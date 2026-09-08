@@ -1118,10 +1118,42 @@ func _reconcile_lost_rank_choices(peer_id: int) -> void:
 	for q in character.pending_rank_choices:
 		var a := String(q.get("ability", ""))
 		queued[a] = int(queued.get(a, 0)) + 1
+	# 2026-09-08 - drop any choice already queued for a NON-COMBAT ability. Owner, looking at a
+	# rank-up popup in a screenshot: *"I notice the card that ranked up is teleport, what class
+	# uses a combat teleport?"* None: Teleport has been out-of-combat only since v0.9.423 (the
+	# combat handler refuses it outright) and `CombatManager.COMBAT_DECK_NON_COMBAT` keeps it out
+	# of decks entirely. Yet every mage was being offered milestone picks on it, because:
+	#   backfill_ability_uses_if_needed() grants mages ability_uses["teleport"] = 200
+	#   -> 200 crosses MASTERY_RANK_THRESHOLDS 10/35/100 = 3 milestones earned
+	#   -> milestones_owed() = 3, and the loop below queues one choice per owed milestone
+	#      for EVERY entry in get_all_available_abilities(), which includes non-combat ones.
+	# The picks offered are combat upgrades (Power, Rider, Executioner) on a card that can never
+	# be played in a fight, so spending one WASTES it. Purge the queue, then never re-queue.
+	var _noncombat: Array = CombatManager.COMBAT_DECK_NON_COMBAT
+	var _purged := 0
+	var _kept: Array = []
+	for q in character.pending_rank_choices:
+		if String(q.get("ability", "")) in _noncombat:
+			_purged += 1
+		else:
+			_kept.append(q)
+	if _purged > 0:
+		character.pending_rank_choices = _kept
+		queued = {}
+		for q in character.pending_rank_choices:
+			var _a := String(q.get("ability", ""))
+			queued[_a] = int(queued.get(_a, 0)) + 1
+		log_message("[RANKFIX] Dropped %d unusable non-combat rank-up choice(s) for %s" % [_purged, character.name])
+
 	var restored := 0
 	for entry in character.get_all_available_abilities():
 		var ability := String(entry.get("name", ""))
 		if ability == "":
+			continue
+		# Never offer a combat upgrade for something that cannot enter combat. Both guards are
+		# checked: the shared list is authoritative, the per-entry flag catches anything added
+		# to the ability table later without being added to the list.
+		if ability in _noncombat or bool(entry.get("non_combat", false)):
 			continue
 		var gap: int = character.milestones_owed(ability) - int(queued.get(ability, 0))
 		if gap <= 0:

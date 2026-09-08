@@ -5815,6 +5815,12 @@ func _dev_run_shots() -> void:
 					print("[SHOTS] would show the victory card, not the combat scene. Raise the")
 					print("[SHOTS] monster level or reduce the scripted attacks and re-run.")
 				else:
+					# A rank-up can fire mid-fight and its overlay covers the middle of the
+					# screen - which is exactly the region a LAYOUT question is about. Stand it
+					# down for the capture; the milestone has its own shot elsewhere.
+					if _milestone_overlay != null and is_instance_valid(_milestone_overlay) and _milestone_overlay.visible:
+						_milestone_overlay.visible = false
+						await get_tree().create_timer(0.4).timeout
 					await _dev_shot_capture("combat")
 			"dungeon":
 				# gm_enter_dungeon is REFUSED while in combat, which silently produced a
