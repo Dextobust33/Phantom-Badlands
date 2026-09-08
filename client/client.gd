@@ -20404,6 +20404,8 @@ var _combat_finisher_value: int = 0
 # content has ever demanded until something forces a re-layout, and the first interaction was
 # what forced it.
 var _milestone_panel: PanelContainer = null
+# True while the shuffle flight is playing; reveals are refused until it lands.
+var _ms_shuffling: bool = false
 
 func _check_for_duplicate_instance() -> void:
 	"""Notice when a SECOND client is already running, and say so. Never blocks.
@@ -20630,6 +20632,10 @@ func _show_milestone_reveal(ability_name: String, offer: Array, reveals_allowed:
 	# nothing on screen said which card they were upgrading.
 	_ms_ability_label = _ability_display_name(ability_name)
 	_ms_phase = "preview"
+	# Cleared HERE, not only by the unlock tween. If an overlay is closed mid-flight the tween
+	# never fires, and a guard that outlives its own animation locks the player out of every
+	# later rank-up. A lock that can get stuck is worse than the problem it solves.
+	_ms_shuffling = false
 	# 2026-09-04 — the header used to say "Memorise their positions", which asks for something
 	# the code does not permit: the shuffle is `_ms_order.shuffle()` followed by an instant grid
 	# rebuild, so the cards TELEPORT. There is no motion to follow and no way to track a card.
@@ -20660,12 +20666,107 @@ func _set_milestone_header(instruction: String) -> void:
 	_milestone_title.text = "%s — Milestone!\n%s" % [_ms_ability_label, instruction]
 
 func _begin_milestone_hunt() -> void:
+	"""Beat 2 — the cards visibly MOVE to their new homes, so the preview is worth watching.
+
+	2026-09-08, owner: "They effectively have no control of which 3 they are picking... a wasted
+	interaction of seeing 9 that you have no bit of control in getting." Correct: this used to be
+	`_ms_order.shuffle()` followed by an instant grid rebuild, so the cards TELEPORTED. A
+	2026-09-04 pass noticed and honestly reworded the header to stop promising a shell game -
+	which fixed the wording and left the interaction a pure gamble.
+
+	Ported from `combat_loot_panel._enter_shuffle`, which the owner validated in August: FACE-UP
+	copies glide from where a card was to where it lands, then everything seals. You track the
+	upgrade you want by watching where it goes.
+
+	Client-side, and that is correct here. In the loot panel the SERVER owns the prize slots, so
+	the swap sequence must come from the server or the animation is a lie. Here the client already
+	holds all nine upgrades and their text - the hiding is a UI conceit, and the client is the
+	source of truth for the order - so animating its own permutation is honest. (I told the owner
+	this would need a server round trip; it does not, and this note is here so nobody adds one.)"""
 	if _ms_phase != "preview":
 		return
+	# Geometry BEFORE the rebuild. The grid is the same 3x3 either way, so slot t always sits at
+	# the same place - which means we already know every destination without waiting for a layout.
+	var slot_pos: Array = []
+	var slot_size: Array = []
+	for t in _ms_grid.get_children():
+		var c := t as Control
+		if c == null:
+			continue
+		slot_pos.append(c.global_position)
+		slot_size.append(c.size)
+	var old_order: Array = _ms_order.duplicate()
+
 	_ms_phase = "hunt"
 	_ms_order.shuffle()
-	_set_milestone_header("Hidden and shuffled — turn over %d of them, then choose one." % _ms_reveals_left)
+	_set_milestone_header("Follow the one you want — turn over %d, then choose one." % _ms_reveals_left)
 	_rebuild_milestone_grid()
+
+	if slot_pos.size() != _ms_order.size():
+		return          # geometry unavailable (first frame); the grid is still correct, just unanimated
+	# Where did each card GO? Card from old slot s carries offer index old_order[s]; it now lives
+	# at whichever slot holds that same index.
+	var dest_of_index := {}
+	for t2 in range(_ms_order.size()):
+		dest_of_index[int(_ms_order[t2])] = t2
+	var flights: Array = []
+	for sfrom in range(old_order.size()):
+		var idx: int = int(old_order[sfrom])
+		var to_slot: int = int(dest_of_index.get(idx, sfrom))
+		var ov := _make_milestone_flyer(_ms_offer[idx], slot_pos[sfrom], slot_size[sfrom])
+		if ov == null:
+			continue
+		_milestone_overlay.add_child(ov)
+		flights.append({"node": ov, "to": slot_pos[to_slot]})
+	# Reveals are locked while the cards are in the air. Without this a fast click lands before
+	# the player has seen where anything went, which is the exact problem this animation exists
+	# to fix - and it would be reintroduced by the impatient player most likely to notice it.
+	_ms_shuffling = flights.size() > 0
+	for f in flights:
+		var node: Control = f["node"]
+		var tw := create_tween()
+		tw.set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
+		tw.tween_property(node, "global_position", f["to"], 0.55)
+		tw.tween_property(node, "modulate:a", 0.0, 0.16)
+		tw.tween_callback(node.queue_free)
+	if _ms_shuffling:
+		var unlock := create_tween()
+		unlock.tween_interval(0.71)
+		unlock.tween_callback(func():
+			_ms_shuffling = false
+			_set_milestone_header("Turn over %d of them, then choose one." % _ms_reveals_left))
+
+
+func _make_milestone_flyer(up: Dictionary, at: Vector2, sz: Vector2) -> Control:
+	"""A face-up copy of one upgrade card that the shuffle animates to its new slot.
+
+	A fixed-size Panel, not a PanelContainer: the loot panel learned (v0.9.712) that a
+	content-sized box grows to fit a long name, and non-uniform flyers overlap mid-flight."""
+	if _milestone_overlay == null or not is_instance_valid(_milestone_overlay):
+		return null
+	var tradeoff: bool = bool(up.get("tradeoff", false))
+	var panel := Panel.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.z_index = 40          # above the sealed grid, below nothing else in the overlay
+	panel.size = sz
+	panel.global_position = at
+	panel.clip_contents = true
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("#2A1F14") if tradeoff else Color("#141A22")
+	sb.border_color = Color("#E0902A") if tradeoff else Color("#4A7FB5")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	panel.add_theme_stylebox_override("panel", sb)
+	var lbl := Label.new()
+	lbl.text = String(up.get("name", "?"))
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 15)
+	lbl.add_theme_color_override("font_color", Color("#E0902A") if tradeoff else Color("#9FD0FF"))
+	lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(lbl)
+	return panel
 
 func _rebuild_milestone_grid() -> void:
 	for c in _ms_grid.get_children():
@@ -20833,6 +20934,8 @@ func _on_milestone_tile_input(event: InputEvent, slot: int) -> void:
 			# an impatient player sit through it.
 			_begin_milestone_hunt()
 		"hunt":
+			if _ms_shuffling:
+				return          # still in the air - see _begin_milestone_hunt
 			if bool(_ms_revealed.get(slot, false)):
 				return
 			_ms_revealed[slot] = true
