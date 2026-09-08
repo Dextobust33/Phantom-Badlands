@@ -96,8 +96,17 @@ while the Paladin's stat realignment held.
       on 2026-09-07 targets, and they are now better evidence than more simulation.
       `bash tools/check_player_progress.sh` — at L25+ re-validate `make_char` against real saves;
       at L50+ the high-level balance work can finally be checked against real data.
-- [ ] **Confirm the deck repair fired.** Five live characters carried bloated decks; the repair runs
-      on their next login and logs `Deck repair: <name> reset to its N-card starter deck`.
+- [x] **Deck repair CONFIRMED WORKING on live data — 2026-09-08.** It runs on character load, so
+      it has fired on the two characters that have logged in since it shipped and not on the rest:
+      * `Dexto` (Ranger L6, repair=1): exactly the 5-card Ranger starter.
+      * `p3snarujuppo` (Ninja L9, repair=1): the 5-card Ninja starter + `companion_card_kelpie`,
+        which the repair keeps ON PURPOSE (a drop the deck screen cannot re-add). It also holds
+        `distract`, which is NOT a Ninja starter card — but `distract` is in the roster and
+        re-addable from the deck screen, so that is a manual add after the repair, which is the
+        documented intent ("players can customize manually again"). Not a defect; recorded because
+        a 7-card deck looks like one at a glance.
+      * The seven that have not logged in still read `deck_repair_version = -` with 7-13 card
+        decks (`Caps2` 12, `CapsUndeadBarb` 13). They will repair on next login. Correct by design.
 - [ ] **Feel check the rest change.** `REST_HEAL_MIN/MAX` replaced EIGHT sites, so meditate and
       companion regen scaled along with rest and mages got it twice. Owner: Meditate is the
       deliberate lever if mages come back too strong — check that BEFORE touching mage design.
