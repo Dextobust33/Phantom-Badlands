@@ -34740,7 +34740,21 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 	if dungeon_data.is_empty():
 		return
 
-	var monsters_count = dungeon_data.get("monsters_per_floor", 3)
+	# 2026-09-08 - scale the count with the floor's AREA, at HALF the old density.
+	#
+	# `monsters_per_floor` is a flat 3 (4 at low tiers) and was tuned when floors were 20-28 wide
+	# - about 576 tiles, so one monster per ~165. Floors are now 48-64 (~3,100 tiles), which left
+	# one monster per ~800 and diluted the wandering pressure roughly five-fold. Owner wants that
+	# pressure: "monsters wandering around this creates the tension".
+	#
+	# HALF density on the owner's call, not full: a bigger floor is also a LONGER run, so equal
+	# density would multiply total encounters as well as floor count. Half keeps quiet corridor
+	# stretches meaningful while still making the floor feel hunted, and it is the smaller step
+	# against the standing solo-possible rule. Expect to retune after a playtest.
+	var _base_count: int = dungeon_data.get("monsters_per_floor", 3)
+	var _area: int = grid.size() * (grid[0].size() if grid.size() > 0 else 0)
+	var _by_area: int = int(round(float(_area) / 330.0))     # 165 tiles/monster, halved
+	var monsters_count = clampi(maxi(_base_count, _by_area), _base_count, 14)
 	var tier = dungeon_data.tier
 	var boss_data = dungeon_data.get("boss", {})
 	var monster_type = boss_data.get("monster_type", "Goblin")

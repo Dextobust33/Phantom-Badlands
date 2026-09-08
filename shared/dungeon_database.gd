@@ -1775,8 +1775,8 @@ const DUNGEON_TYPES = {
 # BSP dungeon grid size range (floors vary between min and max)
 # C3 (dungeon revamp) — enlarged for the Azure-Dreams feel: bigger floors + FEWER, more
 # SPREAD-OUT rooms so corridors between them run long (v2: 18-24 → 20-28).
-const DUNGEON_GRID_SIZE_MIN = 20
-const DUNGEON_GRID_SIZE_MAX = 28
+const DUNGEON_GRID_SIZE_MIN = 48
+const DUNGEON_GRID_SIZE_MAX = 64
 
 # Monster display colors by dungeon tier
 const MONSTER_DISPLAY_COLORS = {
@@ -1851,7 +1851,13 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 	# BSP split the area (leave 1-tile border). v3 (C3, Azure-Dreams) — SHALLOW depth so
 	# there are FEWER, BIGGER partitions; the small rooms above then sit far apart inside
 	# them, so corridors run long (playtest: depth-4 partitions were still too cramped).
-	var max_depth = 3 if size <= 26 else 4
+	# 2026-09-08 - depth 3 at EVERY size. It used to step up to 4 above size 26, which meant a
+	# bigger floor bought more PARTITIONS rather than bigger ones - so the rooms stayed just as
+	# close together and the only thing that grew was the room count. Measured: grid 26-34 at
+	# depth 4 gave 10.6 rooms a floor with a mean edge gap of 3.66. Holding depth at 3 spends the
+	# extra space on distance instead, which is what the owner asked for: "rooms need to be
+	# FARTHER apart MORE OFTEN - longer hallways / more travel area between rooms."
+	var max_depth = 3
 	var partitions = []
 	var initial_rect = Rect2i(1, 1, size - 2, size - 2)
 	_bsp_split(initial_rect, 0, max_depth, rng, partitions)
@@ -2573,9 +2579,27 @@ static func _carve_room(grid: Array, partition: Rect2i, rng: RandomNumberGenerat
 	var room_w = rng.randi_range(3, max(3, max_w))
 	var room_h = rng.randi_range(3, max(3, max_h))
 
-	# Random position within partition
-	var room_x = partition.position.x + rng.randi_range(1, max(1, partition.size.x - room_w - 1))
-	var room_y = partition.position.y + rng.randi_range(1, max(1, partition.size.y - room_h - 1))
+	# 2026-09-08 - CENTRE the room in its partition, with a small jitter, instead of dropping it
+	# anywhere inside. Owner (2026-08-26, still true after C3a): "rooms need to be FARTHER apart
+	# MORE OFTEN - longer hallways / more travel area between rooms."
+	#
+	# Uniform placement was the reason the partitioning did not buy the separation it was meant
+	# to: two rooms in NEIGHBOURING partitions could each drift toward their shared boundary and
+	# end up a couple of tiles apart, so the corridor between them was a stub. Measured before
+	# this change: mean distance between nearest room CENTRES was 6.71 tiles, and with rooms
+	# ~4 wide that is 2-3 tiles of actual hallway.
+	#
+	# Centring makes the gap between two rooms approximately the partition size rather than a
+	# coin flip, which is exactly the "long corridor" the Azure-Dreams feel wants. The jitter is
+	# a quarter of the leftover slack so floors do not become a rigid lattice.
+	var slack_x: int = maxi(0, partition.size.x - room_w - 2)
+	var slack_y: int = maxi(0, partition.size.y - room_h - 2)
+	var jitter_x: int = int(float(slack_x) * 0.25)
+	var jitter_y: int = int(float(slack_y) * 0.25)
+	var room_x = partition.position.x + 1 + int(slack_x / 2.0) + rng.randi_range(-jitter_x, jitter_x)
+	var room_y = partition.position.y + 1 + int(slack_y / 2.0) + rng.randi_range(-jitter_y, jitter_y)
+	room_x = clampi(room_x, partition.position.x + 1, partition.position.x + maxi(1, partition.size.x - room_w - 1))
+	room_y = clampi(room_y, partition.position.y + 1, partition.position.y + maxi(1, partition.size.y - room_h - 1))
 
 	# Clamp to grid bounds (leave outer border as wall)
 	room_x = clampi(room_x, 1, grid.size() - 2)
