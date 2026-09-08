@@ -245,6 +245,25 @@ while the Paladin's stat realignment held.
 ## Phase 5 — the dungeon arc (the big content direction)
 
 - [ ] **Dungeon revamp** — owner wants dungeons changed "a good bit"; details not yet captured.
+- [ ] **Dungeon-themed floor equipment** (owner 2026-09-08): *"higher chances for players to find
+      floor equipment with affixes related to our matching the dungeon type. Example Balrog
+      equipment in a Balrog dungeon."*
+      The gap is small and precise, because **the pattern already exists one branch above it**:
+      `server.gd::_roll_floor_item` receives `dungeon_type` AND `boss_egg_monster`, and the EGG
+      branch uses them (floor eggs already match the dungeon type + tier). The equipment branch
+      (`roll < 82`) calls `drop_tables.roll_dungeon_chest_equipment(tier, lvl)`, which takes only
+      tier and level — so the dungeon's identity is in scope and thrown away.
+      There is also a naming/affix pattern to copy rather than invent: `generate_arcane_hoarder_gear`
+      / `generate_warrior_hoarder_gear` / `generate_trickster_gear` in `drop_tables.gd` already
+      produce monster-flavoured items ("Arcane Hoarder's Ring of the Archon") with a level boost
+      and their own affix roll. A Balrog's Depths run wants "Balrog's ..." on the same shape.
+      Open questions to settle when this is picked up, NOT assumed now:
+        * Does the theme drive a real AFFIX BIAS (fire/burn weighting in a lava dungeon) or only
+          the name + a level/rarity boost? The owner said "affixes related to", so probably both.
+        * How much higher is "higher chance"? Pick it against the drop-rate work, not by feel.
+        * **Read `docs/design/equipment_reference.md` first** — the chase pool is epic+ only, and
+          an item's class stats come from its BASE TYPE, not its affixes. Do not design a themed
+          affix that no acquisition path can actually roll.
 - [ ] **Dungeon Atlas** as hub + quest board.
 - [ ] **Dungeon-centred questing** to replace the disliked overworld quests: clear / rescue /
       boss-hunt / gather.

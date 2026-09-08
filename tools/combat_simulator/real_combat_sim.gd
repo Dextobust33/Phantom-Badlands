@@ -68,6 +68,39 @@ var _gd := _gd_fresh()
 var _rf_may_flee: bool = true
 const WARRIOR_BUFFS := ["berserk", "war_cry"]
 
+# === WALL-CLOCK BUDGET ================================================================
+# 2026-09-08 - a `-- polytest` run was found still alive after THREE DAYS, having pinned a core
+# the whole time. Owner: *"Headless stale process that stick around for days is a problem."*
+#
+# An in-engine Timer cannot save us: every audit runs inside `_init()`, so the SceneTree never
+# reaches a frame and no timer, signal or `_process` ever fires. The only thing that can stop a
+# runaway from INSIDE is a check on the hot path, so the deadline is tested in `run_fight`,
+# which every audit drives.
+#
+# Override for a genuinely long run:  -- refcal --budget=3600
+const DEFAULT_BUDGET_SECONDS := 2700    # 45 min; the whole calibration chain is ~25
+var _deadline_ms: int = 0
+var _budget_tripped := false
+
+
+func _budget_expired() -> bool:
+	"""True once the run has outlived its budget. Prints ONCE, then keeps returning true so every
+	loop unwinds instead of the first one aborting into another."""
+	if _deadline_ms <= 0:
+		return false
+	if Time.get_ticks_msec() < _deadline_ms:
+		return false
+	if not _budget_tripped:
+		_budget_tripped = true
+		push_error("SIM BUDGET EXPIRED - aborting")
+		print("
+!! SIM BUDGET EXPIRED after %d seconds. Aborting so this cannot become a stale
+!! headless process. Results above are INCOMPLETE and must not be used.
+!! If the run legitimately needs longer:  -- <audit> --budget=<seconds>"
+			% int(float(DEFAULT_BUDGET_SECONDS)))
+	return true
+
+
 func _init():
 	seed(20260824)  # reproducible run-to-run (gear affixes/crits/empowered are RNG)
 	drop_tables = load("res://shared/drop_tables.gd").new()
@@ -89,6 +122,14 @@ func _init():
 	combat_mgr.drop_tables = drop_tables
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
+
+	# Arm the watchdog before any audit runs, honouring an explicit --budget=N override.
+	var budget: int = DEFAULT_BUDGET_SECONDS
+	for arg in OS.get_cmdline_user_args():
+		if String(arg).begins_with("--budget="):
+			budget = maxi(30, int(String(arg).split("=")[1]))
+	_deadline_ms = Time.get_ticks_msec() + budget * 1000
+	print("[budget] this run will self-abort after %d seconds" % budget)
 
 	_run_selected_audits()
 	quit()
@@ -183,6 +224,8 @@ func _run_selected_audits() -> void:
 		if arg.begins_with("n="):
 			_audit_n = maxi(1, int(arg.substr(2)))
 			continue
+		if arg.begins_with("budget="):
+			continue   # consumed in _init to arm the watchdog; not an audit name
 		wanted.append(arg)
 	if wanted.is_empty():
 		wanted = DEFAULT_AUDITS.duplicate()
@@ -5153,6 +5196,12 @@ func _monster_turn_if_owed(combat) -> void:
 	combat_mgr.process_monster_turn(combat)
 
 func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter", monster_level: int = -1, race: String = "Human") -> Dictionary:
+	# The watchdog choke point - see _budget_expired(). Every audit reaches combat through here,
+	# so one check covers all of them, and an audit that has run away unwinds instead of pinning
+	# a core until someone notices it days later.
+	if _budget_expired():
+		return {"win": false, "turns": 0, "died": false, "fled": true, "aborted": true,
+			"dealt": 0, "taken": 0, "hp_left": 0, "hp_frac": 0.0}
 	var _rf_dealt := 0
 	var _rf_taken := 0
 	# player_dmg_scale/monster_dmg_scale < 1.0 simulate a rebalanced damage profile

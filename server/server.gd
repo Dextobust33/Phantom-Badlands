@@ -28964,7 +28964,18 @@ func handle_dungeon_list(peer_id: int):
 		# Find active instance of this type
 		var active_instance = ""
 		var instance_location = Vector2i(0, 0)
-		var inst_sub_tier = 1
+		# 2026-09-08 - -1 means "not known yet", NOT sub-tier 1. This defaulted to 1, so every
+		# dungeon with no live instance was listed as "<tier>-1" and priced against the 1-1 band.
+		# A personal dungeon has no instance until you ENTER it (the sub-tier is assigned then,
+		# from distance, with variance) - so the label was a guess presented as a fact, and it
+		# guessed the easiest band every time.
+		#
+		# This is the third number in one report that disagreed with the other two: the owner saw
+		# a "1-1" Wolf Den recommending level 3 whose floor-1 wolves were level 6. The name said
+		# 1-1 (this default), the recommendation said 3 (the TYPE's static min_level, fixed in
+		# v0.9.758), and the wolves were 6 (the INSTANCE, created at sub-tier 4-5 and clamped to
+		# the level-6 player). A genuine 1-1 tops out at level 2.
+		var inst_sub_tier = -1
 		for inst_id in active_dungeons:
 			var inst = active_dungeons[inst_id]
 			if inst.dungeon_type == dungeon_type:
@@ -28977,7 +28988,7 @@ func handle_dungeon_list(peer_id: int):
 		var display_min = dungeon_data.min_level
 		var display_max = dungeon_data.max_level
 		var display_name = dungeon_data.name
-		if active_instance != "":
+		if active_instance != "" and inst_sub_tier > 0:
 			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, inst_sub_tier)
 			display_min = sub_range.min_level
 			# Deeper floors scale monster level up by FLOOR_DIFFICULTY_PER_FLOOR each

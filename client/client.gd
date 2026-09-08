@@ -42789,7 +42789,11 @@ func handle_dungeon_list(message: Dictionary):
 			status = "[color=#00FF00](%d clears)[/color]" % completions
 
 		display_game("[%d] [color=%s]%s[/color] %s" % [idx, color, dname, status])
-		display_game("    Tier %d-%d | Levels %d-%d | Distance: %d tiles" % [tier, sub_tier, min_level, max_level, distance])
+		# sub_tier -1 = not decided yet (no instance). Do not print a guessed "-1" band.
+		if int(sub_tier) > 0:
+			display_game("    Tier %d-%d | Levels %d-%d | Distance: %d tiles" % [tier, sub_tier, min_level, max_level, distance])
+		else:
+			display_game("    Tier %d | Levels %d-%d | Distance: %d tiles" % [tier, min_level, max_level, distance])
 		display_game("")
 		idx += 1
 
@@ -43768,7 +43772,13 @@ func _display_dungeon_entrance_info():
 
 	display_game("")
 	display_game("[color=%s]===== %s =====[/color]" % [color, dungeon_name])
-	display_game("Tier %d-%d Dungeon | Levels %d-%d" % [tier, sub_tier, min_level, max_level])
+	# 2026-09-08 - the server sends sub_tier = -1 when the dungeon has no instance yet, because
+	# the sub-tier is not decided until you enter. Printing "Tier 1-1" there was a guess shown as
+	# a fact, and it always guessed the easiest band. Say what is actually known instead.
+	if int(sub_tier) > 0:
+		display_game("Tier %d-%d Dungeon | Levels %d-%d" % [tier, sub_tier, min_level, max_level])
+	else:
+		display_game("Tier %d Dungeon | Levels %d-%d [color=#808080](exact depth is set when you enter)[/color]" % [tier, min_level, max_level])
 
 	# Show level requirement warning if player is too low
 	if player_level < min_level:
@@ -43797,7 +43807,10 @@ func enter_dungeon_at_location():
 	display_game("[color=%s]===== %s =====[/color]" % [color, dungeon_name])
 	display_game("")
 	var entry_sub_tier = dungeon_entrance_info.get("sub_tier", 1)
-	display_game("Tier %d-%d Dungeon" % [dungeon_entrance_info.get("tier", 1), entry_sub_tier])
+	if int(entry_sub_tier) > 0:
+		display_game("Tier %d-%d Dungeon" % [dungeon_entrance_info.get("tier", 1), entry_sub_tier])
+	else:
+		display_game("Tier %d Dungeon" % dungeon_entrance_info.get("tier", 1))
 	display_game("Level Range: %d - %d" % [min_level, dungeon_entrance_info.get("max_level", 100)])
 	display_game("")
 	display_game("[color=#FFFF00]Entering dungeon...[/color]")
