@@ -32888,7 +32888,14 @@ func _send_dungeon_state(peer_id: int):
 					"level": int(m.get("level", 1)),
 					# The pre-rolled variant name ("Venomous Orc"), so the hover names the
 					# monster the player will actually fight rather than its base type.
-					"variant_name": String(m.get("variant_name", ""))
+					"variant_name": String(m.get("variant_name", "")),
+					# 2026-09-08 - the cosmetic tint, so the HOVER can paint the art the same way
+					# COMBAT does. Owner: "Does an Azure Ogre show when hovered in the dungeon and
+					# in combat?" It did not - the hover drew raw art and these fields were not
+					# even on the wire, so the client could not have matched combat if it tried.
+					"appearance_color": String(m.get("appearance_color", "")),
+					"appearance_color2": String(m.get("appearance_color2", "")),
+					"appearance_pattern": String(m.get("appearance_pattern", ""))
 				})
 
 	# Get floor loot items on current floor (Azure Dreams style pickups)
@@ -34834,7 +34841,8 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 			"variant_name": String(_roll.get("name", monster_type)),
 			"appearance_color": String(_roll.get("appearance_color", "")),
 			"appearance_color2": String(_roll.get("appearance_color2", "")),
-			"appearance_pattern": String(_roll.get("appearance_pattern", ""))
+			"appearance_pattern": String(_roll.get("appearance_pattern", "")),
+			"appearance_variant": String(_roll.get("appearance_variant", ""))
 		}
 		floor_monsters.append(monster_entity)
 		next_dungeon_monster_id += 1
@@ -35235,10 +35243,17 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		if not _em.is_empty():
 			monster_db.reapply_empowered(monster, _em)
 		# Cosmetic tint is visual only and has no re-stamp helper - carry it across directly.
-		for _k in ["appearance_color", "appearance_color2", "appearance_pattern"]:
+		for _k in ["appearance_color", "appearance_color2", "appearance_pattern", "appearance_variant"]:
 			var _v := String(monster_entity.get(_k, ""))
 			if _v != "":
 				monster[_k] = _v
+		# The name the player was SHOWN is the name they fight, full stop. Needed because the
+		# base is generated with suppress_rare_rolls=true, which also suppresses the cosmetic
+		# roll - so an "Azure Ogre" on the floor would otherwise have introduced itself as a
+		# plain "Ogre" in combat, which is the exact mismatch this whole pass is about.
+		var _pn := String(monster_entity.get("variant_name", ""))
+		if _pn != "":
+			monster["name"] = _pn
 	monster.is_dungeon_monster = true
 	# C3b — Elite Den: promote to an elite variant (harder + 2 extra abilities +
 	# guaranteed drop via drop_chance 100). reapply_variant restamps name/stats/abilities.

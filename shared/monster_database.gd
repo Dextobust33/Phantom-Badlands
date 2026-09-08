@@ -1764,6 +1764,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 	var appearance_color := ""
 	var appearance_color2 := ""
 	var appearance_pattern := "solid"
+	var appearance_variant := ""
 	if force_cosmetic or (not suppress_rare_rolls and not is_rare_variant and empowered_mods.is_empty() and randf() < COSMETIC_CHANCE):
 		# Roll from the companion cosmetic pool → any color + any pattern a companion
 		# can get (rarer = fancier patterns). Same weighting the eggs use.
@@ -1771,6 +1772,17 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 		appearance_color = String(tint.get("color", ""))
 		appearance_color2 = String(tint.get("color2", ""))
 		appearance_pattern = String(tint.get("pattern", "solid"))
+		# 2026-09-08 - and KEEP the tint's name. `roll_cosmetic_variant` has always returned
+		# {name, color, color2, pattern} and this call threw the name away, so a tinted monster
+		# was visually distinct and verbally anonymous: there was no such thing as an "Azure
+		# Ogre", only an Ogre that happened to be blue. Owner asked for exactly that name.
+		#
+		# Safe to prefix unconditionally: the tint only rolls for PLAIN monsters (see the gate
+		# above - no rare variant, no empowered mods), so this can never collide with "Venomous"
+		# or "★ ... Champion".
+		appearance_variant = String(tint.get("name", ""))
+		if appearance_variant != "":
+			monster_name = appearance_variant + " " + monster_name
 
 	var monster = {
 		"name": monster_name,
@@ -1778,6 +1790,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 		"appearance_color": appearance_color,   # v0.9.718 — cosmetic tint (visual)
 		"appearance_color2": appearance_color2,
 		"appearance_pattern": appearance_pattern,
+		"appearance_variant": appearance_variant,  # the tint's NAME ("Azure"), "" when untinted
 		"base_level": base_stats.base_level,  # Intrinsic monster base level — needed for accurate HP estimation in client-side discovery system
 		"level": target_level,
 		"max_hp": scaled_hp,

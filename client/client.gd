@@ -36280,14 +36280,18 @@ func _on_log_meta_hover(meta) -> void:
 			if int(_mm.get("id", -1)) != _mid:
 				continue
 			_show_dungeon_monster_hover(String(_mm.get("type", "")), int(_mm.get("level", 1)),
-				String(_mm.get("variant_name", "")))
+				String(_mm.get("variant_name", "")),
+				String(_mm.get("appearance_color", "")),
+				String(_mm.get("appearance_color2", "")),
+				String(_mm.get("appearance_pattern", "")))
 			return
 		return
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(m)
 
 
-func _show_dungeon_monster_hover(monster_type: String, level: int, variant_name: String = "") -> void:
+func _show_dungeon_monster_hover(monster_type: String, level: int, variant_name: String = "",
+		art_color: String = "", art_color2: String = "", art_pattern: String = "") -> void:
 	"""Name a floor monster and show its ASCII art, without entering combat to find out.
 
 	Under permadeath, knowing WHAT is coming down a corridor is information worth having before
@@ -36321,6 +36325,13 @@ func _show_dungeon_monster_hover(monster_type: String, level: int, variant_name:
 		for r in rows:
 			body += String(r) + "
 "
+		# 2026-09-08 - paint it the way COMBAT paints it. Owner: "Will the dungeon monsters ASCII
+		# colors, patterns, variants all match with what you see in combat?" They did not: this
+		# drew the raw art while combat ran it through `_recolor_ascii_art_pattern`, so a tinted
+		# monster was one colour on the floor and another in the fight. Same call, same argument
+		# order, so the two cannot drift apart again.
+		if art_color != "":
+			body = _recolor_ascii_art_pattern(body, art_color, art_color2, art_pattern)
 		# Small font: the portrait is ~150 columns wide, which at body size would be a tooltip
 		# wider than the screen.
 		txt += "
