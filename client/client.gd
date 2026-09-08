@@ -7342,6 +7342,10 @@ func _reset_character_state():
 	character_data = {}
 	# Reset dungeon state
 	dungeon_mode = false
+	# Put the Coords / Region boxes back on the surface. They restore themselves on the
+	# next overworld draw anyway, but a hide that depends on another message arriving is
+	# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
+	_set_dungeon_side_boxes_visible(true)
 	dungeon_data = {}
 	dungeon_floor_grid = []
 	dungeon_available = []
@@ -23255,6 +23259,10 @@ func handle_server_message(message: Dictionary):
 		"character_loaded":
 			# Reset any stale state from previous character
 			dungeon_mode = false
+			# Put the Coords / Region boxes back on the surface. They restore themselves on the
+			# next overworld draw anyway, but a hide that depends on another message arriving is
+			# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
+			_set_dungeon_side_boxes_visible(true)
 			dungeon_data = {}
 			dungeon_floor_grid = []
 			in_combat = false
@@ -23287,6 +23295,10 @@ func handle_server_message(message: Dictionary):
 		"character_created":
 			# Reset any stale state from previous character
 			dungeon_mode = false
+			# Put the Coords / Region boxes back on the surface. They restore themselves on the
+			# next overworld draw anyway, but a hide that depends on another message arriving is
+			# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
+			_set_dungeon_side_boxes_visible(true)
 			dungeon_data = {}
 			dungeon_floor_grid = []
 			in_combat = false
@@ -23343,6 +23355,10 @@ func handle_server_message(message: Dictionary):
 			character_data = {}
 			# Reset dungeon state
 			dungeon_mode = false
+			# Put the Coords / Region boxes back on the surface. They restore themselves on the
+			# next overworld draw anyway, but a hide that depends on another message arriving is
+			# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
+			_set_dungeon_side_boxes_visible(true)
 			dungeon_data = {}
 			dungeon_floor_grid = []
 			dungeon_available = []
@@ -23365,6 +23381,10 @@ func handle_server_message(message: Dictionary):
 			house_mode = ""
 			# Reset dungeon state
 			dungeon_mode = false
+			# Put the Coords / Region boxes back on the surface. They restore themselves on the
+			# next overworld draw anyway, but a hide that depends on another message arriving is
+			# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
+			_set_dungeon_side_boxes_visible(true)
 			dungeon_data = {}
 			dungeon_floor_grid = []
 			dungeon_available = []
@@ -28718,6 +28738,10 @@ func reset_connection_state():
 	character_list = []
 	# Reset dungeon state
 	dungeon_mode = false
+	# Put the Coords / Region boxes back on the surface. They restore themselves on the
+	# next overworld draw anyway, but a hide that depends on another message arriving is
+	# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
+	_set_dungeon_side_boxes_visible(true)
 	dungeon_data = {}
 	dungeon_floor_grid = []
 	dungeon_available = []
@@ -43197,6 +43221,10 @@ func handle_dungeon_floor_change(message: Dictionary):
 func handle_dungeon_complete(message: Dictionary):
 	"""Handle dungeon completion"""
 	dungeon_mode = false
+	# Put the Coords / Region boxes back on the surface. They restore themselves on the
+	# next overworld draw anyway, but a hide that depends on another message arriving is
+	# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
+	_set_dungeon_side_boxes_visible(true)
 	dungeon_data = {}
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
@@ -43551,6 +43579,10 @@ func handle_hotzone_warning(message: Dictionary):
 func handle_dungeon_exit(message: Dictionary):
 	"""Handle exiting a dungeon (voluntary, death, collapse, or escape scroll)"""
 	dungeon_mode = false
+	# Put the Coords / Region boxes back on the surface. They restore themselves on the
+	# next overworld draw anyway, but a hide that depends on another message arriving is
+	# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
+	_set_dungeon_side_boxes_visible(true)
 	dungeon_data = {}
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
@@ -43693,6 +43725,31 @@ func handle_dungeon_gather_result(message: Dictionary):
 	display_game("[color=#808080]Move to continue exploring...[/color]")
 	update_action_bar()
 
+# 2026-09-08 (E) - the dungeon grid's font in the main canvas. The viewport stays 11x11 on the
+# owner's call ("10x10 or 11x11 might be better and effectively 'Zoomed In' if the dungeon is
+# occupying a much larger area"), so ALL of the zoom comes from this. 28 is roughly 3x the
+# default body size, which fills the canvas at 1080p without wrapping an 11-wide row.
+# 46, not larger: the canvas is about 650px tall, a line box is roughly 1.15x the font, and 11
+# rows must fit without scrolling (11 * 53 = 583). Width is no longer the binding constraint now
+# that the viewport is 25 wide. Owner expects to retune this once sprites land - "Once we have
+# some of the sprites on I will likely be able to tell better" - so it is one constant on
+# purpose.
+const DUNGEON_TILE_FONT_SIZE := 46
+
+
+func _set_dungeon_side_boxes_visible(vis: bool) -> void:
+	"""Stand the Coords / Region boxes down underground and put them back on the surface.
+
+	Owner: "they don't really serve much of a purpose while you're in a dungeon". Note the
+	coord label ALREADY had `if dungeon_mode: visible = false` - the gate was right and simply
+	never re-ran on entering a dungeon, so the box stayed on screen over the map. Calling this
+	from the dungeon draw and from the overworld draw is what makes the existing gate work."""
+	if coord_post_label != null and is_instance_valid(coord_post_label):
+		coord_post_label.visible = vis
+	if region_label != null and is_instance_valid(region_label):
+		region_label.visible = vis
+
+
 func display_dungeon_floor():
 	"""Display the current dungeon floor - map goes in MapDisplay, status in GameOutput"""
 	if not dungeon_mode or dungeon_data.is_empty():
@@ -43717,20 +43774,38 @@ func display_dungeon_floor():
 		if m.get("alert", false):
 			alert_count += 1
 
-	# Update map_display panel with dungeon map (right side panel)
+	# 2026-09-08 (presentation pass E) — the GRID and the TEXT swapped places.
+	#
+	# The dungeon was drawn in the small side panel, about 115x165 pixels, while the whole main
+	# canvas held six lines of status and then sat empty — so the game was played in a postage
+	# stamp with two thirds of the screen unused. Owner picked "fewer tiles and larger", noting
+	# the zoom comes from the AREA being bigger rather than from cropping the view, so the
+	# viewport stays 11x11 and is simply drawn much larger.
+	#
+	# The side panel now carries the floor status and the legend, which is what a side panel is
+	# for, and the Coords / Area boxes stand down underground — owner: "they don't really serve
+	# much of a purpose while you're in a dungeon."
 	if map_display:
-		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
-		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
-		map_text += grid_display
-		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n· Floor  E Start        \n[color=#00FFCC]&[/color] Node  [color=#FF4444]×[/color] Trap   Letters = Monsters[/color]"
+		var side_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
+		side_text += "Floor %d/%d\n" % [floor_num, total_floors]
+		side_text += "Defeated: %d\n" % encounters_cleared
+		if alive_count > 0:
+			var _al = "  [color=#FF0000](%d alert!)[/color]" % alert_count if alert_count > 0 else ""
+			side_text += "Remaining: [color=#FF4444]%d[/color]%s\n" % [alive_count, _al]
+		else:
+			side_text += "[color=#00FF00]Floor cleared![/color]\n"
+		side_text += "\n[color=#808080]@ You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nLetters = Monsters[/color]"
 		map_display.clear()
-		map_display.append_text(map_text)
+		map_display.append_text(side_text)
 		map_display.scroll_to_line(0)
+	_set_dungeon_side_boxes_visible(false)
 
-	# GameOutput shows dungeon status (not the map)
+	# GameOutput IS the dungeon canvas now. Everything that is not the map moved to the side
+	# panel above, so this stays as close to "just the floor" as it can.
 	game_output.clear()
-	display_game("[color=%s]===== %s =====[/color]" % [dungeon_color, dungeon_name])
-	display_game("Floor %d/%d | Defeated: %d" % [floor_num, total_floors, encounters_cleared])
+	# Centred, on the owner's call. [center] applies per line, and every grid row is padded to the
+	# same width by the renderer, so the block centres as a block rather than raggedly.
+	display_game("[center][font_size=%d]%s[/font_size][/center]" % [DUNGEON_TILE_FONT_SIZE, grid_display])
 
 	# Step pressure counter — C2: the step budget is retired (server sends step_limit
 	# <= 0). Hide the counter; wandering monsters are the pressure now.
@@ -43745,13 +43820,8 @@ func display_dungeon_floor():
 			step_color = "#FFFF00"
 		display_game("[color=%s]Steps: %d/%d[/color]" % [step_color, steps_taken, step_limit])
 
-	if alive_count > 0:
-		var alert_text = " ([color=#FF0000]%d alert![/color])" % alert_count if alert_count > 0 else ""
-		display_game("Monsters remaining: [color=#FF4444]%d[/color]%s" % [alive_count, alert_text])
-	else:
-		display_game("[color=#00FF00]Floor cleared![/color]")
-	display_game("")
-	display_game("Use numpad/arrows to move. [color=#FFFF00][%s][/color] Items, [color=#FFFF00][%s][/color] %s" % [get_action_key_name(0), get_action_key_name(1), "Meditate" if character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"] else "Rest"])
+	# Monster count and the movement hint live in the side panel and the action bar now — the
+	# canvas is for the floor.
 
 	# v0.9.390 — re-render the last special-tile message (poison, heal,
 	# blood font, etc.) so the player can actually read it. Cleared after
@@ -43761,12 +43831,12 @@ func display_dungeon_floor():
 		display_game("[color=#FFA060]> %s[/color]" % _last_dungeon_tile_message)
 		_dungeon_text_pending = false
 
-	# v0.9.390 — show the theme-tile legend so players know what the special
-	# glyphs (w, +, ^, etc.) do without having to remember the entrance warning.
-	var dungeon_type_for_legend = String(dungeon_data.get("dungeon_type", ""))
-	if dungeon_type_for_legend != "" and DUNGEON_THEME_LEGEND.has(dungeon_type_for_legend):
-		display_game("")
-		_display_dungeon_theme_legend_section(dungeon_type_for_legend)
+	# 2026-09-08 (E) - the theme-tile legend used to print its full prose HERE, in the middle of
+	# what is now the map canvas ("Sacred ground - light beams blessing your next attack with
+	# +20% damage. One-time per tile..."). It is genuinely useful - players reported confusion at
+	# unexplained glyphs, which is why it exists - so it is not dropped: the side panel gets the
+	# glyph and a short name, and the full sentence still appears on the ENTRANCE warning, where
+	# there is room to read it before you are standing on one.
 
 func display_dungeon_food_select():
 	"""Display food selection for dungeon rest."""
@@ -43825,8 +43895,13 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	var grid_height = grid.size()
 	var grid_width = grid[0].size() if grid_height > 0 else 0
 
-	# Viewport size (visible area around player) - keep small for non-fullscreen
-	var view_w = 11
+	# 2026-09-08 (E) - WIDER than tall, because the canvas is. Owner: "Ideally we don't want a
+	# bunch of wasted space on each side of the canvas so we may need to display more of it or
+	# something." The canvas is roughly 1275x650 - about 2:1 - so an 11x11 square view leaves
+	# most of the width empty no matter how large the tiles get. Floors are 20-28 wide (C3a), so
+	# 25 columns usually shows the whole floor across, while the row count stays what a tall tile
+	# can fit vertically.
+	var view_w = 25
 	var view_h = 11
 
 	# Calculate viewport bounds centered on player
