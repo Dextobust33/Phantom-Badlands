@@ -36144,9 +36144,46 @@ const MONSTER_GUTTER := "[color=#FF3B3B]█[/color] "
 
 func _on_log_meta_hover(meta) -> void:
 	"""A damage number in the log was hovered — show its breakdown using the SAME popup the
-	cards use for their formulas, rather than a second tooltip style to maintain."""
+	cards use for their formulas, rather than a second tooltip style to maintain.
+
+	2026-09-08 — also handles `mon:<type>:<level>`, emitted by the dungeon grid, so hovering a
+	monster on the floor names it and shows its art."""
+	var m := str(meta)
+	if m.begins_with("mon:"):
+		var parts := m.split(":")
+		if parts.size() >= 3:
+			_show_dungeon_monster_hover(String(parts[1]), int(parts[2]))
+			return
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
-		combat_scene_panel._show_formula_popup(str(meta))
+		combat_scene_panel._show_formula_popup(m)
+
+
+func _show_dungeon_monster_hover(monster_type: String, level: int) -> void:
+	"""Name a floor monster and show its ASCII art, without entering combat to find out.
+
+	Under permadeath knowing WHAT is coming down a corridor is information worth having before
+	you commit, which is why this is worth more than flavour. The art is the same table the
+	combat screen draws from, so a monster looks like itself in both places."""
+	if monster_type == "":
+		return
+	var art_src = _get_monster_art()
+	var key: String = art_src.resolve_art_key(monster_type) if art_src != null else ""
+	var art_map: Dictionary = art_src.get_art_map() if art_src != null else {}
+	var art: String = String(art_map.get(key, ""))
+	var txt := "[b][color=#FFD700]Level %d %s[/color][/b]" % [level, monster_type]
+	if art != "":
+		# Only the first few rows: this is a peek at a corridor, not the combat portrait.
+		var rows: PackedStringArray = art.split("
+")
+		var take: int = mini(rows.size(), 8)
+		txt += "
+[color=#9FD0FF]"
+		for i in range(take):
+			txt += rows[i] + "
+"
+		txt += "[/color]"
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(txt)
 
 func _on_log_meta_unhover(_meta) -> void:
 	if combat_scene_panel and combat_scene_panel.has_method("_hide_formula_popup"):
@@ -43998,7 +44035,15 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					if mon.get("is_boss", false):
 						mchar = "B"
 						mcolor = "#FF0000"
-					line += "[color=%s]%s[/color]" % [mcolor, mchar]
+					# 2026-09-08 - hoverable. Owner: "make it where players can hover their mouse
+					# over them in the dungeon and see their ascii art (and optionally level and
+					# variant or type)". Same [url=...] + meta_hover idiom as the combat status
+					# chips and the card damage formulas, so there is one tooltip mechanism in the
+					# game rather than a third. The meta carries what the popup needs; the art is
+					# looked up client-side from monster_art.gd, which already has it.
+					line += "[url=mon:%s:%d]%s%s%s[/url]" % [
+						String(mon.get("type", "")), int(mon.get("level", 1)),
+						"[color=%s]" % mcolor, mchar, "[/color]"]
 				elif trap_map.has(mkey):
 					# Render triggered trap marker
 					var tcolor = trap_map[mkey].get("color", "#FF4444")

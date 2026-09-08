@@ -32880,7 +32880,12 @@ func _send_dungeon_state(peer_id: int):
 					"id": m.id, "x": m.x, "y": m.y,
 					"char": m.display_char, "color": m.display_color,
 					"alert": m.alert, "is_boss": m.is_boss,
-					"type": m.monster_type
+					"type": m.monster_type,
+					# 2026-09-08 - the ONE field the dungeon monster hover needed. Owner assumed
+					# it "would require that the type of encounter get chosen beforehand"; it is
+					# already chosen - a floor monster entity is spawned with both monster_type
+					# and level, and the type was already on the wire. Only level was missing.
+					"level": int(m.get("level", 1))
 				})
 
 	# Get floor loot items on current floor (Azure Dreams style pickups)
