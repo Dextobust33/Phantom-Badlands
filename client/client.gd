@@ -5797,12 +5797,25 @@ func _dev_run_shots() -> void:
 				# still reads "???", and the log is blank. Play a couple of rounds so the art,
 				# the damage numbers, the companion and a filled log are all on screen.
 				await _dev_shot_ensure_companion()
-				send_to_server({"type": "gm_spawnmonster", "monster_name": "Wight", "level": 14})
+				# 2026-09-08 - level 30, not 14. A level-14 Wight DIED to the two scripted
+				# attacks, so the capture photographed the victory card and the rank-up overlay
+				# instead of a fight - and the resulting shot was used to judge a combat-layout
+				# question it could not answer. The monster has to outlive the script.
+				send_to_server({"type": "gm_spawnmonster", "monster_name": "Wight", "level": 30})
 				await get_tree().create_timer(3.0).timeout
 				for _i in range(2):
+					if not in_combat:
+						break     # it died anyway; do not keep swinging at nothing
 					send_to_server({"type": "combat", "command": "attack"})
 					await get_tree().create_timer(2.6).timeout
-				await _dev_shot_capture("combat")
+				# A capture taken outside combat is the WRONG SCREEN, and a wrong screenshot is
+				# worse than none: it looks like evidence. Say so loudly rather than saving it.
+				if not in_combat:
+					print("[SHOTS] SKIPPED 'combat' - the fight ended before capture. The shot")
+					print("[SHOTS] would show the victory card, not the combat scene. Raise the")
+					print("[SHOTS] monster level or reduce the scripted attacks and re-run.")
+				else:
+					await _dev_shot_capture("combat")
 			"dungeon":
 				# gm_enter_dungeon is REFUSED while in combat, which silently produced a
 				# duplicate of the combat shot. Leave any fight first, and run this scene
@@ -20447,10 +20460,31 @@ func _ensure_milestone_overlay() -> void:
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_milestone_overlay.add_child(center)
+	# 2026-09-08 - the milestone content sits on its OWN opaque panel. Before this there was only
+	# the 72% dim, so everything behind it stayed legible through the text: a 1080p capture caught
+	# "Teleport - Milestone!" printed straight over the victory card's "Battle Totals", "+660 XP",
+	# "- Loot -" and "No items dropped". Dimming a background is not the same as replacing it, and
+	# this is the same fault the buff chips had - the owner's words there were "without any color
+	# or border it's just a bit hard to notice".
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pstyle := StyleBoxFlat.new()
+	pstyle.bg_color = Color("#0E0C08")          # opaque: nothing behind it reads through
+	pstyle.border_color = Color("#C9A040")
+	pstyle.set_border_width_all(2)
+	pstyle.set_corner_radius_all(8)
+	pstyle.content_margin_left = 28.0
+	pstyle.content_margin_right = 28.0
+	pstyle.content_margin_top = 20.0
+	pstyle.content_margin_bottom = 20.0
+	pstyle.shadow_color = Color(0, 0, 0, 0.55)
+	pstyle.shadow_size = 10
+	panel.add_theme_stylebox_override("panel", pstyle)
+	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 14)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	center.add_child(box)
+	panel.add_child(box)
 	_milestone_title = Label.new()
 	_milestone_title.add_theme_font_size_override("font_size", 22)
 	_milestone_title.add_theme_color_override("font_color", Color("#FFD700"))
