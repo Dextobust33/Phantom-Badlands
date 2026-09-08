@@ -26,6 +26,16 @@ class_name CardUpgrades
 # Which cards an upgrade can appear on.
 #   "damage" — deals direct damage        "buff"    — applies a buff to you
 #   "any"    — anything                   "control" — debuff/CC oriented
+# 2026-09-08 - KIND is what stops an upgrade being offered on a card it cannot help. Four were
+# marked KIND_ANY while their wiring requires DAMAGE DEALT or a KILL, so they were offered on
+# Iron Skin, War Cry, Fortify, Rally, Forcefield, Haste, Analyze and Paralyze, where taking one
+# was a wasted pick:
+#   swift        rides the extra-turn roll, gated on `imprint_damage_dealt > 0`
+#   sacrificial  doubles the damage - of which a buff card has none
+#   vindication  heals when THIS lands a killing blow
+#   refund       refunds the cost when THIS lands the killing blow
+# Found by `-- upgradefit`, which casts every card with and without every upgrade it can be
+# offered and compares the results, rather than trusting a hand-kept table of requirements.
 const KIND_ANY := "any"
 const KIND_DAMAGE := "damage"
 const KIND_BUFF := "buff"
@@ -94,9 +104,9 @@ const UPGRADES := [
 	# them. Revisit if debuffs ever gain real durations.
 
 	# ---------------------------------------------------------------- any, upside -----------
-	{"id": "refund", "wired": true, "name": "Closing Cost", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "refund", "wired": true, "name": "Closing Cost", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Refunds its cost when it lands the killing blow."},
-	{"id": "swift", "wired": true, "name": "Swift", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "swift", "wired": true, "name": "Swift", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "12% chance the enemy loses its turn, so you act again. Damaging cards only."},
 
 	# ---------------------------------------------------------------- TRADE-OFFS ------------
@@ -133,7 +143,7 @@ const UPGRADES := [
 	 "desc": "The FIRST time you play this in a fight, it costs nothing."},
 	{"id": "relentless", "wired": true, "name": "Relentless", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Every third cast of this card gives back a third of your mana / stamina / energy."},
-	{"id": "vindication", "wired": true, "name": "Vindication", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "vindication", "wired": true, "name": "Vindication", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Heals you for 6% of your health when this lands a killing blow."},
 	{"id": "disorienting", "wired": true, "name": "Disorienting", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "One cast in four leaves the enemy swinging wide."},
@@ -186,7 +196,7 @@ const UPGRADES := [
 	 "desc": "A stronger debuff, with a small chance it lands on you instead."},
 	{"id": "gamblers_cut", "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Half cost, but a quarter of the time it does nothing at all."},
-	{"id": "sacrificial", "wired": true, "name": "Sacrificial", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "sacrificial", "wired": true, "name": "Sacrificial", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Far stronger, but the card is spent for the rest of the fight."},
 ]
 

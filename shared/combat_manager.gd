@@ -6173,8 +6173,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					messages.append("[color=#00FFFF]%s Chance:[/color] %d%%%s" % [
 						_fin, assassinate_chance(character, monster, combat), level_warning])
 
-			# Grant +10% damage bonus for rest of combat
-			combat["analyze_bonus"] = 10
+			# Grant +10% damage bonus for rest of combat.
+			# 2026-09-08 - routed through _apply_buff_value_modifiers so the upgrades that scale
+			# a value actually reach it. Reported: Track carried Unstable Hex, which multiplies a
+			# debuff's value by 1.6 AND costs 4% of your health one cast in five - but this bonus
+			# was a bare literal that no modifier touched, so the card took the downside and got
+			# none of the upside. A trade-off where only the trade applied.
+			combat["analyze_bonus"] = maxi(1, int(_apply_buff_value_modifiers(character, ability_name, 10)))
 			messages.append("[color=#00FF00]+10%% damage bonus for this combat![/color]" % [])
 			# Skip monster turn for analyze (information only)
 			# Include revealed HP data for client health bar update
@@ -7425,6 +7430,31 @@ func _apply_buff_value_modifiers(character: Character, ability_name: String, bas
 	return max(1, int(value))
 
 # Audit #1 Slice 6e/6f (v0.9.549) — Variant Imprint support helpers.
+static func upgrade_exclusions_for(ability_name: String) -> Array:
+	"""Upgrades that must never be OFFERED on this card, because they cannot do anything on it.
+
+	Public and static so the audit (`-- upgradefit`) asks the same question the game answers.
+	When it did not, the audit kept reporting picks on Vanish that the game had already stopped
+	offering - a tool disagreeing with the thing it is checking is worse than no tool.
+
+	Forcefield and Shield grant a capacity that lasts until spent, and Vanish arms a single
+	guaranteed crit: none has a DURATION, and Vanish has no magnitude either, so anything that
+	scales one or the other is a wasted pick."""
+	var out: Array = []
+	if ability_name in ["forcefield", "shield", "vanish"]:
+		out.append("duration")
+		out.append("costly_vigil")      # doubles a duration that does not exist
+	if ability_name == "war_cry":
+		# War Cry was re-roled to a tempo/intimidate card: it surges the engine and writes
+		# `enemy_distracted`, and creates no durational buff at all - so there is no duration for
+		# Costly Vigil to double. Measured by `-- upgradefit`, not assumed.
+		out.append("costly_vigil")
+	if ability_name == "vanish":
+		for u in ["concentrated", "slow_cast", "fragile_ward"]:
+			out.append(u)
+	return out
+
+
 func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Array:
 	"""The upgrades laid out at this rank-up, as an array of dicts the client can render.
 
@@ -7441,8 +7471,7 @@ func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Ar
 	# Some "buff" cards have no DURATION to extend — Forcefield grants a shield with a capacity
 	# that lasts until it is spent, and Phantom Strike arms a single auto-crit. Offering them the
 	# Duration upgrade is offering a pick that does nothing at all.
-	var _no_duration: Array = ["forcefield", "shield", "vanish"]
-	var _exclude: Array = ["duration"] if ability_name in _no_duration else []
+	var _exclude: Array = upgrade_exclusions_for(ability_name)
 	var drawn: Array = CU.draw_choices(kind, milestone, taken, CU.OFFER_SIZE, _exclude)
 	var out: Array = []
 	for u in drawn:

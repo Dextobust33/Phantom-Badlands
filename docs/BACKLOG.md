@@ -149,6 +149,27 @@ while the Paladin's stat realignment held.
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 
+- [ ] **Three card upgrades that do nothing on some cards** (found 2026-09-08 by `-- upgradefit`,
+      which casts every card with and without every upgrade it can be offered and compares the
+      result). The structural cause — four damage-only upgrades marked `KIND_ANY` — is FIXED; what
+      is left are three separate wiring gaps, all pre-existing, none a regression:
+      * **`opening_act` on Magic Bolt (all 3 mages) and Analyze** — it refunds
+        `path_last_ability_cost`, which is recorded only in `apply_variable_cost`. Cards that do
+        not take that path never set it, so the refund is zero. Fix belongs in the cost funnel,
+        which several upgrades already modify — worth doing carefully rather than quickly.
+      * **`vindication` on the Paladin's Judgement** — heals 6% on a killing blow, but the
+        finisher's victory path appears to return before the upgrade block runs. Check
+        `_process_victory` against the `vindication` site.
+      * **`demoralising` on Analyze / Sabotage** — measured dead, but it is gated on the ENEMY
+        being stunned or distracted, which another card can supply. NOT necessarily a bug: it
+        fires if you Distract first. Owner decision: acceptable cross-card design, or should
+        conditional upgrades only be offered on cards that can meet their own condition?
+      `-- upgradefit` is at 12 dead pairs of 1127, down from 71. **Read its docstring before
+      trusting a run**: the audit was wrong four times before it was right (player pinned at full
+      health, one cast per combat, not honouring the game's own exclusions, and buffs missing
+      from the signature) and every wrong version produced output indistinguishable from a real
+      finding.
+
 - [x] **Character creation was stale — DONE 2026-09-07** (owner: *"Seems like it's not showing the
       correct classes or descriptions and some of the other info is dated."*). Three faults:
       the class button printed the raw id, so the list said "Sage" while the panel beneath it said

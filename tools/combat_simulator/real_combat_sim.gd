@@ -159,6 +159,7 @@ func _audit_registry() -> Dictionary:
 		"namesweep": ["EVERY class x EVERY card: does one name reach every surface?", run_namesweep],
 		"deadranks": ["can any ability earn combat upgrades it can never use?", run_deadranks],
 		"cardaudit": ["EVERY class x EVERY card: cast it and read what it SAYS", run_cardaudit],
+		"upgradefit": ["does every OFFERED upgrade actually do anything on that card?", run_upgradefit],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
@@ -7490,3 +7491,137 @@ Cast %d cards across 9 classes." % cast_count)
 		print("FAIL - %d card(s) speak for the wrong class:" % problems.size())
 		for pb in problems:
 			print("   " + pb)
+
+
+func run_upgradefit() -> void:
+	"""For every card, every upgrade it can be OFFERED: does taking it change anything?
+
+	2026-09-08, owner: "We will likely need to look through the upgrades again and make sure the
+	cards they are offered on actually get some type of benefit from them."
+
+	Prompted by Unstable Hex on Track. It multiplies a debuff's VALUE by 1.6 and costs 4% of your
+	health 20% of the time - but Track sets a flat `analyze_bonus` that never passes through the
+	value-modifier path, so the card took the downside and got none of the upside. A trade-off
+	where only the trade applies.
+
+	This does not encode what each upgrade "should" need - a table like that is a mirror and would
+	drift. It CASTS the card with and without, from the same seed, and compares everything
+	observable: damage, healing, the message set, and the combat fields the engines use. If
+	nothing ever differs across many casts, the upgrade is dead on that card."""
+	var CU = load("res://shared/card_upgrades.gd")
+	var CM = CombatManager
+	var N := 24
+	var dead: Array = []
+	var checked := 0
+	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var ch = make_char(40, "average", klass, "Human")
+		ch.initialize_deck_collection_if_needed()
+		var deck: Array = CharacterScript.CURATED_STARTER_DECKS_BY_CLASS.get(klass, [])
+		print("
+--- %s ---" % CharacterScript.class_display_name(klass))
+		for ab in deck:
+			var id := String(ab)
+			var offers: Array = combat_mgr._build_upgrade_offer(ch, id, 1)
+			# _build_upgrade_offer draws a RANDOM subset; ask the pool directly for everything
+			# this card's KIND can ever be offered.
+			var is_damage: bool = id in CM.ABILITY_WEIGHTS or id in ["shield_bash", "devastate", "ambush", "gambit", "exploit", "frost_nova"]
+			var is_buff: bool = id in ["forcefield", "shield", "haste", "iron_skin", "fortify", "rally", "berserk", "war_cry", "vanish"]
+			var is_control: bool = id in ["paralyze", "banish", "sabotage", "distract", "analyze", "shadowstep"]
+			var kind: String = CU.card_kind(id, is_damage, is_buff, is_control)
+			# Ask the GAME which upgrades it would exclude, rather than keeping a second opinion.
+			var excluded: Array = CombatManager.upgrade_exclusions_for(id)
+			var pool: Array = []
+			for _u in CU.eligible(kind, 9, []):
+				if not (String(_u.get("id", "")) in excluded):
+					pool.append(_u)
+			var dead_here: Array = []
+			for up in pool:
+				var uid := String(up.get("id", ""))
+				if uid == "":
+					continue
+				checked += 1
+				if _upgrade_changes_nothing(ch, id, uid, N):
+					dead_here.append(uid)
+					dead.append("%s / %s / %s" % [klass, id, uid])
+			var nm: String = id
+			if dead_here.is_empty():
+				print("    %-16s %d offered, all live" % [nm, pool.size()])
+			else:
+				print("    %-16s %d offered, DEAD: %s" % [nm, pool.size(), ", ".join(dead_here)])
+	print("
+Checked %d card/upgrade pairs." % checked)
+	if dead.is_empty():
+		print("PASS - every offered upgrade changes something on the card it is offered on.")
+	else:
+		print("FAIL - %d pair(s) where the upgrade does nothing:" % dead.size())
+		for d in dead:
+			print("   " + d)
+
+
+func _upgrade_changes_nothing(ch, ability: String, upgrade: String, n: int) -> bool:
+	"""Cast `ability` n times with and without `upgrade`, from the same seed, and compare every
+	observable. True when the two runs are indistinguishable."""
+	var before := _cast_signature(ch, ability, [], n)
+	var after := _cast_signature(ch, ability, [upgrade], n)
+	return before == after
+
+
+func _cast_signature(ch, ability: String, picks: Array, n: int) -> String:
+	"""Cast `ability` n times and fingerprint everything observable.
+
+	Structured as SEVERAL FIGHTS OF SEVERAL CASTS, not n separate fights. Third instrument fix on
+	this audit, each removing a whole class of false positive:
+	  1. player pinned at full health -> `desperate`, `bulwark`, `mending` unable to fire;
+	  2. one cast per combat -> `relentless` (every THIRD cast in a fight) could never reach its
+	     third, and `opening_act` (first cast in a fight) was always the first, so neither could
+	     ever be distinguished from doing nothing. That alone was 45 false entries.
+	The player state is still swept, because the conditional upgrades need states to fire in."""
+	var sig := ""
+	ch.ability_milestone_picks[ability] = picks.duplicate()
+	ch.active_buffs = []      # a buff left over from the other arm would fake a difference
+	var fights: int = 6
+	var per_fight: int = int(ceil(float(n) / float(fights)))
+	var i := 0
+	for f in range(fights):
+		seed(90210 + f)          # same stream for both arms, so only the pick differs
+		var monster = make_monster(40, "normal", 3.0)   # tanky: survives a full fight of casts
+		combat_mgr.start_combat(0, ch, monster)
+		var combat = combat_mgr.active_combats[0]
+		combat["momentum"] = CombatManager.MOMENTUM_MAX
+		combat["focus"] = CombatManager.FOCUS_MAX
+		combat["combo"] = CombatManager.COMBO_MAX
+		for c in range(per_fight):
+			i += 1
+			var hp_frac: float = [1.0, 0.45, 0.25, 0.80][i % 4]
+			var pool_frac: float = 1.0 if (i % 2) == 0 else 0.55
+			ch.current_hp = maxi(1, int(float(ch.get_total_max_hp()) * hp_frac))
+			ch.current_mana = int(float(ch.get_total_max_mana()) * pool_frac)
+			ch.current_stamina = int(float(ch.get_total_max_stamina()) * pool_frac)
+			ch.current_energy = int(float(ch.get_total_max_energy()) * pool_frac)
+			combat["combat_hand"] = [ability]
+			combat["player_can_act"] = true
+			var spend := int(round(float(_primary_pool_for(ch)) * 0.35))
+			var res: Dictionary = combat_mgr.process_ability_command(0, ability, str(maxi(1, spend)))
+			sig += "|%s;%d;%d;%d;%d;%d;%d;%d;%d" % [
+				str(res.get("success", false)),
+				int(monster.get("current_hp", 0)),
+				int(ch.current_hp), int(ch.current_mana), int(ch.current_stamina), int(ch.current_energy),
+				int(combat.get("combo", 0)) + int(combat.get("momentum", 0)) + int(combat.get("focus", 0)),
+				int(combat.get("forcefield_shield", 0)),
+				int(combat.get("monster_sabotaged", 0)) + int(combat.get("enemy_distracted", 0)) + int(combat.get("monster_stunned", 0)),
+			]
+			# The player's BUFFS, which the first four versions of this signature ignored - so any
+			# upgrade whose only effect is a buff's VALUE or DURATION was invisible and reported
+			# dead. That is what `costly_vigil` on War Cry and Haste was: it doubles the rounds
+			# through `_buff_duration`, which those cards do use, and the audit simply could not
+			# see the difference. Fourth instrument fix on this audit.
+			for b in ch.active_buffs:
+				if b is Dictionary:
+					sig += "~%s:%d:%d" % [str(b.get("type", "")), int(b.get("value", 0)), int(b.get("duration", 0))]
+			for m in res.get("messages", []):
+				sig += "/" + _strip_bbcode(String(m))
+			if int(monster.get("current_hp", 0)) <= 0:
+				break
+		combat_mgr.active_combats.erase(0)
+	ch.ability_milestone_picks.erase(ability)
+	return sig
