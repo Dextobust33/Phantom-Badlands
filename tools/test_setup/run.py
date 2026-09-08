@@ -72,7 +72,7 @@ def live_instances():
 _MASTERY_THRESHOLDS = [10, 35, 100, 275, 650, 1400]
 
 
-def _settle_milestones(roster):
+def _settle_milestones(roster, reopen=0):
     """Spend every owed card-upgrade milestone up front, so a test session does not open with a
     queue of rank-up popups.
 
@@ -102,12 +102,26 @@ def _settle_milestones(roster):
             if earned > have:
                 picks[ab] = list(picks.get(ab, [])) + ["power"] * (earned - have)
                 n += earned - have
+        # --ranks=N: hand back exactly N unspent milestones, so a UI change to the rank-up
+        # screen can be looked at a few times without either grinding for one or wading through
+        # the ~20 the backfill creates. Taken from DIFFERENT cards so the offers vary.
+        if reopen > 0:
+            given = 0
+            for ab in list(picks.keys()):
+                if given >= reopen or not picks[ab]:
+                    continue
+                picks[ab] = picks[ab][:-1]
+                given += 1
+            print("    %s: %d rank-up(s) left pending" % (cname, given))
         c["ability_milestone_picks"] = picks
         c["pending_rank_choices"] = []
         c["ability_uses_backfilled"] = True   # stop the server creating a fresh queue on load
         with open(path, "w", encoding="utf-8") as f:
             json.dump(c, f, indent="	")
-    print("  settled %d owed card upgrade(s) - no rank-up popups this session" % n)
+    if reopen > 0:
+        print("  settled %d owed card upgrade(s); %d deliberately left pending" % (n, reopen))
+    else:
+        print("  settled %d owed card upgrade(s) - no rank-up popups this session" % n)
 
 
 def _grant_admin():
@@ -133,12 +147,16 @@ def main():
     # opening four windows to reach one of them is its own obstacle.
     only = ""
     noranks = False
+    want_ranks = 0
     argv = []
     for a in sys.argv[1:]:
         if a.startswith("--only="):
             only = a.split("=", 1)[1]
         elif a == "--noranks":
             noranks = True
+        elif a.startswith("--ranks="):
+            noranks = True          # settle everything first...
+            want_ranks = int(a.split("=", 1)[1])   # ...then re-open exactly this many
         else:
             argv.append(a)
     sys.argv = [sys.argv[0]] + argv
@@ -189,7 +207,7 @@ def main():
     # it a co-op round never resolves unless you alt-tab and act in every window, which reads
     # as "nothing happened" rather than "you are still waiting on someone".
     if noranks:
-        _settle_milestones(_roster)
+        _settle_milestones(_roster, want_ranks)
 
     print("[3/4] server (auto-party, auto-act, fight log)")
     slog = open(os.path.join(logdir, "server.log"), "w", encoding="utf-8", errors="replace")
