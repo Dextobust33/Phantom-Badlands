@@ -380,5 +380,15 @@ static func conditional_damage_notes(picks: Array) -> Array:
 		var e = DAMAGE_MULTS.get(id, null)
 		if e == null or bool(e.get("estimate", false)):
 			continue
-		out.append("x%.2g %s" % [float(e.get("mult", 1.0)), String(e.get("when", ""))])
+		# 2026-09-08 - was "%.2g", which GDScript's format operator does not support (it knows
+		# %s %d %f %x %o %c, not %g), so the line rendered with the specifier still in it.
+		# Reported from play: "it also said Situation with some formatting text after it %2".
+		# Built by hand instead: two decimals, trailing zeros and a bare point trimmed, so 1.40
+		# reads "1.4" and 2.00 reads "2".
+		var mtxt: String = ("%.2f" % float(e.get("mult", 1.0)))
+		while mtxt.ends_with("0"):
+			mtxt = mtxt.substr(0, mtxt.length() - 1)
+		if mtxt.ends_with("."):
+			mtxt = mtxt.substr(0, mtxt.length() - 1)
+		out.append("x%s %s" % [mtxt, String(e.get("when", ""))])
 	return out

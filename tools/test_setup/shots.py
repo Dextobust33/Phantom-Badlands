@@ -85,6 +85,10 @@ def main():
         return 1
     print("[2/4] credentials + admin")
     runner.set_dev_passwords(scen.PLAYERS)   # any of them may be chosen with --player=N
+    # 2026-09-08 - settle owed card upgrades before capturing. A rank-up overlay is MODAL and
+    # covers the middle of the frame, so a character left with pending milestones produces a
+    # screenshot of the popup instead of the scene that was asked for. Cost a dungeon capture.
+    runner._settle_milestones(scen.PLAYERS[:player_idx + 1])
     grant_admin()
 
     print("[3/4] server")

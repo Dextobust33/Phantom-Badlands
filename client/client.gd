@@ -24058,6 +24058,15 @@ func handle_server_message(message: Dictionary):
 				else:
 					_merge_character_delta(message.character)
 				account_valor = int(message.get("valor", character_data.get("valor", 0)))
+				# 2026-09-08 - re-render the hand if we are mid-fight. A card's damage estimate
+				# reads `character_data.ability_milestone_picks`, which only arrives here, but the
+				# hand is otherwise only rebuilt on `combat_update` - so taking an upgrade during
+				# a fight left the card showing its old number for the rest of that fight.
+				# Reported: "The card didn't change until after the combat where the upgrade was
+				# selected was over." The server half (pushing this update after a pick at all) is
+				# in handle_rank_choice_response; this is the half that redraws.
+				if in_combat and combat_scene_panel and combat_scene_panel.has_method("update_hand"):
+					combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
 				update_player_level()
 				update_player_hp_bar()
 				update_resource_bar()
@@ -43713,7 +43722,7 @@ func display_dungeon_floor():
 		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
 		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
 		map_text += grid_display
-		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\n[color=#00FFCC]&[/color] Node  [color=#FF4444]×[/color] Trap   Letters = Monsters[/color]"
+		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n· Floor  E Start        \n[color=#00FFCC]&[/color] Node  [color=#FF4444]×[/color] Trap   Letters = Monsters[/color]"
 		map_display.clear()
 		map_display.append_text(map_text)
 		map_display.scroll_to_line(0)
@@ -43803,7 +43812,7 @@ func update_dungeon_map():
 		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
 		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
 		map_text += grid_display
-		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n# Wall  . Floor  E Start\n[color=#00FFCC]&[/color] Node  [color=#FF4444]×[/color] Trap   Letters = Monsters[/color]"
+		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n· Floor  E Start        \n[color=#00FFCC]&[/color] Node  [color=#FF4444]×[/color] Trap   Letters = Monsters[/color]"
 		map_display.clear()
 		map_display.append_text(map_text)
 		map_display.scroll_to_line(0)
@@ -43908,10 +43917,17 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 	"""Get display character and color for a dungeon tile type"""
 	# Matches DungeonDatabase.TileType enum
 	match tile_type:
-		0:  # EMPTY
-			return {"char": ".", "color": "#404040"}
-		1:  # WALL
-			return {"char": "#", "color": "#808080"}
+		0:  # EMPTY — walkable floor
+			# 2026-09-08 (presentation pass, E). Floor is now the BRIGHTER of the two. It read
+			# backwards: floor was #404040 and wall #808080, so the walls were the loudest thing
+			# on screen and the dungeon looked like a grid with gaps rather than rooms.
+			return {"char": "·", "color": "#5A5A66"}
+		1:  # WALL — not drawn at all
+			# Owner 2026-08-26: "stop drawing WALLS as tiles - instead render non-traversable
+			# space as empty/void the player just can't move into (Azure Dreams style), so the
+			# dungeon reads as rooms+corridors in open space, not a walled grid."
+			# A space keeps the monospace grid aligned while making the wall vanish.
+			return {"char": " ", "color": "#000000"}
 		2:  # ENTRANCE
 			return {"char": "E", "color": "#00FF00"}
 		3:  # EXIT

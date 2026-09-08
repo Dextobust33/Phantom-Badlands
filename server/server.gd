@@ -7075,6 +7075,13 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 			"ok": true,
 			"next_pending": character.pending_rank_choices[0] if not character.pending_rank_choices.is_empty() else null
 		})
+		# 2026-09-08 - push the CHARACTER too. Reported from play: "one of the players had Power
+		# strike with an upgrade that does more damage on first use. The card didn't change until
+		# after the combat where the upgrade was selected was over." The card's damage estimate
+		# reads `character_data.ability_milestone_picks`, which only arrives on a character_update
+		# - and none was sent here, so the pick was applied server-side while the card in hand kept
+		# showing its old number until the fight ended and something else refreshed it.
+		send_character_update(peer_id)
 		# Persist character (no character mutation here besides cache mirror,
 		# but save anyway so cache stays consistent with disk).
 		if persistence != null and rc_account_id_v != "":
@@ -7095,6 +7102,13 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 			"rider_level": int(ms_result.get("rider_level", 0)),
 			"next_pending": character.pending_rank_choices[0] if not character.pending_rank_choices.is_empty() else null
 		})
+		# 2026-09-08 - push the CHARACTER too. Reported from play: "one of the players had Power
+		# strike with an upgrade that does more damage on first use. The card didn't change until
+		# after the combat where the upgrade was selected was over." The card's damage estimate
+		# reads `character_data.ability_milestone_picks`, which only arrives on a character_update
+		# - and none was sent here, so the pick was applied server-side while the card in hand kept
+		# showing its old number until the fight ended and something else refreshed it.
+		send_character_update(peer_id)
 		var ms_account_id = peers.get(peer_id, {}).get("account_id", "")
 		if bool(ms_result.get("ok", false)) and persistence != null and ms_account_id != "":
 			persistence.save_character(ms_account_id, character)
