@@ -32362,6 +32362,14 @@ func update_region_label():
 	if not has_character:
 		region_label.visible = false
 		return
+	# 2026-09-08 - the gate belongs HERE, not only where the dungeon draws. Hiding these boxes in
+	# `_set_dungeon_side_boxes_visible` was not enough: any location update re-showed the region
+	# box straight over the dungeon canvas, because this function unconditionally turns it back
+	# on. Same shape as the coord box, whose `if dungeon_mode` check was correct and simply never
+	# re-ran. Owner: these boxes "don't really serve much of a purpose while you're in a dungeon".
+	if dungeon_mode:
+		region_label.visible = false
+		return
 
 	var area_line: String
 	if hud_area_is_safe:
