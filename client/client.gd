@@ -20384,6 +20384,12 @@ const _INSTANCE_LOCK := "user://instance.lock"
 const _INSTANCE_HEARTBEAT_S := 30
 const _INSTANCE_STALE_S := 90
 var _duplicate_instance_warned := false
+# 2026-09-08 - held so the panel can be re-fitted when the overlay opens. Owner: "there appears
+# to be extra padding on the right side until you actually click or interact with it then it
+# shrinks to fit the size of the selections." A PanelContainer keeps the largest size its
+# content has ever demanded until something forces a re-layout, and the first interaction was
+# what forced it.
+var _milestone_panel: PanelContainer = null
 
 func _check_for_duplicate_instance() -> void:
 	"""Notice when a SECOND client is already running, and say so. Never blocks.
@@ -20486,6 +20492,22 @@ func _ability_display_name(ability_name: String) -> String:
 		return String(_canon[ability_name])
 	return ability_name.replace("_", " ").capitalize()
 
+func _refit_milestone_panel() -> void:
+	"""Shrink the milestone panel back to its CURRENT content.
+
+	A PanelContainer holds the largest size its content has ever needed until a re-layout is
+	forced, so the box kept the width of whichever menu was widest and only snapped in when the
+	player clicked something. `reset_size()` after the frame's layout pass does that snap up
+	front. Deferred twice because the children (the 3x3 grid, or the legacy row) have not been
+	measured until the layout that follows the one where they became visible."""
+	if _milestone_panel == null or not is_instance_valid(_milestone_panel):
+		return
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if _milestone_panel != null and is_instance_valid(_milestone_panel):
+		_milestone_panel.reset_size()
+
+
 func _ensure_milestone_overlay() -> void:
 	if _milestone_overlay != null and is_instance_valid(_milestone_overlay):
 		return
@@ -20525,6 +20547,7 @@ func _ensure_milestone_overlay() -> void:
 	pstyle.shadow_color = Color(0, 0, 0, 0.55)
 	pstyle.shadow_size = 10
 	panel.add_theme_stylebox_override("panel", pstyle)
+	_milestone_panel = panel
 	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 14)
@@ -20610,6 +20633,7 @@ func _show_milestone_reveal(ability_name: String, offer: Array, reveals_allowed:
 	_set_milestone_header("Here is what is on offer — they will be hidden and shuffled.")
 	_rebuild_milestone_grid()
 	_milestone_overlay.visible = true
+	_refit_milestone_panel()
 	# 6s, was 3. Nine cards with names and descriptions is more reading than three seconds
 	# allows, and the whole mechanic is spoiled if the player is still reading when they are
 	# taken away. Clicking any card skips ahead for someone who is ready sooner.
@@ -20896,6 +20920,7 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 		_milestone_card_row.add_child(card)
 	_hide_milestone_tip()
 	_milestone_overlay.visible = true
+	_refit_milestone_panel()
 
 
 func _on_milestone_card_input(event: InputEvent, branch: String) -> void:

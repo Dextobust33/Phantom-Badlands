@@ -714,7 +714,12 @@ func _build_scene_section_lufia() -> Control:
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.size_flags_stretch_ratio = 1.3  # 1.5 -> 1.3: Deck/Discard counter removed, so the hand needs less width; give it to the party column
-	right.add_theme_constant_override("separation", 8)
+	# 2026-09-08 - 8 -> 26. Owner: "The Wight on the screen is covered slightly by the cards, are
+	# we able to move the card row down just slightly so it doesn't cover the Monster." This VBox
+	# holds exactly two children (monster column, hand), so its separation IS that gap and
+	# nothing else moves. The monster column keeps its 3.0 stretch, so the art gains the space
+	# rather than losing it.
+	right.add_theme_constant_override("separation", 26)
 	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_monster_col = _build_monster_column()
 	_monster_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2928,7 +2933,9 @@ func _build_monster_column() -> VBoxContainer:
 		# `_monster_name_label`, four lines below, has always used EXPAND_FILL; I did not copy it.
 		_lufia_monster_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_lufia_monster_status.autowrap_mode = TextServer.AUTOWRAP_OFF
-		_lufia_monster_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_lufia_monster_status.mouse_filter = Control.MOUSE_FILTER_PASS
+		_lufia_monster_status.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
+		_lufia_monster_status.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
 		# 2026-09-08 - HIDDEN until it has something to say. Reported live: "Monster ASCII art
 		# looks skewed... Can't see the bottom of combat anymore." That was this label: a
 		# RichTextLabel with fit_content still claims a line of height when empty, and this
@@ -3065,7 +3072,11 @@ func _build_shared_status_strip() -> HBoxContainer:
 	_player_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_player_status_label.size_flags_stretch_ratio = 1.0
 	_player_status_label.add_theme_font_size_override("normal_font_size", 12)
-	_player_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# PASS, not IGNORE: the label must receive hover for [url] metas to fire, while still
+	# letting clicks through to whatever is behind it.
+	_player_status_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_player_status_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
+	_player_status_label.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
 	_status_strip.add_child(_player_status_label)
 
 	_monster_status_label = RichTextLabel.new()
@@ -3075,7 +3086,9 @@ func _build_shared_status_strip() -> HBoxContainer:
 	_monster_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_monster_status_label.size_flags_stretch_ratio = 1.0
 	_monster_status_label.add_theme_font_size_override("normal_font_size", 12)
-	_monster_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_monster_status_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_monster_status_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
+	_monster_status_label.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
 	_status_strip.add_child(_monster_status_label)
 
 	return _status_strip
@@ -3106,7 +3119,45 @@ const _STATUS_TAGS := {
 	# none of its meaning. It is the one chip that summarises everything else on the row, so it
 	# gets a full word and its own colour.
 	"damage_reduction": {"label": "Mitigation", "color": "#7AE07A"},
+	# 2026-09-08 - sabotage / distract / analyze were BORROWING the weakness and slow tags, so a
+	# monster read "Wkn -35% str/def" and "Wkn analyzed +10%": two different effects under one
+	# wrong three-letter label, both in the same grey. Owner: "the coloring for enemy buffs and
+	# debuffs still needs added." They are distinct effects and now read as such - and analyze is
+	# green because it is a bonus for YOU, not a debuff on the monster in the usual sense.
+	"sabotage":   {"label": "Sabotaged",  "color": "#FFA033"},
+	"distract":   {"label": "Distracted", "color": "#6699FF"},
+	"analyze":    {"label": "Analyzed",   "color": "#7AE07A"},
 }
+
+# 2026-09-08, owner: "Buff and Debuff panels should be hoverable to see a longer description of
+# the buff or debuff. Hover should be similar to when we hover a number in a cards description."
+# Same mechanism exactly: the chip is wrapped in [url=...] and the label's meta_hover_started
+# feeds _show_formula_popup, which is what the damage-number formulas already use.
+const _STATUS_HELP := {
+	"bleed":      "Bleeding. Loses health at the start of each of its turns; the number is damage per tick and how many ticks are left.",
+	"poison":     "Poisoned. Damage each turn that cannot land a killing blow — it will not drop anything below 1 HP.",
+	"blind":      "Blinded. Much less likely to land an attack while it lasts.",
+	"stun":       "Stunned. Loses its turn entirely until the counter runs out.",
+	"charm":      "Charmed. Will not attack you while it holds.",
+	"weakness":   "Weakened. Deals less damage for the listed number of rounds.",
+	"slow":       "Slowed. Acts less often, and is likelier to let you go first.",
+	"haste":      "Hastened. You act more often while this holds.",
+	"fortify":    "Fortified. Raised defence for the listed rounds.",
+	"iron_skin":  "Iron Skin. Reduces the damage each hit does to you.",
+	"war_cry":    "War Cry. Raised attack power for the listed rounds.",
+	"berserk":    "Berserk. More damage dealt, and more taken.",
+	"speed":      "Quickened. Improves how often you act.",
+	"strength":   "Strengthened. Raised attack power.",
+	"defense":    "Guarded. Raised defence.",
+	"cloak":      "Cloaked. Harder for the enemy to target you.",
+	"forcefield": "Forcefield. Absorbs incoming damage until its capacity is spent, then breaks.",
+	"vampiric":   "Vampiric. Returns some of the damage you deal as health.",
+	"damage_reduction": "Everything cutting the damage you take, combined the way the game actually applies it — multiplied, not added. Spending engine stacks gives their share back.",
+	"sabotage":   "Sabotaged. Its strength AND its defence are cut, so it hits softer and takes more. Stacks with repeat casts up to 50%.",
+	"distract":   "Distracted. Its attacks are far likelier to miss you.",
+	"analyze":    "Analyzed. You have read its weaknesses: every attack you make deals more for the rest of this fight.",
+}
+
 
 func _format_status_chip(key: String, suffix: String) -> String:
 	"""One status pill. Owner 2026-09-07: *"I see the buff panels, I guess without any color or
@@ -3119,7 +3170,13 @@ func _format_status_chip(key: String, suffix: String) -> String:
 	# glance while staying well behind the text.
 	var bg := Color(fg.r * 0.22, fg.g * 0.22, fg.b * 0.22, 0.85)
 	var body: String = String(tag.label) if suffix == "" else "%s %s" % [tag.label, suffix]
-	return "[bgcolor=#%s] [color=%s]%s[/color] [/bgcolor]" % [bg.to_html(true), tag.color, body]
+	var chip := "[bgcolor=#%s] [color=%s]%s[/color] [/bgcolor]" % [bg.to_html(true), tag.color, body]
+	# Hover carries the long form, the same way a damage number in a card description does.
+	# Quotes are substituted because they end BBCode url parsing dead.
+	var help := String(_STATUS_HELP.get(key, ""))
+	if help != "":
+		return "[url=%s]%s[/url]" % [help.replace("\"", "”").replace("'", "’"), chip]
+	return chip
 
 func update_combat_status(player_status: Dictionary, monster_status: Dictionary) -> void:
 	"""Refresh the status strip from the server's combat_state. Called every
@@ -3136,7 +3193,8 @@ func update_combat_status(player_status: Dictionary, monster_status: Dictionary)
 		_lufia_monster_status.visible = mon_bb != ""   # zero footprint when the monster is clean
 		_monster_status_label.text = ""
 	else:
-		_monster_status_label.text = mon_bb
+		# The shared strip owns the RIGHT half of a full-width row, so align there (only).
+		_monster_status_label.text = ("[right]%s[/right]" % mon_bb) if mon_bb != "" else ""
 
 func _build_player_status_bbcode(s: Dictionary) -> String:
 	if s.is_empty():
@@ -3222,18 +3280,21 @@ func _build_monster_status_bbcode(s: Dictionary) -> String:
 	# sabotage stacks to a 50% cap and distract is overwritten rather than added to.
 	var sab: int = int(s.get("sabotage_value", 0))
 	if sab > 0:
-		chips.append(_format_status_chip("weakness", "-%d%% str/def" % sab))
+		chips.append(_format_status_chip("sabotage", "-%d%% str/def" % sab))
 	var dis: int = int(s.get("distract_value", 0))
 	if dis > 0:
-		chips.append(_format_status_chip("slow", "-%d%% acc" % dis))
+		chips.append(_format_status_chip("distract", "-%d%% acc" % dis))
 	var anz: int = int(s.get("analyze_value", 0))
 	if anz > 0:
-		chips.append(_format_status_chip("weakness", "analyzed +%d%%" % anz))
+		chips.append(_format_status_chip("analyze", "+%d%% your damage" % anz))
 	if chips.is_empty():
 		return ""
 	# Right-align so the chips read from the inside edge inward, matching the
 	# monster HP-text alignment above.
-	return "[right]%s[/right]" % "  ".join(chips)
+	# 2026-09-08 - no [right] wrapper. It existed for the shared strip, where the monster owned
+	# the RIGHT half of a full-width row. The chips now live in the monster column, and [right]
+	# was pinning them to the screen edge instead of under the monster. Callers align them.
+	return "  ".join(chips)
 
 
 func _build_running_totals_strip() -> Control:
