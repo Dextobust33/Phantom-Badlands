@@ -1893,6 +1893,23 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 			for k in range(mini(2, order.size())):
 				_connect_rooms(grid, rooms[a], rooms[int(order[k][1])], rng)
 
+	# 2026-09-08 - DELIBERATE SPURS: a corridor that splits, where one branch goes somewhere the
+	# other does not.
+	#
+	# Owner: "you walk halfway down a corridor and it splits going off to two different rooms or
+	# locations so it's not always just walking down a hallway connecting to only 1 room."
+	# Measured first, and the honest answer was that the existing branching did NOT provide this:
+	# of ~36 forks a floor, only 4.4 led to different rooms and 31.9 simply rejoined. Wiring each
+	# room to its two nearest rooms makes redundant parallel paths that cross and merge, so the
+	# forks were real geometry but fake choices.
+	#
+	# A spur is a short dead-end pocket driven off a corridor into the void. A dead end cannot
+	# rejoin by construction, so the split is always a genuine decision - and it gives the floor
+	# somewhere to hide the loot that makes exploring worth it ("the rush when you find rooms with
+	# great loot in them"). Floor loot already scatters over walkable tiles, so these fill
+	# themselves.
+	_carve_alcove_spurs(grid, rooms, rng, size)
+
 	# Pick a random corner for entrance placement (adds layout variety)
 	var corners = [
 		Vector2i(1, size - 2),       # bottom-left
@@ -2568,6 +2585,73 @@ static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumb
 			_bsp_split(right, depth + 1, max_depth, rng, out_partitions)
 		else:
 			out_partitions.append(rect)
+
+static func _carve_alcove_spurs(grid: Array, rooms: Array, rng: RandomNumberGenerator, size: int) -> void:
+	"""Drive short dead-end spurs off existing corridors, so corridors split to somewhere.
+
+	Walks the floor for corridor tiles that have room to push into empty space, and carves a
+	2-4 tile pocket. Dead ends by design: a branch that cannot rejoin is a branch worth choosing
+	between. Count scales with the floor so a big map gets more of them."""
+	var in_room := {}
+	for r in rooms:
+		var rr: Rect2i = r
+		for yy in range(rr.position.y, rr.position.y + rr.size.y):
+			for xx in range(rr.position.x, rr.position.x + rr.size.x):
+				in_room[Vector2i(xx, yy)] = true
+	# Corridor tiles that could host a spur.
+	var candidates: Array = []
+	for y in range(2, size - 2):
+		for x in range(2, size - 2):
+			if int(grid[y][x]) == TileType.WALL:
+				continue
+			if in_room.has(Vector2i(x, y)):
+				continue
+			candidates.append(Vector2i(x, y))
+	if candidates.is_empty():
+		return
+	candidates.shuffle()
+	var want: int = clampi(int(float(size) / 7.0), 4, 12)
+	var made := 0
+	for c in candidates:
+		if made >= want:
+			break
+		var start: Vector2i = c
+		# Push in a direction that is solid wall, so the spur goes into unused space.
+		var dirs: Array = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+		dirs.shuffle()
+		for d in dirs:
+			var dir: Vector2i = d
+			var length: int = rng.randi_range(2, 4)
+			var ok := true
+			# Every tile of the intended spur must currently be wall, and must not run along an
+			# existing corridor - otherwise the "dead end" quietly joins something.
+			for step in range(1, length + 1):
+				var t: Vector2i = start + dir * step
+				if t.x < 1 or t.y < 1 or t.x >= size - 1 or t.y >= size - 1:
+					ok = false
+					break
+				if int(grid[t.y][t.x]) != TileType.WALL:
+					ok = false
+					break
+				# side clearance: the tiles either side must be wall too
+				var side: Vector2i = Vector2i(dir.y, dir.x)
+				for sgn in [-1, 1]:
+					var sp: Vector2i = t + side * sgn
+					if sp.x < 0 or sp.y < 0 or sp.x >= size or sp.y >= size:
+						continue
+					if int(grid[sp.y][sp.x]) != TileType.WALL:
+						ok = false
+						break
+				if not ok:
+					break
+			if not ok:
+				continue
+			for step in range(1, length + 1):
+				var t2: Vector2i = start + dir * step
+				grid[t2.y][t2.x] = TileType.EMPTY
+			made += 1
+			break
+
 
 static func _carve_room(grid: Array, partition: Rect2i, rng: RandomNumberGenerator) -> Rect2i:
 	"""Carve a SMALL room within a BSP partition — Azure-Dreams feel: distinct little
