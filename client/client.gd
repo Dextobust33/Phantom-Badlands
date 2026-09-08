@@ -30277,6 +30277,10 @@ func display_changelog():
 	# companion XP fixed in both paths, and equipment that actually drops early.
 	# v0.9.756 — the theming pass: all nine decks renamed per class across card face, action bar,
 	# combat log, hover, buff panel, gear affixes and help; plus per-class stat descriptions.
+	# v0.9.760 — the card face made honest about chance-based engine gain (a Grifter's Long Con
+	# is a coin flip the preview counted as certain), half-invisible monster variants fixed at
+	# the colour floor, and the dungeon presentation pass: canvas, zoom, room spread, forking
+	# corridors, alcoves, monster hover.
 	# v0.9.759 — non-combat abilities could earn combat upgrades (teleport/cloak), monster
 	# debuff chips moved under the monster, dungeons stopped inventing a sub-tier, milestone
 	# overlay given an opaque ground, duplicate-client warning, sim watchdog + orphan reaper.
@@ -30288,7 +30292,17 @@ func display_changelog():
 	# v0.9.755 — the class-identity release: nine classes onto three engine shapes, the finisher
 	# forked three ways per path, Sage shown as Oracle, a difficulty curve that ramps with level,
 	# rest/flock changes for the early game, CON granting mitigation, and a one-off deck repair.
-	display_game("[color=#00FF00]v0.9.759[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.760[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ HALF A MONSTER WAS INVISIBLE.[/color] Some monsters carry a two-tone pattern that paints their left half one colour and their right half another — and one of those variants is [b]pure black[/b], drawn on a black panel. A [color=#FFFFFF]Duality[/color] rat really did show you only its left side. Auditing the whole palette, [b]21 colours[/b] were effectively invisible (Void, Eclipse, Obsidian, Barcode, Jailbird and more). Every one is now lifted to a visible brightness [b]without losing its hue[/b], so a purple monster is still purple.")
+	display_game("  [color=#FF8000]★ YOUR CARDS TELL THE TRUTH ABOUT YOUR ENGINE.[/color] A [color=#2F4F4F]Grifter[/color]’s [color=#FFFFFF]Distract, Sabotage[/color] and [color=#FFFFFF]Size Up[/color] showed [b]two[/b] Leverage pips and paid [b]one[/b] about half the time, because Long Con is a coin flip the card counted as a certainty. A guaranteed point is now a [b]solid[/b] pip and a chance is a [b]hollow[/b] one, and the card says the odds when you hover it. Reported from live play — the engine was right the whole time; the card was lying.")
+	display_game("  [color=#1EFF00]◆ Your finisher stopped claiming to build the meter it spends.[/color] A Trickster’s [color=#FFFFFF]Double Cross / Killing Shot / Assassinate[/color] advertised \"+ Leverage\" while it empties the bar. The Warrior and Mage finishers never did this; the Trickster was the odd one out.")
+	display_game("  [color=#1EFF00]◆ \"Building\" is counted on the card.[/color] The upgrade quietly gave an extra engine point that no card face was showing.")
+	display_game("  [color=#FF8000]★ DUNGEONS ARE PLAYED ON THE WHOLE SCREEN NOW.[/color] The floor was drawn in a [b]side panel about the size of a postage stamp[/b] while the main canvas sat empty. The map has moved to the canvas at several times the size, walls read as open void rather than a wall of hashes, and the floor status and legend moved to the panel — which is what a side panel is for.")
+	display_game("  [color=#1EFF00]◆ Dungeon floors are far larger, and rooms are spread out.[/color] Floors are much wider than the view, so most of the time you see a room and its corridors rather than the whole level. Corridors now [b]fork part-way along[/b] toward different rooms, and dead-end alcoves have been added, so a floor has to be explored rather than walked.")
+	display_game("  [color=#1EFF00]◆ Hover a monster in a dungeon to see what it is.[/color] Its art, level and name, before you decide whether to walk that way.")
+	display_game("  [color=#1EFF00]◆ Resting in a dungeon no longer puts its menu in the chat box.[/color] There was nowhere near enough room down there. The Coords and Area boxes also stand down underground, where they were covering the map.")
+	display_game("")
+	display_game("[color=#808080]v0.9.759[/color]")
 	display_game("  [color=#FF8000]★ YOU WERE BEING OFFERED CARD UPGRADES YOU COULD NEVER USE.[/color] Every mage was handed [b]three[/b] upgrade choices for [color=#FFFFFF]Teleport[/color] — a card that has been out-of-combat only for months and cannot be played in a fight at all. Picking one [b]wasted it[/b]. [color=#FFFFFF]Cloak[/color] had the same problem. Those choices are removed, and every ability was re-checked against the real combat engine to be sure nothing else does it.")
 	display_game("  [color=#FF8000]★ THE ENEMY’S DEBUFFS NOW SIT UNDER THE ENEMY.[/color] Your poison, blind and armour-break on a monster were being drawn in a strip at the [b]bottom of the screen[/b], hundreds of pixels from the monster they described — so the half of the fight you were winning was the half you could not see.")
 	display_game("  [color=#FF8000]★ DUNGEONS NO LONGER ADVERTISE A DEPTH THEY HAVE NOT PICKED.[/color] A dungeon you have not entered was labelled [b]Tier 1-1[/b] and priced against the easiest band — always the easiest, because that was the placeholder. Its real depth is not chosen until you go in, and its monsters are sized to [b]you[/b]. It now says \"Tier 1 Dungeon | Levels 3-12 (exact depth is set when you enter)\" instead of guessing.")
