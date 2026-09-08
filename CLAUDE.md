@@ -355,6 +355,14 @@ has lost a performance guard. It asserts:
 | `version` matches VERSION.txt | catches a build exported before the bump |
 | three feature probes | catches the **stale script cache** — a stale export ships OLD code with the NEW version stamped beside it, so the version alone proves nothing |
 
+**`VERSION.txt` is a SIDECAR, not packed content.** It is not in any preset's `include_filter`,
+so it is NOT inside the .pck — the client reads the copy sitting next to the exe, and that copy is
+only refreshed when the release zips are staged. Bumping `VERSION.txt` at the repo root and
+exporting is therefore NOT enough: `builds/windows/VERSION.txt` still holds the PREVIOUS version
+and the build reports it. Copy it into the build dir before gating. The gate caught exactly this
+on v0.9.760 (`FAIL version got 0.9.759, want 0.9.760`) with every freshness probe passing, which
+is the tell that it is the sidecar and not the stale script cache.
+
 The `--buildverify` probe existed from 2026-09-05 and **nothing ever ran it**. Owner, 2026-09-07:
 *"we need to find a solution so this is Always done with every new release without me having to
 tell you or correct it each time."* A check nobody runs is not a check — this script is what runs

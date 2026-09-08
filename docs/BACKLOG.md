@@ -10,9 +10,9 @@ common way to lose a session.
 
 ---
 
-## Where the game is (2026-09-07)
+## Where the game is (2026-09-08)
 
-Live: **v0.9.759** (client + server).
+Live: **v0.9.760** (client + server).
 
 - **Card upgrades are no longer offered where they cannot work.** Four (`swift`, `sacrificial`,
   `vindication`, `refund`) needed damage or a kill but were marked `KIND_ANY`, so a milestone
@@ -157,6 +157,18 @@ while the Paladin's stat realignment held.
       re-run `-- verify`.
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
+
+- [ ] **Show Warrior and Mage engine gain as a COUNT, not a bare symbol** (found by
+      `-- cardpromise`, 2026-09-08). Those archetypes render one `+⚡` / `+◈` marker regardless of
+      how much they actually grant, so they cannot show a bonus at all. Seven cards currently
+      grant MORE than the face shows — Paladin `power_strike` / `war_cry` (up to **3**) /
+      `fortify` / `rally`, and Sage `magic_bolt` / `paralyze` / `forcefield` — all from the
+      "Building" (`momentum_feed`) upgrade. Not a broken promise, so `cardpromise` reports it as a
+      warning rather than a failure, but *"a passive the player cannot observe may as well not
+      exist"* (the reason Long Con was made to announce itself). Fix = generalise the Trickster's
+      pip count to all three engines: a server-side breakdown per engine, and the client drawing N
+      pips instead of one glyph.
+
 
 - [ ] **Three card upgrades that do nothing on some cards** (found 2026-09-08 by `-- upgradefit`,
       which casts every card with and without every upgrade it can be offered and compares the
@@ -304,7 +316,22 @@ while the Paladin's stat realignment held.
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
-- [ ] **Dungeon sprites, and a hoverable key** (owner 2026-09-08): *"ideally we will use sprites
+- [ ] **Dungeon sprites, and a hoverable key** (owner 2026-09-08):
+      ⚠ **CORRECTION 2026-09-08 — the "~4,900 sprites available" note below is misleading.**
+      Both packs carry a **0-byte `.gdignore`**, so Godot imports NOTHING from them: they are not
+      in the .pck (checked `.godot/imported` — zero entries), so they are not inflating the
+      download either. Using any of them means selectively un-ignoring, which is the lever for
+      taking a few without pulling in all 4,900.
+      **And they are almost entirely CHARACTER battlers.** A first sweep for tile/environment art
+      wrongly concluded there was none, by searching path keywords (`*tile*`, `*object*`) instead
+      of reading the packs — the "wrong unit" mistake CLAUDE.md warns about. What actually exists
+      for non-character art is narrow but real:
+        - `timefantasy_characters/frames/chests/` — **32 frames**, 8 chests x 4 states
+        - `timefantasy_characters/frames/animals/` — **96 frames**, cats + dogs
+        - `timefantasy_characters/sheets/` — unsliced sources incl. `chests.png`, `animals1.png`
+      There is **no floor / wall / door / stairs / trap art anywhere in the repo**. So loot chests
+      and some creatures can be sprited from stock; the TILES cannot, and need either sourced art
+      or a proper typographic pass. Owner has not yet chosen between those. ASK before starting. *"ideally we will use sprites
       or something for these spaces as well as floor loot and such. We want to use sprites as much
       as possible for the dungeons. We will want to ensure they are added to the key on the right
       as well though. It could be hoverable like our other hover features to see what it actually
