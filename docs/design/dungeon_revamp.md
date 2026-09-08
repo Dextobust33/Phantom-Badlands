@@ -18,13 +18,29 @@ agreed VISION; slices/sequencing still being decided. Theme sub-system detail li
 3. Meaningful choices mid-run. 4. Added danger is opt-in / telegraphed (permadeath-safe).
 5. Players react to threats (no unavoidable damage). 6. Dungeons are a place to TEAM UP.
 
-## ⚠ HARD BALANCE CONSTRAINT — SOLO-POSSIBLE (user, 2026-08-25)
-Every dungeon MUST be completable SOLO by an appropriately-levelled/geared player. Party
-play is a **force multiplier / social bonus, NEVER a requirement.** This governs ALL
-balance in the arc: boss HP/damage, wandering-monster pressure density, mechanical-theme
-difficulty, encounter counts. When tuning for the multiplayer north star, tune the SOLO
-baseline first, then let parties trivialize/speed it — do NOT balance around a full group.
-Applies to the combat simulator baselines too (`tools/combat_simulator`).
+## ⚠ HARD BALANCE CONSTRAINT — SOLO-POSSIBLE (user, 2026-08-25, REVISED 2026-09-08)
+Every dungeon MUST have a SOLO option, completable by an appropriately-levelled/geared player.
+Tune the SOLO baseline FIRST — boss HP/damage, wandering-monster pressure, mechanical-theme
+difficulty, encounter counts — and never balance around a full group. Applies to the combat
+simulator baselines too (`tools/combat_simulator`).
+
+**REVISED 2026-09-08 — party is no longer only a force multiplier.** Owner: *"I'm not against
+dungeons being party upgradable, Much more difficult with much greater risks but also much
+greater rewards. They should just have a solo option as well."*
+
+So a dungeon may offer a PARTY-UPGRADED mode: harder, riskier, and paying correspondingly more.
+That is a real difficulty tier, not the same dungeon with more bodies in it. What has NOT changed
+is the floor: the solo route must always exist and always be completable. The distinction that
+matters when building this:
+
+* **Not allowed:** a dungeon whose only completion path needs more than one player.
+* **Allowed, and now wanted:** an OPT-IN upgrade that scales threat and reward together, so a
+  party has something to attempt that a solo player cannot — provided the un-upgraded dungeon
+  remains a full, finishable run on its own.
+
+Under permadeath the risk side is real, so the upgrade must be opt-in and clearly signposted
+BEFORE entry, the same way the Sigil consumable is (workstream A slice 4) — there is an obvious
+overlap between the two, and they may end up the same mechanism.
 
 ---
 

@@ -304,7 +304,24 @@ while the Paladin's stat realignment held.
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
-- [ ] **Dungeon revamp** — owner wants dungeons changed "a good bit"; details not yet captured.
+- [ ] **Dungeon revamp — the design IS captured**, in `docs/design/dungeon_revamp.md` (139 lines)
+      plus `docs/design/dungeon_themes.md`. This line used to say "details not yet captured",
+      which was stale and undersold how much has already shipped: instancing + no re-farm,
+      bigger dungeons, wandering-monster pressure replacing the step budget, branching paths,
+      four special room types, Azure-Dreams floor loot, and dungeons as the main egg source.
+      Six workstreams; what is LEFT, and what each waits on:
+        * **D bosses** (phases / telegraphs / adds, telegraph counterplay mandatory) — nothing
+          blocks it.
+        * **E presentation** (zoom, sprites, void instead of wall tiles, wider room spacing)
+          — nothing blocks it. **IN PROGRESS 2026-09-08.**
+        * **A 2-4** (theme roll/stamp/display, themed egg, Sigil consumable) — nothing blocks it.
+        * **B loot/discovery** (signature drops, Dungeon Atlas) — waits on the dungeon card pass,
+          and the Atlas has grown into the realm meta-loop (Phase 6).
+        * **F party in dungeons** (the declared north star, most architectural) — waits on the
+          party system itself, which has unfixed bugs (Phase 4).
+      **Balance rule REVISED 2026-09-08:** dungeons may be PARTY-UPGRADABLE — much harder, much
+      riskier, much better rewards — provided a solo option always exists and is completable.
+      Not "one dungeon, more bodies"; an opt-in difficulty tier, signposted before entry.
 - [ ] **Dungeon-themed floor equipment** (owner 2026-09-08): *"higher chances for players to find
       floor equipment with affixes related to our matching the dungeon type. Example Balrog
       equipment in a Balrog dungeon."*
