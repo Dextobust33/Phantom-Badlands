@@ -34241,7 +34241,27 @@ func _strip_bbcode(text: String) -> String:
 	regex.compile("\\[.*?\\]")
 	return regex.sub(text, "", true)
 
+# 2026-09-08 — true only while the dungeon renderer is writing its own canvas.
+var _dungeon_rendering: bool = false
+
+
 func display_game(text: String):
+	# 2026-09-08 — in a dungeon, `game_output` IS the map. Anything appended to it pushes the
+	# floor up and eventually scrolls it off. Reported: "screenshot output is going in the
+	# gameoutput window moving the dungeon up."
+	#
+	# So while underground, a message that is NOT part of the map goes to the chat log, and is
+	# also kept as the dungeon's pending line so the next map draw shows it beneath the floor.
+	# It stays readable in both places and the canvas never accumulates — which matters because
+	# the Player-Visible Output Rule means these messages cannot simply be dropped.
+	if dungeon_mode and not _dungeon_rendering:
+		if chat_output:
+			chat_output.append_text(text + "\n")
+		var plain := text.strip_edges()
+		if plain != "":
+			_last_dungeon_tile_message = plain
+			_dungeon_text_pending = true
+		return
 	if game_output:
 		game_output.append_text(text + "\n")
 
@@ -36161,27 +36181,36 @@ func _on_log_meta_hover(meta) -> void:
 func _show_dungeon_monster_hover(monster_type: String, level: int) -> void:
 	"""Name a floor monster and show its ASCII art, without entering combat to find out.
 
-	Under permadeath knowing WHAT is coming down a corridor is information worth having before
-	you commit, which is why this is worth more than flavour. The art is the same table the
-	combat screen draws from, so a monster looks like itself in both places."""
+	Under permadeath, knowing WHAT is coming down a corridor is information worth having before
+	you commit, which is why this is worth more than flavour.
+
+	2026-09-08 - two things the first version got wrong, both found by a diagnostic print rather
+	than by reading the code again:
+	  * `get_art_map()` values are ARRAYS of row strings (with a colour tag as element 0), not a
+	    String. `String(array)` threw "Nonexistent String constructor" on every hover, which is
+	    why hovering appeared to do nothing at all.
+	  * the rows are ~150 characters wide and dozens tall, so taking "the first 8 rows" showed a
+	    meaningless sliver of the top. The whole portrait is drawn instead, at a small font size
+	    so it fits as a tooltip."""
 	if monster_type == "":
 		return
 	var art_src = _get_monster_art()
-	var key: String = art_src.resolve_art_key(monster_type) if art_src != null else ""
-	var art_map: Dictionary = art_src.get_art_map() if art_src != null else {}
-	var art: String = String(art_map.get(key, ""))
+	if art_src == null:
+		return
+	var key: String = art_src.resolve_art_key(monster_type)
+	var art_map: Dictionary = art_src.get_art_map()
 	var txt := "[b][color=#FFD700]Level %d %s[/color][/b]" % [level, monster_type]
-	if art != "":
-		# Only the first few rows: this is a peek at a corridor, not the combat portrait.
-		var rows: PackedStringArray = art.split("
-")
-		var take: int = mini(rows.size(), 8)
-		txt += "
-[color=#9FD0FF]"
-		for i in range(take):
-			txt += rows[i] + "
+	var art_val = art_map.get(key, null)
+	if art_val is Array and not (art_val as Array).is_empty():
+		var rows: Array = art_val
+		var body := ""
+		for r in rows:
+			body += String(r) + "
 "
-		txt += "[/color]"
+		# Small font: the portrait is ~150 columns wide, which at body size would be a tooltip
+		# wider than the screen.
+		txt += "
+[font_size=5]" + body + "[/font_size]"
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(txt)
 
@@ -43830,6 +43859,7 @@ func display_dungeon_floor():
 
 	# GameOutput IS the dungeon canvas now. Everything that is not the map moved to the side
 	# panel above, so this stays as close to "just the floor" as it can.
+	_dungeon_rendering = true
 	game_output.clear()
 	# Centred, on the owner's call. [center] applies per line, and every grid row is padded to the
 	# same width by the renderer, so the block centres as a block rather than raggedly.
@@ -43858,6 +43888,8 @@ func display_dungeon_floor():
 		display_game("")
 		display_game("[color=#FFA060]> %s[/color]" % _last_dungeon_tile_message)
 		_dungeon_text_pending = false
+	# Canvas writing is over - anything else that reaches display_game now belongs to chat.
+	_dungeon_rendering = false
 
 	# 2026-09-08 (E) - the theme-tile legend used to print its full prose HERE, in the middle of
 	# what is now the map canvas ("Sacred ground - light beams blessing your next attack with
