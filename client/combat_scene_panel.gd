@@ -223,6 +223,7 @@ var _monster_total: int = 0
 # row. Hidden when there's nothing active.
 var _status_strip: HBoxContainer
 var _player_status_label: RichTextLabel
+var _lufia_monster_status: RichTextLabel   # monster chips, under the monster (Lufia layout)
 var _monster_status_label: RichTextLabel
 
 # In-panel picker — overlays the log section during combat_item_mode (and
@@ -2905,6 +2906,21 @@ func _build_monster_column() -> VBoxContainer:
 	# attention is for combat). Standard / chrono keep HP in the shared strip.
 	if combat_layout == LAYOUT_LUFIA:
 		col.add_child(_build_lufia_monster_hp_panel())
+		# 2026-09-08 - the monster's debuffs belong UNDER THE MONSTER. They were rendering in
+		# the shared status strip, which is a full-width row below the entire battlefield - so
+		# in this layout they sat ~550px away from the monster they described, in empty space at
+		# the bottom right. The strip's own docstring claims it "mirrors the HP-strip layout so
+		# the eye stays anchored to the same vertical column", but that was written for the
+		# shared HP strip, which THIS layout hides (`_shared_hp_strip.visible = false`). The
+		# premise went stale when the layout changed and nothing re-read it.
+		_lufia_monster_status = RichTextLabel.new()
+		_lufia_monster_status.bbcode_enabled = true
+		_lufia_monster_status.fit_content = true
+		_lufia_monster_status.scroll_active = false
+		_lufia_monster_status.add_theme_font_size_override("normal_font_size", 12)
+		_lufia_monster_status.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		_lufia_monster_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(_lufia_monster_status)
 
 	_monster_name_label = RichTextLabel.new()
 	_monster_name_label.bbcode_enabled = true
@@ -3079,7 +3095,14 @@ func update_combat_status(player_status: Dictionary, monster_status: Dictionary)
 	if _player_status_label == null or not is_instance_valid(_player_status_label):
 		return
 	_player_status_label.text = _build_player_status_bbcode(player_status)
-	_monster_status_label.text = _build_monster_status_bbcode(monster_status)
+	var mon_bb := _build_monster_status_bbcode(monster_status)
+	if _lufia_monster_status != null and is_instance_valid(_lufia_monster_status):
+		# Rendered under the monster; the shared strip's right half stays blank so the same
+		# chips are not drawn twice in two different places.
+		_lufia_monster_status.text = mon_bb
+		_monster_status_label.text = ""
+	else:
+		_monster_status_label.text = mon_bb
 
 func _build_player_status_bbcode(s: Dictionary) -> String:
 	if s.is_empty():

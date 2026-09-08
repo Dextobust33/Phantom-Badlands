@@ -157,6 +157,7 @@ func _audit_registry() -> Dictionary:
 		"upgradepreview": ["do card UPGRADES move the number the card prints?", run_upgradepreview],
 		"enginenames": ["what each class is told its ENGINE is called, on every surface", run_enginenames],
 		"namesweep": ["EVERY class x EVERY card: does one name reach every surface?", run_namesweep],
+		"deadranks": ["can any ability earn combat upgrades it can never use?", run_deadranks],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
@@ -7308,3 +7309,99 @@ func run_namesweep() -> void:
 	print("through this same table now - see _resolve_card_info, which asks the resolver FIRST.")
 	if bad > 0:
 		print("FAIL")
+
+
+func run_deadranks() -> void:
+	"""Which abilities can EARN a combat upgrade they can never spend it on?
+
+	2026-09-08, owner: *"Do cloak or other abilities suffer from the same problem as teleport
+	did?"* Teleport did: it is refused in combat, yet `backfill_ability_uses_if_needed` grants
+	mages 200 uses of it, 200 crosses three mastery thresholds, and the rank-choice queue offered
+	three combat upgrades on a card that can never be played. Spending one WASTES the pick.
+
+	This asks the REAL combat handler rather than reading a list, because a list is what went
+	stale: `COMBAT_DECK_NON_COMBAT` names teleport and cloak, but nothing guaranteed it named
+	every ability the handler refuses. Each ability is forced into hand with full resources and
+	actually cast."""
+	var flagged: Array = []
+	var checked := 0
+	print("%-10s %-18s %-9s %-9s %s" % ["class", "ability", "castable", "backfill", "note"])
+	print("---------------------------------------------------------------------------")
+	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var ch = make_char(60, "average", klass, "Human")   # high enough to unlock everything
+		ch.initialize_deck_collection_if_needed()
+		var seen := {}
+		for entry in ch.get_all_available_abilities():
+			var ab := String(entry.get("name", ""))
+			if ab == "" or seen.has(ab):
+				continue
+			seen[ab] = true
+			checked += 1
+			var monster = make_monster(60, "normal", 1.0)
+			combat_mgr.start_combat(0, ch, monster)
+			var combat = combat_mgr.active_combats[0]
+			# Force it into hand and pay for it, so a refusal means the ENGINE refused it and
+			# not that the draw or the resource bar got in the way.
+			combat["combat_hand"] = [ab]
+			# Instrument, not game: without this the loop inherits turn state from the previous
+			# cast and reports "Wait for your turn!" as if the ability were unusable. The first
+			# version of this audit flagged shield_bash, berserk, fortify, iron_skin, vanish and
+			# haste for exactly that reason - six false positives that look identical to the real
+			# finding until you read the message column.
+			combat["player_can_act"] = true
+			# Bank every engine. The finishers (Devastate/Rampage/Judgement, Cataclysm/Unmaking,
+			# Double Cross/Killing Shot) REFUSE on an empty bar by design - a legitimate gate, not
+			# a dead card. Without this the audit reports the Sorcerer's and Oracle's finishers as
+			# unusable, which would be a wrong and expensive conclusion.
+			combat["momentum"] = CombatManager.MOMENTUM_MAX
+			combat["focus"] = CombatManager.FOCUS_MAX
+			combat["combo"] = CombatManager.COMBO_MAX
+			ch.current_hp = ch.get_total_max_hp()
+			ch.current_mana = ch.get_total_max_mana()
+			ch.current_stamina = ch.get_total_max_stamina()
+			ch.current_energy = ch.get_total_max_energy()
+			# Variable-cost cards read their SPEND from the arg. Passing "" makes them refuse
+			# with an empty message, which the first run reported as "magic_bolt and meteor are
+			# unusable in combat" - two of the most-used cards in the game. Always a reason to
+			# doubt the harness first.
+			var spend := int(round(float(_primary_pool_for(ch)) * 0.4))
+			var res: Dictionary = combat_mgr.process_ability_command(0, ab, str(maxi(1, spend)))
+			var ok := bool(res.get("success", false))
+			combat_mgr.active_combats.erase(0)
+			# Would it ACCRUE milestones? The backfill is what silently gave teleport its uses.
+			var backfilled: bool = ab in ["magic_bolt", "blast", "forcefield", "teleport", "meteor",
+				"haste", "paralyze", "banish", "power_strike", "war_cry", "shield_bash", "cleave",
+				"berserk", "iron_skin", "devastate", "fortify", "rally", "analyze", "distract",
+				"pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit",
+				"shadowstep"]
+			var note := ""
+			if not ok:
+				note = _strip_bbcode(String(res.get("message", res.get("error", "")))).strip_edges()
+				if note.length() > 46:
+					note = note.substr(0, 46) + "..."
+			var is_gate := false
+			for phrase in ["needs Momentum", "needs Rage", "needs Conviction", "Wait for your turn",
+					"not in your hand", "Not enough", "read it first", "steadied the shot",
+					"nothing on it yet"]:
+				if note.findn(phrase) >= 0:
+					is_gate = true
+					break
+			if not ok and backfilled and not is_gate:
+				flagged.append("%s / %s" % [klass, ab])
+			if not ok and not is_gate:
+				print("%-10s %-18s %-9s %-9s %s" % [klass, ab, "NO", "yes" if backfilled else "-", note])
+	print("")
+	print("Checked %d ability slots across 9 classes." % checked)
+	if flagged.is_empty():
+		print("PASS - no ability can earn a combat upgrade it is unable to use.")
+	else:
+		print("FLAGGED (refused in combat AND granted backfill uses -> earns dead picks):")
+		for f in flagged:
+			print("   " + f)
+
+
+func _primary_pool_for(ch) -> int:
+	match String(ch.get_class_path()):
+		"mage": return ch.get_total_max_mana()
+		"trickster": return ch.get_total_max_energy()
+	return ch.get_total_max_stamina()
