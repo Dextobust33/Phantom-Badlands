@@ -13532,8 +13532,10 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			# Leverage and the Ranger discharges its Aim; both are certain. Show the damage the
 			# banked stacks are worth, which is the number that actually moves as you build.
 			if _combat_finisher_kind == "guaranteed":
-				if _combat_finisher_value <= 0:
-					return {"text": "build first", "color": "#9A8C6A"}
+				# "~N" is what `_ability_card_estimate` parses for the card's damage pip, so this
+				# wording is also what puts Killing Shot's damage in the same bottom-left box
+				# every other damage card uses. Owner: "Should the card not... use the damage
+				# area in the bottom left like other cards do?"
 				return {"text": "~%d guaranteed" % maxi(1, int(_combat_finisher_value * fraction)), "color": "#A0E060"}
 			var chance = max(1, int(_combat_assassinate_chance * fraction))
 			return {"text": "%d%% kill" % chance, "color": "#A0E060"}

@@ -13159,12 +13159,18 @@ func _finisher_kind(character) -> String:
 
 func _finisher_value(character, combat: Dictionary) -> int:
 	"""Percent for a roll, damage for a guaranteed strike. One computation, two readers."""
-	var n: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+	# 2026-09-08 - size it on the stacks the strike will have WHEN IT RESOLVES, not the stacks
+	# banked right now. Reported from play: "I used Killing shot turn one, it still does damage
+	# turn one." Correct - every Trickster card feeds the engine BEFORE it resolves (see the
+	# _read_gain block in process_ability_command), so casting the finisher on an empty bar gives
+	# it one stack and it fires. The card was saying "build first" about a card that works, and
+	# showed no damage for a strike that deals it. Floor at 1.
+	var n: int = maxi(1, clampi(int(combat.get("combo", 0)), 0, COMBO_MAX))
 	match String(character.class_type):
 		"Grifter":
-			return int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n))) if n > 0 else 0
+			return int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n)))
 		"Ranger":
-			return int(_ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))) if n > 0 else 0
+			return int(_ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n)))
 		"Ninja":
 			var mon = combat.get("monster", null)
 			return assassinate_chance(character, mon, combat) if mon is Dictionary else 0
@@ -13185,16 +13191,10 @@ func _read_note(character, combat: Dictionary) -> String:
 	client-side copy is what drifted last time."""
 	var n: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
 	match String(character.class_type):
-		"Grifter":
-			if n <= 0:
-				return "read it first"
+		"Grifter", "Ranger":
+			# Castable from empty - the cast itself banks the first stack. See _finisher_value.
 			return "%s ~%s" % [_ability_display_name(character, "perfect_heist"),
-				_short_num(int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n))))]
-		"Ranger":
-			if n <= 0:
-				return "steady the shot"
-			return "%s ~%s" % [_ability_display_name(character, "perfect_heist"),
-				_short_num(int(_ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))))]
+				_short_num(_finisher_value(character, combat))]
 		_:
 			var mon = combat.get("monster", null)
 			var pct: int = assassinate_chance(character, mon, combat) if mon is Dictionary else 0
