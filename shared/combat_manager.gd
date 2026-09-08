@@ -7444,6 +7444,23 @@ static func upgrade_exclusions_for(ability_name: String) -> Array:
 	if ability_name in ["forcefield", "shield", "vanish"]:
 		out.append("duration")
 		out.append("costly_vigil")      # doubles a duration that does not exist
+	if ability_name == "analyze":
+		# 2026-09-08, owner call. Unstable Hex is "a stronger debuff, with a small chance it lands
+		# on you instead" - but Analyze/Track/Mark applies no debuff. Its effect is a buff to YOU
+		# (+10% damage for the fight), so the card was taking a rebound for strengthening its own
+		# blessing. Owner: "Drop or remove the downside." Dropped: the upgrade reads as nonsense
+		# here even once the multiplier reaches the value.
+		out.append("unstable_hex")
+		# Opening Act refunds `path_last_ability_cost`, which only the variable-cost path records.
+		# Analyze does not take it, so the refund is zero - measured dead by `-- upgradefit`. If
+		# the cost funnel is fixed (see the backlog item), this line can come out.
+		out.append("opening_act")
+	if ability_name == "magic_bolt":
+		# 2026-09-08, owner call: "Not offered on magic bolt." On a card where the PLAYER chooses
+		# the spend, "the first one is free" refunds whatever they choose to dump in - which would
+		# make it the strongest upgrade in the game on that one card. It also measured dead there
+		# for the same cost-funnel reason as Analyze.
+		out.append("opening_act")
 	if ability_name == "war_cry":
 		# War Cry was re-roled to a tempo/intimidate card: it surges the engine and writes
 		# `enemy_distracted`, and creates no durational buff at all - so there is no duration for

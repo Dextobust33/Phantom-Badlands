@@ -160,10 +160,15 @@ while the Paladin's stat realignment held.
       * **`vindication` on the Paladin's Judgement** — heals 6% on a killing blow, but the
         finisher's victory path appears to return before the upgrade block runs. Check
         `_process_victory` against the `vindication` site.
-      * **`demoralising` on Analyze / Sabotage** — measured dead, but it is gated on the ENEMY
-        being stunned or distracted, which another card can supply. NOT necessarily a bug: it
-        fires if you Distract first. Owner decision: acceptable cross-card design, or should
-        conditional upgrades only be offered on cards that can meet their own condition?
+      * **`demoralising` / `harrying` on Analyze / Sabotage — RULED: they STAY, but see the
+        dependency below.** They are gated on the enemy being stunned or distracted. Only the
+        GRIFTER carries Distract; a Ranger (Track, Snare, Weak Point, Ambush, Killing Shot) and a
+        Ninja (Mark, Hamstring, Ambush, Phantom Strike, Assassinate) hold no card that can rattle
+        anything, so today these can only fire if the player first takes the `Disorienting` or
+        `Pinning` upgrade elsewhere. Owner 2026-09-08: *"These can stay in but only if we ensure
+        we do a good companion card pass... and a dungeon card pass... If those two are done
+        properly a small portion of those could offer stun or distraction to make this a viable
+        option."* So this is CONDITIONAL on the two card passes below.
       `-- upgradefit` is at 12 dead pairs of 1127, down from 71. **Read its docstring before
       trusting a run**: the audit was wrong four times before it was right (player pinned at full
       health, one cast per combat, not honouring the game's own exclusions, and buffs missing
@@ -202,6 +207,19 @@ while the Paladin's stat realignment held.
       Computed by `player_mitigation_breakdown()` in the combat manager, combined multiplicatively
       the way the damage path actually applies it, so the number cannot drift from the real one.
       `-- statuschips` prints what both sides show.
+- [ ] **Card-upgrade pick has no skill in it** (owner 2026-09-08: *"They effectively have no
+      control of which 3 they are picking... a wasted interaction of seeing 9 that you have no bit
+      of control in getting."*). The panel copied the loot minigame's Preview -> Shuffle -> Hunt
+      SHAPE but not its skill layer: `_ms_order.shuffle()` rebuilds the grid instantly, so the
+      cards TELEPORT and the preview is decoration. A 2026-09-04 pass noticed and honestly
+      reworded the header rather than fixing the interaction.
+      **The fix already exists in this codebase and the owner validated it in August**
+      (`project_prize_shuffle_redesign`): `combat_loot_panel.gd` replays a SERVER-supplied `swaps`
+      array as visible pairwise animations so a sharp player can follow one card, plus rare peek
+      tokens; swap count scales with stakes (`3+tier`, cap 14). Port that.
+      **Must be server-driven.** The milestone shuffle is client-side today, and animating a swap
+      sequence the server did not author would be showing the player a lie - worse than the
+      teleport. Owner is happy for this to come AFTER the release.
 - [ ] **Buff panel, party half.** Same strip for each party member, plus a STACKING indicator.
 - [x] **Card upgrade preview — DONE 2026-09-07.** The estimate counted `power` picks alone while
       the combat manager applied nine more multipliers from hard-coded literals, so five upgrades
@@ -262,6 +280,16 @@ while the Paladin's stat realignment held.
 - [ ] **"Party play isn't working properly"** (owner, 2026-08-26) — no repro captured. ASK for the
       symptom before investigating.
 - [ ] **Leader logout must not strand the party.**
+
+- [ ] **Companion card pass** (owner 2026-09-08: *"most companion cards are too weak to be viable
+      or useful at all"*). Re-tune them so a companion card is worth a deck slot at all. **A small
+      portion should offer STUN or DISTRACT** — that is what makes the `harrying` and
+      `demoralising` upgrades viable for a Ranger or Ninja, neither of whom holds a rattling card
+      (see the Phase 3 item). Do this BEFORE re-judging those upgrades.
+- [ ] **Dungeon card pass** (same conversation): *"dungeon reward cards likely need reworked and
+      added to add interesting new cards that classes may want to swap into their decks."* The bar
+      is a card a player would CHOOSE over one of their five, which today almost none clear. Same
+      note as above: some should rattle the enemy.
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
