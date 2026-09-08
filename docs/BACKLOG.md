@@ -12,7 +12,16 @@ common way to lose a session.
 
 ## Where the game is (2026-09-07)
 
-Live: **v0.9.758** (client + server).
+Live: **v0.9.759** (client + server).
+
+- **Card upgrades are no longer offered where they cannot work.** Four (`swift`, `sacrificial`,
+  `vindication`, `refund`) needed damage or a kill but were marked `KIND_ANY`, so a milestone
+  spent on them from a buff card was simply lost. `-- upgradefit` casts every card with and
+  without every upgrade it can be offered: dead pairs 71 -> 8.
+- **Four audits gate the class surfaces**: `cardaudit` (what a card SAYS), `enginenames` (meter,
+  log, label), `statdesc` (stat lines), `upgradefit` (do upgrades do anything). Three PASS.
+- **Read `upgradefit`'s docstring before trusting it.** It was wrong four times before it was
+  right, and every wrong version produced output indistinguishable from a real finding.
 
 - **One name and one number per thing.** A day of player reports turned out to be one shape nine
   times over: a value stated in two places, drifting. Card faces vs hovers, the Trickster meter
