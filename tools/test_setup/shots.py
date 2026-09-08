@@ -64,7 +64,7 @@ def main():
     if scen.main() != 0:
         return 1
     print("[2/4] credentials + admin")
-    runner.set_dev_passwords(1)
+    runner.set_dev_passwords(scen.PLAYERS[:1])   # only PLAYERS[0] logs in to capture
     grant_admin()
 
     print("[3/4] server")

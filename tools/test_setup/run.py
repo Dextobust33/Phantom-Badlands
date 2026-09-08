@@ -29,7 +29,16 @@ DEV_PASSWORD = "devtest"
 
 def set_dev_passwords(_roster):
     """Point the test accounts at a known password so the clients can log themselves in.
-    Mirrors persistence_manager.hash_password: sha256(salt + password), hex."""
+    Mirrors persistence_manager.hash_password: sha256(salt + password), hex.
+
+    `_roster` is a list of (user, account, char, file) tuples, or an INT meaning "the first N
+    players". 2026-09-08: shots.py called this with a bare 1 and died on
+    `TypeError: 'int' object is not iterable`, so the screenshot harness had been broken for as
+    long as that call had been there — which is how a UI report ("combat overlaps at 1080p")
+    could sit in the backlog for months with no way to check it. Accepting the int too means the
+    intent that was obviously meant now works."""
+    if isinstance(_roster, int):
+        _roster = scen.PLAYERS[:_roster]
     with open(scen.ACCOUNTS, encoding="utf-8") as f:
         db = json.load(f)
     wanted = {u for u, _, _, _ in _roster}
