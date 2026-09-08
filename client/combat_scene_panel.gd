@@ -4102,10 +4102,27 @@ func _ensure_formula_popup() -> void:
 	# panel is hidden out of combat, which would hide its children).
 	get_tree().root.add_child(_formula_popup)
 
-func _show_formula_popup(formula: String) -> void:
+func _show_formula_popup(formula: String, mono: bool = false) -> void:
+	"""`mono` switches the popup to the fixed-width font used for ASCII art.
+
+	2026-09-08 - added for the dungeon monster hover. ASCII art in a PROPORTIONAL font is not
+	art: every glyph is a different width, so the columns shear and the picture reads as
+	stretched and skewed. Reported exactly that way. `_monster_art_label` has always overridden
+	normal/bold/italics/mono with Consolas for this reason; the popup never did, because until
+	now it only ever held a line of formula text."""
 	if formula == "":
 		return
 	_ensure_formula_popup()
+	if _mono_font != null and _formula_popup_lbl != null:
+		if mono:
+			for slot in ["normal_font", "bold_font", "italics_font", "mono_font"]:
+				_formula_popup_lbl.add_theme_font_override(slot, _mono_font)
+			# The art is authored on a tight grid; the default line gap doubles its height.
+			_formula_popup_lbl.add_theme_constant_override("line_separation", -2)
+		else:
+			for slot in ["normal_font", "bold_font", "italics_font", "mono_font"]:
+				_formula_popup_lbl.remove_theme_font_override(slot)
+			_formula_popup_lbl.remove_theme_constant_override("line_separation")
 	_formula_popup_lbl.text = "[color=#D4A017][b]ƒ[/b][/color]  [color=#EDE3C8]%s[/color]" % formula
 	_formula_popup.visible = true
 	_formula_popup.reset_size()

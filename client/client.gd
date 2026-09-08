@@ -36210,9 +36210,9 @@ func _show_dungeon_monster_hover(monster_type: String, level: int) -> void:
 		# Small font: the portrait is ~150 columns wide, which at body size would be a tooltip
 		# wider than the screen.
 		txt += "
-[font_size=5]" + body + "[/font_size]"
+[font_size=6]" + body + "[/font_size]"
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
-		combat_scene_panel._show_formula_popup(txt)
+		combat_scene_panel._show_formula_popup(txt, true)   # true = fixed-width, for the art
 
 func _on_log_meta_unhover(_meta) -> void:
 	if combat_scene_panel and combat_scene_panel.has_method("_hide_formula_popup"):
