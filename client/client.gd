@@ -4880,7 +4880,7 @@ func _process(delta):
 					# 2026-09-08 - remember which way we are facing and advance the walk cycle.
 					# The dungeon had no facing at all because an "@" has no front; the sprite
 					# does, and the overworld art ships 4 directions x 3 frames per character.
-					_dungeon_facing = _DUNGEON_FACING_BY_DIR.get(dungeon_dir, _dungeon_facing)
+					_local_map_facing = _DUNGEON_FACING_BY_DIR.get(dungeon_dir, _local_map_facing)
 					_dungeon_walk_frame = 1 if _dungeon_walk_frame != 1 else 2
 					send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
 					last_move_time = current_time
@@ -43916,19 +43916,22 @@ func handle_dungeon_gather_result(message: Dictionary):
 # purpose.
 const DUNGEON_TILE_FONT_SIZE := 46
 
-# Which way the player is facing underground, and where in the 3-frame walk cycle they are.
-# The overworld sprites ship `<dir>_stand` / `_walk1` / `_walk2` for up/down/left/right; the
-# overworld itself only ever used a fraction of that, and the dungeon is where the tiles are
-# large enough for it to read. Owner: *"We also have unused sprites or animations for each
-# sprite that may be able to be used in the dungeon since hopefully they will be larger and
-# easier to see than they are in the overworld."*
+# Where in the 3-frame walk cycle the underground avatar is. FACING deliberately reuses the
+# overworld's `_local_map_facing` rather than keeping a second copy - which way the player is
+# pointing is one fact, and a private dungeon copy of it is exactly the "one value, two places"
+# shape that has caused most of this week's reported bugs.
+#
+# The overworld sprites ship `<dir>_stand` / `_walk1` / `_walk2` for all four directions, and
+# the overworld only ever used part of that. Owner: *"We also have unused sprites or animations
+# for each sprite that may be able to be used in the dungeon since hopefully they will be larger
+# and easier to see than they are in the overworld."*
 const _DUNGEON_FACING_BY_DIR := {
 	"n": "up", "s": "down", "w": "left", "e": "right",
 	"north": "up", "south": "down", "west": "left", "east": "right",
 	"up": "up", "down": "down", "left": "left", "right": "right",
 }
-var _dungeon_facing: String = "down"
 var _dungeon_walk_frame: int = 0
+var _sprite_region_cache: Dictionary = {}
 
 
 func _set_dungeon_side_boxes_visible(vis: bool) -> void:
@@ -44075,7 +44078,10 @@ func _dungeon_side_panel_text() -> String:
 		out += "Remaining: [color=#FF4444]%d[/color]%s\n" % [alive_count, al]
 	else:
 		out += "[color=#00FF00]Floor cleared![/color]\n"
-	out += "\n[color=#808080]@ You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nLetters = Monsters[/color]"
+	# The legend shows the SAME avatar the floor draws, at the panel's own font size.
+	# Leaving a literal "@" here would have the key describe a glyph the map no
+	# longer uses.
+	out += "\n[color=#808080]%s You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nLetters = Monsters[/color]" % _dungeon_player_glyph(14)
 	# This floor's own special glyphs, compactly. The prose lives on the entrance warning.
 	var dt := String(dungeon_data.get("dungeon_type", ""))
 	if dt != "" and DUNGEON_THEME_LEGEND.has(dt):
@@ -44115,7 +44121,7 @@ func update_dungeon_map():
 	_set_dungeon_side_boxes_visible(false)
 
 
-func _dungeon_player_glyph() -> String:
+func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String:
 	"""You, on the dungeon floor - your actual overworld sprite rather than an "@".
 
 	Owner 2026-09-08: *"the player sprite should replace the @ while in dungeons. It should match
@@ -44130,16 +44136,24 @@ func _dungeon_player_glyph() -> String:
 	measured from the live font rather than assumed from the font size, because the theme owns
 	the font and a constant here would be a second copy of it.
 
-	Falls back to the "@" whenever there is no sprite for this character - not every battler id
-	has an overworld twin."""
+	It follows the SAME fallback chain the overworld map uses, because the ask was that the two
+	match: the directional overworld sprite, then the side-view idle battler, then "@". Only 32 of
+	the 80 battler ids have an overworld twin, so stopping at the first tier left more than half
+	of all characters standing underground as an "@" - which is how the first version of this
+	rendered, caught in a screenshot rather than assumed to work."""
 	var fallback := "[color=#00FF00]@[/color]"
 	if character_data.is_empty():
 		return fallback
 	var bid := BattlerSprite.id_from_data(character_data)
-	if bid == "" or not BattlerSprite.has_overworld_by_id(bid):
+	if bid == "":
 		return fallback
-	var path := BattlerSprite.overworld_path_by_id(bid, _dungeon_facing, _dungeon_walk_frame)
+	var path := ""
+	if BattlerSprite.has_overworld_by_id(bid):
+		path = BattlerSprite.overworld_path_by_id(bid, _local_map_facing, _dungeon_walk_frame)
 	if path == "":
+		# No overworld twin - the side-view battler, same as the map's second tier.
+		path = BattlerSprite.idle_path_by_id(bid)
+	if path == "" or not ResourceLoader.exists(path):
 		return fallback
 	var tex := load(path) as Texture2D
 	if tex == null:
@@ -44149,17 +44163,41 @@ func _dungeon_player_glyph() -> String:
 	if f == null:
 		return fallback
 	var cell_w: int = int(round(f.get_string_size("@", HORIZONTAL_ALIGNMENT_LEFT, -1,
-		DUNGEON_TILE_FONT_SIZE).x))
-	var line_h: int = int(f.get_height(DUNGEON_TILE_FONT_SIZE))
+		at_font_size).x))
+	var line_h: int = int(f.get_height(at_font_size))
 	if cell_w <= 0 or line_h <= 0:
 		return fallback
-	var src: Vector2i = tex.get_size()
-	if src.x <= 0 or src.y <= 0:
+	# Crop to the sprite's actual CONTENT. The idle battlers are 48x48 frames holding a 19x30
+	# character - 75% transparent padding - so drawing the whole frame into one cell rendered the
+	# player at about half the size of everything else, which a screenshot caught immediately.
+	# Cropped, the fallback tier comes out 19x30, near-identical to the overworld sprite's 17x31,
+	# so both tiers fill the tile the same way.
+	var reg: Rect2i = _sprite_content_region(path, tex)
+	if reg.size.x <= 0 or reg.size.y <= 0:
 		return fallback
-	var h: int = int(round(float(cell_w) * float(src.y) / float(src.x)))
+	var h: int = int(round(float(cell_w) * float(reg.size.y) / float(reg.size.x)))
 	h = mini(h, line_h)
 	var tint := BattlerSprite.tint_hex(String(character_data.get("appearance_color", "")))
-	return "[img=%dx%d color=%s]%s[/img]" % [cell_w, h, tint, path]
+	return "[img=%dx%d region=%d,%d,%d,%d color=%s]%s[/img]" % [
+		cell_w, h, reg.position.x, reg.position.y, reg.size.x, reg.size.y, tint, path]
+
+
+func _sprite_content_region(path: String, tex: Texture2D) -> Rect2i:
+	"""The non-transparent bounds of a sprite, cached by path.
+
+	`get_image()` pulls the texture back off the GPU and `get_used_rect()` walks every pixel, so
+	this is far too expensive to run per frame - but the answer never changes for a given file,
+	and there are only a handful of avatars in play."""
+	if _sprite_region_cache.has(path):
+		return _sprite_region_cache[path]
+	var r := Rect2i(Vector2i.ZERO, tex.get_size())
+	var img := tex.get_image()
+	if img != null:
+		var used := img.get_used_rect()
+		if used.size.x > 0 and used.size.y > 0:
+			r = used
+	_sprite_region_cache[path] = r
+	return r
 
 
 func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
