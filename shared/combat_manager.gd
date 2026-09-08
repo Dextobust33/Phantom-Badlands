@@ -10467,6 +10467,13 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"read_label": class_engine_label(String(character.class_type)),
 		# What the stacks buy right now. Only the Ninja's finisher is a roll - see _read_note.
 		"read_note": (_read_note(character, combat) if character.get_class_path() == "trickster" else ""),
+		# 2026-09-08 - the finisher as DATA, so the card face and the meter cannot disagree. The
+		# comment on the card's old code already said "use the SERVER's number, not a third copy
+		# of the maths"; a Ranger's card was printing "34% kill" for a strike that cannot miss,
+		# because it read the Ninja's chance. `kind` says which NOUN applies, `value` is a
+		# percent when it is a roll and damage when it is not.
+		"finisher_kind": _finisher_kind(character),
+		"finisher_value": _finisher_value(character, combat),
 		# Live Assassinate % so players can decide when to spring it (single source: helper).
 		"assassinate_chance": (assassinate_chance(character, combat.monster, combat) if (character.get_class_path() == "trickster" and combat.has("monster")) else 0),
 		"focus": int(combat.get("focus", 0)),  # v0.9.697 Mage Focus
@@ -13138,6 +13145,30 @@ func get_party_combat_state(leader_id: int) -> Dictionary:
 		"members": members_info,
 		"current_turn_peer_id": _get_current_turn_peer_id(combat)
 	}
+
+
+func _finisher_kind(character) -> String:
+	"""\"roll\" if the finisher can miss, \"guaranteed\" if it cannot. Only the Ninja rolls."""
+	match String(character.class_type):
+		"Grifter", "Ranger":
+			return "guaranteed"
+		"Ninja":
+			return "roll"
+	return ""
+
+
+func _finisher_value(character, combat: Dictionary) -> int:
+	"""Percent for a roll, damage for a guaranteed strike. One computation, two readers."""
+	var n: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+	match String(character.class_type):
+		"Grifter":
+			return int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n))) if n > 0 else 0
+		"Ranger":
+			return int(_ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))) if n > 0 else 0
+		"Ninja":
+			var mon = combat.get("monster", null)
+			return assassinate_chance(character, mon, combat) if mon is Dictionary else 0
+	return 0
 
 
 func _read_note(character, combat: Dictionary) -> String:

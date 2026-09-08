@@ -3127,6 +3127,18 @@ const _STATUS_TAGS := {
 	"sabotage":   {"label": "Sabotaged",  "color": "#FFA033"},
 	"distract":   {"label": "Distracted", "color": "#6699FF"},
 	"analyze":    {"label": "Analyzed",   "color": "#7AE07A"},
+	# 2026-09-08 - the SIX buff types the game actually applies that had no entry here. Reported:
+	# "Dam in the panel isn't hoverable" - that was `damage`, truncated to three letters by the
+	# unknown-key fallback and, having no help text, given no hover either. Enumerated from every
+	# `add_buff("...")` call in combat_manager rather than added one at a time, so the set is
+	# complete: crit_chance, damage, defense_penalty, evasion, open_guard_penalty, time_stop.
+	# Note `defense_penalty` would have collided with `defense` at three letters - both "Def".
+	"damage":             {"label": "Damage",   "color": "#FF8844"},
+	"crit_chance":        {"label": "Crit",     "color": "#FFD93D"},
+	"defense_penalty":    {"label": "Exposed",  "color": "#FF6666"},
+	"evasion":            {"label": "Evasion",  "color": "#66FFCC"},
+	"open_guard_penalty": {"label": "Guard down", "color": "#FF6666"},
+	"time_stop":          {"label": "Time Stop", "color": "#C8A0FF"},
 }
 
 # 2026-09-08, owner: "Buff and Debuff panels should be hoverable to see a longer description of
@@ -3152,10 +3164,16 @@ const _STATUS_HELP := {
 	"cloak":      "Cloaked. Harder for the enemy to target you.",
 	"forcefield": "Forcefield. Absorbs incoming damage until its capacity is spent, then breaks.",
 	"vampiric":   "Vampiric. Returns some of the damage you deal as health.",
-	"damage_reduction": "Everything cutting the damage you take, combined the way the game actually applies it — multiplied, not added. Spending engine stacks gives their share back.",
+	"damage_reduction": "How much less damage you take right now, from every source combined. The list in brackets shows where it comes from. Careful: some of it is your banked engine stacks, so a card that spends them lowers this number.",
 	"sabotage":   "Sabotaged. Its strength AND its defence are cut, so it hits softer and takes more. Stacks with repeat casts up to 50%.",
 	"distract":   "Distracted. Its attacks are far likelier to miss you.",
 	"analyze":    "Analyzed. You have read its weaknesses: every attack you make deals more for the rest of this fight.",
+	"damage":             "Raised damage. Everything you deal is increased by this much while it lasts.",
+	"crit_chance":        "Raised critical chance. More of your hits land as criticals while it lasts.",
+	"defense_penalty":    "Exposed. Its defence is cut, so your attacks bite deeper.",
+	"evasion":            "Evasion. A better chance to avoid incoming attacks outright.",
+	"open_guard_penalty": "Guard down. You take more damage than usual until it passes - the cost of a card that traded defence for power.",
+	"time_stop":          "Time stopped. You act again before the enemy gets another turn.",
 }
 
 
@@ -3174,6 +3192,10 @@ func _format_status_chip(key: String, suffix: String) -> String:
 	# Hover carries the long form, the same way a damage number in a card description does.
 	# Quotes are substituted because they end BBCode url parsing dead.
 	var help := String(_STATUS_HELP.get(key, ""))
+	if help == "":
+		# Never leave a chip mute. An unrecognised effect still tells the player what it is and
+		# how long it holds, which beats three truncated letters with no hover at all.
+		help = "%s - an active effect. The number is its strength, the T value how many rounds remain." % String(tag.label)
 	if help != "":
 		return "[url=%s]%s[/url]" % [help.replace("\"", "”").replace("'", "’"), chip]
 	return chip

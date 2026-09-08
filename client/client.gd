@@ -13526,6 +13526,15 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			# `_combat_assassinate_chance` is the value the server sent for this exact fight, so
 			# the two readouts cannot disagree any more. It is a full-commit figure, so the
 			# partial-spend fraction applies the same way it does on the meter's roll.
+			# 2026-09-08 - only the NINJA's finisher is a roll. Reported from play: a Ranger's
+			# Killing Shot card read "+28% kill", then "34% kill" - a kill CHANCE printed on a
+			# card that deals guaranteed damage and has no chance at all. The Grifter cashes its
+			# Leverage and the Ranger discharges its Aim; both are certain. Show the damage the
+			# banked stacks are worth, which is the number that actually moves as you build.
+			if _combat_finisher_kind == "guaranteed":
+				if _combat_finisher_value <= 0:
+					return {"text": "build first", "color": "#9A8C6A"}
+				return {"text": "~%d guaranteed" % maxi(1, int(_combat_finisher_value * fraction)), "color": "#A0E060"}
 			var chance = max(1, int(_combat_assassinate_chance * fraction))
 			return {"text": "%d%% kill" % chance, "color": "#A0E060"}
 		"forethought":
@@ -20384,6 +20393,9 @@ const _INSTANCE_LOCK := "user://instance.lock"
 const _INSTANCE_HEARTBEAT_S := 30
 const _INSTANCE_STALE_S := 90
 var _duplicate_instance_warned := false
+# The finisher as the SERVER computes it: "roll" (percent) or "guaranteed" (damage).
+var _combat_finisher_kind: String = ""
+var _combat_finisher_value: int = 0
 # 2026-09-08 - held so the panel can be re-fitted when the overlay opens. Owner: "there appears
 # to be extra padding on the right side until you actually click or interact with it then it
 # shrinks to fit the size of the selections." A PanelContainer keeps the largest size its
@@ -20492,22 +20504,6 @@ func _ability_display_name(ability_name: String) -> String:
 		return String(_canon[ability_name])
 	return ability_name.replace("_", " ").capitalize()
 
-func _refit_milestone_panel() -> void:
-	"""Shrink the milestone panel back to its CURRENT content.
-
-	A PanelContainer holds the largest size its content has ever needed until a re-layout is
-	forced, so the box kept the width of whichever menu was widest and only snapped in when the
-	player clicked something. `reset_size()` after the frame's layout pass does that snap up
-	front. Deferred twice because the children (the 3x3 grid, or the legacy row) have not been
-	measured until the layout that follows the one where they became visible."""
-	if _milestone_panel == null or not is_instance_valid(_milestone_panel):
-		return
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if _milestone_panel != null and is_instance_valid(_milestone_panel):
-		_milestone_panel.reset_size()
-
-
 func _ensure_milestone_overlay() -> void:
 	if _milestone_overlay != null and is_instance_valid(_milestone_overlay):
 		return
@@ -20569,6 +20565,7 @@ func _ensure_milestone_overlay() -> void:
 	_milestone_card_row = HBoxContainer.new()
 	_milestone_card_row.add_theme_constant_override("separation", 18)
 	_milestone_card_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_milestone_card_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_milestone_card_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(_milestone_card_row)
 	# 3x3 for the nine-card reveal. Kept alongside the legacy row rather than replacing it, so a
@@ -20579,6 +20576,13 @@ func _ensure_milestone_overlay() -> void:
 	_ms_grid.add_theme_constant_override("h_separation", 14)
 	_ms_grid.add_theme_constant_override("v_separation", 14)
 	_ms_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 2026-09-08 - CENTRED. Owner: "there appears to be extra padding on the right side until you
+	# actually click or interact with it then it shrinks to fit the size of the selections."
+	# The panel is sized by its widest child, which is the header ("Hidden and shuffled - turn
+	# over 3 of them, then choose one."), not the 3x3 grid. Left-aligned, the grid put all that
+	# slack on the right; when the header later shortened to "Turn over 2 more." the panel
+	# shrank and it looked like it had "fixed itself" on interaction.
+	_ms_grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_ms_grid.visible = false
 	box.add_child(_ms_grid)
 	# Hover preview: the card as it would read IN COMBAT with that upgrade taken. A name and a
@@ -20633,7 +20637,6 @@ func _show_milestone_reveal(ability_name: String, offer: Array, reveals_allowed:
 	_set_milestone_header("Here is what is on offer — they will be hidden and shuffled.")
 	_rebuild_milestone_grid()
 	_milestone_overlay.visible = true
-	_refit_milestone_panel()
 	# 6s, was 3. Nine cards with names and descriptions is more reading than three seconds
 	# allows, and the whole mechanic is spoiled if the player is still reading when they are
 	# taken away. Clicking any card skips ahead for someone who is ready sooner.
@@ -20920,7 +20923,6 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 		_milestone_card_row.add_child(card)
 	_hide_milestone_tip()
 	_milestone_overlay.visible = true
-	_refit_milestone_panel()
 
 
 func _on_milestone_card_input(event: InputEvent, branch: String) -> void:
@@ -35694,6 +35696,8 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	var is_mage := bool(state.get("is_mage_focus", false))
 	# Live Assassinate chance, cached so the card face can show it. 0 for non-Tricksters.
 	_combat_assassinate_chance = int(state.get("assassinate_chance", 0)) if is_trickster else 0
+	_combat_finisher_kind = String(state.get("finisher_kind", ""))
+	_combat_finisher_value = int(state.get("finisher_value", 0))
 	if is_warrior:
 		# The meter's NAME comes from the server (Momentum / Rage / Conviction) so the three
 		# Warrior classes read differently without the client keeping its own class table — the
