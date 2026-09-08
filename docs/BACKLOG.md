@@ -170,13 +170,25 @@ while the Paladin's stat realignment held.
       marginal gain is shown honestly because it rides the tier multiplier rather than compounding.
       `-- upgradepreview` drives the real roller 4000x per upgrade against what the card prints;
       worst gap 0.007.
-- [ ] **Trickster engine label reads the same for all three.** Warriors show Momentum / Rage /
-      Conviction and mages show Focus / Volatility / Insight, but Grifter, Ranger and Ninja all
-      show **"Read"**. The mechanic is deliberately shared; the NAME being shared is what makes
-      three differently-playing classes look identical on the character-creation screen, which is
-      exactly where a new player is choosing between them. Cheap to fork (label only, no balance
-      risk) — the same one-card-one-name fix used for Hamstring/Snare. Needs owner sign-off since
-      "Read x3" was a deliberate choice at the time.
+- [x] **Trickster engine labels forked — DONE 2026-09-07** (owner: *"I'm good with forking it."*).
+      All three read "Read" while warriors showed Momentum / Rage / Conviction and mages Focus /
+      Volatility / Insight. It was wrong about the game, not just inconsistent: the finisher fork
+      gave the three DIFFERENT shapes — the Grifter banks and cashes (Momentum-shaped), the Ranger
+      ramps and discharges (Focus-shaped), and only the Ninja gambles on the bypass (Read-shaped).
+      One noun for three mechanics. Now **Grifter = Leverage, Ranger = Aim, Ninja = Read** (the
+      Ninja keeps the shape name, as Fighter/Momentum and Wizard/Focus do).
+      Root cause of why it had nowhere to land: `update_read` was the only one of the three meter
+      functions with no `label` parameter, and `read_label` was the only engine label the server
+      never sent. Both fixed, so the label lives in one place.
+      Swept all seven surfaces; `-- enginenames` now prints what each class is told and PASSES 9/9.
+      **Mages have no engine log line on purpose** (2026-09-04, one-line-per-action) — the meter
+      carries it; the audit encodes that so nobody "fixes" it later.
+- [x] **Stale copy on the path buttons — DONE 2026-09-07.** The Trickster path still pitched
+      *"Outwit, evade, or strike critically"* — selling **Outsmart**, retired 2026-09-05. All three
+      path pitches now describe the loop the path actually plays. The help page's class overview
+      was worse: it listed **Paladin = self-healing** (it is Retribution — Conviction built by
+      blows you take) and **Sage = efficient** under its old name rather than the Oracle. All nine
+      now name their engine there.
 - [ ] **Death replay / shareable combat log.** When a player dies, the chat message carries a
       clickable link to the combat log — ideally a replay — so everyone can see how it happened.
 - [ ] **Combat layout at 1080p.** Monster ASCII still overlaps the player/companion cards by

@@ -114,6 +114,7 @@ func _audit_registry() -> Dictionary:
 		"cardnames": ["every class: what each of its 5 cards is CALLED", run_cardnames],
 		"statuschips": ["what the combat status strip actually shows both sides", run_statuschips],
 		"upgradepreview": ["do card UPGRADES move the number the card prints?", run_upgradepreview],
+		"enginenames": ["what each class is told its ENGINE is called, on every surface", run_enginenames],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
@@ -7103,3 +7104,89 @@ worst estimable gap: %.3f  (%s)" % [worst, "PASS" if worst <= 0.04 else "FAIL"])
 		print("%-34s printed %5.3f   rolled %5.3f   %s" % [
 			str(combo), est, rolled2, "ok" if absf(est - rolled2) <= 0.05 else "MISMATCH"])
 	ch.ability_milestone_picks.erase("devastate")
+
+
+func run_enginenames() -> void:
+	"""Every surface that names a class ENGINE, per class, read from the real code.
+
+	2026-09-07 - the three Tricksters all printed "Read" while the warriors and mages each had
+	their own name, and it was wrong about the game as well as inconsistent: the finisher fork
+	gave the three DIFFERENT shapes (the Grifter banks and cashes, the Ranger ramps, only the
+	Ninja gambles on the bypass). Forking the label touches the meter, the combat log, the card
+	builder badges, the help pages and character creation - the seven-surface rule - so this
+	prints what each class is ACTUALLY told rather than trusting a grep."""
+	print("%-10s %-11s %-12s %s" % ["class", "engine", "meter", "combat log line"])
+	print("---------------------------------------------------------------------")
+	var bad := 0
+	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var ch = make_char(20, "average", klass, "Human")
+		ch.initialize_deck_collection_if_needed()
+		var monster = make_monster(20, "normal", 1.0)
+		combat_mgr.start_combat(0, ch, monster)
+		var combat = combat_mgr.active_combats[0]
+		var want: String = CombatManager.class_engine_label(klass)
+		# Read the meter label BEFORE acting, while the combat is certainly still live - a fast
+		# kill ends the combat and get_combat_display then returns nothing to check.
+		var d: Dictionary = combat_mgr.get_combat_display(0)
+		var meter := "-"
+		for key in ["momentum_label", "read_label", "focus_label"]:
+			if String(d.get(key, "")) != "":
+				meter = String(d[key])
+				break
+		# Cast whatever is ACTUALLY in hand. A fixed probe card fails most of the time - a hand
+		# is 3 cards drawn from a 5-card deck - and the first version of this audit reported
+		# seven classes as "engine not named in log" when every one of them was simply holding
+		# different cards. The harness, not the game, as usual.
+		var hand: Array = combat.get("combat_hand", []) if combat.get("combat_hand", null) is Array else []
+		if hand.is_empty():
+			print("%-10s %-11s %-12s (no hand dealt)" % [klass, want, meter])
+			combat_mgr.active_combats.erase(0)
+			bad += 1
+			continue
+		var res: Dictionary = combat_mgr.process_ability_command(0, String(hand[0]), "")
+		var line := ""
+		for m in res.get("messages", []):
+			var plain := _strip_bbcode(String(m))
+			if plain.find(want) >= 0:
+				line = plain.strip_edges()
+				break
+		# Mages deliberately get NO engine line in the log (2026-09-04): the Focus meter sits
+		# permanently beside the hand, and the owner's target is one line per action, so
+		# bookkeeping the player is already looking at does not earn one. Their engine name is
+		# carried by the meter, which IS checked. Do not "fix" this by adding a line.
+		var log_expected: bool = ch.get_class_path() != "mage"
+		if meter != want or (log_expected and line == ""):
+			bad += 1
+		# Say WHY when the log line is missing. A cast that was refused and an engine that is
+		# genuinely never named look identical in the output otherwise, and that ambiguity is
+		# how a silent detector gets mistaken for a passing one.
+		if line == "":
+			if not log_expected:
+				line = "(none by design - the meter carries it)"
+			elif not bool(res.get("success", false)):
+				line = "(cast refused: %s)" % _strip_bbcode(String(res.get("message", res.get("error", "?"))))
+			else:
+				line = "(cast ok, but no message names the engine)"
+		print("%-10s %-11s %-12s %s" % [klass, want, meter, line])
+		combat_mgr.active_combats.erase(0)
+	print("
+%s - %d of 9 classes name their engine on every surface that carries one." % ["PASS" if bad == 0 else "FAIL", 9 - bad])
+
+
+func _log_len(combat) -> int:
+	var l = combat.get("combat_log", [])
+	return (l as Array).size() if l is Array else 0
+
+
+func _log_since(combat, n: int) -> Array:
+	var l = combat.get("combat_log", [])
+	if not (l is Array):
+		return []
+	var arr: Array = l
+	return arr.slice(mini(n, arr.size()), arr.size())
+
+
+func _strip_bbcode(t: String) -> String:
+	var rx := RegEx.new()
+	rx.compile("\\[/?[^\\]]*\\]")
+	return rx.sub(t, "", true)

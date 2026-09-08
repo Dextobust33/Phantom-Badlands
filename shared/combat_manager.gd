@@ -4006,7 +4006,16 @@ const ORACLE_LETHAL_PER: int = 5                 # +5% a stack, so a full bank i
 const CLASS_ENGINE_LABEL := {
 	"Fighter": "Momentum", "Barbarian": "Rage", "Paladin": "Conviction",
 	"Wizard": "Focus", "Sorcerer": "Volatility", "Sage": "Insight",
-	"Grifter": "Read", "Ranger": "Read", "Ninja": "Read",
+	# 2026-09-07 — the three Tricksters used to ALL read "Read", while the warriors and mages
+	# each got their own name. That was visibly wrong on the character-creation screen, where a
+	# new player compares the three side by side, and it was wrong about the game: the finisher
+	# fork gave these three DIFFERENT SHAPES. The Grifter banks and cashes (Momentum-shaped), the
+	# Ranger ramps and discharges (Focus-shaped), and only the Ninja actually gambles on a
+	# bypass (Read-shaped). One noun for three mechanics.
+	#   Grifter  Leverage  — what a con accumulates over a mark, then spends
+	#   Ranger   Aim       — the passive ramp; pairs with Steady Hand
+	#   Ninja    Read      — keeps the SHAPE name, as Fighter/Momentum and Wizard/Focus do
+	"Grifter": "Leverage", "Ranger": "Aim", "Ninja": "Read",
 }
 
 static func class_engine_label(class_type: String) -> String:
@@ -6114,10 +6123,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	# not getting extra read from what I'm seeing." It WAS firing; the log just printed the
 	# same "◉ Read n/m" either way, so a 50% passive was invisible unless you tracked the
 	# number across turns. A passive the player cannot observe may as well not exist.
+	# 2026-09-07 - and call it by THIS class's name. Grifter banks Leverage, Ranger builds Aim,
+	# only the Ninja reads. One noun for three mechanics was the state before the fork.
+	var _eng_lbl: String = class_engine_label(String(character.class_type))
 	if _long_con_proc:
-		messages.append("[color=#C8A0FF]LONG CON![/color] [color=#7FD8C8]◉ Read %d/%d (+2)[/color]" % [_newread, COMBO_MAX])
+		messages.append("[color=#C8A0FF]LONG CON![/color] [color=#7FD8C8]◉ %s %d/%d (+2)[/color]" % [_eng_lbl, _newread, COMBO_MAX])
 	else:
-		messages.append("[color=#7FD8C8]◉ Read %d/%d[/color]" % [_newread, COMBO_MAX])
+		messages.append("[color=#7FD8C8]◉ %s %d/%d[/color]" % [_eng_lbl, _newread, COMBO_MAX])
 
 	match ability_name:
 		"analyze":
@@ -7012,7 +7024,8 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 						% class_engine_label(String(character.class_type)))
 				"trickster":
 					combat["combo"] = mini(COMBO_MAX, int(combat.get("combo", 0)) + 1)
-					result.messages.append("[color=#7FD8C8]Building: +1 Read.[/color]")
+					result.messages.append("[color=#7FD8C8]Building: +1 %s.[/color]"
+						% class_engine_label(String(character.class_type)))
 				"mage":
 					combat["focus"] = mini(FOCUS_MAX, int(combat.get("focus", 0)) + 1)
 					result.messages.append("[color=#5AC8FF]Building: +1 Focus.[/color]")
@@ -7239,7 +7252,8 @@ func _feed_class_engine(combat: Dictionary, character, amount: int, result: Dict
 				% [label, amount, class_engine_label(String(character.class_type))])
 		"trickster":
 			combat["combo"] = mini(COMBO_MAX, int(combat.get("combo", 0)) + amount)
-			result.messages.append("[color=#7FD8C8]%s: +%d Read.[/color]" % [label, amount])
+			result.messages.append("[color=#7FD8C8]%s: +%d %s.[/color]"
+				% [label, amount, class_engine_label(String(character.class_type))])
 		"mage":
 			combat["focus"] = mini(FOCUS_MAX, int(combat.get("focus", 0)) + amount)
 			result.messages.append("[color=#5AC8FF]%s: +%d Focus.[/color]" % [label, amount])
@@ -10429,6 +10443,10 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"read": int(combat.get("combo", 0)),  # v0.9.698 Trickster Read (was Combo)
 		"read_max": COMBO_MAX,
 		"is_trickster_read": character.get_class_path() == "trickster",
+		# Sent for the same reason as momentum_label / focus_label. This was the ONE engine of the
+		# three with no label in the payload, which is why the client hardcoded "Read" for all
+		# three Tricksters and the fork had nowhere to land.
+		"read_label": class_engine_label(String(character.class_type)),
 		# Live Assassinate % so players can decide when to spring it (single source: helper).
 		"assassinate_chance": (assassinate_chance(character, combat.monster, combat) if (character.get_class_path() == "trickster" and combat.has("monster")) else 0),
 		"focus": int(combat.get("focus", 0)),  # v0.9.697 Mage Focus

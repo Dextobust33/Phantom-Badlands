@@ -3315,6 +3315,11 @@ var _momentum_finisher_name: String = "Devastate"
 # A character is either a Warrior or a Trickster, never both, so the two engines
 # never contend for the meter.
 var _combo: int = 0  # v0.9.698 — repurposed as "Read" (Trickster Assassinate engine)
+# 2026-09-07 — what THIS Trickster calls its engine: Leverage (Grifter) / Aim (Ranger) /
+# Read (Ninja). Server-supplied, exactly like the warrior and mage meter labels. The panel used
+# to print "Read" for all three because `update_read` was the only one of the three meter
+# functions without a label parameter — so the fork had nowhere to land.
+var _engine_label_text: String = "Read"
 var _combo_max: int = 5
 var _combo_active: bool = false
 var _assassinate_chance: int = 0  # live Assassinate % for the Read meter
@@ -3352,7 +3357,7 @@ func update_momentum(cur: int, mx: int, is_warrior: bool, label: String = "Momen
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
-func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool) -> void:
+func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool, label: String = "Read") -> void:
 	"""v0.9.698 — Trickster Read meter (teal ◉). Every Trickster ability builds Read,
 	which raises your Assassinate chance. Shows the LIVE Assassinate % so you know when to
 	spring it. Drives the Gambit label + the '+◉ Read' builder badges in _refresh_hand."""
@@ -3374,7 +3379,8 @@ func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool)
 		pips += "[color=#7FD8C8]◉[/color]" if i < cur else "[color=#33463F]○[/color]"
 	var oc_color := "#7AE07A" if assassinate_chance >= 70 else ("#7FD8C8" if assassinate_chance >= 40 else "#C89A5A")
 	var tag := "[color=%s]Assassinate %d%%[/color]" % [oc_color, assassinate_chance]
-	_momentum_label.text = "[color=#7FD8C8]◉ Read[/color]\n%s\n%s" % [pips, tag]
+	_engine_label_text = label
+	_momentum_label.text = "[color=#7FD8C8]◉ %s[/color]\n%s\n%s" % [label, pips, tag]
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
@@ -4476,7 +4482,7 @@ func _refresh_hand() -> void:
 					_pips = ""
 					for _i in range(mini(_rg, 4)):
 						_pips += "◉"
-				effect_lbl.text = ("+%s Read" % _pips) if _e2 == "" else "+%s  %s" % [_pips, _e2]
+				effect_lbl.text = ("+%s %s" % [_pips, _engine_label_text]) if _e2 == "" else "+%s  %s" % [_pips, _e2]
 				effect_lbl.add_theme_color_override("font_color", Color("#7FD8C8"))
 			elif _focus_active and _arch == "mage" and card_name != "meteor":
 				var _e3 := effect_lbl.text

@@ -2126,6 +2126,13 @@ func _race_passive_line(race_name: String) -> String:
 [color=%s]Passive - %s:[/color] %s" % [
 		String(p.get("color", "#FFD700")), String(p.get("name", "")), String(p.get("description", ""))]
 
+func _my_engine_label() -> String:
+	"""What MY class calls its engine — Momentum / Rage / Conviction, Focus / Volatility /
+	Insight, Leverage / Aim / Read. Card text and help pages used to say "Read" flat, which was
+	right for one Trickster in three."""
+	return String(CombatManagerScript.class_engine_label(String(character_data.get("class_type", ""))))
+
+
 func _class_engine_and_deck_line(cls: String) -> String:
 	"""The two things character creation never said, both read live from the game.
 
@@ -2195,9 +2202,12 @@ const CLASS_DESCRIPTIONS = {
 # 3 classes plus new-player-facing pitch copy. Class order within each path must
 # match the ClassOption dropdown so the confirm handler reads the right class.
 const ARCHETYPE_DATA = [
-	{"key": "Warrior", "pitch": "Tough. Hits hard up close.", "resource": "Stamina", "beginner": true, "classes": ["Fighter", "Barbarian", "Paladin"]},
-	{"key": "Mage", "pitch": "Ranged spells, big damage, fragile.", "resource": "Mana", "beginner": false, "classes": ["Wizard", "Sorcerer", "Sage"]},
-	{"key": "Trickster", "pitch": "Outwit, evade, or strike critically.", "resource": "Energy", "beginner": false, "classes": ["Grifter", "Ranger", "Ninja"]},
+	# 2026-09-07 — the Trickster pitch still sold OUTSMART ("outwit... strike critically"), an
+	# ability retired on 2026-09-05. All three now describe the loop each path actually plays,
+	# since that is what the engine work made the real difference between them.
+	{"key": "Warrior", "pitch": "Tough up close. Bank power, then spend it.", "resource": "Stamina", "beginner": true, "classes": ["Fighter", "Barbarian", "Paladin"]},
+	{"key": "Mage", "pitch": "Fragile, ranged. Charge up, then unload.", "resource": "Mana", "beginner": false, "classes": ["Wizard", "Sorcerer", "Sage"]},
+	{"key": "Trickster", "pitch": "Buy turns, set up the kill, take it.", "resource": "Energy", "beginner": false, "classes": ["Grifter", "Ranger", "Ninja"]},
 ]
 
 # Plain-text one-liners for the class buttons (Button can't render BBCode).
@@ -19691,7 +19701,9 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"ambush": return "WITS-scaled damage, and it is the surprise strike: +25% crit chance on top of your own. Variable cost 9-30 energy — damage scales with spend."
 		"vanish": return "Go invisible — your next damaging action is a guaranteed crit. Skips enemy turn."
 		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
-		"perfect_heist": return "Instant-win attempt. 15% base, +5% per Read, plus your Wits against the enemy's Intelligence (capped) and -2% per level it is above you. Each Read raises the ceiling too — 60% cold, 85% at full Read. On success: instant kill + 1.25× XP. On failure: the enemy counter-attacks. Variable cost 15-50 energy — the success CHANCE scales with spend, so a floor cast is almost always a miss."
+		"perfect_heist":
+			var _eng := _my_engine_label()
+			return "Instant-win attempt. 15% base, +5% per " + _eng + ", plus your Wits against the enemy's Intelligence (capped) and -2% per level it is above you. Each " + _eng + " raises the ceiling too — 60% cold, 85% at full. On success: instant kill + 1.25× XP. On failure: the enemy counter-attacks. Variable cost 15-50 energy — the success CHANCE scales with spend, so a floor cast is almost always a miss."
 		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total. Variable cost 8-25 energy — debuff magnitude scales with spend; 50% stack cap unchanged."
 		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: 15% of your max HP as self-damage. Bonus loot if the hit kills. Variable cost 10-35 energy — both hit damage AND miss self-damage scale with spend; success chance stays constant."
 		"forethought": return "Pay 1 of your primary resource to skip the monster's turn. The hand mulligan is now automatic — every player action draws a fresh hand, so Forethought is purely a tempo / safety card. Universal."
@@ -19887,7 +19899,7 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"vanish":
 			return "[b]Phantom Strike[/b]: your next damaging action is a [b]guaranteed critical hit[/b] — ability or attack. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"gambit":
-			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ Read[/color]." % _desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier")
+			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ %s[/color]." % [_desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier"), _my_engine_label()]
 		"analyze":
 			return "Reveal the enemy's stats and your Assassinate odds, and gain [b]+10% damage[/b] for the rest of the fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"distract":
@@ -33071,15 +33083,15 @@ func show_help():
 [b][color=#FFD700]══ GETTING STARTED ══[/color][/b]
 [color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage. [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)
   Start hunting immediately. Use Power Strike for damage. War Cry when hurt. Tank and outlast enemies.
-  [color=#C0C0C0]Fighter[/color]=safe, [color=#8B0000]Barbarian[/color]=risky/high dmg, [color=#FFD700]Paladin[/color]=self-healing. [color=#808080]Races: Dwarf(survive), Orc(damage), Ogre(healing)[/color]
+  [color=#C0C0C0]Fighter[/color]=Momentum (bank, guard, burst), [color=#8B0000]Barbarian[/color]=Rage (ramp, no guard), [color=#FFD700]Paladin[/color]=Conviction (built by blows you TAKE). [color=#808080]Races: Dwarf(survive), Orc(damage), Ogre(healing)[/color]
 
 [color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management. [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)
   Use Magic Bolt to kill - costs mana but deals INT-scaled damage. Meditate to recover HP+mana.
   Mages regen 2% mana/round (Sage 3%). [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
 
 [color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options. [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)
-  Build [color=#7FD8C8]Read[/color] with your cards, then Assassinate for the instant kill. Analyze to learn stats. Flee if outmatched.
-  [color=#2F4F4F]Grifter[/color]=stalls & escapes, [color=#228B22]Ranger[/color]=steady, [color=#191970]Ninja[/color]=crits. [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
+  Build your engine ([color=#7FD8C8]Leverage / Aim / Read[/color]) with your cards, then spend it on your finisher. Analyze to learn stats. Flee if outmatched.
+  [color=#2F4F4F]Grifter[/color]=Leverage (stall, bank, cash out), [color=#228B22]Ranger[/color]=Aim (a steady damage ramp), [color=#191970]Ninja[/color]=Read (gamble on a kill that skips the health bar). [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
 
 [b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
 [color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2% attack damage per point[/color] | Warrior ability damage | Stamina pool
@@ -33151,7 +33163,7 @@ func show_help():
   [color=#FFFFFF]Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
   [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next damaging action auto-crits
   [color=#FFFFFF]Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
-  [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]Read[/color], ±WIT (capped) vs enemy INT, -2%/level above you. Each Read also raises the ceiling: 60% cold, 85% at full Read. Fail = free enemy attack
+  [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]engine stack[/color] (Leverage / Aim / Read), ±WIT (capped) vs enemy INT, -2%/level above you. Each stack also raises the ceiling: 60% cold, 85% at full. Fail = free enemy attack
 
 [b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
 [color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
@@ -33495,7 +33507,7 @@ func search_help(search_term: String):
 		{
 			"title": "GETTING STARTED",
 			"keywords": ["start", "starting", "begin", "beginner", "new", "player", "how", "play", "guide", "tutorial", "first", "tips", "advice", "build", "focus"],
-			"content": "[color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage.\n  [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)\n  Start hunting immediately. Use Power Strike for damage. Tank and outlast enemies.\n  [color=#C0C0C0]Fighter[/color]=safe, [color=#8B0000]Barbarian[/color]=risky/high dmg, [color=#FFD700]Paladin[/color]=self-healing\n\n[color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management.\n  [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)\n  Use Magic Bolt to kill. Meditate to recover HP+mana.\n  [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient\n\n[color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options.\n  [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)\n  Build [color=#7FD8C8]Read[/color] with your cards, then Assassinate for the instant kill. Analyze to learn stats. Flee if outmatched.\n  [color=#2F4F4F]Grifter[/color]=stalls & escapes, [color=#228B22]Ranger[/color]=steady, [color=#191970]Ninja[/color]=crits"
+			"content": "[color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage.\n  [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)\n  Start hunting immediately. Use Power Strike for damage. Tank and outlast enemies.\n  [color=#C0C0C0]Fighter[/color]=Momentum (bank, guard, burst), [color=#8B0000]Barbarian[/color]=Rage (ramp, no guard), [color=#FFD700]Paladin[/color]=Conviction (built by blows you TAKE)\n\n[color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management.\n  [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)\n  Use Magic Bolt to kill. Meditate to recover HP+mana.\n  [color=#4169E1]Wizard[/color]=Focus (each spell ramps the next), [color=#9400D3]Sorcerer[/color]=Volatility (banked power is also your guard), [color=#20B2AA]Oracle[/color]=Insight (built by rounds you go unhurt)\n\n[color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options.\n  [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)\n  Build your engine ([color=#7FD8C8]Leverage / Aim / Read[/color]) with your cards, then spend it on your finisher. Analyze to learn stats. Flee if outmatched.\n  [color=#2F4F4F]Grifter[/color]=Leverage (stall, bank, cash out), [color=#228B22]Ranger[/color]=Aim (a steady damage ramp), [color=#191970]Ninja[/color]=Read (gamble on a kill that skips the health bar)"
 		},
 		{
 			"title": "CONTROLS & BASICS",
@@ -33604,10 +33616,10 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 			"title": "ASSASSINATE",
 			"keywords": ["assassinate", "assassination", "heist", "trick", "instant", "win", "read", "finisher"],
 			"content": "[color=#FFA500]Assassinate[/color] — find the opening and end a fight in one strike, bypassing the enemy's HP entirely. The [b]Trickster's signature[/b], and its way of killing things nothing else at its level can touch.
-[color=#7FD8C8]◉ Read is the engine.[/color] Every Trickster card you play adds a stack, and each stack adds [b]+5% to the strike[/b]. At 15% base a cold opener is a bad bet; at full Read it is the best button in the game.
-[color=#C8A0FF]Grifters[/color] build Read fastest — their denial cards (Analyze, Distract, Sabotage) have a [b]50% chance to build double[/b], and the log says [b]LONG CON![/b] when it fires.
-[color=#AAAAAA]Wits above the enemy's Intelligence helps (capped, so it cannot replace Read). Higher-level foes cost you 2% per level. Each Read raises the ceiling as well as the odds — 60% with none, 85% at full Read — so every stack pays.[/color]
-[color=#FF4444]A miss costs you the turn and takes a free hit.[/color] Read survives, so you can line the shot up again.
+[color=#7FD8C8]◉ Your engine drives it.[/color] Every Trickster card you play adds a stack — the Grifter banks [b]Leverage[/b], the Ranger builds [b]Aim[/b], the Ninja takes a [b]Read[/b] — and each stack adds [b]+5% to the strike[/b]. At 15% base a cold opener is a bad bet; at a full bar it is the best button in the game.
+[color=#C8A0FF]Grifters[/color] build fastest — their denial cards (Size Them Up, Distract, Sabotage) have a [b]50% chance to build double Leverage[/b], and the log says [b]LONG CON![/b] when it fires.
+[color=#AAAAAA]Wits above the enemy's Intelligence helps (capped, so it cannot replace stacks). Higher-level foes cost you 2% per level. Each stack raises the ceiling as well as the odds — 60% with none, 85% at a full bar — so every one pays.[/color]
+[color=#FF4444]A miss costs you the turn and takes a free hit.[/color] Your stacks survive, so you can line the shot up again.
 [color=#808080]Replaced Outsmart, which did the same job worse — measured, it contributed almost nothing while Assassinate carried the class.[/color]"
 		},
 		{
@@ -35392,7 +35404,8 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 		combat_scene_panel.update_momentum(int(state.get("momentum", 0)), int(state.get("momentum_max", 5)), true,
 			String(state.get("momentum_label", "Momentum")), String(state.get("momentum_finisher", "Devastate")))
 	elif is_trickster and combat_scene_panel.has_method("update_read"):
-		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)), int(state.get("assassinate_chance", 0)), true)
+		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)),
+			int(state.get("assassinate_chance", 0)), true, String(state.get("read_label", "Read")))
 	elif is_mage and combat_scene_panel.has_method("update_focus"):
 		combat_scene_panel.update_focus(int(state.get("focus", 0)), int(state.get("focus_max", 5)), true,
 			String(state.get("focus_label", "Focus")), String(state.get("focus_note", "")))
