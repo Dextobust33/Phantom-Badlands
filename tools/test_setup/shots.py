@@ -51,7 +51,18 @@ def grant_admin():
 
 
 def main():
-    scenes = sys.argv[1:] or DEFAULT_SCENES
+    # --player=N picks which of scen.PLAYERS logs in (default 0, a Wizard). 2026-09-08: the
+    # monster's debuff chips cannot be photographed with a class that applies none, so a
+    # Trickster (--player=3, a Ranger) is needed to verify that half of the status strip.
+    argv = sys.argv[1:]
+    player_idx = 0
+    rest = []
+    for a in argv:
+        if a.startswith("--player="):
+            player_idx = int(a.split("=", 1)[1])
+        else:
+            rest.append(a)
+    scenes = rest or DEFAULT_SCENES
     if runner.live_instances():
         print("REFUSING: Godot is already running. Close it first.")
         return 1
@@ -64,7 +75,7 @@ def main():
     if scen.main() != 0:
         return 1
     print("[2/4] credentials + admin")
-    runner.set_dev_passwords(scen.PLAYERS[:1])   # only PLAYERS[0] logs in to capture
+    runner.set_dev_passwords(scen.PLAYERS)   # any of them may be chosen with --player=N
     grant_admin()
 
     print("[3/4] server")
@@ -76,7 +87,7 @@ def main():
         return 1
 
     print("[4/4] client capturing: %s" % ", ".join(scenes))
-    user, _acc, cname, _fn = scen.PLAYERS[0]
+    user, _acc, cname, _fn = scen.PLAYERS[player_idx]
     client = subprocess.Popen([
         scen.GODOT, "--path", scen.PROJECT, "--screen", "1", "--windowed",
         "--resolution", SHOT_RES, "client/client.tscn", "--",

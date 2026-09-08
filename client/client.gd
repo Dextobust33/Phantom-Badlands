@@ -5803,6 +5803,19 @@ func _dev_run_shots() -> void:
 				# question it could not answer. The monster has to outlive the script.
 				send_to_server({"type": "gm_spawnmonster", "monster_name": "Wight", "level": 30})
 				await get_tree().create_timer(3.0).timeout
+				# 2026-09-08 - cast a DEBUFF if the hand holds one, so the monster's status chips
+				# are actually on screen. A capture of an undebuffed monster cannot show whether
+				# the monster's chip row renders in the right place, which is the question the
+				# shot is usually being taken to answer.
+				var _debuffs := ["analyze", "sabotage", "distract", "frost_nova", "paralyze"]
+				var _cast_debuff := ""
+				for _c in combat_hand:
+					if String(_c) in _debuffs:
+						_cast_debuff = String(_c)
+						break
+				if _cast_debuff != "" and in_combat:
+					send_to_server({"type": "combat", "command": _cast_debuff})
+					await get_tree().create_timer(2.6).timeout
 				for _i in range(2):
 					if not in_combat:
 						break     # it died anyway; do not keep swinging at nothing
