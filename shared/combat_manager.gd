@@ -10447,6 +10447,8 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# three with no label in the payload, which is why the client hardcoded "Read" for all
 		# three Tricksters and the fork had nowhere to land.
 		"read_label": class_engine_label(String(character.class_type)),
+		# What the stacks buy right now. Only the Ninja's finisher is a roll - see _read_note.
+		"read_note": (_read_note(character, combat) if character.get_class_path() == "trickster" else ""),
 		# Live Assassinate % so players can decide when to spring it (single source: helper).
 		"assassinate_chance": (assassinate_chance(character, combat.monster, combat) if (character.get_class_path() == "trickster" and combat.has("monster")) else 0),
 		"focus": int(combat.get("focus", 0)),  # v0.9.697 Mage Focus
@@ -13118,6 +13120,45 @@ func get_party_combat_state(leader_id: int) -> Dictionary:
 		"members": members_info,
 		"current_turn_peer_id": _get_current_turn_peer_id(combat)
 	}
+
+
+func _read_note(character, combat: Dictionary) -> String:
+	"""What the Trickster's banked stacks are BUYING right now — the twin of `_engine_note`.
+
+	2026-09-07, owner on a Ranger: *"to the left of my cards it says Aim and has little circles.
+	Under that it says Assassinate."* The meter's tag was a hardcoded "Assassinate N%" for all
+	three Tricksters, which is wrong twice over. Only the NINJA's finisher is a roll; the
+	Grifter CASHES its Leverage and the Ranger DISCHARGES its Aim, both guaranteed damage with
+	no chance involved. So two classes in three were shown a success percentage for a card that
+	cannot fail, under a name they do not have.
+
+	Lives server-side for the same reason `_engine_note` does: these are class constants, and a
+	client-side copy is what drifted last time."""
+	var n: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+	match String(character.class_type):
+		"Grifter":
+			if n <= 0:
+				return "read it first"
+			return "%s ~%s" % [_ability_display_name(character, "perfect_heist"),
+				_short_num(int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n))))]
+		"Ranger":
+			if n <= 0:
+				return "steady the shot"
+			return "%s ~%s" % [_ability_display_name(character, "perfect_heist"),
+				_short_num(int(_ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))))]
+		_:
+			var mon = combat.get("monster", null)
+			var pct: int = assassinate_chance(character, mon, combat) if mon is Dictionary else 0
+			return "%s %d%%" % [_ability_display_name(character, "perfect_heist"), pct]
+
+
+func _short_num(v: int) -> String:
+	"""Compact damage for the meter tag, which has one short line to work with."""
+	if v >= 1000000:
+		return "%.1fM" % (float(v) / 1000000.0)
+	if v >= 1000:
+		return "%.1fk" % (float(v) / 1000.0)
+	return str(v)
 
 
 func _engine_note(character, combat: Dictionary) -> String:

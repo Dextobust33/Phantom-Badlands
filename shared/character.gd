@@ -775,29 +775,48 @@ static func stat_description_for(stat: String, class_type: String) -> String:
 		"Fighter", "Barbarian", "Paladin": path = "warrior"
 		"Wizard", "Sorcerer", "Sage": path = "mage"
 		"Grifter", "Ranger", "Ninja": path = "trickster"
+	# 2026-09-07 — the POOL clause is only stated when it is the pool this class actually SPENDS.
+	# Owner, on a Ranger: *"a couple of the stats mentioned Mana Pool. I don't have mana as a
+	# Ranger."* Correct. Every character carries all three pools (mana = INT×3 + WIS×1.5,
+	# stamina = STR + CON, energy = (WITS + DEX)×0.75) but a class only ever spends ONE of them,
+	# so naming the other two is at best noise on the screen where a player commits a level-up
+	# point, and at worst reads as a reason to take the stat.
+	var pool := ""
+	match path:
+		"warrior": pool = "stamina"
+		"mage": pool = "mana"
+		"trickster": pool = "energy"
 	match stat:
 		"strength":
 			if path == "warrior":
 				return "YOUR ability damage. Attack power. Stamina pool."
-			return "Attack power on basic attacks. Stamina pool. Not your ability damage."
+			return "Attack power on basic attacks. Not your ability damage."
 		"constitution":
-			return "Max HP, defense, and damage reduction. Stamina pool."
+			if pool == "stamina":
+				return "Max HP, defense, and damage reduction. Stamina pool."
+			return "Max HP, defense, and damage reduction."
 		"dexterity":
+			var dex_pool := " Energy pool." if pool == "energy" else ""
 			if class_type == "Ninja":
-				return "Dodge (your main defence), crit, hit chance, flee. Energy pool."
-			return "Hit chance, crit, dodge, initiative, flee. Energy pool."
+				return "Dodge (your main defence), crit, hit chance, flee." + dex_pool
+			return "Hit chance, crit, dodge, initiative, flee." + dex_pool
 		"intelligence":
 			if path == "mage":
 				return "YOUR ability damage. Mana pool."
-			return "Mana pool only. Not your ability damage."
+			return "Nothing for your class — not your ability damage, and mana is not what you spend."
 		"wisdom":
 			if path == "mage":
 				return "Counts HALF toward your ability damage. Mana pool. Resists enemy abilities."
-			return "Resists enemy abilities (curse, drain). Mana pool."
+			return "Resists enemy abilities (curse, drain)."
 		"wits":
 			if path == "trickster":
-				return "YOUR ability damage. Assassinate odds. Dodge. Energy pool."
-			return "Energy pool. No damage contribution for your class."
+				# Only the NINJA's finisher is a roll. The Grifter cashes Leverage and the Ranger
+				# discharges Aim, both GUARANTEED — so "Assassinate odds" was selling two classes
+				# a chance that does not exist, under a card name they do not have.
+				if class_type == "Ninja":
+					return "YOUR ability damage. Assassinate odds. Dodge. Energy pool."
+				return "YOUR ability damage. Dodge. Energy pool."
+			return "No damage contribution for your class."
 	return ""
 
 static func class_display_name(class_type: String) -> String:

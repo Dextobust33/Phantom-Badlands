@@ -29034,6 +29034,36 @@ func handle_hotzone_confirm(peer_id: int, message: Dictionary):
 		else:
 			trigger_encounter(peer_id)
 
+func _dungeon_expected_levels(dungeon_type: String, instance_id: String, player_level: int) -> Dictionary:
+	"""The levels a player will ACTUALLY meet: {entry, deepest}.
+
+	One helper, because the level a dungeon advertises has now been wrong on two separate
+	surfaces for the same reason — each read a different field and each was fixed alone. The
+	monster level is `dungeon_level x (1 + floor_num x FLOOR_DIFFICULTY_PER_FLOOR)`, and
+	`dungeon_level` belongs to the INSTANCE, not to the dungeon type."""
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		return {"entry": player_level, "deepest": player_level}
+	var lvl: int = 0
+	if instance_id != "" and active_dungeons.has(instance_id):
+		# A world dungeon already exists and already has its rolled level.
+		lvl = int(active_dungeons[instance_id].get("dungeon_level", 0))
+	if lvl <= 0:
+		# A personal instance has not been made yet; it is created at the player's own level,
+		# clamped into the sub-tier band. Mirror that so the warning matches what follows.
+		var _sub: int = int(dungeon_data.get("sub_tier", 1))
+		if instance_id != "" and active_dungeons.has(instance_id):
+			_sub = int(active_dungeons[instance_id].get("sub_tier", _sub))
+		var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(int(dungeon_data.get("tier", 1)), _sub)
+		lvl = clampi(player_level, int(sub_range.min_level), int(sub_range.max_level))
+	var floors: int = maxi(1, int(dungeon_data.get("floors", 1)))
+	var per: float = DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR
+	return {
+		"entry": maxi(1, int(float(lvl) * (1.0 + 1.0 * per))),
+		"deepest": maxi(1, int(float(lvl) * (1.0 + float(floors) * per))),
+	}
+
+
 func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	"""Handle player entering a dungeon"""
 	if not characters.has(peer_id):
@@ -29077,9 +29107,29 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		var warning_text = "[color=#FF6666]WARNING: There is NO free exit from dungeons![/color]\n"
 		warning_text += "[color=#FFAA00]To leave early, use an Escape Scroll (every dungeon holds at least one — search its treasures). You can also exit by defeating the boss.[/color]\n"
 		warning_text += "[color=#808080]The longer you linger on a floor, the more monsters wander in — keep moving forward.[/color]\n"
-		if character.level < dungeon_data.min_level:
-			var level_diff = dungeon_data.min_level - character.level
-			warning_text += "\n[color=#FF4444]You are also %d levels below the recommended level %d![/color]\n" % [level_diff, dungeon_data.min_level]
+		# 2026-09-07 — report the level of the DUNGEON YOU ARE ABOUT TO ENTER, not the level of
+		# the template it was built from. Owner: *"I'm exploring a 1-1 wolf dungeon and it said
+		# the recommended Level was 3. The wolves in here are level 6 though on the first floor."*
+		#
+		# `dungeon_data.min_level` is a static number on the dungeon TYPE. The monsters are sized
+		# from the INSTANCE's `dungeon_level` — rolled inside the sub-tier band for a world
+		# dungeon, or clamped to the player's own level for a personal one — and then scaled again
+		# per floor (`monster_level = dungeon_level x (1 + floor x 0.07)`). Two unrelated numbers,
+		# one of them shown as if it described the other.
+		#
+		# This is the same defect that was fixed for the dungeon LIST on 2026-08-27 ("a T1-5
+		# dungeon read 6-7 but had level-9 monsters on lower floors"). The entry warning was
+		# missed then because it reads a different field, which is the whole reason the fix
+		# belongs in a shared helper rather than in each surface.
+		var _lvl_info: Dictionary = _dungeon_expected_levels(dungeon_type, provided_instance_id, character.level)
+		var _entry_level: int = int(_lvl_info.get("entry", dungeon_data.min_level))
+		var _deepest: int = int(_lvl_info.get("deepest", _entry_level))
+		if _deepest > _entry_level:
+			warning_text += "\n[color=#FFAA00]Monsters here: level %d on the first floor, up to %d at the bottom.[/color]\n" % [_entry_level, _deepest]
+		else:
+			warning_text += "\n[color=#FFAA00]Monsters here: level %d.[/color]\n" % _entry_level
+		if character.level < _entry_level:
+			warning_text += "[color=#FF4444]That is %d level(s) above you on the very first floor.[/color]\n" % (_entry_level - character.level)
 		warning_text += "\nAre you sure you want to enter?"
 		send_to_peer(peer_id, {
 			"type": "dungeon_level_warning",

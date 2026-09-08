@@ -2130,7 +2130,26 @@ func _my_engine_label() -> String:
 	"""What MY class calls its engine — Momentum / Rage / Conviction, Focus / Volatility /
 	Insight, Leverage / Aim / Read. Card text and help pages used to say "Read" flat, which was
 	right for one Trickster in three."""
-	return String(CombatManagerScript.class_engine_label(String(character_data.get("class_type", ""))))
+	# The client's character_data key is "class", NOT "class_type" — Character.to_dict serialises
+	# it as `"class": class_type`. Written as "class_type" in v0.9.757 this silently returned ""
+	# and CLASS_ENGINE_LABEL's default, so every Trickster's card text read "builds ◉ Momentum".
+	# A default that is a real value cannot be distinguished from a hit; the lookup below fails
+	# loudly instead.
+	return _my_class_engine_label_or_default()
+
+
+func _engine_word() -> String:
+	"""The engine name for prose, with a neutral fallback when character_data is not loaded yet
+	(the card hover can be built before the first character_update lands)."""
+	var l := _my_engine_label()
+	return l if l != "" else "your engine"
+
+
+func _my_class_engine_label_or_default() -> String:
+	var cls := String(character_data.get("class", ""))
+	if cls == "":
+		return ""
+	return String(CombatManagerScript.class_engine_label(cls))
 
 
 func _class_engine_and_deck_line(cls: String) -> String:
@@ -10895,7 +10914,16 @@ func _theme_loot_payload(v):
 	var out: Dictionary = {}
 	for k in v.keys():
 		out[k] = _theme_loot_payload(v[k])
-	var it := String(out.get("item_type", ""))
+	# 2026-09-07 — resolve BOTH type fields. Owner: *"I just got a Stalwart Wood Shield from
+	# battle... Upon opening my inventory its a Stalwart Wood Quiver."* Same item, two names, and
+	# the victory screen is where a player decides whether the drop was worth anything.
+	#
+	# The inventory themes names per class (a Ranger's shield IS a Quiver, a Wizard's a Focus);
+	# this payload themer only read `item_type`, so any drop carrying its type under `type`
+	# resolved to "" and went out with the untouched base name. Pitfall #12 in CLAUDE.md, which
+	# states the fix as `item.get("item_type", item.get("type", ""))` — written before this call
+	# site existed, and not applied here.
+	var it := String(out.get("item_type", out.get("type", "")))
 	var nm := String(out.get("name", ""))
 	if it != "" and nm != "":
 		out["name"] = _get_themed_item_name({"name": nm, "type": it}, character_data.get("class", ""))
@@ -19702,7 +19730,12 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"vanish": return "Go invisible — your next damaging action is a guaranteed crit. Skips enemy turn."
 		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
 		"perfect_heist":
-			var _eng := _my_engine_label()
+			var _eng := _engine_word()
+			match String(character_data.get("class", "")):
+				"Grifter":
+					return "Cash the con. GUARANTEED damage scaling with the Leverage you spend (about 16% of a health bar per stack, so a full bank is over a bar). Spends every stack. Cannot be cast with none. Variable cost 15-50 energy."
+				"Ranger":
+					return "Discharge the shot. GUARANTEED damage scaling with the Aim you release (about 11% of a health bar per stack). Spends every stack. Cannot be cast with none. Variable cost 15-50 energy."
 			return "Instant-win attempt. 15% base, +5% per " + _eng + ", plus your Wits against the enemy's Intelligence (capped) and -2% per level it is above you. Each " + _eng + " raises the ceiling too — 60% cold, 85% at full. On success: instant kill + 1.25× XP. On failure: the enemy counter-attacks. Variable cost 15-50 energy — the success CHANCE scales with spend, so a floor cast is almost always a miss."
 		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total. Variable cost 8-25 energy — debuff magnitude scales with spend; 50% stack cap unchanged."
 		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: 15% of your max HP as self-damage. Bonus loot if the hit kills. Variable cost 10-35 energy — both hit damage AND miss self-damage scale with spend; success chance stays constant."
@@ -19899,15 +19932,27 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"vanish":
 			return "[b]Phantom Strike[/b]: your next damaging action is a [b]guaranteed critical hit[/b] — ability or attack. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"gambit":
-			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ %s[/color]." % [_desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier"), _my_engine_label()]
+			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ %s[/color]." % [_desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier"), _engine_word()]
 		"analyze":
-			return "Reveal the enemy's stats and your Assassinate odds, and gain [b]+10% damage[/b] for the rest of the fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
+			# Only the Ninja's finisher is a roll, so only the Ninja has odds worth reporting.
+			if String(character_data.get("class", "")) == "Ninja":
+				return "Reveal the enemy's stats and your Assassinate odds, and gain [b]+10% damage[/b] for the rest of the fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
+			return "Reveal the enemy's stats, and gain [b]+10% damage[/b] for the rest of the fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"distract":
 			return ("Distract the enemy for up to %s accuracy on its attacks. [color=#7FD8C8]The enemy usually loses its turn (75%%).[/color]") % _desc_num("-50%", "scales with energy spent, up to -50%")
 		"pickpocket":
 			return "Steal crafting materials from the enemy — up to [b]4×[/b] per fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"perfect_heist":
-			return "A high-risk [b]instant win[/b]: a small chance to end the fight outright with bonus XP."
+			# 2026-09-07 - three genuinely different cards share this id. Only the Ninja gambles;
+			# the Grifter cashes its Leverage and the Ranger discharges its Aim, both for
+			# GUARANTEED damage. Describing all three as "a small chance to end the fight" told
+			# two classes their reliable finisher might do nothing.
+			match String(character_data.get("class", "")):
+				"Grifter":
+					return "Cash in everything you have on it: [b]guaranteed[/b] damage that scales with the [color=#7FD8C8]◉ Leverage[/color] you spend. Needs at least one."
+				"Ranger":
+					return "Loose the steadied shot: [b]guaranteed[/b] damage that scales with the [color=#7FD8C8]◉ Aim[/color] you discharge. Needs at least one."
+			return "A high-risk [b]instant win[/b]: a chance to end the fight outright with bonus XP, rising with each [color=#7FD8C8]◉ Read[/color]."
 	# Universal / anything else: plain description as bbcode.
 	return _get_ability_description_text(ability_name)
 
@@ -35417,7 +35462,8 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 			String(state.get("momentum_label", "Momentum")), String(state.get("momentum_finisher", "Devastate")))
 	elif is_trickster and combat_scene_panel.has_method("update_read"):
 		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)),
-			int(state.get("assassinate_chance", 0)), true, String(state.get("read_label", "Read")))
+			int(state.get("assassinate_chance", 0)), true, String(state.get("read_label", "Read")),
+			String(state.get("read_note", "")))
 	elif is_mage and combat_scene_panel.has_method("update_focus"):
 		combat_scene_panel.update_focus(int(state.get("focus", 0)), int(state.get("focus_max", 5)), true,
 			String(state.get("focus_label", "Focus")), String(state.get("focus_note", "")))
@@ -42855,7 +42901,10 @@ func handle_dungeon_level_warning(message: Dictionary):
 	display_game("")
 	display_game("[color=#FFAA00]%s[/color]" % message.get("message", "This dungeon may be too dangerous!"))
 	display_game("")
-	display_game("[color=#FF6666]Recommended Level: %d[/color]" % message.min_level)
+	# 2026-09-07 - the server's `message` text now states the levels actually present, computed
+	# from the INSTANCE. `min_level` is a static field on the dungeon TYPE and described a
+	# different number entirely, so a dungeon could advertise 3 and hold level-6 monsters.
+	display_game("[color=#808080]Dungeon tier baseline: level %d[/color]" % message.min_level)
 	display_game("[color=#AAAAAA]Your Level: %d[/color]" % message.player_level)
 	display_game("")
 

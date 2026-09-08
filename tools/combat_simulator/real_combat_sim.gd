@@ -7010,7 +7010,7 @@ func run_statuschips() -> void:
 	Owner 2026-09-07: players should see their damage reduction and their buffs WITH durations.
 	Most mitigation is not a buff - CON grants it from the stat, the engines from banked stacks -
 	so none of it reached any surface."""
-	for klass in ["Fighter", "Grifter", "Ninja"]:
+	for klass in ["Fighter", "Grifter", "Ninja", "Ranger", "Wizard"]:
 		var ch = make_char(30, "average", klass, "Human")
 		ch.initialize_deck_collection_if_needed()
 		var monster = make_monster(30, "elite", 1.0)
@@ -7115,7 +7115,7 @@ func run_enginenames() -> void:
 	Ninja gambles on the bypass). Forking the label touches the meter, the combat log, the card
 	builder badges, the help pages and character creation - the seven-surface rule - so this
 	prints what each class is ACTUALLY told rather than trusting a grep."""
-	print("%-10s %-11s %-12s %s" % ["class", "engine", "meter", "combat log line"])
+	print("%-10s %-11s %-12s %-26s %s" % ["class", "engine", "meter", "meter tag (what stacks buy)", "combat log line"])
 	print("---------------------------------------------------------------------")
 	var bad := 0
 	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
@@ -7160,6 +7160,7 @@ func run_enginenames() -> void:
 		# Say WHY when the log line is missing. A cast that was refused and an engine that is
 		# genuinely never named look identical in the output otherwise, and that ambiguity is
 		# how a silent detector gets mistaken for a passing one.
+		d = combat_mgr.get_combat_display(0)
 		if line == "":
 			if not log_expected:
 				line = "(none by design - the meter carries it)"
@@ -7167,7 +7168,8 @@ func run_enginenames() -> void:
 				line = "(cast refused: %s)" % _strip_bbcode(String(res.get("message", res.get("error", "?"))))
 			else:
 				line = "(cast ok, but no message names the engine)"
-		print("%-10s %-11s %-12s %s" % [klass, want, meter, line])
+		var note := String(d.get("read_note", "")) if String(d.get("read_note", "")) != "" else String(d.get("focus_note", ""))
+		print("%-10s %-11s %-12s %-26s %s" % [klass, want, meter, note if note != "" else "-", line])
 		combat_mgr.active_combats.erase(0)
 	print("
 %s - %d of 9 classes name their engine on every surface that carries one." % ["PASS" if bad == 0 else "FAIL", 9 - bad])

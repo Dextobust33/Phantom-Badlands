@@ -3005,7 +3005,9 @@ func _build_shared_status_strip() -> HBoxContainer:
 	_status_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_status_strip.add_theme_constant_override("separation", 12)
 	_status_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_status_strip.custom_minimum_size = Vector2(0, 18)
+	# 2026-09-07 - taller and a touch larger, so the chips read as chips. At 18px/11pt the row
+	# was easy to miss entirely, which is what the owner reported.
+	_status_strip.custom_minimum_size = Vector2(0, 24)
 
 	_player_status_label = RichTextLabel.new()
 	_player_status_label.bbcode_enabled = true
@@ -3013,7 +3015,7 @@ func _build_shared_status_strip() -> HBoxContainer:
 	_player_status_label.scroll_active = false
 	_player_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_player_status_label.size_flags_stretch_ratio = 1.0
-	_player_status_label.add_theme_font_size_override("normal_font_size", 11)
+	_player_status_label.add_theme_font_size_override("normal_font_size", 12)
 	_player_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_status_strip.add_child(_player_status_label)
 
@@ -3023,7 +3025,7 @@ func _build_shared_status_strip() -> HBoxContainer:
 	_monster_status_label.scroll_active = false
 	_monster_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_monster_status_label.size_flags_stretch_ratio = 1.0
-	_monster_status_label.add_theme_font_size_override("normal_font_size", 11)
+	_monster_status_label.add_theme_font_size_override("normal_font_size", 12)
 	_monster_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_status_strip.add_child(_monster_status_label)
 
@@ -3050,13 +3052,25 @@ const _STATUS_TAGS := {
 	"cloak":      {"label": "Cl",   "color": "#9999AA"},
 	"forcefield": {"label": "FF",   "color": "#AA66FF"},
 	"vampiric":   {"label": "Vmp",  "color": "#CC33CC"},
+	# 2026-09-07 — `damage_reduction` was MISSING, so the mitigation summary fell through to the
+	# unknown-key default and rendered as a grey "Dam", three letters of the word "damage" with
+	# none of its meaning. It is the one chip that summarises everything else on the row, so it
+	# gets a full word and its own colour.
+	"damage_reduction": {"label": "Mitigation", "color": "#7AE07A"},
 }
 
 func _format_status_chip(key: String, suffix: String) -> String:
+	"""One status pill. Owner 2026-09-07: *"I see the buff panels, I guess without any color or
+	border it's just a bit hard to notice."* They were bare coloured words on a thin row, so they
+	read as part of the background text rather than as a readable state. Each now sits on a dark
+	tint of its own colour with padding, which is what makes it scan as a chip."""
 	var tag: Dictionary = _STATUS_TAGS.get(key, {"label": key.substr(0, 3).capitalize(), "color": "#CCCCCC"})
-	if suffix == "":
-		return "[color=%s]%s[/color]" % [tag.color, tag.label]
-	return "[color=%s]%s %s[/color]" % [tag.color, tag.label, suffix]
+	var fg := Color(String(tag.color))
+	# A dark, slightly translucent version of the chip's own colour: keeps the type readable at a
+	# glance while staying well behind the text.
+	var bg := Color(fg.r * 0.22, fg.g * 0.22, fg.b * 0.22, 0.85)
+	var body: String = String(tag.label) if suffix == "" else "%s %s" % [tag.label, suffix]
+	return "[bgcolor=#%s] [color=%s]%s[/color] [/bgcolor]" % [bg.to_html(true), tag.color, body]
 
 func update_combat_status(player_status: Dictionary, monster_status: Dictionary) -> void:
 	"""Refresh the status strip from the server's combat_state. Called every
@@ -3357,7 +3371,7 @@ func update_momentum(cur: int, mx: int, is_warrior: bool, label: String = "Momen
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
-func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool, label: String = "Read") -> void:
+func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool, label: String = "Read", note: String = "") -> void:
 	"""v0.9.698 — Trickster Read meter (teal ◉). Every Trickster ability builds Read,
 	which raises your Assassinate chance. Shows the LIVE Assassinate % so you know when to
 	spring it. Drives the Gambit label + the '+◉ Read' builder badges in _refresh_hand."""
@@ -3377,8 +3391,18 @@ func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool,
 	var pips := ""
 	for i in range(_combo_max):
 		pips += "[color=#7FD8C8]◉[/color]" if i < cur else "[color=#33463F]○[/color]"
+	# 2026-09-07 — the tag is SERVER-SUPPLIED now, because it is not the same KIND of number for
+	# all three Tricksters. It was a hardcoded "Assassinate N%": right for the Ninja, whose
+	# finisher is a roll, and wrong for the Grifter and Ranger, whose finishers are guaranteed
+	# damage that cannot fail. Two classes in three were being shown a success chance for a card
+	# that has none, named after a card they do not hold. The colour ramp only means anything
+	# for the odds case, so it is applied only there.
 	var oc_color := "#7AE07A" if assassinate_chance >= 70 else ("#7FD8C8" if assassinate_chance >= 40 else "#C89A5A")
-	var tag := "[color=%s]Assassinate %d%%[/color]" % [oc_color, assassinate_chance]
+	var tag := ""
+	if note != "":
+		tag = "[color=%s]%s[/color]" % [oc_color if note.ends_with("%") else "#7FD8C8", note]
+	else:
+		tag = "[color=%s]Assassinate %d%%[/color]" % [oc_color, assassinate_chance]
 	_engine_label_text = label
 	_momentum_label.text = "[color=#7FD8C8]◉ %s[/color]\n%s\n%s" % [label, pips, tag]
 	if not _hand_cells.is_empty():
@@ -4673,12 +4697,19 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 	if client_ref.has_method("_get_ability_combat_info"):
 		var ability_info = client_ref._get_ability_combat_info(card_name, path)
 		if ability_info is Dictionary and not ability_info.is_empty():
-			# 2026-09-06 — an EMPTY display means "resolve it per class" (the finisher is named
-			# differently for Ninja / Grifter / Ranger), so fall through to the resolver rather
-			# than rendering a blank card.
-			var _disp := str(ability_info.get("display", ""))
-			if _disp == "" and client_ref.has_method("_ability_display_name"):
+			# 2026-09-07 — ASK THE RESOLVER FIRST. This used to prefer the static `display` in
+			# `_get_ability_combat_info` and only fall through to `_ability_display_name` when
+			# that string was blank, which meant every forked card had to be blanked BY HAND in
+			# a second table to get its class name onto the face. `perfect_heist` was; `analyze`
+			# was not — so a Ranger's card read "Analyze" on the face and "Track" on the hover.
+			# Owner: *"I also have the Analyze card that says track only when I hover instead of
+			# all the time."* Precedence is inverted rather than the one entry patched, because
+			# the fallback direction is what made a per-class name opt-in.
+			var _disp := ""
+			if client_ref.has_method("_ability_display_name"):
 				_disp = str(client_ref._ability_display_name(card_name))
+			if _disp == "":
+				_disp = str(ability_info.get("display", ""))
 			if _disp != "":
 				info["display"] = _disp
 			info["cost"] = int(ability_info.get("cost", 0))
