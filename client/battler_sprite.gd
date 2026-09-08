@@ -90,11 +90,15 @@ static func has_overworld_by_id(id: String) -> bool:
 static func has_overworld(cls: String, char_name: String) -> bool:
 	return has_overworld_by_id(id_for(cls, char_name))
 
-static func overworld_texture_by_id(id: String, facing: String, walk_frame: int = 0) -> Texture2D:
-	"""Directional overworld sprite for an explicit id. walk_frame: 0 = stand,
-	1/2 = walk cycle. Returns null if this id has no overworld twin."""
+static func overworld_path_by_id(id: String, facing: String, walk_frame: int = 0) -> String:
+	"""The overworld sprite's PATH, for BBCode `[img]` rather than a Texture2D.
+
+	2026-09-08 - the dungeon draws the player into a text grid, so it needs a path to put inside
+	an `[img]` tag; every other consumer wanted a loaded texture. Same resolution rules and the
+	same walk-frame fallback as `overworld_texture_by_id`, which now calls this so the two cannot
+	disagree about which file a facing maps to."""
 	if id == "":
-		return null
+		return ""
 	var dir := facing
 	if not (dir in ["up", "down", "left", "right"]):
 		dir = "down"
@@ -107,6 +111,15 @@ static func overworld_texture_by_id(id: String, facing: String, walk_frame: int 
 	if not ResourceLoader.exists(p):
 		p = OVERWORLD_DIR + id + "/" + dir + "_stand.png"
 	if not ResourceLoader.exists(p):
+		return ""
+	return p
+
+
+static func overworld_texture_by_id(id: String, facing: String, walk_frame: int = 0) -> Texture2D:
+	"""Directional overworld sprite for an explicit id. walk_frame: 0 = stand,
+	1/2 = walk cycle. Returns null if this id has no overworld twin."""
+	var p := overworld_path_by_id(id, facing, walk_frame)
+	if p == "":
 		return null
 	return load(p) as Texture2D
 

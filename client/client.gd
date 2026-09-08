@@ -4877,6 +4877,11 @@ func _process(delta):
 								combat_scene_panel.hide_fx_overlay_only()
 							if combat_scene_panel.has_method("hide_victory_card"):
 								combat_scene_panel.hide_victory_card()
+					# 2026-09-08 - remember which way we are facing and advance the walk cycle.
+					# The dungeon had no facing at all because an "@" has no front; the sprite
+					# does, and the overworld art ships 4 directions x 3 frames per character.
+					_dungeon_facing = _DUNGEON_FACING_BY_DIR.get(dungeon_dir, _dungeon_facing)
+					_dungeon_walk_frame = 1 if _dungeon_walk_frame != 1 else 2
 					send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
 					last_move_time = current_time
 
@@ -36270,15 +36275,19 @@ func _on_log_meta_hover(meta) -> void:
 	monster on the floor names it and shows its art."""
 	var m := str(meta)
 	if m.begins_with("mon:"):
-		var parts := m.split(":")
-		if parts.size() >= 3:
-			_show_dungeon_monster_hover(String(parts[1]), int(parts[2]))
+		var _mid := int(m.substr(4))
+		for _mm in dungeon_monsters_data:
+			if int(_mm.get("id", -1)) != _mid:
+				continue
+			_show_dungeon_monster_hover(String(_mm.get("type", "")), int(_mm.get("level", 1)),
+				String(_mm.get("variant_name", "")))
 			return
+		return
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(m)
 
 
-func _show_dungeon_monster_hover(monster_type: String, level: int) -> void:
+func _show_dungeon_monster_hover(monster_type: String, level: int, variant_name: String = "") -> void:
 	"""Name a floor monster and show its ASCII art, without entering combat to find out.
 
 	Under permadeath, knowing WHAT is coming down a corridor is information worth having before
@@ -36299,7 +36308,12 @@ func _show_dungeon_monster_hover(monster_type: String, level: int) -> void:
 		return
 	var key: String = art_src.resolve_art_key(monster_type)
 	var art_map: Dictionary = art_src.get_art_map()
-	var txt := "[b][color=#FFD700]Level %d %s[/color][/b]" % [level, monster_type]
+	# 2026-09-08 - name the monster the player will actually FIGHT. The variant is now rolled at
+	# spawn rather than at combat start (owner's call), precisely so this line can say "Level 8
+	# Venomous Orc" and the player can decide whether to walk that way. Falls back to the base
+	# type for anything spawned before the pre-roll existed.
+	var _shown: String = variant_name if variant_name != "" else monster_type
+	var txt := "[b][color=#FFD700]Level %d %s[/color][/b]" % [level, _shown]
 	var art_val = art_map.get(key, null)
 	if art_val is Array and not (art_val as Array).is_empty():
 		var rows: Array = art_val
@@ -43902,6 +43916,20 @@ func handle_dungeon_gather_result(message: Dictionary):
 # purpose.
 const DUNGEON_TILE_FONT_SIZE := 46
 
+# Which way the player is facing underground, and where in the 3-frame walk cycle they are.
+# The overworld sprites ship `<dir>_stand` / `_walk1` / `_walk2` for up/down/left/right; the
+# overworld itself only ever used a fraction of that, and the dungeon is where the tiles are
+# large enough for it to read. Owner: *"We also have unused sprites or animations for each
+# sprite that may be able to be used in the dungeon since hopefully they will be larger and
+# easier to see than they are in the overworld."*
+const _DUNGEON_FACING_BY_DIR := {
+	"n": "up", "s": "down", "w": "left", "e": "right",
+	"north": "up", "south": "down", "west": "left", "east": "right",
+	"up": "up", "down": "down", "left": "left", "right": "right",
+}
+var _dungeon_facing: String = "down"
+var _dungeon_walk_frame: int = 0
+
 
 func _set_dungeon_side_boxes_visible(vis: bool) -> void:
 	"""Stand the Coords / Region boxes down underground and put them back on the surface.
@@ -44087,6 +44115,53 @@ func update_dungeon_map():
 	_set_dungeon_side_boxes_visible(false)
 
 
+func _dungeon_player_glyph() -> String:
+	"""You, on the dungeon floor - your actual overworld sprite rather than an "@".
+
+	Owner 2026-09-08: *"the player sprite should replace the @ while in dungeons. It should match
+	the players overworld sprite."* The dungeon tiles are drawn several times larger than the
+	overworld map, which is what makes a 16x30 sprite legible here when it is barely readable up
+	top.
+
+	The one hard constraint is WIDTH. This is a monospace grid, so an inline image whose width is
+	not exactly the character advance shifts every tile after it on that row - the whole floor
+	shears. So the image is pinned to the measured advance and the HEIGHT follows from the
+	sprite's own aspect, clamped under the line height so the row cannot grow either. Both are
+	measured from the live font rather than assumed from the font size, because the theme owns
+	the font and a constant here would be a second copy of it.
+
+	Falls back to the "@" whenever there is no sprite for this character - not every battler id
+	has an overworld twin."""
+	var fallback := "[color=#00FF00]@[/color]"
+	if character_data.is_empty():
+		return fallback
+	var bid := BattlerSprite.id_from_data(character_data)
+	if bid == "" or not BattlerSprite.has_overworld_by_id(bid):
+		return fallback
+	var path := BattlerSprite.overworld_path_by_id(bid, _dungeon_facing, _dungeon_walk_frame)
+	if path == "":
+		return fallback
+	var tex := load(path) as Texture2D
+	if tex == null:
+		return fallback
+	# Measure the cell from the font the canvas is actually using.
+	var f: Font = game_output.get_theme_font("normal_font") if game_output else null
+	if f == null:
+		return fallback
+	var cell_w: int = int(round(f.get_string_size("@", HORIZONTAL_ALIGNMENT_LEFT, -1,
+		DUNGEON_TILE_FONT_SIZE).x))
+	var line_h: int = int(f.get_height(DUNGEON_TILE_FONT_SIZE))
+	if cell_w <= 0 or line_h <= 0:
+		return fallback
+	var src: Vector2i = tex.get_size()
+	if src.x <= 0 or src.y <= 0:
+		return fallback
+	var h: int = int(round(float(cell_w) * float(src.y) / float(src.x)))
+	h = mini(h, line_h)
+	var tint := BattlerSprite.tint_hex(String(character_data.get("appearance_color", "")))
+	return "[img=%dx%d color=%s]%s[/img]" % [cell_w, h, tint, path]
+
+
 func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	"""Render dungeon grid viewport centered on player with monster overlay"""
 	if grid.is_empty():
@@ -44148,7 +44223,7 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 		var line = "[color=#FFD700]|[/color]"
 		for x in range(view_x1, view_x2):
 			if x == player_x and y == player_y:
-				line += "[color=#00FF00]@[/color]"
+				line += _dungeon_player_glyph()
 			else:
 				var mkey = "%d,%d" % [x, y]
 				if npc_map.has(mkey):
@@ -44173,8 +44248,13 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					# chips and the card damage formulas, so there is one tooltip mechanism in the
 					# game rather than a third. The meta carries what the popup needs; the art is
 					# looked up client-side from monster_art.gd, which already has it.
-					line += "[url=mon:%s:%d]%s%s%s[/url]" % [
-						String(mon.get("type", "")), int(mon.get("level", 1)),
+					# 2026-09-08 - the meta carries the monster's ID, not its fields. Packing
+					# type and level into a colon-delimited string worked only while every field
+					# was colon-free, and the pre-rolled variant NAME is not something to trust to
+					# that. The client already holds the whole monster list, so one id resolves
+					# every field the popup wants and adds no new failure mode.
+					line += "[url=mon:%d]%s%s%s[/url]" % [
+						int(mon.get("id", -1)),
 						"[color=%s]" % mcolor, mchar, "[/color]"]
 				elif trap_map.has(mkey):
 					# Render triggered trap marker

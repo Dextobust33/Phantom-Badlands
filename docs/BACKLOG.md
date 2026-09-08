@@ -356,6 +356,14 @@ while the Paladin's stat realignment held.
       anything. ⚡ They also ship inside the .pck; check whether the unadopted packs are inflating
       the download and `.gdignore` what we do not use (dev screenshots once cost ~23MB an update
       the same way).
+- [ ] **Zoom the map inside NPC posts, the way dungeons now do** (owner 2026-09-08): *"We may
+      also want to zoom in the map when players are in a post for the same type of functionality
+      in the future."* Same shape as the dungeon presentation pass: a post interior is a small
+      bounded area drawn at overworld scale, so it wastes the canvas and its sprites are too small
+      to read. The dungeon work already built the pieces — a large-font grid on the main canvas,
+      a side panel for status/legend, and `_dungeon_player_glyph()` drawing the player's overworld
+      sprite inline at the measured cell width. Deliberately AFTER the dungeon arc so the tile
+      size, sprite sizing and key layout are settled once rather than twice.
 - [ ] **Dungeon monsters: hover for art, level and type** (owner 2026-09-08): *"find a few sprites
       we can use for them or just make it where players can hover their mouse over them in the
       dungeon and see their ascii art (and optionally level and variant or type... Level 8 Venomous

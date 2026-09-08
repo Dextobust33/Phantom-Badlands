@@ -32885,7 +32885,10 @@ func _send_dungeon_state(peer_id: int):
 					# it "would require that the type of encounter get chosen beforehand"; it is
 					# already chosen - a floor monster entity is spawned with both monster_type
 					# and level, and the type was already on the wire. Only level was missing.
-					"level": int(m.get("level", 1))
+					"level": int(m.get("level", 1)),
+					# The pre-rolled variant name ("Venomous Orc"), so the hover names the
+					# monster the player will actually fight rather than its base type.
+					"variant_name": String(m.get("variant_name", ""))
 				})
 
 	# Get floor loot items on current floor (Azure Dreams style pickups)
@@ -34802,6 +34805,19 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 		occupied_positions.append(pos)
 		var display_char = monster_type[0].to_upper() if monster_type.length() > 0 else "M"
 
+		# 2026-09-08 - decide the VARIANT here, at spawn, not when the fight starts.
+		#
+		# Owner: *"optionally level and variant or type (example Level 8 Venomous Orc) but this
+		# would require that the type of encounter get chosen beforehand I assume"* - and then,
+		# asked directly, chose to pre-roll so variants become SCOUTABLE: you can see a nasty one
+		# and route around it, which is the whole point of a floor you have to explore.
+		#
+		# Rolled by generating once and keeping the IDENTITY (not the stats), then re-stamped at
+		# combat with `suppress_rare_rolls=true` + reapply_variant/reapply_empowered. That is the
+		# existing FLOCK idiom, which exists for exactly this reason: "no re-roll, no compounding".
+		# Storing the identity rather than the whole monster keeps the saved dungeon small and
+		# keeps the STATS derived at fight time, where level scaling belongs.
+		var _roll: Dictionary = monster_db.generate_monster_by_name(monster_type, monster_level)
 		var monster_entity = {
 			"id": next_dungeon_monster_id,
 			"x": pos.x, "y": pos.y,
@@ -34812,7 +34828,13 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 			"alive": true,
 			"alert": false,
 			"is_boss": false,
-			"boss_data": {}
+			"boss_data": {},
+			"variant_type": String(_roll.get("variant_type", "")),
+			"empowered_mods": _roll.get("empowered_mods", []),
+			"variant_name": String(_roll.get("name", monster_type)),
+			"appearance_color": String(_roll.get("appearance_color", "")),
+			"appearance_color2": String(_roll.get("appearance_color2", "")),
+			"appearance_pattern": String(_roll.get("appearance_pattern", ""))
 		}
 		floor_monsters.append(monster_entity)
 		next_dungeon_monster_id += 1
@@ -35193,11 +35215,30 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 	var instance = active_dungeons[instance_id]
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 
-	# Generate the combat monster from entity data
+	# Generate the combat monster from entity data.
+	#
+	# 2026-09-08 - the variant was PRE-ROLLED at spawn (see _spawn_dungeon_floor_monsters), so
+	# generate a plain base and re-stamp the identity the player was shown. Re-rolling here would
+	# mean the "Venomous Orc" you walked toward could turn out to be something else, which would
+	# make the hover a lie and the routing decision meaningless.
 	var monster_lookup = monster_entity.monster_type
-	var monster = monster_db.generate_monster_by_name(monster_lookup, monster_entity.level)
+	var _prerolled: bool = monster_entity.has("variant_name")
+	var monster = monster_db.generate_monster_by_name(monster_lookup, monster_entity.level, _prerolled)
 	if monster.is_empty():
 		monster = monster_db.generate_monster(monster_entity.level, monster_entity.level)
+		_prerolled = false
+	if _prerolled:
+		var _vt := String(monster_entity.get("variant_type", ""))
+		var _em: Array = monster_entity.get("empowered_mods", [])
+		if _vt != "":
+			monster_db.reapply_variant(monster, _vt)
+		if not _em.is_empty():
+			monster_db.reapply_empowered(monster, _em)
+		# Cosmetic tint is visual only and has no re-stamp helper - carry it across directly.
+		for _k in ["appearance_color", "appearance_color2", "appearance_pattern"]:
+			var _v := String(monster_entity.get(_k, ""))
+			if _v != "":
+				monster[_k] = _v
 	monster.is_dungeon_monster = true
 	# C3b — Elite Den: promote to an elite variant (harder + 2 extra abilities +
 	# guaranteed drop via drop_chance 100). reapply_variant restamps name/stats/abilities.
