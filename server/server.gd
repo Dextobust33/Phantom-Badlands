@@ -280,7 +280,15 @@ const DUNGEON_ENTERED_DESPAWN_DELAY = 300.0  # 5 min re-entry window after first
 # up to a cap — so dawdling/backtracking gets more dangerous and pushes you forward.
 const DUNGEON_WANDER_SPAWN_STEPS = 20   # +1 wandering monster per this many floor steps
 const DUNGEON_WANDER_SPAWN_CAP = 4      # max EXTRA monsters beyond the floor's initial set
-const DUNGEON_WANDER_SPAWN_MIN_DIST = 6 # never spawn within this Manhattan dist of the player
+# 2026-09-08 - these MUST match the client's dungeon viewport (`_render_dungeon_grid`), because
+# the rule is "new spawns should still happen off screen for the player" (owner) and a Manhattan
+# radius cannot express a rectangle. The old value was 6, which was safely outside an 11x11 view;
+# the view is now 25x11, so half its WIDTH is 12 and a monster could pop into existence six tiles
+# away, in plain sight. A spawn is now rejected if it falls inside the visible rectangle at all,
+# plus a tile of margin so it cannot appear on the very edge as the player steps.
+const DUNGEON_VIEW_W = 25               # keep in step with client _render_dungeon_grid view_w
+const DUNGEON_VIEW_H = 11               # keep in step with client _render_dungeon_grid view_h
+const DUNGEON_WANDER_SPAWN_MARGIN = 2   # extra tiles beyond the view edge
 const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tiles of travel
 const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
@@ -34920,10 +34928,25 @@ func _maybe_escalate_wandering_spawns(peer_id: int, instance_id: String) -> void
 	if did > 0:
 		active_dungeons[instance_id]["floor_escalation_spawned"] = spawned + did
 
+func _is_offscreen_for_player(tile: Vector2i, player_pos: Vector2i, grid_size: int) -> bool:
+	"""Would `tile` be OUTSIDE the player's dungeon viewport right now?
+
+	Mirrors the client's clamping in `_render_dungeon_grid` so the answer is the rectangle the
+	player is actually looking at, not an approximation of it. Owner: "New spawns should still
+	happen off screen for the player."""
+	var vx1: int = clampi(player_pos.x - DUNGEON_VIEW_W / 2, 0, maxi(0, grid_size - DUNGEON_VIEW_W))
+	var vy1: int = clampi(player_pos.y - DUNGEON_VIEW_H / 2, 0, maxi(0, grid_size - DUNGEON_VIEW_H))
+	var view := Rect2i(
+		vx1 - DUNGEON_WANDER_SPAWN_MARGIN, vy1 - DUNGEON_WANDER_SPAWN_MARGIN,
+		DUNGEON_VIEW_W + DUNGEON_WANDER_SPAWN_MARGIN * 2,
+		DUNGEON_VIEW_H + DUNGEON_WANDER_SPAWN_MARGIN * 2)
+	return not view.has_point(tile)
+
+
 func _spawn_one_wandering_monster(instance_id: String, floor_num: int, character) -> bool:
-	"""C2 — spawn a single extra wandering monster on the current floor, at least
-	DUNGEON_WANDER_SPAWN_MIN_DIST from the player. Mirrors the initial-spawn entity
-	shape. Returns false if no safe spot was found (never spawns near the player)."""
+	"""C2 — spawn a single extra wandering monster on the current floor, OUTSIDE the player's
+	viewport (see _is_offscreen_for_player). Mirrors the initial-spawn entity shape. Returns
+	false if no safe spot was found — never spawns anywhere the player can see."""
 	if not dungeon_floors.has(instance_id):
 		return false
 	var floors = dungeon_floors[instance_id]
@@ -34962,7 +34985,7 @@ func _spawn_one_wandering_monster(instance_id: String, floor_num: int, character
 		var cand = _find_monster_spawn_position(grid, entrance_pos, exit_pos, occupied)
 		if cand.x < 0:
 			break
-		if (abs(cand.x - player_pos.x) + abs(cand.y - player_pos.y)) >= DUNGEON_WANDER_SPAWN_MIN_DIST:
+		if _is_offscreen_for_player(cand, player_pos, grid.size()):
 			pos = cand
 			break
 	if pos.x < 0:
