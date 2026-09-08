@@ -43786,17 +43786,8 @@ func display_dungeon_floor():
 	# for, and the Coords / Area boxes stand down underground — owner: "they don't really serve
 	# much of a purpose while you're in a dungeon."
 	if map_display:
-		var side_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
-		side_text += "Floor %d/%d\n" % [floor_num, total_floors]
-		side_text += "Defeated: %d\n" % encounters_cleared
-		if alive_count > 0:
-			var _al = "  [color=#FF0000](%d alert!)[/color]" % alert_count if alert_count > 0 else ""
-			side_text += "Remaining: [color=#FF4444]%d[/color]%s\n" % [alive_count, _al]
-		else:
-			side_text += "[color=#00FF00]Floor cleared![/color]\n"
-		side_text += "\n[color=#808080]@ You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nLetters = Monsters[/color]"
 		map_display.clear()
-		map_display.append_text(side_text)
+		map_display.append_text(_dungeon_side_panel_text())
 		map_display.scroll_to_line(0)
 	_set_dungeon_side_boxes_visible(false)
 
@@ -43864,28 +43855,68 @@ func display_dungeon_food_select():
 		display_game("[color=#808080]Page %d/%d[/color]" % [dungeon_food_page + 1, total_pages])
 	display_game("[color=#FFFF00][%s][/color] Back  [color=#FFFF00][%s][/color] Prev Page  [color=#FFFF00][%s][/color] Next Page" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
 
-func update_dungeon_map():
-	"""Update just the dungeon map display (right panel) without touching GameOutput"""
-	if not dungeon_mode or dungeon_data.is_empty():
-		return
-
+func _dungeon_side_panel_text() -> String:
+	"""What the dungeon SIDE PANEL says. One builder, two callers — `display_dungeon_floor` and
+	`update_dungeon_map` — so they cannot drift into showing different things, which is exactly
+	how the grid ended up rendered in two places with two different legends."""
 	var dungeon_name = dungeon_data.get("dungeon_name", "Dungeon")
 	var dungeon_color = dungeon_data.get("color", "#FFFFFF")
 	var floor_num = dungeon_data.get("floor", 1)
 	var total_floors = dungeon_data.get("total_floors", 1)
-	var player_x = dungeon_data.get("player_x", 0)
-	var player_y = dungeon_data.get("player_y", 0)
+	var encounters_cleared = dungeon_data.get("encounters_cleared", 0)
+	var alive_count = 0
+	var alert_count = 0
+	for m in dungeon_monsters_data:
+		alive_count += 1
+		if m.get("alert", false):
+			alert_count += 1
+	var out = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
+	out += "Floor %d/%d\n" % [floor_num, total_floors]
+	out += "Defeated: %d\n" % encounters_cleared
+	if alive_count > 0:
+		var al = "  [color=#FF0000](%d alert!)[/color]" % alert_count if alert_count > 0 else ""
+		out += "Remaining: [color=#FF4444]%d[/color]%s\n" % [alive_count, al]
+	else:
+		out += "[color=#00FF00]Floor cleared![/color]\n"
+	out += "\n[color=#808080]@ You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nLetters = Monsters[/color]"
+	# This floor's own special glyphs, compactly. The prose lives on the entrance warning.
+	var dt := String(dungeon_data.get("dungeon_type", ""))
+	if dt != "" and DUNGEON_THEME_LEGEND.has(dt):
+		var entries: Array = DUNGEON_THEME_LEGEND[dt]
+		if not entries.is_empty():
+			out += "\n"
+			for e in entries:
+				var d := String(e.get("desc", ""))
+				var dash := d.find(" — ")
+				var short_desc := d.substr(0, dash) if dash > 0 else d.substr(0, 22)
+				out += "\n[color=%s]%s[/color] %s" % [
+					String(e.get("color", "#FFFFFF")), String(e.get("glyph", "?")), short_desc]
+	return out
 
-	var grid_display = _render_dungeon_grid(dungeon_floor_grid, player_x, player_y)
 
+func update_dungeon_map():
+	"""Refresh the dungeon SIDE PANEL only — never the canvas.
+
+	2026-09-08. This used to draw the grid into `map_display`, which is where the dungeon lived
+	before the presentation pass. Left as it was, it would have QUIETLY UNDONE that change at
+	runtime: it is called on every dungeon state, while `display_dungeon_floor` (which now draws
+	the grid onto the canvas) is skipped whenever an acknowledgement is pending — a treasure, a
+	trap, a combat victory. So the first time a player opened a chest, the map would have jumped
+	back into the corner box.
+
+	The skip itself is correct and must stay: `game_output` carries the message the player has to
+	read, and redrawing over it is the Player-Visible Output Rule violation this codebase has
+	been bitten by repeatedly. So the split is: canvas = the floor, and only when there is nothing
+	to acknowledge; side panel = status, always. Both call `_dungeon_side_panel_text` so the two
+	cannot drift into disagreeing about what the panel says."""
+	if not dungeon_mode or dungeon_data.is_empty():
+		return
 	if map_display:
-		var map_text = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
-		map_text += "Floor %d/%d\n\n" % [floor_num, total_floors]
-		map_text += grid_display
-		map_text += "\n\n[color=#808080]@ You   $ Loot   > Stairs\n· Floor  E Start        \n[color=#00FFCC]&[/color] Node  [color=#FF4444]×[/color] Trap   Letters = Monsters[/color]"
 		map_display.clear()
-		map_display.append_text(map_text)
+		map_display.append_text(_dungeon_side_panel_text())
 		map_display.scroll_to_line(0)
+	_set_dungeon_side_boxes_visible(false)
+
 
 func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	"""Render dungeon grid viewport centered on player with monster overlay"""
