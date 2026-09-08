@@ -216,19 +216,21 @@ while the Paladin's stat realignment held.
       Computed by `player_mitigation_breakdown()` in the combat manager, combined multiplicatively
       the way the damage path actually applies it, so the number cannot drift from the real one.
       `-- statuschips` prints what both sides show.
-- [ ] **Card-upgrade pick has no skill in it** (owner 2026-09-08: *"They effectively have no
-      control of which 3 they are picking... a wasted interaction of seeing 9 that you have no bit
-      of control in getting."*). The panel copied the loot minigame's Preview -> Shuffle -> Hunt
-      SHAPE but not its skill layer: `_ms_order.shuffle()` rebuilds the grid instantly, so the
-      cards TELEPORT and the preview is decoration. A 2026-09-04 pass noticed and honestly
-      reworded the header rather than fixing the interaction.
-      **The fix already exists in this codebase and the owner validated it in August**
-      (`project_prize_shuffle_redesign`): `combat_loot_panel.gd` replays a SERVER-supplied `swaps`
-      array as visible pairwise animations so a sharp player can follow one card, plus rare peek
-      tokens; swap count scales with stakes (`3+tier`, cap 14). Port that.
-      **Must be server-driven.** The milestone shuffle is client-side today, and animating a swap
-      sequence the server did not author would be showing the player a lie - worse than the
-      teleport. Owner is happy for this to come AFTER the release.
+- [x] **Card-upgrade pick is trackable now — DONE 2026-09-08, owner-confirmed "Looks great!"**
+      It was `_ms_order.shuffle()` plus an instant grid rebuild, so the cards TELEPORTED and the
+      nine-card preview was decoration. Ported `combat_loot_panel._enter_shuffle`: face-up copies
+      glide from where a card sat to where it lands, then seal, so you follow the upgrade you
+      want. Reveals are locked for the 0.7s flight (a fast click would land before anything
+      visibly moved, reintroducing the exact problem), and the lock clears on OPEN as well as on
+      landing, so an overlay closed mid-flight cannot leave it stuck.
+      **Client-side, deliberately.** In the loot panel the SERVER owns the prize slots, so the
+      swaps must come from the server or the animation lies. Here the client already holds all
+      nine upgrades and their text, so it IS the source of truth for the order and animating its
+      own permutation is honest. I initially told the owner this needed a server round trip; it
+      does not. Do not add one.
+      Not done, available if wanted: **peek tokens** (the loot panel's other aid — a rare, limited
+      re-show of one face-down card), and staggering the flights if nine at once ever reads busy.
+      `tools/test_setup/run.py --ranks=N` hands back exactly N rank-ups for looking at this.
 - [ ] **Buff panel, party half.** Same strip for each party member, plus a STACKING indicator.
 - [x] **Card upgrade preview — DONE 2026-09-07.** The estimate counted `power` picks alone while
       the combat manager applied nine more multipliers from hard-coded literals, so five upgrades
