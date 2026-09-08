@@ -29911,13 +29911,25 @@ func display_changelog():
 	# companion XP fixed in both paths, and equipment that actually drops early.
 	# v0.9.756 — the theming pass: all nine decks renamed per class across card face, action bar,
 	# combat log, hover, buff panel, gear affixes and help; plus per-class stat descriptions.
+	# v0.9.758 — six player-reported surface bugs, all of them one name or number told two ways;
+	# then the same root causes swept across all nine classes rather than the reported symptoms.
 	# v0.9.757 — card upgrades made honest (the estimate counted `power` alone while nine more
 	# multipliers were applied), the rank-up hover previews YOUR card, the three Trickster engines
 	# forked to Leverage / Aim / Read, and the creation + help screens un-staled.
 	# v0.9.755 — the class-identity release: nine classes onto three engine shapes, the finisher
 	# forked three ways per path, Sage shown as Oracle, a difficulty curve that ramps with level,
 	# rest/flock changes for the early game, CON granting mitigation, and a one-off deck repair.
-	display_game("[color=#00FF00]v0.9.757[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.758[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOUR CARDS SHOW YOUR CLASS'S NAMES EVERYWHERE NOW.[/color] A card could read one name on its face and a different one on its hover — a Ranger's [color=#FFFFFF]Track[/color] still called itself [b]Analyze[/b] on the card. Every surface now asks the same source, so a renamed card cannot show its old name anywhere. Gear granting +ranks to a renamed card names it correctly too.")
+	display_game("  [color=#FF8000]★ TWO TRICKSTERS WERE SHOWN A CHANCE THAT DOES NOT EXIST.[/color] The meter read [b]\"Assassinate NN%\"[/b] for all three, but only the [color=#191970]Ninja[/color] gambles. A [color=#228B22]Ranger[/color]'s [b]Killing Shot[/b] and a [color=#2F4F4F]Grifter[/color]'s [b]Double Cross[/b] are [b]guaranteed damage[/b] that cannot fail — they now read \"Killing Shot ~229\", and their cards say guaranteed instead of promising an instant kill they never had.")
+	display_game("  [color=#FF8000]★ THE STAT SCREEN OFFERED MANA TO CLASSES WITH NO MANA.[/color] Every character carries all three pools, but you only ever SPEND one — so the level-up screen was recommending stats for a bar a Ranger will never use. Each stat now names a pool only when it is [b]your[/b] pool.")
+	display_game("  [color=#1EFF00]◆ Your racial passive had six different descriptions[/color] across the game, and two were simply wrong: [color=#FFFFFF]Dwarf[/color]'s Last Stand read [b]25%[/b] against a real [b]34%[/b], and [color=#FFFFFF]Halfling[/color]'s +15% Valor was credited to kills when it is paid on [b]market listings[/b]. The Deck screen also used different NAMES for every race than the character sheet did. One source now.")
+	display_game("  [color=#1EFF00]◆ Buffs and damage reduction are readable.[/color] The mitigation summary rendered as a grey [b]\"Dam\"[/b] because its label was missing entirely, and the chips had no background to separate them from the text behind. Each chip now sits on its own tinted ground.")
+	display_game("  [color=#1EFF00]◆ Loot is named the same on the victory screen and in your bags.[/color] A drop could be a [b]Shield[/b] on the reward screen and a [b]Quiver[/b] in your inventory — the same item, themed for your class in one place and not the other.")
+	display_game("  [color=#1EFF00]◆ Dungeons tell you the level you will actually meet.[/color] The entry warning quoted a fixed number attached to the dungeon TYPE, while the monsters inside are sized to the instance and scale further with depth. It now states the first-floor level and the deepest.")
+	display_game("")
+
+	display_game("[color=#00FFFF]v0.9.757[/color]")
 	display_game("  [color=#FF8000]★ CARD UPGRADES NOW MOVE THE NUMBER ON THE CARD.[/color] The card's damage estimate counted only the [b]Power[/b] upgrade, while the game applied nine more. So [color=#FFFFFF]Overdraw[/color], [color=#FFFFFF]Reckless[/color], [color=#FFFFFF]Brittle[/color] and [color=#FFFFFF]Heavy Draw[/color] each added [b]25-35% damage[/b] that appeared nowhere — and [color=#FFFFFF]Slow Burn[/color] quietly [b]took 25% away[/b] with the card printing the same number as before, so there was no way to learn it had cost you anything. Both sides read one table now.")
 	display_game("  [color=#FF8000]★ SEE WHAT AN UPGRADE DOES TO YOUR CARD BEFORE YOU TAKE IT.[/color] The rank-up choice said [i]\"+12% effect\"[/i]; it now shows [b]your[/b] card with the pick applied — \"412 → 462 damage\". Situational upgrades are listed separately with their trigger ([i]\"x1.4 foe under 30%\"[/i]) rather than averaged into a number that would be wrong either way, and Power's shrinking return with each stack is shown honestly.")
 	display_game("  [color=#FF8000]★ EACH TRICKSTER NAMES ITS OWN ENGINE.[/color] All three built \"Read\" while the Warriors banked Momentum / Rage / Conviction and the Mages Focus / Volatility / Insight — one word covering three different mechanics. A [color=#2F4F4F]Grifter[/color] now banks [b]Leverage[/b] and cashes it out, a [color=#228B22]Ranger[/color] builds [b]Aim[/b] as a steady damage ramp, and a [color=#191970]Ninja[/color] takes a [b]Read[/b] toward the strike that skips the health bar.")
