@@ -19447,6 +19447,25 @@ func get_card_read_gain(ability_name: String) -> int:
 		return 0
 	return int(eff.get("read_gain", 0))
 
+
+func get_card_read_breakdown(ability_name: String) -> Dictionary:
+	"""How much of this card's engine gain is CERTAIN and how much is a roll.
+
+	`{"sure": n, "maybe": n, "chance": pct}`. Reported live 2026-09-08: a Grifter's cards
+	advertised two pips of Leverage and paid one about half the time, because Long Con is a 50%
+	double and the preview counted it as though it always landed. The split comes from the server
+	for the same reason the total does - a client copy of that rule would be another mirror."""
+	var out: Dictionary = {"sure": 0, "maybe": 0, "chance": 0}
+	if typeof(_server_ability_effects) != TYPE_DICTIONARY:
+		return out
+	var eff = _server_ability_effects.get(ability_name, {})
+	if not (eff is Dictionary):
+		return out
+	out["sure"] = int(eff.get("read_sure", 0))
+	out["maybe"] = int(eff.get("read_maybe", 0))
+	out["chance"] = int(eff.get("read_chance", 0))
+	return out
+
 func _get_themed_item_name(item: Dictionary, owner_class: String = "") -> String:
 	"""Get the item name themed for a specific class.
 	If owner_class is empty, uses the current player's class.

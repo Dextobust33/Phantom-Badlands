@@ -160,6 +160,7 @@ func _audit_registry() -> Dictionary:
 		"deadranks": ["can any ability earn combat upgrades it can never use?", run_deadranks],
 		"cardaudit": ["EVERY class x EVERY card: cast it and read what it SAYS", run_cardaudit],
 		"upgradefit": ["does every OFFERED upgrade actually do anything on that card?", run_upgradefit],
+		"cardpromise": ["does every card GRANT the engine gain its face advertises?", run_cardpromise],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
@@ -7491,6 +7492,139 @@ Cast %d cards across 9 classes." % cast_count)
 		print("FAIL - %d card(s) speak for the wrong class:" % problems.size())
 		for pb in problems:
 			print("   " + pb)
+
+
+const ENGINE_MARKER_EXEMPT := ["devastate", "meteor", "perfect_heist"]
+
+
+func run_cardpromise() -> void:
+	"""Does every card DELIVER the engine gain its face advertises, every time?
+
+	2026-09-08, owner, after a live Grifter report: *"We likely need to audit all class cards for
+	this type of problem."* The problem being: Distract displayed two solid Leverage pips and
+	granted one about half the time, because Long Con is a 50% double that the card preview
+	counted as certain. The engine was correct throughout - the CARD was lying.
+
+	`cardaudit` reads what a card SAYS. `upgradepreview` checks that upgrades move the number a
+	card prints. Neither casts a card repeatedly to ask whether the printed number is actually
+	KEPT, which is the only way a chance-sold-as-a-certainty shows up: one cast looks perfect.
+
+	So: cast every card of every class %d times from an EMPTY engine bar and compare the realized
+	gain against the face.
+
+	  - realized_min < advertised_sure   ->  the card overpromises (the live bug)
+	  - realized varies with no maybe    ->  undeclared variance, same fault, not yet reported
+	  - realized_max > advertised        ->  the card UNDERSELLS itself, also worth knowing
+
+	Warrior and Mage cards advertise their engine with a bare "+#" marker, which is a promise of
+	exactly 1, so they are held to the same rule. Seeded per class|card cell, never per run - a
+	shared stream would make one card's fix move another's numbers (see CLAUDE.md)."""
+	var CM = CombatManager
+	var CASTS := 60
+	var problems: Array = []
+	var warnings: Array = []
+	var checked := 0
+	print("Casting every card %d times from an empty engine bar." % CASTS)
+	print("advertised = what the card FACE shows.  realized = what %d casts actually granted.
+" % CASTS)
+	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var ch = make_char(40, "average", klass, "Human")
+		ch.initialize_deck_collection_if_needed()
+		var deck: Array = CharacterScript.CURATED_STARTER_DECKS_BY_CLASS.get(klass, [])
+		var eng_key := _engine_key_for_class(String(ch.get_class_path()))
+		print("--- %s (%s) ---" % [CharacterScript.class_display_name(klass), CM.class_engine_label(klass)])
+		if eng_key == "":
+			print("    (no class engine)")
+			continue
+		for ab in deck:
+			var id := String(ab)
+			seed(hash("cardpromise|%s|%s" % [klass, id]))
+			# What the FACE advertises. Read from an empty bar, the same state the casts use,
+			# so a conditional pip is judged against the fight the player is actually in.
+			var adv_sure := 0
+			var adv_maybe := 0
+			var monster0 = make_monster(40, "normal", 1.0)
+			combat_mgr.start_combat(0, ch, monster0)
+			var c0 = combat_mgr.active_combats[0]
+			c0["combat_hand"] = [id]
+			c0["player_can_act"] = true
+			c0[eng_key] = 0
+			# The FINISHERS show no engine marker at all (see combat_scene_panel.gd, which
+			# excludes each archetype's finisher), so they advertise nothing and cannot
+			# overpromise. Auditing them as though they promised 1 was an instrument defect in
+			# this audit's first run - it "found" three bugs that were only its own assumption.
+			if id in ENGINE_MARKER_EXEMPT:
+				combat_mgr.active_combats.erase(0)
+				continue
+			if String(ch.get_class_path()) == "trickster":
+				var _b: Dictionary = combat_mgr.preview_read_breakdown(ch, c0, id)
+				adv_sure = int(_b.get("sure", 0))
+				adv_maybe = int(_b.get("maybe", 0))
+			elif CharacterScript.get_ability_archetype(id) == String(ch.get_class_path()):
+				adv_sure = 1     # the bare "+#" marker promises exactly one
+			combat_mgr.active_combats.erase(0)
+			if adv_sure == 0 and adv_maybe == 0:
+				continue
+			checked += 1
+			# What it actually GRANTS, over many casts.
+			var lo := 1 << 30
+			var hi := -(1 << 30)
+			for _i in range(CASTS):
+				var monster = make_monster(40, "normal", 1.0)
+				combat_mgr.start_combat(0, ch, monster)
+				var combat = combat_mgr.active_combats[0]
+				combat["combat_hand"] = [id]
+				combat["player_can_act"] = true
+				combat[eng_key] = 0
+				ch.current_hp = ch.get_total_max_hp()
+				ch.current_mana = ch.get_total_max_mana()
+				ch.current_stamina = ch.get_total_max_stamina()
+				ch.current_energy = ch.get_total_max_energy()
+				var spend := int(round(float(_primary_pool_for(ch)) * 0.4))
+				combat_mgr.process_ability_command(0, id, str(maxi(1, spend)))
+				var got := int(combat.get(eng_key, 0))
+				lo = mini(lo, got)
+				hi = maxi(hi, got)
+				combat_mgr.active_combats.erase(0)
+			var adv_txt := ("%d" % adv_sure) if adv_maybe == 0 else ("%d+%d?" % [adv_sure, adv_maybe])
+			var real_txt := ("%d" % lo) if lo == hi else ("%d-%d" % [lo, hi])
+			var flag := ""
+			if lo < adv_sure:
+				flag = "   <-- OVERPROMISES: face says %d guaranteed, granted as little as %d" % [adv_sure, lo]
+				problems.append("%s / %s: face %s, realized %s (overpromises)" % [klass, id, adv_txt, real_txt])
+			elif hi > adv_sure + adv_maybe:
+				# Granting MORE than the face shows is not a broken promise, so it does not fail
+				# the audit - but a passive the player cannot observe may as well not exist
+				# (the exact reason Long Con was made to announce itself in 2026-09-05).
+				flag = "   <-- hidden bonus: grants up to %d, face tops out at %d" % [hi, adv_sure + adv_maybe]
+				warnings.append("%s / %s: face %s, realized %s" % [klass, id, adv_txt, real_txt])
+			print("    %-16s advertised %-6s realized %-6s%s" % [id, adv_txt, real_txt, flag])
+	print("
+Checked %d engine-granting card(s) across 9 classes, %d casts each." % [checked, CASTS])
+	if problems.is_empty():
+		print("PASS - every card grants at least what its face promises.")
+	else:
+		print("FAIL - %d card(s) grant LESS than their face promises:" % problems.size())
+		for pb in problems:
+			print("   " + pb)
+	if not warnings.is_empty():
+		print("
+%d card(s) grant MORE than the face shows (not a failure, but invisible to the player):" % warnings.size())
+		for w in warnings:
+			print("   " + w)
+
+
+func _engine_key_for_class(class_path: String) -> String:
+	"""Which combat field holds this class's engine. One mapping, so the audit cannot disagree
+	with `_feed_class_engine` about where the stacks live."""
+	match class_path:
+		"warrior":
+			return "momentum"
+		"trickster":
+			return "combo"
+		"mage":
+			return "focus"
+	return ""
 
 
 func run_upgradefit() -> void:

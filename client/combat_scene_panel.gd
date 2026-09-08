@@ -4650,7 +4650,12 @@ func _refresh_hand() -> void:
 				var _e := effect_lbl.text
 				effect_lbl.text = ("+⚡ %s" % _momentum_name) if _e == "" else "+⚡  %s" % _e
 				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
-			elif _combo_active and _arch == "trickster":
+			# 2026-09-08 - the FINISHER is excluded, as it already is for the Warrior's Devastate
+			# and the Mage's Meteor one branch either side. It banks a stack and then spends the
+			# whole bar, so a "+◉ Leverage" marker advertises the exact opposite of what it does.
+			# Found by `-- cardpromise`: Trickster was the one archetype of three with no
+			# exclusion here, the same branch asymmetry that let the engine LABELS drift.
+			elif _combo_active and _arch == "trickster" and card_name != "perfect_heist":
 				var _e2 := effect_lbl.text
 				# 2026-09-06 — a card that grants MORE than one Read shows one pip per Read, so
 				# the Grifter can see which cards his passive (or an upgrade) is doubling without
@@ -4658,11 +4663,30 @@ func _refresh_hand() -> void:
 				var _rg: int = 0
 				if client_ref and client_ref.has_method("get_card_read_gain"):
 					_rg = int(client_ref.get_card_read_gain(card_name))
+				# 2026-09-08 - a SOLID pip is a promise, a HOLLOW one is a chance. Reported live:
+				# a Grifter's Distract showed two solid pips and paid one about half the time,
+				# because Long Con is a 50% double that the preview counted as certain. Drawing
+				# both the same way is what made a working engine look broken.
+				var _sure: int = _rg
+				var _maybe: int = 0
+				if client_ref and client_ref.has_method("get_card_read_breakdown"):
+					var _b: Dictionary = client_ref.get_card_read_breakdown(card_name)
+					if int(_b.get("sure", 0)) > 0:
+						_sure = int(_b.get("sure", 0))
+						_maybe = int(_b.get("maybe", 0))
 				var _pips := "◉"
 				if _rg > 1:
 					_pips = ""
-					for _i in range(mini(_rg, 4)):
+					for _i in range(mini(_sure, 4)):
 						_pips += "◉"
+					for _i in range(mini(_maybe, 4 - mini(_sure, 4))):
+						_pips += "◌"
+					# Say what the hollow pip MEANS. A symbol the player cannot decode only moves
+					# the confusion; the card now states the odds it is actually offering.
+					if _maybe > 0:
+						var _pct: int = int(client_ref.get_card_read_breakdown(card_name).get("chance", 0))
+						cell.tooltip_text = ("◉ = %d %s guaranteed.   ◌ = %d more at %d%%."
+							% [_sure, _engine_label_text, _maybe, _pct]) if _pct > 0 else ""
 				effect_lbl.text = ("+%s %s" % [_pips, _engine_label_text]) if _e2 == "" else "+%s  %s" % [_pips, _e2]
 				effect_lbl.add_theme_color_override("font_color", Color("#7FD8C8"))
 			elif _focus_active and _arch == "mage" and card_name != "meteor":

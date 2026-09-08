@@ -4458,11 +4458,17 @@ func _build_ability_effect_info(combat: Dictionary) -> Dictionary:
 	for card in combat.get("combat_hand", []):
 		var name := String(card)
 		var eff: Dictionary = preview_ability_effect(character, combat, name)
-		var _rg: int = preview_read_gain(character, combat, name)
+		var _rb: Dictionary = preview_read_breakdown(character, combat, name)
+		var _rg: int = int(_rb.get("sure", 0)) + int(_rb.get("maybe", 0))
+		# Send the SPLIT, not just the total. A card that grants 1 for certain and 1 on a coin
+		# flip is a different card from one that grants 2, and the face has to say which.
 		if _rg > 1:
 			if eff.is_empty():
 				eff = {"kind": "read_only"}
 			eff["read_gain"] = _rg
+			eff["read_sure"] = int(_rb.get("sure", 0))
+			eff["read_maybe"] = int(_rb.get("maybe", 0))
+			eff["read_chance"] = int(_rb.get("chance", 0))
 		if not eff.is_empty() and String(eff.get("kind", "")) != "":
 			out[name] = eff
 	return out
@@ -7236,42 +7242,70 @@ func long_con_denial_chance(character, ability_name: String) -> int:
 	var fx: Dictionary = pas.get("effects", {}) if pas is Dictionary else {}
 	return int(fx.get("denial_read_chance", 0))
 
+func preview_read_breakdown(character, combat: Dictionary, ability_name: String) -> Dictionary:
+	"""Split this card's engine preview into what it WILL grant and what it MIGHT.
+
+	`{"sure": n, "maybe": n, "chance": pct}`.
+
+	2026-09-08 - reported live on a Grifter: "doesn't seem to be building leverage like the cards
+	advertise." The engine was right and the CARD was wrong. Long Con is a 50% chance to double
+	Read on analyze/distract/sabotage, and the preview counted it as though it always landed, so
+	Distract permanently displayed two pips and delivered one half the time. The owner's own log
+	shows it exactly - "LONG CON! Leverage 2/8 (+2)" one round, a silent "Leverage 3/8" the next.
+
+	This is the SAME fault fixed two days ago for `harrying` one line below ("the card promised a
+	stack the fight had not earned"). That pass made the conditional UPGRADES honest and left the
+	class PASSIVE optimistic, which is the whole bug: a preview that reports a coin flip as a
+	certainty is not a preview. The difference is that harrying's condition is knowable now, so it
+	resolves to a definite pip, while Long Con's cannot be known until the cast - so it gets its
+	own bucket and the card face draws it as a maybe rather than silently rounding it up."""
+	var out: Dictionary = {"sure": 0, "maybe": 0, "chance": 0}
+	if character == null or character.get_class_path() != "trickster":
+		return out
+	if Character.get_ability_archetype(ability_name) != "trickster":
+		return out
+	out["sure"] = 1
+	# Long Con: a CHANCE to double, so it can never be a solid pip however high the roll.
+	var _lc: int = long_con_denial_chance(character, ability_name)
+	if _lc > 0:
+		out["maybe"] = 1
+		out["chance"] = _lc
+	var picks: Array = character.get_milestone_picks(ability_name)
+	if not picks.is_empty():
+		# The upgrades that feed the class engine, which for a Trickster IS Read. Each is
+		# evaluated against the fight as it stands RIGHT NOW, so a pip the player cannot
+		# currently earn is never drawn.
+		if "desperate" in picks and float(character.current_hp) < 0.34 * float(character.get_total_max_hp()):
+			out["sure"] += 2
+		if "kindling" in picks and _primary_pool_current(character) >= _primary_pool_max(character):
+			out["sure"] += 1
+		# "Building" - an unconditional extra point into the engine. Found by `-- cardpromise`
+		# 2026-09-08: it feeds all three archetypes (see the `momentum_feed` block in
+		# `process_ability_command`) and NO archetype's card face was counting it, so a card
+		# carrying it quietly granted one more than it showed.
+		if "momentum_feed" in picks:
+			out["sure"] += 1
+		# CONDITIONAL, matching the cast. Reported from play: "Track shows it gives two circles
+		# towards my engine stack but only gives 1 when I use it." Harrying only fires when the
+		# enemy is rattled, which is what its own description says.
+		if "harrying" in picks and (int(combat.get("enemy_distracted", 0)) > 0 or int(combat.get("monster_stunned", 0)) > 0):
+			out["sure"] += 1
+	return out
+
 func preview_read_gain(character, combat: Dictionary, ability_name: String) -> int:
-	"""The MOST Read this card can grant on this cast, for the card face.
+	"""The MOST Read this card can grant on this cast - every maybe landing.
 
 	2026-09-06, owner: "any cards that are going to give him additional read on use (more than 1)
 	whether from his passive, or a card upgrade, or conditional upgrade, should show that on the
 	card display in combat via multiple read showing on the card."
 
-	Computed server-side and sent with the card, rather than re-derived in the client — a client
-	copy of this would be the fourth mirror found and removed in as many days. Long Con is a coin flip
-	so it is counted optimistically, but every CONDITIONAL upgrade is evaluated against the fight
-	as it stands RIGHT NOW - a pip the player cannot currently earn is not a preview, it is a
-	wrong number on a card."""
-	if character == null or character.get_class_path() != "trickster":
+	Computed server-side and sent with the card rather than re-derived in the client. Kept as the
+	optimistic total for anything that wants a single number; the card FACE uses the breakdown so
+	it can tell a certainty from a coin flip."""
+	var b: Dictionary = preview_read_breakdown(character, combat, ability_name)
+	if int(b.get("sure", 0)) <= 0:
 		return 0
-	if Character.get_ability_archetype(ability_name) != "trickster":
-		return 0
-	var gain: int = 1
-	if long_con_denial_chance(character, ability_name) > 0:
-		gain += 1
-	var picks: Array = character.get_milestone_picks(ability_name)
-	if not picks.is_empty():
-		# The upgrades that feed the class engine, which for a Trickster IS Read.
-		if "desperate" in picks and float(character.current_hp) < 0.34 * float(character.get_total_max_hp()):
-			gain += 2
-		if "kindling" in picks and _primary_pool_current(character) >= _primary_pool_max(character):
-			gain += 1
-		# 2026-09-08 - CONDITIONAL, matching the cast. Reported from play: "Track shows it gives
-		# two circles towards my engine stack but only gives 1 when I use it." Harrying only
-		# fires when the enemy is rattled (see the `_rattled` gate where it is actually applied),
-		# which is what its own description says: "whenever the enemy is stunned or distracted".
-		# This preview counted it unconditionally, so the card promised a stack the fight had not
-		# earned. `desperate` and `kindling` directly above were already conditional - harrying
-		# was the odd one out inside its own function.
-		if "harrying" in picks and (int(combat.get("enemy_distracted", 0)) > 0 or int(combat.get("monster_stunned", 0)) > 0):
-			gain += 1
-	return gain
+	return int(b.get("sure", 0)) + int(b.get("maybe", 0))
 
 func _feed_class_engine(combat: Dictionary, character, amount: int, result: Dictionary, label: String) -> void:
 	"""Add to whichever engine this class runs on, respecting its cap. Same shape as the
