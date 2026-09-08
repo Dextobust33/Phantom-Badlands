@@ -125,6 +125,23 @@ while the Paladin's stat realignment held.
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 
+- [x] **Character creation was stale — DONE 2026-09-07** (owner: *"Seems like it's not showing the
+      correct classes or descriptions and some of the other info is dated."*). Three faults:
+      the class button printed the raw id, so the list said "Sage" while the panel beneath it said
+      "Oracle"; race passives had THREE copies and two had drifted (Dwarf's Last Stand advertised
+      at 25% against a real 34%, the Halfling's +15% Valor attributed to monster kills when it is
+      paid on market listings); and the screen predated the per-class engine work, so it pitched
+      nine classes on flavour and a passive alone. It now shows "Builds: Rage / Conviction /
+      Insight..." and the five cards you will actually hold under their per-class names, all read
+      live. `Character.race_passive_for` is the new single source for races.
+- [x] **Release perf guards can no longer be lost — DONE 2026-09-07** (owner: *"we need to find a
+      solution so this is Always done with every new release without me having to tell you or
+      correct it each time."*). `--buildverify` had existed since 2026-09-05 and **nothing ever ran
+      it**. `tools/verify_release_build.sh` runs it against a packaged client and exits non-zero on
+      a stale build or a missing guard; `max_fps` is now set from code beside vsync, since a
+      setting living only in project.godot has no runtime assertion. Mandatory step in CLAUDE.md
+      before upload. Verified by watching it BLOCK the stale 0.9.754 build.
+
 - [x] **Buff/debuff visibility — SELF and ENEMY done 2026-09-07.** Party members still to do.
       Three gaps, all of them things the player could not see at all:
       - The **enemy's debuffs from the current card set** were never sent. Sabotage/Hamstring/Snare,
@@ -141,9 +158,25 @@ while the Paladin's stat realignment held.
       the way the damage path actually applies it, so the number cannot drift from the real one.
       `-- statuschips` prints what both sides show.
 - [ ] **Buff panel, party half.** Same strip for each party member, plus a STACKING indicator.
-- [ ] **Card upgrade preview.** Hovering an upgrade shows YOUR card with it applied; once chosen the
-      card is visibly different. Also: the damage estimate still counts only `power` picks
-      (`_card_damage_multiplier`), so other upgrade families read as doing nothing.
+- [x] **Card upgrade preview — DONE 2026-09-07.** The estimate counted `power` picks alone while
+      the combat manager applied nine more multipliers from hard-coded literals, so five upgrades
+      silently moved the real hit while the card kept printing its old number: Overdraw / Reckless
+      / Brittle / Heavy Draw each add 25-35%, and **Slow Burn TAKES 25% away** with no visible
+      change at all. Both sides now read one table, `CardUpgrades.DAMAGE_MULTS`.
+      Conditional upgrades are deliberately EXCLUDED from the printed number and shown as their
+      own "Situational: x1.4 foe under 30%" line — averaging a trigger into a flat number is wrong
+      in both directions. The rank-up hover now shows the card WITH the pick on it
+      ("412 -> 462 damage (+12%)") instead of the abstract "+12% effect", and Power's shrinking
+      marginal gain is shown honestly because it rides the tier multiplier rather than compounding.
+      `-- upgradepreview` drives the real roller 4000x per upgrade against what the card prints;
+      worst gap 0.007.
+- [ ] **Trickster engine label reads the same for all three.** Warriors show Momentum / Rage /
+      Conviction and mages show Focus / Volatility / Insight, but Grifter, Ranger and Ninja all
+      show **"Read"**. The mechanic is deliberately shared; the NAME being shared is what makes
+      three differently-playing classes look identical on the character-creation screen, which is
+      exactly where a new player is choosing between them. Cheap to fork (label only, no balance
+      risk) — the same one-card-one-name fix used for Hamstring/Snare. Needs owner sign-off since
+      "Read x3" was a deliberate choice at the time.
 - [ ] **Death replay / shareable combat log.** When a player dies, the chat message carries a
       clickable link to the combat log — ideally a replay — so everyone can see how it happened.
 - [ ] **Combat layout at 1080p.** Monster ASCII still overlaps the player/companion cards by
