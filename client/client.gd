@@ -17293,11 +17293,21 @@ func _format_chase_affix_tokens(affixes: Dictionary) -> Array:
 	for ability_key in _ABILITY_SHORT.keys():
 		var affix_key: String = "ability_rank_%s" % ability_key
 		if affixes.has(affix_key):
+			# 2026-09-07 — the hand-tuned per-class table covers 9 of the 18 cards that fork by
+			# class, so gear granting +ranks to the other 9 (iron_skin, war_cry, fortify, rally,
+			# frost_nova, paralyze, forcefield, analyze, sabotage) showed the GENERIC short form:
+			# a Ranger read "+2 Anlz" for a card its hand calls Track. Rather than grow a second
+			# table that has to be remembered on every rename — the thing that has now gone wrong
+			# on four surfaces — anything missing is DERIVED from the resolved display name, so it
+			# cannot fall behind. The hand-tuned entries are kept because they read better.
 			var _short := String(_ABILITY_SHORT[ability_key])
+			var _mine := ""
 			if _ABILITY_SHORT_BY_CLASS.has(ability_key):
-				var _mine := String((_ABILITY_SHORT_BY_CLASS[ability_key] as Dictionary).get(String(character_data.get("class", "")), ""))
-				if _mine != "":
-					_short = _mine
+				_mine = String((_ABILITY_SHORT_BY_CLASS[ability_key] as Dictionary).get(String(character_data.get("class", "")), ""))
+			if _mine == "":
+				_mine = _derive_short_name(ability_key)
+			if _mine != "":
+				_short = _mine
 			tokens.append("[color=#FFD700]+%d %s[/color]" % [int(affixes[affix_key]), _short])
 	# Archetype rolls
 	if affixes.has("ability_rank_warrior_dmg"):
@@ -20310,6 +20320,32 @@ func _is_duration_capable(ability_name: String) -> bool:
 # popup appended NEW buttons on top of the OLD set. Player saw two full
 # 3-button sets (one per active companion across the swap).
 var _rank_choice_custom_buttons: Array = []
+
+func _derive_short_name(ability_name: String) -> String:
+	"""A compact label for a gear affix token, derived from what the card is CALLED in MY hands.
+
+	Returns "" when the card is not renamed for this class, so the hand-tuned generic short form
+	stays in use. Multi-word names become initials ("Size Them Up" -> "STU"); single words are
+	clipped ("Hamstring" -> "Hmstr")."""
+	var mine := _ability_display_name(ability_name)
+	var canonical := String(CombatManager.ABILITY_DISPLAY_NAMES.get(ability_name,
+		ability_name.replace("_", " ").capitalize()))
+	if mine == "" or mine == canonical:
+		return ""
+	var words := mine.split(" ", false)
+	if words.size() >= 2:
+		var initials := ""
+		for w in words:
+			initials += String(w).substr(0, 1).to_upper()
+		return initials
+	# One word: keep the first letter and drop vowels after it, then clip. "Hamstring" -> "Hmstr".
+	var out := mine.substr(0, 1)
+	for i in range(1, mine.length()):
+		var c := mine.substr(i, 1)
+		if not (c.to_lower() in ["a", "e", "i", "o", "u"]):
+			out += c
+	return out.substr(0, 5) if out.length() > 5 else out
+
 
 func _ability_display_name(ability_name: String) -> String:
 	"""v0.9.592 — return the player-facing display name for an internal ability id.
@@ -33076,6 +33112,22 @@ func _get_rarity_multiplier_for_status(rarity: String) -> float:
 		"artifact": return 2.5
 		_: return 1.0
 
+func _help_race_table() -> String:
+	"""The race list, generated from Character.race_passive_for.
+
+	2026-09-07 — this was the FOURTH hand-copy of the racial passives, and it carried both of
+	the errors the other copies had: Dwarf's Last Stand at 25% against a real 34%, and the
+	Halfling's +15% Valor credited to kills when `get_market_bonus` pays it on market listings.
+	Four copies is not a discipline problem, it is a missing generator."""
+	var out: Array = []
+	for r in ["Human", "Elf", "Dwarf", "Ogre", "Halfling", "Orc", "Gnome", "Undead"]:
+		var p: Dictionary = CharacterScript.race_passive_for(r)
+		out.append("[color=%s]%s[/color] — [b]%s[/b]: %s" % [
+			String(p.get("color", "#FFFFFF")), r, String(p.get("name", "")), String(p.get("description", ""))])
+	return "
+".join(out)
+
+
 func _help_stat_table() -> String:
 	"""The stat page, generated. It carried a hand-written per-class level-gain table that went
 	stale the same day the gains changed, credited WITS with `Outsmart` (removed this session),
@@ -33106,7 +33158,7 @@ func _help_fill_passives(text: String) -> String:
 	"""Expand the {{..._PASSIVES}} tokens in a help page. Both /help and /search render these
 	sections, so the substitution lives here rather than in one of them — a page that got the
 	raw token through would show `{{WARRIOR_PASSIVES}}` to the player."""
-	return text 		.replace("{{WARRIOR_PASSIVES}}", _help_passive_block(["Fighter", "Barbarian", "Paladin"])) 		.replace("{{MAGE_PASSIVES}}", _help_passive_block(["Wizard", "Sorcerer", "Sage"])) 		.replace("{{TRICKSTER_PASSIVES}}", _help_passive_block(["Grifter", "Ranger", "Ninja"])) 		.replace("{{STAT_TABLE}}", _help_stat_table())
+	return text 		.replace("{{WARRIOR_PASSIVES}}", _help_passive_block(["Fighter", "Barbarian", "Paladin"])) 		.replace("{{MAGE_PASSIVES}}", _help_passive_block(["Wizard", "Sorcerer", "Sage"])) 		.replace("{{TRICKSTER_PASSIVES}}", _help_passive_block(["Grifter", "Ranger", "Ninja"])) 		.replace("{{STAT_TABLE}}", _help_stat_table()) 		.replace("{{RACE_TABLE}}", _help_race_table())
 
 func _help_passive_block(classes: Array) -> String:
 	"""One line per class: its name, its passive's name and what that passive actually does —
@@ -33151,15 +33203,16 @@ func show_help():
   [color=#2F4F4F]Grifter[/color]=Leverage (stall, bank, cash out), [color=#228B22]Ranger[/color]=Aim (a steady damage ramp), [color=#191970]Ninja[/color]=Read (gamble on a kill that skips the health bar). [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
 
 [b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
+[color=#808080]General reference. Which pool you actually SPEND, and which stat is YOUR ability damage, depend on your class — the "What each stat does FOR YOUR CLASS" table above is the one to build gear around.[/color]
 [color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2% attack damage per point[/color] | Warrior ability damage | Stamina pool
 [color=#66FF66]CON[/color] [color=#808080]Constitution[/color] - [color=#FFFFFF]+5 max HP per point[/color] | +0.5 defense per point | Contributes to Stamina pool
 [color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1% hit, +2% flee, -1% enemy hit per 5 DEX (max 30% dodge)[/color] | +0.5% crit | Energy pool
 [color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3% spell damage per point[/color] | Contributes to Mana pool
 [color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] - [color=#FFFFFF]Increases mana pool[/color] | Resists enemy abilities (curse, drain, etc.)
-[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Trickster ability damage; Assassinate odds vs enemy INT[/color] | Contributes to Energy pool
+[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Trickster ability damage; Assassinate odds vs enemy INT (Ninja only — the Grifter and Ranger finishers are guaranteed, not rolled)[/color] | Contributes to Energy pool
 
 [b][color=#FFD700]══ RACES ══[/color][/b]
-[color=#FFFFFF]Human[/color]=+10%XP | [color=#66FF99]Elf[/color]=+50%poison res,+20%magic res,+25%mana | [color=#FFA366]Dwarf[/color]=25%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
+[color=#FFFFFF]Human[/color]=+10%XP | [color=#66FF99]Elf[/color]=+50%poison res,+20%magic res,+25%mana | [color=#FFA366]Dwarf[/color]=34%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
 [color=#D2691E]Halfling[/color]=+10%dodge,+15%Valor | [color=#556B2F]Orc[/color]=+20%dmg below 50%HP | [color=#DDA0DD]Gnome[/color]=-15%ability costs | [color=#708090]Undead[/color]=curse immune,poison heals
 
 [b][color=#FFD700]══ BASICS ══[/color][/b]
@@ -33579,7 +33632,7 @@ func search_help(search_term: String):
 		{
 			"title": "RACES",
 			"keywords": ["race", "races", "human", "elf", "dwarf", "ogre", "halfling", "orc", "gnome", "undead", "poison", "lethal", "heal", "xp", "experience", "dodge", "gold", "damage", "cost", "curse", "death"],
-			"content": "[color=#FFFFFF]Human[/color] = +10% XP from all kills\n[color=#66FF99]Elf[/color] = 50% poison resistance, +20% magic resistance, +25% mana\n[color=#FFA366]Dwarf[/color] = 25% chance to survive lethal blow at 1 HP\n[color=#8B4513]Ogre[/color] = 2x healing from all sources\n[color=#D2691E]Halfling[/color] = +10% dodge chance, +15% Valor from kills\n[color=#556B2F]Orc[/color] = +20% damage when below 50% HP\n[color=#DDA0DD]Gnome[/color] = -15% ability costs\n[color=#708090]Undead[/color] = Immune to death curses, poison heals instead of damages"
+			"content": "{{RACE_TABLE}}"
 		},
 		{
 			"title": "WARRIOR PATH",

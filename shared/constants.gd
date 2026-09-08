@@ -81,6 +81,12 @@ const AVAILABLE_RACES = [
 ]
 
 # Race Descriptions
+# 2026-09-07 - DEAD DATA, and a trap. Nothing loads this file (it is referenced only from
+# comments), so these strings reach no player - but they are a sixth copy of the racial
+# passives and they are stale: the Dwarf line says 25% where `Character.try_last_stand` rolls
+# 34%. The live source is `Character.race_passive_for`. Do not copy from here; do not "fix"
+# these by hand either. Left in place rather than deleted because removing content is a
+# conversation, not a cleanup.
 const RACE_DESCRIPTIONS = {
 	RACE_HUMAN: "Adaptable and ambitious. Gains +10% bonus experience from all sources.",
 	RACE_ELF: "Ancient and resilient. 50% reduced poison damage, immune to poison debuffs.",

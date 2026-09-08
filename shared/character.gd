@@ -1052,29 +1052,17 @@ static func class_passive_for(class_type: String) -> Dictionary:
 			}
 
 func get_race_trait() -> Dictionary:
-	"""#69 — the character's RACE passive as a display dict (name/description/color),
-	mirroring get_class_passive() so the Deck screen can surface it as a visible Trait
-	card instead of an invisible modifier. Effects live in scattered helpers (poison
-	resist, dodge, cost mult, etc.) — this is the presentation layer."""
-	match race:
-		"Human":
-			return {"name": "Ambitious", "description": "+10% XP from everything", "color": "#FFFFFF"}
-		"Elf":
-			return {"name": "Fey Blood", "description": "+25% max mana, +50% poison resist, +20% magic resist", "color": "#66FF99"}
-		"Dwarf":
-			return {"name": "Last Stand", "description": "25% chance to survive a lethal hit at 1 HP (once per fight)", "color": "#FFA366"}
-		"Ogre":
-			return {"name": "Thick Hide", "description": "All healing you receive is doubled", "color": "#8B4513"}
-		"Halfling":
-			return {"name": "Nimble", "description": "+10% dodge, +15% Valor from sales", "color": "#D2691E"}
-		"Orc":
-			return {"name": "Bloodlust", "description": "+20% damage while below 50% HP", "color": "#556B2F"}
-		"Gnome":
-			return {"name": "Tinkerer", "description": "-15% on all ability costs", "color": "#DDA0DD"}
-		"Undead":
-			return {"name": "Unliving", "description": "Immune to curses; poison heals you instead of hurting", "color": "#708090"}
-		_:
-			return {"name": race if race != "" else "Traveler", "description": "No racial passive", "color": "#808080"}
+	"""The character's RACE passive as a display dict, for the Deck screen's Trait card.
+
+	2026-09-07 — delegates to `race_passive_for`. This was the FIFTH hand-copy of the racial
+	passives and it disagreed with the others on more than numbers: it used entirely different
+	NAMES ("Nimble" for Light-Footed, "Fey Blood" for Forest Heritage, "Thick Hide" for Hearty),
+	so a player's racial passive was called one thing on the Deck screen and another on the
+	character sheet. It also carried the Dwarf's Last Stand at 25% against a real 34%.
+
+	Effects still live in scattered helpers (poison resist, dodge, cost mult); this is only the
+	presentation layer, and there is now one of it."""
+	return race_passive_for(race)
 
 func get_class_attack_verb() -> String:
 	"""Get the attack verb/style for this character's class"""

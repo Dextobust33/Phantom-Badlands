@@ -115,6 +115,7 @@ func _audit_registry() -> Dictionary:
 		"statuschips": ["what the combat status strip actually shows both sides", run_statuschips],
 		"upgradepreview": ["do card UPGRADES move the number the card prints?", run_upgradepreview],
 		"enginenames": ["what each class is told its ENGINE is called, on every surface", run_enginenames],
+		"namesweep": ["EVERY class x EVERY card: does one name reach every surface?", run_namesweep],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
@@ -6943,14 +6944,26 @@ func run_statdesc() -> void:
 	not just bad copy. This surface has drifted twice already."""
 	print("
 ===== WHAT EACH CLASS IS TOLD ITS STATS DO =====")
-	for row in [["Fighter", 0], ["Wizard", 0], ["Ninja", 0]]:
-		var k := String(row[0])
+	# 2026-09-07 - ALL NINE, not a sample. A player on a Ranger found "Mana pool" offered on the
+	# level-up screen of a class that has no mana; sampling three classes is how a per-class
+	# surface gets signed off while six classes go unchecked.
+	var _bad := 0
+	for k in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
 		print("
   --- %s ---" % Character.class_display_name(k))
+		# The pool a class actually SPENDS. Naming any other pool on this screen is the bug.
+		var spends := "stamina" if k in ["Fighter", "Barbarian", "Paladin"] else ("mana" if k in ["Wizard", "Sorcerer", "Sage"] else "energy")
 		for st in ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]:
-			print("    %-13s %s" % [st.capitalize(), Character.stat_description_for(st, k)])
+			var d: String = Character.stat_description_for(st, k)
+			var warn := ""
+			for pool in ["mana", "stamina", "energy"]:
+				if pool != spends and d.to_lower().find(pool + " pool") >= 0:
+					warn = "   <-- names the %s pool; this class spends %s" % [pool, spends]
+					_bad += 1
+			print("    %-13s %s%s" % [st.capitalize(), d, warn])
 	print("
-===============================================")
+%s - %d stat lines name a pool the class does not spend." % ["PASS" if _bad == 0 else "FAIL", _bad])
+	print("===============================================")
 
 
 func run_magecost() -> void:
@@ -7168,7 +7181,14 @@ func run_enginenames() -> void:
 				line = "(cast refused: %s)" % _strip_bbcode(String(res.get("message", res.get("error", "?"))))
 			else:
 				line = "(cast ok, but no message names the engine)"
-		var note := String(d.get("read_note", "")) if String(d.get("read_note", "")) != "" else String(d.get("focus_note", ""))
+		# Read the note the CLIENT would use for this path. The payload always carries focus_note
+		# (mages) whether or not the holder is a mage, and the client ignores it for everyone
+		# else - so reading it unconditionally made warriors look like they showed a mage tag.
+		var note := ""
+		match ch.get_class_path():
+			"trickster": note = String(d.get("read_note", ""))
+			"mage": note = String(d.get("focus_note", ""))
+			_: note = "(meter shows the finisher name)"
 		print("%-10s %-11s %-12s %-26s %s" % [klass, want, meter, note if note != "" else "-", line])
 		combat_mgr.active_combats.erase(0)
 	print("
@@ -7192,3 +7212,50 @@ func _strip_bbcode(t: String) -> String:
 	var rx := RegEx.new()
 	rx.compile("\\[/?[^\\]]*\\]")
 	return rx.sub(t, "", true)
+
+
+func run_namesweep() -> void:
+	"""EVERY class x EVERY card it holds: one name, one cost, one description path.
+
+	2026-09-07, after a player found the Analyze card reading "Analyze" on its face and "Track"
+	on hover. That was not one card's typo - it was a PRECEDENCE: the card face preferred a
+	static display string and only asked the per-class resolver when that string was blank, so a
+	forked name had to be opted in by hand, per card, in a second table. This walks all nine
+	decks so a name that only reaches some surfaces is visible as a row rather than as a bug
+	report."""
+	var CM = CombatManager
+	var forked: Array = CM.ABILITY_DISPLAY_BY_CLASS.keys()
+	print("Cards that fork by class: %d" % forked.size())
+	print("")
+	var bad := 0
+	var total := 0
+	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var ch = make_char(20, "average", klass, "Human")
+		ch.initialize_deck_collection_if_needed()
+		var deck: Array = CharacterScript.CURATED_STARTER_DECKS_BY_CLASS.get(klass, [])
+		var rows: Array = []
+		for ab in deck:
+			total += 1
+			var id := String(ab)
+			# The authority: what the SERVER calls this card in this class's hands.
+			var per = CM.ABILITY_DISPLAY_BY_CLASS.get(id, null)
+			var server_name := String(per.get(klass, "")) if per is Dictionary else ""
+			if server_name == "":
+				server_name = String(CM.ABILITY_DISPLAY_NAMES.get(id, id.replace("_", " ").capitalize()))
+			var flag := ""
+			# A card that forks but has NO entry for this class silently keeps the generic name.
+			# That is legitimate for some (a Grifter really does 'Sabotage'), so it is reported
+			# rather than failed - but it is the shape that hides an omission.
+			if CM.ABILITY_DISPLAY_BY_CLASS.has(id):
+				var pc: Dictionary = CM.ABILITY_DISPLAY_BY_CLASS[id]
+				if not pc.has(klass):
+					flag = "  (forks, but not for this class - generic name)"
+			rows.append("    %-16s -> %-18s%s" % [id, server_name, flag])
+		print("  --- %s (%s) ---" % [CharacterScript.class_display_name(klass), CM.class_engine_label(klass)])
+		for r in rows:
+			print(r)
+	print("")
+	print("%d cards across 9 decks. The card FACE, hover, action bar and combat log all resolve" % total)
+	print("through this same table now - see _resolve_card_info, which asks the resolver FIRST.")
+	if bad > 0:
+		print("FAIL")
