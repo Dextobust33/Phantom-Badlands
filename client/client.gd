@@ -5801,21 +5801,32 @@ func _dev_run_shots() -> void:
 				# attacks, so the capture photographed the victory card and the rank-up overlay
 				# instead of a fight - and the resulting shot was used to judge a combat-layout
 				# question it could not answer. The monster has to outlive the script.
-				send_to_server({"type": "gm_spawnmonster", "monster_name": "Wight", "level": 30})
+				# 2026-09-08 - scale to the CHARACTER and make it unkillable for the shot. A
+				# flat level 30 was tuned against the level-12 Wizard with 1129 HP; pointed at
+				# the level-10 Ranger with 81 HP it simply killed it, the capture was skipped,
+				# and the run reported "0 screenshots" with no reason (the client's stdout was
+				# being discarded too). A screenshot harness must not be able to lose its own
+				# subject.
+				send_to_server({"type": "gm_godmode"})
+				await get_tree().create_timer(0.6).timeout
+				var _mlvl: int = maxi(5, int(character_data.get("level", 10)) + 8)
+				send_to_server({"type": "gm_spawnmonster", "monster_name": "Wight", "level": _mlvl})
 				await get_tree().create_timer(3.0).timeout
 				# 2026-09-08 - cast a DEBUFF if the hand holds one, so the monster's status chips
 				# are actually on screen. A capture of an undebuffed monster cannot show whether
 				# the monster's chip row renders in the right place, which is the question the
 				# shot is usually being taken to answer.
 				var _debuffs := ["analyze", "sabotage", "distract", "frost_nova", "paralyze"]
-				var _cast_debuff := ""
+				# Cast up to TWO, so the monster's chip row has more than one entry and its
+				# position is unmistakable in the frame.
+				var _cast_n := 0
 				for _c in combat_hand:
-					if String(_c) in _debuffs:
-						_cast_debuff = String(_c)
+					if _cast_n >= 2:
 						break
-				if _cast_debuff != "" and in_combat:
-					send_to_server({"type": "combat", "command": _cast_debuff})
-					await get_tree().create_timer(2.6).timeout
+					if String(_c) in _debuffs and in_combat:
+						send_to_server({"type": "combat", "command": String(_c)})
+						_cast_n += 1
+						await get_tree().create_timer(2.6).timeout
 				for _i in range(2):
 					if not in_combat:
 						break     # it died anyway; do not keep swinging at nothing
@@ -5831,6 +5842,10 @@ func _dev_run_shots() -> void:
 					# A rank-up can fire mid-fight and its overlay covers the middle of the
 					# screen - which is exactly the region a LAYOUT question is about. Stand it
 					# down for the capture; the milestone has its own shot elsewhere.
+					# Diagnostic: what the monster chip row was ASKED to render. Inspecting the
+					# code did not settle why the chips were absent from the frame, so print the
+					# payload rather than keep guessing at it.
+					print("[SHOTS] monster_status=", _last_monster_status)
 					if _milestone_overlay != null and is_instance_valid(_milestone_overlay) and _milestone_overlay.visible:
 						_milestone_overlay.visible = false
 						await get_tree().create_timer(0.4).timeout
@@ -30024,6 +30039,9 @@ func display_changelog():
 	# companion XP fixed in both paths, and equipment that actually drops early.
 	# v0.9.756 — the theming pass: all nine decks renamed per class across card face, action bar,
 	# combat log, hover, buff panel, gear affixes and help; plus per-class stat descriptions.
+	# v0.9.759 — non-combat abilities could earn combat upgrades (teleport/cloak), monster
+	# debuff chips moved under the monster, dungeons stopped inventing a sub-tier, milestone
+	# overlay given an opaque ground, duplicate-client warning, sim watchdog + orphan reaper.
 	# v0.9.758 — six player-reported surface bugs, all of them one name or number told two ways;
 	# then the same root causes swept across all nine classes rather than the reported symptoms.
 	# v0.9.757 — card upgrades made honest (the estimate counted `power` alone while nine more
@@ -30032,7 +30050,15 @@ func display_changelog():
 	# v0.9.755 — the class-identity release: nine classes onto three engine shapes, the finisher
 	# forked three ways per path, Sage shown as Oracle, a difficulty curve that ramps with level,
 	# rest/flock changes for the early game, CON granting mitigation, and a one-off deck repair.
-	display_game("[color=#00FF00]v0.9.758[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.759[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOU WERE BEING OFFERED CARD UPGRADES YOU COULD NEVER USE.[/color] Every mage was handed [b]three[/b] upgrade choices for [color=#FFFFFF]Teleport[/color] — a card that has been out-of-combat only for months and cannot be played in a fight at all. Picking one [b]wasted it[/b]. [color=#FFFFFF]Cloak[/color] had the same problem. Those choices are removed, and every ability was re-checked against the real combat engine to be sure nothing else does it.")
+	display_game("  [color=#FF8000]★ THE ENEMY’S DEBUFFS NOW SIT UNDER THE ENEMY.[/color] Your poison, blind and armour-break on a monster were being drawn in a strip at the [b]bottom of the screen[/b], hundreds of pixels from the monster they described — so the half of the fight you were winning was the half you could not see.")
+	display_game("  [color=#FF8000]★ DUNGEONS NO LONGER ADVERTISE A DEPTH THEY HAVE NOT PICKED.[/color] A dungeon you have not entered was labelled [b]Tier 1-1[/b] and priced against the easiest band — always the easiest, because that was the placeholder. Its real depth is not chosen until you go in, and its monsters are sized to [b]you[/b]. It now says \"Tier 1 Dungeon | Levels 3-12 (exact depth is set when you enter)\" instead of guessing.")
+	display_game("  [color=#1EFF00]◆ The rank-up screen no longer prints over the victory screen.[/color] It was dimming what was behind it instead of covering it, so two sets of text collided.")
+	display_game("  [color=#1EFF00]◆ A warning if you launch the game twice.[/color] Two copies means two of everything — twice the CPU and a hotter, slower machine. It tells you and lets you carry on.")
+	display_game("")
+
+	display_game("[color=#00FFFF]v0.9.758[/color]")
 	display_game("  [color=#FF8000]★ YOUR CARDS SHOW YOUR CLASS'S NAMES EVERYWHERE NOW.[/color] A card could read one name on its face and a different one on its hover — a Ranger's [color=#FFFFFF]Track[/color] still called itself [b]Analyze[/b] on the card. Every surface now asks the same source, so a renamed card cannot show its old name anywhere. Gear granting +ranks to a renamed card names it correctly too.")
 	display_game("  [color=#FF8000]★ TWO TRICKSTERS WERE SHOWN A CHANCE THAT DOES NOT EXIST.[/color] The meter read [b]\"Assassinate NN%\"[/b] for all three, but only the [color=#191970]Ninja[/color] gambles. A [color=#228B22]Ranger[/color]'s [b]Killing Shot[/b] and a [color=#2F4F4F]Grifter[/color]'s [b]Double Cross[/b] are [b]guaranteed damage[/b] that cannot fail — they now read \"Killing Shot ~229\", and their cards say guaranteed instead of promising an instant kill they never had.")
 	display_game("  [color=#FF8000]★ THE STAT SCREEN OFFERED MANA TO CLASSES WITH NO MANA.[/color] Every character carries all three pools, but you only ever SPEND one — so the level-up screen was recommending stats for a bar a Ranger will never use. Each stat now names a pool only when it is [b]your[/b] pool.")

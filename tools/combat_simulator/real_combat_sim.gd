@@ -158,6 +158,7 @@ func _audit_registry() -> Dictionary:
 		"enginenames": ["what each class is told its ENGINE is called, on every surface", run_enginenames],
 		"namesweep": ["EVERY class x EVERY card: does one name reach every surface?", run_namesweep],
 		"deadranks": ["can any ability earn combat upgrades it can never use?", run_deadranks],
+		"cardaudit": ["EVERY class x EVERY card: cast it and read what it SAYS", run_cardaudit],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
@@ -7405,3 +7406,87 @@ func _primary_pool_for(ch) -> int:
 		"mage": return ch.get_total_max_mana()
 		"trickster": return ch.get_total_max_energy()
 	return ch.get_total_max_stamina()
+
+
+func run_cardaudit() -> void:
+	"""Cast every card of every class and READ WHAT IT SAYS. Owner 2026-09-08: *"That sounds like
+	we need a card audit for each class."*
+
+	`namesweep` checks a card's NAME. This checks its OUTPUT, which is where the drift has
+	actually been: a Ranger's Track reported "Assassinate Chance: 22%" — the Ninja's mechanic,
+	under a card the Ranger does not own, for a finisher (Killing Shot) that cannot miss. That
+	was found by chance in a screenshot, which is not a process.
+
+	Flags any line that names ANOTHER class's card or engine. The check is mechanical: build the
+	set of terms that belong to other classes, cast the card, and look for them in what comes
+	back."""
+	var CM = CombatManager
+	# Every per-class card name and engine label, so a line can be tested for foreign terms.
+	var owner_of := {}          # term -> the class it belongs to
+	for ab in CM.ABILITY_DISPLAY_BY_CLASS.keys():
+		var per: Dictionary = CM.ABILITY_DISPLAY_BY_CLASS[ab]
+		for cls in per.keys():
+			owner_of[String(per[cls])] = String(cls)
+	for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var lbl := String(CM.class_engine_label(cls))
+		# Engine labels are shared by design within the Trickster trio's mechanic, so only flag
+		# a label that belongs to exactly ONE class.
+		if not owner_of.has(lbl):
+			owner_of[lbl] = cls
+		elif owner_of[lbl] != cls:
+			owner_of[lbl] = "*shared*"
+
+	var problems: Array = []
+	var cast_count := 0
+	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var ch = make_char(40, "average", klass, "Human")
+		ch.initialize_deck_collection_if_needed()
+		var deck: Array = CharacterScript.CURATED_STARTER_DECKS_BY_CLASS.get(klass, [])
+		print("
+--- %s (%s) ---" % [CharacterScript.class_display_name(klass), CM.class_engine_label(klass)])
+		for ab in deck:
+			var id := String(ab)
+			var monster = make_monster(40, "normal", 1.0)
+			combat_mgr.start_combat(0, ch, monster)
+			var combat = combat_mgr.active_combats[0]
+			combat["combat_hand"] = [id]
+			combat["player_can_act"] = true
+			combat["momentum"] = CombatManager.MOMENTUM_MAX
+			combat["focus"] = CombatManager.FOCUS_MAX
+			combat["combo"] = CombatManager.COMBO_MAX
+			ch.current_hp = ch.get_total_max_hp()
+			ch.current_mana = ch.get_total_max_mana()
+			ch.current_stamina = ch.get_total_max_stamina()
+			ch.current_energy = ch.get_total_max_energy()
+			var spend := int(round(float(_primary_pool_for(ch)) * 0.4))
+			var res: Dictionary = combat_mgr.process_ability_command(0, id, str(maxi(1, spend)))
+			cast_count += 1
+			var said: Array = []
+			for m in res.get("messages", []):
+				said.append(_strip_bbcode(String(m)).strip_edges())
+			combat_mgr.active_combats.erase(0)
+			var joined := " ".join(said)
+			var foreign: Array = []
+			for term in owner_of.keys():
+				var owner := String(owner_of[term])
+				if owner == "*shared*" or owner == klass:
+					continue
+				# Word-ish match so "Mark" does not fire inside "Marksman".
+				if joined.find(term) >= 0:
+					foreign.append("%s (%s's)" % [term, owner])
+			var flag := ""
+			if not foreign.is_empty():
+				flag = "   <-- names " + ", ".join(foreign)
+				problems.append("%s / %s -> %s" % [klass, id, ", ".join(foreign)])
+			var first: String = String(said[0]) if said.size() > 0 else "(no message)"
+			if first.length() > 64:
+				first = first.substr(0, 64) + "..."
+			print("    %-16s %s%s" % [id, first, flag])
+	print("
+Cast %d cards across 9 classes." % cast_count)
+	if problems.is_empty():
+		print("PASS - no card's output names another class's card or engine.")
+	else:
+		print("FAIL - %d card(s) speak for the wrong class:" % problems.size())
+		for pb in problems:
+			print("   " + pb)

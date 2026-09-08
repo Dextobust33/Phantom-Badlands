@@ -6147,13 +6147,31 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# against. It now asks the single source, and reports the finisher that still
 			# exists.
 			var level_diff = int(monster.level) - character.level
-			var _assn = assassinate_chance(character, monster, combat)
 			var level_warning = ""
 			if level_diff > 10:
 				level_warning = " [color=#FF4444](Lv%+d penalty!)[/color]" % level_diff
 			elif level_diff > 0:
 				level_warning = " [color=#FFA500](Lv%+d)[/color]" % level_diff
-			messages.append("[color=#00FFFF]Assassinate Chance:[/color] %d%%%s" % [_assn, level_warning])
+			# 2026-09-08 - report the reader's OWN finisher. This printed "Assassinate Chance: N%"
+			# to all three Tricksters, but only the Ninja's finisher is a roll: the Grifter cashes
+			# its Leverage and the Ranger discharges its Aim, both for GUARANTEED damage. Seen in
+			# a capture of a Ranger, whose Track read "Assassinate Chance: 22%" for a card called
+			# Killing Shot that cannot miss. Same fault as the meter tag and the Wits stat line -
+			# one class's mechanic described as if it were everyone's.
+			var _fin := _ability_display_name(character, "perfect_heist")
+			match String(character.class_type):
+				"Grifter", "Ranger":
+					var _stacks: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+					if _stacks <= 0:
+						messages.append("[color=#00FFFF]%s:[/color] build your engine first%s" % [_fin, level_warning])
+					else:
+						messages.append("[color=#00FFFF]%s:[/color] ~%s guaranteed%s" % [
+							_fin, _short_num(int(_ability_anchored_damage(character, "wits",
+								(GRIFTER_CASHOUT_PER_READ if character.class_type == "Grifter" else RANGER_SHOT_PER_READ)
+								* float(_stacks)))), level_warning])
+				_:
+					messages.append("[color=#00FFFF]%s Chance:[/color] %d%%%s" % [
+						_fin, assassinate_chance(character, monster, combat), level_warning])
 
 			# Grant +10% damage bonus for rest of combat
 			combat["analyze_bonus"] = 10

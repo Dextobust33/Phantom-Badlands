@@ -27,6 +27,10 @@ import run as runner     # noqa: E402
 
 # Dungeon BEFORE combat: entering a dungeon is refused while in a fight.
 DEFAULT_SCENES = ["world", "companions", "dungeon", "combat"]
+# 2026-09-08 - the client's stdout used to go to DEVNULL, so every [SHOTS] diagnostic it
+# printed was thrown away and a failed capture looked like "0 screenshots" with no reason.
+# Three separate failures in a row were debugged blind because of this one line.
+CLIENT_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "shots_client.log")
 SHOT_RES = "1920x1080"   # the layout is designed for 1080p; wider just spreads it thin
 # The capture walks its scenes on a fixed timeline inside the client; this is that timeline
 # plus headroom. Overrunning is harmless (the client is killed); cutting it short is not.
@@ -71,6 +75,11 @@ def main():
     before = set(os.listdir(shots_dir)) if os.path.isdir(shots_dir) else set()
 
     print("[1/4] scenario")
+    # The scenario builds only as many characters as its spec asks for ("healthy" = 2), so
+    # --player=3 logged in as a character that had never been created: the client sat at the
+    # login screen and the run captured NOTHING. Widen the roster to cover the index asked for.
+    if player_idx + 1 > scen.SCENARIOS["healthy"].get("players", 2):
+        scen.SCENARIOS["healthy"]["players"] = player_idx + 1
     sys.argv = [sys.argv[0], "healthy"]
     if scen.main() != 0:
         return 1
@@ -93,7 +102,7 @@ def main():
         "--resolution", SHOT_RES, "client/client.tscn", "--",
         "--user=%s" % user, "--pass=%s" % runner.DEV_PASSWORD, "--char=%s" % cname,
         "--server=localhost", "--shots=%s" % ",".join(scenes)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        stdout=open(CLIENT_LOG, "w", encoding="utf-8"), stderr=subprocess.STDOUT)
 
     for _ in range(BUDGET_S):
         time.sleep(1)
@@ -105,6 +114,17 @@ def main():
             p.terminate()
     subprocess.run(["taskkill", "/F", "/IM", "godot.windows.opt.tools.64.exe"],
                    capture_output=True)
+
+    # Echo whatever the client said about the capture, so a failure explains itself.
+    try:
+        with open(CLIENT_LOG, encoding="utf-8", errors="replace") as fh:
+            said = [l.rstrip() for l in fh if "[SHOTS]" in l or "SCRIPT ERROR" in l]
+        if said:
+            print("\nclient said:")
+            for l in said[-12:]:
+                print("  " + l)
+    except OSError:
+        pass
 
     after = set(os.listdir(shots_dir)) if os.path.isdir(shots_dir) else set()
     new = sorted(after - before)
