@@ -572,6 +572,12 @@ var _map_sync_last_sig: String = ""
 # held one line and was dropped the moment it was drawn, plus a parallel copy appended to the
 # chat strip. See `_dungeon_log_add`.
 var _dungeon_log: Array = []
+# Lines of the dungeon menu currently drawn in the SIDE PANEL rather than over the map - rest,
+# food and the gather prompt (owner 2026-09-09: *"Can we not do the rest and food in the right as
+# well. Inventory makes sense to do the canvas but the other two probably not"*). Rebuilt from
+# scratch each time its menu redraws, and only ever RENDERED while that menu is open, so an exit
+# path that forgets to clear it cannot leave a stale menu on the panel.
+var _dungeon_panel_menu: Array = []
 # Bounded so the log cannot push the map key off the panel - the key is what the log sits above,
 # and burying it would trade one unreadable surface for another.
 const DUNGEON_LOG_MAX := 6
@@ -1697,7 +1703,6 @@ var dungeon_available: Array = []  # List of available dungeons to enter
 var dungeon_list_mode: bool = false  # Viewing dungeon list
 var dungeon_triggered_traps: Array = []  # Triggered trap positions for map display
 var dungeon_resource_prompt: bool = false  # Waiting for gather/skip choice
-var awaiting_dungeon_gather_result: bool = false  # Protect gather result display from refresh
 var awaiting_dungeon_trap_ack: bool = false  # Protect trap display from dungeon state refresh
 var dungeon_food_select: bool = false  # Selecting food for dungeon rest
 var dungeon_food_list: Array = []  # [{id, name, quantity, type}] food materials available
@@ -5945,6 +5950,33 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "gm_spring_trap"})
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("dungeontrap")
+
+			"dungeonrest":
+				# The rest / food menu, which moved to the side panel on 2026-09-09. Captured
+				# because "it fits in the panel column" is a claim about pixels, and the only
+				# way to know is to look at it with a real food list in it.
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				if not dungeon_mode:
+					send_to_server({"type": "gm_enter_dungeon", "tier": 3})
+					await get_tree().create_timer(3.0).timeout
+				# Clear a trap ack left over from an earlier scene in the same run. Without this
+				# the capture shows the TRAP's action bar over the food menu, which looks like a
+				# priority bug in the menu rather than the harness not tidying up after itself.
+				if awaiting_dungeon_trap_ack:
+					execute_local_action("dungeon_trap_acknowledge")
+					await get_tree().create_timer(0.6).timeout
+				# A menu of nothing proves nothing, so make sure there IS food to list. These are
+				# real `CraftingDatabase.MATERIALS` ids across the four edible types the rest
+				# menu filters on (plant / herb / fungus / fish).
+				for _mat in ["healing_herb", "small_fish", "cave_mushroom", "seaweed", "mana_blossom", "medium_fish"]:
+					send_to_server({"type": "gm_givemats", "material_id": _mat, "amount": 5})
+					await get_tree().create_timer(0.3).timeout
+				await get_tree().create_timer(0.8).timeout
+				execute_local_action("dungeon_rest")
+				await get_tree().create_timer(1.0).timeout
+				await _dev_shot_capture("dungeonrest")
 
 			_:
 				pass
@@ -15671,9 +15703,13 @@ func execute_local_action(action: String):
 				update_action_bar()
 		"dungeon_gather":
 			dungeon_resource_prompt = false
+			# The prompt lives in the side panel now, so closing it has to repaint the panel -
+			# otherwise the choice you just made stays on screen until the server answers.
+			_dungeon_panel_refresh()
 			send_to_server({"type": "dungeon_gather_confirm"})
 		"dungeon_skip_gather":
 			dungeon_resource_prompt = false
+			_dungeon_panel_refresh()
 			send_to_server({"type": "dungeon_gather_skip"})
 		"dungeon_escape_scroll":
 			# Find and use the first escape scroll in inventory
@@ -28892,7 +28928,6 @@ func _on_move_button(direction: int):
 				4: dungeon_dir = "w"
 				6: dungeon_dir = "e"
 			if dungeon_dir != "":
-				awaiting_dungeon_gather_result = false
 				send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
 				last_move_time = current_time
 			return
@@ -34390,9 +34425,22 @@ func _dungeon_menu_open() -> bool:
 
 	So a menu takes the canvas and the map yields to it - which is the honest priority, since you
 	are not walking while choosing food. Only INCIDENTAL notices (a screenshot confirmation, a
-	tile flavour line) go to chat."""
-	return (dungeon_food_select or dungeon_resource_prompt or dungeon_list_mode
-		or awaiting_dungeon_gather_result or awaiting_dungeon_trap_ack
+	tile flavour line) go to the run log.
+
+	2026-09-09 - a TRAP and a GATHER RESULT are not menus, and they used to be listed here.
+	Owner: *"Can we not put the trap info and other dungeon chat over on the right above the key
+	like you did the enemies here around level 19. It's kind of jarring to take over the whole
+	dungeon art screen with it."* Right - they are NOTIFICATIONS. A menu is a list of options you
+	have to read and choose from, which genuinely needs the room; a notification is one line
+	telling you what just happened, and blanking the floor to say it costs far more than it buys.
+	So the split is MENU vs NOTICE, not "anything the player must acknowledge".
+
+	2026-09-09, second pass - REST, FOOD and the GATHER PROMPT left too, to the side panel
+	(`_dungeon_panel_menu_open`). Owner: *"Can we not do the rest and food in the right as well.
+	Inventory makes sense to do the canvas but the other two probably not."* Three lines of
+	options fit the panel column comfortably; an inventory does not. So what remains here is
+	only the genuinely FULL-SCREEN menus."""
+	return (dungeon_list_mode
 		or inventory_mode or combat_item_mode or settings_mode or admin_mode)
 
 
@@ -34416,11 +34464,25 @@ func _dungeon_log_add(text: String) -> void:
 	_dungeon_log.append(plain)
 	if _dungeon_log.size() > DUNGEON_LOG_MAX:
 		_dungeon_log = _dungeon_log.slice(_dungeon_log.size() - DUNGEON_LOG_MAX)
-	# The panel is what shows it, so it has to be redrawn for the line to appear at all.
+	_dungeon_panel_refresh()
+
+
+func _dungeon_panel_refresh() -> void:
+	"""Redraw the side panel. The panel is what shows the log and the panel menus, so anything
+	that changes either has to call this or the new line simply never appears."""
 	if dungeon_mode and not dungeon_data.is_empty() and map_display:
 		map_display.clear()
 		map_display.append_text(_dungeon_side_panel_text())
 		map_display.scroll_to_line(0)
+
+
+func _dungeon_panel_menu_open() -> bool:
+	"""Is a menu being drawn in the SIDE PANEL right now?
+
+	Rest / food / the gather prompt are short prompts of a few options each, and the owner's call
+	is that they belong beside the map rather than over it. Inventory is NOT here on the same
+	call - it is a full screen of items with comparisons, which the panel column cannot hold."""
+	return dungeon_mode and (dungeon_food_select or dungeon_resource_prompt)
 
 
 func display_game(text: String):
@@ -34433,7 +34495,14 @@ func display_game(text: String):
 	# is still readable — which matters because the Player-Visible Output Rule means these
 	# messages cannot simply be dropped.
 	if dungeon_mode and not _dungeon_rendering and not _dungeon_menu_open():
-		_dungeon_log_add(text)
+		# A panel MENU is being built (rest / food / gather): its lines are the menu, not news,
+		# so they go to the menu block rather than into the run log, which they would otherwise
+		# flood - a nine-item food list would push every real event out of a six-line log.
+		if _dungeon_panel_menu_open():
+			_dungeon_panel_menu.append(text)
+			_dungeon_panel_refresh()
+		else:
+			_dungeon_log_add(text)
 		return
 	if game_output:
 		game_output.append_text(text + "\n")
@@ -43407,16 +43476,14 @@ func handle_dungeon_state(message: Dictionary):
 	# Always update the map display (right panel) so player position is current
 	update_dungeon_map()
 
-	# Only update GameOutput if player doesn't need to acknowledge something
-	# (e.g., combat victory, treasure found, floor change, gather result, trap)
-	if not pending_continue and not awaiting_dungeon_gather_result and not awaiting_dungeon_trap_ack:
+	# Only hold the canvas back for things that genuinely OWN it - a combat victory or a treasure
+	# reveal, which are full screens the player reads.
+	#
+	# 2026-09-09: traps and gather results no longer qualify. They report into the side panel's
+	# run log now and leave the floor alone, so suppressing the map for them would freeze it for
+	# no reason - the map would sit stale behind a notice that is not even on it.
+	if not pending_continue:
 		display_dungeon_floor()
-	# Gather result still auto-clears on next state — those aren't movement-
-	# blocking, just display-preserving. Trap ack is NOT auto-cleared anymore
-	# (a player mashing movement could miss a trap); it now requires explicit
-	# Acknowledge via the `dungeon_trap_acknowledge` action.
-	if awaiting_dungeon_gather_result:
-		awaiting_dungeon_gather_result = false
 	update_action_bar()
 
 func handle_dungeon_treasure(message: Dictionary):
@@ -43855,7 +43922,6 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_triggered_traps = []
 	dungeon_resource_prompt = false
 	dungeon_food_select = false
-	awaiting_dungeon_gather_result = false
 	awaiting_dungeon_trap_ack = false
 	awaiting_final_chest = false
 
@@ -43943,12 +44009,14 @@ func handle_egg_hatched(message: Dictionary):
 	update_action_bar()
 
 func handle_dungeon_resource_prompt(message: Dictionary):
-	"""Handle resource node gather/skip prompt"""
+	"""Handle resource node gather/skip prompt - in the SIDE PANEL (2026-09-09), same call as
+	rest and food. Two options is the clearest case of all for not clearing the map to ask."""
 	dungeon_resource_prompt = true
-	game_output.clear()
+	_dungeon_panel_menu.clear()
 	display_game(message.get("message", "[color=#00FFCC]You found a resource node![/color]"))
 	display_game("")
 	display_game("Press [color=#FFFF00][%s][/color] to Gather or [color=#FFFF00][%s][/color] to Skip" % [get_action_key_name(0), get_action_key_name(1)])
+	display_dungeon_floor()
 	update_action_bar()
 
 func handle_dungeon_trap(message: Dictionary):
@@ -43966,38 +44034,32 @@ func handle_dungeon_trap(message: Dictionary):
 			"type": message.get("trap_type", "rust"),
 			"color": message.get("trap_color", "#FF4444")
 		})
-	# The ack flag must be set BEFORE anything is written, not after.
+	# The trap goes in the RUN LOG, and the floor stays on screen.
 	#
-	# 2026-09-09 - this ordering is what made a sprung trap show the player a BLANK canvas.
-	# `awaiting_dungeon_trap_ack` is one of the states `_dungeon_menu_open()` reports, and that
-	# is what tells `display_game` the canvas belongs to a message rather than to the floor.
-	# Set afterwards, every line below was still routed to chat by the underground redirect -
-	# into a `game_output` this function had just cleared - so the trap took the canvas away and
-	# put nothing in its place. `handle_dungeon_gather_result` right below always had it the
-	# right way round, which is why gathering never showed the fault.
+	# 2026-09-09. This used to clear `game_output` and write a full-screen "===== TRAP! ====="
+	# banner over the map. Owner: *"It's kind of jarring to take over the whole dungeon art
+	# screen with it."* It was also silently broken - the ack flag was set after these writes,
+	# and that flag was what routed them to the canvas, so every line went to chat instead and
+	# the player got a cleared canvas with nothing on it at all. Both problems go away by not
+	# taking the canvas: the notice belongs beside the map, not instead of it.
+	_dungeon_log_add("[color=#FFD700]TRAP![/color] %s"
+		% message.get("message", "[color=#FF4444]You triggered a trap![/color]"))
 	awaiting_dungeon_trap_ack = true  # Hard block until acknowledged
-	# Display trap message in game output
-	game_output.clear()
-	display_game("[color=#FFD700]===== TRAP! =====[/color]")
-	display_game("")
-	display_game(message.get("message", "[color=#FF4444]You triggered a trap![/color]"))
-	display_game("")
-	display_game("[color=#FFAA00]Press [%s] to acknowledge and continue exploring.[/color]" % get_action_key_name(0))
-	# Also keep it in the run log, so after acknowledging you can still see what hit you.
-	_dungeon_log_add(message.get("message", "You triggered a trap!"))
-	update_dungeon_map()
+	# Redraw the floor: a trap arrives with its own `dungeon_state`, which is suppressed while an
+	# acknowledgement is pending, so without this the map would sit stale until you pressed the
+	# button. `_dungeon_log_add` has already refreshed the side panel.
+	display_dungeon_floor()
 	update_action_bar()
 
 func handle_dungeon_gather_result(message: Dictionary):
-	"""Handle gathering result from dungeon resource node"""
+	"""Handle gathering result from dungeon resource node.
+
+	Same treatment as the trap above (2026-09-09): what you gathered is one line of news, so it
+	goes to the run log beside the map rather than clearing the floor for a banner."""
 	dungeon_resource_prompt = false
-	awaiting_dungeon_gather_result = true
-	game_output.clear()
-	display_game("[color=#FFD700]===== GATHERING =====[/color]")
-	display_game("")
-	display_game(message.get("message", "[color=#00FFCC]You gathered resources![/color]"))
-	display_game("")
-	display_game("[color=#808080]Move to continue exploring...[/color]")
+	_dungeon_log_add("[color=#FFD700]GATHERED[/color] %s"
+		% message.get("message", "[color=#00FFCC]You gathered resources![/color]"))
+	display_dungeon_floor()
 	update_action_bar()
 
 # 2026-09-08 (E) - the dungeon grid's font in the main canvas. The viewport stays 11x11 on the
@@ -44181,8 +44243,12 @@ func display_dungeon_floor():
 	# there is room to read it before you are standing on one.
 
 func display_dungeon_food_select():
-	"""Display food selection for dungeon rest."""
-	game_output.clear()
+	"""Display food selection for dungeon rest - in the SIDE PANEL, not over the map.
+
+	2026-09-09. This used to `game_output.clear()` and draw the list across the whole canvas.
+	Rebuilding the buffer from empty each call is what makes paging work: every redraw replaces
+	the menu rather than appending a second copy of it below the first."""
+	_dungeon_panel_menu.clear()
 	var is_mage = character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"]
 	var action_name = "Meditate" if is_mage else "Rest"
 	display_game("[color=#FFD700]===== %s - Select Food =====[/color]" % action_name)
@@ -44205,6 +44271,9 @@ func display_dungeon_food_select():
 	if total_pages > 1:
 		display_game("[color=#808080]Page %d/%d[/color]" % [dungeon_food_page + 1, total_pages])
 	display_game("[color=#FFFF00][%s][/color] Back  [color=#FFFF00][%s][/color] Prev Page  [color=#FFFF00][%s][/color] Next Page" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
+	# The map keeps the canvas now, so it has to be drawn - opening the menu no longer paints
+	# over it, and nothing else would repaint it while the menu is up.
+	display_dungeon_floor()
 
 func _dungeon_side_panel_text() -> String:
 	"""What the dungeon SIDE PANEL says. One builder, two callers — `display_dungeon_floor` and
@@ -44233,6 +44302,14 @@ func _dungeon_side_panel_text() -> String:
 	# log over to the right Above the map key instead of being below in the chat where everything
 	# is cutoff". Oldest first, so the newest line is the one nearest the key and the eye lands on
 	# it last. The panel had a large empty band here already, which is the space this uses.
+	# A panel menu REPLACES the log while it is open - you are choosing, not reading the news,
+	# and stacking both would bury the options. Gated on `_dungeon_panel_menu_open()` rather
+	# than on the buffer being non-empty, so a menu closed by any path cannot linger here.
+	if _dungeon_panel_menu_open() and not _dungeon_panel_menu.is_empty():
+		out += "\n[color=#605040]────────────[/color]\n"
+		for line in _dungeon_panel_menu:
+			out += "%s\n" % String(line)
+		return out
 	if not _dungeon_log.is_empty():
 		out += "\n[color=#605040]────────────[/color]\n"
 		for i in range(_dungeon_log.size()):
