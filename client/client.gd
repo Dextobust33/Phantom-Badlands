@@ -4877,12 +4877,7 @@ func _process(delta):
 								combat_scene_panel.hide_fx_overlay_only()
 							if combat_scene_panel.has_method("hide_victory_card"):
 								combat_scene_panel.hide_victory_card()
-					# 2026-09-08 - remember which way we are facing and advance the walk cycle.
-					# The dungeon had no facing at all because an "@" has no front; the sprite
-					# does, and the overworld art ships 4 directions x 3 frames per character.
-					_local_map_facing = _DUNGEON_FACING_BY_DIR.get(dungeon_dir, _local_map_facing)
-					_dungeon_walk_frame = 1 if _dungeon_walk_frame != 1 else 2
-					send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
+					_send_dungeon_move(dungeon_dir)
 					last_move_time = current_time
 
 	# House movement with numpad/arrow keys (only when in house screen)
@@ -15724,16 +15719,16 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"dungeon_move_n":
 			if not _combat_loot_reveal_active():
-				send_to_server({"type": "dungeon_move", "direction": "n"})
+				_send_dungeon_move("n")
 		"dungeon_move_s":
 			if not _combat_loot_reveal_active():
-				send_to_server({"type": "dungeon_move", "direction": "s"})
+				_send_dungeon_move("s")
 		"dungeon_move_w":
 			if not _combat_loot_reveal_active():
-				send_to_server({"type": "dungeon_move", "direction": "w"})
+				_send_dungeon_move("w")
 		"dungeon_move_e":
 			if not _combat_loot_reveal_active():
-				send_to_server({"type": "dungeon_move", "direction": "e"})
+				_send_dungeon_move("e")
 		# Bless stat selection actions
 		"bless_stat_str":
 			_send_bless_with_stat("strength")
@@ -44276,6 +44271,23 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 	var tint := BattlerSprite.tint_hex(String(character_data.get("appearance_color", "")))
 	return "[img=%dx%d region=%d,%d,%d,%d color=%s]%s[/img]" % [
 		cell_w, h, reg.position.x, reg.position.y, reg.size.x, reg.size.y, tint, path]
+
+
+func _send_dungeon_move(dir: String) -> void:
+	"""Move underground: turn the sprite, advance the walk cycle, then tell the server.
+
+	2026-09-08 - ONE sender, because there were two. The facing update was added to the
+	`_process` key-polling path only, and the action-bar path (`dungeon_move_n/s/w/e` in
+	`execute_local_action`) sent the move straight to the server without it. A player who moves
+	with the on-screen buttons therefore never turned: owner, on live, "my sprite is always facing
+	left". The change was correct and simply was not on the path being executed - which is why
+	both paths now go through here rather than each remembering to do it."""
+	if _combat_loot_reveal_active():
+		return
+	_local_map_facing = _DUNGEON_FACING_BY_DIR.get(dir, _local_map_facing)
+	# stand -> walk1 -> walk2 -> walk1..., so a step always changes the frame
+	_dungeon_walk_frame = 1 if _dungeon_walk_frame != 1 else 2
+	send_to_server({"type": "dungeon_move", "direction": dir})
 
 
 func _dungeon_companion_at(x: int, y: int) -> bool:
