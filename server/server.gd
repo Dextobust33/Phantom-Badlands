@@ -32905,7 +32905,12 @@ func _send_dungeon_state(peer_id: int):
 			floor_item_list.append({
 				"x": it.get("x", 0), "y": it.get("y", 0),
 				"char": it.get("char", "?"), "color": it.get("color", "#FFFFFF"),
-				"kind": it.get("kind", "")
+				"kind": it.get("kind", ""),
+				# 2026-09-08 - the egg's cosmetic variant, so the floor can draw the RIGHT egg
+				# sprite. Owner: "Can we ensure Eggs use these in the dungeon... you could tell
+				# what type of variant you are going to get by the artwork of the egg." That only
+				# works if the variant reaches the client, and only `kind` did.
+				"variant": String(it.get("item_data", {}).get("variant", ""))
 			})
 
 	# Get rescue NPCs on current floor

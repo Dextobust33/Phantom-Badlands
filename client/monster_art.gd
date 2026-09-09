@@ -3,6 +3,10 @@
 class_name MonsterArt
 extends RefCounted
 
+# Preloaded rather than referenced by class_name: the generated table is a plain script, and a
+# class_name lookup depends on the editor having registered it, which a headless check has not.
+const _EggSprites = preload("res://client/egg_sprites.gd")
+
 const ASCII_ART_FONT_SIZE = 4
 
 # Per-monster font size overrides - calibrated for EQUAL vertical screen space
@@ -5677,6 +5681,23 @@ static func get_egg_art(variant_name: String, color1: String, color2: String = "
 	"""Generate colored egg art based on variant pattern.
 	Returns the egg art with BBCode color tags applied.
 	Scale parameter adjusts font size (1.0 = default size 10)."""
+
+	# 2026-09-08 - a real egg SPRITE when this variant has one. Owner added `pet-egg-pack` and
+	# asked that eggs use it "on the Egg screen from here on out", with the artwork telling you
+	# which variant you are going to get; `EggSprites` is the generated dictionary that does that.
+	#
+	# Placed here rather than at the call sites because all three egg surfaces - the Egg screen,
+	# the companion panel and dungeon floor loot - already funnel through this one function. One
+	# change reaches all three, and none of them can drift into drawing eggs a different way.
+	#
+	# The variant PATTERN (striped / split_v / checker) is lost in the swap: a sprite cannot carry
+	# it. Owner accepted that explicitly. Colour identity survives, and it is what the dictionary
+	# is keyed on anyway. Falls through to the ASCII egg for any variant with no sprite, so legacy
+	# and unknown variants keep working.
+	var spr: String = _EggSprites.sprite_for(variant_name)
+	if spr != "":
+		var px: int = maxi(24, int(round(96.0 * scale)))
+		return "[img=%d]%s[/img]" % [px, spr]
 
 	var lines = []
 	var total_rows = EGG_ART_TEMPLATE.size()

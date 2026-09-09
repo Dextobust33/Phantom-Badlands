@@ -44193,6 +44193,19 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 		cell_w, h, reg.position.x, reg.position.y, reg.size.x, reg.size.y, tint, path]
 
 
+func _dungeon_cell_width() -> int:
+	"""One monospace cell, in pixels, measured from the font the canvas actually uses.
+
+	Anything drawn into the dungeon grid as an image must be exactly this wide or it shifts every
+	tile after it on that row. Shared by the player avatar and the floor eggs so the two cannot
+	disagree about how wide a tile is."""
+	var f: Font = game_output.get_theme_font("normal_font") if game_output else null
+	if f == null:
+		return 25
+	return maxi(1, int(round(f.get_string_size("@", HORIZONTAL_ALIGNMENT_LEFT, -1,
+		DUNGEON_TILE_FONT_SIZE).x)))
+
+
 func _sprite_content_region(path: String, tex: Texture2D) -> Rect2i:
 	"""The non-transparent bounds of a sprite, cached by path.
 
@@ -44312,7 +44325,16 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 				elif item_map.has(mkey):
 					# Render floor loot pickup (glyph + color by kind)
 					var fi = item_map[mkey]
-					line += "[color=%s]%s[/color]" % [fi.get("color", "#FFFFFF"), fi.get("char", "?")]
+					# An EGG on the floor is drawn as its actual egg sprite, so you can read the
+					# variant off the ground before you pick it up. Width is pinned to the cell
+					# exactly as the player avatar is - anything else shears the row.
+					var _egg_spr := ""
+					if String(fi.get("kind", "")) == "egg":
+						_egg_spr = MonsterArt._EggSprites.sprite_for(String(fi.get("variant", "")))
+					if _egg_spr != "":
+						line += "[img=%d]%s[/img]" % [_dungeon_cell_width(), _egg_spr]
+					else:
+						line += "[color=%s]%s[/color]" % [fi.get("color", "#FFFFFF"), fi.get("char", "?")]
 				else:
 					var tile = grid[y][x]
 					var tile_info = _get_dungeon_tile_display(tile)
