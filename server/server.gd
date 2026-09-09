@@ -29099,7 +29099,7 @@ func handle_hotzone_confirm(peer_id: int, message: Dictionary):
 		else:
 			trigger_encounter(peer_id)
 
-func _dungeon_expected_levels(dungeon_type: String, instance_id: String, player_level: int) -> Dictionary:
+func _dungeon_expected_levels(dungeon_type: String, instance_id: String, player_level: int, player_x: int = -9999, player_y: int = -9999) -> Dictionary:
 	"""The levels a player will ACTUALLY meet: {entry, deepest}.
 
 	One helper, because the level a dungeon advertises has now been wrong on two separate
@@ -29116,9 +29116,21 @@ func _dungeon_expected_levels(dungeon_type: String, instance_id: String, player_
 	if lvl <= 0:
 		# A personal instance has not been made yet; it is created at the player's own level,
 		# clamped into the sub-tier band. Mirror that so the warning matches what follows.
-		var _sub: int = int(dungeon_data.get("sub_tier", 1))
+		#
+		# 2026-09-08 - the band comes from the TILE, which is what the new instance now inherits.
+		# This previously read `dungeon_data.sub_tier`, a static field on the dungeon TYPE, and so
+		# announced the template's depth for an instance that would be built at another one.
+		# Reported live: warning said "Monsters here: level 2" for a dungeon that opened at T1-7
+		# with a level 9 skeleton. Same fix as the creation path, and it has to be the same NUMBER
+		# or the two drift apart again - which is exactly how this surface broke last time.
+		var _sub: int = -1
 		if instance_id != "" and active_dungeons.has(instance_id):
-			_sub = int(active_dungeons[instance_id].get("sub_tier", _sub))
+			_sub = int(active_dungeons[instance_id].get("sub_tier", -1))
+		if _sub <= 0:
+			var _tile: Dictionary = _get_dungeon_at_location(player_x, player_y, -1)
+			_sub = int(_tile.get("sub_tier", -1))
+		if _sub <= 0:
+			_sub = int(dungeon_data.get("sub_tier", 1))
 		var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(int(dungeon_data.get("tier", 1)), _sub)
 		lvl = clampi(player_level, int(sub_range.min_level), int(sub_range.max_level))
 	var floors: int = maxi(1, int(dungeon_data.get("floors", 1)))
@@ -29186,7 +29198,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		# dungeon read 6-7 but had level-9 monsters on lower floors"). The entry warning was
 		# missed then because it reads a different field, which is the whole reason the fix
 		# belongs in a shared helper rather than in each surface.
-		var _lvl_info: Dictionary = _dungeon_expected_levels(dungeon_type, provided_instance_id, character.level)
+		var _lvl_info: Dictionary = _dungeon_expected_levels(dungeon_type, provided_instance_id, character.level, character.x, character.y)
 		var _entry_level: int = int(_lvl_info.get("entry", dungeon_data.min_level))
 		var _deepest: int = int(_lvl_info.get("deepest", _entry_level))
 		if _deepest > _entry_level:
@@ -29271,8 +29283,12 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		# it clears when the boss is defeated (_complete_dungeon).
 		_on_world_dungeon_entered(character.x, character.y)
 
-		# Players always get their own dungeon instance now
-		instance_id = _create_player_dungeon_instance(peer_id, "", dungeon_type, character.level)
+		# Players always get their own dungeon instance now - but at the depth the TILE
+		# advertised, not a fresh roll. See the note in _create_player_dungeon_instance.
+		var _tile_dungeon: Dictionary = _get_dungeon_at_location(character.x, character.y, peer_id)
+		var _inherit_sub: int = int(_tile_dungeon.get("sub_tier", -1))
+		instance_id = _create_player_dungeon_instance(peer_id, "", dungeon_type, character.level,
+			"", "", 0, _inherit_sub)
 		if instance_id == "":
 			send_to_peer(peer_id, {"type": "error", "message": "Failed to create dungeon instance!"})
 			return
@@ -30233,7 +30249,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	log_message("Created dungeon instance: %s (%s) [T%d-%d]" % [instance_id, dungeon_data.name, dungeon_data.tier, sub_tier])
 	return instance_id
 
-func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0) -> String:
+func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0, force_sub_tier: int = -1) -> String:
 	"""Create a personal dungeon instance for a player's quest. Returns instance ID.
 	fabled_boss_name (P2 Slice 2): if set, the dungeon's boss spawns renamed + buffed.
 	gather_relic_name/count (P2 Slice 3): if set, N themed relics spawn as floor loot for a
@@ -30297,6 +30313,21 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	# Calculate sub-tier based on distance from origin
 	var distance = sqrt(float(spawn_x * spawn_x + spawn_y * spawn_y))
 	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
+	#
+	# 2026-09-08 - ...unless the caller INHERITED one. Reported live: a tile advertising
+	# "Forgotten Crypt [T1-2] | Levels 2-3" opened into a T1-7 with a level 9 skeleton on floor 1.
+	#
+	# The cause was not a display bug, and no display fix could have reached it. Entering a world
+	# 'D' creates a PERSONAL instance, and this function placed that instance at a fresh RANDOM
+	# point 25-40 tiles from the player, then took the sub-tier from THAT point's distance to the
+	# world origin. The tile the player actually walked to contributed nothing but its
+	# dungeon_type, so the depth was a fresh dice roll that no surface could have predicted.
+	#
+	# Inheriting the tile's own sub-tier makes the advertised depth TRUE, and restores the meaning
+	# the overworld is supposed to carry: walking further out finds deeper dungeons. The distance
+	# roll stays for instances with no originating tile (quests, fabled bosses).
+	if force_sub_tier > 0:
+		sub_tier = force_sub_tier
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
 
 	# Scale dungeon level to player, clamped to sub-tier range
