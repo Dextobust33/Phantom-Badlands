@@ -7736,6 +7736,18 @@ func _cast_signature(ch, ability: String, picks: Array, n: int) -> String:
 	for f in range(fights):
 		seed(90210 + f)          # same stream for both arms, so only the pick differs
 		var monster = make_monster(40, "normal", 3.0)   # tanky: survives a full fight of casts
+		# ...EXCEPT the last fight, which is an EXECUTION: the monster is left on a sliver so the
+		# card lands a killing blow.
+		#
+		# Fifth instrument fix on this audit. Every fight being tanky is deliberate - a card that
+		# ends the fight on cast one cannot exercise `relentless` or a buff's duration - but it
+		# also meant a KILL never happened, so `vindication` ("heals when THIS lands a killing
+		# blow") could not fire on any card in any class. It was reported dead on four pairs and
+		# the backlog wrote that up as a wiring gap in the Paladin's finisher, with a guess about
+		# the victory path returning early. There was nothing wrong with the game: the harness
+		# simply never let anything die.
+		if f == fights - 1:
+			monster["current_hp"] = 1
 		combat_mgr.start_combat(0, ch, monster)
 		var combat = combat_mgr.active_combats[0]
 		combat["momentum"] = CombatManager.MOMENTUM_MAX

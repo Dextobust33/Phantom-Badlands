@@ -5034,6 +5034,18 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			if actual_mana_cost < bolt_amount:
 				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % actual_mana_cost)
 			character.current_mana -= actual_mana_cost
+			# Stamp the cost, exactly as `apply_variable_cost` does for every other spender.
+			#
+			# 2026-09-09. Magic Bolt is deliberately OUTSIDE that funnel ("stays on its own
+			# existing variable path (arg-driven)"), and the funnel is the only place that
+			# recorded what was paid - so on the mage's signature card the marker stayed at
+			# whatever the previous cast left, or zero. Two separate systems read it and both
+			# were dead here: the `refund` card upgrade ("Closing Cost", measured dead by
+			# `-- upgradefit`) and the TALENT effect `kill_cost_refund_pct`, which a player can
+			# spend points on and which silently did nothing on the biggest cast in the mage kit.
+			# Recorded at the point of PAYMENT, which is the one fact both paths share.
+			character.set_meta("path_last_ability_cost", actual_mana_cost)
+			character.set_meta("path_last_ability_resource", "mana")
 
 			# #55 (2026-08-26) — Magic Bolt is the mage's signature spell but was the
 			# worst ability in the game (Dmg/Res ~2, i.e. barely more damage than the mana

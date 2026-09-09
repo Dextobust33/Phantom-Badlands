@@ -236,31 +236,32 @@ while the Paladin's stat realignment held.
       cards do not under-report, so nothing here needs fixing on the player-facing side.
 
 
-- [ ] **Three card upgrades that do nothing on some cards** (found 2026-09-08 by `-- upgradefit`,
-      which casts every card with and without every upgrade it can be offered and compares the
-      result). The structural cause — four damage-only upgrades marked `KIND_ANY` — is FIXED; what
-      is left are three separate wiring gaps, all pre-existing, none a regression:
-      * **`opening_act` on Magic Bolt (all 3 mages) and Analyze** — it refunds
-        `path_last_ability_cost`, which is recorded only in `apply_variable_cost`. Cards that do
-        not take that path never set it, so the refund is zero. Fix belongs in the cost funnel,
-        which several upgrades already modify — worth doing carefully rather than quickly.
-      * **`vindication` on the Paladin's Judgement** — heals 6% on a killing blow, but the
-        finisher's victory path appears to return before the upgrade block runs. Check
-        `_process_victory` against the `vindication` site.
-      * **`demoralising` / `harrying` on Analyze / Sabotage — RULED: they STAY, but see the
-        dependency below.** They are gated on the enemy being stunned or distracted. Only the
-        GRIFTER carries Distract; a Ranger (Track, Snare, Weak Point, Ambush, Killing Shot) and a
-        Ninja (Mark, Hamstring, Ambush, Phantom Strike, Assassinate) hold no card that can rattle
-        anything, so today these can only fire if the player first takes the `Disorienting` or
-        `Pinning` upgrade elsewhere. Owner 2026-09-08: *"These can stay in but only if we ensure
-        we do a good companion card pass... and a dungeon card pass... If those two are done
-        properly a small portion of those could offer stun or distraction to make this a viable
-        option."* So this is CONDITIONAL on the two card passes below.
-      `-- upgradefit` is at 12 dead pairs of 1127, down from 71. **Read its docstring before
-      trusting a run**: the audit was wrong four times before it was right (player pinned at full
-      health, one cast per combat, not honouring the game's own exclusions, and buffs missing
-      from the signature) and every wrong version produced output indistinguishable from a real
-      finding.
+- [x] **Card upgrades that did nothing — DOWN TO 3, and the 3 are the ruled-on ones (2026-09-09).**
+      Was 8 dead pairs; the item's own diagnosis was wrong on both counts it guessed at.
+      * **`vindication` on Judgement was NEVER BROKEN.** The item said the finisher's victory path
+        "appears to return before the upgrade block runs". It does not. `-- upgradefit` builds a
+        deliberately TANKY monster (`make_monster(40, "normal", 3.0)`) so a card cannot end the
+        fight and short-circuit multi-cast upgrades like `relentless` — which also meant nothing
+        ever DIED, so a kill-triggered upgrade could not fire on any card in any class. Fifth
+        instrument defect in this audit. The last of the six fights is an EXECUTION now (monster
+        on 1 HP) and all four `vindication` pairs cleared.
+      * **The cost-funnel gap was real, on `refund` not `opening_act`, and bigger than a card.**
+        `path_last_ability_cost` is stamped only by `apply_variable_cost`, and Magic Bolt is
+        *explicitly excluded* from it (`VARIABLE_COST_TABLE.has(name) and name != "magic_bolt"` —
+        it keeps its own arg-driven path). So on the mage's signature card the marker held a
+        stale value or zero, and TWO systems read it: the `refund` upgrade AND the talent effect
+        `kill_cost_refund_pct`, which a player can spend points on and which silently did nothing
+        on the biggest cast in the mage kit. Now stamped at the point of PAYMENT, the one fact
+        both cost paths share.
+      * **Remaining 3 — `harrying` on Analyze — are the ones the owner already ruled STAY**,
+        conditional on the companion and dungeon card passes. Note the Grifter's entry is a
+        harness artifact rather than a real gap: `upgradefit` casts one card in isolation, so
+        Distract never lands and the enemy is never rattled, but a Grifter DOES hold Distract.
+        The genuine gap is the Ranger and the Ninja, neither of whom carries a rattling card.
+      `-- upgradefit` is at 3 dead pairs of 1117. **Read its docstring before trusting a run**:
+      it has now been wrong FIVE times, and every wrong version produced output indistinguishable
+      from a real finding.
+
 
 - [x] **Character creation was stale — DONE 2026-09-07** (owner: *"Seems like it's not showing the
       correct classes or descriptions and some of the other info is dated."*). Three faults:
