@@ -120,15 +120,14 @@ while the Paladin's stat realignment held.
 
 ## Phase 1 — confirm the two releases landed (do first, cheap)
 
-- [ ] **Shutdown handler fires every frame until the process exits** (found during the v0.9.763
-      deploy). The sentinel countdown works and the server does restart — `NRestarts=1`, and the
-      new process hashed identical to the uploaded binary — but the log carries **61** copies of
-      `[SHUTDOWN] Executing server shutdown...` / the "SHUTTING DOWN NOW" broadcast, all in the
-      same second, because nothing latches the shutdown once it starts. Harmless (it exits, and
-      players see one countdown), but every player still connected gets the goodbye broadcast
-      sixty times. A one-line `if _shutdown_executing: return` guard. Not fixed at deploy time on
-      purpose: the binary being shipped had already passed its gate, and adding an untested change
-      to a production server during a release is the riskier move.
+- [x] **Shutdown handler fired every frame until the process exited — FIXED 2026-09-09.**
+      `_execute_pending_shutdown` awaits a second (so the goodbye broadcast lands before sockets
+      close), and `_process` keeps running across an await with `pending_update_active` still true
+      and the counter at zero — so it re-entered every frame. 60fps x 1s = the 61 copies seen in
+      the v0.9.763 deploy log, meaning any connected player was told the server was shutting down
+      sixty times. Latched inside the function rather than at the call site, since the re-entrancy
+      is a property of the function being async. Verified on production by springing a real
+      countdown: **1** shutdown line and **1** broadcast, down from 61.
 
 - [ ] **Confirm the dungeon tile HOVER on screen** (owner 2026-09-09, working remote: *"it will
       need confirmed later once I'm back at my PC"*). Everything a screenshot can show was

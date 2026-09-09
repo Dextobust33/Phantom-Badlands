@@ -55,6 +55,9 @@ const REST_HEAL_MIN := 0.20
 const REST_HEAL_MAX := 0.35
 const SHUTDOWN_SENTINEL_POLL_INTERVAL := 5.0
 var _shutdown_sentinel_timer: float = 0.0
+# Latched the first time the shutdown actually runs, so the async executor cannot be re-entered
+# every frame while it awaits. See `_execute_pending_shutdown`.
+var _shutdown_executing: bool = false
 var pending_update_last_announcement: int = -1  # Track which announcement was last sent
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
@@ -952,7 +955,20 @@ func _check_pending_update_announcements():
 		log_message("[SHUTDOWN] %d:%02d remaining" % [mins, secs])
 
 func _execute_pending_shutdown():
-	"""Execute the server shutdown after countdown expires."""
+	"""Execute the server shutdown after countdown expires. Runs EXACTLY once.
+
+	2026-09-09. This is `await`-ed in the middle (a second, so the goodbye broadcast reaches
+	players before their sockets close), and `_process` keeps running across an await - with
+	`pending_update_active` still true and the counter already at zero. So the caller re-entered
+	every frame for the whole second: the v0.9.763 deploy logged 61 copies of this function, which
+	is 60fps x 1s, and any player still connected would have been told the server was shutting
+	down sixty times.
+	Latched rather than fixed at the call site, because the re-entrancy is a property of THIS
+	function being async - anything that ever calls it gets the guard for free."""
+	if _shutdown_executing:
+		return
+	_shutdown_executing = true
+	pending_update_active = false
 	log_message("[SHUTDOWN] Executing server shutdown...")
 	_send_broadcast("🔌 SERVER SHUTTING DOWN NOW. See you after the update!")
 
