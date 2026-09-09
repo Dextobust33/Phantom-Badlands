@@ -5557,10 +5557,67 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff_ability}
 
 
+## How much a companion card's damage grows with the companion's own QUALITY.
+##
+## Same shape and same slope as `Character.calculate_companion_max_hp` uses for its sub-tier
+## spread, deliberately: sub-tier is the companion's quality axis and it should mean one thing
+## across everything a companion contributes, not two different curves in two files.
+const COMPANION_CARD_SUBTIER_STEP := 0.05
+## What one companion CARD is worth as a share of the level's reference monster HP bar, before
+## the per-kind `power` multiplier. The companion's ordinary attack takes COMPANION_DAMAGE_SHARE
+## (0.05) of the same bar for free every round; a card is a costed, deliberate action and is
+## worth several of those. Calibrated against `-- compcards`, whose bar is the median NON-finisher
+## card of the class the companion card would displace.
+const COMPANION_CARD_DAMAGE_SHARE := 0.055
+
 func _companion_strike(character, monster, ability_name: String, combat: Dictionary, power: float) -> int:
 	"""Deal a companion-card strike scaled by `power` through the shared mastery/
-	tier damage path, apply it to the monster, and return the damage dealt."""
-	var base_dmg: int = int(character.get_total_attack() * power)
+	tier damage path, apply it to the monster, and return the damage dealt.
+
+	2026-09-09 - the `power` values at the call sites were roughly DOUBLED. Owner: *"most
+	companion cards are too weak to be viable or useful at all."* Measured by `-- compcards`,
+	which casts both sides through this same path: a companion card was landing 110-312 damage
+	against a Fighter median of 746 and a Barbarian median of 1609, i.e. 15-40% of the card it
+	displaces. A deck is five cards, so running one means one of your own comes up less often -
+	nothing at 20% of a class card is ever worth that.
+	The target is NOT parity with the best class card. These are cheap (a flat ~10 of the pool
+	against a class card's ~35% share) and most of them carry control a class card does not
+	offer, so the bar is "a real option", not "the best option".
+
+	It also scales with the companion's SUB-TIER now, so investing in a better companion makes
+	its card better. That is the point of the card being a companion's at all - owner's own list
+	of what carries a careful player to the top names a strong companion, and until now the card
+	was identical whether it came from a fresh hatchling or a fused apex."""
+	var comp: Dictionary = character.active_companion if character != null else {}
+	var _sub: int = maxi(1, int(comp.get("sub_tier", comp.get("tier", 1))))
+	var _tier: int = maxi(1, int(comp.get("tier", 1)))
+	# The companion's own quality spread and authored attack profile, read the SAME way its
+	# ordinary attack reads them (see `_process_companion_attack`) so a Gnoll's card hits like a
+	# Gnoll rather than like a generic pet.
+	var quality: float = (1.0
+		+ 0.06 * float(_tier - 1)
+		+ COMPANION_CARD_SUBTIER_STEP * float(_sub - 1))
+	var atk_profile: float = 1.0 + float(comp.get("bonuses", {}).get("attack", 0)) / 10.0
+	# THE BASIS IS THE COMPANION'S, NOT THE PLAYER'S WEAPON ARM.
+	#
+	# 2026-09-09. This used `character.get_total_attack()`, a PHYSICAL stat - so a mage's
+	# companion punched like a mage. Measured by `-- compcards`: after doubling the raw powers a
+	# warrior's companion card reached 59-84% of the median card it displaces, while a Wizard's
+	# reached 10% and an Oracle's 12%. Two of the three paths could never have a viable companion
+	# card no matter how the multipliers were tuned, because the quantity being multiplied was
+	# the wrong one.
+	# A share of the level's reference HP bar is what the companion's ORDINARY attack already
+	# uses, and it is class-neutral and already calibrated - so this reuses it rather than
+	# inventing a second scale. Falls back to the old attack-based number when no reference bar
+	# is available, so nothing breaks if the monster database changes shape.
+	var bar: float = 0.0
+	if monster_database != null and monster_database.has_method("ability_reference_hp"):
+		bar = float(monster_database.ability_reference_hp(maxi(1, int(character.level))))
+	var base_dmg: int = 0
+	if bar > 0.0:
+		base_dmg = int(round(bar * COMPANION_CARD_DAMAGE_SHARE * power * quality * atk_profile))
+	else:
+		base_dmg = int(character.get_total_attack() * power * quality * atk_profile)
 	base_dmg = apply_skill_damage_bonus(character, ability_name, base_dmg, combat)
 	# Companion damage - deliberately NOT given the player crit roll; it is the companion's hit.
 	var mod_dmg: int = apply_ability_damage_modifiers(base_dmg, character.level, monster)
@@ -5641,15 +5698,15 @@ func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dic
 			var healed: int = character.heal(amt)
 			messages.append("[color=#00FF88]★ %s[/color] — heals [color=#00FF88]%d[/color] HP!" % [cname, healed])
 		"channel":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 0.8)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.6)
 			var amtc: int = _companion_restore_resource(character, resource_type, 0.25 + 0.03 * tier)
 			messages.append("[color=#66CCFF]★ %s[/color] strikes for %d and restores [color=#66CCFF]%d %s[/color]!" % [cname, d, amtc, resource_type])
 		# ---------- DAMAGE / DEBUFF ----------
 		"strike":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.6)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 3.2)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for [color=#FFFF00]%d[/color]!" % [cname, d])
 		"execute":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.2)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.4)
 			var wounded: bool = monster.max_hp > 0 and float(monster.current_hp) <= 0.30 * float(monster.max_hp)
 			if wounded:
 				var bonus: int = int(d * (1.2 + 0.15 * tier))
@@ -5658,69 +5715,72 @@ func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dic
 			else:
 				messages.append("[color=#FF99FF]★ %s[/color] hits for [color=#FFFF00]%d[/color]!" % [cname, d])
 		"reckless":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 2.1)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 3.8)
 			var recoil: int = max(1, int(d * 0.05))
 			character.current_hp = max(1, character.current_hp - recoil)
 			messages.append("[color=#FF99FF]★ %s[/color] rips for [color=#FFFF00]%d[/color]! (you take %d recoil)" % [cname, d, recoil])
 		"bleed":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.1)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.2)
 			var dot: int = max(1, int(d * 0.18 * tmult))
 			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + dot
 			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 3)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and bleeds [color=#FF4444]%d/turn[/color]!" % [cname, d, dot])
 		"poison":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var dot: int = max(1, int(d * 0.15 * tmult))
 			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + dot
 			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 4)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and poisons [color=#7FBE2E]%d/turn[/color]!" % [cname, d, dot])
 		"weaken":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var wk: int = min(50, 15 + tier * 3)
 			combat["monster_weakness"] = max(int(combat.get("monster_weakness", 0)), wk)
 			combat["monster_weakness_duration"] = max(int(combat.get("monster_weakness_duration", 0)), 3)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — enemy [color=#C0C0C0]weakened %d%%[/color]!" % [cname, d, wk])
 		"blind":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var bl: int = min(60, 25 + tier * 4)
 			combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), bl)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — enemy [color=#AAAAFF]blinded (%d%% miss)[/color]!" % [cname, d, bl])
 		"stun":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.1)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.2)
 			if int(combat.get("monster_stunned", 0)) <= 0 and randi() % 100 < min(65, 30 + tier * 5):
 				combat["monster_stunned"] = 1
 				messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FFFF00]STUNS[/color]!" % [cname, d])
 			else:
 				messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
 		"charm":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			if int(combat.get("monster_charmed", 0)) <= 0 and randi() % 100 < min(50, 20 + tier * 4):
 				combat["monster_charmed"] = 1
 				messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FF66FF]CHARMS[/color]!" % [cname, d])
 			else:
 				messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
 		"lifesteal":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.2)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.4)
 			var healed: int = character.heal(max(1, int(d * 0.40)))
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and drains [color=#00FF88]%d HP[/color]!" % [cname, d, healed])
 		"timestop":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var turns: int = 1 + (1 if tier >= 4 else 0)
 			combat["monster_stunned"] = max(int(combat.get("monster_stunned", 0)), turns)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FFFF00]freezes time (%d turns)[/color]!" % [cname, d, turns])
 		"plunder":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			combat["card_loot_mult"] = max(float(combat.get("card_loot_mult", 1.0)), 2.0 + 0.15 * tier)
 			# #40 — Plunder now also bumps item QUALITY: +1 rarity step (+2 at T5+).
 			combat["card_loot_quality"] = max(int(combat.get("card_loot_quality", 0)), 1 + (1 if tier >= 5 else 0))
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]item drops boosted (chance + quality) if you win![/color]" % [cname, d])
 		"tribute":
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var valor_gain: int = 15 + tier * 5 + int(monster.level * 0.5)
 			combat["card_bonus_valor"] = int(combat.get("card_bonus_valor", 0)) + valor_gain
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]+%d Valor if you win![/color]" % [cname, d, valor_gain])
 		_:
-			var d: int = _companion_strike(character, monster, ability_name, combat, 1.5)
+			# Fallback for a kind with no branch. Kept in step with `strike` above rather than
+			# left at its old value - a new kind added later should land in the same band as the
+			# rest, not at half of it.
+			var d: int = _companion_strike(character, monster, ability_name, combat, 3.0)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
 
 	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff}

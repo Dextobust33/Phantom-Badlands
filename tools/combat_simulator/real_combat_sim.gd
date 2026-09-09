@@ -153,6 +153,7 @@ func _audit_registry() -> Dictionary:
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
 		"cardnames": ["every class: what each of its 5 cards is CALLED", run_cardnames],
+		"compcards": ["is a COMPANION card worth a deck slot against the class's own five?", run_compcards],
 		"statuschips": ["what the combat status strip actually shows both sides", run_statuschips],
 		"upgradepreview": ["do card UPGRADES move the number the card prints?", run_upgradepreview],
 		"enginenames": ["what each class is told its ENGINE is called, on every surface", run_enginenames],
@@ -7788,3 +7789,149 @@ func _cast_signature(ch, ability: String, picks: Array, n: int) -> String:
 		combat_mgr.active_combats.erase(0)
 	ch.ability_milestone_picks.erase(ability)
 	return sig
+
+
+func run_compcards() -> void:
+	"""Is a COMPANION card worth a deck slot, measured against the class's own five?
+
+	Owner 2026-09-08: *"most companion cards are too weak to be viable or useful at all."* That is
+	a claim about MAGNITUDE, so it needs a number rather than a read of the table - and the number
+	has to be the one the player is actually choosing between. A deck holds five cards; adding a
+	companion card means one of yours comes up less often. So the bar is not "does it do
+	something", it is "does it beat the median card it displaces".
+
+	Both sides are cast through the REAL path (`process_ability_command`), same character, same
+	monster, same seed, so the comparison is of the game and not of two readings of the tables.
+
+	COST IS REPORTED BUT NOT SCORED, and the reason is worth knowing before anyone builds on it.
+	A companion card is a flat ~10 of the class resource while a class card spends a share of the
+	pool, so efficiency looked like the fairer axis - but measured at L40, a Fighter's Cleave and
+	a Grifter's Ambush cost ZERO. Warrior and Trickster ability costs are flat and capped, so
+	against a level-40 pool they round to nothing; only the mage kit actually spends. That is the
+	known "resource economy doesn't scale" flaw, not a fault of this audit, and it makes a
+	damage-per-point comparison meaningless for six classes out of nine. A verdict was written on
+	that axis and REMOVED rather than left to produce confident nonsense.
+
+	Also not counted, and under-reporting those kinds: the DoT from bleed/poison, the heal from
+	lifesteal, and the loot/valor from plunder/tribute. Only the immediate hit is measured."""
+	var DT = load("res://shared/drop_tables.gd")
+	var LEVEL := 40
+	var CASTS := 12
+	print("")
+	print("===== IS A COMPANION CARD WORTH A DECK SLOT? (L%d, %d casts each) =====" % [LEVEL, CASTS])
+	print("%-10s %-22s %8s %8s %9s %s" % ["class", "card", "dmg", "cost", "dmg/cost", ""])
+	var weak_total := 0
+	var seen_total := 0
+	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var ch = make_char(LEVEL, "average", klass, "Human")
+		ch.initialize_deck_collection_if_needed()
+		# --- the five cards a companion card would DISPLACE ---
+		var own: Array = CharacterScript.CURATED_STARTER_DECKS_BY_CLASS.get(klass, [])
+		var own_dmg: Array = []
+		var own_eff: Array = []
+		# The FINISHER is excluded from the baseline. It is gated on a full engine bar and cast
+		# once a fight; a companion card is competing with the cards you play every round.
+		var FINISHERS := ["devastate", "perfect_heist", "meteor"]
+		for ab in own:
+			if String(ab) in FINISHERS:
+				continue
+			var r: Dictionary = _compcard_measure(ch, String(ab), CASTS)
+			if int(r.get("dmg", 0)) > 0:
+				own_dmg.append(int(r["dmg"]))
+				own_eff.append(float(r["dmg"]) / float(maxi(1, int(r.get("cost", 1)))))
+		own_dmg.sort()
+		own_eff.sort()
+		var median: int = own_dmg[own_dmg.size() / 2] if not own_dmg.is_empty() else 0
+		var median_eff: float = own_eff[own_eff.size() / 2] if not own_eff.is_empty() else 0.0
+		print("
+--- %s ---   median class card: %d dmg, %.1f dmg per point spent"
+			% [CharacterScript.class_display_name(klass), median, median_eff])
+		# --- one companion card per KIND, so every branch of the cast is exercised ---
+		var by_kind := {}
+		for mt in DT.COMPANION_CARD_DATA.keys():
+			var k := String(DT.COMPANION_CARD_DATA[mt].get("kind", ""))
+			if k != "" and not by_kind.has(k):
+				by_kind[k] = String(mt)
+		for kind in by_kind.keys():
+			var mtype: String = by_kind[kind]
+			var cid: String = DT.companion_card_id_for(mtype)
+			ch.combat_deck_collection[cid] = 3
+			var r2: Dictionary = _compcard_measure(ch, cid, CASTS)
+			var d: int = int(r2.get("dmg", 0))
+			var c: int = maxi(1, int(r2.get("cost", 1)))
+			seen_total += 1
+			var verdict := ""
+			var eff: float = float(d) / float(c)
+			# A BUFF card deals no damage by design; judging it on damage would be the "wrong
+			# unit" mistake, so it is reported and not scored.
+			#
+			# And the damage-only rule that used to live here was nearly as wrong. A companion
+			# card is a flat ~10 of the pool while a class card spends a share of it, so a card
+			# can trail badly on raw damage and still be the obvious play - for a mage the
+			# efficiency gap is over twenty to one. Judged on BOTH axes now: behind on damage is
+			# a role, behind on damage AND on damage-per-point is no role at all.
+			# Still not counted, and worth stating rather than quietly ignoring: the DoT from
+			# bleed/poison, the heal from lifesteal, and the loot/valor from plunder/tribute are
+			# all invisible to this measurement, so those kinds are UNDER-reported here.
+			if String(DT.companion_card_category(cid)) == "buff":
+				verdict = "(buff - not scored on damage)"
+			elif median > 0 and d < int(median * 0.5):
+				verdict = "<-- under half the median card it displaces"
+				weak_total += 1
+			print("%-10s %-22s %8d %8d %9.1f %s" % [
+				kind, String(DT.COMPANION_CARD_DATA[mtype].get("name", cid)),
+				d, c, float(d) / float(c), verdict])
+	print("")
+	print("[COMPCARDS] %d companion card kinds measured, %d under half the median class card." % [seen_total, weak_total])
+
+
+func _compcard_measure(ch, ability: String, casts: int) -> Dictionary:
+	"""Cast `ability` `casts` times against a fresh tanky monster and report the AVERAGE damage
+	and the AVERAGE resource actually spent. Tanky so the fight never ends mid-sample, and the
+	pools are refilled each cast so a card is never measured while the player cannot afford it."""
+	var total_d := 0
+	var total_c := 0
+	var n := 0
+	for i in range(casts):
+		seed(4242 + i)
+		var monster = make_monster(40, "normal", 6.0)
+		combat_mgr.start_combat(0, ch, monster)
+		var combat = combat_mgr.active_combats[0]
+		# NEUTRAL engine, deliberately not MAX. Filling the bar measures every finisher at its
+		# peak: the first version did that and reported the Paladin's "median class card" as
+		# 20,938 damage - a Judgement cashing a full Conviction bar - against a Fighter's 746.
+		# Tuning a companion card against that number would have been tuning against a once-a-
+		# fight payoff, not against the cards it actually shares a deck with.
+		combat["momentum"] = 0
+		combat["focus"] = 0
+		combat["combo"] = 0
+		combat["combat_hand"] = [ability]
+		combat["player_can_act"] = true
+		ch.current_hp = ch.get_total_max_hp()
+		ch.current_mana = ch.get_total_max_mana()
+		ch.current_stamina = ch.get_total_max_stamina()
+		ch.current_energy = ch.get_total_max_energy()
+		# CURRENT pool, not max. `_primary_pool_for` returns the MAX, so the first version of
+		# this subtracted max from max and reported every card as costing 1 - including the
+		# class cards it was meant to be compared against. Tuning against that number would have
+		# concluded companion cards were free.
+		var pool_before: int = _compcard_pool_now(ch)
+		var hp_before: int = int(monster.get("current_hp", 0))
+		var spend := int(round(float(pool_before) * 0.35))
+		var res: Dictionary = combat_mgr.process_ability_command(0, ability, str(maxi(1, spend)))
+		if bool(res.get("success", false)):
+			total_d += maxi(0, hp_before - int(monster.get("current_hp", 0)))
+			total_c += maxi(0, pool_before - _compcard_pool_now(ch))
+			n += 1
+		combat_mgr.active_combats.erase(0)
+	if n == 0:
+		return {"dmg": 0, "cost": 1}
+	return {"dmg": int(total_d / n), "cost": int(total_c / n)}
+
+
+func _compcard_pool_now(ch) -> int:
+	"""The CURRENT value of the pool this class actually spends."""
+	match String(ch.get_class_path()):
+		"mage": return int(ch.current_mana)
+		"trickster": return int(ch.current_energy)
+	return int(ch.current_stamina)

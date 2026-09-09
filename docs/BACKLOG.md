@@ -376,11 +376,37 @@ while the Paladin's stat realignment held.
       symptom before investigating.
 - [ ] **Leader logout must not strand the party.**
 
-- [ ] **Companion card pass** (owner 2026-09-08: *"most companion cards are too weak to be viable
-      or useful at all"*). Re-tune them so a companion card is worth a deck slot at all. **A small
-      portion should offer STUN or DISTRACT** — that is what makes the `harrying` and
-      `demoralising` upgrades viable for a Ranger or Ninja, neither of whom holds a rattling card
-      (see the Phase 3 item). Do this BEFORE re-judging those upgrades.
+- [x] **Companion card pass — DONE 2026-09-09** (owner: *"most companion cards are too weak to be
+      viable or useful at all"*). Measured first, with a new `-- compcards` audit that casts both
+      a companion card and the class's own cards through the real path and compares them.
+      * **The real fault was the BASIS, not the multipliers.** Damage came from
+        `character.get_total_attack()` — a PHYSICAL stat — so a mage's companion punched like a
+        mage. After doubling the raw powers a warrior's card reached 59-84% of the median card it
+        displaces while a Wizard's reached 10%; two paths in three could never have had a viable
+        companion card no matter how the numbers were tuned. It now takes a share of the level's
+        reference HP bar, which is what the companion's ORDINARY attack already uses — class-
+        neutral and already calibrated. Result: 360-391 across all nine classes, from 210-481.
+      * **A better companion now makes a better card.** Tier, sub-tier and the authored attack
+        profile all scale it, read the same way `_process_companion_attack` reads them. Measured:
+        fresh hatchling 485, fused apex with an attack profile 1355 — nearly 3x.
+      * **The STUN/DISTRACT requirement was already met** and needed no content: `blind` sets
+        `enemy_distracted` and `stun`/`timestop` set `monster_stunned`, exactly the fields
+        `harrying`/`demoralising` test. Nine cards carry them (Goblin/Harpy/Nazgul blind,
+        Gargoyle/Shrieker/World Serpent stun, Siren/Succubus/Cosmic Horror charm, Time Weaver
+        timestop). The blocker was only ever that no one would run them. **So the Phase 3
+        `harrying` dependency is now satisfied** — a Ranger or Ninja can slot a rattling
+        companion card.
+      * **No recalibration chain needed**, checked rather than assumed: the simulator's reference
+        player never casts a companion card, so the monster curve is blind to them. Worth knowing
+        the other way round though — now that they are viable, the reference deck is that much
+        less representative of a player who runs one.
+      * `-- compcards` reports cost but does NOT score it, and says why: measured at L40 a
+        Fighter's Cleave and a Grifter's Ambush cost ZERO (warrior/trickster costs are flat and
+        capped — the known resource-economy flaw), so damage-per-point is meaningless for six
+        classes of nine. A verdict on that axis was written and removed rather than left to
+        produce confident nonsense. It also under-reports bleed/poison DoT, lifesteal healing and
+        plunder/tribute rewards, which it does not measure.
+
 - [ ] **Dungeon card pass** (same conversation): *"dungeon reward cards likely need reworked and
       added to add interesting new cards that classes may want to swap into their decks."* The bar
       is a card a player would CHOOSE over one of their five, which today almost none clear. Same
