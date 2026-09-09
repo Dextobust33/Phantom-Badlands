@@ -30285,6 +30285,10 @@ func display_changelog():
 	# companion XP fixed in both paths, and equipment that actually drops early.
 	# v0.9.756 — the theming pass: all nine decks renamed per class across card face, action bar,
 	# combat log, hover, buff panel, gear affixes and help; plus per-class stat descriptions.
+	# v0.9.762 — the dungeon art pass completes: animated monster sprites, floor loot art, scatter
+	# props, a following companion, all 80 characters given directional art (which fixes the
+	# OVERWORLD too), and every "black hole" in the floor closed. Plus a release gate that checks
+	# every art lookup resolves, after v0.9.761 shipped with all 53 monster sprites broken.
 	# v0.9.761 — the dungeon depth lie fixed at its ROOT (entering built a private instance at a
 	# random location and took the depth from there, so no surface could have been right), the
 	# dungeon tile renderer, monster + egg + player sprites, and the pre-rolled variant hover.
@@ -30303,7 +30307,16 @@ func display_changelog():
 	# v0.9.755 — the class-identity release: nine classes onto three engine shapes, the finisher
 	# forked three ways per path, Sage shown as Oracle, a difficulty curve that ramps with level,
 	# rest/flock changes for the early game, CON granting mitigation, and a one-off deck repair.
-	display_game("[color=#00FF00]v0.9.761[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.762[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ DUNGEONS ARE FULLY ILLUSTRATED NOW.[/color] Monsters are [b]animated sprites[/b] instead of letters — an orc looks like an orc, a skeleton like a skeleton — and they keep moving while you stand still. Floor loot is real item art: coins, ore, scrolls, shields, and eggs that show which variant you are about to pick up. Stones, grass and rubble are scattered across the ground so a corridor is no longer a hundred identical tiles.")
+	display_game("  [color=#FF8000]★ YOUR COMPANION FOLLOWS YOU UNDERGROUND.[/color] It walks in your footsteps, one tile behind, the way it does on the surface.")
+	display_game("  [color=#FF8000]★ EVERY CHARACTER CAN NOW WALK AND TURN.[/color] Only 32 of the 80 character designs had directional artwork; the rest stood frozen, facing one way, [b]on the overworld as well as underground[/b]. All 80 are complete — they face the way you move and animate as they go.")
+	display_game("  [color=#1EFF00]◆ Your sprite turns whichever way you move it.[/color] Moving with the on-screen buttons never turned you, because that path never told the sprite — so it looked permanently stuck facing left.")
+	display_game("  [color=#1EFF00]◆ The floor is even.[/color] Monsters, loot, glyphs and your own sprite all sat in [b]black holes[/b] punched out of the ground, and an alert monster turned its tile red. Everything is drawn on the floor now.")
+	display_game("  [color=#1EFF00]◆ No more line drawn through monsters.[/color] Hovering still works.")
+	display_game("  [color=#1EFF00]◆ A Giant Bat is no longer a Giant.[/color] Monster artwork was matched on a loose name check, so anything containing another monster’s name borrowed its picture.")
+	display_game("")
+	display_game("[color=#808080]v0.9.761[/color]")
 	display_game("  [color=#FF8000]★ THE DUNGEON YOU ENTER IS THE DUNGEON THE SIGN PROMISED.[/color] A tile could read [color=#FFFFFF]Forgotten Crypt [T1-2] | Levels 2-3[/color], warn you that monsters here are [b]level 2[/b], and then open into a [b]T1-7 with a level 9 skeleton[/b] on the first floor. Entering built a private copy of the dungeon at a [b]random spot 25-40 tiles away[/b] and took its depth from THAT spot — so the depth was a dice roll made after you had already committed, and no warning could ever have been right. Your dungeon now inherits the depth of the tile you walked to, which also means [b]walking further out finds deeper dungeons[/b] again.")
 	display_game("  [color=#FF8000]★ DUNGEONS ARE DRAWN WITH REAL TILES NOW.[/color] Cave floor, rock walls carved around every room and corridor, and [b]your own sprite[/b] standing on the ground instead of an [color=#FFFFFF]@[/color]. Tiles are four times the size and the map fills the window. Monsters are sprites too — and they animate as they roam.")
 	display_game("  [color=#1EFF00]◆ You can see what a monster IS before you walk into it.[/color] Hover one on the floor for its art, level and full name — [color=#FFFFFF]Level 8 Venomous Orc[/color], not just \"an Orc\". Its variant is decided when it [b]spawns[/b] rather than when the fight starts, so a nasty one can be spotted and avoided.")
