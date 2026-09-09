@@ -3492,6 +3492,12 @@ var _assassinate_chance: int = 0  # live Assassinate % for the Read meter
 var _focus: int = 0
 var _focus_max: int = 5
 var _focus_active: bool = false
+# What THIS mage calls its engine: Focus (Wizard) / Volatility (Sorcerer) / Insight (Sage).
+# `update_focus` has always RECEIVED this label and only ever used it for the meter, so the card
+# faces had no mage engine name to reach for - the 2026-09-09 pip generalisation grabbed the
+# Trickster's `_engine_label_text` instead and a Wizard's Blast printed "+◈ Read". Stored here
+# for the same reason the Trickster's is: one name per thing, and the card face reads it.
+var _focus_label_text: String = "Focus"
 
 func update_momentum(cur: int, mx: int, is_warrior: bool, label: String = "Momentum", finisher: String = "Devastate") -> void:
 	"""Called from client.gd on each combat_state. Shows a pip meter for Warriors;
@@ -3565,6 +3571,8 @@ func update_focus(cur: int, mx: int, is_mage: bool, label: String = "Focus", not
 	_focus = cur
 	_focus_max = max(1, mx)
 	_focus_active = is_mage
+	if label != "":
+		_focus_label_text = label
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
 	if not is_mage:
@@ -4657,53 +4665,64 @@ func _refresh_hand() -> void:
 		# archetype abilities build the meter (universal/companion cards don't).
 		if effect_lbl and (_momentum_active or _combo_active or _focus_active):
 			var _arch := Character.get_ability_archetype(card_name)
-			if _momentum_active and _arch == "warrior" and card_name != "devastate":
+			# 2026-09-09 - ONE pip path for all three engines.
+			#
+			# The Warrior and Mage branches used to print a bare "+⚡" / "+◈" whatever the card
+			# actually granted, so they could not show a bonus at all. Seven cards granted MORE than
+			# their face admitted - Paladin power_strike / war_cry / fortify / rally and Sage
+			# magic_bolt / paralyze / forcefield - all from the "Building" upgrade, plus War Cry's
+			# own +1. Found by `-- cardpromise`, and the owner's rule from Long Con applies: *"a
+			# passive the player cannot observe may as well not exist"*.
+			# Only the Trickster had the count, so this generalises IT rather than adding a third
+			# variant - the server already computed the breakdown for every archetype.
+			var _eng_on := ((_momentum_active and _arch == "warrior")
+				or (_combo_active and _arch == "trickster")
+				or (_focus_active and _arch == "mage"))
+			# The FINISHER spends the bar instead of feeding it, so it never shows a feed marker.
+			# One list for all three paths; it used to be three separate `card_name !=` tests, and
+			# the Trickster's was simply missing for a month.
+			if _eng_on and card_name not in ["devastate", "perfect_heist", "meteor"]:
+				var _glyph := "⚡"
+				var _colour := "#C8A24A"
+				var _label := _momentum_name
+				if _arch == "trickster":
+					_glyph = "◉"
+					_colour = "#7FD8C8"
+					_label = _engine_label_text
+				elif _arch == "mage":
+					_glyph = "◈"
+					_colour = "#5AC8FF"
+					_label = _focus_label_text
 				var _e := effect_lbl.text
-				effect_lbl.text = ("+⚡ %s" % _momentum_name) if _e == "" else "+⚡  %s" % _e
-				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
-			# 2026-09-08 - the FINISHER is excluded, as it already is for the Warrior's Devastate
-			# and the Mage's Meteor one branch either side. It banks a stack and then spends the
-			# whole bar, so a "+◉ Leverage" marker advertises the exact opposite of what it does.
-			# Found by `-- cardpromise`: Trickster was the one archetype of three with no
-			# exclusion here, the same branch asymmetry that let the engine LABELS drift.
-			elif _combo_active and _arch == "trickster" and card_name != "perfect_heist":
-				var _e2 := effect_lbl.text
-				# 2026-09-06 — a card that grants MORE than one Read shows one pip per Read, so
-				# the Grifter can see which cards his passive (or an upgrade) is doubling without
-				# reading the log after the fact. The count is the server's, not re-derived here.
 				var _rg: int = 0
-				if client_ref and client_ref.has_method("get_card_read_gain"):
-					_rg = int(client_ref.get_card_read_gain(card_name))
-				# 2026-09-08 - a SOLID pip is a promise, a HOLLOW one is a chance. Reported live:
-				# a Grifter's Distract showed two solid pips and paid one about half the time,
-				# because Long Con is a 50% double that the preview counted as certain. Drawing
-				# both the same way is what made a working engine look broken.
+				if client_ref and client_ref.has_method("get_card_engine_gain"):
+					_rg = int(client_ref.get_card_engine_gain(card_name))
+				# A SOLID pip is a promise, a HOLLOW one is a chance. Reported live: a Grifter's
+				# Distract showed two solid pips and paid one about half the time, because Long Con
+				# is a 50% double the preview counted as certain. Drawing both the same way is what
+				# made a working engine look broken.
 				var _sure: int = _rg
 				var _maybe: int = 0
-				if client_ref and client_ref.has_method("get_card_read_breakdown"):
-					var _b: Dictionary = client_ref.get_card_read_breakdown(card_name)
+				if client_ref and client_ref.has_method("get_card_engine_breakdown"):
+					var _b: Dictionary = client_ref.get_card_engine_breakdown(card_name)
 					if int(_b.get("sure", 0)) > 0:
 						_sure = int(_b.get("sure", 0))
 						_maybe = int(_b.get("maybe", 0))
-				var _pips := "◉"
+				var _pips := _glyph
 				if _rg > 1:
 					_pips = ""
 					for _i in range(mini(_sure, 4)):
-						_pips += "◉"
+						_pips += _glyph
 					for _i in range(mini(_maybe, 4 - mini(_sure, 4))):
 						_pips += "◌"
-					# Say what the hollow pip MEANS. A symbol the player cannot decode only moves
-					# the confusion; the card now states the odds it is actually offering.
-					if _maybe > 0:
-						var _pct: int = int(client_ref.get_card_read_breakdown(card_name).get("chance", 0))
-						cell.tooltip_text = ("◉ = %d %s guaranteed.   ◌ = %d more at %d%%."
-							% [_sure, _engine_label_text, _maybe, _pct]) if _pct > 0 else ""
-				effect_lbl.text = ("+%s %s" % [_pips, _engine_label_text]) if _e2 == "" else "+%s  %s" % [_pips, _e2]
-				effect_lbl.add_theme_color_override("font_color", Color("#7FD8C8"))
-			elif _focus_active and _arch == "mage" and card_name != "meteor":
-				var _e3 := effect_lbl.text
-				effect_lbl.text = "+◈ Focus" if _e3 == "" else "+◈  %s" % _e3
-				effect_lbl.add_theme_color_override("font_color", Color("#5AC8FF"))
+					# Say what the hollow pip MEANS. A symbol the player cannot decode only moves the
+					# confusion; the card states the odds it is actually offering.
+					if _maybe > 0 and client_ref:
+						var _pct: int = int(client_ref.get_card_engine_breakdown(card_name).get("chance", 0))
+						cell.tooltip_text = ("%s = %d %s guaranteed.   ◌ = %d more at %d%%."
+							% [_glyph, _sure, _label, _maybe, _pct]) if _pct > 0 else ""
+				effect_lbl.text = ("+%s %s" % [_pips, _label]) if _e == "" else "+%s  %s" % [_pips, _e]
+				effect_lbl.add_theme_color_override("font_color", Color(_colour))
 
 		# v0.9.696 — Warrior Devastate is gated behind Momentum: it can't be played
 		# with 0 Momentum. Render it as uncastable (dimmed + hint) until the meter

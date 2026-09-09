@@ -209,16 +209,31 @@ while the Paladin's stat realignment held.
       capture runs in a row failed to proc it, which is the same verify-by-luck gap
       `gm_spring_trap` closed for traps.
 
-- [ ] **Show Warrior and Mage engine gain as a COUNT, not a bare symbol** (found by
-      `-- cardpromise`, 2026-09-08). Those archetypes render one `+⚡` / `+◈` marker regardless of
-      how much they actually grant, so they cannot show a bonus at all. Seven cards currently
-      grant MORE than the face shows — Paladin `power_strike` / `war_cry` (up to **3**) /
-      `fortify` / `rally`, and Sage `magic_bolt` / `paralyze` / `forcefield` — all from the
-      "Building" (`momentum_feed`) upgrade. Not a broken promise, so `cardpromise` reports it as a
-      warning rather than a failure, but *"a passive the player cannot observe may as well not
-      exist"* (the reason Long Con was made to announce itself). Fix = generalise the Trickster's
-      pip count to all three engines: a server-side breakdown per engine, and the client drawing N
-      pips instead of one glyph.
+- [x] **Warrior and Mage engine gain shows as a COUNT — DONE 2026-09-09.** Those archetypes drew
+      one `+⚡` / `+◈` marker regardless of how much they granted, so they could not show a bonus
+      at all. The three branches are now ONE path: the server already computed a per-card
+      breakdown for every archetype (`preview_engine_breakdown`, ungated from `trickster` and
+      renamed off `read_*`, since a field named for one archetype's engine is how the labels
+      drifted before), and the card face draws N pips from it — solid for certain, hollow for a
+      chance. War Cry correctly advertises **2** now (its own surge plus the shared +1).
+      The finisher exclusion is one list for all three paths, replacing three separate
+      `card_name !=` tests of which the Trickster's had been missing for a month.
+      **A regression was caught on screen, not in review:** the mage branch reached for
+      `_engine_label_text`, which is the TRICKSTER's label, so a Wizard's Blast printed
+      "+◈ Read". `update_focus` had always RECEIVED the mage label and never stored it; it does
+      now (`_focus_label_text`), so there is one name per engine. `-- enginenames` still 9/9.
+
+      **The 7 "hidden bonus" warnings from `-- cardpromise` are the AUDIT, not the cards.**
+      Measured: the only two classes that vary 1-2 are the only two with an engine-feeding class
+      passive — the Paladin's Retribution (+1 Conviction per blow taken) and the Sage's Foresight
+      (+1 Insight on a round it fails to hurt you). Every class without one measures exactly 1.
+      So the extra point comes from the monster's turn and is charged to the card. Isolating the
+      card's own share is harder than it looks and was ATTEMPTED AND BACKED OUT: subtracting the
+      passive's recorded share leaves a residue (a monster turn can also end a cast early and rob
+      the card of its grant), and suppressing the monster turn does not stop Foresight, whose
+      condition is "was not hurt". The audit still measures the round, with that interpretation
+      written into it, rather than being half-corrected. **The card faces are correct** — these
+      cards do not under-report, so nothing here needs fixing on the player-facing side.
 
 
 - [ ] **Three card upgrades that do nothing on some cards** (found 2026-09-08 by `-- upgradefit`,

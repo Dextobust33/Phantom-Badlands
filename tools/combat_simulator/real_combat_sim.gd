@@ -7556,12 +7556,18 @@ func run_cardpromise() -> void:
 			if id in ENGINE_MARKER_EXEMPT:
 				combat_mgr.active_combats.erase(0)
 				continue
-			if String(ch.get_class_path()) == "trickster":
-				var _b: Dictionary = combat_mgr.preview_read_breakdown(ch, c0, id)
-				adv_sure = int(_b.get("sure", 0))
-				adv_maybe = int(_b.get("maybe", 0))
-			elif CharacterScript.get_ability_archetype(id) == String(ch.get_class_path()):
-				adv_sure = 1     # the bare "+#" marker promises exactly one
+			# READ THE FACE'S OWN SOURCE, for every archetype.
+			#
+			# 2026-09-09. This used to branch on `trickster` and hard-code `adv_sure = 1` for the
+			# other two, because only the Trickster's card face drew a real count - the Warrior
+			# and Mage printed a bare "+#" whatever they granted. That is now fixed, and the
+			# audit was the SECOND copy of the old behaviour: it would have gone on reporting
+			# seven "hidden bonus" warnings for cards whose faces had started showing the bonus.
+			# An audit that models the surface instead of reading it is the same defect it exists
+			# to catch.
+			var _b: Dictionary = combat_mgr.preview_engine_breakdown(ch, c0, id)
+			adv_sure = int(_b.get("sure", 0))
+			adv_maybe = int(_b.get("maybe", 0))
 			combat_mgr.active_combats.erase(0)
 			if adv_sure == 0 and adv_maybe == 0:
 				continue
@@ -7582,6 +7588,17 @@ func run_cardpromise() -> void:
 				ch.current_energy = ch.get_total_max_energy()
 				var spend := int(round(float(_primary_pool_for(ch)) * 0.4))
 				combat_mgr.process_ability_command(0, id, str(maxi(1, spend)))
+				# The engine total AFTER the full round. Note this includes the two class passives
+				# that feed the engine from the monster's turn - the Paladin's Retribution (+1
+				# Conviction per blow taken) and the Sage's Foresight (+1 Insight on a round it fails
+				# to hurt you) - which is why exactly those two classes report a 1-2 range while every
+				# class without such a passive reports exactly 1. Their seven "hidden bonus" warnings
+				# are therefore the PASSIVE, not the card, and are not something the card face should
+				# claim. Isolating the card's own share was attempted 2026-09-09 and is harder than it
+				# looks: subtracting the passive's recorded share leaves a residue because a monster
+				# turn can also end a cast early, and suppressing the monster turn does not stop
+				# Foresight, whose condition is "was not hurt". Left measuring the round, with the
+				# interpretation written down, rather than half-corrected.
 				var got := int(combat.get(eng_key, 0))
 				lo = mini(lo, got)
 				hi = maxi(hi, got)

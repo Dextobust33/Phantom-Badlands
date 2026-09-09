@@ -4473,17 +4473,19 @@ func _build_ability_effect_info(combat: Dictionary) -> Dictionary:
 	for card in combat.get("combat_hand", []):
 		var name := String(card)
 		var eff: Dictionary = preview_ability_effect(character, combat, name)
-		var _rb: Dictionary = preview_read_breakdown(character, combat, name)
+		var _rb: Dictionary = preview_engine_breakdown(character, combat, name)
 		var _rg: int = int(_rb.get("sure", 0)) + int(_rb.get("maybe", 0))
 		# Send the SPLIT, not just the total. A card that grants 1 for certain and 1 on a coin
 		# flip is a different card from one that grants 2, and the face has to say which.
 		if _rg > 1:
 			if eff.is_empty():
 				eff = {"kind": "read_only"}
-			eff["read_gain"] = _rg
-			eff["read_sure"] = int(_rb.get("sure", 0))
-			eff["read_maybe"] = int(_rb.get("maybe", 0))
-			eff["read_chance"] = int(_rb.get("chance", 0))
+			# `engine_*`, not `read_*`: this now carries Momentum and Focus as well, and a field
+			# named for one archetype's engine is how the LABELS drifted for a month.
+			eff["engine_gain"] = _rg
+			eff["engine_sure"] = int(_rb.get("sure", 0))
+			eff["engine_maybe"] = int(_rb.get("maybe", 0))
+			eff["engine_chance"] = int(_rb.get("chance", 0))
 		if not eff.is_empty() and String(eff.get("kind", "")) != "":
 			out[name] = eff
 	return out
@@ -7257,7 +7259,7 @@ func long_con_denial_chance(character, ability_name: String) -> int:
 	var fx: Dictionary = pas.get("effects", {}) if pas is Dictionary else {}
 	return int(fx.get("denial_read_chance", 0))
 
-func preview_read_breakdown(character, combat: Dictionary, ability_name: String) -> Dictionary:
+func preview_engine_breakdown(character, combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Split this card's engine preview into what it WILL grant and what it MIGHT.
 
 	`{"sure": n, "maybe": n, "chance": pct}`.
@@ -7275,21 +7277,39 @@ func preview_read_breakdown(character, combat: Dictionary, ability_name: String)
 	resolves to a definite pip, while Long Con's cannot be known until the cast - so it gets its
 	own bucket and the card face draws it as a maybe rather than silently rounding it up."""
 	var out: Dictionary = {"sure": 0, "maybe": 0, "chance": 0}
-	if character == null or character.get_class_path() != "trickster":
+	if character == null:
 		return out
-	if Character.get_ability_archetype(ability_name) != "trickster":
+	# ALL THREE ARCHETYPES, not just the Trickster.
+	#
+	# 2026-09-09. This was gated to `trickster` and everything below it was written as though
+	# "the engine" meant Read - but `_feed_class_engine` has always been archetype-aware, so
+	# kindling / desperate / harrying / momentum_feed feed a Warrior's Momentum and a Mage's
+	# Focus exactly as they feed Leverage. The maths was right for all three and only the GATE
+	# and the NAME were Trickster-specific, so a Paladin's War Cry (+2) or any card carrying
+	# "Building" (+1) granted more than its face admitted. Found by `-- cardpromise`.
+	var _path := String(character.get_class_path())
+	if Character.get_ability_archetype(ability_name) != _path:
+		return out
+	# The FINISHER spends the bar rather than feeding it, so it gets no pips. Each path has its
+	# own; the card face excludes the same three.
+	if ability_name in ["devastate", "perfect_heist", "meteor"]:
 		return out
 	out["sure"] = 1
+	# War Cry surges the meter on TOP of the shared +1 at the end of the cast, so it is worth 2.
+	# This is a base property of the card, not an upgrade - see the `war_cry` case.
+	if ability_name == "war_cry":
+		out["sure"] += 1
 	# Long Con: a CHANCE to double, so it can never be a solid pip however high the roll.
+	# Trickster-only by construction (`long_con_denial_chance` reads that class passive).
 	var _lc: int = long_con_denial_chance(character, ability_name)
 	if _lc > 0:
 		out["maybe"] = 1
 		out["chance"] = _lc
 	var picks: Array = character.get_milestone_picks(ability_name)
 	if not picks.is_empty():
-		# The upgrades that feed the class engine, which for a Trickster IS Read. Each is
-		# evaluated against the fight as it stands RIGHT NOW, so a pip the player cannot
-		# currently earn is never drawn.
+		# The upgrades that feed the class engine - Momentum, Leverage or Focus, whichever this
+		# class runs; they all route through `_feed_class_engine`. Each is evaluated against the
+		# fight as it stands RIGHT NOW, so a pip the player cannot currently earn is never drawn.
 		if "desperate" in picks and float(character.current_hp) < 0.34 * float(character.get_total_max_hp()):
 			out["sure"] += 2
 		if "kindling" in picks and _primary_pool_current(character) >= _primary_pool_max(character):
@@ -7317,7 +7337,7 @@ func preview_read_gain(character, combat: Dictionary, ability_name: String) -> i
 	Computed server-side and sent with the card rather than re-derived in the client. Kept as the
 	optimistic total for anything that wants a single number; the card FACE uses the breakdown so
 	it can tell a certainty from a coin flip."""
-	var b: Dictionary = preview_read_breakdown(character, combat, ability_name)
+	var b: Dictionary = preview_engine_breakdown(character, combat, ability_name)
 	if int(b.get("sure", 0)) <= 0:
 		return 0
 	return int(b.get("sure", 0)) + int(b.get("maybe", 0))
@@ -8105,6 +8125,10 @@ func _apply_on_unharmed_turn(combat: Dictionary, character, result: Dictionary) 
 	if after == before:
 		return
 	combat["focus"] = after
+	# Attribute this point to the PASSIVE, not to whatever card was cast this round. Without it
+	# the two are indistinguishable in the engine total, and `-- cardpromise` blamed the card:
+	# it reported seven Paladin/Sage cards as granting a hidden bonus that was really this.
+	combat["_engine_from_passive"] = int(combat.get("_engine_from_passive", 0)) + (after - before)
 	var line := "[color=#20B2AA]◈ Foresight — Insight %d/%d[/color]" % [after, FOCUS_MAX]
 	if result.has("message"):
 		result["message"] = "%s\n%s" % [String(result["message"]), line]
@@ -8128,6 +8152,8 @@ func _apply_on_taken_hit(combat: Dictionary, character, result: Dictionary) -> v
 	if after == before:
 		return
 	combat["momentum"] = after
+	# Same attribution as Foresight above - see the note there.
+	combat["_engine_from_passive"] = int(combat.get("_engine_from_passive", 0)) + (after - before)
 	var line := "[color=#FFD700]⚔ Retribution — Conviction %d/%d[/color]" % [after, MOMENTUM_MAX]
 	if result.has("message"):
 		result["message"] = "%s\n%s" % [String(result["message"]), line]

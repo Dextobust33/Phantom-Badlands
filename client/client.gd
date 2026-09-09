@@ -19533,8 +19533,8 @@ func _get_slot_abbreviation(item_type: String) -> String:
 		return "[color=#666666][AMU][/color]"
 	return ""
 
-func get_card_read_gain(ability_name: String) -> int:
-	"""How much Read this card will grant, as the SERVER computed it. 0 when it is not more
+func get_card_engine_gain(ability_name: String) -> int:
+	"""How much ENGINE this card will grant, as the SERVER computed it. 0 when it is not more
 	than the usual 1, so the card only shouts when there is something to shout about.
 
 	2026-09-06, owner: a Grifter card that grants extra Read — from Long Con, a card upgrade, or
@@ -19546,10 +19546,10 @@ func get_card_read_gain(ability_name: String) -> int:
 	var eff = _server_ability_effects.get(ability_name, {})
 	if not (eff is Dictionary):
 		return 0
-	return int(eff.get("read_gain", 0))
+	return int(eff.get("engine_gain", 0))
 
 
-func get_card_read_breakdown(ability_name: String) -> Dictionary:
+func get_card_engine_breakdown(ability_name: String) -> Dictionary:
 	"""How much of this card's engine gain is CERTAIN and how much is a roll.
 
 	`{"sure": n, "maybe": n, "chance": pct}`. Reported live 2026-09-08: a Grifter's cards
@@ -19562,9 +19562,9 @@ func get_card_read_breakdown(ability_name: String) -> Dictionary:
 	var eff = _server_ability_effects.get(ability_name, {})
 	if not (eff is Dictionary):
 		return out
-	out["sure"] = int(eff.get("read_sure", 0))
-	out["maybe"] = int(eff.get("read_maybe", 0))
-	out["chance"] = int(eff.get("read_chance", 0))
+	out["sure"] = int(eff.get("engine_sure", 0))
+	out["maybe"] = int(eff.get("engine_maybe", 0))
+	out["chance"] = int(eff.get("engine_chance", 0))
 	return out
 
 func _get_themed_item_name(item: Dictionary, owner_class: String = "") -> String:
