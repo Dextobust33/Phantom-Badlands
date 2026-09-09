@@ -442,9 +442,20 @@ while the Paladin's stat realignment held.
             PREVIOUS Time Fantasy sets", and `singleframes/` holds exactly set1-set7 +
             military1-3 = 80, matching `tf/` one for one. So all 80 battlers DO have character
             counterparts - across the wider Time Fantasy product line, not inside the single
-            character pack we own. Rows 6-7 come from sets we do not have. The fix is acquiring
-            the right set, not searching this one; until then they keep the mirrored-battler
-            fallback (left/right facing, no walk cycle).
+            character pack we own.
+            **The missing set is IDENTIFIED.** The battler pack's page: "80 characters based on
+            the heroes from the original Time Fantasy set and the Monsters expansion", plus "For
+            base walking animations for these characters, check out the original character pack".
+            Our `READ_ME.txt` confirms we own the ORIGINAL - "32 main hero/villain characters, 24
+            military characters, 16 NPCs (recolored -> 32), 8 bonus characters" - which is
+            exactly rows 1-5 and m1-m3, and explains why `npc`/`bonus` never matched: they are
+            townsfolk, not battler heroes.
+            So rows 6-7 need **Time Fantasy RPG Sprites 2 (with Monsters)**,
+            <https://finalbossblues.itch.io/time-fantasy-monsters>, **$10 minimum**, which ships
+            "all monsters with full four-direction walking animations and single-frame battlers".
+            Four-direction walking is precisely the missing art. Same artist and style, so it
+            drops in beside what is already wired.
+            Until then they keep the mirrored-battler fallback (left/right facing, no walk cycle).
 
       - [ ] **Player EMOTE animations underground** (owner 2026-09-08): the walk cycle IS live -
             each step advances a 3-frame cycle from the overworld art's 4 directions x 3 frames -
