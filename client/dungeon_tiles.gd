@@ -63,8 +63,12 @@ const CAVE_ROCK := Vector2i(4, 4)
 ## - two of those "candidates" turned out to be the lower halves of a lantern and a piece of the
 ## tent, which read as debris when dropped on their own - so they are left for deliberate
 ## placement rather than random scatter.
+##
+## The SKULL was dropped after seeing it in play: at tile scale it reads as a white oval that
+## looks like an egg or a pickup, and three in one view competed with the actual floor loot.
+## Background scatter has to stay in the background.
 const PROP_DIR := "res://client/sprites/prop_floor32/"
-const PROP_COUNT := 8
+const PROP_COUNT := 7
 ## Roughly one floor tile in seven. Flavour, not clutter: high enough that a corridor is not all
 ## one tile, low enough that the eye still reads the floor as floor.
 const PROP_CHANCE_IN := 7

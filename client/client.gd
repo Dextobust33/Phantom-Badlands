@@ -3569,6 +3569,7 @@ func _on_window_resized():
 		call_deferred("_sync_map_sprites_overlay")
 
 func _process(delta):
+	_dungeon_idle_tick(delta)
 	# v0.9.695 — F12 screenshot via a polled edge, so NO UI/combat state can eat
 	# the key (the _input path + the top-bar button both get consumed in combat).
 	var _f12_now := Input.is_physical_key_pressed(KEY_F12)
@@ -43970,6 +43971,11 @@ const _DUNGEON_FACING_BY_DIR := {
 var _dungeon_walk_frame: int = 0
 # Advances on every dungeon redraw so monsters and the companion cycle their walk frames.
 var _dungeon_anim_tick: int = 0
+# Wall-clock accumulator for the IDLE animation. Owner: "The continuous idle animations would
+# help the dungeon feel more alive." Without this the floor only redraws when the server sends
+# state - on your step, or when a wanderer moves - so a still player sees a still dungeon.
+var _dungeon_idle_accum: float = 0.0
+const DUNGEON_IDLE_FRAME_SEC := 0.42
 # Where the player was on the PREVIOUS step, so the companion can walk in their footsteps.
 # Owner: "We will eventually want the companion following your sprite in dungeons just like on
 # the overworld as well." The overworld draws it as a positioned Control overlay, which the
@@ -44350,6 +44356,28 @@ func _dungeon_glyph_cell(glyph: String, color: String, url: String = "") -> Stri
 	if url != "":
 		body = "[url=%s]%s[/url]" % [url, body]
 	return "[font_size=%d]%s[/font_size]" % [DUNGEON_GLYPH_FONT_SIZE, body]
+
+
+func _dungeon_idle_tick(delta: float) -> void:
+	"""Advance the dungeon's idle animation on a clock, not only on server state.
+
+	Owner: "The continuous idle animations would help the dungeon feel more alive." Until this,
+	the floor redrew only when `dungeon_state` arrived - your step, or a wanderer moving - so a
+	player standing still saw a frozen room.
+
+	Gated hard, because this repaints the CANVAS: only in a dungeon, only while the canvas is
+	actually the map (`_dungeon_menu_open()` covers rest, inventory, gather and the rest), and
+	never during combat or a loot reveal. A full floor redraw was measured at ~16.7ms, so at
+	roughly two frames a second this is a few percent of one second's budget."""
+	if not dungeon_mode or in_combat or dungeon_data.is_empty():
+		return
+	if _dungeon_rendering or _dungeon_menu_open() or _combat_loot_reveal_active():
+		return
+	_dungeon_idle_accum += delta
+	if _dungeon_idle_accum < DUNGEON_IDLE_FRAME_SEC:
+		return
+	_dungeon_idle_accum = 0.0
+	display_dungeon_floor()
 
 
 func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
