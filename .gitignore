@@ -44,3 +44,8 @@ client/sprites/godot-pixel-items-source/
 client/sprites/godot-pixel-items-windows/
 client/sprites/godot-pixel-mobs-source/
 client/sprites/godot-pixel-mobs-windows/
+
+# The RageTileMap Unity demo project. Its ART and the two tile-index enums are curated into
+# client/sprites/tilemap_pack/ and committed; the Unity project itself (its own ProjectSettings,
+# .meta files and C# scripts) must not sit live under res:// where our importer walks it.
+client/sprites/RageTileMap-master/
