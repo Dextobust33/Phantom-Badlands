@@ -20,11 +20,15 @@ func _init() -> void:
 	var bad: Array = []
 	var checked := 0
 
+	# EVERY walk frame, not just one. Monsters animate now, and checking a single frame would
+	# pass while two thirds of the art was missing - the same shape as checking that files exist
+	# while never calling the resolver.
 	for k in DS.MONSTER_SPRITE.keys():
-		checked += 1
-		var p: String = DS.monster_path(String(k))
-		if p == "" or not ResourceLoader.exists(p):
-			bad.append("monster %s -> '%s'" % [k, p])
+		for fr in range(DS.MONSTER_FRAMES):
+			checked += 1
+			var p: String = DS.monster_path(String(k), fr)
+			if p == "" or not ResourceLoader.exists(p):
+				bad.append("monster %s frame %d -> '%s'" % [k, fr, p])
 
 	for k in DS.GLYPH_TILE.keys():
 		checked += 1

@@ -43968,6 +43968,8 @@ const _DUNGEON_FACING_BY_DIR := {
 	"up": "up", "down": "down", "left": "left", "right": "right",
 }
 var _dungeon_walk_frame: int = 0
+# Advances on every dungeon redraw so monsters and the companion cycle their walk frames.
+var _dungeon_anim_tick: int = 0
 # Where the player was on the PREVIOUS step, so the companion can walk in their footsteps.
 # Owner: "We will eventually want the companion following your sprite in dungeons just like on
 # the overworld as well." The overworld draws it as a positioned Control overlay, which the
@@ -44310,11 +44312,15 @@ func _dungeon_companion_img() -> String:
 	var mt := String(comp.get("monster_type", ""))
 	if mt == "":
 		return _DungeonTiles.floor_img()
-	var spr: String = _DungeonSprites.monster_path(mt)
+	var spr: String = _DungeonSprites.monster_path(mt, _dungeon_walk_frame)
 	if spr == "" or not ResourceLoader.exists(spr):
 		return _DungeonTiles.floor_img()
-	# A gentle warm tint so your Wolf reads as YOURS rather than as another wolf on the floor.
-	return "[img=%dx%d color=#CFE8FF]%s[/img]" % [
+	# NO TINT. Owner: "the companion has a color offset under it or something, floor is a
+	# different color on its space." Exactly right, and it is the same fault removed from the
+	# player one commit earlier: `color=` multiplies the WHOLE image, and these sprites have the
+	# floor baked into them, so an identity tint stains the ground. Wanting the companion to read
+	# as YOURS is not worth a discoloured tile; position behind you already says it.
+	return "[img=%dx%d]%s[/img]" % [
 		_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, spr]
 
 
@@ -44504,6 +44510,7 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	# in" - so filling the canvas has to come from drawing the same view LARGER, not from showing
 	# more of the floor.
 	_dungeon_pick_tile_px(view_w, view_h)
+	_dungeon_anim_tick += 1
 	# Track the step so the companion has somewhere to stand. Only moves when the player actually
 	# moves; a redraw in place must not make the companion jump onto the player.
 	var _here := Vector2i(player_x, player_y)
@@ -44594,7 +44601,12 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					var _mname := String(mon.get("variant_name", ""))
 					if _mname == "":
 						_mname = String(mon.get("type", ""))
-					var _msprite: String = _DungeonSprites.monster_path(_mname)
+					# Owner: "The monster sprites and companion don't seem to animate." They did
+					# not - only frame 0 was ever baked. All three walk frames are baked now and
+					# the floor advances them as it redraws, offset by monster id so a room does
+					# not breathe in lockstep.
+					var _mframe: int = _dungeon_anim_tick + int(mon.get("id", 0))
+					var _msprite: String = _DungeonSprites.monster_path(_mname, _mframe)
 					var _murl := "mon:%d" % int(mon.get("id", -1))
 					if _msprite != "" and ResourceLoader.exists(_msprite):
 						# ALERT is the one thing the sprite cannot say on its own, so it keeps the

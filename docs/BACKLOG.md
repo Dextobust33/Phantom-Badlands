@@ -374,7 +374,7 @@ while the Paladin's stat realignment held.
       A mixed mock (darkcave floor + wall rim, RageTileMap stairs/doors/torch/forge) reads fine:
       the warm brown stone sits comfortably against the cave rock.
 
-      - [ ] **Scatter FLAVOUR props on the floor** (owner 2026-09-08, on seeing slice 1): *"We
+      - [x] **DONE (unverified on screen) - Scatter FLAVOUR props on the floor** (owner 2026-09-08, on seeing slice 1): *"We
             will likely want to add some of the stones, grass, trees, stumps, lanterns scattered
             around in the future just for flavor to make the floor less of the same thing."*
             The olive floor reads correctly as cave floor - confirmed by the owner - but every
@@ -385,7 +385,7 @@ while the Paladin's stat realignment held.
             stable across redraws and does not shimmer as you walk), at a low density - flavour,
             not clutter, and never on a tile whose meaning a player must read.
 
-      - [ ] **Companion follows you underground** (owner 2026-09-08): *"We will eventually want
+      - [x] **DONE (unverified on screen) - Companion follows you underground** (owner 2026-09-08): *"We will eventually want
             the companion following your sprite in dungeons just like on the overworld as well."*
             The overworld already does this with `_local_companion_label` / `_make_map_companion_label`
             (a small monospace RichTextLabel of the companion's ASCII art, positioned under the

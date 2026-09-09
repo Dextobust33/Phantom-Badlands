@@ -642,7 +642,11 @@ const GLYPH_TILE := {
 }
 
 
-static func monster_path(display_name: String) -> String:
+## How many walk frames each monster has baked (walk1 / stand / walk2, straight off the sheet).
+const MONSTER_FRAMES := 3
+
+
+static func monster_path(display_name: String, frame: int = 1) -> String:
 	"""The baked sprite for a monster, or "" if it has none.
 
 	Matches the BASE name inside the display name, so a pre-rolled "Venomous Orc" or an elite
@@ -650,8 +654,9 @@ static func monster_path(display_name: String) -> String:
 	beaten by "Dragon"."""
 	if display_name == "":
 		return ""
+	var f: int = posmod(frame, MONSTER_FRAMES)
 	if MONSTER_SPRITE.has(display_name):
-		return MONSTER_DIR + String(MONSTER_SPRITE[display_name]) + ".png"
+		return MONSTER_DIR + String(MONSTER_SPRITE[display_name]) + "_%d.png" % f
 	var best := ""
 	for k in MONSTER_SPRITE.keys():
 		var n := String(k)
@@ -659,7 +664,7 @@ static func monster_path(display_name: String) -> String:
 			best = n
 	if best == "":
 		return ""
-	return MONSTER_DIR + String(MONSTER_SPRITE[best]) + ".png"
+	return MONSTER_DIR + String(MONSTER_SPRITE[best]) + "_%d.png" % f
 
 
 static func glyph_path(glyph: String, color: String) -> String:
