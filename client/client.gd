@@ -30387,7 +30387,16 @@ func display_changelog():
 	# v0.9.755 — the class-identity release: nine classes onto three engine shapes, the finisher
 	# forked three ways per path, Sage shown as Oracle, a difficulty curve that ramps with level,
 	# rest/flock changes for the early game, CON granting mitigation, and a one-off deck repair.
-	display_game("[color=#00FF00]v0.9.762[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.763[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE DUNGEON TALKS TO YOU BESIDE THE MAP, NOT OVER IT.[/color] Traps, finds and tile effects used to [b]blank the whole floor[/b] for a full-screen notice, or get buried in the chat strip where they were cut off. There is now a [b]run log on the right, above the key[/b], and the map never goes away. [b]Rest, food and the gather prompt[/b] moved there too — only full screens like your inventory still take the canvas.")
+	display_game("  [color=#FF8000]★ SPECIAL FLOOR TILES EXPLAIN THEMSELVES.[/color] [b]Hover any tile[/b] — in the key on the right, or on the floor itself — to see exactly what it does. Poison, healing pools, embers, briars: what was written once on the entrance sign is now available the moment you are standing on it.")
+	display_game("  [color=#1EFF00]◆ Stepping on a trap no longer shows you a blank screen.[/color] The trap took the canvas away and put nothing back — a black screen with one button, and the text you needed sent to the chat log.")
+	display_game("  [color=#1EFF00]◆ Tiles stopped advertising a rule the game no longer has.[/color] Thirteen tiles said crossing them 'costs +1 step', left over from the retired step budget. They still cost you [b]time[/b] — the floor stirs sooner and wandering monsters arrive faster — and now they say so.")
+	display_game("  [color=#1EFF00]◆ Five egg variants were the same blank white egg.[/color] Ivory, Arctic, Marked, Halo and Blessed all drew as an [b]untextured white blob[/b], indistinguishable from each other. They now look like what they were always meant to be.")
+	display_game("  [color=#1EFF00]◆ The key said 'Letters = Monsters'.[/color] Every monster is a sprite now, so the only letters left on a floor are special tiles — the key was telling you a bull-rune was a goblin.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.762[/color]")
 	display_game("  [color=#FF8000]★ DUNGEONS ARE FULLY ILLUSTRATED NOW.[/color] Monsters are [b]animated sprites[/b] instead of letters — an orc looks like an orc, a skeleton like a skeleton — and they keep moving while you stand still. Floor loot is real item art: coins, ore, scrolls, shields, and eggs that show which variant you are about to pick up. Stones, grass and rubble are scattered across the ground so a corridor is no longer a hundred identical tiles.")
 	display_game("  [color=#FF8000]★ YOUR COMPANION FOLLOWS YOU UNDERGROUND.[/color] It walks in your footsteps, one tile behind, the way it does on the surface.")
 	display_game("  [color=#FF8000]★ EVERY CHARACTER CAN NOW WALK AND TURN.[/color] Only 32 of the 80 character designs had directional artwork; the rest stood frozen, facing one way, [b]on the overworld as well as underground[/b]. All 80 are complete — they face the way you move and animate as they go.")
@@ -30512,16 +30521,6 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ Card upgrades show on the deck screen too.[/color] Last release put them on the combat hover only; the deck builds its cards by a different route and missed out.")
 	display_game("  [color=#1EFF00]◆ Every card has ONE name now.[/color] Nine cards were called different things in combat and in the deck — the worst being [b]Arcane Surge[/b] in battle and [b]Haste[/b] in your deck, which reads as a missing card. Also Bolt/Magic Bolt, Strike/Power Strike, Bash/Shield Bash, Cry/War Cry, Field/Forcefield, Iron/Iron Skin, Heist/Perfect Heist and Steal/Pickpocket.")
 	display_game("  [color=#1EFF00]◆ New characters also get a Home Stone (Companion).[/color] It registers a companion to your Sanctuary, so your first one can outlive you — which is the whole loop.")
-	display_game("")
-
-	display_game("[color=#00FFFF]v0.9.748[/color]")
-	display_game("  [color=#FF8000]★ YOUR CARD UPGRADES WERE INVISIBLE.[/color] They were [b]working[/b] the whole time — every upgrade fires in combat — but nothing showed them to you after you picked one, so an upgraded card looked identical to a fresh one. Cards now [b]list the upgrades they carry[/b], with a count for stacked ones, and you can hover each name for what it does.")
-	display_game("  [color=#FF8000]★ COMPANIONS ARE YOUR INVESTMENT AGAIN.[/color] A companion's health and damage were derived from [b]its owner's[/b] stats, which had two absurd consequences: equipping +HP gear changed your companion's health bar, and [b]gaining a level made your companion weaker[/b] (671 → 474 HP for one level, measured). Both now come from the [b]companion's own level[/b] — stable whatever you wear, and rising only when you level the companion. The cap that stopped an over-levelled companion gaining anything past 2.5x is gone too: a companion far above your level is [b]supposed[/b] to carry you, that is what you invested in.")
-	display_game("  [color=#FF8000]★ NEW CHARACTERS START WITH GEAR.[/color] A fresh character had [b]nothing[/b], and measured a [b]5-28%[/b] win rate against a 60% target — four deaths in five fights. You now start with a full basic kit in every slot. It is the cheapest gear in the game and your first real drop will beat it, but it is the difference between playing and dying.")
-	display_game("  [color=#1EFF00]◆ Tricksters: a deck that survives long enough to win.[/color] The starter deck is now [b]Analyze, Distract, Sabotage x2, Ambush, Assassinate[/b]. Analyze skips the enemy's turn outright; Distract and Sabotage avoid it [b]75%[/b] of the time — and none of those cards ever said so. They do now. That is the class engine: buy the turns you need to build Read, then finish with Outsmart.")
-	display_game("  [color=#1EFF00]◆ Assassinate now actually kills the enemy in a party.[/color] It ended the fight in solo and left the monster standing at full health in co-op.")
-	display_game("  [color=#1EFF00]◆ A stray percent sign in 115 places.[/color] Card costs, unique effects, the help page and the changelog were all printing \"%\" where they meant \"%\".")
-	display_game("  [color=#909090]Also: an Ambusher's opening strike now appears in the combat log instead of damaging you silently; deleting a character returns its companion to the Sanctuary; and a stray apostrophe in a damage tooltip no longer turns the rest of the log into raw markup.[/color]")
 	display_game("")
 
 	display_game("[color=#00FFFF]v0.9.747[/color]")

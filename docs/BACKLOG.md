@@ -120,6 +120,14 @@ while the Paladin's stat realignment held.
 
 ## Phase 1 — confirm the two releases landed (do first, cheap)
 
+- [ ] **Confirm the dungeon tile HOVER on screen** (owner 2026-09-09, working remote: *"it will
+      need confirmed later once I'm back at my PC"*). Everything a screenshot can show was
+      checked — the `[url=]` is emitted, the key entry renders underlined as a live link, the
+      handler is connected on `map_display` as well as `game_output`, and the popup parents to
+      the window root so it shows outside combat. What was NOT verified is the rendered tooltip
+      itself, because it needs a real mouse hover. Check a theme tile in the key AND one on the
+      floor; the text should wrap rather than run off screen.
+
 - [ ] **Watch the five live characters at L3-L12.** They sit in exactly the range everything shipped
       on 2026-09-07 targets, and they are now better evidence than more simulation.
       `bash tools/check_player_progress.sh` — at L25+ re-validate `make_char` against real saves;
