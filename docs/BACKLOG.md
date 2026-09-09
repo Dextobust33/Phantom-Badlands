@@ -416,13 +416,35 @@ while the Paladin's stat realignment held.
             Sprites are 16x16 frames in horizontal STRIPS (SkeletonA = 144x16 = 9 frames), so
             frame 0 is a region and animation is available later at no extra cost.
 
+      - [ ] **Animated STATUS-EFFECT art for combat** (owner 2026-09-08, pointing at
+            `tf_svbattle/RMMV/system`). `States.png` is 768x960 - **10 status animations of 8
+            frames each** in 96x96 cells, and the pack's own readme calls them "a set of
+            animations for status effects (poison, sleep, etc)... pixel-art animation in the
+            style of Time Fantasy so there won't be a style clash".
+            Rendered and identified: 1 poison (purple bubbles), 2 blind (eye + red X), 3 silence
+            (speech bubble), 4 stun/armour-break (closing brackets), 5 confusion (question
+            marks), 6 charm (hearts), 7 sleep (Zzz), 8 paralysis (lightning), 9 doom (skulls),
+            10 freeze/slow (blue drops).
+            Combat currently shows statuses as TEXT chips with `[url=]` hovers. These would sit
+            on the combatant instead - and note they are ANIMATED, which the text chips are not.
+            `Shadow2.png` in the same folder is a deliberate BLANK: the Time Fantasy style bakes
+            the shadow into each sprite, so it overwrites the engine's default drop shadow. Do
+            not mistake it for missing art.
+
       - [ ] **16 characters still have no directional art**: `tf/6_1..6_8` and `tf/7_1..7_8`
             (paths `client/sprites/battlers/tf/<id>/idle_0.png`). Coverage is 64 of 80 after
             wiring chara1 -> row 1 and military1-3 -> m1-m3. The only unused CHARACTER sheets left
             are `fairies` (4 winged), `vampire` (a vampire and a bat) and `bonus1` (8 in modern
-            dress) - none are the armoured adventurers in rows 6/7, shown side by side rather than
-            asserted. They need art from outside this pack, or they keep the mirrored-battler
-            fallback (left/right facing, no walk cycle). Owner is searching.
+            dress) - none are the armoured adventurers in rows 6/7, shown side by side rather
+            than asserted; `npc*` are plainly townsfolk in aprons and overalls.
+            **Why they are missing is now known.** The battler pack's readme: "This is an
+            EXPANSION pack for the Time Fantasy RPG assets... expands on the characters from
+            PREVIOUS Time Fantasy sets", and `singleframes/` holds exactly set1-set7 +
+            military1-3 = 80, matching `tf/` one for one. So all 80 battlers DO have character
+            counterparts - across the wider Time Fantasy product line, not inside the single
+            character pack we own. Rows 6-7 come from sets we do not have. The fix is acquiring
+            the right set, not searching this one; until then they keep the mirrored-battler
+            fallback (left/right facing, no walk cycle).
 
       - [ ] **Player EMOTE animations underground** (owner 2026-09-08): the walk cycle IS live -
             each step advances a 3-frame cycle from the overworld art's 4 directions x 3 frames -
