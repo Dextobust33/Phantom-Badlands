@@ -2284,6 +2284,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_test_b2(peer_id)
 		"gm_enter_dungeon":
 			handle_gm_enter_dungeon(peer_id, message)
+		"gm_dungeon_drop":
+			handle_gm_dungeon_drop(peer_id, message)
 		"gm_build_test_post":
 			handle_gm_build_test_post(peer_id, message)
 		"gm_hire_test_guard":
@@ -39058,6 +39060,63 @@ func handle_gm_test_b2(peer_id: int):
 		"  • Use Taunt Charm in-combat to test +30%% aggro for 3 monster turns."
 	])
 	send_to_peer(peer_id, {"type": "text", "message": summary})
+
+func handle_gm_dungeon_drop(peer_id: int, message: Dictionary) -> void:
+	"""Drop a floor-loot item next to the player, for testing how it RENDERS.
+
+	Added 2026-09-08 because floor loot is rare enough that a capture rarely contains any, so the
+	egg and item sprites could not be reviewed on screen without waiting for luck. Owner: "Can
+	you show an egg onscreen in the next test so I can see it as well?"
+
+	Admin-gated like every other gm_ handler, and it only places an entity that the normal drop
+	code could have placed anyway."""
+	if not _is_admin(peer_id) or not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not character.in_dungeon:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]Not in a dungeon.[/color]"})
+		return
+	var iid: String = character.current_dungeon_id
+	if not active_dungeons.has(iid):
+		return
+	var floor_num: int = character.dungeon_floor
+	# the floor grid lives in `dungeon_floors`, keyed by instance then floor - NOT under
+	# active_dungeons. Reading the wrong path returned an empty grid, the placement loop found no
+	# walkable tile, and the drop silently did nothing: owner, "I also never saw an egg."
+	if not dungeon_floors.has(iid):
+		return
+	var grid: Array = dungeon_floors[iid][floor_num] if floor_num < dungeon_floors[iid].size() else []
+	if grid.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No floor grid.[/color]"})
+		return
+	var kind := String(message.get("kind", "egg"))
+	var item: Dictionary = {}
+	match kind:
+		"egg":
+			var egg = drop_tables.get_egg_for_monster("Wolf", {}, 3)
+			item = {"kind": "egg", "char": "◉", "color": "#A335EE", "item_data": egg}
+		"equipment":
+			item = {"kind": "equipment", "char": "◆", "color": "#1EFF00", "item_data": {}}
+		_:
+			item = {"kind": kind, "char": "$", "color": "#FFD700", "item_data": {}}
+	# place it on the first walkable tile beside the player so it is certain to be in view
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1)]:
+		var nx: int = character.dungeon_x + d.x
+		var ny: int = character.dungeon_y + d.y
+		if ny < 0 or ny >= grid.size():
+			continue
+		if nx < 0 or nx >= grid[ny].size():
+			continue
+		if int(grid[ny][nx]) != int(DungeonDatabaseScript.TileType.EMPTY):
+			continue
+		if _floor_item_at(iid, floor_num, nx, ny):
+			continue
+		_place_floor_item_at(iid, floor_num, nx, ny, item)
+		_send_dungeon_state(peer_id)
+		send_to_peer(peer_id, {"type": "text",
+			"message": "[color=#1EFF00]Dropped a %s beside you.[/color]" % kind})
+		return
+
 
 func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
 	"""Admin shortcut: drop the player straight into a dungeon of the

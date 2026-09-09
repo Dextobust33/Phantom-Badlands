@@ -661,10 +661,27 @@ static func monster_path(display_name: String, frame: int = 1, alert: bool = fal
 	var suffix: String = "_alert" if alert else ""
 	if MONSTER_SPRITE.has(display_name):
 		return MONSTER_DIR + String(MONSTER_SPRITE[display_name]) + "_%d%s.png" % [f, suffix]
+	# Strip the DECORATIONS the game adds, then require an EXACT or SUFFIX match. A bare
+	# "contains" test was wrong and shipped: "Giant Bat" contains "Giant", so a bat rendered as
+	# the Giant's golem. The decorations are a known, fixed set - empowered prefixes, the elite
+	# star and suffix, the rare-variant suffixes - so they can be removed precisely instead of
+	# guessed around.
+	var n2 := display_name.replace("★ ", "")
+	for suf in [" Champion", " Weapon Master", " Shield Guardian"]:
+		if n2.ends_with(suf):
+			n2 = n2.substr(0, n2.length() - suf.length())
+	for pre in ["Frenzied ", "Vampiric ", "Thorned ", "Swift ", "Juggernaut ", "Venomous ",
+			"Warded ", "Gilded ", "Broodcalling ", "Corrosive ", "Sundering "]:
+		if n2.begins_with(pre):
+			n2 = n2.substr(pre.length())
+	if MONSTER_SPRITE.has(n2):
+		return MONSTER_DIR + String(MONSTER_SPRITE[n2]) + "_%d%s.png" % [f, suffix]
+	# A cosmetic tint prefixes an arbitrary word ("Azure Orc"), so allow a SUFFIX match - the
+	# roster name at the END. Never a prefix: that is what turned a Giant Bat into a Giant.
 	var best := ""
 	for k in MONSTER_SPRITE.keys():
 		var n := String(k)
-		if display_name.findn(n) >= 0 and n.length() > best.length():
+		if n2.ends_with(n) and n.length() > best.length():
 			best = n
 	if best == "":
 		return ""

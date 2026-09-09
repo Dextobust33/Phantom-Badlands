@@ -5919,6 +5919,13 @@ func _dev_run_shots() -> void:
 				for _d in ["east", "east", "south"]:
 					send_to_server({"type": "move", "direction": _d})
 					await get_tree().create_timer(0.7).timeout
+				# Put loot on the floor so the egg and item sprites are actually IN the capture.
+				# Floor loot is rare enough that a shot rarely contains any, which meant the art
+				# could not be reviewed without waiting for luck.
+				send_to_server({"type": "gm_dungeon_drop", "kind": "egg"})
+				await get_tree().create_timer(0.5).timeout
+				send_to_server({"type": "gm_dungeon_drop", "kind": "equipment"})
+				await get_tree().create_timer(0.8).timeout
 				await _dev_shot_capture("dungeon")
 			_:
 				pass
@@ -44048,6 +44055,10 @@ func display_dungeon_floor():
 	# a hard requirement for any sprite TILE work, where soft edges on every tile read as blur
 	# across the whole floor rather than as one fuzzy character.
 	game_output.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# Owner: "The regular Wyvern has a line through it too." RichTextLabel UNDERLINES `[url]` by
+	# default, and every monster is url-wrapped so it can be hovered - so the underline drew a
+	# line straight through the sprite. Hovering still works without it.
+	game_output.meta_underlined = false
 	game_output.clear()
 	# Centred, on the owner's call. [center] applies per line, and every grid row is padded to the
 	# same width by the renderer, so the block centres as a block rather than raggedly.
@@ -44222,7 +44233,7 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 		# `overworld_pad32/` and the solid floor tile). Still 32x32, so a 64px cell is a clean 2x.
 		var padded := "res://client/sprites/overworld_floor32/%s/%s%s.png" % [
 			bid, _local_map_facing,
-			["_stand", "_walk1", "_walk2"][clampi(_dungeon_walk_frame, 0, 2)]]
+			["_stand", "_walk1", "_walk2"][clampi(posmod(_dungeon_anim_tick, 3), 0, 2)]]
 		if ResourceLoader.exists(padded):
 			path = padded
 		else:
@@ -44318,7 +44329,8 @@ func _dungeon_companion_img() -> String:
 	var mt := String(comp.get("monster_type", ""))
 	if mt == "":
 		return _DungeonTiles.floor_img()
-	var spr: String = _DungeonSprites.monster_path(mt, _dungeon_walk_frame)
+	# idle-animate too, offset so the pair do not step in perfect unison
+	var spr: String = _DungeonSprites.monster_path(mt, _dungeon_anim_tick + 1)
 	if spr == "" or not ResourceLoader.exists(spr):
 		return _DungeonTiles.floor_img()
 	# NO TINT. Owner: "the companion has a color offset under it or something, floor is a
@@ -44663,6 +44675,13 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					var _egg_spr := ""
 					if _kind == "egg":
 						_egg_spr = MonsterArt._EggSprites.sprite_for(String(fi.get("variant", "")))
+						# use the FLOOR-BACKED copy: the pack's eggs are transparent around the
+						# shell, so on the black canvas one sat in a hole like everything else
+						# did before it was baked.
+						if _egg_spr != "":
+							var _backed := "res://client/sprites/egg_floor32/" + _egg_spr.get_file()
+							if ResourceLoader.exists(_backed):
+								_egg_spr = _backed
 					else:
 						# Real item art for the other loot kinds, floor baked in like everything
 						# else on the ground.
