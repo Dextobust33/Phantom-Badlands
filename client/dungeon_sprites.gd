@@ -46,12 +46,16 @@ static func loot_path(kind: String) -> String:
 		return ""
 	return LOOT_DIR + String(LOOT_SPRITE[kind]) + ".png"
 
-## Monster display name -> baked sprite. The mapping to `mobs_pack` families came from comparing
-## all 82 families against the roster. About two thirds are strong (Skeleton, Zombie,
-## Mimic->Chest, Vampire->Count, Death Incarnate->Reaper, Wolf->Dog, Hydra->Snake); the humanoids
-## - Goblin, Orc, Ogre, Troll, Giant, Kobold, Hobgoblin, Gnoll - are LOOSE, because the pack has
-## almost no fantasy humanoids and no cheap pack was found covering them. Owner chose loose
-## matches over leaving those as glyphs.
+## Monster display name -> baked sprite, from the TIME FANTASY monsters pack.
+##
+## Re-mapped 2026-09-08 when the owner bought that pack. It is the right source twice over: it is
+## the same artist and style as the PLAYER sprite, so a dungeon now reads as one piece of art
+## rather than two; and it carries 16 orcs, which finally gives the humanoid tier - Goblin, Orc,
+## Hobgoblin, Ogre - real matches. The previous mapping used `mobs_pack`, where the closest thing
+## to an ogre was `Hulk`, a many-armed insect.
+##
+## Owner: "There are also some monster ones that we could use for any of the monster ones that
+## didn't fit well."
 const MONSTER_SPRITE := {
 	"Ancient Dragon": "ancient_dragon",
 	"Avatar of Chaos": "avatar_of_chaos",

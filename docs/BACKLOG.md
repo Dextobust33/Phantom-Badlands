@@ -431,7 +431,7 @@ while the Paladin's stat realignment held.
             the shadow into each sprite, so it overwrites the engine's default drop shadow. Do
             not mistake it for missing art.
 
-      - [ ] **16 characters still have no directional art**: `tf/6_1..6_8` and `tf/7_1..7_8`
+      - [x] **DONE - all 80 characters have directional art** (owner bought TF Sprites 2): `tf/6_1..6_8` and `tf/7_1..7_8`
             (paths `client/sprites/battlers/tf/<id>/idle_0.png`). Coverage is 64 of 80 after
             wiring chara1 -> row 1 and military1-3 -> m1-m3. The only unused CHARACTER sheets left
             are `fairies` (4 winged), `vampire` (a vampire and a bat) and `bonus1` (8 in modern
