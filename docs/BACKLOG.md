@@ -369,6 +369,17 @@ while the Paladin's stat realignment held.
       A mixed mock (darkcave floor + wall rim, RageTileMap stairs/doors/torch/forge) reads fine:
       the warm brown stone sits comfortably against the cave rock.
 
+      - [ ] **Scatter FLAVOUR props on the floor** (owner 2026-09-08, on seeing slice 1): *"We
+            will likely want to add some of the stones, grass, trees, stumps, lanterns scattered
+            around in the future just for flavor to make the floor less of the same thing."*
+            The olive floor reads correctly as cave floor - confirmed by the owner - but every
+            tile is identical. The cave sheet already carries the props: grass tufts and pebbles
+            (cols 13-14, rows 2-4), moss, a skull (19,2), a dead branch (17,3), a sapling (19,3),
+            and lanterns (19-20, rows 5-6); `tilemap_pack` adds dead trees and stumps.
+            Do it as a DECORATION layer keyed off the tile position (a hash of x,y so it is
+            stable across redraws and does not shimmer as you walk), at a low density - flavour,
+            not clutter, and never on a tile whose meaning a player must read.
+
       Slice it: (1) floor + wall-rim + geometry, screenshot, iterate. (2) props and the special
       tiles. (3) monsters from `mobs_pack` with the hover already built. (4) floor loot from
       `items_pack`. (5) the hoverable key, using the `[url=]` idiom.

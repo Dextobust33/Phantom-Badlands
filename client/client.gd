@@ -43941,7 +43941,9 @@ const _DungeonTiles = preload("res://client/dungeon_tiles.gd")
 # 8px - so FOUR characters make 32px - and a 32px image sets a natural 32px row with no
 # separation hack at all. Hence: images are 32px, text cells are padded to 4 chars.
 const DUNGEON_TILE_FONT_SIZE := 14
-const DUNGEON_TEXT_CELL_CHARS := 4      # 4 x 8px = one 32px cell
+# How many font-14 characters make one cell. Recomputed with TILE_PX; a Consolas char is exactly
+# 8px at font 14, so this is always TILE_PX / 8.
+var DUNGEON_TEXT_CELL_CHARS: int = 4
 
 # Where in the 3-frame walk cycle the underground avatar is. FACING deliberately reuses the
 # overworld's `_local_map_facing` rather than keeping a second copy - which way the player is
@@ -44234,6 +44236,30 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 		cell_w, h, reg.position.x, reg.position.y, reg.size.x, reg.size.y, tint, path]
 
 
+func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
+	"""Choose the largest crisp tile size that fits the whole viewport in the canvas.
+
+	Constrained to multiples of THIRTY-TWO, not 16. Both sheets have to land on a whole-number
+	scale or their pixel art smears, and the cave WALL sheet is 32px while the floor sheet is
+	16px: 48 would be a clean 3x for the floor and a ragged 1.5x for the walls. 32 also divides by
+	8, so a font-14 Consolas character (exactly 8px) fits a whole number of times and a text cell
+	can be padded to match an image cell."""
+	if game_output == null or not is_instance_valid(game_output):
+		return
+	var avail: Vector2 = game_output.size
+	if avail.x < 64.0 or avail.y < 64.0:
+		return                                   # not laid out yet; keep the last good size
+	# A little headroom: the canvas also carries the step counter and tile messages under the map.
+	var w_room: float = avail.x - 24.0
+	var h_room: float = avail.y - 96.0
+	var best := 32
+	for px in [32, 64, 96, 128]:
+		if float(view_w * px) <= w_room and float(view_h * px) <= h_room:
+			best = px
+	_DungeonTiles.TILE_PX = best
+	DUNGEON_TEXT_CELL_CHARS = best / 8            # font 14 -> 8px per character
+
+
 func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 	"""One dungeon cell as a sprite.
 
@@ -44324,6 +44350,16 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	# can fit vertically.
 	var view_w = 25
 	var view_h = 11
+	# 2026-09-08 - size the TILE to the canvas rather than the canvas to the tile. Owner: "the
+	# Dungeon looks like it's only taking up a small portion of the game output window. Could we
+	# potentially use all or at least a larger portion of that?" At a fixed 32px a 25x11 viewport
+	# is 800x352, which is under half of a 1080p canvas.
+	#
+	# The TILE COUNT deliberately does not change. Owner's design for dungeons is limited sight -
+	# "most of the time you only see a room and corridors, only corridors or the corridor you are
+	# in" - so filling the canvas has to come from drawing the same view LARGER, not from showing
+	# more of the floor.
+	_dungeon_pick_tile_px(view_w, view_h)
 
 	# Calculate viewport bounds centered on player
 	var view_x1 = player_x - view_w / 2

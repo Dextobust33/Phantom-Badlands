@@ -8,19 +8,32 @@ class_name DungeonTiles
 ## `[img]` costs 16.67ms per redraw against 15.70ms for text glyphs - 1.1x - so the existing
 ## renderer stays and every tile is simply an inline image.
 ##
-## Two numbers make a SQUARE grid possible inside a text line, and both were measured rather than
-## derived (see `Client.DUNGEON_TILE_FONT_SIZE` and `DUNGEON_ROW_SEPARATION`):
+## Making a SQUARE grid work inside a text line took one wrong turn worth recording. The first
+## attempt used font 58 - whose Consolas cell is exactly 32px wide - with `line_separation = -47`
+## to pull the 59px line down to 32. Every headless measurement agreed it gave 32px rows, and it
+## was still wrong: a negative separation does not merely tighten rows, it COMPRESSES the inline
+## images, so tiles drew at full width and half height. `get_content_height()` reports the row
+## pitch, not whether the image inside was squashed, so the instrument confirmed a broken layout
+## four times. A 32px lattice drawn over a screenshot found it in one look.
 ##
-##   * Consolas at font size 58 has a cell exactly 32px wide. That is a perfect 2x integer scale
-##     of a 16px tile and 1:1 for the 32px wall sheet. Non-integer scaling is what makes pixel art
-##     look smeared, so this number is the whole point of choosing 58 over 46.
-##   * `line_separation = -47` puts rows exactly 32px apart. Measured: -45 gives 34px, -47 gives
-##     32px, -50 gives 29px.
+## What actually works: font 14, no separation override. A Consolas character is exactly 8px
+## there, so a text cell padded to TILE_PX/8 characters is the same width as an image cell, and a
+## 32px image sets a natural 32px row on its own.
 ##
 ## The hard constraint everywhere below: an inline image MUST be exactly one cell wide, or every
 ## tile after it on that row shifts and the whole floor shears.
 
-const TILE_PX := 32                      # one dungeon cell, square
+## The dungeon cell, in pixels. Sized at RUNTIME to fill the canvas (see
+## `Client._dungeon_pick_tile_px`), not fixed, because the canvas differs by window and by
+## resolution and a constant would leave most of it empty on a large screen - which is exactly
+## what the owner reported: "the Dungeon looks like it's only taking up a small portion of the
+## game output window".
+##
+## Always a MULTIPLE OF 16 so a 16px source tile lands on a whole-number scale; pixel art at a
+## fractional scale is smeared. And always a multiple of 8 so a font-14 Consolas character
+## (exactly 8px) divides it evenly - that is what lets a text cell be padded to the same width as
+## an image cell.
+static var TILE_PX: int = 32
 
 const SHEET_CAVE16 := "res://client/sprites/darkcave/dark cave_tiles_and_sprite_16x16.png"
 const SHEET_CAVE32 := "res://client/sprites/darkcave/dark cave_wall_32x32.png"
