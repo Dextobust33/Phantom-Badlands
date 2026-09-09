@@ -44231,7 +44231,12 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 		# character, so on the black canvas the player sat in an obvious hole. `battler_floor32/`
 		# crops each to its content and stands it on the floor tile at 32x32 - a clean 2x at a
 		# 64px cell, where compositing the raw 48x48 frame would have been a blurry 1.33x.
-		var backed := "res://client/sprites/battler_floor32/%s.png" % bid
+		# The side-view battler has NO directional art, so 60% of characters would stand frozen
+		# facing one way underground. Owner: "There are no walk animations triggering, my sprite
+		# is always facing left." A mirrored copy at least gives left/right, the same trick the
+		# overworld map uses with flip_h - which BBCode cannot do, hence a baked flip.
+		var _suffix := "_flip" if _local_map_facing == "right" else ""
+		var backed := "res://client/sprites/battler_floor32/%s%s.png" % [bid, _suffix]
 		path = backed if ResourceLoader.exists(backed) else BattlerSprite.idle_path_by_id(bid)
 	if path == "" or not ResourceLoader.exists(path):
 		return fallback
@@ -44251,18 +44256,24 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 	# player at about half the size of everything else, which a screenshot caught immediately.
 	# Cropped, the fallback tier comes out 19x30, near-identical to the overworld sprite's 17x31,
 	# so both tiers fill the tile the same way.
-	var tint := BattlerSprite.tint_hex(String(character_data.get("appearance_color", "")))
+	# NO TINT on a floor-backed sprite. `color=` multiplies the WHOLE image, and these frames have
+	# the floor baked into them, so the player's appearance colour was tinting the ground under
+	# their feet: the owner saw their cell as (82,49,23) against a floor of (82,75,36) - "the box
+	# behind my player sprite is also not the same color as the floor". The overworld can tint
+	# because it modulates a TextureRect whose sprite is transparent; here the floor is part of
+	# the image. Identity colour is given up rather than staining the floor.
 	var src: Vector2i = tex.get_size()
 	if src.x == src.y:
-		# Already square (a padded overworld frame, or a 48x48 battler): draw it whole, filling
+		# Already square (a padded overworld frame, or a baked battler): draw it whole, filling
 		# the cell. No region, no cropping - cropping to content is what would break the square.
-		return "[img=%dx%d color=%s]%s[/img]" % [cell_w, cell_w, tint, path]
+		return "[img=%dx%d]%s[/img]" % [cell_w, cell_w, path]
 	# Non-square fallback: crop to content and pin the WIDTH to the cell, which is the only rule
 	# that keeps a monospace row aligned.
 	var reg: Rect2i = _sprite_content_region(path, tex)
 	if reg.size.x <= 0 or reg.size.y <= 0:
 		return fallback
 	var h: int = mini(int(round(float(cell_w) * float(reg.size.y) / float(reg.size.x))), line_h)
+	var tint := BattlerSprite.tint_hex(String(character_data.get("appearance_color", "")))
 	return "[img=%dx%d region=%d,%d,%d,%d color=%s]%s[/img]" % [
 		cell_w, h, reg.position.x, reg.position.y, reg.size.x, reg.size.y, tint, path]
 

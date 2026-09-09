@@ -355,6 +355,14 @@ has lost a performance guard. It asserts:
 | `version` matches VERSION.txt | catches a build exported before the bump |
 | three feature probes | catches the **stale script cache** — a stale export ships OLD code with the NEW version stamped beside it, so the version alone proves nothing |
 
+**Verify the FUNCTION, not the ingredients.** v0.9.761 shipped with every dungeon monster sprite
+broken: the table stored `"skeleton.png"` and `monster_path()` appended `.png` again, so all 53
+lookups returned `skeleton.png.png` and every monster fell back to a letter. The files were
+checked. The row count was checked. The resolver was never called once. `tools/verify_dungeon_art.gd`
+now calls every dungeon-art resolver on every key it claims to serve (713 lookups) and the release
+gate fails on any that does not load — proven by re-injecting the exact `.png.png` fault and
+watching the gate block. **When you write a lookup table, the check is calling the lookup.**
+
 **`VERSION.txt` is a SIDECAR, not packed content.** It is not in any preset's `include_filter`,
 so it is NOT inside the .pck — the client reads the copy sitting next to the exe, and that copy is
 only refreshed when the release zips are staged. Bumping `VERSION.txt` at the repo root and

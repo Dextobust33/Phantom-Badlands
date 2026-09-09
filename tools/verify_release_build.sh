@@ -66,6 +66,32 @@ check "themed_loot_hook"     "true"          "$(field themed_loot_hook)"
 check "outsmart_button_gone" "true"          "$(field outsmart_button_gone)"
 check "passive_single_source" "true"         "$(field passive_single_source)"
 
+# --- do the dungeon art LOOKUPS resolve? Not "do the files exist" - do the FUNCTIONS that the
+# --- game calls return something loadable. v0.9.761 shipped with every monster sprite broken
+# --- because the table stored "skeleton.png" and monster_path() appended ".png" again. The files
+# --- were checked. The row count was checked. The resolver was never called once, and every
+# --- monster in every dungeon silently fell back to a letter.
+GODOT_BIN="${GODOT_BIN:-D:/SteamLibrary/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe}"
+if [ -x "$GODOT_BIN" ]; then
+    art_out="$("$GODOT_BIN" --headless --path . --script res://tools/verify_dungeon_art.gd 2>&1)"
+    art_rc=$?
+    if printf '%s' "$art_out" | grep -q "DUNGEONART"; then
+        if [ "$art_rc" -eq 0 ]; then
+            printf '  ok    dungeon_art            %s
+'                 "$(printf '%s' "$art_out" | grep -o 'checked=[0-9]*' | head -1) lookups resolve"
+        else
+            printf '  FAIL  dungeon_art            a lookup resolves to nothing
+'
+            printf '%s
+' "$art_out" | grep BROKEN | head -5 | sed 's/^/        /'
+            fail=1
+        fi
+    else
+        printf '  WARN  dungeon_art            audit did not run
+'
+    fi
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo
     echo "RELEASE BLOCKED. Do not upload this build."
