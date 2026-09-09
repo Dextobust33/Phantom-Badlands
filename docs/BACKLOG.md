@@ -14,14 +14,24 @@ common way to lose a session.
 
 Live: **v0.9.762** (client + server). Unreleased in master: the dungeon log / trap fix below.
 
-- **A sprung trap no longer blanks the dungeon screen, and the run log moved to the side panel.**
-  `handle_dungeon_trap` set its ack flag AFTER writing, and that flag is what tells `display_game`
-  the canvas belongs to a message — so all five lines were routed to chat, into a `game_output` it
-  had just cleared. The player got a black screen and one Acknowledge button. Underground messages
-  now go to `_dungeon_log` (6 lines, above the map key, cleared per floor) instead of the cut-off
-  chat strip. `gm_spring_trap` + the `dungeontrap` capture scene make the trap screen reachable on
-  demand — it had been broken since it was written and was only ever seen by a screenshot run
-  walking onto one by luck.
+- **The dungeon reports beside the map, never over it.** Owner 2026-09-09: *"It's kind of jarring
+  to take over the whole dungeon art screen with it"*, then *"Can we not do the rest and food in
+  the right as well. Inventory makes sense to do the canvas but the other two probably not."*
+  The old rule was "anything the player must acknowledge takes the canvas", which lumped a
+  one-line notice in with a full screen of items. Now:
+    * NOTICES (trap, gather result) -> `_dungeon_log`, six lines in the side panel above the key,
+      cleared per floor. Each keeps its own colour, so a trap stays red and stays scannable.
+    * SHORT MENUS (rest, food, gather prompt) -> `_dungeon_panel_menu`, rendered in the panel and
+      replacing the log while open. Gated at RENDER time on `_dungeon_panel_menu_open()`, not on
+      the buffer being non-empty, so none of the five exit paths can leave a stale menu up.
+    * FULL-SCREEN MENUS (inventory, settings, admin, dungeon list) still take the canvas.
+  The trap used to clear `game_output` for a `===== TRAP! =====` banner — and was silently broken
+  doing it, since the ack flag that routes text to the canvas was set AFTER the five writes, so
+  every one went to chat and the player got a BLANK canvas with one button. The trap's Acknowledge
+  gate STAYS (owner: *"Keep it"*). `awaiting_dungeon_gather_result` deleted — nothing set it true.
+  `gm_spring_trap` + the `dungeontrap` / `dungeonrest` capture scenes make both screens reachable
+  on demand; the trap screen had been broken since it was written and was only ever seen because a
+  screenshot run happened to walk onto one.
 
 - **Card upgrades are no longer offered where they cannot work.** Four (`swift`, `sacrificial`,
   `vindication`, `refund`) needed damage or a kill but were marked `KIND_ANY`, so a milestone
@@ -383,7 +393,7 @@ while the Paladin's stat realignment held.
       A mixed mock (darkcave floor + wall rim, RageTileMap stairs/doors/torch/forge) reads fine:
       the warm brown stone sits comfortably against the cave rock.
 
-      - [x] **DONE (unverified on screen) - Scatter FLAVOUR props on the floor** (owner 2026-09-08, on seeing slice 1): *"We
+      - [x] **DONE, VERIFIED ON SCREEN 2026-09-09 - Scatter FLAVOUR props on the floor** (owner 2026-09-08, on seeing slice 1): *"We
             will likely want to add some of the stones, grass, trees, stumps, lanterns scattered
             around in the future just for flavor to make the floor less of the same thing."*
             The olive floor reads correctly as cave floor - confirmed by the owner - but every
@@ -394,7 +404,7 @@ while the Paladin's stat realignment held.
             stable across redraws and does not shimmer as you walk), at a low density - flavour,
             not clutter, and never on a tile whose meaning a player must read.
 
-      - [x] **DONE (unverified on screen) - Companion follows you underground** (owner 2026-09-08): *"We will eventually want
+      - [x] **DONE, VERIFIED ON SCREEN 2026-09-09 - Companion follows you underground** (owner 2026-09-08): *"We will eventually want
             the companion following your sprite in dungeons just like on the overworld as well."*
             The overworld already does this with `_local_companion_label` / `_make_map_companion_label`
             (a small monospace RichTextLabel of the companion's ASCII art, positioned under the
@@ -406,6 +416,13 @@ while the Paladin's stat realignment held.
             rule - remember the player's previous cell and draw the companion there, which also
             gives it a facing for free. Sprite source: the companion art already used on the
             overworld, or a `mobs_pack` match once monsters are sprited.
+            **Verified 2026-09-09, and it took an instrument fix to do it.** Two things hid it:
+            the test save's companion was KO'd (a downed companion is not drawn), and the
+            `dungeon` capture scene sent the OVERWORLD `move` message instead of `dungeon_move`,
+            so the player never took a step - 450 redraws at one cell, and the companion stands
+            on the player's PREVIOUS cell, which never existed. Both shots looked entirely normal.
+            `_dev_shot_ensure_companion` now revives as well as grants, and the scene moves with
+            `dungeon_move`. The wolf then appears behind the player exactly as designed.
 
       - [x] **DONE - monster sprites (loose matches, owner's call).** All 82
             `mobs_pack` families were rendered and compared against the 53-monster roster

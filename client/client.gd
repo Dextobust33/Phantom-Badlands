@@ -5920,12 +5920,22 @@ func _dev_run_shots() -> void:
 				if in_combat:
 					send_to_server({"type": "combat", "command": "flee"})
 					await get_tree().create_timer(2.0).timeout
+				# On its feet BEFORE entering: the companion is only drawn on the floor while it
+				# is alive, and a KO'd one also parks its status card over the map.
+				await _dev_shot_ensure_companion()
 				send_to_server({"type": "gm_enter_dungeon", "tier": 3})
 				await get_tree().create_timer(3.0).timeout
 				# Take a couple of steps so the floor is partly explored rather than a
 				# single lit room, and the minimap has something on it.
-				for _d in ["east", "east", "south"]:
-					send_to_server({"type": "move", "direction": _d})
+				#
+				# 2026-09-09 - `dungeon_move` with a SINGLE-LETTER direction, not `move` with a
+				# compass word. Underground the two are different messages, and this scene had
+				# been sending the overworld one, so the capture never moved a step: 450 redraws
+				# at the same cell. That silently broke the companion-follower check, because the
+				# companion stands on the player's PREVIOUS cell and there had never been one.
+				# The shot looked completely normal, which is what made it cost a session.
+				for _d in ["e", "e", "s"]:
+					send_to_server({"type": "dungeon_move", "direction": _d})
 					await get_tree().create_timer(0.7).timeout
 				# Put loot on the floor so the egg and item sprites are actually IN the capture.
 				# Floor loot is rare enough that a shot rarely contains any, which meant the art
@@ -5993,15 +6003,23 @@ func _dev_shot_grant_companions() -> void:
 
 
 func _dev_shot_ensure_companion() -> void:
-	"""A combat shot without a companion misses half of what the game looks like."""
-	if character_data.get("active_companion", {}).size() > 0:
-		return
-	send_to_server({"type": "gm_givecompanion", "monster_type": "Wolf"})
-	await get_tree().create_timer(1.2).timeout
-	var comps: Array = character_data.get("collected_companions", [])
-	if comps.size() > 0 and comps[0] is Dictionary:
-		send_to_server({"type": "activate_companion", "id": comps[0].get("id", "")})
+	"""A combat shot without a companion misses half of what the game looks like.
+
+	2026-09-09 - and a KO'd one is just as bad, which cost a verification pass. Every dungeon
+	capture for two days carried a downed Wolf Pup: the companion is only DRAWN on the floor when
+	it is alive, so the "does the companion follow you underground" item could not be answered
+	from any of those shots, and the KO card sat over the map in all of them. The early-out below
+	tested only that a companion EXISTS, which a KO'd one does."""
+	if character_data.get("active_companion", {}).size() == 0:
+		send_to_server({"type": "gm_givecompanion", "monster_type": "Wolf"})
 		await get_tree().create_timer(1.2).timeout
+		var comps: Array = character_data.get("collected_companions", [])
+		if comps.size() > 0 and comps[0] is Dictionary:
+			send_to_server({"type": "activate_companion", "id": comps[0].get("id", "")})
+			await get_tree().create_timer(1.2).timeout
+	# On its feet, whether it was just granted or was already there and downed.
+	send_to_server({"type": "gm_revive_companion"})
+	await get_tree().create_timer(1.0).timeout
 
 
 func _dev_shot_clear_overlays() -> void:
