@@ -40,6 +40,14 @@ func _init() -> void:
 		if p2 == "" or not ResourceLoader.exists(p2):
 			bad.append("glyph %s -> '%s'" % [k, p2])
 
+	# landmark tiles, every frame
+	for k in DS.TILE_FRAMES.keys():
+		for fr in range(int(DS.TILE_FRAMES[k])):
+			checked += 1
+			var tp: String = DS.tile_path(String(k), fr)
+			if tp == "" or not ResourceLoader.exists(tp):
+				bad.append("tile %s frame %d -> '%s'" % [k, fr, tp])
+
 	for k in DS.LOOT_SPRITE.keys():
 		checked += 1
 		var p3: String = DS.loot_path(String(k))

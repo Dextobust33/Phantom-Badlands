@@ -476,7 +476,7 @@ while the Paladin's stat realignment held.
             their own facing - and the client currently has no positions for them underground.
             Same shape as the companion follower, one step harder.
 
-      - [ ] **Unused PROP art already in the repo** (owner 2026-09-08: "there are some trees and
+      - [x] **PARTLY DONE - landmark tiles sprited; doors/traps/trees still unused** (owner 2026-09-08: "there are some trees and
             traps and things that could be useful"). All under
             `client/sprites/battlers/timefantasy_characters/timefantasy_characters/RPGMAKERMV/`:
               `characters/!doors.png`       576x768  - DOORS: wood, red, metal, barred variants

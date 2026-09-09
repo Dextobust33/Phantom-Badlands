@@ -26,6 +26,34 @@ class_name DungeonSprites
 const MONSTER_DIR := "res://client/sprites/monster_floor32/"
 const GLYPH_DIR := "res://client/sprites/glyph_floor32/"
 const LOOT_DIR := "res://client/sprites/loot_floor32/"
+const TILE_DIR := "res://client/sprites/tile_floor32/"
+
+## Landmark tiles that have real art, and how many frames each has. Generated from what is
+## actually on disk, so a tile can never claim a frame it does not have. The other ~46 theme
+## tiles stay as coloured glyphs on the floor: they are per-dungeon flavour, they read fine, and
+## bespoke art for each would be 46 decisions for very little gain.
+const TILE_FRAMES := {
+	"final_chest": 4,
+	"gold_hoard": 1,
+	"infernal_brazier": 3,
+	"lava_pool": 1,
+	"molten_slag": 1,
+	"resource": 1,
+	"rest_room": 2,
+	"stone_stairs": 1,
+	"treasure": 4,
+}
+
+
+static func tile_path(name: String, frame: int = 0) -> String:
+	"""A landmark tile's sprite, or "" when it has no art and should stay a glyph."""
+	if not TILE_FRAMES.has(name):
+		return ""
+	var n: int = int(TILE_FRAMES[name])
+	if n <= 0:
+		return ""
+	return TILE_DIR + "%s_%d.png" % [name, posmod(frame, n)]
+
 
 ## Floor loot, by the `kind` the server sends. Chosen for what each sprite SAYS rather than for
 ## what came first in the folder - `ScrollPortal` is literally a portal scroll, which is what an

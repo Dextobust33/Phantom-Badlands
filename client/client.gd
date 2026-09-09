@@ -43955,6 +43955,21 @@ func handle_dungeon_gather_result(message: Dictionary):
 const _DungeonTiles = preload("res://client/dungeon_tiles.gd")
 const _DungeonSprites = preload("res://client/dungeon_sprites.gd")
 
+## Which TileType values have landmark art. Keyed by the enum's integer value, taken from
+## `DungeonDatabase.TileType` - treasure and the final chest ANIMATE (a 4-frame chest), the
+## brazier and campfire flicker, the rest are single tiles.
+const _DUNGEON_LANDMARK_TILE := {
+	5: "treasure",           # TREASURE
+	8: "resource",           # RESOURCE
+	9: "final_chest",        # FINAL_CHEST
+	17: "lava_pool",         # LAVA_POOL
+	47: "infernal_brazier",  # INFERNAL_BRAZIER
+	48: "stone_stairs",      # STONE_STAIRS
+	49: "gold_hoard",        # GOLD_HOARD
+	50: "molten_slag",       # MOLTEN_SLAG
+	64: "rest_room",         # REST_ROOM
+}
+
 # 2026-09-08 (tile pass). The dungeon cell is 32px: a clean 2x of a 16px tile, 1:1 for the 32px
 # wall sheet. Getting BOTH the width and the height to 32 took a wrong turn worth recording.
 #
@@ -44479,6 +44494,15 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 		2:                                     # ENTRANCE - stairs up
 			var _su: String = _DungeonTiles.free_backed_img("stairs_up")
 			return _su if _su != "" else _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_UP)
+	# Landmark tiles with real art - the places a player navigates TOWARD. Everything else keeps
+	# its glyph: the remaining ~46 are per-dungeon flavour tiles that read fine as coloured
+	# letters on the floor, and bespoke art for each would be 46 decisions for very little gain.
+	var _lm: String = _DUNGEON_LANDMARK_TILE.get(tile, "")
+	if _lm != "":
+		var _lp: String = _DungeonSprites.tile_path(_lm, _dungeon_anim_tick)
+		if _lp != "" and ResourceLoader.exists(_lp):
+			return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _lp]
+
 	# Not yet sprited: keep the glyph, but pad it to a FULL CELL. At font 14 a Consolas char is
 	# 8px, so 4 characters are exactly the 32px an image occupies. Without this every text cell
 	# would be 24px narrow and shift the rest of its row left.
