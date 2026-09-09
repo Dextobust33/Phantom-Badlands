@@ -44634,14 +44634,19 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					# the floor advances them as it redraws, offset by monster id so a room does
 					# not breathe in lockstep.
 					var _mframe: int = _dungeon_anim_tick + int(mon.get("id", 0))
-					var _msprite: String = _DungeonSprites.monster_path(_mname, _mframe)
+					var _alert: bool = bool(mon.get("alert", false))
+					var _msprite: String = _DungeonSprites.monster_path(_mname, _mframe, _alert)
 					var _murl := "mon:%d" % int(mon.get("id", -1))
 					if _msprite != "" and ResourceLoader.exists(_msprite):
-						# ALERT is the one thing the sprite cannot say on its own, so it keeps the
-						# red the glyph used - as a tint over the whole sprite.
-						var _tint := " color=#FF6060" if mon.get("alert", false) else ""
-						line += "[url=%s][img=%dx%d%s]%s[/img][/url]" % [
-							_murl, _DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _tint, _msprite]
+						# NO `color=` here. Alert is a separate BAKED sprite whose CHARACTER is
+						# reddened and whose floor is untouched. A tint tag multiplies the whole
+						# image, and these sprites carry the floor - owner: "The red floor tile
+						# when the monster aggro's is a bit odd looking." That was the third time
+						# the same mistake reached the screen (player, then companion, then here),
+						# which is why the rule is now absolute: never `color=` a floor-backed
+						# sprite. `tools/verify_dungeon_art.gd` fails the build if one appears.
+						line += "[url=%s][img=%dx%d]%s[/img][/url]" % [
+							_murl, _DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _msprite]
 					else:
 						line += _dungeon_glyph_cell(mchar, mcolor, _murl)
 				elif trap_map.has(mkey):

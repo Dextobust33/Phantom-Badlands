@@ -646,7 +646,7 @@ const GLYPH_TILE := {
 const MONSTER_FRAMES := 3
 
 
-static func monster_path(display_name: String, frame: int = 1) -> String:
+static func monster_path(display_name: String, frame: int = 1, alert: bool = false) -> String:
 	"""The baked sprite for a monster, or "" if it has none.
 
 	Matches the BASE name inside the display name, so a pre-rolled "Venomous Orc" or an elite
@@ -655,8 +655,12 @@ static func monster_path(display_name: String, frame: int = 1) -> String:
 	if display_name == "":
 		return ""
 	var f: int = posmod(frame, MONSTER_FRAMES)
+	# ALERT is a separate BAKED sprite, never a `color=` tag. A tag multiplies the whole image and
+	# these sprites carry the floor, so tinting one turns the ground red under it - which is what
+	# the owner saw, and the THIRD time that same mistake reached the screen.
+	var suffix: String = "_alert" if alert else ""
 	if MONSTER_SPRITE.has(display_name):
-		return MONSTER_DIR + String(MONSTER_SPRITE[display_name]) + "_%d.png" % f
+		return MONSTER_DIR + String(MONSTER_SPRITE[display_name]) + "_%d%s.png" % [f, suffix]
 	var best := ""
 	for k in MONSTER_SPRITE.keys():
 		var n := String(k)
@@ -664,7 +668,7 @@ static func monster_path(display_name: String, frame: int = 1) -> String:
 			best = n
 	if best == "":
 		return ""
-	return MONSTER_DIR + String(MONSTER_SPRITE[best]) + "_%d.png" % f
+	return MONSTER_DIR + String(MONSTER_SPRITE[best]) + "_%d%s.png" % [f, suffix]
 
 
 static func glyph_path(glyph: String, color: String) -> String:

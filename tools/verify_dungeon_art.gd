@@ -64,6 +64,34 @@ func _init() -> void:
 		if not ResourceLoader.exists(pp):
 			bad.append("prop %s missing" % pp)
 
+	# --- and the rule that took THREE occurrences to learn ---
+	#
+	# Never `color=` a floor-backed sprite. Those images have the ground baked into them, so a
+	# tint tag multiplies the floor too. It shipped on the player (brown cell), was fixed, then
+	# repeated on the companion (discoloured tile), was fixed, then was still live on alert
+	# monsters (red floor). Each time the code read as reasonable - "a tint so it reads as
+	# yours", "a tint so alert is visible" - which is exactly why a comment was not enough.
+	var src := FileAccess.get_file_as_string("res://client/client.gd")
+	var lines := src.split("
+")
+	var MARKERS := ["_floor32", "monster_path", "prop_for", "floor_img", "TILE_PX"]
+	for i in range(lines.size()):
+		var line: String = lines[i]
+		if line.find("color=") < 0 or line.find("[img") < 0:
+			continue
+		# The sprite path is usually on the FOLLOWING line (the format-args list), so a
+		# same-line test misses it - the first version of this check did exactly that and
+		# failed to fire when the real bug was re-injected. Look at a small window.
+		var window := ""
+		for j in range(i, mini(i + 3, lines.size())):
+			window += String(lines[j])
+		for m in MARKERS:
+			if window.find(m) >= 0:
+				checked += 1
+				bad.append("a floor-backed sprite is tinted at client.gd:%d - %s"
+					% [i + 1, line.strip_edges()])
+				break
+
 	print("[DUNGEONART] checked=%d broken=%d" % [checked, bad.size()])
 	for b in bad:
 		print("[DUNGEONART] BROKEN ", b)
