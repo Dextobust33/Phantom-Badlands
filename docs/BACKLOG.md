@@ -12,7 +12,7 @@ common way to lose a session.
 
 ## Where the game is (2026-09-09)
 
-Live: **v0.9.762** (client + server). Unreleased in master: the dungeon log / trap fix below.
+Live: **v0.9.763** (client + server), released 2026-09-09.
 
 - **The dungeon reports beside the map, never over it.** Owner 2026-09-09: *"It's kind of jarring
   to take over the whole dungeon art screen with it"*, then *"Can we not do the rest and food in
@@ -119,6 +119,16 @@ while the Paladin's stat realignment held.
 ---
 
 ## Phase 1 — confirm the two releases landed (do first, cheap)
+
+- [ ] **Shutdown handler fires every frame until the process exits** (found during the v0.9.763
+      deploy). The sentinel countdown works and the server does restart — `NRestarts=1`, and the
+      new process hashed identical to the uploaded binary — but the log carries **61** copies of
+      `[SHUTDOWN] Executing server shutdown...` / the "SHUTTING DOWN NOW" broadcast, all in the
+      same second, because nothing latches the shutdown once it starts. Harmless (it exits, and
+      players see one countdown), but every player still connected gets the goodbye broadcast
+      sixty times. A one-line `if _shutdown_executing: return` guard. Not fixed at deploy time on
+      purpose: the binary being shipped had already passed its gate, and adding an untested change
+      to a production server during a release is the riskier move.
 
 - [ ] **Confirm the dungeon tile HOVER on screen** (owner 2026-09-09, working remote: *"it will
       need confirmed later once I'm back at my PC"*). Everything a screenshot can show was

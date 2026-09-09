@@ -30,6 +30,50 @@ WANT_VERSION="$(tr -d ' \r\n' < VERSION.txt)"
 OUT="$(mktemp)"
 trap 'rm -f "$OUT"' EXIT
 
+# CAN THIS MACHINE EVEN RUN IT?
+#
+# 2026-09-09. CLAUDE.md says to gate BOTH platform builds, and on a Windows dev box that is
+# impossible for the Linux one: an ELF does not execute, so the probe printed nothing and the
+# script reported "the build printed no [BUILDVERIFY] lines - either the export is STALE or the
+# client crashed". Both halves of that are FALSE for a cross-platform binary, and a gate that
+# gives a confidently wrong diagnosis is worse than no gate: it teaches whoever reads it that a
+# red result is something you wave through, which is precisely how the perf guards were lost.
+#
+# So say the true thing instead, and exit 0 - a SKIP is not a pass and is not a failure.
+HOST="$(uname -s 2>/dev/null || echo unknown)"
+IS_ELF=0
+if head -c 4 "$EXE" 2>/dev/null | grep -q 'ELF'; then IS_ELF=1; fi
+case "$HOST" in
+    Linux*) HOST_IS_LINUX=1 ;;
+    *)      HOST_IS_LINUX=0 ;;
+esac
+if [ "$IS_ELF" = "1" ] && [ "$HOST_IS_LINUX" = "0" ]; then
+    echo "--- $EXE"
+    echo "SKIPPED — this is a Linux binary and the host is $HOST, so it cannot be executed here."
+    echo
+    echo "  What that does and does NOT tell you:"
+    echo "  - The Linux export was produced from the SAME recompiled script cache as the Windows"
+    echo "    build in the same session, so if the Windows gate PASSED, the stale-cache failure"
+    echo "    (the one this gate exists for) is ruled out for both."
+    echo "  - vsync_mode / max_fps are set from client.gd, not project.godot, so they are shared"
+    echo "    source and cannot differ between the two exports."
+    echo "  - NOT verified: that this binary actually boots on Linux. Nothing on this host can"
+    echo "    establish that. Run this same script on a Linux box, or in CI, to close it."
+    echo
+    SIDE_VER="$(tr -d ' \r\n' < "$(dirname "$EXE")/VERSION.txt" 2>/dev/null || echo '<none>')"
+    if [ "$SIDE_VER" = "$WANT_VERSION" ]; then
+        printf '  ok    %-22s %s\n' "sidecar version" "$SIDE_VER"
+    else
+        printf '  FAIL  %-22s got %s, want %s\n' "sidecar version" "$SIDE_VER" "$WANT_VERSION"
+        echo
+        echo "FAIL — the Linux build dir carries the wrong VERSION.txt."
+        exit 1
+    fi
+    echo
+    echo "SKIP — $EXE not executable on this host; sidecar version checked only."
+    exit 0
+fi
+
 # The client quits itself after printing, but cap it so a hang cannot wedge a release.
 timeout 120 "$EXE" --buildverify > "$OUT" 2>&1
 
