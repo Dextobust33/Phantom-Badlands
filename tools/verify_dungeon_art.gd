@@ -18,6 +18,7 @@ func _init() -> void:
 	var ES = load("res://client/egg_sprites.gd")
 	var DTables = load("res://shared/drop_tables.gd")
 	var bad: Array = []
+	var warn: Array = []
 	var checked := 0
 
 	# EVERY walk frame, not just one. Monsters animate now, and checking a single frame would
@@ -54,12 +55,48 @@ func _init() -> void:
 		if p3 == "" or not ResourceLoader.exists(p3):
 			bad.append("loot %s -> '%s'" % [k, p3])
 
-	# every cosmetic variant must resolve to an egg
+	# every cosmetic variant must resolve to an egg — and to a DISTINCT, textured one
+	var egg_art_seen := {}
 	for v in DTables.EGG_VARIANTS:
 		checked += 1
 		var p4: String = ES.sprite_for(String(v.get("name", "")))
 		if p4 == "":
 			bad.append("egg variant %s -> ''" % v.get("name", ""))
+			continue
+		# RESOLVING IS NOT ENOUGH - this check used to stop at the line above, and five variants
+		# (Ivory, Arctic, Marked, Halo, Blessed) all pointed at `0624-egg-base.png`, the pack's
+		# UNTEXTURED template. It resolved, it loaded, it drew - as a flat white blob, identical
+		# for all five, which is what the owner saw on a dungeon floor: "Two of the eggs in that
+		# last screenshot look plain white."
+		#
+		# Two properties are asserted instead, both measured from the image itself:
+		#   1. it is SHADED - a real egg has 99-120 distinct body colours, the template has 2
+		#   2. it is UNIQUE - two variants sharing art cannot be told apart, which defeats the
+		#      whole point of a variant having its own look
+		var tex: Texture2D = load(p4)
+		if tex == null:
+			bad.append("egg variant %s -> %s did not load" % [v.get("name", ""), p4])
+			continue
+		var img: Image = tex.get_image()
+		var seen := {}
+		for py in range(img.get_height()):
+			for px in range(img.get_width()):
+				var c: Color = img.get_pixel(px, py)
+				if c.a < 0.8:
+					continue
+				seen[c.to_rgba32()] = true
+		if seen.size() < 20:
+			bad.append("egg variant %s -> %s is FLAT (%d colours) - an untextured template"
+				% [v.get("name", ""), p4.get_file(), seen.size()])
+		# Sharing is a WARNING, not a failure. There are 117 variants and 93 distinct egg
+		# sprites, so some reuse is a content limitation rather than a bug, and blocking every
+		# release on 20 known pairs would just train people to ignore the gate. A FLAT sprite
+		# above stays a hard failure: that one is never intentional.
+		if egg_art_seen.has(p4):
+			warn.append("egg variant %s shares art with %s (%s)"
+				% [v.get("name", ""), egg_art_seen[p4], p4.get_file()])
+		else:
+			egg_art_seen[p4] = String(v.get("name", ""))
 
 	# the tiles the floor itself is made of
 	for f in [DT.floor_img(), DT.rock_img(), DT.blank_img()]:
@@ -100,7 +137,9 @@ func _init() -> void:
 					% [i + 1, line.strip_edges()])
 				break
 
-	print("[DUNGEONART] checked=%d broken=%d" % [checked, bad.size()])
+	print("[DUNGEONART] checked=%d broken=%d warnings=%d" % [checked, bad.size(), warn.size()])
 	for b in bad:
 		print("[DUNGEONART] BROKEN ", b)
+	for w in warn:
+		print("[DUNGEONART] warn ", w)
 	quit(0 if bad.is_empty() else 1)
