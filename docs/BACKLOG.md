@@ -416,6 +416,14 @@ while the Paladin's stat realignment held.
             Sprites are 16x16 frames in horizontal STRIPS (SkeletonA = 144x16 = 9 frames), so
             frame 0 is a region and animation is available later at no extra cost.
 
+      - [ ] **16 characters still have no directional art**: `tf/6_1..6_8` and `tf/7_1..7_8`
+            (paths `client/sprites/battlers/tf/<id>/idle_0.png`). Coverage is 64 of 80 after
+            wiring chara1 -> row 1 and military1-3 -> m1-m3. The only unused CHARACTER sheets left
+            are `fairies` (4 winged), `vampire` (a vampire and a bat) and `bonus1` (8 in modern
+            dress) - none are the armoured adventurers in rows 6/7, shown side by side rather than
+            asserted. They need art from outside this pack, or they keep the mirrored-battler
+            fallback (left/right facing, no walk cycle). Owner is searching.
+
       - [ ] **Player EMOTE animations underground** (owner 2026-09-08): the walk cycle IS live -
             each step advances a 3-frame cycle from the overworld art's 4 directions x 3 frames -
             but the EMOTE sheets are a separate thing and are NOT done. They sit unsliced at
@@ -434,6 +442,26 @@ while the Paladin's stat realignment held.
             party needs other members drawn as their own sprites in the same grid, each with
             their own facing - and the client currently has no positions for them underground.
             Same shape as the companion follower, one step harder.
+
+      - [ ] **Unused PROP art already in the repo** (owner 2026-09-08: "there are some trees and
+            traps and things that could be useful"). All under
+            `client/sprites/battlers/timefantasy_characters/timefantasy_characters/RPGMAKERMV/`:
+              `characters/!doors.png`       576x768  - DOORS: wood, red, metal, barred variants
+              `expansion/switch1.png`       576x768  - pressure plates, levers, buttons, gems:
+                                                       trap and switch art
+              `expansion/bonus_lava_anim.png` 432x144 - ANIMATED lava, i.e. the LAVA_POOL theme
+                                                       tile exactly
+              `characters/!$torch.png`      144x240  - animated torch, several variants
+              `characters/!$fireplace.png`  144x240  - animated fire
+              `expansion/bonus_trees.png`   480x576  - 12 trees
+              `expansion/bonus_pinktrees.png` 576x192 - 2 cherry trees
+              `expansion/bonus_kitchen.png` 192x288  - counters and tables
+            This closes gaps I had twice reported as missing. Note the theme-tile matches are
+            direct: LAVA_POOL -> lava, and the trap glyph -> a pressure plate. Torch and fire are
+            ANIMATED, which suits a lit corridor or a rest site.
+            Slice them the same way row 1 was: RPG Maker sheets are 12 cols x 8 rows of frames,
+            character blocks are 3 cols x 4 rows, and `!`-prefixed files are OBJECT sheets rather
+            than characters (different layout - check before assuming the block maths).
 
       Slice it: (1) floor + wall-rim + geometry, screenshot, iterate. (2) props and the special
       tiles. (3) monsters from `mobs_pack` with the hover already built. (4) floor loot from
