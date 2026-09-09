@@ -361,6 +361,11 @@ while the Paladin's stat realignment held.
       (a 4-frame animation), 21-28 Wall, 38 Bed, 39 Sacks, 47 Forge, 48 Anvil, 49 Workbench`.
       `47 Forge` is worth noting - the game already has an Infernal Forge.
 
+      **Tile size / view count may want revisiting** (owner 2026-09-08): *"We may have to find a
+      size and number that works for the future if it starts looking that bad. Currently this
+      looks great."* Now 64px tiles at a 19x9 view. Revisit if props, monsters and loot make the
+      floor feel cramped.
+
       **Solid darkcave tiles, found by scanning for a fully-opaque uniform cell rather than by
       eye:** floor = **(2,2)** `#524B24` (zero colour spread), void = **(2,8)** black. A first
       mock used (6,2) and produced a room covered in black notches - that is an EDGE tile. The
@@ -392,6 +397,24 @@ while the Paladin's stat realignment held.
             rule - remember the player's previous cell and draw the companion there, which also
             gives it a facing for free. Sprite source: the companion art already used on the
             overworld, or a `mobs_pack` match once monsters are sprited.
+
+      - [ ] **BLOCKED ON A DECISION - monster sprites: the pack has no humanoids.** All 82
+            `mobs_pack` families were rendered and compared against the 53-monster roster
+            (2026-09-08). About 35 map WELL: undead (Skeleton/Zombie/Skull/Ghast), Mimic->Chest,
+            Vampire->Count, Death Incarnate->Reaper, Wolf/Gnoll/Cerberus->Dog, Hydra->Snake,
+            Elemental->ElementalOrb, Iron Golem/Titan->Golem, Shrieker->Mushroom, God Slayer->
+            Sword, Void Walker->Space, Balrog/Phoenix->FireSmall.
+            The pack is slimes, skulls, orbs, elementals, bugs, animals and constructs - the only
+            humanoid-ish families are Count, Mummy, Zombie, Witch, Reaper, Robot, Dwarf, Beard,
+            Skeleton, Golem, Head. Our roster is heavy on classic humanoids (Goblin, Kobold,
+            Hobgoblin, Orc, Ogre, Troll, Giant, Gnoll) and NONE of them match; a first pass put
+            four of them in `Hulk`, which is a many-armed insect. Also weak: Gargoyle->Monolith
+            (a brown slab), Sphinx->Mask, Cosmic Horror->Eye (renders nearly empty).
+            Owner to choose: (1) sprite only what fits and keep glyphs for the humanoids - never
+            shows a wrong-looking monster, degrades cleanly as art arrives; (2) accept loose
+            matches so everything is a sprite; (3) source a humanoid pack.
+            Sprites are 16x16 frames in horizontal STRIPS (SkeletonA = 144x16 = 9 frames), so
+            frame 0 is a region and animation is available later at no extra cost.
 
       Slice it: (1) floor + wall-rim + geometry, screenshot, iterate. (2) props and the special
       tiles. (3) monsters from `mobs_pack` with the hover already built. (4) floor loot from
