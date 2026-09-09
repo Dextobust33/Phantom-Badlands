@@ -316,6 +316,44 @@ while the Paladin's stat realignment held.
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
+- [ ] **NEXT: dungeon tile renderer** — art is IN, geometry is MEASURED, nothing is blocking it.
+      Owner chose `darkcave` over Godot Pixel Levels on look. Committed at
+      `client/sprites/darkcave/` (2 sheets), `mobs_pack/` (366 animation strips),
+      `items_pack/` (~1500 by equipment slot).
+
+      **Geometry, measured not assumed** (a monospace canvas can host a square tile grid):
+        - `DUNGEON_TILE_FONT_SIZE` 46 -> **58**: Consolas cell becomes exactly **32px** wide, a
+          perfect **2x integer scale** of a 16px tile and **1:1** for the 32px wall sheet.
+          Non-integer scaling is what makes pixel art mushy, so this number is the whole point.
+        - `line_separation` **-47** on `game_output` while the dungeon draws: rows land at
+          exactly 32px, giving square cells. Measured: -45 -> 34px, -47 -> 32px, -50 -> 29px.
+        - NEAREST filtering: DONE (was missing; the player avatar was being drawn soft).
+        - Cost: a full 25x11 floor of inline `[img]` measured **16.67ms vs 15.70ms** for text
+          glyphs - 1.1x. No renderer rewrite needed.
+
+      **Sheet contents, indexed cell by cell rather than guessed:**
+        - `dark cave_tiles_and_sprite_16x16.png` (22x12): olive FLOOR autotile at cols 5-11 rows
+          1-5; the same shapes in BLACK at rows 7-11 (pit/chasm); props at cols 13-20 - grass,
+          pebbles, moss, **gold nuggets**, skull, dead branch, sapling, **campfire (2 frames,
+          animated)**, bookshelf, **2 lanterns**, and a 3x3 **tent**.
+        - `dark cave_wall_32x32.png` (12x6): a classic **4x4 autotile block at cols 1-4 rows
+          1-4**, rocky edges with a BLACK interior; cols 5-11 are decorated variants.
+
+      **Key design point:** WALL is deliberately drawn as blank void today (owner: "render
+      non-traversable space as empty/void... Azure Dreams style"), so do NOT carpet the map in
+      wall sprites. Use the wall autotile only as the RIM where floor meets void - its black
+      interior means the deep void stays black and rooms read as carved out of rock. This uses
+      the art for the shape it actually has and keeps the existing design.
+
+      **Natural mappings already available:** campfire -> rest site, tent -> safe room, gold
+      nuggets -> resource node (`&`), `mobs_pack/ChestA` (a mimic) -> treasure chest, skull ->
+      remains. Genuinely missing: **stairs and doors** - keep `>` / `E` as glyphs, or source two
+      tiles later.
+
+      Slice it: (1) floor + wall-rim + geometry, screenshot, iterate. (2) props and the special
+      tiles. (3) monsters from `mobs_pack` with the hover already built. (4) floor loot from
+      `items_pack`. (5) the hoverable key, using the `[url=]` idiom.
+
 - [ ] **Dungeon sprites, and a hoverable key** (owner 2026-09-08):
       ⚠ **CORRECTION 2026-09-08 — the "~4,900 sprites available" note below is misleading.**
       Both packs carry a **0-byte `.gdignore`**, so Godot imports NOTHING from them: they are not
