@@ -2304,6 +2304,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_dungeon_drop(peer_id, message)
 		"gm_spring_trap":
 			handle_gm_spring_trap(peer_id, message)
+		"gm_apply_buff":
+			handle_gm_apply_buff(peer_id, message)
 		"gm_build_test_post":
 			handle_gm_build_test_post(peer_id, message)
 		"gm_hire_test_guard":
@@ -39204,6 +39206,32 @@ func handle_gm_spring_trap(peer_id: int, message: Dictionary) -> void:
 	_trigger_trap(peer_id, trap, iid)
 	send_to_peer(peer_id, {"type": "text",
 		"message": "[color=#808080]trap: sprang '%s'[/color]" % String(trap.get("type", "?"))})
+
+
+func handle_gm_apply_buff(peer_id: int, message: Dictionary) -> void:
+	"""Put an arbitrary buff or debuff on the player, for testing what the STATUS CHIPS say.
+
+	Added 2026-09-09. A monster's curse is a 30% roll, so the chip that renders it could only be
+	photographed by getting lucky - three capture runs in a row failed to proc it. That is the
+	same "verify by luck" gap `gm_spring_trap` was added to close, and the same answer: make the
+	state reachable on demand.
+
+	Negative `value` is a debuff; `duration` of `CombatManager.REST_OF_COMBAT_TURNS` is the
+	rest-of-fight sentinel, which is precisely the case the chip used to render as '995T'."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var btype := String(message.get("buff_type", ""))
+	if btype == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]buff: no buff_type[/color]"})
+		return
+	var value := int(message.get("value", 10))
+	var duration := int(message.get("duration", 5))
+	characters[peer_id].add_buff(btype, value, duration)
+	send_to_peer(peer_id, {"type": "text",
+		"message": "[color=#808080]buff: %s %d for %d turns[/color]" % [btype, value, duration]})
 
 
 func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):

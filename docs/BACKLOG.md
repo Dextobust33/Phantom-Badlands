@@ -194,6 +194,21 @@ while the Paladin's stat realignment held.
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 
+- [x] **"Exposed 995T" — the status chip lied twice, FIXED 2026-09-09.** Found in the 1080p
+      capture above, not reported. Two defects in three lines:
+      * **999 is a SENTINEL** meaning "rest of this fight" (a monster's curse has no natural
+        expiry), and the chip printed it as a turn count. Now `CombatManager.REST_OF_COMBAT_TURNS`
+        with a display floor, because the sentinel is decremented every round like any other
+        duration — the first version compared against the sentinel itself and so only worked on
+        turn one, which the next capture caught as "Exposed -16% 995T".
+      * **`bval > 0` dropped negative magnitudes**, so every DEBUFF on the player fell to the
+        bare-timer branch. The 2026-09-07 "show the magnitude" fix covered buffs only; a curse
+        never said it was -25% defence.
+      Reads **"Exposed -25% this fight"** now, verified through the real render path.
+      `gm_apply_buff` added so this is reachable on demand — the curse is a 30% roll and three
+      capture runs in a row failed to proc it, which is the same verify-by-luck gap
+      `gm_spring_trap` closed for traps.
+
 - [ ] **Show Warrior and Mage engine gain as a COUNT, not a bare symbol** (found by
       `-- cardpromise`, 2026-09-08). Those archetypes render one `+⚡` / `+◈` marker regardless of
       how much they actually grant, so they cannot show a bonus at all. Seven cards currently
@@ -313,12 +328,17 @@ while the Paladin's stat realignment held.
       now name their engine there.
 - [ ] **Death replay / shareable combat log.** When a player dies, the chat message carries a
       clickable link to the combat log — ideally a replay — so everyone can see how it happened.
-- [ ] **Combat layout at 1080p — CONFIRM BEFORE BUILDING.** Owner 2026-09-08: *"needs confirmed
-      before we work it. May not be an issue anymore."* The overlap was logged 2026-05-28 and the
-      combat scene has been rebuilt several times since, so the report may already be stale.
-      Capture first: `python tools/test_setup/shots.py combat` renders the real client at
-      1920x1080 (SHOT_RES) into `claude_screenshots/`. Look at the image before writing any code;
-      if the overlap is gone, close this item rather than "fixing" it.
+- [x] **Combat layout at 1080p — CONFIRMED FINE, CLOSED 2026-09-09.** Owner: *"needs confirmed
+      before we work it. May not be an issue anymore."* Captured the real client at 1920x1080 and
+      looked: the combat log, monster art, player/companion panel, card row and action bar all sit
+      clear of one another. Nothing overlaps. The 2026-05-28 report is stale — the combat scene has
+      been rebuilt several times since. Closed rather than "fixed".
+      The capture DID have to be repaired first: the scene spawned the monster at player level + 8
+      and a L14 wizard killed it inside the four scripted rounds, so the shot was skipped and the
+      question went unanswered. `gm_godmode` protects the player; nothing protected the monster.
+      Now level x6, a multiplier so the margin survives future player-power changes.
+      Found while looking: the status chip read **"Exposed 995T"** — see below.
+
 - [ ] **Extend UI-scale registration** to the elements that still lack it (action bar, status HUD,
       inventory, market, crafting, sanctuary).
 

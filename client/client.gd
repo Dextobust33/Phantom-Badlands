@@ -5869,13 +5869,25 @@ func _dev_run_shots() -> void:
 				# subject.
 				send_to_server({"type": "gm_godmode"})
 				await get_tree().create_timer(0.6).timeout
-				var _mlvl: int = maxi(5, int(character_data.get("level", 10)) + 8)
+				# 2026-09-09 - level+8 was still killable. A L14 wizard cleared a L22 Wight inside
+				# the four scripted rounds, the capture was skipped, and the layout question it
+				# was taken to answer went unanswered for another session. `gm_godmode` protects
+				# the PLAYER; nothing was protecting the monster. Multiply rather than add, so the
+				# margin does not evaporate the next time player power moves - the whole point of
+				# the note above is that this harness must not be able to lose its own subject.
+				var _mlvl: int = maxi(80, int(character_data.get("level", 10)) * 6)
 				send_to_server({"type": "gm_spawnmonster", "monster_name": "Wight", "level": _mlvl})
 				await get_tree().create_timer(3.0).timeout
 				# 2026-09-08 - cast a DEBUFF if the hand holds one, so the monster's status chips
 				# are actually on screen. A capture of an undebuffed monster cannot show whether
 				# the monster's chip row renders in the right place, which is the question the
 				# shot is usually being taken to answer.
+				# A rest-of-combat DEBUFF on the player, deterministically. The monster's curse is
+				# a 30% roll, so the chip that renders it could only be captured by luck - three
+				# runs in a row missed it. This is the case that read "Exposed 995T".
+				send_to_server({"type": "gm_apply_buff", "buff_type": "defense_penalty",
+					"value": -25, "duration": 999})
+				await get_tree().create_timer(0.5).timeout
 				var _debuffs := ["analyze", "sabotage", "distract", "frost_nova", "paralyze"]
 				# Check the hand EVERY round, not once. The hand is redrawn each turn, so a
 				# single check before attacking only sees the opening draw - and when that draw

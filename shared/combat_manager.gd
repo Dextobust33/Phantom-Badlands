@@ -378,6 +378,21 @@ const ABILITY_PACK_LEADER = "pack_leader"
 const ABILITY_GOLD_HOARDER = "gold_hoarder"  # Legacy — no effect (gold removed)
 const ABILITY_GEM_BEARER = "gem_bearer"
 const ABILITY_CURSE = "curse"
+## Duration meaning "until this fight ends" rather than a real turn count. Buffs are ticked down
+## per round, so an effect with no natural expiry is given a number it cannot reach.
+##
+## It is a SENTINEL, and the UI must not print it as a number: the status chip did exactly that
+## and read "Exposed 995T", telling the player a curse would last 995 turns. Anything rendering a
+## duration compares against this rather than hard-coding 999 a second time.
+const REST_OF_COMBAT_TURNS := 999
+## Anything at or above this is DISPLAYED as "this fight" rather than as a turn count.
+##
+## A floor, not an equality test against the sentinel above: the duration is decremented every
+## round like any other, so by round four a 999 has already become 995. The first version of this
+## fix compared `>= REST_OF_COMBAT_TURNS` and therefore only worked on turn one - the capture
+## still showed "Exposed -16% 995T", which is how it was caught. No genuine effect lasts hundreds
+## of rounds, so any remaining duration this large can only be the sentinel counting down.
+const REST_OF_COMBAT_DISPLAY_MIN := 900
 const ABILITY_DISARM = "disarm"
 const ABILITY_UNPREDICTABLE = "unpredictable"
 const ABILITY_WISH_GRANTER = "wish_granter"
@@ -9154,7 +9169,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		if randi() % 100 < curse_chance:
 			combat["curse_applied"] = true
 			var curse_penalty = int(-25 * (1.0 - wis_resist))  # WIS reduces penalty too
-			character.add_buff("defense_penalty", curse_penalty, 999)  # Lasts entire combat
+			character.add_buff("defense_penalty", curse_penalty, REST_OF_COMBAT_TURNS)
 			if wis_resist > 0:
 				messages.append("[color=#FF00FF]The %s curses you! (%d%% defense, WIS resists %d%%)[/color]" % [monster.name, curse_penalty, int(wis_resist * 100)])
 			else:

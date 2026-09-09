@@ -3251,11 +3251,22 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 				continue
 			# 2026-09-07 — show the MAGNITUDE, not just the timer. A chip reading "Iron Skin 4T"
 			# told the player how long something lasted without ever saying what it was worth.
+			#
+			# 2026-09-09 — two things that fix missed, both visible in one screenshot as
+			# "Exposed 995T":
+			#   * `bval > 0` drops NEGATIVE magnitudes, so every DEBUFF on the player fell to the
+			#     bare-timer branch. A monster's curse is -25% defence and the chip never said so.
+			#   * 999 is a SENTINEL for "rest of this fight", not a turn count, and it was printed
+			#     literally. `CombatManager.REST_OF_COMBAT_TURNS` is the one definition of it.
 			var bval: int = int(b.get("value", 0))
+			var dur_txt := ("this fight" if bdur >= CombatManager.REST_OF_COMBAT_DISPLAY_MIN
+				else "%dT" % bdur)
 			if bval > 0:
-				chips.append(_format_status_chip(btype, "+%d%% %dT" % [bval, bdur]))
+				chips.append(_format_status_chip(btype, "+%d%% %s" % [bval, dur_txt]))
+			elif bval < 0:
+				chips.append(_format_status_chip(btype, "%d%% %s" % [bval, dur_txt]))
 			else:
-				chips.append(_format_status_chip(btype, "%dT" % bdur))
+				chips.append(_format_status_chip(btype, dur_txt))
 	# Total damage reduction, with its sources. Most of it is NOT a buff — CON grants it from the
 	# stat and the class engines grant it from banked stacks — so it appeared on no surface, and a
 	# player could hold 25% from their own engine without knowing. It also makes the decision to
