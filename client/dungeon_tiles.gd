@@ -43,6 +43,10 @@ const SHEET_FREE   := "res://client/sprites/tilemap_pack/free_tiles_16x16.png"
 ## cell with zero colour spread. A first attempt picked (6,2) by eye and produced a room covered
 ## in black notches, because that is an EDGE tile of the autotile rather than its solid centre.
 const CAVE_FLOOR := Vector2i(2, 2)       # solid olive floor, #524B24, zero spread
+## The floor's exact colour. It has ZERO colour spread - every pixel of that tile is this - so a
+## flat `bgcolor` behind a text glyph matches the floor exactly rather than approximately, and a
+## glyph cell stops reading as a hole punched in the ground.
+const FLOOR_COLOR := "#524B24"
 const CAVE_VOID := Vector2i(2, 8)        # solid black
 
 ## The most solid cell on the 32px wall sheet (458 rock pixels of a possible ~1024). The sheet is
