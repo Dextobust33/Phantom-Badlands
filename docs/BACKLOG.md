@@ -12,7 +12,16 @@ common way to lose a session.
 
 ## Where the game is (2026-09-09)
 
-Live: **v0.9.762** (client + server).
+Live: **v0.9.762** (client + server). Unreleased in master: the dungeon log / trap fix below.
+
+- **A sprung trap no longer blanks the dungeon screen, and the run log moved to the side panel.**
+  `handle_dungeon_trap` set its ack flag AFTER writing, and that flag is what tells `display_game`
+  the canvas belongs to a message — so all five lines were routed to chat, into a `game_output` it
+  had just cleared. The player got a black screen and one Acknowledge button. Underground messages
+  now go to `_dungeon_log` (6 lines, above the map key, cleared per floor) instead of the cut-off
+  chat strip. `gm_spring_trap` + the `dungeontrap` capture scene make the trap screen reachable on
+  demand — it had been broken since it was written and was only ever seen by a screenshot run
+  walking onto one by luck.
 
 - **Card upgrades are no longer offered where they cannot work.** Four (`swift`, `sacrificial`,
   `vindication`, `refund`) needed damage or a kill but were marked `KIND_ANY`, so a milestone
