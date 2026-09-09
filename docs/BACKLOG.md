@@ -380,6 +380,19 @@ while the Paladin's stat realignment held.
             stable across redraws and does not shimmer as you walk), at a low density - flavour,
             not clutter, and never on a tile whose meaning a player must read.
 
+      - [ ] **Companion follows you underground** (owner 2026-09-08): *"We will eventually want
+            the companion following your sprite in dungeons just like on the overworld as well."*
+            The overworld already does this with `_local_companion_label` / `_make_map_companion_label`
+            (a small monospace RichTextLabel of the companion's ASCII art, positioned under the
+            player's map sprite). The dungeon cannot reuse that directly: the overworld map is an
+            OVERLAY of positioned Controls, while the dungeon grid is inline text, so the
+            companion has to be a tile in the grid, drawn one cell behind the player.
+            Two pieces are missing and worth checking before starting: the companion has no
+            POSITION in a dungeon (nothing server-side tracks one), and it would need a trailing
+            rule - remember the player's previous cell and draw the companion there, which also
+            gives it a facing for free. Sprite source: the companion art already used on the
+            overworld, or a `mobs_pack` match once monsters are sprited.
+
       Slice it: (1) floor + wall-rim + geometry, screenshot, iterate. (2) props and the special
       tiles. (3) monsters from `mobs_pack` with the hover already built. (4) floor loot from
       `items_pack`. (5) the hoverable key, using the `[url=]` idiom.

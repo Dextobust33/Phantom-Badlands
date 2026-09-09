@@ -44251,7 +44251,7 @@ func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
 		return                                   # not laid out yet; keep the last good size
 	# A little headroom: the canvas also carries the step counter and tile messages under the map.
 	var w_room: float = avail.x - 24.0
-	var h_room: float = avail.y - 96.0
+	var h_room: float = avail.y - 56.0
 	var best := 32
 	for px in [32, 64, 96, 128]:
 		if float(view_w * px) <= w_room and float(view_h * px) <= h_room:
@@ -44348,8 +44348,17 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	# most of the width empty no matter how large the tiles get. Floors are 20-28 wide (C3a), so
 	# 25 columns usually shows the whole floor across, while the row count stays what a tall tile
 	# can fit vertically.
-	var view_w = 25
-	var view_h = 11
+	# 2026-09-08 - 25x11 -> 19x9, so the tiles can be TWICE the size.
+	#
+	# Owner wanted the canvas used: at 32px a 25-wide view is 800px against a ~1250px canvas. The
+	# next crisp size up is 64px (both sheets need a whole-number scale, and the wall sheet is
+	# 32px, so the steps are 32 -> 64), but 25 x 64 = 1600px does not fit. 19 x 64 = 1216 does.
+	#
+	# Fewer tiles and larger is also the direction the owner already chose for this view, and it
+	# suits the design: "most of the time you only see a room and corridors, only corridors or the
+	# corridor you are in". A narrower window is more dungeon-like, not less.
+	var view_w = 19
+	var view_h = 9
 	# 2026-09-08 - size the TILE to the canvas rather than the canvas to the tile. Owner: "the
 	# Dungeon looks like it's only taking up a small portion of the game output window. Could we
 	# potentially use all or at least a larger portion of that?" At a fixed 32px a 25x11 viewport
