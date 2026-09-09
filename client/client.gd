@@ -2900,6 +2900,14 @@ func _ready():
 			if not game_output.meta_hover_started.is_connected(_on_log_meta_hover):
 				game_output.meta_hover_started.connect(_on_log_meta_hover)
 				game_output.meta_hover_ended.connect(_on_log_meta_unhover)
+		# The side panel needs the SAME connection, or the dungeon key's hoverable tiles are
+		# underlined and dead - which is exactly how the combat log's damage numbers behaved for
+		# a week before the note above was written. A link is only as good as the label it is on.
+		if map_display != null:
+			map_display.mouse_filter = Control.MOUSE_FILTER_PASS
+			if not map_display.meta_hover_started.is_connected(_on_log_meta_hover):
+				map_display.meta_hover_started.connect(_on_log_meta_hover)
+				map_display.meta_hover_ended.connect(_on_log_meta_unhover)
 		if _ss_parent:
 			var ss_btn := Button.new()
 			ss_btn.name = "ScreenshotButton"
@@ -36429,6 +36437,19 @@ func _on_log_meta_hover(meta) -> void:
 	2026-09-08 — also handles `mon:<type>:<level>`, emitted by the dungeon grid, so hovering a
 	monster on the floor names it and shows its art."""
 	var m := str(meta)
+	if m.begins_with("tile:"):
+		# A theme tile, hovered either in the side-panel key or on the floor itself.
+		var dt := String(dungeon_data.get("dungeon_type", ""))
+		if dt == "" or not DUNGEON_THEME_LEGEND.has(dt):
+			return
+		var entries: Array = DUNGEON_THEME_LEGEND[dt]
+		var idx := int(m.substr(5))
+		if idx < 0 or idx >= entries.size():
+			return
+		var e: Dictionary = entries[idx]
+		_show_dungeon_tile_hover(String(e.get("glyph", "?")), String(e.get("color", "#FFFFFF")),
+			String(e.get("desc", "")))
+		return
 	if m.begins_with("mon:"):
 		var _mid := int(m.substr(4))
 		for _mm in dungeon_monsters_data:
@@ -36493,6 +36514,54 @@ func _show_dungeon_monster_hover(monster_type: String, level: int, variant_name:
 [font_size=6]" + body + "[/font_size]"
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(txt, true)   # true = fixed-width, for the art
+
+func _show_dungeon_tile_hover(glyph: String, color: String, desc: String) -> void:
+	"""What a special floor tile actually does, on hover.
+
+	Owner 2026-09-09: *"the player can't hover the special dungeon tiles in the key to see what
+	they do (like a poison tile, or one that heals etc.)"*. The full prose already existed in
+	`DUNGEON_THEME_LEGEND` and was only ever shown once, on the entrance warning - by the time a
+	player is standing on a green patch it is long gone from the log. This puts it where the
+	question is asked, in both places a tile appears: the key and the floor.
+
+	Goes through the SAME `_show_formula_popup` as the card formulas and the monster hover.
+	`false` (not fixed-width) because this is prose, not ASCII art."""
+	if desc == "":
+		return
+	var name_part := desc
+	var body := ""
+	var dash := desc.find(" — ")
+	if dash > 0:
+		name_part = desc.substr(0, dash)
+		body = desc.substr(dash + 3)
+	var txt := "[color=%s]%s[/color]  [b]%s[/b]" % [color, glyph, name_part]
+	if body != "":
+		# WRAP IT OURSELVES. The popup label is `AUTOWRAP_OFF` (it was built for one-line damage
+		# formulas), so a 150-character tile description would render as a single line wider than
+		# the screen. These are the longest strings anything has ever put in this popup.
+		txt += "\n" + _wrap_plain(body, 62)
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(txt)
+
+
+func _wrap_plain(text: String, width: int) -> String:
+	"""Greedy word wrap for tooltip prose. Plain text only — it counts characters, so a BBCode
+	tag would be counted as visible width and throw the line length off."""
+	var out := ""
+	var line := ""
+	for w in text.split(" ", false):
+		var word := String(w)
+		if line == "":
+			line = word
+		elif line.length() + 1 + word.length() <= width:
+			line += " " + word
+		else:
+			out += line + "\n"
+			line = word
+	if line != "":
+		out += line
+	return out
+
 
 func _on_log_meta_unhover(_meta) -> void:
 	if combat_scene_panel and combat_scene_panel.has_method("_hide_formula_popup"):
@@ -43679,7 +43748,7 @@ func handle_dungeon_level_warning(message: Dictionary):
 # strange glyph means. Add entries here as Audit #5 theme tags ship.
 const DUNGEON_THEME_LEGEND = {
 	"spider_nest": [
-		{"glyph": "w", "color": "#A335EE", "desc": "Spider webs — costs +1 step to cross. Wading through clinging silk slows you down."}
+		{"glyph": "w", "color": "#A335EE", "desc": "Spider webs — clinging silk drags at you. Crossing one costs you TIME: the floor stirs sooner, so wandering spiders arrive faster. Persistent."}
 	],
 	"plagued_graveyard": [
 		{"glyph": ",", "color": "#7FBF3F", "desc": "Toxic miasma — stepping onto it ticks ~2% of your max HP. Plan paths around the green patches when possible."}
@@ -43694,7 +43763,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "?", "color": "#FFAA00", "desc": "False chests — disguised mimics. Looks like treasure but snaps for ~4% of your max HP when triggered. Distinct from real treasure ($ glyph). One-time per false chest (consumed)."}
 	],
 	"harpy_cliffs": [
-		{"glyph": "~", "color": "#87CEEB", "desc": "Updrafts — wind shears costing +2 steps to cross. Persistent — map the wind currents and plan around them."}
+		{"glyph": "~", "color": "#87CEEB", "desc": "Updrafts — wind shears that cost you double the time to cross, so the floor stirs much sooner and wanderers arrive faster. Persistent — map the currents and plan around them."}
 	],
 	"vampire_crypt": [
 		{"glyph": "+", "color": "#660000", "desc": "Blood fonts — vampiric pools. Drink from one to heal ~5% of your max HP. One-time per font (consumed)."}
@@ -43709,7 +43778,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "c", "color": "#DAA520", "desc": "Scattered loot — goblin hoard piles. Step on one to scoop up 1-5 Valor. One-time per pile (consumed)."}
 	],
 	"siren_cove": [
-		{"glyph": "=", "color": "#20B2AA", "desc": "Shallow tide — wading costs +1 step AND has a small chance (~5%) to apply Lullaby (skip your next combat turn). Persistent. Pairs with the Siren's Lullaby attack."}
+		{"glyph": "=", "color": "#20B2AA", "desc": "Shallow tide — wading costs you time (the floor stirs sooner) AND has a small chance (~5%) to apply Lullaby, which makes you skip your next combat turn. Persistent. Pairs with the Siren's Lullaby attack."}
 	],
 	"troll_den": [
 		{"glyph": "m", "color": "#3CB371", "desc": "Cave moss — damp moss patches that heal ~2% of your max HP on step. One-time per patch (consumed)."}
@@ -43736,7 +43805,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": ":", "color": "#9370DB", "desc": "Spectral veils — touching one banks 20% monster-miss chance for the first 2 rounds of your next combat. One-time per veil (consumed). Defensive companion to the Orc banner."}
 	],
 	"giant_keep": [
-		{"glyph": "r", "color": "#A0A0A0", "desc": "Crushed rubble — scrambling over giant-scale debris costs +2 steps to cross. Persistent. Plan paths around the gray patches."}
+		{"glyph": "r", "color": "#A0A0A0", "desc": "Crushed rubble — scrambling over giant-scale debris costs double time, so the floor stirs much sooner. Persistent. Plan paths around the gray patches."}
 	],
 	"hydra_swamp": [
 		{"glyph": "/", "color": "#48D1CC", "desc": "Regen springs — hydra waters that heal ~6% of your max HP on step. Strongest heal tile to date. One-time per spring (consumed). Pairs with the Hydra's Regen boss signature."}
@@ -43748,7 +43817,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "d", "color": "#BDB76B", "desc": "Grave dust — necrotic residue that burns your lungs for ~3% of your max HP on step. Persistent. Stronger than caltrops; the barrow remembers its dead."}
 	],
 	"minotaur_labyrinth": [
-		{"glyph": "g", "color": "#8B4513", "desc": "Bull-runes — minotaur maze glyphs that scramble your bearings. Costs +1 step to cross. Persistent."}
+		{"glyph": "g", "color": "#8B4513", "desc": "Bull-runes — minotaur maze glyphs that scramble your bearings, costing time and bringing wanderers sooner. Persistent."}
 	],
 	"elemental_nexus": [
 		{"glyph": "q", "color": "#4169E1", "desc": "Prism shards — fractured elemental crystals. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per shard (consumed)."}
@@ -43763,13 +43832,13 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "y", "color": "#8B2500", "desc": "Torn carrion — gnoll pack-kill scraps. Step on one to heal ~2% of your max HP. One-time per scrap (consumed). Pairs with Pack Frenzy — heal pickups counter-balance the per-round damage ramp."}
 	],
 	"kelpie_marsh": [
-		{"glyph": "u", "color": "#556B2F", "desc": "Bog patches — marsh muck that drags at your boots. Costs +1 step to cross. Persistent. Plan paths around the dark olive patches."}
+		{"glyph": "u", "color": "#556B2F", "desc": "Bog patches — marsh muck that drags at your boots, costing time and bringing wanderers sooner. Persistent. Plan paths around the dark olive patches."}
 	],
 	"wyvern_roost": [
 		{"glyph": "f", "color": "#FFE4B5", "desc": "Wyvern down — soft feather patches that cushion wounds for ~3% of your max HP on step. One-time per patch (consumed). Pairs with the Wyvern Queen's Aerial Dive burst."}
 	],
 	"ogre_bog": [
-		{"glyph": "v", "color": "#5D4037", "desc": "Sinking mud — ogre-trampled bog that costs +2 steps to wade through. Persistent. Plan paths around the dark brown patches."}
+		{"glyph": "v", "color": "#5D4037", "desc": "Sinking mud — ogre-trampled bog that costs double time to wade through, so the floor stirs much sooner. Persistent. Plan paths around the dark brown patches."}
 	],
 	"demon_gate": [
 		{"glyph": "z", "color": "#DC143C", "desc": "Hellfire runes — demonic glyphs that sear your flesh for ~3% of your max HP on step. Persistent. Pairs with the Demon Overlord's stacking Infernal Curse — every nick adds to the pressure."}
@@ -43778,7 +43847,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "a", "color": "#B0E0E6", "desc": "Wind currents — gryphon updrafts. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per current (consumed). Rare placement — pairs with Talon Barrage."}
 	],
 	"shrieker_caverns": [
-		{"glyph": "h", "color": "#B080FF", "desc": "Sound echoes — the Shrieker's resonant cries still bounce off the walls. Crossing one costs +1 step from sheer disorientation. Persistent — plan paths around the purple echoes."}
+		{"glyph": "h", "color": "#B080FF", "desc": "Sound echoes — the Shrieker's cries still bounce off the walls. The disorientation costs you time, bringing wanderers sooner. Persistent — plan paths around the purple echoes."}
 	],
 	"chimaera_gorge": [
 		{"glyph": "k", "color": "#66CC00", "desc": "Venom drips — the chimaera's serpent head leaves venom on cave ledges. Stepping under one ticks ~2% of your max HP. Persistent. Pairs with Triple Threat's poison-burn-slow rotation."}
@@ -43793,13 +43862,13 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "e", "color": "#FF6600", "desc": "Infernal braziers — perpetual fires of the demon lord's throne. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per brazier (consumed). Rare placement — pairs with Soul Forge."}
 	],
 	"titan_colosseum": [
-		{"glyph": "H", "color": "#909090", "desc": "Stone stairs — built at titan scale, every flight is a climb. Costs +2 steps to scramble up. Persistent — plan paths around the giant stonework."}
+		{"glyph": "H", "color": "#909090", "desc": "Stone stairs — built at titan scale, every flight is a climb. Costs double time, so the floor stirs much sooner. Persistent — plan paths around the giant stonework."}
 	],
 	"ancient_dragon_lair": [
 		{"glyph": "G", "color": "#FFD700", "desc": "Gold hoard — ancient dragons sleep on coin piles. Step on one to scoop up 5-10 Valor. One-time per hoard (consumed)."}
 	],
 	"golem_foundry": [
-		{"glyph": "S", "color": "#707070", "desc": "Molten slag — industrial floor still hot from golem-forging. Costs +1 step to cross. Persistent — plan paths around the gray patches."}
+		{"glyph": "S", "color": "#707070", "desc": "Molten slag — industrial floor still hot from golem-forging. Picking your way across costs time, bringing wanderers sooner. Persistent — plan paths around the gray patches."}
 	],
 	"nazgul_shadow_keep": [
 		{"glyph": "Q", "color": "#2A0033", "desc": "Shadow pool — cold nazgul shadow saps your warmth. Stepping ticks ~3% of your max HP. Persistent — plan paths around the dark patches."}
@@ -43808,13 +43877,13 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "F", "color": "#FF4500", "desc": "Dragon breath — primordial elemental fire that lingers in the air. Stepping burns ~5% of your max HP. Persistent. Strongest persistent damage in the pool — plan T7 paths very carefully."}
 	],
 	"world_serpent_coil": [
-		{"glyph": "Z", "color": "#003344", "desc": "Coiled scales — the floor IS the world serpent's muscled body. Costs +2 steps to cross as the coils ripple beneath you. Persistent."}
+		{"glyph": "Z", "color": "#003344", "desc": "Coiled scales — the floor IS the world serpent's muscled body. The rippling coils cost double time, so the floor stirs much sooner. Persistent."}
 	],
 	"elder_lich_phylactery": [
 		{"glyph": "Y", "color": "#AA66FF", "desc": "Phylactery shards — fragments of the elder lich's soul vessel. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per shard (consumed). Rarest placement — pairs with Death Mark."}
 	],
 	"jabberwock_thicket": [
-		{"glyph": "V", "color": "#228B22", "desc": "Vorpal briars — thorny brambles that snag your boots. Costs +1 step to push through. Persistent — plan paths around the green tangles."}
+		{"glyph": "V", "color": "#228B22", "desc": "Vorpal briars — thorny brambles that snag your boots, costing time and bringing wanderers sooner. Persistent — plan paths around the green tangles."}
 	],
 	"cosmic_horror_realm": [
 		{"glyph": "R", "color": "#1A0033", "desc": "Reality tears — fractures in the world where space briefly breaks. Touching one banks 20% monster-miss for the first 2 rounds of your next combat. One-time per tear (consumed)."}
@@ -43829,7 +43898,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "W", "color": "#FF00FF", "desc": "Chaos warps — raw chaos eats at your form. Stepping ticks ~5% of your max HP. Persistent. T9 damage tile — plan paths very carefully."}
 	],
 	"nameless_void": [
-		{"glyph": "N", "color": "#444466", "desc": "Void whispers — the void erodes your sense of motion. Costs +2 steps to cross. Persistent — plan paths around the dim patches."}
+		{"glyph": "N", "color": "#444466", "desc": "Void whispers — the void erodes your sense of motion, costing double time so the floor stirs much sooner. Persistent — plan paths around the dim patches."}
 	],
 	"god_slayer_arena": [
 		{"glyph": "D", "color": "#FFFFAA", "desc": "Divine blood — god-killing power lingers in pools. Step on one to heal ~8% of your max HP. Strongest heal tile in the pool. One-time per pool (consumed)."}
@@ -44340,19 +44409,31 @@ func _dungeon_side_panel_text() -> String:
 	# The legend shows the SAME avatar the floor draws, at the panel's own font size.
 	# Leaving a literal "@" here would have the key describe a glyph the map no
 	# longer uses.
-	out += "\n[color=#808080]%s You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nLetters = Monsters[/color]" % _dungeon_player_glyph(14)
-	# This floor's own special glyphs, compactly. The prose lives on the entrance warning.
+	#
+	# "Letters = Monsters" RETIRED 2026-09-09. Every monster in the roster resolves to a sprite
+	# now (owner: "For monsters use the closest match we have, no glyphs for them" - verified
+	# 53/53 by `tools/probe/monster_sprite_gaps.gd`), so the only letters left on a floor are
+	# this dungeon's THEME tiles. The old line pointed the player at exactly the wrong reading
+	# of them: it said a bull-rune was a goblin.
+	out += "\n[color=#808080]%s You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nSprites = Monsters  (hover any tile)[/color]" % _dungeon_player_glyph(14)
+	# This floor's own special glyphs, compactly - and each one HOVERABLE for the full effect.
+	# Owner 2026-09-09: *"the player can't hover the special dungeon tiles in the key to see what
+	# they do (like a poison tile, or one that heals etc.)"*. Same `[url=]` + `meta_hover_started`
+	# idiom as the combat status chips, the card formulas and the floor monsters, so the game
+	# keeps ONE tooltip mechanism rather than growing a fourth. The short label stays on the
+	# panel; the prose - which is what actually answers "what does this do" - is on hover.
 	var dt := String(dungeon_data.get("dungeon_type", ""))
 	if dt != "" and DUNGEON_THEME_LEGEND.has(dt):
 		var entries: Array = DUNGEON_THEME_LEGEND[dt]
 		if not entries.is_empty():
 			out += "\n"
-			for e in entries:
+			for i in range(entries.size()):
+				var e: Dictionary = entries[i]
 				var d := String(e.get("desc", ""))
 				var dash := d.find(" — ")
 				var short_desc := d.substr(0, dash) if dash > 0 else d.substr(0, 22)
-				out += "\n[color=%s]%s[/color] %s" % [
-					String(e.get("color", "#FFFFFF")), String(e.get("glyph", "?")), short_desc]
+				out += "\n[url=tile:%d][color=%s]%s[/color] %s[/url]" % [
+					i, String(e.get("color", "#FFFFFF")), String(e.get("glyph", "?")), short_desc]
 	return out
 
 
@@ -44668,7 +44749,30 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 	# 8px, so 4 characters are exactly the 32px an image occupies. Without this every text cell
 	# would be 24px narrow and shift the rest of its row left.
 	var info := _get_dungeon_tile_display(tile)
-	return _dungeon_glyph_cell(String(info.char), String(info.color))
+	# Hoverable ON THE FLOOR too, not only in the key - the tile you are about to step on is
+	# where the question "what does this do?" actually gets asked. Matched to the legend by
+	# GLYPH: within one dungeon type the theme glyphs are unique, and the alternative (a second
+	# copy of the tile enum in the legend table) is the "one value, two places" shape that
+	# causes most of the wrong-text bugs in this codebase.
+	return _dungeon_glyph_cell(String(info.char), String(info.color),
+		_dungeon_theme_tile_url(String(info.char)))
+
+
+func _dungeon_theme_tile_url(glyph: String) -> String:
+	"""`tile:<index>` for a glyph that belongs to THIS dungeon's theme legend, else "" (no link).
+
+	Returning "" for unknown glyphs matters: it keeps plain floor, stairs and walls from becoming
+	dead links that pop an empty tooltip."""
+	if glyph == "":
+		return ""
+	var dt := String(dungeon_data.get("dungeon_type", ""))
+	if dt == "" or not DUNGEON_THEME_LEGEND.has(dt):
+		return ""
+	var entries: Array = DUNGEON_THEME_LEGEND[dt]
+	for i in range(entries.size()):
+		if String(entries[i].get("glyph", "")) == glyph:
+			return "tile:%d" % i
+	return ""
 
 
 func _dungeon_touches_floor(grid: Array, x: int, y: int) -> bool:

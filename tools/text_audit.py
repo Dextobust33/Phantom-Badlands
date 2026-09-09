@@ -46,6 +46,51 @@ def effect_numbers(text):
     return out
 
 
+
+# --- retired mechanics that prose still advertises -------------------------------------------
+#
+# 2026-09-09. The dungeon STEP BUDGET was retired (C2 - wandering monsters are the pressure now),
+# but 13 theme tiles still told the player a crossing "costs +1 step" and 13 server messages said
+# the same on arrival. Owner: "There are also some legacy effects that don't do anything anymore
+# like extra steps." The counter those tiles feed is alive - it is the wandering-monster
+# escalation clock - so the EFFECT is real and only the WORDING was legacy, which is the harder
+# version of this bug to spot: nothing is broken, the player is just told a rule that no longer
+# exists.
+#
+# Player-facing strings only. Code comments may still describe the old budget as history.
+RETIRED_PROSE = [
+    (r'\+\s*\d+\s+steps?', 'the step BUDGET is retired; say what it costs now (time -> '
+                             'wandering monsters arrive sooner)'),
+    (r'[Cc]osts?\s*\+\s*\d+\s+steps?', 'the step BUDGET is retired'),
+]
+
+
+def scan_retired(paths):
+    """Flag player-facing prose that still describes a retired mechanic."""
+    import re as _re
+    n = 0
+    for path in paths:
+        if not os.path.exists(path):
+            continue
+        with io.open(path, encoding='utf-8') as fh:
+            for i, line in enumerate(fh, 1):
+                stripped = line.lstrip()
+                if stripped.startswith('#'):
+                    continue          # a comment may describe history
+                if '"' not in line:
+                    continue
+                for pat, why in RETIRED_PROSE:
+                    for m in _re.finditer(pat, line):
+                        # only inside a string literal
+                        before = line[:m.start()]
+                        if before.count('"') % 2 == 0:
+                            continue
+                        print('  %s:%d  %s  -- %s' % (path, i, m.group(0).strip(), why))
+                        n += 1
+                        break
+    return n
+
+
 def main():
     total = 0
     flagged = 0
@@ -70,7 +115,12 @@ def main():
         if hits == 0:
             print('  (clean)')
         print('')
-    print('checked %d described effects, flagged %d' % (total, flagged))
+    print('=== retired mechanics still in player-facing prose ===')
+    r = scan_retired(['client/client.gd', 'server/server.gd', 'shared/dungeon_database.gd'])
+    if r == 0:
+        print('  (clean)')
+    print('')
+    print('checked %d described effects, flagged %d; retired-prose hits %d' % (total, flagged, r))
 
 
 if __name__ == '__main__':

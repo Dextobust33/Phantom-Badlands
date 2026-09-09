@@ -29490,7 +29490,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Note: `tile` was sampled before the move, so this is the destination tile.
 	if tile == DungeonDatabaseScript.TileType.WEBBED:
 		character.dungeon_floor_steps += 1
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]You wade through clinging webs (+1 step).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]You wade through clinging webs — you lose time.[/color]"})
 	# Audit #5 Slice 2 theme tag — Plague Graveyard POISON_MIASMA ticks HP on step.
 	# 2% of player max HP, min 1 max 40, can't kill outright (floored at 1 HP).
 	elif tile == DungeonDatabaseScript.TileType.POISON_MIASMA:
@@ -29524,7 +29524,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# cross. Persistent. Strong negative — stacks two of Spider's web cost.
 	elif tile == DungeonDatabaseScript.TileType.UPDRAFT:
 		character.dungeon_floor_steps += 2
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#87CEEB]A wind shear pushes against you (+2 steps).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#87CEEB]A wind shear pushes against you — you lose a lot of time.[/color]"})
 	# Audit #5 Slice 9 theme tag — Vampire Crypt BLOOD_FONT heals 5% max HP
 	# on first step (consumed). Stronger than Wolf Den's blood trail (3%) —
 	# T4 dungeon, more potent vampiric blood. Floored at full HP.
@@ -29563,7 +29563,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# with Siren Enchantress's Lullaby signature.
 	elif tile == DungeonDatabaseScript.TileType.SHALLOW_TIDE:
 		character.dungeon_floor_steps += 1
-		var tide_msg = "[color=#20B2AA]You wade through the shallow tide (+1 step)."
+		var tide_msg = "[color=#20B2AA]You wade through the shallow tide — you lose time."
 		if randi() % 100 < 5:
 			character.set_meta("pending_dungeon_lull", true)
 			tide_msg += " [color=#9370DB]The tide hums a lullaby — you'll skip your next combat turn.[/color]"
@@ -29667,7 +29667,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# (12% vs 10%) — giant_keep navigation is distinctly slow.
 	elif tile == DungeonDatabaseScript.TileType.CRUSHED_RUBBLE:
 		character.dungeon_floor_steps += 2
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#A0A0A0]You scramble over giant-scale rubble (+2 steps).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#A0A0A0]You scramble over giant-scale rubble — you lose a lot of time.[/color]"})
 	# Audit #5 Slice 14 theme tag — Hydra Swamp REGEN_SPRING heals on step (consumed).
 	# 6% max HP — strongest heal tile to date. Pairs with Hydra's Regen boss
 	# signature (boss heals when player hits hard).
@@ -29696,7 +29696,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# scramble your sense of direction.
 	elif tile == DungeonDatabaseScript.TileType.MAZE_GLYPH:
 		character.dungeon_floor_steps += 1
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#8B4513]Bull-runes scramble your bearings (+1 step).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#8B4513]Bull-runes scramble your bearings — you lose time.[/color]"})
 	# Audit #5 Slice 15 theme tag — Elemental Nexus PRISM_SHARD (consumed buff).
 	# Reuses pending_war_banner meta — +15% damage for 3 rounds in next
 	# combat. Rare pickup (5% placement) befitting T7 power.
@@ -29730,7 +29730,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Persistent. Same payload as Spider Nest WEBBED at marsh density.
 	elif tile == DungeonDatabaseScript.TileType.BOG_PATCH:
 		character.dungeon_floor_steps += 1
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#556B2F]Marsh muck drags at your boots (+1 step).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#556B2F]Marsh muck drags at your boots — you lose time.[/color]"})
 	# Audit #5 Slice 16 theme tag — Wyvern Roost FEATHER_DOWN heals on step
 	# (consumed). 3% max HP. T3 positive tile between cave_moss and warm_nest.
 	elif tile == DungeonDatabaseScript.TileType.FEATHER_DOWN:
@@ -29743,7 +29743,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Persistent. Same payload as Harpy Cliffs UPDRAFT at bog density.
 	elif tile == DungeonDatabaseScript.TileType.SINKING_MUD:
 		character.dungeon_floor_steps += 2
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#5D4037]You sink to your knees in ogre bog (+2 steps).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#5D4037]You sink to your knees in ogre bog — you lose a lot of time.[/color]"})
 	# Audit #5 Slice 16 theme tag — Demon Gate HELLFIRE_RUNE persistent burn.
 	# 3% max HP, min 1 max 100. T4 damage tile — same payload as lava_pool but
 	# at T4 tier; pairs with Demon Overlord's stacking Infernal Curse.
@@ -29762,7 +29762,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Persistent. Echoes disorient and slow you. Pairs with Sonic Echo boss sig.
 	elif tile == DungeonDatabaseScript.TileType.SOUND_ECHO:
 		character.dungeon_floor_steps += 1
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#B080FF]A shrieking echo rattles your bones (+1 step).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#B080FF]A shrieking echo rattles your bones — you lose time.[/color]"})
 	# Audit #5 Slice 17 theme tag — Chimaera Gorge VENOM_DRIP persistent poison.
 	# 2% max HP, min 1 max 60. T4 damage tile pairing with Triple Threat sig.
 	elif tile == DungeonDatabaseScript.TileType.VENOM_DRIP:
@@ -29797,7 +29797,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Harpy Cliffs UPDRAFT and Ogre Bog SINKING_MUD at T5 density.
 	elif tile == DungeonDatabaseScript.TileType.STONE_STAIRS:
 		character.dungeon_floor_steps += 2
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#909090]You scramble up titan-scale stairs (+2 steps).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#909090]You scramble up titan-scale stairs — you lose a lot of time.[/color]"})
 	# Audit #5 Slice 18 theme tag — Ancient Dragon Lair GOLD_HOARD valor pickup.
 	# 5-10 Valor (consumed). T6 valor payout — bigger than goblin/kobold tier.
 	elif tile == DungeonDatabaseScript.TileType.GOLD_HOARD:
@@ -29809,7 +29809,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Persistent. Hot industrial floor slows you. Same payload as WEBBED at T6.
 	elif tile == DungeonDatabaseScript.TileType.MOLTEN_SLAG:
 		character.dungeon_floor_steps += 1
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#707070]Molten slag clings to your boots (+1 step).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#707070]Molten slag clings to your boots — you lose time.[/color]"})
 	# Audit #5 Slice 18 theme tag — Nazgul Shadow Keep SHADOW_POOL persistent damage.
 	# 3% max HP, min 1 max 200. T6 — same payload as GRAVE_DUST but at T6 cap.
 	elif tile == DungeonDatabaseScript.TileType.SHADOW_POOL:
@@ -29828,7 +29828,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# UPDRAFT / Ogre SINKING_MUD / Titan STONE_STAIRS at T7 density.
 	elif tile == DungeonDatabaseScript.TileType.COILED_SCALE:
 		character.dungeon_floor_steps += 2
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#003344]The serpent's coils ripple under your feet (+2 steps).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#003344]The serpent's coils ripple under your feet — you lose a lot of time.[/color]"})
 	# Audit #5 Slice 18 theme tag — Elder Lich Phylactery PHYLACTERY_SHARD (consumed buff).
 	# Reuses pending_war_banner meta — +15% damage for 3 rounds in next combat.
 	# Rarest placement (4%) befitting T7 power and pairing with Death Mark sig.
@@ -29840,7 +29840,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Persistent. Closes T5 coverage. Last T5 holdout themed.
 	elif tile == DungeonDatabaseScript.TileType.VORPAL_BRIAR:
 		character.dungeon_floor_steps += 1
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#228B22]Vorpal thorns snag your boots (+1 step).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#228B22]Vorpal thorns snag your boots — you lose time.[/color]"})
 	# Audit #5 Slice 19 theme tag — Cosmic Horror Realm REALITY_TEAR (consumed buff).
 	# Reuses pending_dungeon_veil meta — 20% monster-miss for 2 rounds in next combat.
 	# T8 defensive — reality distortion briefly hides you.
@@ -29871,7 +29871,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Persistent. T9 — the void erodes your sense of motion.
 	elif tile == DungeonDatabaseScript.TileType.VOID_WHISPER:
 		character.dungeon_floor_steps += 2
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#444466]A nameless whisper steals your bearings (+2 steps).[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#444466]A nameless whisper steals your bearings — you lose a lot of time.[/color]"})
 	# Audit #5 Slice 19 theme tag — God Slayer Arena DIVINE_BLOOD heals on step.
 	# 8% max HP, min 1 max 1000. Strongest heal pickup in the pool. Consumed.
 	# God-killing power restores those who walk in its blood.
