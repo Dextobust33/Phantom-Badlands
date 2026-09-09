@@ -398,7 +398,7 @@ while the Paladin's stat realignment held.
             gives it a facing for free. Sprite source: the companion art already used on the
             overworld, or a `mobs_pack` match once monsters are sprited.
 
-      - [ ] **BLOCKED ON A DECISION - monster sprites: the pack has no humanoids.** All 82
+      - [x] **DONE - monster sprites (loose matches, owner's call).** All 82
             `mobs_pack` families were rendered and compared against the 53-monster roster
             (2026-09-08). About 35 map WELL: undead (Skeleton/Zombie/Skull/Ghast), Mimic->Chest,
             Vampire->Count, Death Incarnate->Reaper, Wolf/Gnoll/Cerberus->Dog, Hydra->Snake,

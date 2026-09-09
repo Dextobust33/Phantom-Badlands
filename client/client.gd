@@ -43926,6 +43926,7 @@ func handle_dungeon_gather_result(message: Dictionary):
 # some of the sprites on I will likely be able to tell better" - so it is one constant on
 # purpose.
 const _DungeonTiles = preload("res://client/dungeon_tiles.gd")
+const _DungeonSprites = preload("res://client/dungeon_sprites.gd")
 
 # 2026-09-08 (tile pass). The dungeon cell is 32px: a clean 2x of a 16px tile, 1:1 for the 32px
 # wall sheet. Getting BOTH the width and the height to 32 took a wrong turn worth recording.
@@ -44258,15 +44259,22 @@ func _dungeon_glyph_cell(glyph: String, color: String, url: String = "") -> Stri
 
 	Every glyph in the grid goes through here; the unevenness the owner reported came from three
 	separate places each emitting their own bare `[color=..]X[/color]`."""
+	# A BAKED TILE first. `[bgcolor]` was tried nested both inside and outside `[font_size]` and
+	# paints at most a thin band, never the cell, so a glyph drawn as text always left a black
+	# hole in the floor. Every glyph/colour pair the grid can emit is instead pre-rendered onto
+	# the floor tile offline (see `DungeonSprites.GLYPH_TILE`), which makes the cell an image like
+	# any other and keeps the grid even.
+	var baked: String = _DungeonSprites.glyph_path(glyph, color)
+	if baked != "" and ResourceLoader.exists(baked):
+		var img := "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, baked]
+		return "[url=%s]%s[/url]" % [url, img] if url != "" else img
+	# Nothing baked for this pair - fall back to text. It will show the old hole, which is the
+	# visible signal that a new glyph needs adding to the generator.
 	var body := "[color=%s]%s[/color]%s" % [color, glyph,
 		" ".repeat(maxi(0, DUNGEON_TEXT_CELL_CHARS - 1))]
 	if url != "":
 		body = "[url=%s]%s[/url]" % [url, body]
-	# bgcolor OUTSIDE font_size: its filled box takes its height from the font in effect where the
-	# tag OPENS, so with the order reversed it painted a ~15px bar (the label's own font 14) under
-	# a 58px glyph - a thin stripe rather than a filled cell.
-	return "[bgcolor=%s][font_size=%d]%s[/font_size][/bgcolor]" % [
-		_DungeonTiles.FLOOR_COLOR, DUNGEON_GLYPH_FONT_SIZE, body]
+	return "[font_size=%d]%s[/font_size]" % [DUNGEON_GLYPH_FONT_SIZE, body]
 
 
 func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
@@ -44496,7 +44504,23 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					# was colon-free, and the pre-rolled variant NAME is not something to trust to
 					# that. The client already holds the whole monster list, so one id resolves
 					# every field the popup wants and adds no new failure mode.
-					line += _dungeon_glyph_cell(mchar, mcolor, "mon:%d" % int(mon.get("id", -1)))
+					# 2026-09-08 - a real monster SPRITE. Owner chose loose matches over glyphs
+					# after no cheap pack was found covering our humanoids. The name used is the
+					# PRE-ROLLED variant name where there is one, so "Venomous Orc" still resolves
+					# to the Orc sprite.
+					var _mname := String(mon.get("variant_name", ""))
+					if _mname == "":
+						_mname = String(mon.get("type", ""))
+					var _msprite: String = _DungeonSprites.monster_path(_mname)
+					var _murl := "mon:%d" % int(mon.get("id", -1))
+					if _msprite != "" and ResourceLoader.exists(_msprite):
+						# ALERT is the one thing the sprite cannot say on its own, so it keeps the
+						# red the glyph used - as a tint over the whole sprite.
+						var _tint := " color=#FF6060" if mon.get("alert", false) else ""
+						line += "[url=%s][img=%dx%d%s]%s[/img][/url]" % [
+							_murl, _DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _tint, _msprite]
+					else:
+						line += _dungeon_glyph_cell(mchar, mcolor, _murl)
 				elif trap_map.has(mkey):
 					# Render triggered trap marker
 					var tcolor = trap_map[mkey].get("color", "#FF4444")
