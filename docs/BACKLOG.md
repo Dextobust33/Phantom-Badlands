@@ -12,7 +12,7 @@ common way to lose a session.
 
 ## Where the game is (2026-09-09)
 
-Live: **v0.9.761** (client + server).
+Live: **v0.9.762** (client + server).
 
 - **Card upgrades are no longer offered where they cannot work.** Four (`swift`, `sacrificial`,
   `vindication`, `refund`) needed damage or a kill but were marked `KIND_ANY`, so a milestone
