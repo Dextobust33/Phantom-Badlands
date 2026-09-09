@@ -2286,6 +2286,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_enter_dungeon(peer_id, message)
 		"gm_dungeon_drop":
 			handle_gm_dungeon_drop(peer_id, message)
+		"gm_spring_trap":
+			handle_gm_spring_trap(peer_id, message)
 		"gm_build_test_post":
 			handle_gm_build_test_post(peer_id, message)
 		"gm_hire_test_guard":
@@ -39144,6 +39146,48 @@ func handle_gm_dungeon_drop(peer_id: int, message: Dictionary) -> void:
 	send_to_peer(peer_id, {"type": "text",
 		"message": "[color=#FF4444]drop: no free tile beside %d,%d[/color]"
 			% [character.dungeon_x, character.dungeon_y]})
+
+
+func handle_gm_spring_trap(peer_id: int, message: Dictionary) -> void:
+	"""Spring a dungeon trap on demand, for testing what a trap LOOKS like.
+
+	Added 2026-09-09. A sprung trap blanked the dungeon canvas, and the only reason that was
+	ever seen is that a screenshot run happened to walk over one - the bug had been shippable
+	since the trap screen was written. Waiting on luck is not verification, so this makes the
+	trap screen reachable the same way `gm_dungeon_drop` made floor loot reachable.
+
+	It runs the REAL `_trigger_trap`, not a mock message: the fault was in the ordering inside
+	the client's handler, so a hand-built payload that skipped the server path would have proved
+	nothing about the path players take."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not character.in_dungeon:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]Not in a dungeon.[/color]"})
+		return
+	var iid: String = character.current_dungeon_id
+	# Prefer a REAL untriggered trap on this floor, so the thing under test is the trap the
+	# generator actually placed. Fall back to a synthetic one only if the floor has none left.
+	var floor_num: int = character.dungeon_floor
+	var wanted := String(message.get("trap_type", ""))
+	var trap = null
+	if dungeon_traps.has(iid):
+		for t in dungeon_traps[iid].get(floor_num, []):
+			if t.get("triggered", false):
+				continue
+			if wanted != "" and String(t.get("type", "")) != wanted:
+				continue
+			trap = t
+			break
+	if trap == null:
+		trap = {"x": character.dungeon_x, "y": character.dungeon_y,
+			"type": wanted if wanted != "" else "rust", "triggered": false}
+	_trigger_trap(peer_id, trap, iid)
+	send_to_peer(peer_id, {"type": "text",
+		"message": "[color=#808080]trap: sprang '%s'[/color]" % String(trap.get("type", "?"))})
 
 
 func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):

@@ -567,11 +567,14 @@ const MAP_SYNC_SETTLE_RETRY_MAX := 8
 # high; it only corrected when a later redraw (a step, or another player moving) happened
 # to re-run with settled metrics. We now re-sync until the fingerprint stops changing.
 var _map_sync_last_sig: String = ""
-# v0.9.390 — capture the most recent dungeon special-tile text message so
-# display_dungeon_floor can re-append it (otherwise the immediately-following
-# dungeon_state clears game_output before the player can read it).
-var _last_dungeon_tile_message: String = ""
-var _dungeon_text_pending: bool = false
+# The dungeon RUN LOG - what has happened to you on this floor, shown in the side panel above
+# the map key (owner 2026-09-09). Replaces v0.9.390's single `_last_dungeon_tile_message`, which
+# held one line and was dropped the moment it was drawn, plus a parallel copy appended to the
+# chat strip. See `_dungeon_log_add`.
+var _dungeon_log: Array = []
+# Bounded so the log cannot push the map key off the panel - the key is what the log sits above,
+# and burying it would trade one unreadable surface for another.
+const DUNGEON_LOG_MAX := 6
 var _cached_nearby_players: Array = []  # Latest nearby_players list from server
 # Local player's position from the most recent location message. Cached
 # separately because character_data.x/y is only updated on flee, not on
@@ -5927,6 +5930,22 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "gm_dungeon_drop", "kind": "equipment"})
 				await get_tree().create_timer(0.8).timeout
 				await _dev_shot_capture("dungeon")
+
+			"dungeontrap":
+				# What a sprung trap looks like. 2026-09-09: this screen showed a BLANK canvas
+				# because the ack flag was set after the text was written, and the only reason
+				# anyone saw it is that a "dungeon" capture happened to walk onto a trap. A
+				# scene that springs one on purpose is what makes it checkable on every run.
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				if not dungeon_mode:
+					send_to_server({"type": "gm_enter_dungeon", "tier": 3})
+					await get_tree().create_timer(3.0).timeout
+				send_to_server({"type": "gm_spring_trap"})
+				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_capture("dungeontrap")
+
 			_:
 				pass
 	print("[SHOTS] done")
@@ -24057,12 +24076,12 @@ func handle_server_message(message: Dictionary):
 				display_game(text_msg)
 			else:
 				display_game(text_msg)
-			# v0.9.390 — capture dungeon special-tile messages so the next
-			# dungeon_state can re-append them (otherwise display_dungeon_floor
-			# clears game_output and the player never sees what they stepped on).
-			if dungeon_mode and text_msg != "":
-				_last_dungeon_tile_message = text_msg
-				_dungeon_text_pending = true
+			# Dungeon special-tile messages also go to the run log in the side panel, so what
+			# you stepped on stays readable after the next `dungeon_state` redraws the floor.
+			# Only needed when `display_game` took the CANVAS branch (a menu is open); its
+			# underground branch already logs, and logging twice would double every line.
+			if dungeon_mode and text_msg != "" and _dungeon_menu_open():
+				_dungeon_log_add(text_msg)
 			# Sound triggers for text messages
 			var text_lower = text_msg.to_lower()
 			if "hp restored" in text_lower or "healed" in text_lower or "recovered" in text_lower:
@@ -34377,22 +34396,44 @@ func _dungeon_menu_open() -> bool:
 		or inventory_mode or combat_item_mode or settings_mode or admin_mode)
 
 
+func _dungeon_log_add(text: String) -> void:
+	"""Record one line in the dungeon run log - the side panel's scrolling history.
+
+	2026-09-09. Underground messages used to go to `chat_output`, and the owner's trap
+	screenshot is why they no longer do: *"We probably need to move the dungeon log over to the
+	right Above the map key instead of being below in the chat where everything is cutoff."*
+	The chat strip is a few lines tall, shared with player chat, and sits under the action bar
+	away from where the eye is - so a trap, a tile effect or a find scrolled past unread.
+
+	This is now the ONE home for those lines. The previous code kept TWO partial copies - a
+	chat append plus a single `_last_dungeon_tile_message` re-rendered under the floor on the
+	next draw - which is the "one value, two places" shape this codebase keeps getting bitten
+	by, and neither copy was a real history: the pending line held exactly one message and was
+	dropped as soon as it was shown."""
+	var plain := text.strip_edges()
+	if plain == "":
+		return
+	_dungeon_log.append(plain)
+	if _dungeon_log.size() > DUNGEON_LOG_MAX:
+		_dungeon_log = _dungeon_log.slice(_dungeon_log.size() - DUNGEON_LOG_MAX)
+	# The panel is what shows it, so it has to be redrawn for the line to appear at all.
+	if dungeon_mode and not dungeon_data.is_empty() and map_display:
+		map_display.clear()
+		map_display.append_text(_dungeon_side_panel_text())
+		map_display.scroll_to_line(0)
+
+
 func display_game(text: String):
 	# 2026-09-08 — in a dungeon, `game_output` IS the map. Anything appended to it pushes the
 	# floor up and eventually scrolls it off. Reported: "screenshot output is going in the
 	# gameoutput window moving the dungeon up."
 	#
-	# So while underground, a message that is NOT part of the map goes to the chat log, and is
-	# also kept as the dungeon's pending line so the next map draw shows it beneath the floor.
-	# It stays readable in both places and the canvas never accumulates — which matters because
-	# the Player-Visible Output Rule means these messages cannot simply be dropped.
+	# So while underground, a message that is NOT part of the map goes to the dungeon run log
+	# in the side panel (see `_dungeon_log_add`). The canvas never accumulates, and the message
+	# is still readable — which matters because the Player-Visible Output Rule means these
+	# messages cannot simply be dropped.
 	if dungeon_mode and not _dungeon_rendering and not _dungeon_menu_open():
-		if chat_output:
-			chat_output.append_text(text + "\n")
-		var plain := text.strip_edges()
-		if plain != "":
-			_last_dungeon_tile_message = plain
-			_dungeon_text_pending = true
+		_dungeon_log_add(text)
 		return
 	if game_output:
 		game_output.append_text(text + "\n")
@@ -43341,6 +43382,11 @@ func handle_dungeon_list(message: Dictionary):
 
 func handle_dungeon_state(message: Dictionary):
 	"""Handle dungeon state update from server"""
+	# The run log is per FLOOR. Carrying it down the stairs would show you what happened on the
+	# floor you just left, next to a key describing the one you are standing on.
+	var new_floor := int(message.get("floor", 1))
+	if not dungeon_mode or new_floor != int(dungeon_data.get("floor", -1)):
+		_dungeon_log.clear()
 	dungeon_mode = true
 	dungeon_list_mode = false
 	dungeon_resource_prompt = false
@@ -43920,6 +43966,16 @@ func handle_dungeon_trap(message: Dictionary):
 			"type": message.get("trap_type", "rust"),
 			"color": message.get("trap_color", "#FF4444")
 		})
+	# The ack flag must be set BEFORE anything is written, not after.
+	#
+	# 2026-09-09 - this ordering is what made a sprung trap show the player a BLANK canvas.
+	# `awaiting_dungeon_trap_ack` is one of the states `_dungeon_menu_open()` reports, and that
+	# is what tells `display_game` the canvas belongs to a message rather than to the floor.
+	# Set afterwards, every line below was still routed to chat by the underground redirect -
+	# into a `game_output` this function had just cleared - so the trap took the canvas away and
+	# put nothing in its place. `handle_dungeon_gather_result` right below always had it the
+	# right way round, which is why gathering never showed the fault.
+	awaiting_dungeon_trap_ack = true  # Hard block until acknowledged
 	# Display trap message in game output
 	game_output.clear()
 	display_game("[color=#FFD700]===== TRAP! =====[/color]")
@@ -43927,7 +43983,8 @@ func handle_dungeon_trap(message: Dictionary):
 	display_game(message.get("message", "[color=#FF4444]You triggered a trap![/color]"))
 	display_game("")
 	display_game("[color=#FFAA00]Press [%s] to acknowledge and continue exploring.[/color]" % get_action_key_name(0))
-	awaiting_dungeon_trap_ack = true  # Hard block until acknowledged
+	# Also keep it in the run log, so after acknowledging you can still see what hit you.
+	_dungeon_log_add(message.get("message", "You triggered a trap!"))
 	update_dungeon_map()
 	update_action_bar()
 
@@ -44110,14 +44167,10 @@ func display_dungeon_floor():
 	# Monster count and the movement hint live in the side panel and the action bar now — the
 	# canvas is for the floor.
 
-	# v0.9.390 — re-render the last special-tile message (poison, heal,
-	# blood font, etc.) so the player can actually read it. Cleared after
-	# display so a subsequent dungeon_state with no new text drops the message.
-	if _dungeon_text_pending and _last_dungeon_tile_message != "":
-		display_game("")
-		display_game("[color=#FFA060]> %s[/color]" % _last_dungeon_tile_message)
-		_dungeon_text_pending = false
-	# Canvas writing is over - anything else that reaches display_game now belongs to chat.
+	# Special-tile messages (poison, heal, blood font, etc.) are no longer re-appended here.
+	# They live in the side panel's run log now, which keeps SIX of them instead of one and does
+	# not vanish on the next redraw. See `_dungeon_log_add`.
+	# Canvas writing is over - anything else that reaches display_game now belongs to the log.
 	_dungeon_rendering = false
 
 	# 2026-09-08 (E) - the theme-tile legend used to print its full prose HERE, in the middle of
@@ -44176,6 +44229,19 @@ func _dungeon_side_panel_text() -> String:
 		out += "Remaining: [color=#FF4444]%d[/color]%s\n" % [alive_count, al]
 	else:
 		out += "[color=#00FF00]Floor cleared![/color]\n"
+	# The RUN LOG sits between the floor status and the key - owner 2026-09-09, "move the dungeon
+	# log over to the right Above the map key instead of being below in the chat where everything
+	# is cutoff". Oldest first, so the newest line is the one nearest the key and the eye lands on
+	# it last. The panel had a large empty band here already, which is the space this uses.
+	if not _dungeon_log.is_empty():
+		out += "\n[color=#605040]────────────[/color]\n"
+		for i in range(_dungeon_log.size()):
+			# Each line keeps its OWN colour - green for a find, red for a trap. An earlier
+			# version dimmed older lines by stripping their BBCode, which threw that away: a
+			# trap you sprang two steps ago went from red to grey, losing the one thing that
+			# made it scannable. Only the ARROW marks recency.
+			var arrow := "[color=#FFA060]>[/color] " if i == _dungeon_log.size() - 1 else "[color=#605040]>[/color] "
+			out += "%s%s\n" % [arrow, String(_dungeon_log[i])]
 	# The legend shows the SAME avatar the floor draws, at the panel's own font size.
 	# Leaving a literal "@" here would have the key describe a glyph the map no
 	# longer uses.
