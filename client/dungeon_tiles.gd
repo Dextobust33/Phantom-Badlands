@@ -55,6 +55,32 @@ const CAVE_VOID := Vector2i(2, 8)        # solid black
 ## tile and directionality is deferred until it can be judged on screen.
 const CAVE_ROCK := Vector2i(4, 4)
 
+## Scatter decoration, pre-composited onto the floor. Owner, on seeing the plain floor: "We will
+## likely want to add some of the stones, grass, trees, stumps, lanterns scattered around in the
+## future just for flavor to make the floor less of the same thing."
+##
+## Only genuine SCATTER is in here. The sheet's lanterns, campfire and tent are landmark objects
+## - two of those "candidates" turned out to be the lower halves of a lantern and a piece of the
+## tent, which read as debris when dropped on their own - so they are left for deliberate
+## placement rather than random scatter.
+const PROP_DIR := "res://client/sprites/prop_floor32/"
+const PROP_COUNT := 8
+## Roughly one floor tile in seven. Flavour, not clutter: high enough that a corridor is not all
+## one tile, low enough that the eye still reads the floor as floor.
+const PROP_CHANCE_IN := 7
+
+
+static func prop_for(x: int, y: int) -> String:
+	"""The scatter prop for a floor tile, or "" for plain floor.
+
+	Keyed on the tile's POSITION, not on a random draw: the grid is rebuilt on every step, so a
+	random pick would make the decoration shimmer and crawl as the player walks. Hashing the
+	coordinates means a given tile keeps the same pebble forever."""
+	var h: int = abs(hash(Vector2i(x, y)))
+	if h % PROP_CHANCE_IN != 0:
+		return ""
+	return PROP_DIR + "prop_%02d.png" % ((h / PROP_CHANCE_IN) % PROP_COUNT)
+
 ## `free_tiles_16x16.png` is indexed by the enum in `tilemap_pack/FreeTileMap.cs.reference`, which
 ## NAMES every tile - so none of these were identified by eye. Verified by rendering each index
 ## and looking at it. Index -> cell is (i % 32, i / 32).

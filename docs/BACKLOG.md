@@ -416,6 +416,25 @@ while the Paladin's stat realignment held.
             Sprites are 16x16 frames in horizontal STRIPS (SkeletonA = 144x16 = 9 frames), so
             frame 0 is a region and animation is available later at no extra cost.
 
+      - [ ] **Player EMOTE animations underground** (owner 2026-09-08): the walk cycle IS live -
+            each step advances a 3-frame cycle from the overworld art's 4 directions x 3 frames -
+            but the EMOTE sheets are a separate thing and are NOT done. They sit unsliced at
+            `timefantasy_characters/sheets/emote2..5.png` (312x288 = a 12x8 grid of 26x36 frames)
+            plus `animation1/2.png`, and larger 936x864 copies under `RPGMAKERMV/characters/`.
+            The pack's `frames/` folder slices chara/military/npc/animals/chests but never the
+            emotes, so they need a slicing pass first - the same offline treatment the avatar
+            frames got. Then decide WHEN one plays: on rest, on a find, on low HP.
+
+      - [ ] **Dungeons must support PARTY play** (owner 2026-09-08: "we will also need to ensure
+            Dungeons support party play at some point"). Already the declared north star under
+            phase F below and carries the revised balance rule (party-upgradable dungeons: much
+            harder, much greater rewards, but always with a solo option). Recorded HERE too
+            because the tile renderer now makes a concrete demand of it that did not exist
+            before: the grid draws exactly one player sprite and one trailing companion, so a
+            party needs other members drawn as their own sprites in the same grid, each with
+            their own facing - and the client currently has no positions for them underground.
+            Same shape as the companion follower, one step harder.
+
       Slice it: (1) floor + wall-rim + geometry, screenshot, iterate. (2) props and the special
       tiles. (3) monsters from `mobs_pack` with the hover already built. (4) floor loot from
       `items_pack`. (5) the hoverable key, using the `[url=]` idiom.

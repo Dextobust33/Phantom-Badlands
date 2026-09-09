@@ -43973,6 +43973,13 @@ const _DUNGEON_FACING_BY_DIR := {
 	"up": "up", "down": "down", "left": "left", "right": "right",
 }
 var _dungeon_walk_frame: int = 0
+# Where the player was on the PREVIOUS step, so the companion can walk in their footsteps.
+# Owner: "We will eventually want the companion following your sprite in dungeons just like on
+# the overworld as well." The overworld draws it as a positioned Control overlay, which the
+# dungeon cannot reuse - the grid is inline text - and nothing server-side tracks a companion
+# POSITION underground. Trailing the player's last cell needs neither.
+var _dungeon_prev_pos: Vector2i = Vector2i(-9999, -9999)
+var _dungeon_last_pos: Vector2i = Vector2i(-9999, -9999)
 var _sprite_region_cache: Dictionary = {}
 
 
@@ -44260,6 +44267,34 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 		cell_w, h, reg.position.x, reg.position.y, reg.size.x, reg.size.y, tint, path]
 
 
+func _dungeon_companion_at(x: int, y: int) -> bool:
+	"""Is the companion standing here? It walks in the player's footsteps - the cell they were on
+	before this step - which gives it a position without the server having to track one, and
+	makes it read as following rather than teleporting alongside."""
+	if _dungeon_prev_pos.x == -9999:
+		return false
+	if _dungeon_prev_pos == _dungeon_last_pos:
+		return false                      # not moved yet; do not stack it under the player
+	return _dungeon_prev_pos == Vector2i(x, y)
+
+
+func _dungeon_companion_img() -> String:
+	"""The active companion, drawn on the floor behind the player. Reuses the same floor-backed
+	monster sprites the dungeon already uses, matched on the companion's `monster_type`."""
+	var comp: Dictionary = character_data.get("active_companion", {}) if character_data else {}
+	if comp == null or comp.is_empty():
+		return _DungeonTiles.floor_img()
+	var mt := String(comp.get("monster_type", ""))
+	if mt == "":
+		return _DungeonTiles.floor_img()
+	var spr: String = _DungeonSprites.monster_path(mt)
+	if spr == "" or not ResourceLoader.exists(spr):
+		return _DungeonTiles.floor_img()
+	# A gentle warm tint so your Wolf reads as YOURS rather than as another wolf on the floor.
+	return "[img=%dx%d color=#CFE8FF]%s[/img]" % [
+		_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, spr]
+
+
 func _dungeon_glyph_cell(glyph: String, color: String, url: String = "") -> String:
 	"""A text glyph occupying exactly one dungeon cell, ON THE FLOOR.
 
@@ -44346,6 +44381,11 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 	Everything that is not floor or wall keeps its glyph for now; those get sprites in slice 2."""
 	match tile:
 		0, 7:                                  # EMPTY / CLEARED - walkable floor
+			# Scatter decoration, so a corridor is not every tile identical. Position-hashed, so
+			# it does not crawl as the player walks (the grid is rebuilt on every step).
+			var prop: String = _DungeonTiles.prop_for(x, y)
+			if prop != "" and ResourceLoader.exists(prop):
+				return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, prop]
 			return _DungeonTiles.floor_img()
 		1:                                     # WALL
 			if _dungeon_touches_floor(grid, x, y):
@@ -44441,6 +44481,13 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	# in" - so filling the canvas has to come from drawing the same view LARGER, not from showing
 	# more of the floor.
 	_dungeon_pick_tile_px(view_w, view_h)
+	# Track the step so the companion has somewhere to stand. Only moves when the player actually
+	# moves; a redraw in place must not make the companion jump onto the player.
+	var _here := Vector2i(player_x, player_y)
+	if _here != _dungeon_last_pos:
+		if _dungeon_last_pos.x != -9999:
+			_dungeon_prev_pos = _dungeon_last_pos
+		_dungeon_last_pos = _here
 
 	# Calculate viewport bounds centered on player
 	var view_x1 = player_x - view_w / 2
@@ -44486,6 +44533,8 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 		for x in range(view_x1, view_x2):
 			if x == player_x and y == player_y:
 				line += _dungeon_player_glyph()
+			elif _dungeon_companion_at(x, y):
+				line += _dungeon_companion_img()
 			else:
 				var mkey = "%d,%d" % [x, y]
 				if npc_map.has(mkey):
@@ -44542,9 +44591,16 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					# An EGG on the floor is drawn as its actual egg sprite, so you can read the
 					# variant off the ground before you pick it up. Width is pinned to the cell
 					# exactly as the player avatar is - anything else shears the row.
+					var _kind := String(fi.get("kind", ""))
 					var _egg_spr := ""
-					if String(fi.get("kind", "")) == "egg":
+					if _kind == "egg":
 						_egg_spr = MonsterArt._EggSprites.sprite_for(String(fi.get("variant", "")))
+					else:
+						# Real item art for the other loot kinds, floor baked in like everything
+						# else on the ground.
+						var _lp: String = _DungeonSprites.loot_path(_kind)
+						if _lp != "" and ResourceLoader.exists(_lp):
+							_egg_spr = _lp
 					if _egg_spr != "":
 						line += "[img=%dx%d]%s[/img]" % [_dungeon_cell_width(), _dungeon_cell_width(), _egg_spr]
 					else:

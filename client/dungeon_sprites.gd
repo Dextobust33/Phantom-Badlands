@@ -25,6 +25,26 @@ class_name DungeonSprites
 
 const MONSTER_DIR := "res://client/sprites/monster_floor32/"
 const GLYPH_DIR := "res://client/sprites/glyph_floor32/"
+const LOOT_DIR := "res://client/sprites/loot_floor32/"
+
+## Floor loot, by the `kind` the server sends. Chosen for what each sprite SAYS rather than for
+## what came first in the folder - `ScrollPortal` is literally a portal scroll, which is what an
+## escape scroll does. Eggs are not here: they already resolve to their own variant egg through
+## `EggSprites`, so the artwork tells you which variant is lying on the floor.
+const LOOT_SPRITE := {
+	"valor": "valor",
+	"escape_scroll": "escape_scroll",
+	"material": "material",
+	"quest_relic": "quest_relic",
+	"equipment": "equipment",
+}
+
+
+static func loot_path(kind: String) -> String:
+	"""The baked sprite for a floor-loot kind, or "" if that kind has no art yet."""
+	if kind == "" or not LOOT_SPRITE.has(kind):
+		return ""
+	return LOOT_DIR + String(LOOT_SPRITE[kind]) + ".png"
 
 ## Monster display name -> baked sprite. The mapping to `mobs_pack` families came from comparing
 ## all 82 families against the roster. About two thirds are strong (Skeleton, Zombie,
