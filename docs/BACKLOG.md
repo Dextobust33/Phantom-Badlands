@@ -347,8 +347,27 @@ while the Paladin's stat realignment held.
 
       **Natural mappings already available:** campfire -> rest site, tent -> safe room, gold
       nuggets -> resource node (`&`), `mobs_pack/ChestA` (a mimic) -> treasure chest, skull ->
-      remains. Genuinely missing: **stairs and doors** - keep `>` / `E` as glyphs, or source two
-      tiles later.
+      remains.
+
+      **Stairs and doors are SOLVED** (owner supplied `RageTileMap-master`, 2026-09-08). Its art
+      is the Henry Software Pixel Level set - the SAME artist as mobs_pack/items_pack, so it
+      matches them by construction. Curated to `client/sprites/tilemap_pack/`:
+        - `free_tiles_16x16.png` (32x4) and `paper_tiles_16x16.png` (48x64, ~3000 tiles)
+        - the two C# tile ENUMS kept as `*.cs.reference` - they NAME every index, so no tile has
+          to be identified by eye. Index -> cell is `(i % across, i / across)`; across = 32 for
+          free, 64 for paper.
+      Verified by rendering each index and looking at it, not by trusting the enum:
+      `12 StairsDown, 13 StairsUp, 14 DoorShut, 15 DoorOpen, 16 DoorBroke, 17-20 WallTorch
+      (a 4-frame animation), 21-28 Wall, 38 Bed, 39 Sacks, 47 Forge, 48 Anvil, 49 Workbench`.
+      `47 Forge` is worth noting - the game already has an Infernal Forge.
+
+      **Solid darkcave tiles, found by scanning for a fully-opaque uniform cell rather than by
+      eye:** floor = **(2,2)** `#524B24` (zero colour spread), void = **(2,8)** black. A first
+      mock used (6,2) and produced a room covered in black notches - that is an EDGE tile. The
+      autotile cells must be identified the same measured way.
+
+      A mixed mock (darkcave floor + wall rim, RageTileMap stairs/doors/torch/forge) reads fine:
+      the warm brown stone sits comfortably against the cave rock.
 
       Slice it: (1) floor + wall-rim + geometry, screenshot, iterate. (2) props and the special
       tiles. (3) monsters from `mobs_pack` with the hover already built. (4) floor loot from
