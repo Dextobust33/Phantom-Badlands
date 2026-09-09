@@ -43925,7 +43925,23 @@ func handle_dungeon_gather_result(message: Dictionary):
 # that the viewport is 25 wide. Owner expects to retune this once sprites land - "Once we have
 # some of the sprites on I will likely be able to tell better" - so it is one constant on
 # purpose.
-const DUNGEON_TILE_FONT_SIZE := 46
+const _DungeonTiles = preload("res://client/dungeon_tiles.gd")
+
+# 2026-09-08 (tile pass). The dungeon cell is 32px: a clean 2x of a 16px tile, 1:1 for the 32px
+# wall sheet. Getting BOTH the width and the height to 32 took a wrong turn worth recording.
+#
+# The first attempt used font 58 - whose Consolas cell is exactly 32px wide - with
+# `line_separation = -47` to pull the 59px line down to 32. Every headless measurement said 32px
+# rows, and it was still wrong: a negative separation does not merely tighten rows, it COMPRESSES
+# the inline images, so the tiles rendered at full width and half height. `get_content_height()`
+# cannot see that, which is why only a screenshot with a 32px lattice drawn over it found it.
+#
+# The real conflict: a TEXT cell needs a big font to be 32px wide, an IMAGE cell needs a small
+# font or the row grows to 79px. Both are satisfied at font 14, where a Consolas char is exactly
+# 8px - so FOUR characters make 32px - and a 32px image sets a natural 32px row with no
+# separation hack at all. Hence: images are 32px, text cells are padded to 4 chars.
+const DUNGEON_TILE_FONT_SIZE := 14
+const DUNGEON_TEXT_CELL_CHARS := 4      # 4 x 8px = one 32px cell
 
 # Where in the 3-frame walk cycle the underground avatar is. FACING deliberately reuses the
 # overworld's `_local_map_facing` rather than keeping a second copy - which way the player is
@@ -44010,7 +44026,9 @@ func display_dungeon_floor():
 	game_output.clear()
 	# Centred, on the owner's call. [center] applies per line, and every grid row is padded to the
 	# same width by the renderer, so the block centres as a block rather than raggedly.
-	display_game("[center][font_size=%d]%s[/font_size][/center]" % [DUNGEON_TILE_FONT_SIZE, grid_display])
+	# No [font_size] wrapper: the label's own size IS the tile font (see DUNGEON_TILE_FONT_SIZE),
+	# and inflating it is what forced the negative line spacing that squashed the tiles.
+	display_game("[center]%s[/center]" % grid_display)
 
 	# Step pressure counter — C2: the step budget is retired (server sends step_limit
 	# <= 0). Hide the counter; wandering monsters are the pressure now.
@@ -44163,11 +44181,24 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 	var bid := BattlerSprite.id_from_data(character_data)
 	if bid == "":
 		return fallback
+	# 2026-09-08 (tile pass) - PRE-PADDED 32x32 frames. A dungeon cell is now square, and the
+	# overworld sprites are 17x31: scaling one to fill a 32px width makes it 58px tall and the row
+	# grows, while fitting it by height makes it 20px wide and the row shears. Both break the
+	# grid. `overworld_pad32/` holds the same frames centred on a 32x32 canvas, so they draw 1:1
+	# with no scaling at all - the padding that had to be CROPPED at the old 25px cell is what
+	# makes them fit at 32px square.
 	var path := ""
 	if BattlerSprite.has_overworld_by_id(bid):
-		path = BattlerSprite.overworld_path_by_id(bid, _local_map_facing, _dungeon_walk_frame)
+		var padded := "res://client/sprites/overworld_pad32/%s/%s%s.png" % [
+			bid, _local_map_facing,
+			["_stand", "_walk1", "_walk2"][clampi(_dungeon_walk_frame, 0, 2)]]
+		if ResourceLoader.exists(padded):
+			path = padded
+		else:
+			path = BattlerSprite.overworld_path_by_id(bid, _local_map_facing, _dungeon_walk_frame)
 	if path == "":
-		# No overworld twin - the side-view battler, same as the map's second tier.
+		# No overworld twin - the side-view battler, same as the map's second tier. Its 48x48
+		# frame is already square, so it needs no padding.
 		path = BattlerSprite.idle_path_by_id(bid)
 	if path == "" or not ResourceLoader.exists(path):
 		return fallback
@@ -44178,9 +44209,8 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 	var f: Font = game_output.get_theme_font("normal_font") if game_output else null
 	if f == null:
 		return fallback
-	var cell_w: int = int(round(f.get_string_size("@", HORIZONTAL_ALIGNMENT_LEFT, -1,
-		at_font_size).x))
-	var line_h: int = int(f.get_height(at_font_size))
+	var cell_w: int = _DungeonTiles.TILE_PX if at_font_size == DUNGEON_TILE_FONT_SIZE 		else int(round(f.get_string_size("@", HORIZONTAL_ALIGNMENT_LEFT, -1, at_font_size).x))
+	var line_h: int = maxi(cell_w, int(f.get_height(at_font_size)))
 	if cell_w <= 0 or line_h <= 0:
 		return fallback
 	# Crop to the sprite's actual CONTENT. The idle battlers are 48x48 frames holding a 19x30
@@ -44188,14 +44218,66 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 	# player at about half the size of everything else, which a screenshot caught immediately.
 	# Cropped, the fallback tier comes out 19x30, near-identical to the overworld sprite's 17x31,
 	# so both tiers fill the tile the same way.
+	var tint := BattlerSprite.tint_hex(String(character_data.get("appearance_color", "")))
+	var src: Vector2i = tex.get_size()
+	if src.x == src.y:
+		# Already square (a padded overworld frame, or a 48x48 battler): draw it whole, filling
+		# the cell. No region, no cropping - cropping to content is what would break the square.
+		return "[img=%dx%d color=%s]%s[/img]" % [cell_w, cell_w, tint, path]
+	# Non-square fallback: crop to content and pin the WIDTH to the cell, which is the only rule
+	# that keeps a monospace row aligned.
 	var reg: Rect2i = _sprite_content_region(path, tex)
 	if reg.size.x <= 0 or reg.size.y <= 0:
 		return fallback
-	var h: int = int(round(float(cell_w) * float(reg.size.y) / float(reg.size.x)))
-	h = mini(h, line_h)
-	var tint := BattlerSprite.tint_hex(String(character_data.get("appearance_color", "")))
+	var h: int = mini(int(round(float(cell_w) * float(reg.size.y) / float(reg.size.x))), line_h)
 	return "[img=%dx%d region=%d,%d,%d,%d color=%s]%s[/img]" % [
 		cell_w, h, reg.position.x, reg.position.y, reg.size.x, reg.size.y, tint, path]
+
+
+func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
+	"""One dungeon cell as a sprite.
+
+	WALL is the interesting case. Owner 2026-08-26: *"stop drawing WALLS as tiles - instead render
+	non-traversable space as empty/void the player just can't move into (Azure Dreams style)"* -
+	so the map must NOT be carpeted in rock. But the cave sheet's wall tiles have BLACK interiors
+	with rocky edges, which is exactly the shape of a RIM: draw rock only where wall touches
+	floor, and the deep void stays black. The owner's design survives and the art gets used for
+	what it actually is.
+
+	Everything that is not floor or wall keeps its glyph for now; those get sprites in slice 2."""
+	match tile:
+		0, 7:                                  # EMPTY / CLEARED - walkable floor
+			return _DungeonTiles.floor_img()
+		1:                                     # WALL
+			if _dungeon_touches_floor(grid, x, y):
+				return _DungeonTiles.rock_img()
+			return _DungeonTiles.blank_img()
+		3:                                     # EXIT - stairs down
+			return _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_DOWN)
+		2:                                     # ENTRANCE - stairs up
+			return _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_UP)
+	# Not yet sprited: keep the glyph, but pad it to a FULL CELL. At font 14 a Consolas char is
+	# 8px, so 4 characters are exactly the 32px an image occupies. Without this every text cell
+	# would be 24px narrow and shift the rest of its row left.
+	var info := _get_dungeon_tile_display(tile)
+	return "[color=%s]%s[/color]%s" % [info.color, info.char,
+		" ".repeat(DUNGEON_TEXT_CELL_CHARS - 1)]
+
+
+func _dungeon_touches_floor(grid: Array, x: int, y: int) -> bool:
+	"""Is this cell orthogonally adjacent to anything walkable? That is what makes a wall a RIM
+	rather than deep void."""
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var nx: int = x + d.x
+		var ny: int = y + d.y
+		if ny < 0 or ny >= grid.size():
+			continue
+		var row = grid[ny]
+		if nx < 0 or nx >= row.size():
+			continue
+		if int(row[nx]) != 1:
+			return true
+	return false
 
 
 func _dungeon_cell_width() -> int:
@@ -44204,11 +44286,8 @@ func _dungeon_cell_width() -> int:
 	Anything drawn into the dungeon grid as an image must be exactly this wide or it shifts every
 	tile after it on that row. Shared by the player avatar and the floor eggs so the two cannot
 	disagree about how wide a tile is."""
-	var f: Font = game_output.get_theme_font("normal_font") if game_output else null
-	if f == null:
-		return 25
-	return maxi(1, int(round(f.get_string_size("@", HORIZONTAL_ALIGNMENT_LEFT, -1,
-		DUNGEON_TILE_FONT_SIZE).x)))
+	# A cell is one TILE now, not one character. Text cells are padded to match it.
+	return _DungeonTiles.TILE_PX
 
 
 func _sprite_content_region(path: String, tex: Texture2D) -> Rect2i:
@@ -44283,11 +44362,10 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 		item_map[key] = fi
 
 	# Top border
-	lines.append("[color=#FFD700]+" + "-".repeat(render_width) + "+[/color]")
 
 	# Grid rows (viewport only)
 	for y in range(view_y1, view_y2):
-		var line = "[color=#FFD700]|[/color]"
+		var line = ""
 		for x in range(view_x1, view_x2):
 			if x == player_x and y == player_y:
 				line += _dungeon_player_glyph()
@@ -44320,13 +44398,14 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					# was colon-free, and the pre-rolled variant NAME is not something to trust to
 					# that. The client already holds the whole monster list, so one id resolves
 					# every field the popup wants and adds no new failure mode.
-					line += "[url=mon:%d]%s%s%s[/url]" % [
+					line += "[url=mon:%d]%s%s%s[/url]%s" % [
 						int(mon.get("id", -1)),
-						"[color=%s]" % mcolor, mchar, "[/color]"]
+						"[color=%s]" % mcolor, mchar, "[/color]",
+						" ".repeat(DUNGEON_TEXT_CELL_CHARS - 1)]
 				elif trap_map.has(mkey):
 					# Render triggered trap marker
 					var tcolor = trap_map[mkey].get("color", "#FF4444")
-					line += "[color=%s]×[/color]" % tcolor
+					line += "[color=%s]×[/color]%s" % [tcolor, " ".repeat(DUNGEON_TEXT_CELL_CHARS - 1)]
 				elif item_map.has(mkey):
 					# Render floor loot pickup (glyph + color by kind)
 					var fi = item_map[mkey]
@@ -44337,18 +44416,15 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					if String(fi.get("kind", "")) == "egg":
 						_egg_spr = MonsterArt._EggSprites.sprite_for(String(fi.get("variant", "")))
 					if _egg_spr != "":
-						line += "[img=%d]%s[/img]" % [_dungeon_cell_width(), _egg_spr]
+						line += "[img=%dx%d]%s[/img]" % [_dungeon_cell_width(), _dungeon_cell_width(), _egg_spr]
 					else:
-						line += "[color=%s]%s[/color]" % [fi.get("color", "#FFFFFF"), fi.get("char", "?")]
+						line += "[color=%s]%s[/color]%s" % [fi.get("color", "#FFFFFF"),
+							fi.get("char", "?"), " ".repeat(DUNGEON_TEXT_CELL_CHARS - 1)]
 				else:
 					var tile = grid[y][x]
-					var tile_info = _get_dungeon_tile_display(tile)
-					line += "[color=%s]%s[/color]" % [tile_info.color, tile_info.char]
-		line += "[color=#FFD700]|[/color]"
+					line += _dungeon_tile_cell(grid, x, y, int(tile))
 		lines.append(line)
 
-	# Bottom border
-	lines.append("[color=#FFD700]+" + "-".repeat(render_width) + "+[/color]")
 
 	return "\n".join(lines)
 
