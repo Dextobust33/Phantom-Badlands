@@ -3493,11 +3493,18 @@ var _focus: int = 0
 var _focus_max: int = 5
 var _focus_active: bool = false
 # What THIS mage calls its engine: Focus (Wizard) / Volatility (Sorcerer) / Insight (Sage).
-# `update_focus` has always RECEIVED this label and only ever used it for the meter, so the card
-# faces had no mage engine name to reach for - the 2026-09-09 pip generalisation grabbed the
-# Trickster's `_engine_label_text` instead and a Wizard's Blast printed "+◈ Read". Stored here
-# for the same reason the Trickster's is: one name per thing, and the card face reads it.
 var _focus_label_text: String = "Focus"
+
+# THE ENGINE NAME, KEYED BY ARCHETYPE. One of each shape per path now - Momentum / Rage /
+# Conviction, Focus / Volatility / Insight, Leverage / Aim / Read - so "warriors are all
+# Momentum" has not been true since 2026-09-07 and nothing may assume it.
+#
+# 2026-09-09. There are three label variables and the card face used to choose between them with
+# an if/elif chain, which is how a Wizard's Blast came to print "+◈ Read": the mage branch
+# reached for the TRICKSTER's variable, compiled fine, and `-- enginenames` passed because that
+# audit checks the meter and the log, not the card face. Selecting by archetype out of one table
+# makes the wrong pick unrepresentable rather than merely tested-for.
+var _engine_label_by_arch := {"warrior": "Momentum", "trickster": "Read", "mage": "Focus"}
 
 func update_momentum(cur: int, mx: int, is_warrior: bool, label: String = "Momentum", finisher: String = "Devastate") -> void:
 	"""Called from client.gd on each combat_state. Shows a pip meter for Warriors;
@@ -3507,6 +3514,7 @@ func update_momentum(cur: int, mx: int, is_warrior: bool, label: String = "Momen
 	_momentum_active = is_warrior
 	if is_warrior:
 		_momentum_name = label
+		_engine_label_by_arch["warrior"] = label
 		_momentum_finisher_name = finisher
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
@@ -3536,6 +3544,14 @@ func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool,
 	_combo_max = max(1, mx)
 	_assassinate_chance = assassinate_chance
 	_combo_active = is_trickster
+	# Store the NAME first, exactly as the warrior and mage setters do. It used to be recorded
+	# near the bottom, past both the node guard and the is_trickster guard, so the name the CARD
+	# FACE reads depended on the meter node existing. That asymmetry is the same shape as the
+	# original one - `update_read` was the only meter function with no label parameter at all -
+	# which is what let the three Trickster engines print one name for a month.
+	if is_trickster and label != "":
+		_engine_label_text = label
+		_engine_label_by_arch["trickster"] = label
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
 	if not is_trickster:
@@ -3560,7 +3576,6 @@ func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool,
 		tag = "[color=%s]%s[/color]" % [oc_color if note.ends_with("%") else "#7FD8C8", note]
 	else:
 		tag = "[color=%s]Assassinate %d%%[/color]" % [oc_color, assassinate_chance]
-	_engine_label_text = label
 	_momentum_label.text = "[color=#7FD8C8]◉ %s[/color]\n%s\n%s" % [label, pips, tag]
 	if not _hand_cells.is_empty():
 		_refresh_hand()
@@ -3573,6 +3588,7 @@ func update_focus(cur: int, mx: int, is_mage: bool, label: String = "Focus", not
 	_focus_active = is_mage
 	if label != "":
 		_focus_label_text = label
+		_engine_label_by_arch["mage"] = label
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
 	if not is_mage:
@@ -4682,17 +4698,17 @@ func _refresh_hand() -> void:
 			# One list for all three paths; it used to be three separate `card_name !=` tests, and
 			# the Trickster's was simply missing for a month.
 			if _eng_on and card_name not in ["devastate", "perfect_heist", "meteor"]:
+				# Glyph and colour are per-SHAPE; the NAME is per-class and comes from the
+				# archetype-keyed table, never from one of the three label variables by hand.
 				var _glyph := "⚡"
 				var _colour := "#C8A24A"
-				var _label := _momentum_name
 				if _arch == "trickster":
 					_glyph = "◉"
 					_colour = "#7FD8C8"
-					_label = _engine_label_text
 				elif _arch == "mage":
 					_glyph = "◈"
 					_colour = "#5AC8FF"
-					_label = _focus_label_text
+				var _label := String(_engine_label_by_arch.get(_arch, ""))
 				var _e := effect_lbl.text
 				var _rg: int = 0
 				if client_ref and client_ref.has_method("get_card_engine_gain"):
