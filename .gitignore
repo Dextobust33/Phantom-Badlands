@@ -23,3 +23,24 @@ client/webhook_secret.gd
 # uid companions for the gitignored webhook secrets (no secret inside, ignore anyway)
 client/webhook_secret.gd.uid
 launcher/webhook_secret.gd.uid
+
+# Asset-pack downloads. The ART is extracted into client/sprites/<pack>/ and committed; these
+# zips are the originals plus the vendors' DEMO BUILDS (macOS .app, Windows .exe+.pck, a
+# GameMaker demo) - about 87MB of someone else's executables that must never enter the repo.
+client/sprites/*.zip
+
+# Raw asset-pack EXTRACTS. The curated art lives in client/sprites/{darkcave,mobs_pack,items_pack}
+# - deliberately NOT named pixelmobs/pixelitems, because git on Windows is CASE-INSENSITIVE and
+# the "PixelMobs/" rule silently swallowed a "pixelmobs/" folder of committed art. Worse, NTFS
+# treats PixelItems/ and pixelitems/ as ONE directory, so the vendor extract and the curated one
+# merged and a .gdignore meant for the vendor blocked the curated art from importing at all.
+# Hence mobs_pack/ and items_pack/: names that cannot collide with a vendor folder.
+# and is committed; these are the vendors' originals - duplicates, demo builds (.exe/.pck/.app)
+# and two complete nested Godot projects, which the importer must not walk. Each also carries a
+# .gdignore so Godot skips them even while they sit in the working tree. Safe to delete.
+client/sprites/darkcave Add CRT effect/
+client/sprites/darkcave_tiles/
+client/sprites/godot-pixel-items-source/
+client/sprites/godot-pixel-items-windows/
+client/sprites/godot-pixel-mobs-source/
+client/sprites/godot-pixel-mobs-windows/
