@@ -39101,9 +39101,23 @@ func handle_gm_dungeon_drop(peer_id: int, message: Dictionary) -> void:
 			var egg = drop_tables.get_egg_for_monster("Wolf", {}, 3)
 			item = {"kind": "egg", "char": "◉", "color": "#A335EE", "item_data": egg}
 		"equipment":
-			item = {"kind": "equipment", "char": "◆", "color": "#1EFF00", "item_data": {}}
+			# a REAL item from the real generator. The first version used `item_data: {}` and put
+			# a nameless, blank entry in the player's inventory: owner, "When it said I pick up an
+			# Item shouldn't it have told me what kind of item? It's a blank item in my inventory
+			# now." A test hook that fabricates malformed data is worse than no hook - it invents
+			# a bug that the real game does not have, and leaves junk in a live character.
+			var _eq = drop_tables.roll_dungeon_chest_equipment(3, maxi(1, character.level))
+			if _eq.is_empty():
+				_eq = drop_tables.generate_weapon(maxi(1, character.level))
+			item = {"kind": "equipment", "char": "◆",
+				"color": _get_rarity_color(String(_eq.get("rarity", "common"))), "item_data": _eq}
+		"valor":
+			item = {"kind": "valor", "char": "¢", "color": "#FFD700",
+				"item_data": {"valor": 25}}
 		_:
-			item = {"kind": kind, "char": "$", "color": "#FFD700", "item_data": {}}
+			send_to_peer(peer_id, {"type": "text",
+				"message": "[color=#FF4444]drop: unknown kind '%s'[/color]" % kind})
+			return
 	# place it on the first walkable tile beside the player so it is certain to be in view
 	var ring: Array = []
 	for r in range(1, 5):
