@@ -44461,9 +44461,11 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 				return _DungeonTiles.rock_img()
 			return _DungeonTiles.blank_img()
 		3:                                     # EXIT - stairs down
-			return _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_DOWN)
+			var _sd: String = _DungeonTiles.free_backed_img("stairs_down")
+			return _sd if _sd != "" else _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_DOWN)
 		2:                                     # ENTRANCE - stairs up
-			return _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_UP)
+			var _su: String = _DungeonTiles.free_backed_img("stairs_up")
+			return _su if _su != "" else _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_UP)
 	# Not yet sprited: keep the glyph, but pad it to a FULL CELL. At font 14 a Consolas char is
 	# 8px, so 4 characters are exactly the 32px an image occupies. Without this every text cell
 	# would be 24px narrow and shift the rest of its row left.

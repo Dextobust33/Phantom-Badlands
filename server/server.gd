@@ -39070,7 +39070,12 @@ func handle_gm_dungeon_drop(peer_id: int, message: Dictionary) -> void:
 
 	Admin-gated like every other gm_ handler, and it only places an entity that the normal drop
 	code could have placed anyway."""
-	if not _is_admin(peer_id) or not characters.has(peer_id):
+	# Report EVERY outcome. The first version returned silently on four separate paths, so when
+	# it placed nothing the log said nothing and the owner just never saw an egg.
+	if not _is_admin(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]drop: not admin[/color]"})
+		return
+	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
 	if not character.in_dungeon:
@@ -39100,7 +39105,13 @@ func handle_gm_dungeon_drop(peer_id: int, message: Dictionary) -> void:
 		_:
 			item = {"kind": kind, "char": "$", "color": "#FFD700", "item_data": {}}
 	# place it on the first walkable tile beside the player so it is certain to be in view
-	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1)]:
+	var ring: Array = []
+	for r in range(1, 5):
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				if absi(dx) == r or absi(dy) == r:
+					ring.append(Vector2i(dx, dy))
+	for d in ring:
 		var nx: int = character.dungeon_x + d.x
 		var ny: int = character.dungeon_y + d.y
 		if ny < 0 or ny >= grid.size():
@@ -39114,8 +39125,11 @@ func handle_gm_dungeon_drop(peer_id: int, message: Dictionary) -> void:
 		_place_floor_item_at(iid, floor_num, nx, ny, item)
 		_send_dungeon_state(peer_id)
 		send_to_peer(peer_id, {"type": "text",
-			"message": "[color=#1EFF00]Dropped a %s beside you.[/color]" % kind})
+			"message": "[color=#1EFF00]drop: placed %s at %d,%d[/color]" % [kind, nx, ny]})
 		return
+	send_to_peer(peer_id, {"type": "text",
+		"message": "[color=#FF4444]drop: no free tile beside %d,%d[/color]"
+			% [character.dungeon_x, character.dungeon_y]})
 
 
 func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):

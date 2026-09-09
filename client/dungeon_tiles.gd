@@ -108,6 +108,19 @@ static func cell_img(sheet: String, cell: Vector2i, src_px: int) -> String:
 		sheet]
 
 
+const FREE_FLOOR_DIR := "res://client/sprites/free_floor32/"
+
+
+static func free_backed_img(name: String) -> String:
+	"""A free-tileset tile with the cave floor baked UNDER it. The Pixel Level tiles have their
+	own transparent surround, so drawn raw they sat in a dark square while every other cell had
+	ground beneath it."""
+	var p := FREE_FLOOR_DIR + name + ".png"
+	if not ResourceLoader.exists(p):
+		return ""
+	return "[img=%dx%d]%s[/img]" % [TILE_PX, TILE_PX, p]
+
+
 static func free_img(index: int) -> String:
 	"""A tile from the Pixel Level sheet, addressed by its ENUM INDEX rather than a coordinate,
 	so the call site reads as the name the artist gave it."""
