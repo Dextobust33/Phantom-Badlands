@@ -44002,6 +44002,11 @@ func display_dungeon_floor():
 	# GameOutput IS the dungeon canvas now. Everything that is not the map moved to the side
 	# panel above, so this stays as close to "just the floor" as it can.
 	_dungeon_rendering = true
+	# 2026-09-08 - pixel art MUST be point-sampled or it is smeared. The canvas never set this,
+	# so the player avatar added earlier today was being drawn with linear filtering; it is also
+	# a hard requirement for any sprite TILE work, where soft edges on every tile read as blur
+	# across the whole floor rather than as one fuzzy character.
+	game_output.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	game_output.clear()
 	# Centred, on the owner's call. [center] applies per line, and every grid row is padded to the
 	# same width by the renderer, so the block centres as a block rather than raggedly.
