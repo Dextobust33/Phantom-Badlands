@@ -30282,6 +30282,9 @@ func display_changelog():
 	# companion XP fixed in both paths, and equipment that actually drops early.
 	# v0.9.756 — the theming pass: all nine decks renamed per class across card face, action bar,
 	# combat log, hover, buff panel, gear affixes and help; plus per-class stat descriptions.
+	# v0.9.761 — the dungeon depth lie fixed at its ROOT (entering built a private instance at a
+	# random location and took the depth from there, so no surface could have been right), the
+	# dungeon tile renderer, monster + egg + player sprites, and the pre-rolled variant hover.
 	# v0.9.760 — the card face made honest about chance-based engine gain (a Grifter's Long Con
 	# is a coin flip the preview counted as certain), half-invisible monster variants fixed at
 	# the colour floor, and the dungeon presentation pass: canvas, zoom, room spread, forking
@@ -30297,7 +30300,15 @@ func display_changelog():
 	# v0.9.755 — the class-identity release: nine classes onto three engine shapes, the finisher
 	# forked three ways per path, Sage shown as Oracle, a difficulty curve that ramps with level,
 	# rest/flock changes for the early game, CON granting mitigation, and a one-off deck repair.
-	display_game("[color=#00FF00]v0.9.760[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.761[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE DUNGEON YOU ENTER IS THE DUNGEON THE SIGN PROMISED.[/color] A tile could read [color=#FFFFFF]Forgotten Crypt [T1-2] | Levels 2-3[/color], warn you that monsters here are [b]level 2[/b], and then open into a [b]T1-7 with a level 9 skeleton[/b] on the first floor. Entering built a private copy of the dungeon at a [b]random spot 25-40 tiles away[/b] and took its depth from THAT spot — so the depth was a dice roll made after you had already committed, and no warning could ever have been right. Your dungeon now inherits the depth of the tile you walked to, which also means [b]walking further out finds deeper dungeons[/b] again.")
+	display_game("  [color=#FF8000]★ DUNGEONS ARE DRAWN WITH REAL TILES NOW.[/color] Cave floor, rock walls carved around every room and corridor, and [b]your own sprite[/b] standing on the ground instead of an [color=#FFFFFF]@[/color]. Tiles are four times the size and the map fills the window. Monsters are sprites too — and they animate as they roam.")
+	display_game("  [color=#1EFF00]◆ You can see what a monster IS before you walk into it.[/color] Hover one on the floor for its art, level and full name — [color=#FFFFFF]Level 8 Venomous Orc[/color], not just \"an Orc\". Its variant is decided when it [b]spawns[/b] rather than when the fight starts, so a nasty one can be spotted and avoided.")
+	display_game("  [color=#1EFF00]◆ Eggs are real egg art.[/color] 119 variants, each with its own egg — so the artwork tells you which variant you are holding, on the Egg screen and on a dungeon floor.")
+	display_game("  [color=#1EFF00]◆ Half a monster is no longer invisible.[/color] A two-tone variant could paint one half in pure black on a black panel — a [color=#FFFFFF]Duality[/color] rat really did show only its left side. 21 colours were effectively invisible; all are lifted without losing their hue.")
+	display_game("  [color=#1EFF00]◆ Your cards tell the truth about your engine.[/color] A [color=#2F4F4F]Grifter[/color]’s Distract, Sabotage and Size Up showed [b]two[/b] Leverage pips and paid [b]one[/b] about half the time. A guaranteed point is now a solid pip, a chance is a hollow one, and the card states the odds on hover.")
+	display_game("")
+	display_game("[color=#808080]v0.9.760[/color]")
 	display_game("  [color=#FF8000]★ HALF A MONSTER WAS INVISIBLE.[/color] Some monsters carry a two-tone pattern that paints their left half one colour and their right half another — and one of those variants is [b]pure black[/b], drawn on a black panel. A [color=#FFFFFF]Duality[/color] rat really did show you only its left side. Auditing the whole palette, [b]21 colours[/b] were effectively invisible (Void, Eclipse, Obsidian, Barcode, Jailbird and more). Every one is now lifted to a visible brightness [b]without losing its hue[/b], so a purple monster is still purple.")
 	display_game("  [color=#FF8000]★ YOUR CARDS TELL THE TRUTH ABOUT YOUR ENGINE.[/color] A [color=#2F4F4F]Grifter[/color]’s [color=#FFFFFF]Distract, Sabotage[/color] and [color=#FFFFFF]Size Up[/color] showed [b]two[/b] Leverage pips and paid [b]one[/b] about half the time, because Long Con is a coin flip the card counted as a certainty. A guaranteed point is now a [b]solid[/b] pip and a chance is a [b]hollow[/b] one, and the card says the odds when you hover it. Reported from live play — the engine was right the whole time; the card was lying.")
 	display_game("  [color=#1EFF00]◆ Your finisher stopped claiming to build the meter it spends.[/color] A Trickster’s [color=#FFFFFF]Double Cross / Killing Shot / Assassinate[/color] advertised \"+ Leverage\" while it empties the bar. The Warrior and Mage finishers never did this; the Trickster was the odd one out.")
