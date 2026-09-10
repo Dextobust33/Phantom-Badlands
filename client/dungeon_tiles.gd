@@ -229,17 +229,26 @@ static func is_room_cell(grid: Array, x: int, y: int) -> bool:
 	check in the client AND the server, which is the shape of change that leaves one site behind.
 	Deriving it here needs no protocol change and no new tile type.
 
-	**The test: does this cell belong to any fully-walkable 2x2 block?** A corridor is one tile
-	wide so it can never form one; a room always can. This is deliberately not "walkable on both
-	axes", which calls a corridor T-JUNCTION a room — a junction is walkable north-south and
-	east-west and is still corridor.
+	**The test: does this cell belong to any fully-walkable 3x3 block?**
+
+	It was 2x2 first, and that was wrong in a way only a real floor showed. A 1-wide corridor can
+	never form a 2x2, which is what the fixtures tested -- but TWO corridors running ADJACENT do,
+	and the flood fill then spread along the whole connected run. Measured across six generated
+	floors that produced "rooms" of 8x26 at 45% fill: a branching set of passages painted as one
+	chamber. Owner, seeing one in play: *"Not sure if this room is legit."*
+
+	3x3 is not an arbitrary tightening - it is the GENERATOR'S OWN MINIMUM. `_carve_room` sizes
+	every room `rng.randi_range(3, ...)` in both axes, so every real room contains a 3x3 block and
+	no pair of adjacent corridors does. The rule now matches the thing it is trying to detect.
+
+	Still deliberately not "walkable on both axes", which calls a corridor T-JUNCTION a room.
 
 	Pure and static so it can be probed; the caller owns any caching."""
-	for dy in [-1, 0]:
-		for dx in [-1, 0]:
+	for dy in [-2, -1, 0]:
+		for dx in [-2, -1, 0]:
 			var ok := true
-			for oy in range(2):
-				for ox in range(2):
+			for oy in range(3):
+				for ox in range(3):
 					var nx: int = x + dx + ox
 					var ny: int = y + dy + oy
 					if ny < 0 or ny >= grid.size():

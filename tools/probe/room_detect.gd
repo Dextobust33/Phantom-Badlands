@@ -65,16 +65,16 @@ func _init() -> void:
 
 	print("--- 4. the SEAM: a corridor meeting a room ---")
 	var seam := grid_from([
-		"######",
-		"#..###",
-		"#..###",
-		"#....#",
-		"######",
+		"#######",
+		"#...###",
+		"#...###",
+		"#...###",
+		"#.....#",
+		"#######",
 	])
-	ck(_T.is_room_cell(seam, 1, 1), "inside the 2x2 chamber -> room")
-	ck(_T.is_room_cell(seam, 2, 2), "chamber cell touching the corridor -> room")
-	ck(not _T.is_room_cell(seam, 4, 3), "the corridor running off it -> corridor")
-	ck(not _T.is_room_cell(seam, 3, 3), "the cell where the corridor leaves -> corridor")
+	ck(_T.is_room_cell(seam, 2, 2), "inside the 3x3 chamber -> room")
+	ck(_T.is_room_cell(seam, 3, 3), "chamber cell touching the corridor -> room")
+	ck(not _T.is_room_cell(seam, 5, 4), "the corridor running off it -> corridor")
 
 	print("--- 5. a staircase inside a chamber STANDS ON the room floor ---")
 	# This first asserted the opposite, and the opposite was wrong. Excluding stairs from a
@@ -82,9 +82,9 @@ func _init() -> void:
 	# brown square. Owner, first walkthrough: "I also found another one near the stairs that
 	# seems to be brown for no apparent reason." A staircase is an OBJECT ON the floor, not a
 	# hole in it - only a WALL breaks a room.
-	var st := grid_from(["####", "#..#", "#..#", "####"])
-	st[1][1] = 3   # EXIT stairs dropped into a chamber
-	ck(_T.is_room_cell(st, 1, 1), "the ground under a staircase in a chamber is room floor")
+	var st := grid_from(["#####", "#...#", "#...#", "#...#", "#####"])
+	st[2][2] = 3   # EXIT stairs dropped into a chamber
+	ck(_T.is_room_cell(st, 2, 2), "the ground under a staircase in a chamber is room floor")
 	var st2 := grid_from(["#####", "#...#", "#####"])
 	st2[1][2] = 3  # stairs at the end of a CORRIDOR
 	ck(not _T.is_room_cell(st2, 2, 1), "a staircase in a corridor still stands on corridor floor")
@@ -109,26 +109,32 @@ func _init() -> void:
 		print("      real floor: %d room cells, %d corridor cells" % [rooms, corr])
 		ck(rooms > 0, "a real floor has room cells")
 		ck(corr > 0, "a real floor has corridor cells")
-		ck(rooms > corr, "rooms outnumber corridors on a real floor (chambers are 2D, corridors are 1D)")
+		# No assertion on which is larger. It was "rooms outnumber corridors", which held only
+		# while the 2x2 rule was over-counting: passages were being labelled as rooms. With the
+		# 3x3 rule a floor of small chambers joined by long corridors has MORE corridor, and that
+		# is the correct shape. Asserting the old ratio would have locked in the bug.
+		print("      room:corridor ratio %.2f" % (float(rooms) / float(maxi(1, corr))))
 
 	print("--- 7. ROOM IDENTITY: each chamber gets its own id ---")
 	# Needed because each chamber picks a LOOK. Hashing per cell would speckle several looks
 	# through one room; the room has to be one thing.
 	var two := grid_from([
-		"#########",
-		"#..###..#",
-		"#..#+#..#",
-		"#########",
+		"###########",
+		"#...###...#",
+		"#...#.#...#",
+		"#...###...#",
+		"###########",
 	])
 	# the '+' is a corridor cell joining the two chambers - it is 1 wide, so not room floor
 	var labels := _T.label_rooms(two)
 	ck(_T.room_count(labels) == 2, "two chambers joined by a 1-wide corridor are TWO rooms (got %d)" % _T.room_count(labels))
-	ck(labels.get("1,1", -1) == labels.get("2,2", -2), "cells of the same chamber share an id")
-	ck(labels.get("1,1", -1) != labels.get("6,1", -2), "cells of different chambers do not")
-	ck(not labels.has("4,2"), "the joining corridor cell has no room id at all")
+	ck(labels.get("1,1", -1) == labels.get("3,3", -2), "cells of the same chamber share an id")
+	ck(labels.get("1,1", -1) != labels.get("7,1", -2), "cells of different chambers do not")
+	ck(not labels.has("5,2"), "the joining corridor cell has no room id at all")
 
 	var one := grid_from([
 		"######",
+		"#....#",
 		"#....#",
 		"#....#",
 		"######",
@@ -147,6 +153,38 @@ func _init() -> void:
 		# stability: labelling the same grid twice must agree, or a room would change look on redraw
 		ck(_T.label_rooms(g2) == l2, "labelling is deterministic - a room keeps its look on redraw")
 
+
+	print("--- 9. no ROOM is really a run of passages (the bug the owner spotted) ---")
+	# The 2x2 rule passed every fixture above and still mislabelled real floors, because two
+	# corridors running ADJACENT form a 2x2 and the flood fill spread along the whole run. It
+	# produced "rooms" of 8x26 at 45% fill. Fixtures cannot catch that; only generated floors can.
+	for dt in ["kobold_tunnels", "wolf_den"]:
+		for f in range(1, 4):
+			var r3: Dictionary = _DD.generate_floor_grid(dt, f, false)
+			var g3: Array = r3.get("grid", [])
+			if g3.is_empty():
+				continue
+			var l3: Dictionary = _T.label_rooms(g3)
+			var box := {}
+			for k in l3:
+				var id: int = l3[k]
+				var pp: PackedStringArray = String(k).split(",")
+				var xx := int(pp[0])
+				var yy := int(pp[1])
+				if not box.has(id):
+					box[id] = {"x0": xx, "x1": xx, "y0": yy, "y1": yy, "n": 0}
+				var bb = box[id]
+				bb.x0 = mini(bb.x0, xx); bb.x1 = maxi(bb.x1, xx)
+				bb.y0 = mini(bb.y0, yy); bb.y1 = maxi(bb.y1, yy)
+				bb.n += 1
+			var bad := 0
+			for id in box:
+				var bb = box[id]
+				var w: int = bb.x1 - bb.x0 + 1
+				var h: int = bb.y1 - bb.y0 + 1
+				if float(bb.n) / float(w * h) < 0.5:
+					bad += 1
+			ck(bad == 0, "%s f%d: %d rooms, none is a sparse blob" % [dt, f, box.size()])
 
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails > 0 else 0)
