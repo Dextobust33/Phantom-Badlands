@@ -12,7 +12,9 @@ common way to lose a session.
 
 ## Where the game is (2026-09-09)
 
-Live: **v0.9.765** (client + server), released 2026-09-09.
+Live: **v0.9.766** (client only), released 2026-09-10. **UNSHIPPED in master: the
+arrow-key diagonal movement** — held back deliberately, awaiting the owner's playtest of the 70ms
+chord window. Do not let it ride along in the next release until that has happened.
 
 - **The dungeon reports beside the map, never over it.** Owner 2026-09-09: *"It's kind of jarring
   to take over the whole dungeon art screen with it"*, then *"Can we not do the rest and food in
