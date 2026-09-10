@@ -194,6 +194,42 @@ while the Paladin's stat realignment held.
       ability entry for no player-visible gain. If they are ever removed, do it in one pass and
       re-run `-- verify`.
 
+## Phase 3.4 — the CYCLE VALUE (deck-width arc, owner direction 2026-09-10)
+
+Owner: *"make cards with mechanics that make you actually want to grow your deck to a larger size
+instead of the way it currently is where it benefits to keep the deck small."* Weighed Slay the
+Spire against **Dune: Imperium**, and Dune won on the owner's own three points.
+
+**Why thin wins today, precisely.** Hand is 3, so a given card is available about `3/N` of the
+time — 60% at a 5-card deck, 30% at 10. Every card in a curated five is good, so a sixth is pure
+dilution. No amount of card QUALITY fixes that; the arithmetic has to change.
+
+**Why not Slay the Spire.** StS also rewards thin decks — its strongest runs are 10-15 cards — so
+copying it does not invert anything. It also runs an energy-per-turn economy; ours is a variable
+share of a pool plus a per-class engine, so its cost curve does not transfer. Owner raised both.
+
+**Why Dune: Imperium.** The cards you do NOT play pay a smaller benefit as they cycle.
+  * **No hand-size change**, which is what has historically skewed the combat scene, broken the
+    monster ASCII and cut off the screen. Hand stays at 3; nothing in the layout moves.
+  * **We already dump the entire unused hand every action** — that IS Dune's reveal step, already
+    built and animated, and nothing read it.
+  * **A card with a cycle value is never a dead draw**, so adding it costs less than a normal
+    card. That is the dilution maths inverted at the root.
+
+- [x] **The hook — BUILT 2026-09-10, UNRELEASED.** `_cycle_unplayed` pays out cycle values, called
+      from BOTH places that dump the hand (playing a card, and a basic attack — hooking one would
+      pay when you cast and stay silent when you attack). Five effect types: engine / shield /
+      heal / resource / chip. The four existing dungeon cards carry one as proof.
+      **OPT-IN ON PURPOSE**: only companion/dungeon cards can hold a `cycle` block, so the
+      reference player the monster curve is calibrated against is unaffected and NO chain is owed.
+      Making it universal would be a global player buff and would owe the full 25 minutes.
+      Verified by probe: fires on both paths, and a class-only hand pays exactly nothing.
+- [ ] **NEEDS A PLAYTEST before it ships.** Whether a cycle value actually makes a wider deck
+      tempting is a question about feel, not numbers.
+- [ ] **THEN the 53-dungeon card content.** The owner chose full coverage, but that decision
+      predates this design — cards should now be authored WITH cycle values, so the content pass
+      waits on the model being confirmed.
+
 ## Phase 3.5 — input and accessibility (owner direction 2026-09-10)
 
 Owner: *"we need to add support for players with no numpad on their keyboard. With no numpad they

@@ -2279,7 +2279,7 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	# since combat is ending anyway. Skip if the action didn't actually
 	# resolve (e.g., outsmart-failed kept player_can_act false).
 	if action == CombatAction.ATTACK and result.get("success", false) and not result.get("combat_ended", false):
-		_cycle_hand_after_attack(combat)
+		_cycle_hand_after_attack(combat, result.get("messages", []))
 
 	# Check if combat ended
 	if result.has("combat_ended") and result.combat_ended:
@@ -4685,7 +4685,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# Audit #1 Slice 6a — successful ability use moves the card from
 		# hand to discard and refills the hand. Done after mastery tracking
 		# so a rank-up notification still ties to the card just played.
-		_consume_card_from_hand(combat, _ability_alias_to_card(ability_name))
+		_consume_card_from_hand(combat, _ability_alias_to_card(ability_name), result.messages)
 
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
@@ -11374,7 +11374,7 @@ func _draw_to_hand(combat_state: Dictionary) -> void:
 	combat_state["combat_deck"] = deck
 	combat_state["combat_discard"] = discard
 
-func _consume_card_from_hand(combat_state: Dictionary, ability_name: String) -> bool:
+func _consume_card_from_hand(combat_state: Dictionary, ability_name: String, msgs: Array = []) -> bool:
 	"""Move a card from hand to discard and refill the hand. Returns true if
 	the ability was actually in hand and removed.
 	v0.9.423 — playing a card now cycles the ENTIRE remaining hand to discard
@@ -11388,6 +11388,9 @@ func _consume_card_from_hand(combat_state: Dictionary, ability_name: String) -> 
 	hand.remove_at(idx)
 	var discard: Array = combat_state.get("combat_discard", [])
 	discard.append(ability_name)
+	# The cards you did NOT play pay out as they cycle - see `_cycle_unplayed`. Applied before
+	# they reach the discard pile, while `hand` still holds exactly the unplayed set.
+	_cycle_unplayed(combat_state, hand, msgs)
 	# Cycle the rest of the hand to discard before redrawing.
 	for leftover in hand:
 		discard.append(leftover)
@@ -11396,13 +11399,14 @@ func _consume_card_from_hand(combat_state: Dictionary, ability_name: String) -> 
 	_draw_to_hand(combat_state)
 	return true
 
-func _cycle_hand_after_attack(combat_state: Dictionary) -> void:
+func _cycle_hand_after_attack(combat_state: Dictionary, msgs: Array = []) -> void:
 	"""v0.9.423 — basic attacks (no card played) also cycle the hand: all
 	current cards go to discard, then draw 3 fresh ones. Mirrors the
 	user-facing rule: 'every player action results in a fresh hand next
 	round so you're never stuck holding unusable cards.'"""
 	var hand: Array = combat_state.get("combat_hand", [])
 	var discard: Array = combat_state.get("combat_discard", [])
+	_cycle_unplayed(combat_state, hand, msgs)
 	for card in hand:
 		discard.append(card)
 	combat_state["combat_hand"] = []
@@ -13493,3 +13497,68 @@ func _maybe_reveal_disguise(combat: Dictionary, result: Dictionary) -> void:
 	if result.has("messages"):
 		result.messages.append("[color=#FF0000]The %s reveals its true form![/color]" % monster.name)
 		result.messages.append("[color=#FF4444]It was much stronger than it appeared![/color]")
+
+
+# === CYCLE VALUE: what a card you did NOT play is worth =======================================
+#
+# Owner 2026-09-10, after weighing Slay the Spire against Dune: Imperium: *"Dune: Imperium... you
+# choose what cards to use on your turn and the ones you don't pick have an alternative use or
+# benefit at the end of your turn."* That is the model, and it fits this engine better than the
+# Slay the Spire one for three reasons the owner named:
+#
+#   1. NO HAND-SIZE CHANGE. A bigger hand is what has historically skewed the combat scene,
+#      broken the monster ASCII and cut off the screen. The hand stays at three; nothing moves.
+#   2. WE ALREADY DUMP THE UNUSED HAND every single action, in the two places funnelled above.
+#      That is Dune's reveal step, already built and already animated, and nothing read it.
+#   3. IT DOES NOT TOUCH THE ECONOMY. Slay the Spire's energy-per-turn economy is not ours - we
+#      spend a variable share of a pool, plus a per-class engine - so its cost curve does not
+#      transfer. Dune's model is about SELECTION, which is exactly the decision we already make.
+#
+# And it answers the actual question - why would anyone widen their deck? A card with a cycle
+# value is never a dead draw, so adding it costs less than a normal card does. Dilution stops
+# being pure loss. That is the incentive inverted at the root rather than papered over.
+#
+# OPT-IN ON PURPOSE. Only cards with a `cycle` block pay anything, and only companion/dungeon
+# cards can carry one - `get_card_data_by_id` returns nothing for a class card. So the reference
+# player the monster curve is calibrated against is completely unaffected, and no recalibration
+# chain is owed. Making it universal would be a global player buff and would owe the full chain.
+func _cycle_unplayed(combat: Dictionary, cards: Array, msgs: Array) -> void:
+	"""Pay out the cycle value of every unplayed card, as the hand cycles."""
+	if cards.is_empty():
+		return
+	var character = combat.get("character", null)
+	if character == null:
+		return
+	for c in cards:
+		var data: Dictionary = DropTablesScript.get_card_data_by_id(String(c))
+		if data.is_empty():
+			continue
+		var cyc = data.get("cycle", {})
+		if not (cyc is Dictionary) or cyc.is_empty():
+			continue
+		var amount: int = int(cyc.get("amount", 1))
+		var label: String = String(data.get("name", "A card"))
+		match String(cyc.get("type", "")):
+			"engine":
+				# Routed through the shared feeder so it respects each engine's cap and names
+				# the engine the way that class calls it.
+				_feed_class_engine(combat, character, amount, {"messages": msgs}, "%s (cycled)" % label)
+			"shield":
+				var sh: int = maxi(1, int(float(character.get_total_max_hp()) * float(amount) / 100.0))
+				combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + sh
+				msgs.append("[color=#7AA8FF]%s cycles — %d shield.[/color]" % [label, sh])
+			"heal":
+				var hp: int = maxi(1, int(float(character.get_total_max_hp()) * float(amount) / 100.0))
+				var got: int = character.heal(hp)
+				if got > 0:
+					msgs.append("[color=#77DD77]%s cycles — %d health.[/color]" % [label, got])
+			"resource":
+				var back: int = maxi(1, int(float(_primary_pool_max(character)) * float(amount) / 100.0))
+				_restore_primary_resource(character, back)
+				msgs.append("[color=#66B0FF]%s cycles — %d back.[/color]" % [label, back])
+			"chip":
+				var monster = combat.get("monster", null)
+				if monster is Dictionary and int(monster.get("current_hp", 0)) > 0:
+					var d: int = maxi(1, int(float(character.get_total_attack()) * float(amount) / 100.0))
+					monster.current_hp = maxi(0, int(monster.current_hp) - d)
+					msgs.append("[color=#FF99FF]%s cycles — %d damage.[/color]" % [label, d])

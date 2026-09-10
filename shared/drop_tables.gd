@@ -1426,10 +1426,10 @@ static func companion_card_permanence_uses(monster_type: String) -> int:
 # Slice 1 = 4 cards (poison / lifesteal / shield / execute) across 4 dungeon types.
 # =========================================================================
 const DUNGEON_CARD_DATA = {
-	"venom_fang":        {"name": "Venom Fang",         "kind": "poison",    "tier": 2, "dungeon": "spider_nest",      "desc": "A dungeon-forged strike drenched in spider venom — poisons the enemy, dealing damage every turn."},
-	"crimson_draught":   {"name": "Crimson Draught",    "kind": "lifesteal", "tier": 4, "dungeon": "vampire_crypt",    "desc": "Crypt-tainted blood magic — a strike that heals you for part of the damage dealt."},
-	"bulwark_of_bone":   {"name": "Bulwark of Bone",    "kind": "shield",    "tier": 3, "dungeon": "forgotten_crypt",  "desc": "Raise a lattice of grave-bone that absorbs a burst of incoming damage."},
-	"executioners_edge": {"name": "Executioner's Edge", "kind": "execute",   "tier": 9, "dungeon": "god_slayer_arena", "desc": "A god-killer's finishing blow — devastating against wounded enemies."},
+	"venom_fang":        {"name": "Venom Fang",         "kind": "poison",    "tier": 2, "dungeon": "spider_nest",      "cycle": {"type": "chip", "amount": 30}, "desc": "A dungeon-forged strike drenched in spider venom — poisons the enemy, dealing damage every turn. If you do not play it, the venom still seeps: it deals a little damage as it cycles."},
+	"crimson_draught":   {"name": "Crimson Draught",    "kind": "lifesteal", "tier": 4, "dungeon": "vampire_crypt",    "cycle": {"type": "heal", "amount": 3}, "desc": "Crypt-tainted blood magic — a strike that heals you for part of the damage dealt. Left unplayed it still works on you, mending a little as it cycles."},
+	"bulwark_of_bone":   {"name": "Bulwark of Bone",    "kind": "shield",    "tier": 3, "dungeon": "forgotten_crypt",  "cycle": {"type": "shield", "amount": 4}, "desc": "Raise a lattice of grave-bone that absorbs a burst of incoming damage. Even unplayed the bone answers, leaving a thin ward as it cycles."},
+	"executioners_edge": {"name": "Executioner's Edge", "kind": "execute",   "tier": 9, "dungeon": "god_slayer_arena", "cycle": {"type": "engine", "amount": 1}, "desc": "A god-killer's finishing blow — devastating against wounded enemies. Carrying it sharpens you: it feeds your engine as it cycles, played or not."},
 }
 
 static func dungeon_card_id_for_dungeon(dungeon_type: String) -> String:
