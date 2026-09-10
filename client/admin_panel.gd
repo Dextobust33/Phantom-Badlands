@@ -20,7 +20,7 @@ var _title_label: Label
 var _subtitle_label: RichTextLabel
 var _button_column: VBoxContainer
 
-var _current_page: String = "root"  # "root" | "test_b2" | "items" | "combat" | "misc" | "world" | "patreon" | "abilities"
+var _current_page: String = "root"  # root | dungeon | combat | items | companions | player | world | loot_lab | abilities | patreon
 
 
 func _ready() -> void:
@@ -108,26 +108,63 @@ func _render_page() -> void:
 		"root":
 			_title_label.text = "ADMIN MENU"
 			_subtitle_label.text = "[color=#aaaaaa]All commands are server-gated. Non-admin accounts will be rejected.[/color]"
-			_add_button("Test B2 — companion polish (DR + revive items)", "_page_test_b2", Color(1, 0.84, 0))
-			_add_button("World — settler bubble + post testing", "_page_world", Color(0.6, 1, 0.6))
-			_add_button("Items — give items, consumables, materials", "_page_items")
-			_add_button("Combat — spawn monsters, godmode", "_page_combat")
-			_add_button("Misc — heal, reset quests, revive companion", "_page_misc")
-			_add_button("Patreon — fulfill supporter tiers (nearest player)", "_page_patreon", Color(0.95, 0.55, 1.0))
-			_add_button("Abilities — test +X to ability gear (v0.9.606)", "_page_abilities", Color(1, 0.84, 0))
-			_add_button("Loot Lab — force minigame + rare cells / affixed tools", "_page_loot_lab", Color(0.4, 0.9, 1.0))
+			# 2026-09-10 - reorganised. Owner: "the Admin panel needs reorganized. It doesn't make
+			# sense where some of the things are in it... It should just be logical where things are."
+			# The worst of it: every DUNGEON control lived under ITEMS - nine buttons that are not
+			# items - and there was no Dungeon page at all. That is why the dungeon buttons were
+			# repeatedly hunted for under World and not found, three sessions running.
+			# Pages are now named for what they DO, ordered by how often they are reached for, and
+			# nothing appears on two pages (Revive Companion was on two, Spawn Monster on two).
+			_add_button("Dungeon - enter, traps, loot, finish a run", "_page_dungeon", Color(1, 0.7, 0.3))
+			_add_button("Combat - spawn monsters, godmode, co-op", "_page_combat", Color(1.0, 0.45, 0.45))
+			_add_button("Items - gear, consumables, cards, structures", "_page_items")
+			_add_button("Companions - eggs, KO/revive, fusion catalysts", "_page_companions", Color(1, 0.84, 0))
+			_add_button("Player - heal, quests, help reference", "_page_player", Color(0.6, 1, 0.6))
+			_add_button("World - test posts, guards, cartography", "_page_world", Color(0.6, 1, 0.6))
+			_add_separator()
+			_add_button("Loot Lab - force minigame + rare cells / affixed tools", "_page_loot_lab", Color(0.4, 0.9, 1.0))
+			_add_button("Abilities - test +X to ability gear", "_page_abilities", Color(0.85, 0.65, 1.0))
+			_add_button("Patreon - fulfill supporter tiers (nearest player)", "_page_patreon", Color(0.95, 0.55, 1.0))
 			_add_separator()
 			_add_button("Close", "_close", Color(0.7, 0.7, 0.7))
-		"test_b2":
-			_title_label.text = "ADMIN — TEST PHASE B2"
-			_subtitle_label.text = "[color=#aaaaaa]Test scenarios for the Phase B2 companion polish bundle: per-sub_tier damage reduction, Companion Revive Potion, and the new aggro / Taunt Charm system.[/color]"
-			_add_button("Setup B2 Test Scenario  (recommended)", "gm_test_b2", Color(1, 0.84, 0))
+		"dungeon":
+			_title_label.text = "ADMIN - DUNGEON"
+			_subtitle_label.text = "[color=#aaaaaa]Get in, and reach the states that are otherwise rare. Every button here runs the REAL server path a player takes, so what it shows is what a player sees.[/color]"
+			_add_button("Enter T1 Dungeon (instant)", "enter_dungeon_t1", Color(0.6, 1, 0.6))
+			_add_button("Enter T6 Dungeon (instant)", "enter_dungeon_t6", Color(0.6, 1, 0.6))
+			_add_button("Enter Tier-Appropriate Dungeon (own level)", "enter_dungeon_auto", Color(0.6, 1, 0.6))
+			_subtitle_subline("Skips spawn-and-walk: drops you straight inside a fresh personal dungeon instance.")
+			_add_separator()
+			_subtitle_subline("INSIDE a dungeon - a trap you must walk onto, a chest you must find, a floor you must clear. Each one used to mean wandering until luck provided it.")
+			_add_button("Spring a Trap (here)", "dungeon_spring_trap", Color(1, 0.5, 0.5))
+			_add_button("Drop Loot Beside Me", "dungeon_drop_loot", Color(1, 0.84, 0))
+			_add_button("Flood the Run Log (12 lines)", "dungeon_flood_log", Color(0.7, 0.8, 1))
+			_add_button("Finish Dungeon -> Final Chest", "dungeon_finish", Color(1, 0.7, 0.3))
+			_subtitle_subline("Places the real FINAL_CHEST tile and defers the teleport exactly as a boss kill does - walk onto it. Forces the card reward so the DUNGEON CARD banner always shows.")
+			_add_separator()
+			_add_button("Test Dungeon Chest Drops (1 of each new item)", "give_chest_test_kit", Color(1, 0.84, 0))
+			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a T6 equipment piece.")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"companions":
+			_title_label.text = "ADMIN - COMPANIONS"
+			_subtitle_label.text = "[color=#aaaaaa]Eggs, KO and revive, aggro items, fusion catalysts. Everything companion-shaped is here now; it used to be spread across three pages, with Revive Companion on two of them.[/color]"
+			_add_button("Setup Companion Test Scenario  (recommended)", "gm_test_b2", Color(1, 0.84, 0))
 			_subtitle_subline("Sub-tier 8 companion (~24% DR), KO'd, +3x revive potions, 5x elixirs, 3x taunt charms.")
 			_add_button("KO Active Companion (instant)", "gm_ko_companion")
 			_add_button("Revive Companion to Full HP", "gm_revive_companion")
 			_add_button("Give 3x Companion Revive Potion", "give_revive_x3")
 			_add_button("Give 3x Taunt Charm", "give_taunt_x3")
-			_add_button("Spawn Monster (own level)", "spawn_mob_own_level")
+			_add_separator()
+			_add_button("Give Egg (random monster type)", "give_egg")
+			_add_button("Give Companion (random, T5)", "give_companion_t5")
+			_add_button("Give Companion Stable (structure)", "give_companion_stable_structure", Color(1, 0.5, 1))
+			_subtitle_subline("A buildable Companion Stable. Place inside your own enclosure for Sanctuary kennel access at your post.")
+			_add_separator()
+			_add_button("Give 3x Hybrid Catalyst", "give_hybrid_catalyst_x3", Color(1, 0.5, 1))
+			_subtitle_subline("Enables Hybrid fusion (2 different monster types, both sub-tier 5+).")
+			_add_button("Give 3x Ascension Catalyst", "give_ascension_catalyst_x3", Color(1, 0.67, 0.4))
+			_subtitle_subline("Enables Tier Ascend fusion (3 same monster type + same tier -> tier+1).")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"loot_lab":
@@ -143,50 +180,21 @@ func _render_page() -> void:
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"items":
-			_title_label.text = "ADMIN — ITEMS"
-			_subtitle_label.text = "[color=#aaaaaa]Gear, consumables, and starter kit shortcuts.[/color]"
+			_title_label.text = "ADMIN - ITEMS"
+			_subtitle_label.text = "[color=#aaaaaa]Gear, consumables, cards and buildables. Dungeon entry and the companion shortcuts moved to their own pages - nine of the buttons that used to be here were not items.[/color]"
 			_add_button("Give Tier 5 Item (random slot)", "give_item_t5")
 			_add_button("Give Tier 8 Item (random slot)", "give_item_t8")
 			_add_button("Give 5x Hedge Elixir (T7 heal)", "give_elixirs")
 			_add_button("Give Starter Kit (Valor / gems / mats)", "gm_giveall")
-			_add_button("Give Egg (random monster type)", "give_egg")
-			_add_button("Give Companion (random, T5)", "give_companion_t5")
 			_add_button("Grant Test Cards (dungeon + companion, tradeable)", "gm_give_test_card", Color(1.0, 0.7, 0.28))
 			_add_separator()
-			# v0.9.496 — fusion catalyst shortcuts for Stable / Sanctuary testing.
-			_add_button("Give 3x Hybrid Catalyst", "give_hybrid_catalyst_x3", Color(1, 0.5, 1))
-			_subtitle_subline("Enables Hybrid fusion (2 different monster types, both sub-tier 5+).")
-			_add_button("Give 3x Ascension Catalyst", "give_ascension_catalyst_x3", Color(1, 0.67, 0.4))
-			_subtitle_subline("Enables Tier Ascend fusion (3 same monster type + same tier → tier+1).")
-			# v0.9.500 — Companion Stable structure for testing player-built Stables.
-			_add_button("Give Companion Stable (structure)", "give_companion_stable_structure", Color(1, 0.5, 1))
-			_subtitle_subline("A buildable Companion Stable. Place inside your own enclosure to get Sanctuary kennel access at your post.")
-			# v0.9.507 — cosmetic structure set for testing buildable catalogue.
 			_add_button("Give Cosmetic Structures (1 of each)", "give_cosmetic_structures_set", Color(1, 0.84, 0))
 			_subtitle_subline("Banner + Lamp Post + Torch + Statue + Signpost. Bump into a placed signpost to read or (as owner) edit its text.")
 			_add_separator()
-			_add_button("Test Dungeon Chest Drops (1 of each new item)", "give_chest_test_kit", Color(1, 0.84, 0))
-			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a T6 equipment piece.")
-			_add_separator()
-			_add_button("Enter T1 Dungeon (instant)", "enter_dungeon_t1", Color(0.6, 1, 0.6))
-			_add_button("Enter T6 Dungeon (instant)", "enter_dungeon_t6", Color(0.6, 1, 0.6))
-			_add_button("Enter Tier-Appropriate Dungeon (own level)", "enter_dungeon_auto", Color(0.6, 1, 0.6))
-			_subtitle_subline("Skips spawn-and-walk: drops you straight inside a fresh personal dungeon instance.")
-			_add_separator()
-			# 2026-09-10 - INSIDE a dungeon, the interesting states are all rare: a trap you have
-			# to walk onto, a chest you have to find, and a floor you have to clear. Testing the
-			# panel and the completion screen meant wandering until luck provided one. These
-			# reach the same server paths a player does, so what they show is what a player sees.
-			_add_button("Spring a Trap (here)", "dungeon_spring_trap", Color(1, 0.5, 0.5))
-			_add_button("Drop Loot Beside Me", "dungeon_drop_loot", Color(1, 0.84, 0))
-			_add_button("Flood the Run Log (12 lines)", "dungeon_flood_log", Color(0.7, 0.8, 1))
-			_add_button("Finish Dungeon -> Final Chest", "dungeon_finish", Color(1, 0.7, 0.3))
-			_subtitle_subline("Trap / loot / an overfull log / jump to the end-of-dungeon chest screen.")
-			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"combat":
-			_title_label.text = "ADMIN — COMBAT"
-			_subtitle_label.text = "[color=#aaaaaa]Force encounters and toggle invincibility.[/color]"
+			_title_label.text = "ADMIN - COMBAT"
+			_subtitle_label.text = "[color=#aaaaaa]Force encounters, toggle invincibility, and drive the co-op path.[/color]"
 			_add_button("Spawn Monster (own level)", "spawn_mob_own_level")
 			_subtitle_subline("A normal same-level monster of a species that really spawns here.")
 			_add_button("Spawn EMPOWERED (own level)", "spawn_mob_empowered", Color(1.0, 0.72, 0.3))
@@ -194,12 +202,17 @@ func _render_page() -> void:
 			_add_button("Spawn ELITE Champion (own level)", "spawn_mob_elite", Color(1.0, 0.45, 0.45))
 			_subtitle_subline("Normally a 1% roll, so testing one by hand meant ~100 spawns. Target: ~65%.")
 			_add_button("Spawn Wish Granter (1 HP, 100% wish)", "gm_spawnwish")
+			_add_separator()
 			_add_button("Toggle Godmode", "gm_godmode")
+			_add_separator()
+			_subtitle_subline("Co-op - these were on MISC, which is not where anyone looks for combat controls.")
+			_add_button("Toggle Co-op Party Combat", "gm_toggle_coop", Color(1.0, 0.7, 0.28))
+			_add_button("Preview Party Column (while in combat)", "preview_party_column", Color(1.0, 0.7, 0.28))
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"world":
-			_title_label.text = "ADMIN — WORLD"
-			_subtitle_label.text = "[color=#aaaaaa]Test the post-anchored world Slice 4 settler-bubble suppression without grinding for build materials.[/color]"
+			_title_label.text = "ADMIN - WORLD"
+			_subtitle_label.text = "[color=#aaaaaa]Posts, guards, the settler bubble, and finding things on the map.[/color]"
 			_add_button("Build Test Post Here  (5x5 + 2 tower-boosted guards)", "gm_build_test_post", Color(0.6, 1, 0.6))
 			_subtitle_subline("Drops a fresh enclosure at your feet and hires 2 free guards. Monsters in the bubble drop to T1.")
 			_add_button("Hire Free Guard (north of you)", "gm_hire_test_guard")
@@ -207,22 +220,20 @@ func _render_page() -> void:
 			_add_button("Diagnose Settler Bubble Here", "gm_settler_diag")
 			_subtitle_subline("Prints wilderness tier, bubble status, guard count, monster level.")
 			_add_separator()
-			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
-		"misc":
-			_title_label.text = "ADMIN — MISC"
-			_subtitle_label.text = "[color=#aaaaaa]Self-heal, quest reset, companion revive.[/color]"
-			_add_button("Heal Self (full HP / mana / stamina)", "gm_heal")
-			_add_button("Revive Companion (full HP)", "gm_revive_companion")
-			_add_button("Toggle Co-op Party Combat (#64 test)", "gm_toggle_coop", Color(1.0, 0.7, 0.28))
-			_add_button("Preview Party Column (#64 — while in combat)", "preview_party_column", Color(1.0, 0.7, 0.28))
-			_add_button("Reset Active Quests", "gm_resetquests")
-			_add_button("Show /gmhelp text reference", "show_gmhelp")
-			_add_separator()
-			_subtitle_subline("Cartography (rooted Locate) — set rank to test each precision tier: 1-2 region, 3-4 coarse, 5-7 precise, 8 = anywhere sense.")
+			_subtitle_subline("Cartography (rooted Locate) - rank sets precision: 1-2 region, 3-4 coarse, 5-7 precise, 8 = anywhere sense. Moved here from MISC: it is a map feature.")
 			_add_button("Cartography rank +1", "gm_cartography_up", Color(0.35, 0.78, 1.0))
-			_add_button("Cartography → 5 (precise, post-gated)", "gm_cartography_5", Color(0.35, 0.78, 1.0))
-			_add_button("Cartography → 8 (anywhere sense)", "gm_cartography_8", Color(0.48, 0.88, 0.48))
-			_add_button("Cartography → 1 (reset)", "gm_cartography_1", Color(0.7, 0.7, 0.7))
+			_add_button("Cartography -> 5 (precise, post-gated)", "gm_cartography_5", Color(0.35, 0.78, 1.0))
+			_add_button("Cartography -> 8 (anywhere sense)", "gm_cartography_8", Color(0.48, 0.88, 0.48))
+			_add_button("Cartography -> 1 (reset)", "gm_cartography_1", Color(0.7, 0.7, 0.7))
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"player":
+			_title_label.text = "ADMIN - PLAYER"
+			_subtitle_label.text = "[color=#aaaaaa]Your own character. This page was called MISC, which is what a page gets called when nobody decides what it is for.[/color]"
+			_add_button("Heal Self (full HP / mana / stamina)", "gm_heal")
+			_add_button("Reset Active Quests", "gm_resetquests")
+			_add_separator()
+			_add_button("Show /gmhelp text reference", "show_gmhelp")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"abilities":
@@ -325,17 +336,19 @@ func _on_button_pressed(action_id: String) -> void:
 		"_back_root":
 			_current_page = "root"
 			_render_page()
-		"_page_test_b2":
-			_current_page = "test_b2"
+		"_page_companions":
+			_current_page = "companions"
 			_render_page()
+		"_page_dungeon":
+			_current_page = "dungeon"
 		"_page_items":
 			_current_page = "items"
 			_render_page()
 		"_page_combat":
 			_current_page = "combat"
 			_render_page()
-		"_page_misc":
-			_current_page = "misc"
+		"_page_player":
+			_current_page = "player"
 			_render_page()
 		"_page_world":
 			_current_page = "world"
