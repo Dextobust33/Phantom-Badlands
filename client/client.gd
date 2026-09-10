@@ -6003,10 +6003,19 @@ func _dev_run_shots() -> void:
 				# A menu of nothing proves nothing, so make sure there IS food to list. These are
 				# real `CraftingDatabase.MATERIALS` ids across the four edible types the rest
 				# menu filters on (plant / herb / fungus / fish).
-				for _mat in ["healing_herb", "small_fish", "cave_mushroom", "seaweed", "mana_blossom", "medium_fish"]:
+				# TWENTY-FOUR distinct foods, six of each edible type. Owner 2026-09-10 asked what
+				# the rest menu looks like when a player is carrying a full larder - the menu
+				# pages at 9, so 24 is the case that proves paging AND panel fit at once.
+				for _mat in ["healing_herb", "mana_blossom", "vigor_root", "shadowleaf",
+						"phoenix_petal", "clover",
+						"seaweed", "magic_kelp", "enchanted_kelp", "bark", "sap", "acorn",
+						"common_mushroom", "cave_mushroom", "glowing_mushroom", "nightmare_cap",
+						"void_spore", "primordial_fungus",
+						"small_fish", "medium_fish", "large_fish", "rare_fish", "deep_sea_fish",
+						"legendary_fish"]:
 					send_to_server({"type": "gm_givemats", "material_id": _mat, "amount": 5})
-					await get_tree().create_timer(0.3).timeout
-				await get_tree().create_timer(0.8).timeout
+					await get_tree().create_timer(0.18).timeout
+				await get_tree().create_timer(1.0).timeout
 				execute_local_action("dungeon_rest")
 				await get_tree().create_timer(1.0).timeout
 				await _dev_shot_capture("dungeonrest")
@@ -34566,7 +34575,16 @@ func _dungeon_panel_trim_to_fit() -> void:
 	The log is the part that can safely shrink: it is a history, and its oldest line is the least
 	useful thing on the panel. The header, the key and the theme legend are all reference the
 	player needs, so they stay. Bounded by the log's own length, and it only ever runs when the
-	content genuinely does not fit."""
+	content genuinely does not fit.
+
+	MEASURED at 1920x1080, panel 540px tall (2026-09-10, owner asked what happens with a full
+	rest menu):
+	  * log at its cap, with a theme legend: 444px  - the worst case, and what this trims
+	  * rest menu open with 24 foods carried: 418px - bounded by PAGING at 9 per page, so it
+	    does not grow with the size of your larder; "Page 1/3" is what keeps it finite
+	A panel menu is deliberately NOT trimmed: it is already bounded, it is smaller than the log
+	case, and its controls (Back / Prev / Next) are duplicated on the action bar - so even a menu
+	clipped on a very short panel stays operable, which a silently shortened list would not."""
 	if map_display == null or _dungeon_log.is_empty():
 		return
 	# The height is only valid after the label has laid the new text out.
