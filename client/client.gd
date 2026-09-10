@@ -32330,6 +32330,16 @@ func update_tool_status_overlay():
 
 	var sections: Array[String] = []
 
+	# NO TOOLS UNDERGROUND. Owner 2026-09-10: *"we don't need the tools text while in dungeons,
+	# that would give us a little more room on the bottom."* Checked before removing it rather
+	# than assuming: a dungeon DOES have resource nodes (`&` is in the key), but
+	# `handle_dungeon_gather_confirm` never touches a tool or its durability, so a pickaxe is
+	# genuinely inert down there. Five lines back, and this block reserves height whether or not
+	# it has anything to say.
+	#
+	# Only the TOOLS section goes. Backpack, Pouch and Eggs stay, because all three still move
+	# underground - your pack fills with floor loot and eggs hatch on the steps you take.
+	var _hide_tools: bool = dungeon_mode
 	# --- Tools (all 4 slots, empty ones shown so the player knows the slot exists) ---
 	var eq_tools = character_data.get("equipped_tools", {})
 	var slot_order = ["pickaxe", "axe", "sickle", "rod"]
@@ -32357,7 +32367,13 @@ func update_tool_status_overlay():
 		if t.has("tier"):
 			tier_str = " T%d" % int(t.get("tier", 1))
 		tool_lines.append("[color=%s]%s %s%s  %d/%d[/color]" % [color, icon, slot.capitalize(), tier_str, dur, max_dur])
-	sections.append("[color=#9ACD32]Tools:[/color]\n" + "\n".join(tool_lines))
+	if not _hide_tools:
+		sections.append("[color=#9ACD32]Tools:[/color]\n" + "\n".join(tool_lines))
+	# Hand the HEIGHT back, or removing the text buys nothing. This label carries a 110px minimum
+	# from the scene, sized for the Tools block; leaving it set would keep exactly the gap that
+	# block used to fill. `MapPanel` is a VBox whose map display expands, so whatever this row
+	# gives up goes straight to the dungeon panel above it.
+	tool_status_overlay.custom_minimum_size.y = 40.0 if _hide_tools else 110.0
 
 	# --- Backpack ---
 	var inv = character_data.get("inventory", [])
@@ -34577,8 +34593,8 @@ func _dungeon_panel_trim_to_fit() -> void:
 	player needs, so they stay. Bounded by the log's own length, and it only ever runs when the
 	content genuinely does not fit.
 
-	MEASURED at 1920x1080, panel 540px tall (2026-09-10, owner asked what happens with a full
-	rest menu):
+	MEASURED at 1920x1080, panel 610px tall (2026-09-10, owner asked what happens with a full
+	rest menu; the panel grew from 540px when the Tools block was dropped underground):
 	  * log at its cap, with a theme legend: 444px  - the worst case, and what this trims
 	  * rest menu open with 24 foods carried: 418px - bounded by PAGING at 9 per page, so it
 	    does not grow with the size of your larder; "Page 1/3" is what keeps it finite
@@ -44346,6 +44362,9 @@ func _set_dungeon_side_boxes_visible(vis: bool) -> void:
 	# the side panel, which is the space the dungeon's own run log needs.
 	if minimap_display != null and is_instance_valid(minimap_display) and not vis:
 		minimap_display.visible = false
+	# Re-render the status block: it drops the Tools section underground and gives its reserved
+	# height back, and nothing else would prompt it to notice the mode change.
+	update_tool_status_overlay()
 
 
 func display_dungeon_floor():
