@@ -454,8 +454,57 @@ are now bought, unzipped and licence-cleared, so the blocker is design rather th
       things that WOULD cost: a second draw layer per cell (doubles the inline images), and pck
       size — 6.6MB unzipped, negligible.
 - [ ] **Slice it the way the dungeon was sliced**, which worked: one interior end-to-end
-      (the sanctuary, since `_render_house_map()` exists), screenshot, iterate — then posts, then
-      dungeon rooms. Do NOT start all three.
+      (the sanctuary, since `_render_house_map()` exists), screenshot, iterate — then posts. The
+      DUNGEON ROOMS are a separate problem with its own entry below; do not bundle them in.
+
+### Dungeon rooms from the Raven packs — a DIFFERENT problem to the interiors
+
+Owner, 2026-09-10: *"keep our dungeon corridoors using what we currently do but make all of the
+actual rooms out of sprites from those packs."*
+
+**This was first filed as a third slice of the interiors work, which was wrong.** "What we
+currently do" for corridors is ALREADY sprites — the darkcave pack. So this is not
+ASCII-versus-sprites like the interiors are. It is **two art packs meeting at a doorway**, and the
+question is whether their palettes belong in the same room. That is a coherence problem, and it
+does not exist in the interiors case at all.
+
+- [ ] **Pick the room pack by MEASUREMENT, not by name.** Palettes compared in HSV against the
+      darkcave corridor sheet (2026-09-10), because two greys with different casts look identical
+      in an RGB average and wrong on screen:
+      | pack | hue gap | value gap | sat gap |
+      |---|---|---|---|
+      | **shroom_chasm** | **0.006** | **0.009** | 0.154 |
+      | **miners_cave** | 0.075 | 0.156 | 0.034 |
+      | `green_dungeon` | 0.176 | 0.210 | 0.061 |
+      | `the_underworld` | 0.332 | 0.108 | 0.030 |
+      The pack literally named **green_dungeon is one of the WORSE matches** — brighter and
+      greener, it would read as pasted in beside our corridors. `shroom_chasm` is near-identical
+      in hue and brightness and `miners_cave` is both close and thematically a cave. This is the
+      same trap the tile pass already hit once by picking a sheet cell by eye.
+      `the_underworld` is worst on hue AND its sheets are 654x366, not a multiple of 16.
+- [ ] **The brightness gap may be a FEATURE, not a defect.** darkcave sits at value 0.45; most
+      Raven packs are 0.57-0.66. Rooms would read as brighter than the corridors leading to them
+      — which is what a lit room off a dark passage should look like. Decide deliberately whether
+      to lean into that or flatten it; do not correct it by reflex.
+- [ ] **Where is the SEAM?** A room entrance is a hard transition between two packs in adjacent
+      cells. Options: a doorway/threshold tile from the room pack that reads as belonging to
+      both; a one-tile border of rubble; or accepting the cut. Needs to be looked at on screen,
+      not reasoned about — the same way the prop occlusion question was settled.
+- [ ] **The renderer needs no change; telling a room from a corridor is the actual work.** A room
+      cell is one inline `[img]` exactly like a corridor cell — only the sheet it indexes differs.
+      But the distinction does NOT survive generation: `_carve_room` and `_connect_rooms` both
+      write `TileType.EMPTY`, so by the time the grid reaches the client a room floor and a
+      corridor floor are the same number. (Checked, after first writing here that the generator
+      "already knows" — it knows while carving and then throws it away.)
+      **Do NOT add a TileType.ROOM for this.** Every walkable check in the client and server tests
+      against EMPTY/CLEARED, so a new walkable type would have to be added to each of them, and
+      that is the shape of change that leaves one site behind.
+      **Derive it CLIENT-SIDE from the grid instead — no protocol change, no new tile type.** A
+      corridor is one tile wide and a room is not, so counting walkable neighbours separates them:
+      a cell with walkable neighbours on both axes is room floor, a cell walkable along one axis
+      only is corridor. That is the same trick `_dungeon_touches_floor` already uses to find the
+      wall RIM, so it is an idiom in this renderer rather than a new one. Cache per floor; the
+      grid only changes when the floor does.
 
 ## Phase 3.5 — input and accessibility (owner direction 2026-09-10)
 
