@@ -12,7 +12,7 @@ common way to lose a session.
 
 ## Where the game is (2026-09-09)
 
-Live: **v0.9.764** (client + server), released 2026-09-09.
+Live: **v0.9.765** (client + server), released 2026-09-09.
 
 - **The dungeon reports beside the map, never over it.** Owner 2026-09-09: *"It's kind of jarring
   to take over the whole dungeon art screen with it"*, then *"Can we not do the rest and food in
