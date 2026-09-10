@@ -256,3 +256,41 @@ against `client/dungeon_tiles.gd`.
 on assets we own, not licensed art, so they belong in the PUBLIC repo. That turns 134
 irreplaceable files into reproducible output and means a fresh clone plus the source packs can
 rebuild everything. On the backlog; until it lands, the backup above is the mitigation.
+
+
+## The rewrite was not finished when I first said it was
+
+Recorded because the mistake is more instructive than the fix.
+
+After `git filter-repo` and the force push, the check run was: *is any restricted path reachable
+in this repository?* It came back clean, and that was reported as done. **It asked the wrong
+repository.** Three release tags — `v0.9.764`, `v0.9.765`, `v0.9.766` — and a branch,
+`release/v0.9.747`, existed ONLY on the remote. They were created server-side by
+`gh release create`, so the local clone never had them, and `git push --force --tags` pushes LOCAL
+tags. All four still pointed into the old history.
+
+That is not "unreachable objects awaiting GC". Those refs were **live**, and every restricted file
+was browsable through them — `raw.githubusercontent.com/.../v0.9.766/client/sprites/darkcave/...`
+returned 200. A garbage collection would never have touched them, because they were referenced.
+The support request would have been answered, closed, and the art would still have been public.
+
+It surfaced only because a completely unrelated question — "what is unreleased?" — ran
+`git log v0.9.766..HEAD` and got *nothing*, because the tag was not in local history at all.
+
+Fixed by mapping each stale SHA through `.git/filter-repo/commit-map` (which had all four, since
+the commits *were* local at rewrite time — only the tags were not) and force-pushing the corrected
+refs. All 800 remote refs now audit clean, and every GitHub Release kept its 7 assets.
+
+**`tools/check_no_restricted_refs.sh` is the lesson made executable:** it walks the REMOTE ref
+list, not the local one, and fails on any ref it cannot account for.
+
+### And a second wrong instrument, found the same way
+
+`raw.githubusercontent.com` is fronted by a CDN with `max-age=300` that caches by path and ignores
+cache-busting query strings. After the refs were corrected it kept serving the deleted files with
+`X-Cache: HIT`, which read exactly like "the fix did not work". The authority is the **contents
+API** (`/repos/:owner/:repo/contents/PATH?ref=REF`), which answered 404 immediately.
+`tools/check_github_gc.sh` was rewritten to use it.
+
+The GC request itself still stands: the three sample dangling SHAs are genuinely unreachable now
+and are still served by SHA through the API, which is the retention the request is about.

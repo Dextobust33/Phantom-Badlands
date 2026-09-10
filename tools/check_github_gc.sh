@@ -13,7 +13,11 @@ SHAS="2d0504c4217fc9a4c57b5ecf5444321061b72cda 615b40c31c688f0916b976c95256a76c1
 PATHREF="client/sprites/pet-egg-pack/LICENSE.txt"
 live=0
 for s in $SHAS; do
-    c=$(curl -sS -o /dev/null -w '%{http_code}' -L "https://raw.githubusercontent.com/$REPO/$s/$PATHREF")
+    # The CONTENTS API, not raw.githubusercontent.com. raw is fronted by a CDN with
+    # `max-age=300` that caches by path and ignores cache-busting query strings, so it happily
+    # served a deleted file with `X-Cache: HIT` for minutes after the ref was corrected. Believing
+    # it once already produced a wrong conclusion; the API answers from the repository itself.
+    c=$(curl -sS -o /dev/null -w '%{http_code}'         -H 'Accept: application/vnd.github+json'         "https://api.github.com/repos/$REPO/contents/$PATHREF?ref=$s")
     if [ "$c" = "200" ]; then printf '  STILL SERVED  %s  (HTTP %s)\n' "${s:0:12}" "$c"; live=1
     else printf '  gone          %s  (HTTP %s)\n' "${s:0:12}" "$c"; fi
 done
