@@ -44388,6 +44388,9 @@ func handle_dungeon_gather_result(message: Dictionary):
 # purpose.
 const _DungeonTiles = preload("res://client/dungeon_tiles.gd")
 const _DungeonSprites = preload("res://client/dungeon_sprites.gd")
+# Draws an entity OVER the scatter prop it is standing on instead of instead of it — see
+# `client/dungeon_composite.gd` for why a BBCode grid can do that at all.
+const _DungeonComposite = preload("res://client/dungeon_composite.gd")
 
 ## Which TileType values have landmark art. Keyed by the enum's integer value, taken from
 ## `DungeonDatabase.TileType` - treasure and the final chest ANIMATE (a 4-frame chest), the
@@ -44698,7 +44701,7 @@ func update_dungeon_map():
 	_set_dungeon_side_boxes_visible(false)
 
 
-func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String:
+func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "") -> String:
 	"""You, on the dungeon floor - your actual overworld sprite rather than an "@".
 
 	Owner 2026-09-08: *"the player sprite should replace the @ while in dungeons. It should match
@@ -44787,7 +44790,9 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE) -> String
 	if src.x == src.y:
 		# Already square (a padded overworld frame, or a baked battler): draw it whole, filling
 		# the cell. No region, no cropping - cropping to content is what would break the square.
-		return "[img=%dx%d]%s[/img]" % [cell_w, cell_w, path]
+		# `over_prop` is a no-op unless this cell carries a scatter prop, in which case it hands
+		# back an in-memory composite so you stand ON the moss rather than erasing it.
+		return "[img=%dx%d]%s[/img]" % [cell_w, cell_w, _DungeonComposite.over_prop(path, prop)]
 	# Non-square fallback: crop to content and pin the WIDTH to the cell, which is the only rule
 	# that keeps a monospace row aligned.
 	var reg: Rect2i = _sprite_content_region(path, tex)
@@ -44827,7 +44832,7 @@ func _dungeon_companion_at(x: int, y: int) -> bool:
 	return _dungeon_prev_pos == Vector2i(x, y)
 
 
-func _dungeon_companion_img() -> String:
+func _dungeon_companion_img(prop: String = "") -> String:
 	"""The active companion, drawn on the floor behind the player. Reuses the same floor-backed
 	monster sprites the dungeon already uses, matched on the companion's `monster_type`."""
 	var comp: Dictionary = character_data.get("active_companion", {}) if character_data else {}
@@ -44846,10 +44851,10 @@ func _dungeon_companion_img() -> String:
 	# floor baked into them, so an identity tint stains the ground. Wanting the companion to read
 	# as YOURS is not worth a discoloured tile; position behind you already says it.
 	return "[img=%dx%d]%s[/img]" % [
-		_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, spr]
+		_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _DungeonComposite.over_prop(spr, prop)]
 
 
-func _dungeon_glyph_cell(glyph: String, color: String, url: String = "") -> String:
+func _dungeon_glyph_cell(glyph: String, color: String, url: String = "", prop: String = "") -> String:
 	"""A text glyph occupying exactly one dungeon cell, ON THE FLOOR.
 
 	`bgcolor` is what stops a glyph from punching a black hole in the floor - the solid floor tile
@@ -44866,7 +44871,8 @@ func _dungeon_glyph_cell(glyph: String, color: String, url: String = "") -> Stri
 	# any other and keeps the grid even.
 	var baked: String = _DungeonSprites.glyph_path(glyph, color)
 	if baked != "" and ResourceLoader.exists(baked):
-		var img := "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, baked]
+		var img := "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX,
+			_DungeonComposite.over_prop(baked, prop)]
 		return "[url=%s]%s[/url]" % [url, img] if url != "" else img
 	# Nothing baked for this pair - fall back to text. It will show the old hole, which is the
 	# visible signal that a new glyph needs adding to the generator.
@@ -45142,10 +45148,18 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	for y in range(view_y1, view_y2):
 		var line = ""
 		for x in range(view_x1, view_x2):
+			# The scatter prop on THIS cell, looked up once and handed to whatever ends up drawn
+			# here. Every entity sprite carries plain floor baked in, so without this an entity
+			# standing on a prop erased it — owner: "when a sprite steps on a space with a
+			# decorative piece on it the decorative piece seems to go away". Only walkable floor
+			# (0/7) scatters props, which is the same gate `_dungeon_tile_cell` uses; asking for
+			# a prop on a wall or a stairwell would invent one that is not drawn when empty.
+			var _tv: int = int(grid[y][x])
+			var _prop: String = _DungeonTiles.prop_for(x, y) if (_tv == 0 or _tv == 7) else ""
 			if x == player_x and y == player_y:
-				line += _dungeon_player_glyph()
+				line += _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, _prop)
 			elif _dungeon_companion_at(x, y):
-				line += _dungeon_companion_img()
+				line += _dungeon_companion_img(_prop)
 			else:
 				var mkey = "%d,%d" % [x, y]
 				if npc_map.has(mkey):
@@ -45153,7 +45167,7 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					var npc = npc_map[mkey]
 					var nchar = npc.get("display_char", "?")
 					var ncolor = npc.get("display_color", "#00FF00")
-					line += _dungeon_glyph_cell(String(nchar), String(ncolor))
+					line += _dungeon_glyph_cell(String(nchar), String(ncolor), "", _prop)
 				elif monster_map.has(mkey):
 					# Render monster entity
 					var mon = monster_map[mkey]
@@ -45199,13 +45213,14 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 						# which is why the rule is now absolute: never `color=` a floor-backed
 						# sprite. `tools/verify_dungeon_art.gd` fails the build if one appears.
 						line += "[url=%s][img=%dx%d]%s[/img][/url]" % [
-							_murl, _DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _msprite]
+							_murl, _DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX,
+							_DungeonComposite.over_prop(_msprite, _prop)]
 					else:
-						line += _dungeon_glyph_cell(mchar, mcolor, _murl)
+						line += _dungeon_glyph_cell(mchar, mcolor, _murl, _prop)
 				elif trap_map.has(mkey):
 					# Render triggered trap marker
 					var tcolor = trap_map[mkey].get("color", "#FF4444")
-					line += _dungeon_glyph_cell("×", tcolor)
+					line += _dungeon_glyph_cell("×", tcolor, "", _prop)
 				elif item_map.has(mkey):
 					# Render floor loot pickup (glyph + color by kind)
 					var fi = item_map[mkey]
@@ -45230,13 +45245,13 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 						if _lp != "" and ResourceLoader.exists(_lp):
 							_egg_spr = _lp
 					if _egg_spr != "":
-						line += "[img=%dx%d]%s[/img]" % [_dungeon_cell_width(), _dungeon_cell_width(), _egg_spr]
+						line += "[img=%dx%d]%s[/img]" % [_dungeon_cell_width(), _dungeon_cell_width(),
+							_DungeonComposite.over_prop(_egg_spr, _prop)]
 					else:
 						line += _dungeon_glyph_cell(String(fi.get("char", "?")),
-							String(fi.get("color", "#FFFFFF")))
+							String(fi.get("color", "#FFFFFF")), "", _prop)
 				else:
-					var tile = grid[y][x]
-					line += _dungeon_tile_cell(grid, x, y, int(tile))
+					line += _dungeon_tile_cell(grid, x, y, _tv)
 		lines.append(line)
 
 

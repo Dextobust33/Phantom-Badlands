@@ -117,8 +117,16 @@ func _init() -> void:
 	# monsters (red floor). Each time the code read as reasonable - "a tint so it reads as
 	# yours", "a tint so alert is visible" - which is exactly why a comment was not enough.
 	var src := FileAccess.get_file_as_string("res://client/client.gd")
-	var lines := src.split("
-")
+	# The delimiter is the ESCAPE "\n", not a literal newline typed inside the quotes. It was a
+	# literal one, which GDScript accepted, and the split then returned the WHOLE FILE as a
+	# single element - so `lines[0]` held every `color=`, every `[img` and every marker in
+	# client.gd at once, and the scan reported exactly one BROKEN at line 1 forever, whatever
+	# the code actually said. `verify_release_build.sh` fails on this script's exit code, so
+	# the dungeon-art gate had been RED on master and would have blocked the next release for
+	# a fault that does not exist. An always-on detector is as useless as one that never
+	# fires and much harder to notice, since it looks like a finding.
+	var lines := src.split("\n")
+	assert(lines.size() > 100, "client.gd did not split into lines - the scan below is vacuous")
 	var MARKERS := ["_floor32", "monster_path", "prop_for", "floor_img", "TILE_PX"]
 	for i in range(lines.size()):
 		var line: String = lines[i]

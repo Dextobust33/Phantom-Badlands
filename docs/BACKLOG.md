@@ -235,21 +235,39 @@ thing that will exist in multiples. Widening the upgrade pool can start earlier 
 today there are three reveal upgrades and five cycle types, which the owner's own playtest answer
 ("depends what upgrades hit your cards") already suggests is too thin to build a chase on.
 
-- [ ] **Props are HIDDEN by anything standing on them — open, no cheap fix yet.** Owner
-      2026-09-10: *"when a sprite steps on a space with a decorative piece on it the decorative
-      piece seems to go away from the space instead of the sprite being drawn over the top of it...
-      I guess variety [first] but occlusion may become annoying in the future. We should keep this
-      in mind in case another solution arises."*
-      **Why it is not a quick fix.** Every grid cell is ONE inline `[img]` with the floor baked
-      into it, so a sprite REPLACES the cell rather than layering over it. The codebase's existing
-      answer to this shape is offline pre-baking (`monster_floor32/`, `GLYPH_TILE`), which here
-      would mean baking every sprite onto every prop background — and that multiplies: props x
-      (player frames + companion + 53 monsters). Widening the prop pool, which the owner chose
-      first, makes the multiplication worse, not better.
-      **Options if it becomes annoying:** (a) runtime compositing, cost unknown and per-frame;
-      (b) place props only on tiles nothing can stand on, so the case never arises; (c) accept it —
-      a prop reappearing as you step off reads as "you were standing on it".
-      Revisit if it starts reading as a bug rather than as depth.
+- [x] **DONE 2026-09-10 — Props are no longer erased by anything standing on them.** Owner:
+      *"when a sprite steps on a space with a decorative piece on it the decorative piece seems to
+      go away"*, then after living with it: *"The occlusion just makes it look janky currently.
+      We need to find a solution or a way to make it work well."*
+      **What unlocked it.** The entry below used to say "no cheap fix yet", because the two known
+      routes were both expensive: offline pre-baking multiplies (props x every player frame x
+      companion x 53 monsters), and runtime compositing looked like it needed the grid rewritten
+      from one BBCode string into an `add_image()` token stream. The second assumption was wrong.
+      `Resource.take_over_path()` puts a texture into the engine's resource CACHE under a chosen
+      path, and `ResourceLoader.load()` — which is exactly what RichTextLabel's `[img]` tag calls —
+      checks that cache before it touches the disk. So an image composited in memory can be handed
+      to the renderer as an ordinary `res://` string and NOTHING about the grid emitter changes.
+      Probed before any of it was written (`tools/probe/dyn_texture_bbcode.gd`).
+      **How the sprite's background is recovered.** There is no alpha left — the bake already
+      flattened it — so it comes back by COLOUR KEY on the flat `#524B24` floor, restricted to
+      pixels reachable by flood fill FROM THE TILE EDGE. Border-connected matters: a troll has 24
+      floor-coloured pixels *inside* it and a plain colour key would punch prop speckles through
+      its middle. Both halves are asserted in `tools/probe/prop_occlusion.gd`, and the interior
+      assertion was proven to fire by disabling the flood fill and watching it go red — the first
+      two versions of that assertion passed with the fault injected and were measuring nothing.
+      Cost: 0.27ms per cold (sprite, prop) pair, cached for the session; 2000 warm lookups in
+      1.1ms. Applies uniformly to the player, the companion, every monster, floor loot and eggs.
+      **This is also the layer TALL PROPS need** — see below.
+
+- [ ] **Tall props (the lampposts) — the draw layer now exists, the row split does not.** The
+      cave sheet's lanterns are 16x32: one cell of them renders as half a lamppost, which is why
+      they were dropped from `PROP_COUNT` on 2026-09-10. A 2-cell prop needs its top half drawn
+      into the cell ABOVE, over whatever that cell already holds — which is the same compositing
+      the occlusion fix just built, now with real alpha rather than a colour key. What is still
+      missing is the row split: `prop_for()` returns one path per cell and has no notion of a prop
+      that claims two, and the cell above can be floor, another prop, a wall rim, void, or an
+      ENTITY — and a lamp head drawn over a monster's head is a perspective call, not a bug fix.
+      Worth doing after the current playtest stack ships, not inside it.
 
 ## Phase 3.4 — the CYCLE VALUE (deck-width arc, owner direction 2026-09-10)
 

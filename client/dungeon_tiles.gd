@@ -84,6 +84,9 @@ const PROP_DIR := "res://client/sprites/prop_floor32/"
 ## 16x32 source either squashes or drops to half the scale of everything around it. Tall props
 ## need a second draw LAYER - which is the same thing prop occlusion needs, so the two are one
 ## problem, not two.
+## The LAYER now exists (`dungeon_composite.gd`, 2026-09-10) and prop OCCLUSION is fixed with
+## it - anything standing on a prop now draws over it instead of erasing it. What a tall prop
+## still needs on top of that is the ROW SPLIT: one prop claiming two cells.
 ## Still deliberately excluded, each for a reason: the SKULL (dropped in d42bf00f for reading as
 ## loot), the CAMPFIRE (reads as a rest site, which is a real feature), the grave MARKER (reads as
 ## remains) and the 3x3 TENT (reads as a safe room). Background scatter must stay background.
