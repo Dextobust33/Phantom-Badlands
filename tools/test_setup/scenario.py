@@ -169,6 +169,42 @@ def give_materials(c):
         pouch[mat] = int(pouch.get(mat, 0)) + 20
 
 
+def park_on_dungeon(c):
+    """Stand the character next to a dungeon entrance, stocked to explore.
+
+    The dungeon panel work (run log, hoverable theme tiles, treasure chests, the Tools block
+    standing down) can only be judged from INSIDE a dungeon, and walking to one is the setup tax
+    this harness exists to remove. Food is included so the rest menu can be opened while there.
+    """
+    give_tools(c)
+    give_materials(c)
+    return []
+
+
+def give_cycle_cards(c):
+    """Put DUNGEON cards - the ones carrying a cycle value - into the deck, plus a REVEAL upgrade.
+
+    For the Dune: Imperium "the cards you don't play still do something" model (2026-09-10). Two
+    things have to be on screen at once to judge it: a card whose FACE advertises a cycle value,
+    and enough copies that a three-card hand reliably holds one you choose NOT to play.
+
+    Three copies of two different cards, so a hand of three nearly always contains at least one
+    unplayed cycler. The four dungeon cards each carry a different cycle TYPE, so two of them
+    show two different payouts rather than the same line twice.
+    """
+    coll = c.setdefault("combat_deck_collection", {})
+    coll["dungeon_card_bulwark_of_bone"] = 3      # cycle: a ward
+    coll["dungeon_card_venom_fang"] = 3           # cycle: chip damage
+    # A REVEAL upgrade already taken on a CLASS card, so the upgrade path is visible without
+    # gambling on which upgrades the rank-up happens to offer.
+    deck = sorted(str(a) for a in coll.keys()
+                  if a and not str(a).startswith(("companion_card", "dungeon_card")))
+    picks = c.setdefault("ability_milestone_picks", {})
+    if deck:
+        picks[deck[0]] = ["reveal_ward"]
+    return deck[:1]
+
+
 SCENARIOS = {
     "healthy": dict(
         doc="Everyone at full HP, standing together. The default sandbox.",
@@ -292,6 +328,19 @@ SCENARIOS = {
             "max_energy": 9999, "current_energy": 9999,
         }), seed_milestones(c))),
 
+    "cycle_cards": dict(
+        doc=("Deck loaded with DUNGEON cards that carry a CYCLE value, plus a REVEAL upgrade "
+             "already taken on a class card - for the Dune: Imperium model where the cards you "
+             "do NOT play still pay out. Look at the card faces for a 'cycles: ...' line, then "
+             "play ONE card and read the combat log for what the other two paid."),
+        players=1,
+        apply=give_cycle_cards),
+    "in_dungeon": dict(
+        doc=("A character parked ON a dungeon entrance with a full pouch - for the dungeon side "
+             "panel: hover the theme tile in the key AND on the floor, open a treasure chest, "
+             "and read the run log. Walk onto the D and press the dungeon action."),
+        players=1,
+        apply=park_on_dungeon),
     "stocked": dict(
         doc="Give everyone a stack of potions (for the combat item rules).",
         players=2,

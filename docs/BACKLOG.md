@@ -120,6 +120,17 @@ while the Paladin's stat realignment held.
 
 ---
 
+## ⚑ PLAYTEST QUEUE — `docs/PLAYTEST_QUEUE.md`
+
+Four things are committed to master and deliberately NOT released, waiting on the owner at a PC:
+arrow-key diagonal movement, cycle values, reveal upgrades, and the dungeon panel confirmations.
+`docs/PLAYTEST_QUEUE.md` holds a one-command setup and a specific checklist for each — do not
+re-derive them, and do not let any of it ride along in a release before it has been checked.
+
+Two scenarios were added for it: **`cycle_cards`** (dungeon cards carrying cycle values, plus a
+reveal upgrade already taken on a class card) and **`in_dungeon`** (parked on a dungeon entrance,
+stocked, for the hover / chest / run-log checks).
+
 ## Phase 1 — confirm the two releases landed (do first, cheap)
 
 - [x] **Shutdown handler fired every frame until the process exited — FIXED 2026-09-09.**
