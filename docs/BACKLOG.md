@@ -477,7 +477,21 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       gathering/crafting rewards.
 - [ ] **"Party play isn't working properly"** (owner, 2026-08-26) — no repro captured. ASK for the
       symptom before investigating.
-- [ ] **Leader logout must not strand the party.**
+- [x] **Leader logout no longer strands the party — FIXED 2026-09-10, and it was THREE paths.**
+      Only `handle_disconnect` cleaned up party state. `handle_logout_character` and
+      `handle_logout_account` erased the character and left the player in `active_parties` and
+      `party_membership` — so a LEADER returning to character select left the party pointing at a
+      leader with no character, with no transfer and no disband. Worse than a stale row, because
+      `peer_id` survives character select: the same connection could pick another character and
+      keep playing while still registered as leader of a party it had left.
+      **The root was not those functions — it was that the rule lived in someone's memory.**
+      `tools/probe/exit_paths.gd` asserts it instead: any function erasing a peer from
+      `characters` must call `_cleanup_party_on_disconnect`. It immediately found a FOURTH path
+      nobody had looked at — **`handle_permadeath`**, which under the game's central pillar is the
+      one that matters most: a leader dying for good left the survivors in a broken party.
+      Proved by re-injecting a removal and watching it fail (exit 1, naming the function).
+      **Not runtime-verified**: `active_parties` lives on the server, which the sim harness cannot
+      instantiate, so a live two-client check is still owed.
 
 - [x] **Companion card pass — DONE 2026-09-09** (owner: *"most companion cards are too weak to be
       viable or useful at all"*). Measured first, with a new `-- compcards` audit that casts both

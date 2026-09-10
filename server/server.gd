@@ -3424,6 +3424,20 @@ func handle_logout_character(peer_id: int):
 	# Save character before logout
 	save_character(peer_id)
 
+	# LEAVE THE PARTY BEFORE LEAVING THE CHARACTER.
+	#
+	# 2026-09-10. Only `handle_disconnect` called this, so a player who logged out GRACEFULLY -
+	# back to character select, or out of the account - stayed in `active_parties` and
+	# `party_membership` while their character was erased from `characters`. If they were the
+	# LEADER, no leadership transfer ran and the party was left pointing at a leader who no
+	# longer has a character: the exact "leader logout must not strand the party" on the backlog.
+	#
+	# It is worse than a stale entry, because `peer_id` survives character select. The same
+	# connection could pick a different character and carry on playing while still registered as
+	# the leader of a party it is no longer in.
+	_cleanup_party_on_disconnect(peer_id)
+
+
 	# Remove from combat if needed
 	if combat_mgr.is_in_combat(peer_id):
 		combat_mgr.end_combat(peer_id, false)
@@ -3464,6 +3478,9 @@ func handle_logout_account(peer_id: int):
 	"""Logout of account completely, return to login screen"""
 	# Save character first if active
 	save_character(peer_id)
+
+	# Same as character logout - see the note there.
+	_cleanup_party_on_disconnect(peer_id)
 
 	# Remove from combat if needed
 	if combat_mgr.is_in_combat(peer_id):
@@ -7777,6 +7794,13 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 
 	# Delete character from persistence
 	persistence.delete_character(account_id, character.name)
+
+	# LEAVE THE PARTY. Found 2026-09-10 by `tools/probe/exit_paths.gd`, which asserts that every
+	# function erasing a character cleans up its party first - this was the fourth exit path and
+	# the one nobody had looked at. Permadeath is the game's central pillar, so a party leader
+	# dying for good is not an edge case: without this the survivors were left in a party whose
+	# leader no longer has a character, with no leadership transfer and no disband.
+	_cleanup_party_on_disconnect(peer_id)
 
 	# Remove from active characters
 	characters.erase(peer_id)
