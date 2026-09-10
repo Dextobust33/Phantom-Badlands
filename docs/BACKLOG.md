@@ -224,8 +224,27 @@ share of a pool plus a per-class engine, so its cost curve does not transfer. Ow
       reference player the monster curve is calibrated against is unaffected and NO chain is owed.
       Making it universal would be a global player buff and would owe the full 25 minutes.
       Verified by probe: fires on both paths, and a class-only hand pays exactly nothing.
+- [x] **Reveal as CARD UPGRADES — BUILT 2026-09-10** (owner: *"we could take advantage of card
+      upgrades and make these types of reveal options show up in that pool as well"*). Three
+      KIND_ANY upgrades — Foretold (engine), Held in Reserve (ward), Smouldering (chip). This is
+      the better half of the opt-in: a dungeon card has to DROP, whereas an upgrade is something a
+      player builds toward on a card they already run, and it costs a milestone. It also reaches
+      CLASS cards, so every player can have it without a lucky drop.
+- [x] **Clarity — the reveal is ON THE CARD FACE, not behind a confirm step.** With a hand of
+      three you play one and cycle two, so each card stating its own reveal makes the whole trade
+      legible at a glance — Dune reads exactly this way — and it costs nothing on every turn of
+      every fight. Face and payout are derived from the SAME two sources (card data + the
+      player's picks) so they cannot disagree. Verified end to end: face said "cycles: 20 ward",
+      two unplayed copies paid exactly 40.
 - [ ] **NEEDS A PLAYTEST before it ships.** Whether a cycle value actually makes a wider deck
       tempting is a question about feel, not numbers.
+- [ ] **PARTY has no un-submit, and that is where a confirmation step is actually needed.**
+      `_party_submit_action` returns early if `submitted_this_round` — a one-way door, so a
+      misclick is unrecoverable and you wait out the round. Owner asked for a confirmation step in
+      solo AND party; recommending it only for party, because solo already shows the result
+      immediately and the card face now carries the reveal, whereas party makes you commit and
+      wait. Adding a confirm to solo would tax every turn of every fight for information that is
+      already on screen.
 - [ ] **THEN the 53-dungeon card content.** The owner chose full coverage, but that decision
       predates this design — cards should now be authored WITH cycle values, so the content pass
       waits on the model being confirmed.

@@ -84,6 +84,22 @@ const UPGRADES := [
 	{"id": "momentum_feed", "wired": true, "name": "Building", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Grants an extra point of your class engine (Momentum, Rage, Conviction, Focus or Read)."},
 
+	# ------------------------------------------------------- REVEAL (the cycle value) --------
+	# Owner 2026-09-10: *"we could take advantage of card upgrades and make these types of reveal
+	# options show up in that pool as well."* Right, and it is the better half of the opt-in:
+	# a dungeon card has to DROP, whereas an upgrade is something a player chooses to build
+	# toward on a card they already run - and it costs a milestone, which is a real price.
+	#
+	# KIND_ANY because EVERY card can be discarded unplayed; there is no card shape this cannot
+	# apply to. That also makes them the first upgrades whose effect fires when the card is NOT
+	# used, which is why the wiring lives in `_cycle_unplayed` rather than in a cast path.
+	{"id": "reveal_engine", "wired": true, "name": "Foretold", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "REVEAL: when you do NOT play this card, it feeds 1 point of your class engine as it cycles."},
+	{"id": "reveal_ward", "wired": true, "name": "Held in Reserve", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "REVEAL: when you do NOT play this card, it leaves a small ward (3% of your max health) as it cycles."},
+	{"id": "reveal_spark", "wired": true, "name": "Smouldering", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "REVEAL: when you do NOT play this card, it still stings the enemy for a little damage as it cycles."},
+
 	# ---------------------------------------------------------------- buff, upside ----------
 	{"id": "preload", "wired": true, "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "The buff is already active on the first round of your NEXT fight."},

@@ -19573,6 +19573,22 @@ func _get_slot_abbreviation(item_type: String) -> String:
 		return "[color=#666666][AMU][/color]"
 	return ""
 
+func get_card_reveal_text(ability_name: String) -> String:
+	"""What this card is worth if you DON'T play it, in four words or fewer, or "" for nothing.
+
+	Owner 2026-09-10: *"We will want to ensure that players have a clear way to follow what's
+	going to happen with their card selection and the reveal."*
+
+	Shown on the card FACE rather than behind a confirmation step. With a hand of three you play
+	one and cycle two, so if every card states its own reveal the whole trade is legible at a
+	glance - which is how Dune: Imperium reads, and it costs no extra click on every turn of
+	every fight. The server owns the values; this only formats what it already sent."""
+	var eff = _server_ability_effects.get(ability_name, {}) if typeof(_server_ability_effects) == TYPE_DICTIONARY else {}
+	if eff is Dictionary and String(eff.get("reveal", "")) != "":
+		return String(eff["reveal"])
+	return ""
+
+
 func get_card_engine_gain(ability_name: String) -> int:
 	"""How much ENGINE this card will grant, as the SERVER computed it. 0 when it is not more
 	than the usual 1, so the card only shouts when there is something to shout about.

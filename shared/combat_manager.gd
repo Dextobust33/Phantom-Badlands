@@ -4485,9 +4485,55 @@ func _build_ability_effect_info(combat: Dictionary) -> Dictionary:
 			eff["engine_sure"] = int(_rb.get("sure", 0))
 			eff["engine_maybe"] = int(_rb.get("maybe", 0))
 			eff["engine_chance"] = int(_rb.get("chance", 0))
+		# THE REVEAL, so the card face can say what NOT playing it is worth. Computed from the
+		# same place the payout reads, so the face and the effect cannot disagree.
+		var rv := _cycle_preview_text(character, name)
+		if rv != "":
+			if eff.is_empty():
+				eff = {"kind": "read_only"}
+			eff["reveal"] = rv
 		if not eff.is_empty() and String(eff.get("kind", "")) != "":
 			out[name] = eff
 	return out
+
+
+func _cycle_preview_text(character, card_id: String) -> String:
+	"""One short line describing this card's cycle value, or "" if it has none.
+
+	Deliberately derived from the SAME two sources `_cycle_unplayed` pays from - the card's own
+	data and the player's REVEAL upgrades - so a card cannot advertise a reveal it will not pay,
+	or pay one it never advertised. That split is how the card faces went wrong twice already."""
+	if character == null:
+		return ""
+	var cyc: Dictionary = {}
+	var data: Dictionary = DropTablesScript.get_card_data_by_id(card_id)
+	if not data.is_empty():
+		var d = data.get("cycle", {})
+		if d is Dictionary and not d.is_empty():
+			cyc = d
+	var picks: Array = character.get_milestone_picks(card_id)
+	if not picks.is_empty():
+		if "reveal_engine" in picks:
+			cyc = {"type": "engine", "amount": 1}
+		elif "reveal_ward" in picks:
+			cyc = {"type": "shield", "amount": 3}
+		elif "reveal_spark" in picks:
+			cyc = {"type": "chip", "amount": 25}
+	if cyc.is_empty():
+		return ""
+	var amt: int = int(cyc.get("amount", 1))
+	match String(cyc.get("type", "")):
+		"engine":
+			return "cycles: +%d %s" % [amt, class_engine_label(String(character.class_type))]
+		"shield":
+			return "cycles: %d ward" % maxi(1, int(float(character.get_total_max_hp()) * float(amt) / 100.0))
+		"heal":
+			return "cycles: %d health" % maxi(1, int(float(character.get_total_max_hp()) * float(amt) / 100.0))
+		"resource":
+			return "cycles: %d back" % maxi(1, int(float(_primary_pool_max(character)) * float(amt) / 100.0))
+		"chip":
+			return "cycles: %d damage" % maxi(1, int(float(character.get_total_attack()) * float(amt) / 100.0))
+	return ""
 
 func process_ability_command(peer_id: int, ability_name: String, arg: String) -> Dictionary:
 	"""Process an ability command from player"""
@@ -13530,14 +13576,30 @@ func _cycle_unplayed(combat: Dictionary, cards: Array, msgs: Array) -> void:
 	if character == null:
 		return
 	for c in cards:
-		var data: Dictionary = DropTablesScript.get_card_data_by_id(String(c))
-		if data.is_empty():
-			continue
-		var cyc = data.get("cycle", {})
-		if not (cyc is Dictionary) or cyc.is_empty():
+		var card_id := String(c)
+		# TWO SOURCES, one payout. A companion/dungeon card can carry a `cycle` block in its own
+		# data, and ANY card - class cards included - can gain one from a REVEAL upgrade the
+		# player spent a milestone on. The upgrade wins if a card somehow has both, because the
+		# player chose it deliberately and the data value is the card's baseline.
+		var cyc: Dictionary = {}
+		var label := _ability_display_name(character, card_id)
+		var data: Dictionary = DropTablesScript.get_card_data_by_id(card_id)
+		if not data.is_empty():
+			label = String(data.get("name", label))
+			var d = data.get("cycle", {})
+			if d is Dictionary and not d.is_empty():
+				cyc = d
+		var picks: Array = character.get_milestone_picks(card_id)
+		if not picks.is_empty():
+			if "reveal_engine" in picks:
+				cyc = {"type": "engine", "amount": 1}
+			elif "reveal_ward" in picks:
+				cyc = {"type": "shield", "amount": 3}
+			elif "reveal_spark" in picks:
+				cyc = {"type": "chip", "amount": 25}
+		if cyc.is_empty():
 			continue
 		var amount: int = int(cyc.get("amount", 1))
-		var label: String = String(data.get("name", "A card"))
 		match String(cyc.get("type", "")):
 			"engine":
 				# Routed through the shared feeder so it respects each engine's cap and names

@@ -4740,6 +4740,20 @@ func _refresh_hand() -> void:
 				effect_lbl.text = ("+%s %s" % [_pips, _label]) if _e == "" else "+%s  %s" % [_pips, _e]
 				effect_lbl.add_theme_color_override("font_color", Color(_colour))
 
+		# THE REVEAL — what this card is worth if you DON'T play it.
+		#
+		# Owner 2026-09-10: *"we will want to ensure that players have a clear way to follow
+		# what's going to happen with their card selection and the reveal."* With a hand of three
+		# you play one and cycle two, so stating each card's own reveal on its face makes the
+		# whole trade legible at a glance - no confirmation step, and no cost paid on every turn
+		# of every fight. Appended after the engine marker so a card can show both.
+		if effect_lbl and client_ref and client_ref.has_method("get_card_reveal_text"):
+			var _rv := String(client_ref.get_card_reveal_text(card_name))
+			if _rv != "":
+				var _cur := effect_lbl.text
+				effect_lbl.text = _rv if _cur == "" else "%s
+[%s]" % [_cur, _rv]
+
 		# v0.9.696 — Warrior Devastate is gated behind Momentum: it can't be played
 		# with 0 Momentum. Render it as uncastable (dimmed + hint) until the meter
 		# has at least 1 pip, mirroring the server gate in _process_warrior_ability.
