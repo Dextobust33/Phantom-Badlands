@@ -65,7 +65,7 @@ func _build_layout() -> void:
 
 	# Title
 	var title := Label.new()
-	title.text = "Controls — Numpad"
+	title.text = "Controls — Movement"
 	title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.27))
 	title.add_theme_font_size_override("font_size", 22)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -78,7 +78,11 @@ func _build_layout() -> void:
 	intro.scroll_active = false
 	intro.add_theme_font_size_override("normal_font_size", 13)
 	intro.custom_minimum_size = Vector2(0, 38)
-	intro.append_text("[color=#CCCCCC]The best way to control your character is the [color=#FFD700]numpad[/color]. It maps directly to the 8 movement directions, with [color=#FFD700]5[/color] as a hunt action.[/color]")
+	# 2026-09-10 - this used to open with "The best way to control your character is the numpad",
+	# which tells the sizeable share of players on a laptop that they are equipped wrong before
+	# they have taken a step, and buried the alternative in grey at the very bottom. Both schemes
+	# reach all eight directions now, so both are stated as first-class.
+	intro.append_text("[color=#CCCCCC]Two ways to move, both covering all 8 directions: the [color=#FFD700]numpad[/color], or the [color=#FFD700]arrow keys[/color] ([color=#FFD700]no numpad needed[/color] — hold two arrows for a diagonal).[/color]")
 	vbox.add_child(intro)
 
 	# ASCII numpad layout — uses a monospaced label inside a thin-bordered panel.
@@ -136,7 +140,7 @@ func _build_layout() -> void:
 	var legend_text := ""
 	legend_text += "[color=#9ACD32]Movement (1-4, 6-9):[/color] step in 8 directions. Diagonals ([color=#FFD700]1[/color]/[color=#FFD700]3[/color]/[color=#FFD700]7[/color]/[color=#FFD700]9[/color]) cross two axes at once — faster for getting around terrain.\n"
 	legend_text += "[color=#FF6B6B]Hunt (5):[/color] search your current tile + adjacent tiles for monsters and other interactions.\n"
-	legend_text += "[color=#888888]Arrow keys also work for cardinal directions (no diagonals).[/color]"
+	legend_text += "[color=#9ACD32]No numpad?[/color] [color=#FFD700]Arrow keys[/color] move you, and holding [color=#FFD700]two[/color] together takes the diagonal between them — [color=#FFD700]Up[/color]+[color=#FFD700]Left[/color] goes north-west. [color=#FF6B6B]H[/color] hunts."
 	legend.append_text(legend_text)
 	vbox.add_child(legend)
 

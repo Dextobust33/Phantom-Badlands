@@ -418,6 +418,10 @@ var default_keybinds = {
 	"move_8": KEY_KP_8,      # N
 	"move_9": KEY_KP_9,      # NE
 	"hunt": KEY_KP_5,        # Hunt
+	# A NUMPAD-FREE Hunt. Owner 2026-09-10: laptops have no numpad, and Hunt was the one action
+	# with no alternative at all - arrows already covered movement. H is unused anywhere else in
+	# the client (checked, not assumed).
+	"hunt_alt": KEY_H,
 	# Alternative movement (arrow keys)
 	"move_up": KEY_UP,
 	"move_down": KEY_DOWN,
@@ -897,6 +901,20 @@ var character_data = {}
 var has_character = false
 var last_move_time = 0.0
 const MOVE_COOLDOWN = 0.15
+## How long the FIRST arrow press waits to see whether a second arrow joins it, making a diagonal.
+##
+## Owner 2026-09-10, on being offered two-arrow chords: *"Are we sure it won't fire the movement
+## if one of the keys is hit slightly before the other though?"* Exactly right, and without this
+## the answer is no. Movement is polled in `_process`, so if Up is down on one frame and Left
+## arrives two frames later, North fires first and MOVE_COOLDOWN then locks the diagonal out for
+## 150ms. A human pressing two keys "together" lands them 20-60ms apart; a frame is 16.7ms.
+##
+## 70ms covers that spread while staying under the threshold where a tap feels laggy. It is paid
+## ONCE, on the initial press: while the keys stay held the direction re-reads live with no delay,
+## so travelling across the map is full speed. A diagonal pair seen inside the window resolves
+## immediately rather than waiting it out, and releasing early still moves - a quick tap is not
+## swallowed.
+const ARROW_CHORD_GRACE_SEC := 0.07
 
 # Slice 6g — biome move cooldown modifier. Multipliers on MOVE_COOLDOWN per
 # biome string (matches world_system BIOME_* constants). Plains/Forest = 1.0
@@ -4996,27 +5014,29 @@ func _process(delta):
 						move_dir = dir
 						break
 
-				# Check hunt key
+				# Check hunt key — numpad 5, or H for a keyboard without one. Hunt was the only
+				# action with no numpad-free route at all: arrows already covered movement, so a
+				# laptop player could walk the world but never hunt in it.
 				if move_dir == 0:
 					var hunt_key = keybinds.get("hunt", default_keybinds.get("hunt", KEY_KP_5))
-					if Input.is_physical_key_pressed(hunt_key) and not (build_placement_active and hunt_key in placement_keys):
+					var hunt_alt = keybinds.get("hunt_alt", default_keybinds.get("hunt_alt", KEY_H))
+					var hunt_down: bool = (
+						(Input.is_physical_key_pressed(hunt_key)
+							and not (build_placement_active and hunt_key in placement_keys))
+						or (Input.is_physical_key_pressed(hunt_alt)
+							and not (build_placement_active and hunt_alt in placement_keys)))
+					if hunt_down:
 						is_hunt = true
 
-				# Check arrow keys as alternative movement (4-direction)
+				# Arrow keys as alternative movement — now EIGHT-direction, via chords.
+				#
+				# This was 4-direction only ("no diagonals", as the help popup admits), which on
+				# an 8-way map left a laptop player unable to take a diagonal at all and slower
+				# on every journey. `_arrow_move_dir` resolves Up+Left into north-west and holds
+				# the first step for `ARROW_CHORD_GRACE_SEC` so a chord pressed a few
+				# milliseconds apart is not read as a cardinal.
 				if move_dir == 0 and not is_hunt:
-					var up_key = keybinds.get("move_up", default_keybinds.get("move_up", KEY_UP))
-					var down_key = keybinds.get("move_down", default_keybinds.get("move_down", KEY_DOWN))
-					var left_key = keybinds.get("move_left", default_keybinds.get("move_left", KEY_LEFT))
-					var right_key = keybinds.get("move_right", default_keybinds.get("move_right", KEY_RIGHT))
-
-					if Input.is_physical_key_pressed(up_key) and not (build_placement_active and up_key in placement_keys):
-						move_dir = 8  # North
-					elif Input.is_physical_key_pressed(down_key) and not (build_placement_active and down_key in placement_keys):
-						move_dir = 2  # South
-					elif Input.is_physical_key_pressed(left_key) and not (build_placement_active and left_key in placement_keys):
-						move_dir = 4  # West
-					elif Input.is_physical_key_pressed(right_key) and not (build_placement_active and right_key in placement_keys):
-						move_dir = 6  # East
+					move_dir = _arrow_move_dir(placement_keys if build_placement_active else [])
 
 				if move_dir > 0:
 					# Dismiss bump prompt on movement
@@ -5480,9 +5500,9 @@ func _input(event):
 				start_rebinding("move_9")  # NE
 			elif keycode == KEY_4:
 				# 2026-09-10 - this had TWO calls in a row, so `move_4` was armed and then
-				# immediately overwritten by `hunt`: pressing 4 rebound Hunt, and WEST could not
+				# immediately overwritten by `hunt`: pressing 4 rebound Hunt and WEST could not
 				# be rebound at all. Found while adding non-numpad support, which is the exact
-				# situation where a player is sent to this menu.
+				# situation where a player needs this menu to work.
 				start_rebinding("move_4")  # W
 			elif keycode == KEY_5:
 				start_rebinding("hunt")    # numpad 5 is Hunt, so 5 rebinds it here
@@ -50103,3 +50123,96 @@ func _check_tutorial_trigger(event: String):
 	var step = TUTORIAL_STEPS[tutorial_step]
 	if step.get("wait_for", "") == event:
 		_advance_tutorial()
+
+
+# === ARROW-KEY MOVEMENT, WITH DIAGONALS (2026-09-10) ==========================================
+#
+# The world is EIGHT-way and the numpad is how it was meant to be played, which leaves a laptop
+# without one able to move only along the axes - slower on every journey and unable to take a
+# diagonal at all. Owner: *"we need to add support for players with no numpad on their keyboard."*
+#
+# WASD is not available: Q, W, E, R and Space are the action bar. So diagonals are CHORDS - hold
+# Up and Left together for north-west - which needs no new keys and cannot collide with anything.
+# `ARROW_CHORD_GRACE_SEC` is what makes a chord reliable; see the note on it.
+var _arrow_mask: int = 0          # arrows seen since this press began (1=N 2=S 4=W 8=E)
+var _arrow_deadline_ms: int = 0   # when the chord window closes
+var _arrow_settled: bool = false  # true once resolved; keeps held travel at full speed
+
+
+func _arrow_move_dir(blocked_keys: Array = []) -> int:
+	"""The numpad-style direction (1-9) the arrow keys are asking for, or 0 for none-yet.
+
+	Returns 0 while the chord window is still open, which is the point: the caller must not move
+	on the first frame a single arrow is seen, or a diagonal can never be entered by hand.
+
+	`blocked_keys` are keycodes the caller has claimed for something else this frame (the build
+	placement mode steals the arrows), matching what the 4-direction version did."""
+	var up_key: int = int(keybinds.get("move_up", default_keybinds.get("move_up", KEY_UP)))
+	var down_key: int = int(keybinds.get("move_down", default_keybinds.get("move_down", KEY_DOWN)))
+	var left_key: int = int(keybinds.get("move_left", default_keybinds.get("move_left", KEY_LEFT)))
+	var right_key: int = int(keybinds.get("move_right", default_keybinds.get("move_right", KEY_RIGHT)))
+	var cur := 0
+	if Input.is_physical_key_pressed(up_key) and not (up_key in blocked_keys):
+		cur |= 1
+	if Input.is_physical_key_pressed(down_key) and not (down_key in blocked_keys):
+		cur |= 2
+	if Input.is_physical_key_pressed(left_key) and not (left_key in blocked_keys):
+		cur |= 4
+	if Input.is_physical_key_pressed(right_key) and not (right_key in blocked_keys):
+		cur |= 8
+
+	if cur == 0:
+		# Everything released. If the window was still open, honour what WAS held - otherwise a
+		# tap shorter than the grace period would be swallowed and the player would think the
+		# key had not registered.
+		var pending := _arrow_mask
+		var already_moved := _arrow_settled
+		_arrow_mask = 0
+		_arrow_deadline_ms = 0
+		_arrow_settled = false
+		# Only the unresolved case moves here. If the window had already closed, the step was
+		# taken while the key was down and releasing must not take a second one.
+		return 0 if already_moved else _arrow_mask_to_dir(pending)
+
+	if _arrow_settled:
+		# Held down and already resolved: read the LIVE keys with no delay, so a player crossing
+		# the map at full tilt can also change direction instantly.
+		_arrow_mask = cur
+		return _arrow_mask_to_dir(cur)
+
+	if _arrow_mask == 0:
+		_arrow_deadline_ms = Time.get_ticks_msec() + int(ARROW_CHORD_GRACE_SEC * 1000.0)
+	_arrow_mask |= cur
+
+	# A diagonal is unambiguous the moment both axes are held - no reason to wait out the window.
+	var has_vertical := (_arrow_mask & 3) != 0
+	var has_horizontal := (_arrow_mask & 12) != 0
+	if (has_vertical and has_horizontal) or Time.get_ticks_msec() >= _arrow_deadline_ms:
+		_arrow_settled = true
+		return _arrow_mask_to_dir(_arrow_mask)
+	return 0
+
+
+
+func _arrow_mask_to_dir(mask: int) -> int:
+	"""Arrow bitmask -> numpad direction. Opposite keys on one axis cancel, so mashing Left and
+	Right together stands still rather than picking whichever was tested first."""
+	var n := (mask & 1) != 0
+	var s := (mask & 2) != 0
+	var w := (mask & 4) != 0
+	var e := (mask & 8) != 0
+	if n and s:
+		n = false
+		s = false
+	if w and e:
+		w = false
+		e = false
+	if n and w: return 7
+	if n and e: return 9
+	if s and w: return 1
+	if s and e: return 3
+	if n: return 8
+	if s: return 2
+	if w: return 4
+	if e: return 6
+	return 0
