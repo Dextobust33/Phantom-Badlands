@@ -598,18 +598,26 @@ does not exist in the interiors case at all.
       once serves both, and the half-lamppost that shipped in the props pass is the reminder of
       what happens when a two-cell object is treated as one.
 
-- [ ] **Border floor LOOT so decor cannot be mistaken for it** (owner, 2026-09-10): *"we could
-      always put a small border around floor loot to help differentiate it from decorations."*
-      **This inverts the constraint and is worth doing before widening decor.** The decor pool is
-      currently narrowed to three packs because a tileset's small objects are mostly items, and
-      an item-looking decoration is misleading when real loot is also a floor sprite. Marking the
-      LOOT removes that constraint entirely: crates, pots, weapons and skulls all become usable
-      scenery, which is most of what the other four packs have. One border unlocks four packs.
-      Cheap: floor loot already goes through one baked path (`loot_floor32`, five kinds), so the
-      border is a bake-time frame, not a renderer change. `tools/bake_floor_backed.py` is where
-      it would go.
-      Judge the border against the existing rarity COLOURS — floor loot already tints by rarity,
-      so the border must not fight that.
+- [x] **DONE 2026-09-10 - floor LOOT is bracketed, which unblocks the decor pool.** Owner:
+      *"we could always put a small border around floor loot to help differentiate it from
+      decorations."* Corner brackets rather than a closed frame: a rectangle round every pickup
+      turns two adjacent items into what looks like a table of cells, and it is heavier than the
+      job needs. Drawn at runtime by `DungeonComposite.bordered`, cached, no new assets.
+      The colour is the item's OWN colour straight off the floor-item payload - rarity for
+      equipment, kind for everything else. That colour already existed and was only ever visible
+      on the GLYPH fallback, so this puts information on screen that the sprite path had been
+      throwing away, rather than inventing a code for players to learn.
+      `tools/probe/loot_border.gd` covers the two silent failures: brackets in the wrong place,
+      and brackets lost when the sprite is composited onto a room floor - which is the order the
+      renderer actually uses.
+
+- [ ] **NOW UNBLOCKED: widen the decor pool.** Decor was curated to 3 of 7 packs because a
+      tileset's small objects are mostly items and an item-looking decoration was misleading.
+      With loot bracketed that constraint is gone: the crates, pots, weapons, skulls and ingots
+      rejected from `cozy_home`, `farmlands_v3`, `the_underworld` and `red_desert_ruin` are now
+      usable scenery. Re-curate from the shortlist `tools/bake_room_decor.py::pick` already
+      produces - the CHICKENS stay out regardless, because a live animal reads as a monster and
+      no border fixes that.
 
 - [ ] **Walls only where they explain the space** (owner, 2026-09-10): *"It may be better if only
       the spaces below a corridor show those (almost as if they are holding up the corridors) and

@@ -129,6 +129,58 @@ static func overlay(base_path: String, top_path: String) -> String:
 	return dyn
 
 
+## Corner brackets, not a full frame. A closed rectangle around every pickup turns two adjacent
+## items into what looks like a table of cells, and it is heavier than the job needs. Brackets
+## read as a marker and leave the tile open. Measured in tile pixels, so they scale with TILE_PX.
+const _BRACKET_ARM := 7
+const _BRACKET_INSET := 1
+
+
+static func bordered(path: String, color_hex: String) -> String:
+	"""`path` with corner brackets in `color_hex`, marking it as something you can PICK UP.
+
+	Owner 2026-09-10: *"we could always put a small border around floor loot to help
+	differentiate it from decorations."* That inverts a real constraint. Room decor had to be
+	curated down to three packs because a tileset's small objects are mostly items, and an
+	item-looking decoration is misleading while real loot is also just a floor sprite. Marking the
+	LOOT means the decor no longer has to avoid looking like loot.
+
+	The colour is the item's OWN colour, straight off the floor-item payload - rarity for
+	equipment, kind for everything else. That colour already existed and was only ever visible on
+	the glyph fallback, so this puts information on screen that the sprite path was throwing away
+	rather than inventing a new code for players to learn."""
+	if path == "" or color_hex == "":
+		return path
+	var key := path + "#" + color_hex
+	if _out_cache.has(key):
+		return _out_cache[key]
+	var base := _image_for(path)
+	if base == null:
+		return path
+	var out := base.duplicate() as Image
+	var c := Color(color_hex)
+	var w := out.get_width()
+	var h := out.get_height()
+	var arm: int = maxi(2, int(round(float(_BRACKET_ARM) * float(w) / 32.0)))
+	var ins: int = maxi(0, int(round(float(_BRACKET_INSET) * float(w) / 32.0)))
+	for i in range(arm):
+		# four corners, an L at each
+		out.set_pixel(ins + i, ins, c)
+		out.set_pixel(ins, ins + i, c)
+		out.set_pixel(w - 1 - ins - i, ins, c)
+		out.set_pixel(w - 1 - ins, ins + i, c)
+		out.set_pixel(ins + i, h - 1 - ins, c)
+		out.set_pixel(ins, h - 1 - ins - i, c)
+		out.set_pixel(w - 1 - ins - i, h - 1 - ins, c)
+		out.set_pixel(w - 1 - ins, h - 1 - ins - i, c)
+	var tex := ImageTexture.create_from_image(out)
+	var dyn := _DYN_DIR + "b%d.png" % abs(hash(key))
+	tex.take_over_path(dyn)
+	_keepalive.append(tex)
+	_out_cache[key] = dyn
+	return dyn
+
+
 static func _image_for(path: String) -> Image:
 	if _img_cache.has(path):
 		return _img_cache[path]

@@ -45311,8 +45311,12 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 						if _lp != "" and ResourceLoader.exists(_lp):
 							_egg_spr = _lp
 					if _egg_spr != "":
-						line += "[img=%dx%d]%s[/img]" % [_dungeon_cell_width(), _dungeon_cell_width(),
-							_DungeonComposite.over_prop(_egg_spr, _prop)]
+						# Composite onto the ground FIRST, then bracket the result: the brackets
+						# mark the cell as a pickup and must sit on top of everything, including
+						# the room floor showing through the sprite's baked corridor floor.
+						var _lit: String = _DungeonComposite.over_prop(_egg_spr, _prop)
+						_lit = _DungeonComposite.bordered(_lit, String(fi.get("color", "#FFFFFF")))
+						line += "[img=%dx%d]%s[/img]" % [_dungeon_cell_width(), _dungeon_cell_width(), _lit]
 					else:
 						line += _dungeon_glyph_cell(String(fi.get("char", "?")),
 							String(fi.get("color", "#FFFFFF")), "", _prop)
