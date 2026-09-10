@@ -173,6 +173,15 @@ func _render_page() -> void:
 			_add_button("Enter Tier-Appropriate Dungeon (own level)", "enter_dungeon_auto", Color(0.6, 1, 0.6))
 			_subtitle_subline("Skips spawn-and-walk: drops you straight inside a fresh personal dungeon instance.")
 			_add_separator()
+			# 2026-09-10 - INSIDE a dungeon, the interesting states are all rare: a trap you have
+			# to walk onto, a chest you have to find, and a floor you have to clear. Testing the
+			# panel and the completion screen meant wandering until luck provided one. These
+			# reach the same server paths a player does, so what they show is what a player sees.
+			_add_button("Spring a Trap (here)", "dungeon_spring_trap", Color(1, 0.5, 0.5))
+			_add_button("Drop Loot Beside Me", "dungeon_drop_loot", Color(1, 0.84, 0))
+			_add_button("Flood the Run Log (12 lines)", "dungeon_flood_log", Color(0.7, 0.8, 1))
+			_subtitle_subline("Trap / loot / a deliberately overfull side-panel log, for the dungeon UI.")
+			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"combat":
 			_title_label.text = "ADMIN — COMBAT"

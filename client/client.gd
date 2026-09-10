@@ -35990,6 +35990,23 @@ func _on_admin_panel_action(action_id: String) -> void:
 		"enter_dungeon_auto":
 			close_admin_menu()
 			send_to_server({"type": "gm_enter_dungeon", "tier": 0})
+		"dungeon_spring_trap":
+			close_admin_menu()
+			send_to_server({"type": "gm_spring_trap"})
+		"dungeon_drop_loot":
+			close_admin_menu()
+			# One of each kind, so the run log shows several rarity colours at once - which is
+			# also the overflow case for the side panel.
+			for _k in ["egg", "equipment", "valor"]:
+				send_to_server({"type": "gm_dungeon_drop", "kind": _k})
+		"dungeon_flood_log":
+			close_admin_menu()
+			# Deliberately overfill the side-panel log. Owner 2026-09-10: *"might be worth having
+			# a scenario where we expect the log to overflow over there so I can see how that
+			# handles."* The panel trims its OLDEST lines until the content fits, so this is the
+			# case that proves the key is never pushed off the bottom.
+			for _i in range(12):
+				_dungeon_log_add("[color=#FFD700]Log flood test line %d — a deliberately long entry so the panel has to wrap and then trim it.[/color]" % (_i + 1))
 		# Combat
 		"gm_spawnwish":
 			send_to_server({"type": "gm_spawnwish"})
@@ -44220,6 +44237,25 @@ func handle_egg_hatched(message: Dictionary):
 
 	# Play celebration sound
 	play_egg_hatch_sound()
+
+	# UNDERGROUND, a hatch is a NOTICE, not a screen. Reported 2026-09-10: *"I had a wolf pup
+	# hatch while I was in the Dungeon, the dungeon floor vanished momentarily and then came back
+	# right after."* Exactly the trap and treasure-chest shape a third time: this clears
+	# `game_output` and then writes through `display_game`, which underground routes to the
+	# side-panel log - so the canvas is emptied and nothing replaces it until the next
+	# dungeon_state redraws the floor.
+	#
+	# On the SURFACE the full celebration stays: a hatch has earned a screen, and there is no map
+	# being destroyed to show it.
+	if dungeon_mode:
+		var _bits: Array = []
+		for _b in bonuses.keys():
+			_bits.append("%s +%s" % [String(_b).capitalize(), str(bonuses[_b])])
+		_dungeon_log_add("[color=#FFD700]✦ EGG HATCHED ✦[/color] [color=%s]%s[/color] (%s, T%d)%s"
+			% [variant_color, companion_name, variant, int(tier),
+				("  " + ", ".join(_bits)) if not _bits.is_empty() else ""])
+		display_dungeon_floor()
+		return
 
 	# Display hatching celebration
 	game_output.clear()
