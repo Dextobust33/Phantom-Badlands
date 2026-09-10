@@ -288,10 +288,27 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       still reports all three sample SHAs at HTTP 200 and the repo at its pre-rewrite 120,127 KB.
       When it goes green, update `docs/ASSET_LICENCES.md` and tick this.
 
-- [ ] **SET UP: the private art backup.** git is no longer the backup for restricted art. Plan
-      and exact commands are in `docs/ASSET_LICENCES.md` - a PRIVATE `Phantom-Badlands-Art` repo
-      (private storage is not redistribution), with a LICENSING.md at its root so the
-      restriction travels with the art. Until that exists the only copy is the local snapshot.
+- [x] **DONE 2026-09-10 - private art backup exists.**
+      <https://github.com/Dextobust33/Phantom-Badlands-Art> (private, 1,849 files) holds every
+      path in `tools/licensed_assets.manifest` plus the 20 untouched purchased Raven `.zip`
+      files. Verified by MD5 against the working tree - 0 missing, 0 differing - and by an
+      actual RESTORE DRILL: `prop_floor32` deleted, gate went red and named it, restored from
+      the repo by the documented command, gate went green, occlusion probe passed. A backup that
+      has never been restored from is a hope, not a backup.
+      Risks accepted knowingly and written down in `docs/ASSET_LICENCES.md`: a private repo is
+      one click from public, and it stores plaintext on a third party.
+
+- [ ] **Write the BAKE GENERATORS as committed tools.** The real fix behind the backup above.
+      `prop_floor32` (11), `tile_floor32` (18), `free_floor32` (5) and `egg_floor32` (100) are
+      134 baked PNGs whose generator scripts **do not exist** - checked, no commit ever added
+      one. They were ad-hoc and are gone, so those files are currently irreplaceable data rather
+      than reproducible output.
+      The generators are OUR code operating on assets we own, not licensed art, so they belong
+      in the PUBLIC repo. Writing them turns 134 irreplaceable files into build output, lets a
+      fresh clone rebuild everything from the source packs alone, and shrinks what the private
+      repo has to guard to just the purchased packs. Roughly an hour; retires the class.
+      Everything needed to write them is in `client/dungeon_tiles.gd` (sheet paths, cell
+      coordinates, `FLOOR_COLOR`) and `client/dungeon_sprites.gd` (the glyph and tile tables).
 
 - [ ] **Asset licences: two open items** (raised 2026-09-10 by the owner asking whether the Raven
       packs are legal to have in the repo — see `docs/ASSET_LICENCES.md` for the full record).

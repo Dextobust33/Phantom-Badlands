@@ -142,27 +142,41 @@ plan and its risks.
 The restricted art is no longer in git, so **git is no longer your backup**. Losing the working
 copy means re-downloading (or re-buying) the packs and re-running the bakes. Set this up once.
 
-### Recommended: a PRIVATE GitHub repo
+### DONE 2026-09-10: the private repo exists
 
-A private repo is storage, not publication — the licences forbid *redistribution*, and a repo only
-you can read is the same category as a personal Dropbox folder. It is versioned, off-machine,
-free, and uses tooling that is already installed.
+**<https://github.com/Dextobust33/Phantom-Badlands-Art>** - private, 1,849 files, holding every
+path in `tools/licensed_assets.manifest` plus `purchased-originals/` (the 20 untouched Raven
+`.zip` files as bought, so that pack can always be restored from source rather than from a copy).
+
+Its `LICENSING.md` carries the per-pack terms verbatim and opens with "DO NOT MAKE THIS
+REPOSITORY PUBLIC", so the restriction travels with the art instead of living in someone's memory.
+
+**Verified, not assumed:**
+
+- all 1,827 art files compared by MD5 against the working tree - **0 missing, 0 differing**
+- a restore DRILL: `prop_floor32` was deleted outright, the gate went red and named it, the
+  directory was restored from the art repo by the documented command, the gate went green, and the
+  occlusion probe passed. The backup is known to be restorable, not merely known to exist.
+
+To restore on a fresh machine:
 
 ```bash
-gh repo create Phantom-Badlands-Art --private --description "Licence-restricted art. NOT for redistribution."
-cd /c/Users/Dexto/Documents
 git clone https://github.com/Dextobust33/Phantom-Badlands-Art.git pb-art
-cd pb-art
-# copy every path named in tools/licensed_assets.manifest, preserving the layout
-git add -A && git commit -m "Licensed art snapshot" && git push
+cp -r pb-art/client/sprites/* <phantasia-revival>/client/sprites/
+cd <phantasia-revival> && bash tools/check_licensed_assets.sh    # must print ok
 ```
 
-To restore on a fresh machine: clone `Phantom-Badlands-Art`, copy `client/sprites/*` into place,
-then `bash tools/check_licensed_assets.sh` to confirm nothing is missing.
+### The risks that were accepted going in
 
-**Put a LICENSING.md at the root of that repo** saying the contents are licensed for use in
-Phantom Badlands and must not be redistributed. It costs one file and it means the restriction
-travels with the art rather than living only in someone's memory.
+Stated plainly so nobody has to rediscover them:
+
+1. **A private repo is one click from public.** That is the standing hazard an offline copy does
+   not have. Mitigated by `LICENSING.md`, a blunt repo description, and no collaborators.
+2. **It puts the files in plaintext on a third party.** Private storage is not redistribution -
+   the same category as Dropbox - but it is transmission, and a strict reading of "in any form"
+   could argue. An encrypted archive was the alternative; the convenience of a repo was chosen.
+3. **The bakes still cannot be regenerated.** See below - this backup mitigates that, it does not
+   fix it.
 
 ### The local snapshot that already exists
 
@@ -227,3 +241,18 @@ at 120,127 KB, which is the signal that unreachable objects are still retained.
 Established while filing, and worth keeping: the repository has **0 forks** and has **never had a
 pull request** (no `refs/pull/*` refs). Those are the two things that normally keep rewritten
 commits alive, and neither applies here.
+
+## ⚠ The 134 files that cannot be regenerated
+
+`prop_floor32` (11), `tile_floor32` (18), `free_floor32` (5) and `egg_floor32` (100) are baked
+derivatives, and **the scripts that produced them do not exist** - not in the repo, not anywhere
+in its history. Checked, not assumed: no commit ever added a baker. They were ad-hoc and are gone.
+
+So those 134 PNGs live in exactly three places: the working tree, the local snapshot, and the
+private art repo. Lose all three and they must be re-derived by rewriting the bakers from scratch
+against `client/dungeon_tiles.gd`.
+
+**The real fix is to write the bake generators as committed tools.** They are OUR code operating
+on assets we own, not licensed art, so they belong in the PUBLIC repo. That turns 134
+irreplaceable files into reproducible output and means a fresh clone plus the source packs can
+rebuild everything. On the backlog; until it lands, the backup above is the mitigation.
