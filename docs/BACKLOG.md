@@ -259,6 +259,28 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       1.1ms. Applies uniformly to the player, the companion, every monster, floor loot and eggs.
       **This is also the layer TALL PROPS need** — see below.
 
+- [ ] **DECISION NEEDED: purge licence-restricted art from git HISTORY.** 1,576 files were
+      untracked on 2026-09-10 (`darkcave`, `tilemap_pack`, `pet-egg-pack`, and the four derived
+      bakes that carry their art) because their licences permit USE but forbid REDISTRIBUTION --
+      darkcave's wording is *"You cannot redistribute this software package or its files in any
+      form or form"*, with no carve-out. Untracking removes them from the current tree only;
+      `git checkout <old sha>` still recovers every one of them, so the exposure is reduced and
+      not ended. Full record in `docs/ASSET_LICENCES.md`.
+      **The fix is `git filter-repo --invert-paths` over those directories, then a force push.**
+      Not done without an explicit go-ahead, because it is destructive and public. Risks to
+      handle in the plan, none of them blockers:
+        - every commit SHA is rewritten, so any link or note referencing an old SHA goes stale;
+        - TAGS are rewritten too, and GitHub Releases are tied to tags. The uploaded ZIPs live
+          outside git and survive, but the tag -> commit link must be re-checked release by
+          release, and the launcher reads `api.github.com/repos/.../releases` -- so this is the
+          one step that could actually reach players if it goes wrong. Verify the launcher can
+          still see the latest release BEFORE walking away from it;
+        - anyone who already cloned or forked keeps the data; nothing can undo that;
+        - GitHub retains unreachable objects until GC and will keep serving them by SHA; ask
+          support to run one.
+      Take a full mirror clone as a backup first (`git clone --mirror`), off the machine.
+      Repo weight is a side benefit, not a reason: it is ~120MB, mostly art.
+
 - [ ] **Asset licences: two open items** (raised 2026-09-10 by the owner asking whether the Raven
       packs are legal to have in the repo — see `docs/ASSET_LICENCES.md` for the full record).
       Raven Fantasy is settled: commercial use unlimited, attribution welcome not required, but

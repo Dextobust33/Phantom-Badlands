@@ -58,3 +58,20 @@ client/sprites/RageTileMap-master/
 # sprite-room work without them. See docs/ASSET_LICENCES.md.
 client/sprites/raven/
 client/sprites/*.zip
+
+# --- Licence-restricted art: USE is licensed, REDISTRIBUTION is not ---
+# These packs forbid redistributing the files themselves, and a public repo does exactly that.
+# They stay on disk and ship inside the .pck (a packed build artefact, which is the licensed
+# use); they are simply not published as source. Derived *_floor32 bakes are listed too where
+# palette-tracing showed they carry the restricted art rather than only the flat floor colour
+# (prop_floor32 traced 100% to darkcave, free_floor32 81% to tilemap_pack).
+# Keep a private backup: a fresh clone cannot build without these. See docs/ASSET_LICENCES.md.
+client/sprites/darkcave/
+client/sprites/darkcave_tiles/
+client/sprites/darkcave Add CRT effect/
+client/sprites/tilemap_pack/
+client/sprites/pet-egg-pack/
+client/sprites/prop_floor32/
+client/sprites/free_floor32/
+client/sprites/tile_floor32/
+client/sprites/egg_floor32/
