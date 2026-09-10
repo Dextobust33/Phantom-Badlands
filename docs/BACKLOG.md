@@ -611,13 +611,30 @@ does not exist in the interiors case at all.
       and brackets lost when the sprite is composited onto a room floor - which is the order the
       renderer actually uses.
 
-- [ ] **NOW UNBLOCKED: widen the decor pool.** Decor was curated to 3 of 7 packs because a
-      tileset's small objects are mostly items and an item-looking decoration was misleading.
-      With loot bracketed that constraint is gone: the crates, pots, weapons, skulls and ingots
-      rejected from `cozy_home`, `farmlands_v3`, `the_underworld` and `red_desert_ruin` are now
-      usable scenery. Re-curate from the shortlist `tools/bake_room_decor.py::pick` already
-      produces - the CHICKENS stay out regardless, because a live animal reads as a monster and
-      no border fixes that.
+- [x] **DONE 2026-09-10 - decor pool widened from 3 packs to 7.** The corner brackets on floor
+      loot are what made it safe: jars, crates, pots, a kettle, ingots, skulls and a box are all
+      usable scenery now that real pickups are marked. 13 tiles -> 31.
+      The CHICKENS stayed out, and no border fixes them - a live animal reads as a MONSTER, and
+      monsters are drawn as floor sprites here too. See the food-source item below, which is a
+      better use for them than scenery.
+
+- [ ] **Floor loot should be HOVERABLE** (owner, 2026-09-10): *"I wonder if it makes sense to make
+      loot mouse hoverable to see what it is now?"* Yes, and it is nearly free: the dungeon
+      already hovers monsters and theme tiles through one idiom (`[url=...]` +
+      `meta_hover_started` -> popup), floor loot already carries its full `item_data` on the wire,
+      and the loot cell is already an `[img]` that could be wrapped in a `[url]` exactly as the
+      monster cell is. The brackets say "this is a pickup"; hover would say WHICH pickup, which is
+      the natural next question and the one the colour alone cannot answer.
+
+- [ ] **Chickens (and animals) as a dungeon FOOD source** (owner, 2026-09-10): *"One argument for
+      the chickens is they could be a food source that can be found in the dungeon so they can use
+      it when they rest."* This turns a rejected asset into content, and it lands on a system that
+      already exists - resting underground consumes food from the pouch, and running dry is a real
+      pressure on a long run.
+      It also fits the dungeon design: a floor that can feed you changes how far you push, which
+      is the same lever wandering monsters pull. Open questions for whoever picks it up: is it a
+      floor-loot KIND (bracketed like other pickups), a passive creature you catch, or a tile you
+      interact with? `farmlands_v3` has 12 chicken frames, so there is art for any of the three.
 
 - [ ] **Walls only where they explain the space** (owner, 2026-09-10): *"It may be better if only
       the spaces below a corridor show those (almost as if they are holding up the corridors) and

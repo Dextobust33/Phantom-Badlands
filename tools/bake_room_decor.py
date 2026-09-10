@@ -46,9 +46,19 @@ RAVEN = 'client/sprites/raven'
 #
 # 2,304 object cells per pack was a count of CELLS, not of usable scenery. Three packs have any:
 DECOR = {
-    'shroom_chasm':  [(7, 12), (7, 14), (9, 15), (20, 0), (7, 15), (21, 2)],   # flower, crystals, sand
-    'winter_forest': [(1, 0), (6, 6), (7, 6)],                                 # rock, twigs, branch
-    'green_dungeon': [(10, 3), (11, 3), (7, 11), (8, 11)],                     # flowers, stone, log
+    'shroom_chasm':   [(7, 12), (7, 14), (9, 15), (20, 0), (7, 15), (21, 2)],   # flower, crystals, sand
+    'winter_forest':  [(1, 0), (6, 6), (7, 6)],                                 # rock, twigs, branch
+    'green_dungeon':  [(10, 3), (11, 3), (7, 11), (8, 11)],                     # flowers, stone, log
+    # WIDENED 2026-09-10, once floor loot got its corner brackets. These are the cells that were
+    # rejected for looking like pickups - jars, crates, ingots, skulls. A bracket on the real loot
+    # is what makes them safe, which is the whole reason the owner suggested the border.
+    'cozy_home':      [(26, 11), (23, 16), (15, 8), (26, 12), (23, 15), (26, 14)],  # jars, pot, crate, kettle
+    'the_underworld': [(23, 6), (24, 6), (25, 16), (17, 3), (18, 3), (22, 6)],      # ingots, marks, skulls, box
+    'farmlands_v3':   [(16, 16), (16, 17), (2, 12), (12, 5), (12, 2)],              # skulls, beet, mound
+    'red_desert_ruin': [(8, 1)],                                                    # crate
+    # The CHICKENS stay out, and no border fixes them: a live animal reads as a MONSTER, and
+    # monsters are also drawn as floor sprites here. The owner has a better use for them anyway -
+    # a dungeon food source you can cook at a rest - which makes them content, not scenery.
 }
 # Rooms whose pack is NOT in DECOR keep the existing darkcave scatter props, which are neutral
 # and already work. A pack contributing a floor need not contribute decor.
