@@ -578,6 +578,9 @@ var _dungeon_log: Array = []
 # scratch each time its menu redraws, and only ever RENDERED while that menu is open, so an exit
 # path that forgets to clear it cannot leave a stale menu on the panel.
 var _dungeon_panel_menu: Array = []
+# The last text actually written to the side panel, so an unchanged redraw can be skipped and the
+# player's scroll position left alone. See `_dungeon_panel_refresh`.
+var _dungeon_panel_last_text: String = ""
 # Bounded so the log cannot push the map key off the panel - the key is what the log sits above,
 # and burying it would trade one unreadable surface for another.
 const DUNGEON_LOG_MAX := 6
@@ -34494,19 +34497,60 @@ func _dungeon_log_add(text: String) -> void:
 	var plain := text.strip_edges()
 	if plain == "":
 		return
+	# COLLAPSE A REPEATING LINE instead of stacking it.
+	#
+	# Player report 2026-09-09: the log "appears full at the beginning" and pickups could not be
+	# seen. A status that counts down - "You are blinded! (11 rounds remaining)", then 10, then 9 -
+	# is ONE fact changing, and it was taking one of six slots per step, so three steps of a
+	# debuff pushed every find off the panel. Matched on the line with its numbers removed, so
+	# only the count differs, and the newest wording replaces the old rather than queueing behind
+	# it. A genuinely different message still appends normally.
+	var shape := _dungeon_log_shape(plain)
+	if not _dungeon_log.is_empty() and _dungeon_log_shape(String(_dungeon_log[-1])) == shape:
+		_dungeon_log[-1] = plain
+		_dungeon_panel_refresh()
+		return
 	_dungeon_log.append(plain)
 	if _dungeon_log.size() > DUNGEON_LOG_MAX:
 		_dungeon_log = _dungeon_log.slice(_dungeon_log.size() - DUNGEON_LOG_MAX)
 	_dungeon_panel_refresh()
 
 
+func _dungeon_log_shape(line: String) -> String:
+	"""A log line with its NUMBERS and colour tags stripped, so two ticks of the same countdown
+	compare equal while two different events do not."""
+	var out := ""
+	var plain := _strip_bbcode(line)
+	for i in range(plain.length()):
+		var ch := plain[i]
+		if ch >= "0" and ch <= "9":
+			continue
+		out += ch
+	return out
+
+
 func _dungeon_panel_refresh() -> void:
 	"""Redraw the side panel. The panel is what shows the log and the panel menus, so anything
-	that changes either has to call this or the new line simply never appears."""
-	if dungeon_mode and not dungeon_data.is_empty() and map_display:
-		map_display.clear()
-		map_display.append_text(_dungeon_side_panel_text())
-		map_display.scroll_to_line(0)
+	that changes either has to call this or the new line simply never appears.
+
+	IT MUST NOT FIGHT THE SCROLLBAR. Player report 2026-09-09: *"players aren't able to scroll or
+	see the items they are picking up."* The dungeon idle animation redraws the floor roughly
+	every 0.42s and this went with it, and every redraw ended in `scroll_to_line(0)` - so a player
+	who scrolled down to read what they had picked up was yanked back to the top two or three
+	times a second. Scrolling was not broken; it was being undone faster than a person can read.
+
+	So the redraw is now a no-op when the text has not actually changed, and the scroll is only
+	reset when it HAS. An idle animation tick changes nothing in this panel, so it no longer
+	touches it at all."""
+	if not (dungeon_mode and not dungeon_data.is_empty() and map_display):
+		return
+	var txt: String = _dungeon_side_panel_text()
+	if txt == _dungeon_panel_last_text:
+		return
+	_dungeon_panel_last_text = txt
+	map_display.clear()
+	map_display.append_text(txt)
+	map_display.scroll_to_line(0)
 
 
 func _dungeon_panel_menu_open() -> bool:
@@ -44245,6 +44289,14 @@ func _set_dungeon_side_boxes_visible(vis: bool) -> void:
 		coord_post_label.visible = vis
 	if region_label != null and is_instance_valid(region_label):
 		region_label.visible = vis
+	# The OVERWORLD MINIMAP stands down too. Player report 2026-09-09: *"there is an ASCII thing
+	# over there for some reason"* - it was the surface map, still drawing trees, water and the
+	# roads while the player was underground, where none of it means anything. Same call the
+	# owner made for the Coords / Region boxes ("they don't really serve much of a purpose while
+	# you're in a dungeon"); it was simply not in this list. It also occupied the bottom third of
+	# the side panel, which is the space the dungeon's own run log needs.
+	if minimap_display != null and is_instance_valid(minimap_display) and not vis:
+		minimap_display.visible = false
 
 
 func display_dungeon_floor():
@@ -44282,10 +44334,7 @@ func display_dungeon_floor():
 	# The side panel now carries the floor status and the legend, which is what a side panel is
 	# for, and the Coords / Area boxes stand down underground — owner: "they don't really serve
 	# much of a purpose while you're in a dungeon."
-	if map_display:
-		map_display.clear()
-		map_display.append_text(_dungeon_side_panel_text())
-		map_display.scroll_to_line(0)
+	_dungeon_panel_refresh()
 	_set_dungeon_side_boxes_visible(false)
 
 	# GameOutput IS the dungeon canvas now. Everything that is not the map moved to the side
@@ -44461,10 +44510,11 @@ func update_dungeon_map():
 	cannot drift into disagreeing about what the panel says."""
 	if not dungeon_mode or dungeon_data.is_empty():
 		return
-	if map_display:
-		map_display.clear()
-		map_display.append_text(_dungeon_side_panel_text())
-		map_display.scroll_to_line(0)
+	# Through the SAME writer as everything else, so there is one place that decides when the
+	# panel is redrawn and when the player's scroll position is left alone. This used to clear
+	# and re-append on its own, which meant it reset the scrollbar on every dungeon_state even
+	# after the other two callers had been taught not to.
+	_dungeon_panel_refresh()
 	_set_dungeon_side_boxes_visible(false)
 
 
