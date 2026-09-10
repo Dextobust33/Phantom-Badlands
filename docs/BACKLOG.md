@@ -267,7 +267,9 @@ will have a hard time moving through the world... Ultimately it would be great i
 of controller or phone support as well."* A 2026-08-20 playtest had already recorded that
 "non-numpad keyboards need an answer at some point"; it was never written down anywhere actionable.
 
-- [x] **Keyboard parity — DONE 2026-09-10.** The overworld arrow fallback was FOUR-direction only
+- [x] **Keyboard parity — DONE 2026-09-10, PLAYTEST PASSED.** Owner confirmed diagonals land
+      (including deliberately sloppy chords), taps are not swallowed, held travel is full speed,
+      H hunts, and the rebind works. `ARROW_CHORD_GRACE_SEC` stays at 70ms — *"didn't seem laggy"*. The overworld arrow fallback was FOUR-direction only
       (the code said so), so on an 8-way map a laptop player could not take a diagonal at all and
       was slower on every journey. WASD is unavailable — Q/W/E/R/Space are the action bar — so
       diagonals are CHORDS: hold Up+Left for north-west. Owner asked the right question about it,

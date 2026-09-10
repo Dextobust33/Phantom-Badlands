@@ -11,7 +11,12 @@ out as one release rather than several.
 
 ---
 
-## 1. Arrow-key diagonal movement  ⚠ highest risk
+## 1. Arrow-key diagonal movement — ✅ PASSED 2026-09-10
+
+> Owner: *"all the tests were fine and H does hunt. Rebinding seemed to work as well. Didn't seem
+> laggy."* Chords land as diagonals including sloppy presses, taps are not swallowed, held travel
+> is full speed, opposite keys cancel, H hunts, and 4/5 rebind West/Hunt correctly.
+> **The 70ms grace window stays at 70ms** — cleared for release.
 
 **Why it needs you:** the whole question is a 70ms timing window, which no test or screenshot can
 judge. Numpad players are unaffected either way.
