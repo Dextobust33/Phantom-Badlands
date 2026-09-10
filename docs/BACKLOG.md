@@ -235,6 +235,22 @@ thing that will exist in multiples. Widening the upgrade pool can start earlier 
 today there are three reveal upgrades and five cycle types, which the owner's own playtest answer
 ("depends what upgrades hit your cards") already suggests is too thin to build a chase on.
 
+- [ ] **Props are HIDDEN by anything standing on them — open, no cheap fix yet.** Owner
+      2026-09-10: *"when a sprite steps on a space with a decorative piece on it the decorative
+      piece seems to go away from the space instead of the sprite being drawn over the top of it...
+      I guess variety [first] but occlusion may become annoying in the future. We should keep this
+      in mind in case another solution arises."*
+      **Why it is not a quick fix.** Every grid cell is ONE inline `[img]` with the floor baked
+      into it, so a sprite REPLACES the cell rather than layering over it. The codebase's existing
+      answer to this shape is offline pre-baking (`monster_floor32/`, `GLYPH_TILE`), which here
+      would mean baking every sprite onto every prop background — and that multiplies: props x
+      (player frames + companion + 53 monsters). Widening the prop pool, which the owner chose
+      first, makes the multiplication worse, not better.
+      **Options if it becomes annoying:** (a) runtime compositing, cost unknown and per-frame;
+      (b) place props only on tiles nothing can stand on, so the case never arises; (c) accept it —
+      a prop reappearing as you step off reads as "you were standing on it".
+      Revisit if it starts reading as a bug rather than as depth.
+
 ## Phase 3.4 — the CYCLE VALUE (deck-width arc, owner direction 2026-09-10)
 
 Owner: *"make cards with mechanics that make you actually want to grow your deck to a larger size

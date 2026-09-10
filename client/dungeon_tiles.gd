@@ -68,7 +68,17 @@ const CAVE_ROCK := Vector2i(4, 4)
 ## looks like an egg or a pickup, and three in one view competed with the actual floor loot.
 ## Background scatter has to stay in the background.
 const PROP_DIR := "res://client/sprites/prop_floor32/"
-const PROP_COUNT := 7
+## 7 -> 14 on 2026-09-10. Owner, after a live look: *"I also haven't seen much variety in the
+## decorations like the lamps and things from the sprite packs."* Correct, and worse than it
+## sounds: FOUR of the original seven were near-identical grass sprigs, so a corridor was really
+## showing three distinct things. Added boulders, a small rock, a dead shrub, a moss patch and two
+## lanterns - all picked by rendering the cave sheet with its cells LABELLED and looking at it,
+## because a previous pick-by-eye put an edge tile on the floor and covered the room in black
+## notches.
+## Still deliberately excluded, each for a reason: the SKULL (dropped in d42bf00f for reading as
+## loot), the CAMPFIRE (reads as a rest site, which is a real feature), the grave MARKER (reads as
+## remains) and the 3x3 TENT (reads as a safe room). Background scatter must stay background.
+const PROP_COUNT := 14
 ## Roughly one floor tile in seven. Flavour, not clutter: high enough that a corridor is not all
 ## one tile, low enough that the eye still reads the floor as floor.
 const PROP_CHANCE_IN := 7
