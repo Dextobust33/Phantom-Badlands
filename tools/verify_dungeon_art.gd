@@ -109,6 +109,36 @@ func _init() -> void:
 		if not ResourceLoader.exists(pp):
 			bad.append("prop %s missing" % pp)
 
+	# --- can every floor-loot KIND the server can drop actually be drawn? ---
+	#
+	# 2026-09-10. `consumable` had no sprite for as long as the sprite table has existed, so a
+	# Floor Skip Charm on the dungeon floor rendered as a bare glyph beside five sprited kinds.
+	# Nothing caught it because every check asked "do the files in the table load", and the table
+	# was the thing that was incomplete. Owner found it by walking past one.
+	#
+	# So this asks the other direction: for every kind the SERVER can put on the floor, does the
+	# client have art? The list is read out of server.gd rather than copied here, because a copy
+	# is the "one value, two places" shape that causes most of the wrong-text bugs in this repo -
+	# a new kind added to the server must show up here without anyone remembering to update it.
+	var srv := FileAccess.get_file_as_string("res://server/server.gd")
+	var kind_re := RegEx.new()
+	kind_re.compile('"kind": "([a-z_]+)", "char"')
+	var kinds := {}
+	for m in kind_re.search_all(srv):
+		kinds[m.get_string(1)] = true
+	if kinds.is_empty():
+		bad.append("floor-loot kind scan matched NOTHING - the pattern has drifted from server.gd")
+	for k in kinds:
+		checked += 1
+		# eggs are drawn from the EGG sprite set by variant, not from the loot table
+		if k == "egg":
+			continue
+		var lp: String = DS.loot_path(k)
+		if lp == "":
+			bad.append("floor loot kind '%s' has no sprite - it will draw as a bare glyph" % k)
+		elif not ResourceLoader.exists(lp):
+			bad.append("floor loot kind '%s' -> %s does not load" % [k, lp])
+
 	# --- and the rule that took THREE occurrences to learn ---
 	#
 	# Never `color=` a floor-backed sprite. Those images have the ground baked into them, so a

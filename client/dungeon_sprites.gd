@@ -65,6 +65,12 @@ const LOOT_SPRITE := {
 	"material": "material",
 	"quest_relic": "quest_relic",
 	"equipment": "equipment",
+	# 2026-09-10 - the server has ALWAYS been able to drop this kind and it never had art, so
+	# a Floor Skip Charm on the ground rendered as a bare glyph next to five sprited kinds.
+	# Owner spotted it in play: "the floor skip charm doesn't have a sprite currently."
+	# `verify_dungeon_art.gd` now diffs this table against the kinds the server can actually
+	# send, so a sixth kind cannot be added without its art again.
+	"consumable": "consumable",
 }
 
 
