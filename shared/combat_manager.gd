@@ -5591,16 +5591,33 @@ func _companion_strike(character, monster, ability_name: String, combat: Diction
 	its card better. That is the point of the card being a companion's at all - owner's own list
 	of what carries a careful player to the top names a strong companion, and until now the card
 	was identical whether it came from a fresh hatchling or a fused apex."""
-	var comp: Dictionary = character.active_companion if character != null else {}
-	var _sub: int = maxi(1, int(comp.get("sub_tier", comp.get("tier", 1))))
-	var _tier: int = maxi(1, int(comp.get("tier", 1)))
-	# The companion's own quality spread and authored attack profile, read the SAME way its
-	# ordinary attack reads them (see `_process_companion_attack`) so a Gnoll's card hits like a
-	# Gnoll rather than like a generic pet.
-	var quality: float = (1.0
-		+ 0.06 * float(_tier - 1)
-		+ COMPANION_CARD_SUBTIER_STEP * float(_sub - 1))
-	var atk_profile: float = 1.0 + float(comp.get("bonuses", {}).get("attack", 0)) / 10.0
+	# WHOSE quality scales this card?
+	#
+	# This function serves BOTH companion cards and DUNGEON cards - `_process_companion_ability`
+	# handles either id. When the companion scaling was added on 2026-09-09 that distinction was
+	# missed, so a dungeon card's power started depending on whichever companion happened to be
+	# equipped, and fell to the floor for a player running none. A Balrog's card is not your
+	# wolf's, and it should not get better because you fused a nicer pet.
+	#
+	# So: a companion card scales off the COMPANION, a dungeon card off its own authored TIER -
+	# the `tier` field that has always been in `DUNGEON_CARD_DATA` and was never read for
+	# anything. Same curve either way, so the two remain comparable.
+	var quality: float = 1.0
+	var atk_profile: float = 1.0
+	if ability_name.begins_with("dungeon_card_"):
+		var dtier: int = maxi(1, int(DropTablesScript.get_card_data_by_id(ability_name).get("tier", 1)))
+		quality = 1.0 + 0.06 * float(dtier - 1) + COMPANION_CARD_SUBTIER_STEP * float(dtier - 1)
+	else:
+		var comp: Dictionary = character.active_companion if character != null else {}
+		var _sub: int = maxi(1, int(comp.get("sub_tier", comp.get("tier", 1))))
+		var _tier: int = maxi(1, int(comp.get("tier", 1)))
+		# The companion's own quality spread and authored attack profile, read the SAME way its
+		# ordinary attack reads them (see `_process_companion_attack`) so a Gnoll's card hits
+		# like a Gnoll rather than like a generic pet.
+		quality = (1.0
+			+ 0.06 * float(_tier - 1)
+			+ COMPANION_CARD_SUBTIER_STEP * float(_sub - 1))
+		atk_profile = 1.0 + float(comp.get("bonuses", {}).get("attack", 0)) / 10.0
 	# THE BASIS IS THE COMPANION'S, NOT THE PLAYER'S WEAPON ARM.
 	#
 	# 2026-09-09. This used `character.get_total_attack()`, a PHYSICAL stat - so a mage's

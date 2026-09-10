@@ -585,9 +585,12 @@ var _dungeon_panel_menu: Array = []
 # The last text actually written to the side panel, so an unchanged redraw can be skipped and the
 # player's scroll position left alone. See `_dungeon_panel_refresh`.
 var _dungeon_panel_last_text: String = ""
-# Bounded so the log cannot push the map key off the panel - the key is what the log sits above,
-# and burying it would trade one unreadable surface for another.
-const DUNGEON_LOG_MAX := 6
+# Bounded so the log cannot grow without limit. This is now a MEMORY bound rather than the
+# display limit: `_dungeon_panel_trim_to_fit` drops the oldest lines until the panel actually
+# fits, so the visible depth adapts to the window instead of being guessed here. Raised from 6
+# on 2026-09-10 because a treasure chest posts one entry per item, and a four-item chest was
+# taking five of six slots and pushing everything else off.
+const DUNGEON_LOG_MAX := 10
 var _cached_nearby_players: Array = []  # Latest nearby_players list from server
 # Local player's position from the most recent location message. Cached
 # separately because character_data.x/y is only updated on flee, not on
@@ -43710,29 +43713,31 @@ func handle_dungeon_treasure(message: Dictionary):
 	"""Handle opening a treasure chest in dungeon"""
 	var rewards = message.get("rewards", [])
 
-	game_output.clear()
-	display_game("[color=#FFD700]===== TREASURE! =====[/color]")
-	display_game("")
-	display_game("[color=#FFD700]  $$$[/color]")
-	display_game("[color=#8B4513] [===][/color]")
-	display_game("")
-
-	if not rewards.is_empty():
-		display_game("[color=#87CEEB]Found:[/color]")
-		for reward_text in rewards:
-			display_game("  %s" % reward_text)
+	# INTO THE RUN LOG, and the floor stays up. Reported 2026-09-10: *"Opening small treasure
+	# chests text also clears before players can view it."*
+	#
+	# Exactly the shape the sprung trap had. This cleared `game_output` and then wrote through
+	# `display_game`, which underground routes to the side-panel log rather than the canvas - so
+	# the chest blanked the map and put its text somewhere else, and the banner and ASCII chest
+	# were drawn to a surface nobody was looking at. A chest is a NOTICE, not a screen: it goes
+	# beside the map, where it persists until six newer things have happened, instead of over it.
+	if rewards.is_empty():
+		_dungeon_log_add("[color=#FFD700]TREASURE![/color] [color=#808080]The chest was empty...[/color]")
 	else:
-		display_game("[color=#808080]The chest was empty...[/color]")
-
-	display_game("")
-	display_game("[color=#808080]Move to continue exploring...[/color]")
+		# One entry per item, so each keeps its own rarity colour and the log's de-duplication
+		# cannot fold two different finds into one line.
+		_dungeon_log_add("[color=#FFD700]★ TREASURE ★[/color]")
+		for reward_text in rewards:
+			_dungeon_log_add(String(reward_text))
 
 	# Update map panel to show player on the treasure tile (without clearing game_output)
 	var px = message.get("player_x", dungeon_data.get("player_x", 0))
 	var py = message.get("player_y", dungeon_data.get("player_y", 0))
 	dungeon_data["player_x"] = px
 	dungeon_data["player_y"] = py
-	update_dungeon_map()
+	# Redraw the FLOOR too, not just the panel. The canvas is no longer cleared above, but the
+	# player has just moved onto the chest tile and the map has to catch up.
+	display_dungeon_floor()
 
 	# Don't set pending_continue - player can move immediately
 	# Movement will naturally request fresh dungeon state
@@ -43796,36 +43801,38 @@ func handle_dungeon_complete(message: Dictionary):
 	_display_dungeon_complete(message)
 
 func _display_dungeon_complete(message: Dictionary):
-	"""Display the dungeon completion screen"""
-	var dungeon_name = message.get("dungeon_name", "Dungeon")
-	var rewards = message.get("rewards", {})
-	var floors_cleared = rewards.get("floors_cleared", 0)
-	var total_floors = rewards.get("total_floors", 0)
-	var xp_reward = rewards.get("xp", 0)
-	var full_clear = rewards.get("full_clear", false)
-	var boss_egg_obtained = message.get("boss_egg_obtained", false)
-	var boss_egg_name = message.get("boss_egg_name", "")
-	var boss_egg_lost = message.get("boss_egg_lost_to_full", false)
+	"""Display the dungeon completion screen.
 
+	SHOW THE SERVER'S SUMMARY. This used to rebuild its own from the structured fields - banner,
+	floors, XP, egg - and simply not render `message`, the summary the server had already
+	assembled. That summary is a strict SUPERSET: it also carries HARD MODE and FLAWLESS banners,
+	the boss material drops, the final Reliquary Chest loot, and the DUNGEON CARD callout.
+
+	So the reward from the last chest, and the card the run was for, were being built, sent, and
+	thrown away. Worse, the server-side fix for exactly this is dated v0.9.679 and says so in a
+	comment - the chest lines were folded into the completion message "so it's shown ON the
+	completion screen (was a separate text message wiped by the teleport)". That fix never
+	reached a player, because the consumer ignored the field it was written into. A change that
+	is not on the executed path is not a change.
+
+	Reported 2026-09-10: *"the player doesn't get to see what they got out of it because it
+	teleports them out of the dungeon and shows the screen that gives them the egg."*"""
 	game_output.clear()
-
-	if full_clear:
-		display_game("[color=#00FF00]===== DUNGEON COMPLETE! =====[/color]")
-		display_game("")
-		display_game("[color=#FFD700]★★★ VICTORY! ★★★[/color]")
+	var body := String(message.get("message", ""))
+	if body != "":
+		for line in body.split("
+"):
+			display_game(String(line))
 	else:
+		# Fallback for an older server that sends no summary - the fields are still there, so a
+		# mismatched client shows something rather than an empty screen.
+		var dungeon_name = message.get("dungeon_name", "Dungeon")
+		var rewards = message.get("rewards", {})
 		display_game("[color=#FFFF00]===== DUNGEON CLEARED =====[/color]")
-
-	display_game("")
-	display_game("You have conquered the %s!" % dungeon_name)
-	display_game("Floors cleared: %d/%d" % [floors_cleared, total_floors])
-	display_game("")
-	display_game("[color=#FFD700]Rewards:[/color]")
-	display_game("  + %d XP" % xp_reward)
-	if boss_egg_obtained:
-		display_game("[color=#FF69B4]  ★ %s obtained! ★[/color]" % boss_egg_name)
-	elif boss_egg_lost:
-		display_game("[color=#FF6666]  ★ %s found but eggs full! ★[/color]" % boss_egg_name)
+		display_game("")
+		display_game("You have conquered the %s!" % dungeon_name)
+		display_game("Floors cleared: %d/%d" % [rewards.get("floors_cleared", 0), rewards.get("total_floors", 0)])
+		display_game("  + %d XP" % rewards.get("xp", 0))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
