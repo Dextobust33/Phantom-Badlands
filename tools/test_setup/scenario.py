@@ -222,6 +222,19 @@ def release_check(c):
     """
     park_on_dungeon(c)
     seeded = give_cycle_cards(c)
+    # Back the dungeon cards down from 3 copies to 2. `give_cycle_cards` seeds the CAP so a
+    # three-card hand reliably holds an unplayed cycler - right for the cycle test, wrong
+    # here. A maxed themed card makes `_roll_dungeon_card_reward` fall straight through to
+    # the copy-drop, so the completion screen shows 'RARE CARD DROP' instead of 'DUNGEON
+    # CARD EARNED' - and the exclusive banner is the half worth looking at.
+    #
+    # Found by reading which of two near-identical banners the owner's screenshot actually
+    # contained: Forgotten Crypt's themed card IS bulwark_of_bone, which the seeding had
+    # already capped. A harness will hand you a confident pass for a branch it silently
+    # prevented from running.
+    for _cid in ('dungeon_card_bulwark_of_bone', 'dungeon_card_venom_fang'):
+        if _cid in c.get('combat_deck_collection', {}):
+            c['combat_deck_collection'][_cid] = 2
     c["max_hp"] = 500000
     c["current_hp"] = 500000
     for pool in ("stamina", "mana", "energy"):
