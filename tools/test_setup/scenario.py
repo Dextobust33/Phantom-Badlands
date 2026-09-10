@@ -205,6 +205,25 @@ def give_cycle_cards(c):
     return deck[:1]
 
 
+def dungeon_rooms(c):
+    """Walk a floor and look at where a CORRIDOR meets a ROOM.
+
+    Rooms are drawn from a different tileset than corridors now, and the one thing neither the
+    palette measurement nor the room-detection probe can answer is what the SEAM looks like when
+    you walk through it. So: parked on an entrance, stocked, and given enough HP that wandering
+    monsters do not end the walk before the doorways have been looked at. No cards or eggs seeded
+    - anything that pops a menu is a distraction from the only question being asked here.
+    """
+    park_on_dungeon(c)
+    c["max_hp"] = 500000
+    c["current_hp"] = 500000
+    for pool in ("stamina", "mana", "energy"):
+        c["max_" + pool] = 9999
+        c["current_" + pool] = 9999
+    return []
+
+
+
 def release_check(c):
     """Everything the v0.9.767 release still needs a human to look at, in ONE dungeon run.
 
@@ -391,6 +410,13 @@ SCENARIOS = {
              "and read the run log. Walk onto the D and press the dungeon action."),
         players=1,
         apply=park_on_dungeon),
+    "dungeon_rooms": dict(
+        doc=("Walk a dungeon floor to judge the SEAM where a corridor meets a room - rooms are "
+             "drawn from shroom_chasm, corridors stay darkcave. Parked on an entrance with food "
+             "and enough HP to wander. Enter via Admin > Dungeon > Enter T1 Dungeon (instant)."),
+        players=1,
+        apply=dungeon_rooms),
+
     "release_check": dict(
         doc=("EVERY unverified fix in the pending release, reachable in ONE dungeon run: "
              "hoverable card damage, the absorbed-hit line, props under theme-tile glyphs, an "
