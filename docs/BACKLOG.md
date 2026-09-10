@@ -205,6 +205,36 @@ stocked, for the hover / chest / run-log checks).
       ability entry for no player-visible gain. If they are ever removed, do it in one pass and
       re-run `-- verify`.
 
+## ⚑ CARD INSTANCES + a WIDE upgrade pool (owner direction 2026-09-10) — the chase loop
+
+Owner, after playtesting cycle values: *"Card upgrades should always be something worth chasing
+and make Milestones exciting. The pool of them should be wide enough that some players are telling
+their friends about ones they found that their friends have probably never seen."*
+
+**The loop this is meant to create:**
+1. Earn a card from a dungeon (companion or dungeon-specific).
+2. Put it in the deck and LEVEL IT UP, hoping for good milestones to stack on it.
+3. If the rolls disappoint, **sell it on the market** and try again with a fresh one.
+
+**The architectural consequence, which is the expensive part — do not start the content pass
+without deciding this first.** Duplicate cards must become **unique INSTANCES**: usage and
+milestone picks tracked *per copy*, so two Venom Fangs can carry different upgrades and a player
+can chase a better roll. Today all progression is keyed by CARD ID:
+  * `combat_deck_collection` is `{card_id: count}` — a count, with no identity per copy
+  * `ability_uses[card_id]` — shared across every copy
+  * `ability_milestone_picks[card_id]` — shared across every copy
+  * the market lists a card by id (`handle_market_list_card`), so "sell THIS one" has nothing to
+    name yet
+  * the deck screen and the combat hand address cards by id throughout
+So this is not a table change; it is an identity change that reaches the save format, the deck UI,
+the combat hand, the milestone system and the market. It also needs a migration for existing
+saves, and `MAX_ABILITY_COPIES` (3) starts meaning something different.
+
+**Sequencing:** this decision comes BEFORE authoring 53 dungeon cards, because the cards are the
+thing that will exist in multiples. Widening the upgrade pool can start earlier and independently —
+today there are three reveal upgrades and five cycle types, which the owner's own playtest answer
+("depends what upgrades hit your cards") already suggests is too thin to build a chase on.
+
 ## Phase 3.4 — the CYCLE VALUE (deck-width arc, owner direction 2026-09-10)
 
 Owner: *"make cards with mechanics that make you actually want to grow your deck to a larger size
