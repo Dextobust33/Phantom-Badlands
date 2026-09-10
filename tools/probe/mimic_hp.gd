@@ -21,7 +21,6 @@ func _init() -> void:
 		% [int(mon.max_hp), int(mon.current_hp), str(c.get("disguise_active", false))])
 	var claimed := 0
 	for rnd in range(5):
-		c["round"] = rnd + 3          # force the reveal window open
 		var before: int = int(mon.current_hp)
 		var maxb: int = int(mon.max_hp)
 		c["combat_hand"] = ["magic_bolt"]

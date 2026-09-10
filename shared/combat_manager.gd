@@ -1800,9 +1800,23 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 			"defense": monster.defense,
 			"name": monster.name
 		}
-		# Show weakened stats initially (50%)
-		monster.max_hp = max(10, int(monster.max_hp * 0.5))
-		monster.current_hp = monster.max_hp
+		# 2026-09-09 - the HP is NO LONGER HALVED, and this is the fix for a player-reported
+		# bug: "Magic bolt stated it did 593 damage, but this did not show/register on monster's
+		# health bar" (APEX Mimic, v0.9.764).
+		#
+		# The disguise used to halve max_hp and current_hp, creating a SECOND HP SPACE, and the
+		# reveal then recomputed current_hp from a derived damage figure - so at the reveal the
+		# bar JUMPED UP. Reproduced: 1354/1354 -> 1331/1354 after a hit, then the reveal moved it
+		# to 2616/2709, a jump of +1285. Damage the player had genuinely dealt was swallowed
+		# whole, and no amount of tuning the formula fixes that while two HP spaces exist.
+		#
+		# So the disguise is an INFORMATION effect now, not a stat one. There is one HP pool, it
+		# is the true one, and every point of damage lands on it and stays landed. What the
+		# disguise hides is the NUMBER: `get_combat_display` reports the monster's HP as unknown
+		# until it reveals, reusing the "???" the game already shows for an unfamiliar monster.
+		# Note the halving only ever touched HP anyway - strength and defence were stored and
+		# "restored" to the values they already had - so nothing else changes.
+		pass
 		monster.strength = max(5, int(monster.strength * 0.5))
 		monster.defense = max(3, int(monster.defense * 0.5))
 
@@ -2347,22 +2361,7 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	combat.round += 1
 	combat.player_can_act = true
 
-	# === DISGUISE REVEAL (after 2 rounds) ===
-	if combat.get("disguise_active", false) and not combat.get("disguise_revealed", false) and combat.round >= 3:
-		var true_stats = combat.get("disguise_true_stats", {})
-		if not true_stats.is_empty():
-			combat["disguise_revealed"] = true
-			var monster = combat.monster
-			# Calculate how much damage was dealt to disguised form
-			var damage_dealt = combat.get("disguise_true_stats", {}).get("max_hp", monster.max_hp) * 0.5 - monster.current_hp
-			# Restore true stats
-			monster.max_hp = true_stats.max_hp
-			monster.strength = true_stats.strength
-			monster.defense = true_stats.defense
-			# Set current HP to true max minus proportional damage
-			monster.current_hp = max(1, true_stats.max_hp - int(damage_dealt * 2))
-			result.messages.append("[color=#FF0000]The %s reveals its true form![/color]" % monster.name)
-			result.messages.append("[color=#FF4444]It was much stronger than it appeared![/color]")
+	_maybe_reveal_disguise(combat, result)
 
 	# Tick buff durations at end of round and notify of expired buffs
 	var expired_buffs = combat.character.tick_buffs()
@@ -4851,6 +4850,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# Increment round
 	combat.round += 1
 	combat.player_can_act = true
+
+	# The same reveal the basic-attack path runs. Without this line a player who casts every
+	# round never reveals a disguised monster at all.
+	_maybe_reveal_disguise(combat, result)
 
 	# Tick buff durations and regenerate energy
 	var expired_buffs = combat.character.tick_buffs()
@@ -10643,7 +10646,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 	# If unknown OR player is blinded, send -1 for HP values so client shows "???"
 	var monster_base = monster.get("base_name", monster.name)
 	var knows_monster = character.knows_monster(monster_base, monster.level)
-	var can_see_hp = knows_monster and not character.blind_active
+	# A DISGUISED monster does not show its HP. This is what the disguise actually does now -
+	# it hides the number rather than faking a smaller pool. Reuses the same "???" path as an
+	# unfamiliar monster, which players already understand.
+	var disguised: bool = (combat.get("disguise_active", false)
+		and not combat.get("disguise_revealed", false))
+	var can_see_hp = knows_monster and not character.blind_active and not disguised
 	var display_hp = monster.current_hp if can_see_hp else -1
 	var display_max_hp = monster.max_hp if can_see_hp else -1
 	var display_hp_percent = int((float(monster.current_hp) / monster.max_hp) * 100) if can_see_hp else -1
@@ -13437,3 +13445,34 @@ func _engine_note(character, combat: Dictionary) -> String:
 			if n <= 0:
 				return "cast to ramp up"
 			return "+%d%% spell dmg" % int(float(n) * FOCUS_DMG_PER * 100.0)
+
+
+func _maybe_reveal_disguise(combat: Dictionary, result: Dictionary) -> void:
+	"""Reveal a disguised monster once the fight has run a couple of rounds.
+
+	2026-09-09 - this was INLINE in `process_combat_action`, the BASIC-ATTACK path. Abilities go
+	through `process_ability_command`, which returns before ever reaching it, so a player who
+	cast a spell every round never triggered the reveal at all and the Mimic stayed disguised for
+	the whole fight. Pulled out so both paths can call it, which is the only reason a caster ever
+	sees "it reveals its true form".
+	"""
+	if not combat.get("disguise_active", false):
+		return
+	if combat.get("disguise_revealed", false):
+		return
+	if int(combat.get("round", 0)) < 3:
+		return
+	var true_stats: Dictionary = combat.get("disguise_true_stats", {})
+	if true_stats.is_empty():
+		return
+	combat["disguise_revealed"] = true
+	var monster = combat.monster
+	# HP IS NOT TOUCHED. It never left the true pool, so there is nothing to restore and nothing
+	# to recompute - the old `current_hp = true_max - damage_dealt * 2` is exactly what made a
+	# player's damage vanish from the bar. strength/defense are assigned for the legacy case of a
+	# combat that began under the old rules; otherwise they are already these values.
+	monster.strength = true_stats.strength
+	monster.defense = true_stats.defense
+	if result.has("messages"):
+		result.messages.append("[color=#FF0000]The %s reveals its true form![/color]" % monster.name)
+		result.messages.append("[color=#FF4444]It was much stronger than it appeared![/color]")
