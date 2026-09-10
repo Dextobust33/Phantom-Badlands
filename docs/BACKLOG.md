@@ -541,16 +541,31 @@ does not exist in the interiors case at all.
       Assets are not the constraint: 20 packs, each shipping 16/32/48/64px plus RPG Maker
       autotile sheets that NAME which cells are floor, wall and object.
 
-- [ ] **WALLS around rooms — asked 2026-09-10, not yet decided.** *"Do we plan on making the walls
-      around rooms different tiles as well?"* Not yet, and it is a bigger change than the floor
-      was. Walls are currently drawn as a single rock RIM tile where floor meets void, with the
-      deep void left black — the owner's own Azure-Dreams call, and the reason the map reads as
-      carved-out space rather than a walled grid. Giving rooms their own walls means either a
-      second rim tile keyed on room-ness (cheap, and the room mask already exists), or real
-      directional autotiling (the Raven packs ship the sheets for it, but it is a different and
-      much larger piece of work than swapping one tile).
-      Do the cheap version first and look at it: the rim is one tile and the mask is already
-      computed, so it is close to free to try.
+- [ ] **THREE LAYERS per room — the owner's design, 2026-09-10.** *"If for each room we were to
+      pick a random pack for the floors, a random pack for the walls, and a random pack for decor
+      items that would add 3 layers of variety to make some interesting rooms I believe. We could
+      even do doors or chests and things to break it up."*
+      **This is the right shape and it is worth saying why.** Twenty packs authored once gives
+      20 x 20 x 20 = 8,000 room combinations for the cost of three lookups. The goal — *"seeing
+      things no other players have before"* — is reached COMBINATORIALLY rather than by authoring
+      eight thousand rooms, and it is the same answer as the card-upgrade pool: width plus
+      independence, not more hand-made content.
+      **The one hard constraint is LEGIBILITY, not taste.** The owner already ruled that coherence
+      does not matter (*"less concerned with if the room looks like it fits in with the dungeon"*),
+      so a snow wall around a lava floor is a feature. What is NOT acceptable is a floor and a wall
+      close enough in colour that a player cannot tell where the walls are — that is not a bold
+      combination, it is an unreadable room. So combinations should be gated on MEASURED CONTRAST
+      between the three layers, not on anyone's taste. The HSV palette-distance tooling written to
+      choose the room floor already does exactly this measurement and can be reused: reject a
+      pairing under a contrast floor, allow everything above it.
+      Sequencing, cheapest first, each visible before the next starts:
+        1. **Floor per room** — needs only a pack list; `label_rooms` already gives room identity.
+        2. **Walls per room** — the rim is a single tile and the room mask already exists, so
+           keying it on room-ness is close to free. Do NOT reach for directional autotiling yet;
+           the packs ship the sheets, but that is a much larger piece and the rim may be enough.
+        3. **Decor per room** — the existing prop scatter, drawn from the room's pack.
+        4. **Doors and chests at the seam** — which also answers "where is the seam", below: a
+           door tile IS the transition, and is better than any blend.
 
 - [ ] **Where is the SEAM?** A room entrance is a hard transition between two packs in adjacent
       cells. Options: a doorway/threshold tile from the room pack that reads as belonging to
