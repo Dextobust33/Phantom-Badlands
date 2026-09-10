@@ -211,3 +211,19 @@ Only GitHub Support can force the GC. Send this at <https://support.github.com/r
 
 Note what this cannot fix: anyone who already cloned or forked keeps the data, and old SHAs would
 have to be known to fetch them. The exposure after GC is essentially zero for a passer-by.
+
+### Re-checking whether the GC has run
+
+Request submitted 2026-09-10. Do not guess whether it happened - run:
+
+```bash
+bash tools/check_github_gc.sh
+```
+
+It refetches the three sample SHAs and reports the repo size GitHub advertises. Exit 0 means the
+objects are gone. At submission time all three still returned HTTP 200 and the size was unchanged
+at 120,127 KB, which is the signal that unreachable objects are still retained.
+
+Established while filing, and worth keeping: the repository has **0 forks** and has **never had a
+pull request** (no `refs/pull/*` refs). Those are the two things that normally keep rewritten
+commits alive, and neither applies here.

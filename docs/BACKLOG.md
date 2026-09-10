@@ -272,11 +272,21 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       the release gate, so a build cannot ship without the art present. Proven by hiding
       `prop_floor32` and watching it go red.
 
-- [ ] **SEND: GitHub Support GC request.** The rewrite made the objects unreachable, but GitHub
-      still serves them BY DIRECT SHA until it garbage-collects - measured, not assumed: an old
-      commit's `pet-egg-pack/LICENSE.txt` still returned HTTP 200 from raw.githubusercontent and
-      from the contents API AFTER the force push. Only Support can force the GC. The draft is
-      written and ready in `docs/ASSET_LICENCES.md`; it needs sending at support.github.com.
+- [ ] **AWAITING GITHUB: garbage collection of unreachable objects.** Request SUBMITTED
+      2026-09-10 via the Support virtual assistant ("Yes, but I need help removing of cached
+      commits"). Helpful facts established while filing, all verified rather than asserted: the
+      repo has **0 forks** and **0 pull requests ever** (no `refs/pull/*`), so the objects exist
+      only here and no fork owner has to be chased - that is the usual reason these requests
+      stall.
+      Framing matters if they come back: this is a LICENCE-COMPLIANCE obligation, not a leaked
+      credential. GitHub's stated bar is "sensitive data that cannot be mitigated by rotating
+      affected credentials", and the honest argument is that rotation is INAPPLICABLE here - the
+      risk is that the files remain downloadable, not that a secret is usable. They may still
+      decline as out of scope; that is a reasonable outcome and the answer is then to leave it.
+      We cannot escalate - the DMCA route belongs to the copyright holder, not to us as licensee.
+      **Re-check with `bash tools/check_github_gc.sh`** rather than guessing. As of submission it
+      still reports all three sample SHAs at HTTP 200 and the repo at its pre-rewrite 120,127 KB.
+      When it goes green, update `docs/ASSET_LICENCES.md` and tick this.
 
 - [ ] **SET UP: the private art backup.** git is no longer the backup for restricted art. Plan
       and exact commands are in `docs/ASSET_LICENCES.md` - a PRIVATE `Phantom-Badlands-Art` repo
