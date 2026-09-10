@@ -34551,6 +34551,37 @@ func _dungeon_panel_refresh() -> void:
 	map_display.clear()
 	map_display.append_text(txt)
 	map_display.scroll_to_line(0)
+	_dungeon_panel_trim_to_fit()
+
+
+func _dungeon_panel_trim_to_fit() -> void:
+	"""Drop the OLDEST log lines until the panel fits, so nothing important is below the fold.
+
+	Owner 2026-09-09: *"What happens if there is more text than fits on the right?"* Measured at
+	1080p with a full six-line log it does fit - 425px of content in 540px - but that headroom
+	depends on the window size, the UI scale and how many theme tiles a floor happens to have, so
+	it is luck rather than a guarantee. Left to overflow, the panel scrolls and the KEY drops off
+	the bottom, which is how a player came to report a find they could not read.
+
+	The log is the part that can safely shrink: it is a history, and its oldest line is the least
+	useful thing on the panel. The header, the key and the theme legend are all reference the
+	player needs, so they stay. Bounded by the log's own length, and it only ever runs when the
+	content genuinely does not fit."""
+	if map_display == null or _dungeon_log.is_empty():
+		return
+	# The height is only valid after the label has laid the new text out.
+	await get_tree().process_frame
+	var guard: int = 0
+	while (map_display.get_content_height() > map_display.size.y
+			and _dungeon_log.size() > 1 and guard < DUNGEON_LOG_MAX):
+		guard += 1
+		_dungeon_log.remove_at(0)
+		var t: String = _dungeon_side_panel_text()
+		_dungeon_panel_last_text = t
+		map_display.clear()
+		map_display.append_text(t)
+		map_display.scroll_to_line(0)
+		await get_tree().process_frame
 
 
 func _dungeon_panel_menu_open() -> bool:
