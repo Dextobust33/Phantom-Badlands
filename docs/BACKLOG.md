@@ -839,7 +839,20 @@ down, and these are the ones it keeps sending back — which is what extra lives
 - [ ] **Sanctuary redesign.**
 - [ ] **Player phantoms.**
 - [ ] **Minigame variety.**
-- [ ] **Live smoke test of the card market** (built, compile-clean, never exercised end to end).
+- [x] **Card market smoke-tested 2026-09-10 — no faults found.** It had been "built, compile-clean,
+      never exercised end to end", so this exercised it two ways.
+      `tools/probe/card_market.gd` puts ALL 57 tradeable cards through the three lookups a
+      listing is built from — display name, tier, valor — because a card that returns an empty
+      name lists as a blank row and one that prices at 0 is given away, and BOTH succeed
+      silently. All 57 pass; valor spans 220-2457.
+      `tools/probe/card_market_roundtrip.gd` runs list -> merge -> price -> remove. The merge is
+      the part worth having a test for: cards carry `supply_category: "card"`, which is NOT in
+      the unique list, so a second listing of the same card by the same seller MERGES and sums
+      BOTH quantity and base_valor. That is safe only because the buy side divides by quantity
+      for a per-unit rate — proven here rather than assumed, since pricing a merged stack from
+      `base_valor` directly would have charged double for one card.
+      **Still unexercised**: the live wire path (`market_list_card` -> SQLite -> another player's
+      `market_buy`) needs two connected clients; only the logic beneath it is covered.
 
 ---
 
