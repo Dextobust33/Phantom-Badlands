@@ -650,8 +650,14 @@ does not exist in the interiors case at all.
       test. The owner has offered to judge sample rooms, so build the samples rather than
       guessing at it.
 
-        4. **Doors and chests at the seam** — which also answers "where is the seam", below: a
-           door tile IS the transition, and is better than any blend.
+        4. ~~Doors and chests at the seam~~ — **DROPPED 2026-09-10.** Owner: *"We may not really
+           need doors."* Agreed on reflection: the seam is already marked twice over by work that
+           landed first. A room has its own FLOOR MATERIAL, so crossing the boundary is already a
+           visible change, and the directional rim means corridors and rooms carry rock in
+           different places. A door would be a third cue for a distinction that two already make.
+           It was also the worst-supported: the only real door art is in `free_floor32`, which
+           comes from `tilemap_pack` whose licence is UNIDENTIFIED, and the only Raven pack with
+           doors has trapdoors.
 
 - [ ] **Where is the SEAM?** A room entrance is a hard transition between two packs in adjacent
       cells. Options: a doorway/threshold tile from the room pack that reads as belonging to
