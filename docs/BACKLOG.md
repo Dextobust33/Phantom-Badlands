@@ -460,8 +460,21 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 ## Phase 4 — party (half-built; finish or cut)
 
 - [ ] **Invite window** and **watch-a-teammate's-minigame** — the two remaining Party UI pieces.
-- [ ] **Party fairness**: verify every member really receives combat rewards (especially equipment),
-      rotate the leader between fights, consider splitting gathering/crafting/loot rewards.
+- [x] **Party rewards — AUDITED 2026-09-10, the live path is correct.** Read AND probed. The
+      simultaneous path (`_end_party_combat_all`) skips only `dead` / `fled` / missing members and
+      gives every survivor their own XP, companion XP and an INDEPENDENT loot roll, with
+      inventory-full auto-salvage on equipment. `tools/probe/party_rewards.gd` confirms a round
+      resolves to victory with both members eligible.
+      **A trap was removed while looking.** `_handle_party_combat_victory` — 182 lines of
+      plausible reward logic containing `var is_dead = rewards.is_empty()`, i.e. death inferred
+      from a missing dictionary entry — had NO CALLERS. It is the old sequential path, superseded.
+      It cost me a false alarm within minutes (the probe "found" every living member reported
+      dead, because it was asserting on a field only the dead path populates), so it is deleted
+      rather than left to mislead the next reader.
+      **Still open, and NOT verifiable headlessly**: the payout itself runs server-side and needs
+      `characters`/`peers`/`persistence`, so a live two-client run is the only way to confirm the
+      equipment actually lands. Also still open: rotate the leader between fights, and splitting
+      gathering/crafting rewards.
 - [ ] **"Party play isn't working properly"** (owner, 2026-08-26) — no repro captured. ASK for the
       symptom before investigating.
 - [ ] **Leader logout must not strand the party.**
