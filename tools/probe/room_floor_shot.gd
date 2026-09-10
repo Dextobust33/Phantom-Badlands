@@ -36,17 +36,14 @@ func _rock() -> Image:
 
 
 func _touches_floor(grid: Array, x: int, y: int) -> bool:
-	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-		var nx: int = x + d.x
-		var ny: int = y + d.y
-		if ny < 0 or ny >= grid.size():
-			continue
-		var row = grid[ny]
-		if nx < 0 or nx >= row.size():
-			continue
-		if int(row[nx]) != 1:
-			return true
-	return false
+	"""Mirrors client.gd `_dungeon_supports_floor`: rock only where it holds up the floor above."""
+	var ny: int = y - 1
+	if ny < 0 or ny >= grid.size():
+		return false
+	var row = grid[ny]
+	if x < 0 or x >= row.size():
+		return false
+	return int(row[x]) != 1
 
 
 func _init() -> void:

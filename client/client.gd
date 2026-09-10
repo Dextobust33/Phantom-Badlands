@@ -45003,7 +45003,7 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 				return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, ground]
 			return _DungeonTiles.floor_img()
 		1:                                     # WALL
-			if _dungeon_touches_floor(grid, x, y):
+			if _dungeon_supports_floor(grid, x, y):
 				return _DungeonTiles.rock_img()
 			return _DungeonTiles.blank_img()
 		3:                                     # EXIT - stairs down
@@ -45058,21 +45058,36 @@ func _dungeon_theme_tile_url(glyph: String) -> String:
 	return ""
 
 
-func _dungeon_touches_floor(grid: Array, x: int, y: int) -> bool:
-	"""Is this cell orthogonally adjacent to anything walkable? That is what makes a wall a RIM
-	rather than deep void."""
-	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-		var nx: int = x + d.x
-		var ny: int = y + d.y
-		if ny < 0 or ny >= grid.size():
-			continue
-		var row = grid[ny]
-		if nx < 0 or nx >= row.size():
-			continue
-		if int(row[nx]) != 1:
-			return true
-	return false
+func _dungeon_supports_floor(grid: Array, x: int, y: int) -> bool:
+	"""Should this WALL cell draw rock? Yes when the cell ABOVE it is floor.
 
+	The rim used to appear wherever wall touched floor on ANY side, which outlined every passage
+	on all four sides and put 69 rock cells in a 19x9 view. Owner, on seeing three rules rendered
+	on one floor: *"The bottom one looks the best out of those"* — rock below all floor, room or
+	corridor, which is 31 cells for the same view.
+
+	Reading it as SUPPORT is what makes it work: the rock sits under the ground you walk on, so a
+	corridor looks held up rather than outlined. It also halves the rock on screen, which is what
+	lets the room floors and their decor be the thing you notice.
+
+	The owner also raised the rule's own limit, and it is recorded rather than solved: *"unless we
+	are planning to use something different to make the floors look supported from below."* A
+	dedicated wall FACE below a floor edge — the cliff-face convention most top-down games use —
+	would do this job better than a rim tile borrowed from an autotile. That is a different asset,
+	not a different rule, and none of the pool packs ship one.
+
+	Three rules were compared on the SAME generated floor (`tools/probe/wall_samples.gd`), because
+	rendering three different floors would have compared the floors."""
+	return _dungeon_walkable_cell(grid, x, y - 1)
+
+
+func _dungeon_walkable_cell(grid: Array, x: int, y: int) -> bool:
+	if y < 0 or y >= grid.size():
+		return false
+	var row = grid[y]
+	if x < 0 or x >= row.size():
+		return false
+	return int(row[x]) != 1
 
 func _dungeon_cell_width() -> int:
 	"""One monospace cell, in pixels, measured from the font the canvas actually uses.
