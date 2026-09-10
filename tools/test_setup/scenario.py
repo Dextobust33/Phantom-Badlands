@@ -205,6 +205,43 @@ def give_cycle_cards(c):
     return deck[:1]
 
 
+def release_check(c):
+    """Everything the v0.9.767 release still needs a human to look at, in ONE dungeon run.
+
+    Six fixes landed AFTER the owner's playtest feedback and none of them has been seen running:
+    hoverable damage on companion/dungeon cards, the absorbed-hit combat line, theme-tile glyphs
+    carrying scatter props, an egg hatching without blanking the dungeon floor, the final chest's
+    loot and DUNGEON CARD banner, and the rest menu with a full larder. Chasing those across two
+    scenarios and hoping the right things drop is the setup tax this harness exists to remove.
+
+    So: parked on a dungeon entrance, stocked with food, holding the cycle-value cards (which is
+    what makes Venom Fang's damage number and the absorbed-hit line reachable at all), and
+    carrying an egg THREE STEPS from hatching so it pops inside the dungeon rather than never.
+    HP is raised because dying halfway through the checklist wastes the run, not because the
+    fight matters.
+    """
+    park_on_dungeon(c)
+    seeded = give_cycle_cards(c)
+    c["max_hp"] = 500000
+    c["current_hp"] = 500000
+    for pool in ("stamina", "mana", "energy"):
+        c["max_" + pool] = 9999
+        c["current_" + pool] = 9999
+    # An egg that hatches almost at once. Shaped like Character.add_egg output, because the
+    # server reads these fields directly and a hand-rolled dict with the wrong keys would hatch
+    # into a companion with a hot-pink error colour.
+    c.setdefault("incubating_eggs", []).append({
+        "egg_id": "release_check_egg", "monster_type": "wolf",
+        "companion_name": "Test Pup", "name": "Test Pup Egg",
+        "tier": 1, "sub_tier": 1,
+        "steps_remaining": 3, "hatch_steps": 100,
+        "bonuses": {}, "obtained_at": 0,
+        "variant": "Common", "variant_color": "#B0B0B0", "variant_color2": "",
+        "variant_pattern": "solid", "variant_rarity": 10,
+    })
+    return seeded
+
+
 SCENARIOS = {
     "healthy": dict(
         doc="Everyone at full HP, standing together. The default sandbox.",
@@ -341,6 +378,13 @@ SCENARIOS = {
              "and read the run log. Walk onto the D and press the dungeon action."),
         players=1,
         apply=park_on_dungeon),
+    "release_check": dict(
+        doc=("EVERY unverified fix in the pending release, reachable in ONE dungeon run: "
+             "hoverable card damage, the absorbed-hit line, props under theme-tile glyphs, an "
+             "egg that hatches underground after 3 steps, the final chest banner, and the rest "
+             "menu. Parked on a dungeon entrance with food, cycle cards and lots of HP."),
+        players=1,
+        apply=release_check),
     "stocked": dict(
         doc="Give everyone a stack of potions (for the combat item rules).",
         players=2,

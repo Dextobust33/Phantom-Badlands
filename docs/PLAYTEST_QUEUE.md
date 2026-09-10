@@ -11,6 +11,44 @@ out as one release rather than several.
 
 ---
 
+## 0. RELEASE CHECK — six unverified fixes, one dungeon run  *(do this one)*
+
+Everything below items 1-3 has passed. These six landed **after** that feedback and have never
+been seen running. One command, one dungeon, roughly ten minutes.
+
+```bash
+python tools/test_setup/run.py release_check
+```
+
+Parked on a dungeon entrance with food, the cycle-value cards, lots of HP, and an egg **three
+steps from hatching** so it pops underground rather than never.
+
+Enter via **Admin > Items > Enter T1 Dungeon (instant)** — not Admin > World.
+
+- [ ] **A. Egg hatch underground.** Walk 3-4 steps. A companion hatches. **The dungeon floor must
+      stay on screen** — the hatch notice belongs in the run log on the right. (It used to blank
+      the whole canvas.)
+- [ ] **B. Props under theme-tile glyphs.** Look at the coloured letter tiles (mud, moss, webbing
+      — whichever this dungeon uses). Some should now have a pebble or twig **behind** the letter,
+      at about the same one-in-seven rate as plain floor. Before, glyph tiles were always bare.
+- [ ] **C. Card damage is hoverable.** Start a fight, play **Venom Fang**. Hover its damage
+      number in the combat log — it should show a breakdown, and a floating number should appear
+      over the monster. You reported this dead last time.
+- [ ] **D. A fully-absorbed hit says so.** Get a ward up (play or cycle **Bulwark of Bone**), then
+      let the monster hit you. The log must **name what absorbed it** rather than printing
+      nothing. Previously an absorbed hit read as though the monster did nothing at all.
+- [ ] **E. Rest menu with a full larder.** Press **Rest** underground. Should read `Page 1/3` and
+      fit without pushing the map key off the panel.
+- [ ] **F. Final chest + card banner.** Clear the floor/dungeon. The completion screen must list
+      the **Reliquary Chest** loot, and if one dropped, the **DUNGEON CARD** banner. This is the
+      one that was being built, sent, and thrown away — it has never once been confirmed.
+
+Admin buttons exist for the awkward ones if RNG will not cooperate: **spring trap**, **drop loot**,
+**flood log**.
+
+**Not in this run** — they need extra clients, and are the only other unverified items:
+`party3` for leader logout/permadeath, and a 2-client fight for party equipment rewards.
+
 ## 1. Arrow-key diagonal movement — ✅ PASSED 2026-09-10
 
 > Owner: *"all the tests were fine and H does hunt. Rebinding seemed to work as well. Didn't seem
