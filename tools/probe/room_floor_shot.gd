@@ -1,0 +1,117 @@
+extends SceneTree
+## Render a REAL generated floor with room floors and corridor floors, at the real cell size.
+##
+## The pack was chosen by measurement and the rule proved by probe, but the one question neither
+## can answer is what the SEAM looks like where a corridor meets a room. That needs looking at.
+const _T = preload("res://client/dungeon_tiles.gd")
+const _C = preload("res://client/dungeon_composite.gd")
+const _DD = preload("res://shared/dungeon_database.gd")
+
+const VIEW_W := 19
+const VIEW_H := 9
+const CELL := 64
+
+
+func _img(path: String) -> Image:
+	var im: Image = (load(path) as Texture2D).get_image()
+	im.convert(Image.FORMAT_RGBA8)
+	return im
+
+
+func _corridor_floor() -> Image:
+	var sheet: Image = (load(_T.SHEET_CAVE16) as Texture2D).get_image()
+	sheet.convert(Image.FORMAT_RGBA8)
+	var im := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	im.blit_rect(sheet, Rect2i(_T.CAVE_FLOOR * 16, Vector2i(16, 16)), Vector2i.ZERO)
+	im.resize(32, 32, Image.INTERPOLATE_NEAREST)
+	return im
+
+
+func _rock() -> Image:
+	var sheet: Image = (load(_T.SHEET_CAVE32) as Texture2D).get_image()
+	sheet.convert(Image.FORMAT_RGBA8)
+	var im := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	im.blit_rect(sheet, Rect2i(_T.CAVE_ROCK * 32, Vector2i(32, 32)), Vector2i.ZERO)
+	return im
+
+
+func _touches_floor(grid: Array, x: int, y: int) -> bool:
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var nx: int = x + d.x
+		var ny: int = y + d.y
+		if ny < 0 or ny >= grid.size():
+			continue
+		var row = grid[ny]
+		if nx < 0 or nx >= row.size():
+			continue
+		if int(row[nx]) != 1:
+			return true
+	return false
+
+
+func _init() -> void:
+	var out_dir: String = OS.get_environment("PROPSHOT_DIR")
+	var res: Dictionary = _DD.generate_floor_grid("wolf_den", 1, false)
+	var grid: Array = res.get("grid", [])
+	if grid.is_empty():
+		print("no grid")
+		quit(1)
+		return
+
+	# Find a viewport that actually contains a SEAM - both room and corridor - rather than
+	# whatever is at the origin. Showing a view of pure corridor would prove nothing.
+	var best := Vector2i(0, 0)
+	var best_mix := -1
+	for oy in range(0, maxi(1, grid.size() - VIEW_H), 2):
+		for ox in range(0, maxi(1, grid[0].size() - VIEW_W), 2):
+			var r := 0
+			var c := 0
+			for y in range(oy, mini(oy + VIEW_H, grid.size())):
+				for x in range(ox, mini(ox + VIEW_W, grid[y].size())):
+					if int(grid[y][x]) == 1:
+						continue
+					if _T.is_room_cell(grid, x, y): r += 1
+					else: c += 1
+			var mix: int = mini(r, c)          # maximise the SMALLER of the two
+			if mix > best_mix:
+				best_mix = mix
+				best = Vector2i(ox, oy)
+	print("viewport at %s - %d cells of the rarer kind in view" % [best, best_mix])
+
+	var corridor := _corridor_floor()
+	var rock := _rock()
+	var void_im := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	void_im.fill(Color(0, 0, 0, 1))
+
+	for mode in ["before", "after"]:
+		var canvas := Image.create(VIEW_W * 32, VIEW_H * 32, false, Image.FORMAT_RGBA8)
+		var rooms := 0
+		for gy in range(VIEW_H):
+			for gx in range(VIEW_W):
+				var x: int = best.x + gx
+				var y: int = best.y + gy
+				var tile: int = 1
+				if y < grid.size() and x < grid[y].size():
+					tile = int(grid[y][x])
+				var cell: Image = null
+				if tile == 1:
+					cell = rock if _touches_floor(grid, x, y) else void_im
+				else:
+					var is_room: bool = _T.is_room_cell(grid, x, y)
+					var prop: String = _T.prop_for(x, y)
+					if mode == "after" and is_room:
+						rooms += 1
+						if prop != "" and ResourceLoader.exists(prop):
+							cell = _img(_C.over_prop(prop, _T.room_floor_for(x, y)))
+						else:
+							cell = _img(_T.room_floor_for(x, y))
+					elif prop != "" and ResourceLoader.exists(prop):
+						cell = _img(prop)
+					else:
+						cell = corridor
+				canvas.blit_rect(cell, Rect2i(Vector2i.ZERO, Vector2i(32, 32)),
+					Vector2i(gx * 32, gy * 32))
+		canvas.resize(VIEW_W * CELL, VIEW_H * CELL, Image.INTERPOLATE_NEAREST)
+		canvas.save_png("%s/rooms_%s.png" % [out_dir, mode])
+		print("%s: %d room cells drawn" % [mode, rooms])
+	quit()

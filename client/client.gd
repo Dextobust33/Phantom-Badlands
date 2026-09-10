@@ -44884,6 +44884,47 @@ func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
 	DUNGEON_TEXT_CELL_CHARS = g_chars
 
 
+## Which cells are ROOM floor, cached per floor. Cleared when the grid changes.
+var _dungeon_room_mask: Dictionary = {}
+var _dungeon_room_mask_key: String = ""
+
+
+func _dungeon_is_room(grid: Array, x: int, y: int) -> bool:
+	"""Cached `DungeonTiles.is_room_cell`. The RULE lives there because it is pure grid logic with
+	no client state, which means a probe can call it — while it sat here it could not be tested at
+	all without standing up the whole client. The cache stays here because the lifetime is a
+	client concern: it is only valid for the floor currently on screen."""
+	var key := "%d,%d" % [x, y]
+	if _dungeon_room_mask.has(key):
+		return _dungeon_room_mask[key]
+	var out: bool = _DungeonTiles.is_room_cell(grid, x, y)
+	_dungeon_room_mask[key] = out
+	return out
+
+
+func _dungeon_ground_at(grid: Array, x: int, y: int, tile: int) -> String:
+	"""The GROUND this cell stands on, as an image path — or "" for plain corridor floor.
+
+	One answer for two callers: the tile renderer draws it, and anything STANDING here composites
+	over it. Returning "" for plain corridor is not a special case — every entity sprite already
+	has the corridor floor baked in, so there is nothing to composite and the cheapest thing is to
+	draw the sprite as it is.
+
+	Order matters: a prop sits ON the floor, so a prop in a room is the prop composited over the
+	ROOM floor, not the prop's own baked corridor floor."""
+	if tile == 1 or tile == 2 or tile == 3:
+		return ""
+	var room: bool = _dungeon_is_room(grid, x, y)
+	var prop: String = _dungeon_prop_at(x, y, tile)
+	if prop == "":
+		return _DungeonTiles.room_floor_for(x, y) if room else ""
+	if not room:
+		return prop
+	# prop over the room floor: `over_prop` swaps the prop tile's own baked CORRIDOR floor for the
+	# room floor, which is the same operation it does for a sprite. Cached like any other pair.
+	return _DungeonComposite.over_prop(prop, _DungeonTiles.room_floor_for(x, y))
+
+
 func _dungeon_prop_at(x: int, y: int, tile: int) -> String:
 	"""The scatter prop for this cell, or "" if this kind of tile does not take one.
 
@@ -44923,9 +44964,9 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 		0, 7:                                  # EMPTY / CLEARED - walkable floor
 			# Scatter decoration, so a corridor is not every tile identical. Position-hashed, so
 			# it does not crawl as the player walks (the grid is rebuilt on every step).
-			var prop: String = _dungeon_prop_at(x, y, tile)
-			if prop != "" and ResourceLoader.exists(prop):
-				return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, prop]
+			var ground: String = _dungeon_ground_at(grid, x, y, tile)
+			if ground != "" and ResourceLoader.exists(ground):
+				return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, ground]
 			return _DungeonTiles.floor_img()
 		1:                                     # WALL
 			if _dungeon_touches_floor(grid, x, y):
@@ -45030,6 +45071,14 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 
 	var grid_height = grid.size()
 	var grid_width = grid[0].size() if grid_height > 0 else 0
+	# The room mask is derived from the grid, so it is only valid for THIS floor. Keyed on the
+	# floor identity rather than cleared on every draw, which would defeat the cache entirely.
+	var _mask_key := "%s:%d:%dx%d" % [
+		String(dungeon_data.get("dungeon_name", "")), int(dungeon_data.get("floor", 0)),
+		grid_width, grid_height]
+	if _mask_key != _dungeon_room_mask_key:
+		_dungeon_room_mask_key = _mask_key
+		_dungeon_room_mask.clear()
 
 	# 2026-09-08 (E) - WIDER than tall, because the canvas is. Owner: "Ideally we don't want a
 	# bunch of wasted space on each side of the canvas so we may need to display more of it or
@@ -45116,7 +45165,10 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 			# (0/7) scatters props, which is the same gate `_dungeon_tile_cell` uses; asking for
 			# a prop on a wall or a stairwell would invent one that is not drawn when empty.
 			var _tv: int = int(grid[y][x])
-			var _prop: String = _dungeon_prop_at(x, y, _tv)
+			# The GROUND, not just the prop: in a room this is the room floor (or a prop already
+			# composited onto it), so anything standing here lands on the right material instead
+			# of carrying a patch of corridor floor into the middle of a chamber.
+			var _prop: String = _dungeon_ground_at(grid, x, y, _tv)
 			if x == player_x and y == player_y:
 				line += _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, _prop)
 			elif _dungeon_companion_at(x, y):

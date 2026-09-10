@@ -67,6 +67,53 @@ const CAVE_ROCK := Vector2i(4, 4)
 ## The SKULL was dropped after seeing it in play: at tile scale it reads as a white oval that
 ## looks like an egg or a pickup, and three in one view competed with the actual floor loot.
 ## Background scatter has to stay in the background.
+## The ROOM floor. Owner 2026-09-10: *"keep our dungeon corridoors using what we currently do
+## but make all of the actual rooms out of sprites from those packs."*
+##
+## Corridors stay on the darkcave floor; a ROOM gets this instead, so walking out of a passage
+## into a chamber is a visible change of material rather than more of the same ground.
+##
+## The pack was chosen by MEASUREMENT, twice over, because picking a sheet cell by eye has already
+## put an autotile EDGE on this floor once and covered a room in black notches. First every Raven
+## pack's palette was compared to the darkcave corridor sheet in HSV -- an RGB average hides two
+## greys with different casts, which is exactly the failure that matters here. `shroom_chasm` came
+## back nearest by a wide margin (hue gap 0.006, value 0.009, against `green_dungeon`'s 0.176 and
+## 0.210 -- the pack whose NAME suggests it is the obvious choice is one of the worst matches).
+## Then the sheet was scanned for a fully-opaque, low-spread, mid-brightness cell the way
+## CAVE_FLOOR was found, and the candidates rendered BESIDE the corridor floor before choosing.
+##
+## Cell (4,2) of `shroom_chasm/All Tileset/Tileset.png`: textured stone, three colours, close to
+## the corridor in brightness and clearly a different material. Baked to 32px like every other
+## dungeon cell asset, so a 64px cell is a clean 2x.
+##
+## LICENCE: derived from a pack that forbids redistribution -- untracked, see
+## `docs/ASSET_LICENCES.md`. It is in `tools/licensed_assets.manifest`, so the release gate fails
+## without it rather than shipping a dungeon with holes in the rooms.
+## FOUR variants, not one. A single room tile was baked first and the repeat was obvious the
+## moment a large chamber was rendered: cell (4,2) carries a visible arc motif, so tiling it
+## produced a wallpaper grid across the room. The corridor floor never does this because it is a
+## FLAT colour — a textured tile has to be varied or it patterns.
+##
+## The pack ships its floor variation as a 2x2 block, which is the usual convention: (4,2), (5,2),
+## (4,3) and (5,3) all sit within 19 of each other in total RGB, so they read as one material
+## rather than four. Found by scanning for cells near the base tile's mean, not by eye.
+const ROOM_FLOOR_DIR := "res://client/sprites/room_floor32/"
+const ROOM_FLOOR_COUNT := 4
+
+
+static func room_floor_for(x: int, y: int) -> String:
+	"""Which room-floor variant this cell uses.
+
+	Position-hashed, exactly like `prop_for`, and for the same reason: the grid is rebuilt on
+	every step, so a random pick would make the whole floor shimmer as the player walks. A given
+	cell keeps its tile for the life of the floor.
+
+	Hashed on a DIFFERENT salt from `prop_for` — `Vector2i(y, x)` rather than `Vector2i(x, y)` —
+	so the two do not correlate. Sharing a hash would make every propped cell tend to the same
+	floor variant, which is a subtle way to reintroduce the pattern this exists to break."""
+	var h: int = abs(hash(Vector2i(y, x)))
+	return ROOM_FLOOR_DIR + "room_floor_%02d.png" % (h % ROOM_FLOOR_COUNT)
+
 const PROP_DIR := "res://client/sprites/prop_floor32/"
 ## 7 -> 14 on 2026-09-10. Owner, after a live look: *"I also haven't seen much variety in the
 ## decorations like the lamps and things from the sprite packs."* Correct, and worse than it
@@ -94,6 +141,50 @@ const PROP_COUNT := 11
 ## Roughly one floor tile in seven. Flavour, not clutter: high enough that a corridor is not all
 ## one tile, low enough that the eye still reads the floor as floor.
 const PROP_CHANCE_IN := 7
+
+
+## Cells that are never part of a room's floor area: WALL and the two staircases.
+const _NOT_ROOM_FLOOR := [1, 2, 3]
+
+
+static func is_room_cell(grid: Array, x: int, y: int) -> bool:
+	"""Is this cell ROOM floor rather than corridor?
+
+	Owner wants corridors to keep the darkcave look and ROOMS to be drawn from another pack, so
+	the renderer has to tell them apart. The generator knows while it is carving and then throws
+	it away — `_carve_room` and `_connect_rooms` both write `TileType.EMPTY`, so what reaches the
+	client is one number for both. Adding a `TileType.ROOM` would mean touching every walkable
+	check in the client AND the server, which is the shape of change that leaves one site behind.
+	Deriving it here needs no protocol change and no new tile type.
+
+	**The test: does this cell belong to any fully-walkable 2x2 block?** A corridor is one tile
+	wide so it can never form one; a room always can. This is deliberately not "walkable on both
+	axes", which calls a corridor T-JUNCTION a room — a junction is walkable north-south and
+	east-west and is still corridor.
+
+	Pure and static so it can be probed; the caller owns any caching."""
+	for dy in [-1, 0]:
+		for dx in [-1, 0]:
+			var ok := true
+			for oy in range(2):
+				for ox in range(2):
+					var nx: int = x + dx + ox
+					var ny: int = y + dy + oy
+					if ny < 0 or ny >= grid.size():
+						ok = false
+						break
+					var row = grid[ny]
+					if nx < 0 or nx >= row.size():
+						ok = false
+						break
+					if int(row[nx]) in _NOT_ROOM_FLOOR:
+						ok = false
+						break
+				if not ok:
+					break
+			if ok:
+				return true
+	return false
 
 
 static func prop_for(x: int, y: int) -> String:
