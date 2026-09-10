@@ -89,30 +89,63 @@ const CAVE_ROCK := Vector2i(4, 4)
 ## LICENCE: derived from a pack that forbids redistribution -- untracked, see
 ## `docs/ASSET_LICENCES.md`. It is in `tools/licensed_assets.manifest`, so the release gate fails
 ## without it rather than shipping a dungeon with holes in the rooms.
-## FOUR variants, not one. A single room tile was baked first and the repeat was obvious the
-## moment a large chamber was rendered: cell (4,2) carries a visible arc motif, so tiling it
-## produced a wallpaper grid across the room. The corridor floor never does this because it is a
-## FLAT colour — a textured tile has to be varied or it patterns.
+## The ROOM FLOOR pool: one look per PACK, and a room picks one.
 ##
-## The pack ships its floor variation as a 2x2 block, which is the usual convention: (4,2), (5,2),
-## (4,3) and (5,3) all sit within 19 of each other in total RGB, so they read as one material
-## rather than four. Found by scanning for cells near the base tile's mean, not by eye.
+## Owner 2026-09-10: *"I'm less concerned with if the room looks like it fits in with the dungeon
+## and much more concerned that they look unique and fun. The more the better since it will lead
+## to more variety and exploration, seeing things no other players have before."*
+##
+## So a chamber's floor is chosen by its ROOM ID, not by its position: every cell of one room
+## agrees, and the next room over is something else entirely. Baked by
+## `tools/bake_room_floors.py`, which records how the cells were chosen -- a measured shortlist,
+## gated on CONTRAST WITH THE WALL RIM so a room is always readable, then rendered and looked at.
+## That last step is what caught what no measurement could: two of the top-scoring "floors" were
+## water and one was a boulder.
+##
+## LICENCE: derived from packs that forbid redistribution -- untracked, and in
+## `tools/licensed_assets.manifest` so the release gate fails without them.
 const ROOM_FLOOR_DIR := "res://client/sprites/room_floor32/"
-const ROOM_FLOOR_COUNT := 4
+
+## The packs in the pool. Order is not meaningful; a room hashes into it.
+const ROOM_PACKS := [
+	"cozy_home", "farmlands_v3", "green_dungeon", "red_desert_ruin",
+	"shroom_chasm", "the_underworld", "winter_forest",
+]
+
+## pack -> how many variant tiles it baked. Counted from the FILES rather than written down a
+## second time: the bake script already decides this, and a hand-kept copy here is the "one value,
+## two places" shape that causes most of the wrong-text bugs in this repo.
+static var _room_variant_count: Dictionary = {}
 
 
-static func room_floor_for(x: int, y: int) -> String:
-	"""Which room-floor variant this cell uses.
+static func room_variants(pack: String) -> int:
+	if _room_variant_count.has(pack):
+		return _room_variant_count[pack]
+	var n := 0
+	while ResourceLoader.exists(ROOM_FLOOR_DIR + "%s_%02d.png" % [pack, n]):
+		n += 1
+	_room_variant_count[pack] = maxi(1, n)
+	return _room_variant_count[pack]
 
-	Position-hashed, exactly like `prop_for`, and for the same reason: the grid is rebuilt on
-	every step, so a random pick would make the whole floor shimmer as the player walks. A given
-	cell keeps its tile for the life of the floor.
 
-	Hashed on a DIFFERENT salt from `prop_for` — `Vector2i(y, x)` rather than `Vector2i(x, y)` —
-	so the two do not correlate. Sharing a hash would make every propped cell tend to the same
-	floor variant, which is a subtle way to reintroduce the pattern this exists to break."""
-	var h: int = abs(hash(Vector2i(y, x)))
-	return ROOM_FLOOR_DIR + "room_floor_%02d.png" % (h % ROOM_FLOOR_COUNT)
+static func room_floor_for(x: int, y: int, room_id: int) -> String:
+	"""The floor tile for a room cell: the ROOM picks the pack, the CELL picks the variant.
+
+	Two hashes doing two different jobs. `room_id` selects the pack, so a chamber is one material
+	throughout -- hashing the pack per cell would speckle eight looks through one room, which is the
+	failure this whole approach exists to avoid. The cell then picks a variant WITHIN that pack,
+	which is what stops a textured tile gridding into wallpaper across a large chamber; it did
+	exactly that on the first single-tile attempt.
+
+	Position-hashed rather than random, like `prop_for`, because the grid is rebuilt on every step
+	and a random pick would make the floor shimmer as the player walks."""
+	if ROOM_PACKS.is_empty():
+		return ""
+	var pack: String = ROOM_PACKS[abs(room_id) % ROOM_PACKS.size()]
+	var n: int = room_variants(pack)
+	var v: int = (abs(hash(Vector2i(y, x))) % n) if n > 1 else 0
+	return ROOM_FLOOR_DIR + "%s_%02d.png" % [pack, v]
+
 
 const PROP_DIR := "res://client/sprites/prop_floor32/"
 ## 7 -> 14 on 2026-09-10. Owner, after a live look: *"I also haven't seen much variety in the

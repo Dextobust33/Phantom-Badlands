@@ -44884,22 +44884,24 @@ func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
 	DUNGEON_TEXT_CELL_CHARS = g_chars
 
 
-## Which cells are ROOM floor, cached per floor. Cleared when the grid changes.
+## {"x,y": room_id} for every ROOM cell on the current floor, from `DungeonTiles.label_rooms`.
+## ONE pass answers both questions the renderer asks - IS this room floor (the key exists) and
+## WHICH room is it (the value) - so there is no separate mask to fall out of step with it.
 var _dungeon_room_mask: Dictionary = {}
 var _dungeon_room_mask_key: String = ""
 
 
-func _dungeon_is_room(grid: Array, x: int, y: int) -> bool:
-	"""Cached `DungeonTiles.is_room_cell`. The RULE lives there because it is pure grid logic with
-	no client state, which means a probe can call it — while it sat here it could not be tested at
-	all without standing up the whole client. The cache stays here because the lifetime is a
-	client concern: it is only valid for the floor currently on screen."""
-	var key := "%d,%d" % [x, y]
-	if _dungeon_room_mask.has(key):
-		return _dungeon_room_mask[key]
-	var out: bool = _DungeonTiles.is_room_cell(grid, x, y)
-	_dungeon_room_mask[key] = out
-	return out
+func _dungeon_room_id(grid: Array, x: int, y: int) -> int:
+	"""Which ROOM this cell belongs to, or -1 for corridor / wall.
+
+	Labels the whole floor on first use and caches it. The rule and the labelling live in
+	`DungeonTiles` because they are pure grid logic with no client state, which is what lets a
+	probe call them - while `is_room_cell` sat in this file it could not be tested without
+	standing up the entire client. Only the CACHE belongs here, because its lifetime is "the
+	floor currently on screen"."""
+	if _dungeon_room_mask.is_empty() and not grid.is_empty():
+		_dungeon_room_mask = _DungeonTiles.label_rooms(grid)
+	return int(_dungeon_room_mask.get("%d,%d" % [x, y], -1))
 
 
 func _dungeon_ground_at(grid: Array, x: int, y: int, tile: int) -> String:
@@ -44914,15 +44916,16 @@ func _dungeon_ground_at(grid: Array, x: int, y: int, tile: int) -> String:
 	ROOM floor, not the prop's own baked corridor floor."""
 	if tile == 1:
 		return ""
-	var room: bool = _dungeon_is_room(grid, x, y)
+	var rid: int = _dungeon_room_id(grid, x, y)
+	var room: bool = rid >= 0
 	var prop: String = _dungeon_prop_at(x, y, tile)
 	if prop == "":
-		return _DungeonTiles.room_floor_for(x, y) if room else ""
+		return _DungeonTiles.room_floor_for(x, y, rid) if room else ""
 	if not room:
 		return prop
 	# prop over the room floor: `over_prop` swaps the prop tile's own baked CORRIDOR floor for the
 	# room floor, which is the same operation it does for a sprite. Cached like any other pair.
-	return _DungeonComposite.over_prop(prop, _DungeonTiles.room_floor_for(x, y))
+	return _DungeonComposite.over_prop(prop, _DungeonTiles.room_floor_for(x, y, rid))
 
 
 func _dungeon_backed_cell(path: String, ground: String, url: String = "") -> String:

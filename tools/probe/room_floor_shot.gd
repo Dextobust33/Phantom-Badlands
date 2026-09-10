@@ -78,6 +78,9 @@ func _init() -> void:
 				best = Vector2i(ox, oy)
 	print("viewport at %s - %d cells of the rarer kind in view" % [best, best_mix])
 
+	# label ONCE, not per cell - relabelling inside the loop is O(cells x grid)
+	var labels: Dictionary = _T.label_rooms(grid)
+	print("rooms on this floor: %d" % _T.room_count(labels))
 	var corridor := _corridor_floor()
 	var rock := _rock()
 	var void_im := Image.create(32, 32, false, Image.FORMAT_RGBA8)
@@ -102,9 +105,9 @@ func _init() -> void:
 					if mode == "after" and is_room:
 						rooms += 1
 						if prop != "" and ResourceLoader.exists(prop):
-							cell = _img(_C.over_prop(prop, _T.room_floor_for(x, y)))
+							cell = _img(_C.over_prop(prop, _T.room_floor_for(x, y, int(labels.get("%d,%d" % [x, y], 0)))))
 						else:
-							cell = _img(_T.room_floor_for(x, y))
+							cell = _img(_T.room_floor_for(x, y, int(labels.get("%d,%d" % [x, y], 0))))
 					elif prop != "" and ResourceLoader.exists(prop):
 						cell = _img(prop)
 					else:
