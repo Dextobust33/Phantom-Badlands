@@ -5802,88 +5802,88 @@ func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dic
 		"channel":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 1.6)
 			var amtc: int = _companion_restore_resource(character, resource_type, 0.25 + 0.03 * tier)
-			messages.append("[color=#66CCFF]★ %s[/color] strikes for %d and restores [color=#66CCFF]%d %s[/color]!" % [cname, d, amtc, resource_type])
+			messages.append("[color=#66CCFF]★ %s[/color] strikes for %s and restores [color=#66CCFF]%d %s[/color]!" % [cname, _damage_with_detail(combat, messages, d), amtc, resource_type])
 		# ---------- DAMAGE / DEBUFF ----------
 		"strike":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 3.2)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for [color=#FFFF00]%d[/color]!" % [cname, d])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s!" % [cname, _damage_with_detail(combat, messages, d)])
 		"execute":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.4)
 			var wounded: bool = monster.max_hp > 0 and float(monster.current_hp) <= 0.30 * float(monster.max_hp)
 			if wounded:
 				var bonus: int = int(d * (1.2 + 0.15 * tier))
 				monster.current_hp = max(0, monster.current_hp - bonus)
-				messages.append("[color=#FF99FF]★ %s[/color] EXECUTES for [color=#FFFF00]%d[/color] (+%d vs wounded)!" % [cname, d, bonus])
+				messages.append("[color=#FF99FF]★ %s[/color] EXECUTES for %s (+%d vs wounded)!" % [cname, _damage_with_detail(combat, messages, d), bonus])
 			else:
-				messages.append("[color=#FF99FF]★ %s[/color] hits for [color=#FFFF00]%d[/color]!" % [cname, d])
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %s!" % [cname, _damage_with_detail(combat, messages, d)])
 		"reckless":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 3.8)
 			var recoil: int = max(1, int(d * 0.05))
 			character.current_hp = max(1, character.current_hp - recoil)
-			messages.append("[color=#FF99FF]★ %s[/color] rips for [color=#FFFF00]%d[/color]! (you take %d recoil)" % [cname, d, recoil])
+			messages.append("[color=#FF99FF]★ %s[/color] rips for %s! (you take %d recoil)" % [cname, _damage_with_detail(combat, messages, d), recoil])
 		"bleed":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.2)
 			var dot: int = max(1, int(d * 0.18 * tmult))
 			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + dot
 			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 3)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and bleeds [color=#FF4444]%d/turn[/color]!" % [cname, d, dot])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s and bleeds [color=#FF4444]%d/turn[/color]!" % [cname, _damage_with_detail(combat, messages, d), dot])
 		"poison":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var dot: int = max(1, int(d * 0.15 * tmult))
 			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + dot
 			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 4)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and poisons [color=#7FBE2E]%d/turn[/color]!" % [cname, d, dot])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s and poisons [color=#7FBE2E]%d/turn[/color]!" % [cname, _damage_with_detail(combat, messages, d), dot])
 		"weaken":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var wk: int = min(50, 15 + tier * 3)
 			combat["monster_weakness"] = max(int(combat.get("monster_weakness", 0)), wk)
 			combat["monster_weakness_duration"] = max(int(combat.get("monster_weakness_duration", 0)), 3)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — enemy [color=#C0C0C0]weakened %d%%[/color]!" % [cname, d, wk])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s — enemy [color=#C0C0C0]weakened %d%%[/color]!" % [cname, _damage_with_detail(combat, messages, d), wk])
 		"blind":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var bl: int = min(60, 25 + tier * 4)
 			combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), bl)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — enemy [color=#AAAAFF]blinded (%d%% miss)[/color]!" % [cname, d, bl])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s — enemy [color=#AAAAFF]blinded (%d%% miss)[/color]!" % [cname, _damage_with_detail(combat, messages, d), bl])
 		"stun":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.2)
 			if int(combat.get("monster_stunned", 0)) <= 0 and randi() % 100 < min(65, 30 + tier * 5):
 				combat["monster_stunned"] = 1
-				messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FFFF00]STUNS[/color]!" % [cname, d])
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %s and [color=#FFFF00]STUNS[/color]!" % [cname, _damage_with_detail(combat, messages, d)])
 			else:
-				messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %s!" % [cname, _damage_with_detail(combat, messages, d)])
 		"charm":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			if int(combat.get("monster_charmed", 0)) <= 0 and randi() % 100 < min(50, 20 + tier * 4):
 				combat["monster_charmed"] = 1
-				messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FF66FF]CHARMS[/color]!" % [cname, d])
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %s and [color=#FF66FF]CHARMS[/color]!" % [cname, _damage_with_detail(combat, messages, d)])
 			else:
-				messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %s!" % [cname, _damage_with_detail(combat, messages, d)])
 		"lifesteal":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.4)
 			var healed: int = character.heal(max(1, int(d * 0.40)))
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and drains [color=#00FF88]%d HP[/color]!" % [cname, d, healed])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s and drains [color=#00FF88]%d HP[/color]!" % [cname, _damage_with_detail(combat, messages, d), healed])
 		"timestop":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var turns: int = 1 + (1 if tier >= 4 else 0)
 			combat["monster_stunned"] = max(int(combat.get("monster_stunned", 0)), turns)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FFFF00]freezes time (%d turns)[/color]!" % [cname, d, turns])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s and [color=#FFFF00]freezes time (%d turns)[/color]!" % [cname, _damage_with_detail(combat, messages, d), turns])
 		"plunder":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			combat["card_loot_mult"] = max(float(combat.get("card_loot_mult", 1.0)), 2.0 + 0.15 * tier)
 			# #40 — Plunder now also bumps item QUALITY: +1 rarity step (+2 at T5+).
 			combat["card_loot_quality"] = max(int(combat.get("card_loot_quality", 0)), 1 + (1 if tier >= 5 else 0))
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]item drops boosted (chance + quality) if you win![/color]" % [cname, d])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s — [color=#FFD700]item drops boosted (chance + quality) if you win![/color]" % [cname, _damage_with_detail(combat, messages, d)])
 		"tribute":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 2.0)
 			var valor_gain: int = 15 + tier * 5 + int(monster.level * 0.5)
 			combat["card_bonus_valor"] = int(combat.get("card_bonus_valor", 0)) + valor_gain
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]+%d Valor if you win![/color]" % [cname, d, valor_gain])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s — [color=#FFD700]+%d Valor if you win![/color]" % [cname, _damage_with_detail(combat, messages, d), valor_gain])
 		_:
 			# Fallback for a kind with no branch. Kept in step with `strike` above rather than
 			# left at its old value - a new kind added later should land in the same band as the
 			# rest, not at half of it.
 			var d: int = _companion_strike(character, monster, ability_name, combat, 3.0)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %s!" % [cname, _damage_with_detail(combat, messages, d)])
 
 	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff}
 

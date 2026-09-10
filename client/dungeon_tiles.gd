@@ -75,10 +75,19 @@ const PROP_DIR := "res://client/sprites/prop_floor32/"
 ## lanterns - all picked by rendering the cave sheet with its cells LABELLED and looking at it,
 ## because a previous pick-by-eye put an edge tile on the floor and covered the room in black
 ## notches.
+##
+## THE LANTERNS DID NOT SURVIVE, and the reason is structural. Owner, seeing them in play: *"the
+## two lanterns you added in those are actually two vertical squares tall, I think one of the
+## shrubs are too, currently they render as half of a lamppost."* Correct - the lamp occupies
+## (19,5)+(19,6) and the shrub (17,3)+(17,4), so baking one cell yields half a sprite. A 2-cell
+## prop cannot fit this grid at all: every cell is one square image drawn at the tile width, so a
+## 16x32 source either squashes or drops to half the scale of everything around it. Tall props
+## need a second draw LAYER - which is the same thing prop occlusion needs, so the two are one
+## problem, not two.
 ## Still deliberately excluded, each for a reason: the SKULL (dropped in d42bf00f for reading as
 ## loot), the CAMPFIRE (reads as a rest site, which is a real feature), the grave MARKER (reads as
 ## remains) and the 3x3 TENT (reads as a safe room). Background scatter must stay background.
-const PROP_COUNT := 14
+const PROP_COUNT := 11
 ## Roughly one floor tile in seven. Flavour, not clutter: high enough that a corridor is not all
 ## one tile, low enough that the eye still reads the floor as floor.
 const PROP_CHANCE_IN := 7
