@@ -97,6 +97,36 @@ as one number.
 
 ---
 
+## ⚑ TWO TRACKS — the sequencing rule that decides everything below
+
+Asked 2026-09-10: *"Looking at everything still on our backlog whats the most efficient way to
+proceed?"* The answer is not an order of items. It is that **the items fall into two tracks, and
+mixing them is what burns sessions.**
+
+**Track A — art, UI, tooling.** Dungeon rooms, sprite interiors, tall props, bake generators,
+UI-scale registration, the docs/help audit, the licence chores. None of it changes player power,
+so **none of it invalidates the monster curve.** No calibration chain, no playtest gate, no
+recalibration tax. It can ship continuously and in any order.
+
+**Track B — cards and balance.** Card instances, the upgrade rarity weight, companion and dungeon
+card passes, starter decks, the 53-card content, the per-class death-rate work. **Every one of
+these invalidates the curve** (see the recalibration rule in CLAUDE.md), and the chain must be run
+ONCE after all of them — running it per change costs ~25-45 minutes a round and was abandoned as
+a strategy on 2026-09-04.
+
+**So: batch ALL of Track B behind one chain run, and do Track A work in between rather than
+interleaving a card tweak between two art tasks.** A single card change dropped in the middle of
+art work forces a chain run that a batched approach pays once.
+
+**Track B has one gate that must be decided before the rest of it starts:** card INSTANCES. It
+reaches the save format, the deck UI, the combat hand, the milestone system and the market, and
+the 53-card content pass must not begin before it — the cards are the thing that will exist in
+multiples. That decision is the owner's, not a thing to infer.
+
+**Track A has one item that is ready NOW:** dungeon rooms from the Raven packs. The pack choice is
+settled by measurement, the room/corridor split needs no protocol change, and the only open
+question (the seam at a doorway) needs a screenshot rather than analysis.
+
 ## How to work on balance without burning sessions
 
 Both failed calibration chains on 2026-09-07 cost ~45 minutes each, and **neither failed because
@@ -142,13 +172,10 @@ stocked, for the hover / chest / run-log checks).
       is a property of the function being async. Verified on production by springing a real
       countdown: **1** shutdown line and **1** broadcast, down from 61.
 
-- [ ] **Confirm the dungeon tile HOVER on screen** (owner 2026-09-09, working remote: *"it will
-      need confirmed later once I'm back at my PC"*). Everything a screenshot can show was
-      checked — the `[url=]` is emitted, the key entry renders underlined as a live link, the
-      handler is connected on `map_display` as well as `game_output`, and the popup parents to
-      the window root so it shows outside combat. What was NOT verified is the rendered tooltip
-      itself, because it needs a real mouse hover. Check a theme tile in the key AND one on the
-      floor; the text should wrap rather than run off screen.
+- [x] **CONFIRMED ON SCREEN 2026-09-10.** The owner hovered a theme tile in the KEY and the
+      same tile on the FLOOR, and the tooltip wrapped rather than running off the edge: *"3a
+      Working. 3b Working. 3c Seems to wrap, it's on two lines."* This was the only part a
+      screenshot could not settle, because it needs a real mouse.
 
 - [ ] **Watch the five live characters at L3-L12.** They sit in exactly the range everything shipped
       on 2026-09-07 targets, and they are now better evidence than more simulation.
@@ -407,8 +434,13 @@ share of a pool plus a per-class engine, so its cost curve does not transfer. Ow
       every fight. Face and payout are derived from the SAME two sources (card data + the
       player's picks) so they cannot disagree. Verified end to end: face said "cycles: 20 ward",
       two unplayed copies paid exactly 40.
-- [ ] **NEEDS A PLAYTEST before it ships.** Whether a cycle value actually makes a wider deck
-      tempting is a question about feel, not numbers.
+- [x] **PLAYTESTED AND SHIPPED in v0.9.767 (2026-09-10).** Faces read `cycles: 38 ward` /
+      `cycles: 122 damage`, both Bulwarks cycled and paid exactly 38 each, Venom Fang played for
+      its stated 122, and the upgrade route worked too (`Blast` showed `[cycles: 29 ward]`).
+      The design question came back QUALIFIED rather than yes: *"it will very much depend on what
+      upgrades hit the players cards. If you get one with a good cycle ability you will likely
+      want to keep it in."* So the pull is real but CONTINGENT on the upgrade you draw — which is
+      precisely why the rarity finding above is the gate on this arc rather than more cards.
 - [ ] **PARTY has no un-submit, and that is where a confirmation step is actually needed.**
       `_party_submit_action` returns early if `submitted_this_round` — a one-way door, so a
       misclick is unrecoverable and you wait out the round. Owner asked for a confirmation step in
@@ -819,258 +851,43 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
-- [ ] **NEXT: dungeon tile renderer** — art is IN, geometry is MEASURED, nothing is blocking it.
-      Owner chose `darkcave` over Godot Pixel Levels on look. Committed at
-      `client/sprites/darkcave/` (2 sheets), `mobs_pack/` (366 animation strips),
-      `items_pack/` (~1500 by equipment slot).
+- [x] **SHIPPED v0.9.760-767 — the dungeon RENDERER, its sprites, and the hoverable key.**
+      This replaces three separate open entries (~245 lines) that were still describing this as
+      the next thing to build. Reconciled 2026-09-10 after the owner asked what the most efficient
+      way to proceed was: a plan built on a list that calls finished work "NEXT" is wrong before
+      it starts.
+      What landed: the tile renderer on the main canvas, floor/wall-rim/void, landmark art
+      (chests, lava, braziers, campfires, stairs), scatter props, animated monster sprites for all
+      53, floor-loot and egg art, the player's own overworld sprite underground with a trailing
+      companion, the run log and legend in the side panel, hover on a theme tile in the KEY and on
+      the FLOOR, monster hover with pre-rolled variant, level and art, and prop occlusion.
+      **The deleted geometry section was WORSE than stale — it was wrong.** It specified
+      `DUNGEON_TILE_FONT_SIZE 46 -> 58` with `line_separation = -47`, an approach that was tried
+      and abandoned: a negative separation does not merely tighten rows, it COMPRESSES the inline
+      images, so tiles drew full width and half height while every headless measurement said 32px.
+      Font 14 with no separation override is what actually works. Anyone planning from that entry
+      would have rebuilt a known-broken design, which is exactly the cost of a stale backlog.
+      **The live reference is the code, not this file:** `client/dungeon_tiles.gd` carries the
+      sheet coordinates, `FLOOR_COLOR`, the tile-size rules and the reasoning for each; and
+      `client/dungeon_sprites.gd` the glyph/monster/landmark tables. `tools/verify_dungeon_art.gd`
+      calls every resolver on every key it claims to serve (840 lookups) and the release gate
+      fails on any that does not load.
+      **Two facts from that section worth keeping:** WALL is still deliberately drawn as void with
+      the rock autotile used only as the RIM where floor meets void (owner's Azure-Dreams call);
+      and `client/sprites/tilemap_pack/` is now LICENCE-RESTRICTED and untracked, so see
+      `docs/ASSET_LICENCES.md` before touching it.
+      Still open from the original scope, and now the only part that is: **the ~46 remaining THEME
+      tiles are still coloured letters.** Landmark tiles got real art; flavour tiles (mud, moss,
+      webbing, miasma) did not. They read acceptably and now carry scatter props behind them, so
+      this is a polish item rather than a gap — and it is the natural companion to the Raven room
+      work, which will settle what a themed floor should look like anyway.
 
-      **Geometry, measured not assumed** (a monospace canvas can host a square tile grid):
-        - `DUNGEON_TILE_FONT_SIZE` 46 -> **58**: Consolas cell becomes exactly **32px** wide, a
-          perfect **2x integer scale** of a 16px tile and **1:1** for the 32px wall sheet.
-          Non-integer scaling is what makes pixel art mushy, so this number is the whole point.
-        - `line_separation` **-47** on `game_output` while the dungeon draws: rows land at
-          exactly 32px, giving square cells. Measured: -45 -> 34px, -47 -> 32px, -50 -> 29px.
-        - NEAREST filtering: DONE (was missing; the player avatar was being drawn soft).
-        - Cost: a full 25x11 floor of inline `[img]` measured **16.67ms vs 15.70ms** for text
-          glyphs - 1.1x. No renderer rewrite needed.
-
-      **Sheet contents, indexed cell by cell rather than guessed:**
-        - `dark cave_tiles_and_sprite_16x16.png` (22x12): olive FLOOR autotile at cols 5-11 rows
-          1-5; the same shapes in BLACK at rows 7-11 (pit/chasm); props at cols 13-20 - grass,
-          pebbles, moss, **gold nuggets**, skull, dead branch, sapling, **campfire (2 frames,
-          animated)**, bookshelf, **2 lanterns**, and a 3x3 **tent**.
-        - `dark cave_wall_32x32.png` (12x6): a classic **4x4 autotile block at cols 1-4 rows
-          1-4**, rocky edges with a BLACK interior; cols 5-11 are decorated variants.
-
-      **Key design point:** WALL is deliberately drawn as blank void today (owner: "render
-      non-traversable space as empty/void... Azure Dreams style"), so do NOT carpet the map in
-      wall sprites. Use the wall autotile only as the RIM where floor meets void - its black
-      interior means the deep void stays black and rooms read as carved out of rock. This uses
-      the art for the shape it actually has and keeps the existing design.
-
-      **Natural mappings already available:** campfire -> rest site, tent -> safe room, gold
-      nuggets -> resource node (`&`), `mobs_pack/ChestA` (a mimic) -> treasure chest, skull ->
-      remains.
-
-      **Stairs and doors are SOLVED** (owner supplied `RageTileMap-master`, 2026-09-08). Its art
-      is the Henry Software Pixel Level set - the SAME artist as mobs_pack/items_pack, so it
-      matches them by construction. Curated to `client/sprites/tilemap_pack/`:
-        - `free_tiles_16x16.png` (32x4) and `paper_tiles_16x16.png` (48x64, ~3000 tiles)
-        - the two C# tile ENUMS kept as `*.cs.reference` - they NAME every index, so no tile has
-          to be identified by eye. Index -> cell is `(i % across, i / across)`; across = 32 for
-          free, 64 for paper.
-      Verified by rendering each index and looking at it, not by trusting the enum:
-      `12 StairsDown, 13 StairsUp, 14 DoorShut, 15 DoorOpen, 16 DoorBroke, 17-20 WallTorch
-      (a 4-frame animation), 21-28 Wall, 38 Bed, 39 Sacks, 47 Forge, 48 Anvil, 49 Workbench`.
-      `47 Forge` is worth noting - the game already has an Infernal Forge.
-
-      **Tile size / view count may want revisiting** (owner 2026-09-08): *"We may have to find a
-      size and number that works for the future if it starts looking that bad. Currently this
-      looks great."* Now 64px tiles at a 19x9 view. Revisit if props, monsters and loot make the
-      floor feel cramped.
-
-      **Solid darkcave tiles, found by scanning for a fully-opaque uniform cell rather than by
-      eye:** floor = **(2,2)** `#524B24` (zero colour spread), void = **(2,8)** black. A first
-      mock used (6,2) and produced a room covered in black notches - that is an EDGE tile. The
-      autotile cells must be identified the same measured way.
-
-      A mixed mock (darkcave floor + wall rim, RageTileMap stairs/doors/torch/forge) reads fine:
-      the warm brown stone sits comfortably against the cave rock.
-
-      - [x] **DONE, VERIFIED ON SCREEN 2026-09-09 - Scatter FLAVOUR props on the floor** (owner 2026-09-08, on seeing slice 1): *"We
-            will likely want to add some of the stones, grass, trees, stumps, lanterns scattered
-            around in the future just for flavor to make the floor less of the same thing."*
-            The olive floor reads correctly as cave floor - confirmed by the owner - but every
-            tile is identical. The cave sheet already carries the props: grass tufts and pebbles
-            (cols 13-14, rows 2-4), moss, a skull (19,2), a dead branch (17,3), a sapling (19,3),
-            and lanterns (19-20, rows 5-6); `tilemap_pack` adds dead trees and stumps.
-            Do it as a DECORATION layer keyed off the tile position (a hash of x,y so it is
-            stable across redraws and does not shimmer as you walk), at a low density - flavour,
-            not clutter, and never on a tile whose meaning a player must read.
-
-      - [x] **DONE, VERIFIED ON SCREEN 2026-09-09 - Companion follows you underground** (owner 2026-09-08): *"We will eventually want
-            the companion following your sprite in dungeons just like on the overworld as well."*
-            The overworld already does this with `_local_companion_label` / `_make_map_companion_label`
-            (a small monospace RichTextLabel of the companion's ASCII art, positioned under the
-            player's map sprite). The dungeon cannot reuse that directly: the overworld map is an
-            OVERLAY of positioned Controls, while the dungeon grid is inline text, so the
-            companion has to be a tile in the grid, drawn one cell behind the player.
-            Two pieces are missing and worth checking before starting: the companion has no
-            POSITION in a dungeon (nothing server-side tracks one), and it would need a trailing
-            rule - remember the player's previous cell and draw the companion there, which also
-            gives it a facing for free. Sprite source: the companion art already used on the
-            overworld, or a `mobs_pack` match once monsters are sprited.
-            **Verified 2026-09-09, and it took an instrument fix to do it.** Two things hid it:
-            the test save's companion was KO'd (a downed companion is not drawn), and the
-            `dungeon` capture scene sent the OVERWORLD `move` message instead of `dungeon_move`,
-            so the player never took a step - 450 redraws at one cell, and the companion stands
-            on the player's PREVIOUS cell, which never existed. Both shots looked entirely normal.
-            `_dev_shot_ensure_companion` now revives as well as grants, and the scene moves with
-            `dungeon_move`. The wolf then appears behind the player exactly as designed.
-
-      - [x] **DONE - monster sprites (loose matches, owner's call).** All 82
-            `mobs_pack` families were rendered and compared against the 53-monster roster
-            (2026-09-08). About 35 map WELL: undead (Skeleton/Zombie/Skull/Ghast), Mimic->Chest,
-            Vampire->Count, Death Incarnate->Reaper, Wolf/Gnoll/Cerberus->Dog, Hydra->Snake,
-            Elemental->ElementalOrb, Iron Golem/Titan->Golem, Shrieker->Mushroom, God Slayer->
-            Sword, Void Walker->Space, Balrog/Phoenix->FireSmall.
-            The pack is slimes, skulls, orbs, elementals, bugs, animals and constructs - the only
-            humanoid-ish families are Count, Mummy, Zombie, Witch, Reaper, Robot, Dwarf, Beard,
-            Skeleton, Golem, Head. Our roster is heavy on classic humanoids (Goblin, Kobold,
-            Hobgoblin, Orc, Ogre, Troll, Giant, Gnoll) and NONE of them match; a first pass put
-            four of them in `Hulk`, which is a many-armed insect. Also weak: Gargoyle->Monolith
-            (a brown slab), Sphinx->Mask, Cosmic Horror->Eye (renders nearly empty).
-            Owner to choose: (1) sprite only what fits and keep glyphs for the humanoids - never
-            shows a wrong-looking monster, degrades cleanly as art arrives; (2) accept loose
-            matches so everything is a sprite; (3) source a humanoid pack.
-            Sprites are 16x16 frames in horizontal STRIPS (SkeletonA = 144x16 = 9 frames), so
-            frame 0 is a region and animation is available later at no extra cost.
-
-      - [ ] **Animated STATUS-EFFECT art for combat** (owner 2026-09-08, pointing at
-            `tf_svbattle/RMMV/system`). `States.png` is 768x960 - **10 status animations of 8
-            frames each** in 96x96 cells, and the pack's own readme calls them "a set of
-            animations for status effects (poison, sleep, etc)... pixel-art animation in the
-            style of Time Fantasy so there won't be a style clash".
-            Rendered and identified: 1 poison (purple bubbles), 2 blind (eye + red X), 3 silence
-            (speech bubble), 4 stun/armour-break (closing brackets), 5 confusion (question
-            marks), 6 charm (hearts), 7 sleep (Zzz), 8 paralysis (lightning), 9 doom (skulls),
-            10 freeze/slow (blue drops).
-            Combat currently shows statuses as TEXT chips with `[url=]` hovers. These would sit
-            on the combatant instead - and note they are ANIMATED, which the text chips are not.
-            `Shadow2.png` in the same folder is a deliberate BLANK: the Time Fantasy style bakes
-            the shadow into each sprite, so it overwrites the engine's default drop shadow. Do
-            not mistake it for missing art.
-
-      - [x] **DONE - all 80 characters have directional art** (owner bought TF Sprites 2): `tf/6_1..6_8` and `tf/7_1..7_8`
-            (paths `client/sprites/battlers/tf/<id>/idle_0.png`). Coverage is 64 of 80 after
-            wiring chara1 -> row 1 and military1-3 -> m1-m3. The only unused CHARACTER sheets left
-            are `fairies` (4 winged), `vampire` (a vampire and a bat) and `bonus1` (8 in modern
-            dress) - none are the armoured adventurers in rows 6/7, shown side by side rather
-            than asserted; `npc*` are plainly townsfolk in aprons and overalls.
-            **Why they are missing is now known.** The battler pack's readme: "This is an
-            EXPANSION pack for the Time Fantasy RPG assets... expands on the characters from
-            PREVIOUS Time Fantasy sets", and `singleframes/` holds exactly set1-set7 +
-            military1-3 = 80, matching `tf/` one for one. So all 80 battlers DO have character
-            counterparts - across the wider Time Fantasy product line, not inside the single
-            character pack we own.
-            **The missing set is IDENTIFIED.** The battler pack's page: "80 characters based on
-            the heroes from the original Time Fantasy set and the Monsters expansion", plus "For
-            base walking animations for these characters, check out the original character pack".
-            Our `READ_ME.txt` confirms we own the ORIGINAL - "32 main hero/villain characters, 24
-            military characters, 16 NPCs (recolored -> 32), 8 bonus characters" - which is
-            exactly rows 1-5 and m1-m3, and explains why `npc`/`bonus` never matched: they are
-            townsfolk, not battler heroes.
-            So rows 6-7 need **Time Fantasy RPG Sprites 2 (with Monsters)**,
-            <https://finalbossblues.itch.io/time-fantasy-monsters>, **$10 minimum**, which ships
-            "all monsters with full four-direction walking animations and single-frame battlers".
-            Four-direction walking is precisely the missing art. Same artist and style, so it
-            drops in beside what is already wired.
-            Until then they keep the mirrored-battler fallback (left/right facing, no walk cycle).
-
-      - [ ] **Player EMOTE animations underground** (owner 2026-09-08): the walk cycle IS live -
-            each step advances a 3-frame cycle from the overworld art's 4 directions x 3 frames -
-            but the EMOTE sheets are a separate thing and are NOT done. They sit unsliced at
-            `timefantasy_characters/sheets/emote2..5.png` (312x288 = a 12x8 grid of 26x36 frames)
-            plus `animation1/2.png`, and larger 936x864 copies under `RPGMAKERMV/characters/`.
-            The pack's `frames/` folder slices chara/military/npc/animals/chests but never the
-            emotes, so they need a slicing pass first - the same offline treatment the avatar
-            frames got. Then decide WHEN one plays: on rest, on a find, on low HP.
-
-      - [ ] **Dungeons must support PARTY play** (owner 2026-09-08: "we will also need to ensure
-            Dungeons support party play at some point"). Already the declared north star under
-            phase F below and carries the revised balance rule (party-upgradable dungeons: much
-            harder, much greater rewards, but always with a solo option). Recorded HERE too
-            because the tile renderer now makes a concrete demand of it that did not exist
-            before: the grid draws exactly one player sprite and one trailing companion, so a
-            party needs other members drawn as their own sprites in the same grid, each with
-            their own facing - and the client currently has no positions for them underground.
-            Same shape as the companion follower, one step harder.
-
-      - [x] **PARTLY DONE - landmark tiles sprited; doors/traps/trees still unused** (owner 2026-09-08: "there are some trees and
-            traps and things that could be useful"). All under
-            `client/sprites/battlers/timefantasy_characters/timefantasy_characters/RPGMAKERMV/`:
-              `characters/!doors.png`       576x768  - DOORS: wood, red, metal, barred variants
-              `expansion/switch1.png`       576x768  - pressure plates, levers, buttons, gems:
-                                                       trap and switch art
-              `expansion/bonus_lava_anim.png` 432x144 - ANIMATED lava, i.e. the LAVA_POOL theme
-                                                       tile exactly
-              `characters/!$torch.png`      144x240  - animated torch, several variants
-              `characters/!$fireplace.png`  144x240  - animated fire
-              `expansion/bonus_trees.png`   480x576  - 12 trees
-              `expansion/bonus_pinktrees.png` 576x192 - 2 cherry trees
-              `expansion/bonus_kitchen.png` 192x288  - counters and tables
-            This closes gaps I had twice reported as missing. Note the theme-tile matches are
-            direct: LAVA_POOL -> lava, and the trap glyph -> a pressure plate. Torch and fire are
-            ANIMATED, which suits a lit corridor or a rest site.
-            Slice them the same way row 1 was: RPG Maker sheets are 12 cols x 8 rows of frames,
-            character blocks are 3 cols x 4 rows, and `!`-prefixed files are OBJECT sheets rather
-            than characters (different layout - check before assuming the block maths).
-
-      Slice it: (1) floor + wall-rim + geometry, screenshot, iterate. (2) props and the special
-      tiles. (3) monsters from `mobs_pack` with the hover already built. (4) floor loot from
-      `items_pack`. (5) the hoverable key, using the `[url=]` idiom.
-
-- [ ] **Dungeon sprites, and a hoverable key** (owner 2026-09-08):
-      ⚠ **CORRECTION 2026-09-08 — the "~4,900 sprites available" note below is misleading.**
-      Both packs carry a **0-byte `.gdignore`**, so Godot imports NOTHING from them: they are not
-      in the .pck (checked `.godot/imported` — zero entries), so they are not inflating the
-      download either. Using any of them means selectively un-ignoring, which is the lever for
-      taking a few without pulling in all 4,900.
-      **And they are almost entirely CHARACTER battlers.** A first sweep for tile/environment art
-      wrongly concluded there was none, by searching path keywords (`*tile*`, `*object*`) instead
-      of reading the packs — the "wrong unit" mistake CLAUDE.md warns about. What actually exists
-      for non-character art is narrow but real:
-        - `timefantasy_characters/frames/chests/` — **32 frames**, 8 chests x 4 states
-        - `timefantasy_characters/frames/animals/` — **96 frames**, cats + dogs
-        - `timefantasy_characters/sheets/` — unsliced sources incl. `chests.png`, `animals1.png`
-      There is **no floor / wall / door / stairs / trap art anywhere in the repo**. So loot chests
-      and some creatures can be sprited from stock; the TILES cannot, and need either sourced art
-      or a proper typographic pass. Owner has not yet chosen between those. ASK before starting. *"ideally we will use sprites
-      or something for these spaces as well as floor loot and such. We want to use sprites as much
-      as possible for the dungeons. We will want to ensure they are added to the key on the right
-      as well though. It could be hoverable like our other hover features to see what it actually
-      does."*
-      Prompted by the `g` glyphs on a Minotaur's Labyrinth floor. **Note the collision this
-      exposes:** theme tiles are drawn as LETTERS while the key says "Letters = Monsters", so a
-      bull-rune tile and a goblin look the same. Sprites fix that by removing letters from
-      non-monster things entirely.
-      Scope: theme tiles, floor loot (currently ◉ egg / ◆ gear / ♦ consumable / ▪ material /
-      ¢ valor / ! scroll), special rooms, traps, stairs. Sprite candidates were already scouted
-      — unused single-frames under `client/sprites/battlers/tf_svbattle/singleframes/` and
-      `timefantasy_characters/`; the load pattern to copy is `battler_sprite.gd`.
-      The KEY must list every sprite used, and each entry hovers to explain what the thing does —
-      the same `[url=...]` + `meta_hover_started` → `_show_formula_popup` idiom the combat status
-      chips and card damage numbers already use.
-      **Do AFTER the room spread**, and after the zoom/font is settled: sprite size depends on how
-      many tiles are on screen, and that is not final until a floor actually fills the view.
-      **Unused art already in the repo** (verified 2026-09-08, not recalled): `tf_svbattle/`
-      **3,042 PNGs** and `timefantasy_characters/` **1,829**, neither referenced anywhere in the
-      client — the code only loads `sprites/ascii/`, `sprites/battlers/`, `battlers/overworld/`,
-      `battlers/tf/` and `sprites/classes/`. So ~4,900 sprites are available without sourcing
-      anything. ⚡ They also ship inside the .pck; check whether the unadopted packs are inflating
-      the download and `.gdignore` what we do not use (dev screenshots once cost ~23MB an update
-      the same way).
-- [ ] **Zoom the map inside NPC posts, the way dungeons now do** (owner 2026-09-08): *"We may
-      also want to zoom in the map when players are in a post for the same type of functionality
-      in the future."* Same shape as the dungeon presentation pass: a post interior is a small
-      bounded area drawn at overworld scale, so it wastes the canvas and its sprites are too small
-      to read. The dungeon work already built the pieces — a large-font grid on the main canvas,
-      a side panel for status/legend, and `_dungeon_player_glyph()` drawing the player's overworld
-      sprite inline at the measured cell width. Deliberately AFTER the dungeon arc so the tile
-      size, sprite sizing and key layout are settled once rather than twice.
-- [ ] **Dungeon monsters: hover for art, level and type** (owner 2026-09-08): *"find a few sprites
-      we can use for them or just make it where players can hover their mouse over them in the
-      dungeon and see their ascii art (and optionally level and variant or type... Level 8 Venomous
-      Orc)... this would require that the type of encounter get chosen beforehand I assume."*
-      **Half of that assumption is already satisfied — checked, not guessed.** A dungeon monster
-      entity is created with BOTH `monster_type` and `level` at spawn
-      (`_spawn_dungeon_floor_monsters`), and `monster_type` is ALREADY sent to the client as
-      `type` in the `dungeon_state` monster list. So "Level 8 Orc" + its ASCII art (client already
-      has `monster_art.gd`) needs only ONE extra field on the wire: `level`.
-      What is NOT pre-decided is the VARIANT (Venomous / elite / empowered) — that is rolled when
-      combat starts. Pre-rolling it at spawn is a real design change, and arguably a good one
-      under permadeath: seeing a Venomous Orc coming down the corridor is information you can act
-      on. Decide that separately; the cheap 90% does not depend on it.
+- [ ] **Zoom the map inside NPC posts** (owner 2026-09-08) — **now part of Phase 3.45, do not
+      plan it twice.** *"We may also want to zoom in the map when players are in a post for the
+      same type of functionality in the future."* This and the sprite-interiors arc are the same
+      screen: a post interior drawn larger, with sprites. Phase 3.45 owns the design; this line
+      stays only so the older ask is not lost. (The Dungeon Atlas was once tracked as three
+      separate tasks in three places — that is the mistake this cross-reference exists to avoid.)
 
 - [ ] **Dungeon revamp — the design IS captured**, in `docs/design/dungeon_revamp.md` (139 lines)
       plus `docs/design/dungeon_themes.md`. This line used to say "details not yet captured",
@@ -1081,7 +898,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
         * **D bosses** (phases / telegraphs / adds, telegraph counterplay mandatory) — nothing
           blocks it.
         * **E presentation** (zoom, sprites, void instead of wall tiles, wider room spacing)
-          — nothing blocks it. **IN PROGRESS 2026-09-08.**
+          — **DONE, shipped v0.9.760-767.** See the ticked entry above.
         * **A 2-4** (theme roll/stamp/display, themed egg, Sigil consumable) — nothing blocks it.
         * **B loot/discovery** (signature drops, Dungeon Atlas) — waits on the dungeon card pass,
           and the Atlas has grown into the realm meta-loop (Phase 6).
@@ -1112,7 +929,9 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 - [ ] **Dungeon Atlas** as hub + quest board.
 - [ ] **Dungeon-centred questing** to replace the disliked overworld quests: clear / rescue /
       boss-hunt / gather.
-- [ ] **Presentation pass**: map, minimap, GUI, and real in-game dungeon screenshots for the site.
+- [ ] **Presentation pass — mostly SHIPPED, one piece left.** The map, minimap and in-dungeon
+      GUI all landed across v0.9.760-767. What remains is narrow: **real in-game dungeon
+      screenshots for the website**, which now show something worth showing.
 
 ## Phase 6 — realm meta and sinks
 
