@@ -577,6 +577,27 @@ does not exist in the interiors case at all.
            look, needs no wall art at all, and the room mask already exists. Note the repo rule
            against `color=` on floor-backed sprites — the rim is not floor-backed, but the art
            gate scans for that pattern and would need to know the difference.
+- [ ] **More variety when it is wanted: the OTHER packs, and MULTI-TILE decor** (owner,
+      2026-09-10, after the three layers landed): *"If we need more variety we can still look at
+      the other sprite packs we have for more Floors, walls, and decor or even expand to
+      multi-tile decor."*
+      **`tilemap_pack` is the cheapest expansion available and is currently unused for rooms.**
+      Its `FreeTileMap.cs.reference` NAMES every index: **12 floors** (`Floor0-5`,
+      `FloorRoom0-5`), **26 walls** (`Wall0-25`) and 6 rugs, with `paper_tiles_16x16.png` and a
+      `TownTileMap` enum on top. Naming matters more than count here — every Raven cell had to be
+      found by scanning, scoring and then LOOKING, and two of the top-scoring "floors" still
+      turned out to be water. A named index skips all of that.
+      It is also the answer to the layer the Raven packs could not supply: only 2 of 7 shipped a
+      wall sheet, and this one has 26 named walls. If per-room walls are ever wanted, start here.
+      **Caveat:** `tilemap_pack` is licence-UNIDENTIFIED and untracked for that reason
+      (`docs/ASSET_LICENCES.md`). Identify it before building on it.
+      **Multi-tile decor is the same problem as TALL PROPS, not a new one.** A 16x32 lamppost and
+      a 2x2 shrine both need one object to span two grid cells, and the compositing layer for that
+      already exists (`dungeon_composite.gd`) — what is missing is the ROW SPLIT: `prop_for` and
+      `decor_for` return one path per cell and have no notion of an object claiming two. Doing it
+      once serves both, and the half-lamppost that shipped in the props pass is the reminder of
+      what happens when a two-cell object is treated as one.
+
 - [ ] **Border floor LOOT so decor cannot be mistaken for it** (owner, 2026-09-10): *"we could
       always put a small border around floor loot to help differentiate it from decorations."*
       **This inverts the constraint and is worth doing before widening decor.** The decor pool is
