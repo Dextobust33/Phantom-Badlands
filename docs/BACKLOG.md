@@ -560,10 +560,23 @@ does not exist in the interiors case at all.
       pairing under a contrast floor, allow everything above it.
       Sequencing, cheapest first, each visible before the next starts:
         1. **Floor per room** — needs only a pack list; `label_rooms` already gives room identity.
-        2. **Walls per room** — the rim is a single tile and the room mask already exists, so
-           keying it on room-ness is close to free. Do NOT reach for directional autotiling yet;
-           the packs ship the sheets, but that is a much larger piece and the rim may be enough.
-        3. **Decor per room** — the existing prop scatter, drawn from the room's pack.
+        2. **Decor per room — DO THIS BEFORE WALLS.** Measured 2026-09-10, after floors shipped:
+           every one of the seven pool packs ships a 768x768 RPG Maker "B" object sheet, which is
+           **2,304 object cells each**. Decor is what makes a room read as a mushroom cave rather
+           than a mine; walls are only the frame. It is also the layer with by far the best asset
+           support, and it reuses the existing prop scatter and the compositor unchanged.
+        3. **Walls per room — POORLY SUPPORTED, and that is a measurement not a guess.** Only
+           **2 of the 7** pool packs (`green_dungeon`, `winter_forest`) ship an A4 WALL sheet; the
+           rest carry floors (A5) and objects (B) only. Scanning their mixed tilesets for a
+           wall-like cell was tried and the results were weak — flat blocks, and `shroom_chasm`'s
+           best candidate is a treeline silhouette, not a wall face.
+           There is also a design cost nobody has weighed yet: the current rim is mostly BLACK
+           with rocky edges, which is what makes the map read as carved-out space rather than a
+           walled grid (the owner's Azure-Dreams call). A solid pack wall would box rooms in.
+           Cheaper option worth trying first: TINT the existing rim per room. It keeps the carved
+           look, needs no wall art at all, and the room mask already exists. Note the repo rule
+           against `color=` on floor-backed sprites — the rim is not floor-backed, but the art
+           gate scans for that pattern and would need to know the difference.
         4. **Doors and chests at the seam** — which also answers "where is the seam", below: a
            door tile IS the transition, and is better than any blend.
 
