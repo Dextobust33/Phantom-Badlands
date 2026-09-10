@@ -104,6 +104,11 @@ func _render_page() -> void:
 	for child in _button_column.get_children():
 		child.queue_free()
 
+	# An unknown page would render as an empty panel with no Back button - which looks
+	# exactly like a crash. Fall back to root rather than stranding the panel.
+	if not _current_page in ["root", "dungeon", "combat", "items", "companions", "player",
+			"world", "loot_lab", "abilities", "patreon"]:
+		_current_page = "root"
 	match _current_page:
 		"root":
 			_title_label.text = "ADMIN MENU"
@@ -330,37 +335,23 @@ func _subtitle_subline(text: String) -> void:
 
 
 func _on_button_pressed(action_id: String) -> void:
+	# Any "_page_<name>" button navigates, and the page name IS the suffix - so adding a page needs
+	# no new case here at all.
+	#
+	# This was nine near-identical cases, each setting `_current_page` and then calling
+	# `_render_page()`. A tenth was added by hand for the new Dungeon page and omitted the render
+	# call, so the button set the variable and redrew nothing: owner, immediately, *"Clicking
+	# Dungeon in the Admin pannel does nothing."* Nine correct copies of a two-step rule is nine
+	# chances to write the tenth wrong. One rule cannot forget half of itself.
+	if action_id.begins_with("_page_"):
+		_current_page = action_id.substr(6)
+		_render_page()
+		return
 	match action_id:
 		"_close":
 			emit_signal("close_requested")
 		"_back_root":
 			_current_page = "root"
-			_render_page()
-		"_page_companions":
-			_current_page = "companions"
-			_render_page()
-		"_page_dungeon":
-			_current_page = "dungeon"
-		"_page_items":
-			_current_page = "items"
-			_render_page()
-		"_page_combat":
-			_current_page = "combat"
-			_render_page()
-		"_page_player":
-			_current_page = "player"
-			_render_page()
-		"_page_world":
-			_current_page = "world"
-			_render_page()
-		"_page_patreon":
-			_current_page = "patreon"
-			_render_page()
-		"_page_abilities":
-			_current_page = "abilities"
-			_render_page()
-		"_page_loot_lab":
-			_current_page = "loot_lab"
 			_render_page()
 		_:
 			emit_signal("action_triggered", action_id)
