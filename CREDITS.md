@@ -1249,3 +1249,47 @@ A small number of LPC parts used in this project are released under
 **CC-BY 3.0** instead of OGA-BY (license texts list only CC-BY 3.0).
 CC-BY 3.0 also permits commercial use with attribution and is
 included in the per-part entries above.
+
+---
+
+## Tiles, Monsters, Items and Eggs
+
+Recorded 2026-09-10 during the asset-licence audit (`docs/ASSET_LICENCES.md`). None of these
+require attribution; all of them appreciate it, and a credit that cannot be produced later is the
+same as no credit at all.
+
+- **PixelItems** (equipment and loot sprites) — by **rakkarage / Henry Software**
+  - Source: <http://henrysoftware.itch.io/godot-pixel-items> · <https://github.com/rakkarage/PixelItems>
+  - License: **CC0 1.0 Universal** (public domain dedication)
+  - Used as: `client/sprites/items_pack/`, and the floor-backed bakes in `loot_floor32/`
+
+- **PixelMobs** (monster sprites) — by **rakkarage / Henry Software**
+  - Source: <http://henrysoftware.itch.io/godot-pixel-mobs>
+  - License: **CC0 1.0 Universal**
+  - Used as: `client/sprites/mobs_pack/`, and the floor-backed bakes in `monster_floor32/`
+
+- **Pet egg pack** (companion eggs) — by **Hope2D**
+  - Contact: <https://hope2d.com> · admin@hope2d.com
+  - License: Hope2D Asset License v1.0 — commercial use permitted; attribution appreciated, not
+    required; **the asset files themselves may not be redistributed**, which is why they are not
+    in this repository.
+
+- **Dark Cave tileset** (the dungeon floor, walls, props and landmark art) — **author not yet
+  identified**
+  - License, verbatim from the pack page: use permitted in business and personal projects;
+    editing permitted; *"You cannot redistribute this software package or its files in any form"*;
+    no use for AI training; *"Credit is not mandatory, but commendable."*
+  - **TODO:** record the author and store URL. The pack ships no licence file and its bundled
+    PDF uses subset-encoded fonts, so the name could not be recovered from the files themselves.
+
+- **`tilemap_pack/free_tiles_16x16.png`** (interior tiles, stairs, doors) — **origin unidentified**
+  - **TODO:** identify and record, or replace. Untracked in the meantime.
+
+### Raven Fantasy — Clockwork Raven Studios
+
+Purchased 2026-09-10, **not yet used in the shipped game**. When any of it ships, credit here:
+
+- **Raven Fantasy tilesets** by **Caio, Clockwork Raven Studios**
+  - <https://clockworkraven.itch.io> · <https://www.patreon.com/clockworkravenstudios>
+  - License: use permitted in personal, commercial and physical projects; *"cannot be distributed
+    or sold as a separate product"*; *"Attribution is not necessary but welcome."*

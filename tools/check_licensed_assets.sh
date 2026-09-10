@@ -31,10 +31,26 @@ while IFS=$'\t' read -r path want why; do
     fi
 done < "$MAN"
 
+# The OTHER half of the same rule. Present on disk, ABSENT from git -- and nothing enforced the
+# second half, so one `git add -f` or a careless .gitignore edit would quietly re-publish art we
+# are not licensed to redistribute, in a commit that looks like any other. The whole history had
+# to be rewritten once already; this is what stops a second time.
+while IFS=$'	' read -r path want why; do
+    case "$path" in ''|'#'*) continue;; esac
+    tracked=$(git ls-files "$path" 2>/dev/null | wc -l)
+    if [ "$tracked" -gt 0 ]; then
+        printf '  FAIL  %-34s %s files TRACKED IN GIT - must not be published (%s)
+'             "$path" "$tracked" "$why"
+        fail=1
+    fi
+done < "$MAN"
+
 if [ "$fail" -ne 0 ]; then
     echo
-    echo "  Licence-restricted art is missing. It is deliberately NOT in git."
-    echo "  Restore it from the private backup, then re-run. See docs/ASSET_LICENCES.md."
+    echo "  Licence-restricted art is missing, or is tracked in git when it must not be."
+    echo "  MISSING -> restore from the private backup. TRACKED -> git rm --cached it."
+    echo "  These packs are licensed to USE, not to REDISTRIBUTE. See docs/ASSET_LICENCES.md."
     exit 1
 fi
-printf '  ok    licensed_assets       all %d restricted art directories present\n' "$total"
+printf '  ok    licensed_assets       %d restricted dirs on disk, none tracked in git
+' "$total"
