@@ -44925,7 +44925,13 @@ func _dungeon_ground_at(grid: Array, x: int, y: int, tile: int) -> String:
 		return prop
 	# prop over the room floor: `over_prop` swaps the prop tile's own baked CORRIDOR floor for the
 	# room floor, which is the same operation it does for a sprite. Cached like any other pair.
-	return _DungeonComposite.over_prop(prop, _DungeonTiles.room_floor_for(x, y, rid))
+	# A decoration belongs here (the prop hash said so). If this room's pack ships its own
+	# scenery, draw that instead of the neutral darkcave prop - that is the third layer.
+	var floor_img: String = _DungeonTiles.room_floor_for(x, y, rid)
+	var decor: String = _DungeonTiles.decor_for(x, y, rid)
+	if decor != "":
+		return _DungeonComposite.overlay(floor_img, decor)
+	return _DungeonComposite.over_prop(prop, floor_img)
 
 
 func _dungeon_backed_cell(path: String, ground: String, url: String = "") -> String:

@@ -128,6 +128,39 @@ static func room_variants(pack: String) -> int:
 	return _room_variant_count[pack]
 
 
+## Per-pack room DECOR. Not every pack has any: a tileset's small objects are mostly ITEMS, and
+## decor that reads as loot or as a creature is worse than none (an auto-pick returned chickens).
+## A room whose pack has no decor keeps the neutral darkcave scatter props.
+const DECOR_DIR := "res://client/sprites/decor32/"
+static var _decor_count: Dictionary = {}
+
+
+static func decor_variants(pack: String) -> int:
+	if _decor_count.has(pack):
+		return _decor_count[pack]
+	var n := 0
+	while ResourceLoader.exists(DECOR_DIR + "%s_%02d.png" % [pack, n]):
+		n += 1
+	_decor_count[pack] = n
+	return n
+
+
+static func decor_for(x: int, y: int, room_id: int) -> String:
+	"""This room's own decoration for this cell, or "" if its pack ships none.
+
+	WHERE a decoration goes is still decided by `prop_for`'s position hash - the density and the
+	placement are already tuned and there is no reason to have two answers to the same question.
+	This decides only WHAT is drawn there."""
+	if ROOM_PACKS.is_empty():
+		return ""
+	var pack: String = ROOM_PACKS[abs(room_id) % ROOM_PACKS.size()]
+	var n: int = decor_variants(pack)
+	if n <= 0:
+		return ""
+	var h: int = abs(hash(Vector2i(x + 7919, y)))
+	return DECOR_DIR + "%s_%02d.png" % [pack, h % n]
+
+
 static func room_floor_for(x: int, y: int, room_id: int) -> String:
 	"""The floor tile for a room cell: the ROOM picks the pack, the CELL picks the variant.
 

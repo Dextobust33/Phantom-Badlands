@@ -104,10 +104,13 @@ func _init() -> void:
 					var prop: String = _T.prop_for(x, y)
 					if mode == "after" and is_room:
 						rooms += 1
+						var rid: int = int(labels.get("%d,%d" % [x, y], 0))
+						var fl: String = _T.room_floor_for(x, y, rid)
 						if prop != "" and ResourceLoader.exists(prop):
-							cell = _img(_C.over_prop(prop, _T.room_floor_for(x, y, int(labels.get("%d,%d" % [x, y], 0)))))
+							var dec: String = _T.decor_for(x, y, rid)
+							cell = _img(_C.overlay(fl, dec)) if dec != "" else _img(_C.over_prop(prop, fl))
 						else:
-							cell = _img(_T.room_floor_for(x, y, int(labels.get("%d,%d" % [x, y], 0))))
+							cell = _img(fl)
 					elif prop != "" and ResourceLoader.exists(prop):
 						cell = _img(prop)
 					else:

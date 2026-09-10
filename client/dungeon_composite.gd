@@ -96,6 +96,39 @@ static func over_prop(sprite_path: String, prop_path: String) -> String:
 	return dyn
 
 
+static func overlay(base_path: String, top_path: String) -> String:
+	"""`top_path` alpha-composited over `base_path`, as a path the BBCode `[img]` tag can load.
+
+	The sibling of `over_prop`, and deliberately a separate function rather than a flag. They do
+	different things for different reasons: `over_prop` recovers a background by COLOUR KEY,
+	because the dungeon's sprites had their floor baked in and have no alpha left. Room DECOR is
+	cut straight from a tileset and still HAS alpha, so keying it would be both slower and wrong -
+	it would punch holes wherever the decor happened to use the floor colour.
+
+	Same cache and same `take_over_path` trick, so the renderer still receives an ordinary
+	res:// string."""
+	if base_path == "" or top_path == "":
+		return base_path
+	var key := base_path + "+" + top_path
+	if _out_cache.has(key):
+		return _out_cache[key]
+	if _rejected.has(key):
+		return base_path
+	var bg := _image_for(base_path)
+	var fg := _image_for(top_path)
+	if bg == null or fg == null or bg.get_size() != fg.get_size():
+		_rejected[key] = true
+		return base_path
+	var out := bg.duplicate() as Image
+	out.blend_rect(fg, Rect2i(Vector2i.ZERO, fg.get_size()), Vector2i.ZERO)
+	var tex := ImageTexture.create_from_image(out)
+	var dyn := _DYN_DIR + "o%d.png" % abs(hash(key))
+	tex.take_over_path(dyn)
+	_keepalive.append(tex)
+	_out_cache[key] = dyn
+	return dyn
+
+
 static func _image_for(path: String) -> Image:
 	if _img_cache.has(path):
 		return _img_cache[path]
