@@ -328,6 +328,46 @@ static func room_count(labels: Dictionary) -> int:
 	return seen.size()
 
 
+## TWO-CELL props. The lamps and the dead shrub were dropped from the scatter pool because a
+## 2-cell object baked into one cell is half an object - owner: *"currently they render as half of
+## a lamppost"*. They come back here as top and bottom HALVES drawn into two grid cells.
+##
+## Rarer than scatter by a wide margin: a lamppost is a landmark and a floor covered in them is a
+## street. One in ~55 eligible cells against one in 7 for pebbles.
+const TALL_DIR := "res://client/sprites/tall32/"
+const TALL_NAMES := ["lantern", "lantern2", "shrub"]
+const TALL_CHANCE_IN := 55
+
+
+static func tall_prop_for(grid: Array, x: int, y: int) -> String:
+	"""The two-cell prop whose BASE stands on this cell, or "".
+
+	Position-hashed like `prop_for`, on a different salt so the two do not correlate.
+
+	The placement rule is the whole point: a base is only allowed where the cell ABOVE is also
+	walkable floor. Without that the top half would be drawn into a wall or into the void, which
+	is precisely the half-object problem this exists to fix, just moved up one cell."""
+	if y <= 0 or y >= grid.size():
+		return ""
+	var row = grid[y]
+	if x < 0 or x >= row.size():
+		return ""
+	if int(row[x]) == 1:
+		return ""
+	var above = grid[y - 1]
+	if x >= above.size() or int(above[x]) == 1:
+		return ""      # nowhere for the top half to go
+	var h: int = abs(hash(Vector2i(x * 31 + 5, y * 17)))
+	if h % TALL_CHANCE_IN != 0:
+		return ""
+	return TALL_NAMES[(h / TALL_CHANCE_IN) % TALL_NAMES.size()]
+
+
+static func tall_half(name: String, half: String) -> String:
+	var p := TALL_DIR + "%s_%s.png" % [name, half]
+	return p if ResourceLoader.exists(p) else ""
+
+
 static func prop_for(x: int, y: int) -> String:
 	"""The scatter prop for a floor tile, or "" for plain floor.
 

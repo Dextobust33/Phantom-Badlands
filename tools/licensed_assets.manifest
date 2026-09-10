@@ -13,3 +13,4 @@ client/sprites/egg_floor32	100	bake - pet-egg-pack eggs
 client/sprites/raven	190	Raven Fantasy - no redistribution as a separate product
 client/sprites/room_floor32	1	bake - the ROOM floor, cropped from shroom_chasm (Raven Fantasy)
 client/sprites/decor32	1	bake - per-pack room DECOR from the Raven tilesets
+client/sprites/tall32	1	bake - TWO-CELL props (lanterns, shrub) split into halves, from darkcave

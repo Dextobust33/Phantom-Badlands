@@ -76,6 +76,14 @@ def _mean_hsv(img, require_opaque=True):
     return colorsys.rgb_to_hsv(*[c / 255 for c in mean]), mean
 
 
+def _reference_image(sheet_const, cell_const, size):
+    src = open(TILES_GD, encoding='utf-8').read()
+    sheet = re.search(r'const %s := "([^"]+)"' % sheet_const, src).group(1).replace('res://', '')
+    cx, cy = re.search(r'const %s := Vector2i\((\d+), (\d+)\)' % cell_const, src).groups()
+    im = Image.open(sheet).convert('RGBA')
+    return im.crop((int(cx) * size, int(cy) * size, (int(cx) + 1) * size, (int(cy) + 1) * size))
+
+
 def _reference(sheet_const, cell_const, size, require_opaque=True):
     """The corridor floor / wall rim as the GAME defines them, read from dungeon_tiles.gd.
 
@@ -138,6 +146,18 @@ def main():
         os.remove(old)
     for old in glob.glob(os.path.join(OUT, '*.png.import')):
         os.remove(old)
+
+    # The CORRIDOR floor as a standalone file. It is a sheet REGION everywhere else, which is
+    # fine for drawing but useless to the compositor - `overlay` and `over_prop` need a file. The
+    # two-cell props need it: half a lantern standing in a corridor has to be composited onto
+    # something. Named `corridor_00` so it lives beside the room floors and loads the same way,
+    # but it is deliberately NOT in ROOM_PACKS, so no room can ever pick it.
+    #
+    # Exempt from both legibility gates by definition: it IS the corridor, so "differs from the
+    # corridor" is not a question that can be asked of it.
+    corr_img = _reference_image('SHEET_CAVE16', 'CAVE_FLOOR', 16)
+    corr_img.resize((32, 32), Image.NEAREST).save(os.path.join(OUT, 'corridor_00.png'))
+    print('  %-18s the corridor floor, for compositing' % 'corridor')
 
     total = 0
     for pack, cells in sorted(FLOORS.items()):

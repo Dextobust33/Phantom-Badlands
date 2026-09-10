@@ -96,6 +96,14 @@ func _init() -> void:
 				var cell: Image = null
 				if tile == 1:
 					cell = rock if _touches_floor(grid, x, y) else void_im
+				elif mode == "after" and (_T.tall_prop_for(grid, x, y) != "" or _T.tall_prop_for(grid, x, y + 1) != ""):
+					# a TWO-CELL prop claims this cell; mirrors client.gd `_dungeon_ground_at`
+					var tb: String = _T.tall_prop_for(grid, x, y)
+					var tt: String = _T.tall_prop_for(grid, x, y + 1)
+					var rid0: int = int(labels.get("%d,%d" % [x, y], -1))
+					var under: String = _T.room_floor_for(x, y, rid0) if rid0 >= 0 						else _T.ROOM_FLOOR_DIR + "corridor_00.png"
+					var half: String = _T.tall_half(tb, "bot") if tb != "" else _T.tall_half(tt, "top")
+					cell = _img(_C.overlay(under, half)) if half != "" else corridor
 				else:
 					var is_room: bool = _T.is_room_cell(grid, x, y)
 					var prop: String = _T.prop_for(x, y)

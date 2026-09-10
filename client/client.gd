@@ -44973,6 +44973,18 @@ func _dungeon_ground_at(grid: Array, x: int, y: int, tile: int) -> String:
 		return ""
 	var rid: int = _dungeon_room_id(grid, x, y)
 	var room: bool = rid >= 0
+	# A TWO-CELL prop claims this cell and the one above it. Checked before the ordinary scatter
+	# so the two cannot both occupy a cell, and returned as part of the GROUND so that anything
+	# standing here composites over it exactly as it does over a pebble - the lamp goes behind the
+	# monster rather than being erased by it, which is the whole point of the compositing layer.
+	var _tall_base: String = _DungeonTiles.tall_prop_for(grid, x, y)
+	var _tall_top: String = _DungeonTiles.tall_prop_for(grid, x, y + 1)
+	if _tall_base != "" or _tall_top != "":
+		var _under: String = _DungeonTiles.room_floor_for(x, y, rid) if room else _DungeonTiles.ROOM_FLOOR_DIR + "corridor_00.png"
+		var _half: String = _DungeonTiles.tall_half(_tall_base, "bot") if _tall_base != "" \
+			else _DungeonTiles.tall_half(_tall_top, "top")
+		if _half != "" and _under != "":
+			return _DungeonComposite.overlay(_under, _half)
 	var prop: String = _dungeon_prop_at(x, y, tile)
 	if prop == "":
 		return _DungeonTiles.room_floor_for(x, y, rid) if room else ""

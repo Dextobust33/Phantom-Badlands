@@ -370,15 +370,24 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       have no licence file and no `CREDITS.md` entry. Track down and record.
       Cheapest fix for (a) and for Raven both: one email asking for written permission.
 
-- [ ] **Tall props (the lampposts) — the draw layer now exists, the row split does not.** The
-      cave sheet's lanterns are 16x32: one cell of them renders as half a lamppost, which is why
-      they were dropped from `PROP_COUNT` on 2026-09-10. A 2-cell prop needs its top half drawn
-      into the cell ABOVE, over whatever that cell already holds — which is the same compositing
-      the occlusion fix just built, now with real alpha rather than a colour key. What is still
-      missing is the row split: `prop_for()` returns one path per cell and has no notion of a prop
-      that claims two, and the cell above can be floor, another prop, a wall rim, void, or an
-      ENTITY — and a lamp head drawn over a monster's head is a perspective call, not a bug fix.
-      Worth doing after the current playtest stack ships, not inside it.
+- [x] **DONE 2026-09-10 - two-cell props span two cells.** The lamps and the dead shrub are back,
+      drawn as top and bottom HALVES into two grid cells instead of one cell holding half an
+      object. Owner's original report: *"the two lanterns you added in those are actually two
+      vertical squares tall... currently they render as half of a lamppost."*
+      The placement rule is the fix, not the art: a base is only allowed where the cell ABOVE is
+      also walkable, so a top half can never land in a wall or the void - which would be the same
+      half-object bug moved up one cell. 1 in 55 eligible cells against 1 in 7 for scatter,
+      because a lamppost is a landmark and a floor covered in them is a street.
+      The halves stay TRANSPARENT and go through `overlay`, so they are part of the GROUND: a
+      monster standing at a lamp composites over it rather than erasing it, which is the
+      occlusion layer paying for itself a third time.
+      Needed one new asset with no obvious home: the CORRIDOR floor as a standalone file. It is a
+      sheet region everywhere else, which is fine for drawing and useless to a compositor. Baked
+      as `room_floor32/corridor_00.png`, deliberately outside `ROOM_PACKS` so no room can pick it.
+      `tools/probe/tall_props.gd` checks both halves exist, that no base on six generated floors
+      puts its top into a wall, the density, and that placement is stable rather than shimmering.
+      **This is also the row split MULTI-TILE DECOR needs** - the mechanism is now there, and what
+      is left for decor is choosing 2-cell objects from the packs.
 
 - [x] **SHIPPED v0.9.767 (2026-09-10).** Cycle values + the three reveal upgrades, arrow-key
       diagonals for keyboards with no numpad, prop occlusion (entities draw OVER scatter) and
