@@ -259,27 +259,29 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       1.1ms. Applies uniformly to the player, the companion, every monster, floor loot and eggs.
       **This is also the layer TALL PROPS need** — see below.
 
-- [ ] **DECISION NEEDED: purge licence-restricted art from git HISTORY.** 1,576 files were
-      untracked on 2026-09-10 (`darkcave`, `tilemap_pack`, `pet-egg-pack`, and the four derived
-      bakes that carry their art) because their licences permit USE but forbid REDISTRIBUTION --
-      darkcave's wording is *"You cannot redistribute this software package or its files in any
-      form or form"*, with no carve-out. Untracking removes them from the current tree only;
-      `git checkout <old sha>` still recovers every one of them, so the exposure is reduced and
-      not ended. Full record in `docs/ASSET_LICENCES.md`.
-      **The fix is `git filter-repo --invert-paths` over those directories, then a force push.**
-      Not done without an explicit go-ahead, because it is destructive and public. Risks to
-      handle in the plan, none of them blockers:
-        - every commit SHA is rewritten, so any link or note referencing an old SHA goes stale;
-        - TAGS are rewritten too, and GitHub Releases are tied to tags. The uploaded ZIPs live
-          outside git and survive, but the tag -> commit link must be re-checked release by
-          release, and the launcher reads `api.github.com/repos/.../releases` -- so this is the
-          one step that could actually reach players if it goes wrong. Verify the launcher can
-          still see the latest release BEFORE walking away from it;
-        - anyone who already cloned or forked keeps the data; nothing can undo that;
-        - GitHub retains unreachable objects until GC and will keep serving them by SHA; ask
-          support to run one.
-      Take a full mirror clone as a backup first (`git clone --mirror`), off the machine.
-      Repo weight is a side benefit, not a reason: it is ~120MB, mostly art.
+- [x] **DONE 2026-09-10 - licence-restricted art purged from git history.** 1,576 files
+      untracked, then removed from all 1,688 commits with `git filter-repo` and force-pushed.
+      Verified after: 0 blobs of any restricted path remain reachable; commits 1688/1688 and
+      tags 792/792 preserved; the working tree is file-for-file identical to before; the art
+      gate and occlusion probe still pass from disk. Every GitHub Release survived with all 7
+      assets, and the launcher's own endpoint plus its `releases/latest/download` URL both
+      answered (HTTP 200, 38MB) - that was the one step that could have reached players.
+      Backups taken FIRST, at `Documents/phantom-badlands-backup/<timestamp>/`: a 147MB full pre-rewrite
+      mirror and a 28MB copy of the art itself.
+      New guard: `tools/check_licensed_assets.sh` + `tools/licensed_assets.manifest`, wired into
+      the release gate, so a build cannot ship without the art present. Proven by hiding
+      `prop_floor32` and watching it go red.
+
+- [ ] **SEND: GitHub Support GC request.** The rewrite made the objects unreachable, but GitHub
+      still serves them BY DIRECT SHA until it garbage-collects - measured, not assumed: an old
+      commit's `pet-egg-pack/LICENSE.txt` still returned HTTP 200 from raw.githubusercontent and
+      from the contents API AFTER the force push. Only Support can force the GC. The draft is
+      written and ready in `docs/ASSET_LICENCES.md`; it needs sending at support.github.com.
+
+- [ ] **SET UP: the private art backup.** git is no longer the backup for restricted art. Plan
+      and exact commands are in `docs/ASSET_LICENCES.md` - a PRIVATE `Phantom-Badlands-Art` repo
+      (private storage is not redistribution), with a LICENSING.md at its root so the
+      restriction travels with the art. Until that exists the only copy is the local snapshot.
 
 - [ ] **Asset licences: two open items** (raised 2026-09-10 by the owner asking whether the Raven
       packs are legal to have in the repo — see `docs/ASSET_LICENCES.md` for the full record).

@@ -1,0 +1,13 @@
+# Art this repo USES but may not REDISTRIBUTE. Not in git; restore from the private
+# backup before building. Format: <path><TAB><min .png count><TAB><why>
+# Regenerate counts with: bash tools/check_licensed_assets.sh --update
+
+client/sprites/darkcave	2	darkcave - "cannot redistribute ... in any form"
+client/sprites/darkcave_tiles	2	derived from darkcave
+client/sprites/tilemap_pack	2	unidentified licence
+client/sprites/pet-egg-pack	648	Hope2D v1.0 - no standalone redistribution
+client/sprites/prop_floor32	11	bake - traced 100% to darkcave
+client/sprites/free_floor32	5	bake - traced 81% to tilemap_pack
+client/sprites/tile_floor32	18	bake - landmark art from darkcave/free_tiles
+client/sprites/egg_floor32	100	bake - pet-egg-pack eggs
+client/sprites/raven	190	Raven Fantasy - no redistribution as a separate product

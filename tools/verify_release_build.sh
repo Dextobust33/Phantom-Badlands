@@ -110,6 +110,16 @@ check "themed_loot_hook"     "true"          "$(field themed_loot_hook)"
 check "outsmart_button_gone" "true"          "$(field outsmart_button_gone)"
 check "passive_single_source" "true"         "$(field passive_single_source)"
 
+# --- is the licence-restricted art even PRESENT? It is not in git (docs/ASSET_LICENCES.md),
+# --- so a fresh clone builds a dungeon with letters where the tiles should be and nothing says
+# --- so. Cheapest possible check, and it has to run BEFORE the art lookups below, which would
+# --- otherwise fail confusingly for a reason that is not their own.
+if [ -f tools/check_licensed_assets.sh ]; then
+    if ! bash tools/check_licensed_assets.sh; then
+        fail=1
+    fi
+fi
+
 # --- do the dungeon art LOOKUPS resolve? Not "do the files exist" - do the FUNCTIONS that the
 # --- game calls return something loadable. v0.9.761 shipped with every monster sprite broken
 # --- because the table stored "skeleton.png" and monster_path() appended ".png" again. The files

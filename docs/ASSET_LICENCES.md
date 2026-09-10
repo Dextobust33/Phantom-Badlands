@@ -136,3 +136,78 @@ Untracking removes these files from the current tree, not from past commits. `gi
 old SHA still recovers them, so under "cannot redistribute in any form" the exposure is reduced,
 not ended. Ending it means `git filter-repo` and a force push — see `docs/BACKLOG.md` for the
 plan and its risks.
+
+## The private backup — how to keep this art safe and restorable
+
+The restricted art is no longer in git, so **git is no longer your backup**. Losing the working
+copy means re-downloading (or re-buying) the packs and re-running the bakes. Set this up once.
+
+### Recommended: a PRIVATE GitHub repo
+
+A private repo is storage, not publication — the licences forbid *redistribution*, and a repo only
+you can read is the same category as a personal Dropbox folder. It is versioned, off-machine,
+free, and uses tooling that is already installed.
+
+```bash
+gh repo create Phantom-Badlands-Art --private --description "Licence-restricted art. NOT for redistribution."
+cd /c/Users/Dexto/Documents
+git clone https://github.com/Dextobust33/Phantom-Badlands-Art.git pb-art
+cd pb-art
+# copy every path named in tools/licensed_assets.manifest, preserving the layout
+git add -A && git commit -m "Licensed art snapshot" && git push
+```
+
+To restore on a fresh machine: clone `Phantom-Badlands-Art`, copy `client/sprites/*` into place,
+then `bash tools/check_licensed_assets.sh` to confirm nothing is missing.
+
+**Put a LICENSING.md at the root of that repo** saying the contents are licensed for use in
+Phantom Badlands and must not be redistributed. It costs one file and it means the restriction
+travels with the art rather than living only in someone's memory.
+
+### The local snapshot that already exists
+
+Taken automatically before the history rewrite on 2026-09-10:
+
+```
+C:\Users\Dexto\Documents\phantom-badlands-backup\<timestamp>\
+    licensed-art\client\sprites\...      28 MB — every restricted directory, plus the Raven zips
+    phantom-badlands-mirror.git          147 MB — the FULL pre-rewrite history
+```
+
+Keep the mirror until you are satisfied the rewrite went well; it is the only copy of the old
+SHAs. After that it can go, and the `licensed-art` folder is the one worth keeping forever.
+
+### What stops this being silently forgotten
+
+`tools/licensed_assets.manifest` lists every restricted directory and its expected file count.
+`tools/check_licensed_assets.sh` verifies them and is wired into `tools/verify_release_build.sh`,
+so **a release cannot be built without the art present**. Without that check, a fresh clone
+produces a dungeon of letters and blank tiles that looks like a rendering bug rather than a
+missing checkout — proven by hiding `prop_floor32` and watching the gate go red.
+
+When a new restricted pack is added: drop it in, add a line to the manifest, run
+`bash tools/check_licensed_assets.sh --update`, gitignore the path, and record the terms above.
+### Draft: GitHub Support request (still needs sending)
+
+The history rewrite removed the files from every reachable commit, but GitHub keeps unreachable
+objects until it garbage-collects, and it will still serve them **by direct SHA**. Verified on
+2026-09-10: an old commit that contained `pet-egg-pack/LICENSE.txt` still returned HTTP 200 from
+both `raw.githubusercontent.com` and the contents API after the force push.
+
+Only GitHub Support can force the GC. Send this at <https://support.github.com/request>:
+
+> **Subject:** Request garbage collection after history rewrite — Dextobust33/Phantom-Badlands
+>
+> I rewrote the history of `Dextobust33/Phantom-Badlands` with `git filter-repo` to remove
+> licensed third-party art that I am permitted to use in my game but not to redistribute, and
+> force-pushed all branches and tags.
+>
+> The objects are unreachable from any ref, but they are still served by direct commit SHA — for
+> example `https://raw.githubusercontent.com/Dextobust33/Phantom-Badlands/<SHA>/client/sprites/pet-egg-pack/LICENSE.txt`
+> still returns 200.
+>
+> Please run garbage collection on the repository so the unreachable objects are no longer
+> retrievable. There are no forks I need preserved.
+
+Note what this cannot fix: anyone who already cloned or forked keeps the data, and old SHAs would
+have to be known to fetch them. The exposure after GC is essentially zero for a passer-by.
