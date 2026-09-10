@@ -25942,6 +25942,18 @@ func handle_server_message(message: Dictionary):
 				show_toast(toast_msg, toast_dur)
 
 func _process_combat_start(message: Dictionary):
+	# HOVERABLE NUMBERS MUST LOOK HOVERABLE AGAIN.
+	#
+	# Reported 2026-09-10: *"it's not usually clear which numbers are hoverable as many of them
+	# don't do anything when you hover them."* Traced to a single line: the dungeon renderer sets
+	# `game_output.meta_underlined = false` so the `[url]` underline does not slash through a
+	# monster sprite, and NOTHING ever set it back. `game_output` is the same node the combat log
+	# writes to, so entering one dungeon stripped the underline from every hoverable damage
+	# number for the rest of the session - and an underline is the only cue that a number has a
+	# breakdown behind it.
+	if game_output:
+		game_output.meta_underlined = true
+
 	"""Process a combat_start message - separated out so queued combat can call it"""
 	# Flush any leftover phased combat messages from previous combat
 	if not combat_msg_queue.is_empty():
@@ -44151,6 +44163,11 @@ func handle_hotzone_warning(message: Dictionary):
 	update_action_bar()
 
 func handle_dungeon_exit(message: Dictionary):
+	# Same restore as combat start - the dungeon renderer turned the underline off and the
+	# overworld log needs it back. See the note in `_process_combat_start`.
+	if game_output:
+		game_output.meta_underlined = true
+
 	"""Handle exiting a dungeon (voluntary, death, collapse, or escape scroll)"""
 	dungeon_mode = false
 	# Put the Coords / Region boxes back on the surface. They restore themselves on the

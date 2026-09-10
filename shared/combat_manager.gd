@@ -1275,6 +1275,30 @@ func _take_mitigations(combat: Dictionary) -> String:
 		return ""
 	return _bbcode_meta_safe("  ·  ".join(notes))
 
+func _monster_attack_line(combat: Dictionary, monster_name: String, amount: int) -> String:
+	"""The monster's attack line, written so a FULLY ABSORBED hit still reads as an event.
+
+	Reported from play 2026-09-10: *"It reads 'The mimic attacks and deals 0 damage'... it's kind
+	of odd not showing how much damage it did in the combat log at all just because the shield
+	blocked it."* Exactly right. What softened a hit is buffered by `_note_mitigation` and rides
+	on the number as a HOVER, which is the right call for a normal blow - it keeps the log to one
+	line per action. But at ZERO it fails: "deals 0 damage" reads as a monster that missed or is
+	harmless, the shield that just ate 46 is invisible, and nobody hovers a zero to find out.
+	The same fight showed the other half of it - two cycled wards granted 76 shield and 30 was
+	left, and the missing 46 was this hit, with nothing on screen connecting the two.
+
+	So a fully-absorbed hit names the thing that absorbed it, in the line, and a normal hit is
+	unchanged. `_take_mitigations` DRAINS its buffer, so it is read exactly once here - which is
+	also why all three call sites route through this rather than each calling it themselves."""
+	var detail := _take_mitigations(combat)
+	if amount > 0:
+		var num := ("[url=%s][color=#FF8800]%d[/color][/url]" % [detail, amount]) if detail != "" else ("[color=#FF8800]%d[/color]" % amount)
+		return "[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster_name, num]
+	if detail != "":
+		return "[color=#FF4444]The %s attacks — [/color][color=#7AA8FF]%s[/color][color=#FF4444] — no damage taken![/color]" % [monster_name, detail]
+	return "[color=#FF4444]The %s attacks and deals [color=#FF8800]0[/color] damage![/color]" % monster_name
+
+
 func _incoming_with_detail(combat: Dictionary, amount: int) -> String:
 	"""The number for a hit on the PLAYER, carrying what softened it on hover.
 
@@ -8995,7 +9019,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		if character.current_hp <= 0 and character.has_path_effect("death_save_per_combat") and not combat.get("path_death_save_used", false):
 			combat["path_death_save_used"] = true
 			character.current_hp = 1
-			messages.append("[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster.name, _incoming_with_detail(combat, total_damage)])
+			messages.append(_monster_attack_line(combat, monster.name, total_damage))
 			messages.append("[color=#FFD700][b]LAST STAND![/b] Your Path holds you at death's door — 1 HP![/color]")
 			return {"success": true, "message": "\n".join(messages), "path_last_stand": true}
 
@@ -9003,7 +9027,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		if character.current_hp <= 0:
 			if character.try_last_stand():
 				character.current_hp = 1
-				messages.append("[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster.name, _incoming_with_detail(combat, total_damage)])
+				messages.append(_monster_attack_line(combat, monster.name, total_damage))
 				messages.append("[color=#FFD700][b]LAST STAND![/b] Your dwarven resilience saves you![/color]")
 				return {"success": true, "message": "\n".join(messages), "last_stand": true}
 
@@ -9256,7 +9280,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		if num_attacks > 1:
 			messages.append("[color=#FF4444]The %s hits %d times for %s total damage![/color]" % [monster.name, hits, _incoming_with_detail(combat, total_damage)])
 		else:
-			messages.append("[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster.name, _incoming_with_detail(combat, total_damage)])
+			messages.append(_monster_attack_line(combat, monster.name, total_damage))
 	else:
 		# A miss still CLEARS the buffer, or a shield note would survive to ride a later line.
 		var _missed_mit := _take_mitigations(combat)

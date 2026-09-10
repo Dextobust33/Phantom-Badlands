@@ -45,7 +45,21 @@ it is a straight trade.
 
 ---
 
-## 2. Cycle values — the Dune: Imperium model
+## 2. Cycle values — ✅ PASSED 2026-09-10
+
+> Owner at the PC: faces read `cycles: 38 ward` / `cycles: 122 damage`; both Bulwarks cycled and
+> paid **exactly 38** each; Venom Fang played for its stated 122 and applied its poison; the
+> upgrade route works too (`Blast` showed `[cycles: 29 ward]`).
+> **2e, the design question, came back qualified:** *"it will very much depend on what upgrades
+> hit the players cards. If you get one with a good cycle ability you will likely want to keep it
+> in."* So the pull is real but CONTINGENT on getting a good reveal — which makes deck width a
+> build decision rather than a global rule. Consequence for the content pass: reveal upgrades need
+> to be reachable often enough to be a build people can aim at, and there should be enough VARIETY
+> that some are worth chasing for a given class. Three upgrades and five cycle types is probably
+> thin for that.
+> Two live findings came out of the same session — see below.
+
+## 2 (original steps)
 
 **Why it needs you:** whether "the card I didn't play still did something" actually makes you want
 a wider deck is a question about feel.
