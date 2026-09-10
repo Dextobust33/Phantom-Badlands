@@ -49,3 +49,12 @@ client/sprites/godot-pixel-mobs-windows/
 # client/sprites/tilemap_pack/ and committed; the Unity project itself (its own ProjectSettings,
 # .meta files and C# scripts) must not sit live under res:// where our importer walks it.
 client/sprites/RageTileMap-master/
+
+# Raven Fantasy tilesets (Clockwork Raven Studios, purchased 2026-09-10).
+# Commercial use in the game is licensed and unlimited, but the licence forbids
+# distributing the assets "as a separate product" -- and a public repo full of raw PNGs is
+# exactly how someone would obtain the tileset without buying it. They ship INSIDE the .pck,
+# which is use, not redistribution. Keep a private backup: a fresh clone cannot build the
+# sprite-room work without them. See docs/ASSET_LICENCES.md.
+client/sprites/raven/
+client/sprites/*.zip

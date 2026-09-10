@@ -259,6 +259,18 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       1.1ms. Applies uniformly to the player, the companion, every monster, floor loot and eggs.
       **This is also the layer TALL PROPS need** — see below.
 
+- [ ] **Asset licences: two open items** (raised 2026-09-10 by the owner asking whether the Raven
+      packs are legal to have in the repo — see `docs/ASSET_LICENCES.md` for the full record).
+      Raven Fantasy is settled: commercial use unlimited, attribution welcome not required, but
+      *"cannot be distributed or sold as a separate product"* — so `client/sprites/raven/` is
+      gitignored and ships inside the `.pck` instead. Still open:
+      (a) `pet-egg-pack` (1,298 raw PNGs tracked) carries a Hope2D clause against redistribution
+      "in a standalone or reusable asset form" — the same shape, already live. Decide: gitignore,
+      ask permission, or accept the reading.
+      (b) `darkcave/` and `tilemap_pack/` — the sheets the entire dungeon tile pass is built on —
+      have no licence file and no `CREDITS.md` entry. Track down and record.
+      Cheapest fix for (a) and for Raven both: one email asking for written permission.
+
 - [ ] **Tall props (the lampposts) — the draw layer now exists, the row split does not.** The
       cave sheet's lanterns are 16x32: one cell of them renders as half a lamppost, which is why
       they were dropped from `PROP_COUNT` on 2026-09-10. A 2-cell prop needs its top half drawn

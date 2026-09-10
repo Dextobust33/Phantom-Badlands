@@ -5,6 +5,7 @@ extends SceneTree
 ## failure this replaces was invisible to every check that only asked whether the files existed.
 const _C = preload("res://client/dungeon_composite.gd")
 const _T = preload("res://client/dungeon_tiles.gd")
+const _DSpr = preload("res://client/dungeon_sprites.gd")
 
 var fails := 0
 func ck(ok: bool, msg: String) -> void:
@@ -147,6 +148,17 @@ func _init() -> void:
 	rtl.text = "[img=32x32]%s[/img]" % out
 	await process_frame; await process_frame
 	ck(rtl.get_content_height() >= 32, "RichTextLabel draws the composite at full tile height")
+
+	print("--- 7. THEME TILES take a prop too (owner playtest 2026-09-10) ---")
+	# The mechanism always worked on a baked glyph; what was missing was that props were only
+	# scattered on EMPTY/CLEARED, so a themed floor's glyph cells had nothing to preserve. This
+	# asserts the glyph half; the tile-type gate itself lives in client.gd `_dungeon_prop_at`.
+	for pair in [["w", "#A335EE"], [",", "#7FBF3F"], ["m", "#3CB371"]]:
+		var gp: String = _DSpr.glyph_path(String(pair[0]), String(pair[1]))
+		ck(gp != "" and ResourceLoader.exists(gp), "theme glyph %s has a baked tile" % pair[0])
+		if gp == "" or not ResourceLoader.exists(gp):
+			continue
+		ck(_C.over_prop(gp, prop) != gp, "theme glyph %s composites over its prop" % pair[0])
 
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails > 0 else 0)

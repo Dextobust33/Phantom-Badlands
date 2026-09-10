@@ -44950,6 +44950,30 @@ func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
 	DUNGEON_TEXT_CELL_CHARS = g_chars
 
 
+func _dungeon_prop_at(x: int, y: int, tile: int) -> String:
+	"""The scatter prop for this cell, or "" if this kind of tile does not take one.
+
+	ONE rule, called from both the grid loop (which needs it to composite whatever ENTITY is
+	standing here) and from `_dungeon_tile_cell` (which needs it to draw the empty cell). It was
+	briefly two copies, and they immediately disagreed: the tile renderer scattered props on
+	EMPTY/CLEARED only, so on a themed floor every webbed / miasma / moss cell had no prop to
+	preserve, and next to decorated plain floor that reads exactly as the glyph having eaten the
+	decoration. Owner, after the playtest: *"glyphs still hide any decoration tiles they are
+	over."*
+
+	What is excluded and why:
+	  WALL / the two STAIRCASES — not floor you stand on.
+	  LANDMARK tiles — the chests, braziers, lava and campfires that have real art. Those are
+	  OBJECTS occupying the cell, not ground, and a pebble behind a lava pool reads as a mistake.
+	Everything else is walkable floor and takes scatter, which is what makes the density read as
+	one-in-seven everywhere instead of one-in-seven of whichever tiles happened to be plain."""
+	if tile == 1 or tile == 2 or tile == 3:
+		return ""
+	if _DUNGEON_LANDMARK_TILE.has(tile):
+		return ""
+	return _DungeonTiles.prop_for(x, y)
+
+
 func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 	"""One dungeon cell as a sprite.
 
@@ -44965,7 +44989,7 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 		0, 7:                                  # EMPTY / CLEARED - walkable floor
 			# Scatter decoration, so a corridor is not every tile identical. Position-hashed, so
 			# it does not crawl as the player walks (the grid is rebuilt on every step).
-			var prop: String = _DungeonTiles.prop_for(x, y)
+			var prop: String = _dungeon_prop_at(x, y, tile)
 			if prop != "" and ResourceLoader.exists(prop):
 				return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, prop]
 			return _DungeonTiles.floor_img()
@@ -44992,13 +45016,16 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 	# 8px, so 4 characters are exactly the 32px an image occupies. Without this every text cell
 	# would be 24px narrow and shift the rest of its row left.
 	var info := _get_dungeon_tile_display(tile)
+	# A theme tile is a glyph baked onto the floor, so it takes a prop behind it exactly the way
+	# plain floor does. This line is the one the owner's playtest was missing.
+	var _tprop: String = _dungeon_prop_at(x, y, tile)
 	# Hoverable ON THE FLOOR too, not only in the key - the tile you are about to step on is
 	# where the question "what does this do?" actually gets asked. Matched to the legend by
 	# GLYPH: within one dungeon type the theme glyphs are unique, and the alternative (a second
 	# copy of the tile enum in the legend table) is the "one value, two places" shape that
 	# causes most of the wrong-text bugs in this codebase.
 	return _dungeon_glyph_cell(String(info.char), String(info.color),
-		_dungeon_theme_tile_url(String(info.char)))
+		_dungeon_theme_tile_url(String(info.char)), _tprop)
 
 
 func _dungeon_theme_tile_url(glyph: String) -> String:
@@ -45155,7 +45182,7 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 			# (0/7) scatters props, which is the same gate `_dungeon_tile_cell` uses; asking for
 			# a prop on a wall or a stairwell would invent one that is not drawn when empty.
 			var _tv: int = int(grid[y][x])
-			var _prop: String = _DungeonTiles.prop_for(x, y) if (_tv == 0 or _tv == 7) else ""
+			var _prop: String = _dungeon_prop_at(x, y, _tv)
 			if x == player_x and y == player_y:
 				line += _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, _prop)
 			elif _dungeon_companion_at(x, y):

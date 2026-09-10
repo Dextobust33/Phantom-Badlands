@@ -6,6 +6,7 @@ extends SceneTree
 ## `prop_for()` position hash, so the two can be judged the way they will be seen.
 const _C = preload("res://client/dungeon_composite.gd")
 const _T = preload("res://client/dungeon_tiles.gd")
+const _DS = preload("res://client/dungeon_sprites.gd")
 
 const VW := 19
 const VH := 9
@@ -66,6 +67,14 @@ func _init() -> void:
 				var tile: Image = floor_im
 				if prop != "" and ResourceLoader.exists(prop):
 					tile = _tile(prop)
+				# Every third row is a THEME TILE floor - the webbed / miasma / moss glyphs that
+				# make up most of a themed dungeon. Until now these never carried a prop at all,
+				# which is what the owner saw as "glyphs still hide any decoration tiles".
+				if gy % 3 == 1 and not placed.has(cell):
+					var gl: Array = [["w", "#A335EE"], [",", "#7FBF3F"], ["m", "#3CB371"]][gx % 3]
+					var gp: String = _DS.glyph_path(String(gl[0]), String(gl[1]))
+					if gp != "" and ResourceLoader.exists(gp):
+						tile = _tile(_C.over_prop(gp, prop)) if (mode == "new" and prop != "") else _tile(gp)
 				if placed.has(cell):
 					var spr: String = placed[cell]
 					if prop != "":
