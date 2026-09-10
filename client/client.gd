@@ -26180,13 +26180,22 @@ func _process_combat_start(message: Dictionary):
 func _on_send_button_pressed():
 	send_input()
 
+# Clicking in and out of the chat box announces the mode change. Underground that announcement
+# goes to the dungeon RUN LOG, which holds a handful of lines and is where finds and traps live -
+# so two clicks near the chat box pushed a pickup off the panel. Visible in a live flood test:
+# "Movement mode" appeared TWICE and "Chat mode" once, in a log of about ten entries.
+# Incidental UI chatter does not belong there, so underground it is simply not said: the dungeon
+# action bar already shows what the keys do.
+#
+# The wording was also stale - it named the numpad only, which stopped being the whole story when
+# arrow keys gained diagonals on 2026-09-10.
 func _on_input_focus_entered():
-	if has_character and game_state == GameState.PLAYING:
+	if has_character and game_state == GameState.PLAYING and not dungeon_mode:
 		display_game("[color=#808080]Chat mode - type to send messages[/color]")
 
 func _on_input_focus_exited():
-	if has_character and game_state == GameState.PLAYING:
-		display_game("[color=#808080]Movement mode - use numpad to move[/color]")
+	if has_character and game_state == GameState.PLAYING and not dungeon_mode:
+		display_game("[color=#808080]Movement mode - numpad or arrow keys to move[/color]")
 
 func _on_clickable_area_clicked(event: InputEvent):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -36005,8 +36014,18 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# a scenario where we expect the log to overflow over there so I can see how that
 			# handles."* The panel trims its OLDEST lines until the content fits, so this is the
 			# case that proves the key is never pushed off the bottom.
-			for _i in range(12):
-				_dungeon_log_add("[color=#FFD700]Log flood test line %d — a deliberately long entry so the panel has to wrap and then trim it.[/color]" % (_i + 1))
+			# GENUINELY DIFFERENT lines. The first version numbered them, and the log's
+			# de-duplication - which compares lines with their DIGITS stripped, so a countdown
+			# collapses to one row - folded all twelve into a single entry. The button proved
+			# the de-dup works and tested nothing about overflow.
+			var _flood := ["You pick up a Tarnished Ring", "Spider webs cling to your boots",
+				"You find a Wolf Pup Egg on the floor", "A wall blocks your path",
+				"You pick up 25 Valor", "Toxic miasma sears your lungs",
+				"You scavenge from a fresh pack-kill", "A corrosive mist engulfs you",
+				"Bone shards nick you as you pass", "You pick up a Steel Warlord Blade",
+				"The floor stirs — something is awake", "You gather Glowing Mushroom x3"]
+			for _line in _flood:
+				_dungeon_log_add("[color=#FFD700]%s — padded out so the panel must wrap this entry before it can trim it.[/color]" % _line)
 		# Combat
 		"gm_spawnwish":
 			send_to_server({"type": "gm_spawnwish"})

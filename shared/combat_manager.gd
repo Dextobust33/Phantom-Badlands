@@ -1292,7 +1292,10 @@ func _monster_attack_line(combat: Dictionary, monster_name: String, amount: int)
 	also why all three call sites route through this rather than each calling it themselves."""
 	var detail := _take_mitigations(combat)
 	if amount > 0:
-		var num := ("[url=%s][color=#FF8800]%d[/color][/url]" % [detail, amount]) if detail != "" else ("[color=#FF8800]%d[/color]" % amount)
+		# Uniformly hoverable, same rule as the player's own damage - see `_damage_with_detail`.
+		if detail == "":
+			detail = "%d damage, nothing reduced this hit." % amount
+		var num := "[url=%s][color=#FF8800]%d[/color][/url]" % [detail, amount]
 		return "[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster_name, num]
 	if detail != "":
 		return "[color=#FF4444]The %s attacks — [/color][color=#7AA8FF]%s[/color][color=#FF4444] — no damage taken![/color]" % [monster_name, detail]
@@ -1346,8 +1349,17 @@ func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffi
 	if combat.get("monster", null) is Dictionary:
 		_mhp = int(combat["monster"].get("current_hp", -1))
 	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount, "mhp": _mhp})
+	# EVERY damage number is hoverable, even one with nothing special behind it.
+	#
+	# Owner 2026-09-10: *"it's not usually clear which numbers are hoverable as many of them don't
+	# do anything when you hover them... uniformly hoverable is probably best for numbers."*
+	# The old rule was "hoverable only if something modified it", which is invisible from the
+	# outside: a player cannot tell a number with no breakdown from a number whose breakdown is
+	# broken, so the whole feature reads as unreliable and stops being used.
+	# A plain hit now says so plainly. One rule a player learns in a single fight - every number
+	# explains itself - beats a subtle distinction they must first notice and then trust.
 	if detail == "":
-		return "%d %s" % [amount, suffix]
+		detail = "%d %s, no modifiers on this hit." % [amount, suffix]
 	# Only the NUMBER carries the link, and the COLOUR SITS INSIDE IT. Godot renders `[url]`
 	# in the theme's link colour, which overrode the cyan the line had set - the number came
 	# out white and stopped standing out at all ("now its no longer a different color which
