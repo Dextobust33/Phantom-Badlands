@@ -193,6 +193,66 @@ static func is_room_cell(grid: Array, x: int, y: int) -> bool:
 	return false
 
 
+static func label_rooms(grid: Array) -> Dictionary:
+	"""Give every ROOM its own id: {"x,y": room_id} for each room cell. Corridors are absent.
+
+	Owner 2026-09-10, on what rooms should look like: *"I'm less concerned with if the room looks
+	like it fits in with the dungeon and much more concerned that they look unique and fun. The
+	more the better since it will lead to more variety and exploration, seeing things no other
+	players have before."*
+
+	Which means each CHAMBER picks a look — and `is_room_cell` cannot support that, because it
+	answers "is this room floor", not "which room". Hashing per cell is right for breaking up a
+	floor texture and exactly wrong here: it would speckle four looks through one chamber instead
+	of giving the chamber one. So rooms need an identity, and an identity is a connected component.
+
+	Flood fill over room cells, 4-connected. Two chambers joined by a 1-wide corridor get
+	different ids because the corridor cells are not room cells and so do not conduct — which is
+	the behaviour wanted: the corridor is the JOIN, and a doorway is where the look changes.
+
+	Ids are assigned in scan order, so they are stable for a given grid: the same floor always
+	labels the same way, and a room keeps its look for the life of the floor rather than
+	shimmering as the player walks. Computed once per floor by the caller and cached; this walks
+	the whole grid and is not something to run per frame."""
+	var out := {}
+	var next_id := 0
+	for y in range(grid.size()):
+		var row = grid[y]
+		for x in range(row.size()):
+			var key := "%d,%d" % [x, y]
+			if out.has(key):
+				continue
+			if not is_room_cell(grid, x, y):
+				continue
+			# a new chamber: flood it
+			var stack: Array[Vector2i] = [Vector2i(x, y)]
+			while not stack.is_empty():
+				var c: Vector2i = stack.pop_back()
+				var ck := "%d,%d" % [c.x, c.y]
+				if out.has(ck):
+					continue
+				if c.y < 0 or c.y >= grid.size():
+					continue
+				var r = grid[c.y]
+				if c.x < 0 or c.x >= r.size():
+					continue
+				if not is_room_cell(grid, c.x, c.y):
+					continue
+				out[ck] = next_id
+				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					stack.append(c + d)
+			next_id += 1
+	return out
+
+
+static func room_count(labels: Dictionary) -> int:
+	"""How many distinct chambers `label_rooms` found."""
+	var seen := {}
+	for k in labels:
+		seen[labels[k]] = true
+	return seen.size()
+
+
 static func prop_for(x: int, y: int) -> String:
 	"""The scatter prop for a floor tile, or "" for plain floor.
 

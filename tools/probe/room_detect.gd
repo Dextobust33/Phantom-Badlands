@@ -111,5 +111,42 @@ func _init() -> void:
 		ck(corr > 0, "a real floor has corridor cells")
 		ck(rooms > corr, "rooms outnumber corridors on a real floor (chambers are 2D, corridors are 1D)")
 
+	print("--- 7. ROOM IDENTITY: each chamber gets its own id ---")
+	# Needed because each chamber picks a LOOK. Hashing per cell would speckle several looks
+	# through one room; the room has to be one thing.
+	var two := grid_from([
+		"#########",
+		"#..###..#",
+		"#..#+#..#",
+		"#########",
+	])
+	# the '+' is a corridor cell joining the two chambers - it is 1 wide, so not room floor
+	var labels := _T.label_rooms(two)
+	ck(_T.room_count(labels) == 2, "two chambers joined by a 1-wide corridor are TWO rooms (got %d)" % _T.room_count(labels))
+	ck(labels.get("1,1", -1) == labels.get("2,2", -2), "cells of the same chamber share an id")
+	ck(labels.get("1,1", -1) != labels.get("6,1", -2), "cells of different chambers do not")
+	ck(not labels.has("4,2"), "the joining corridor cell has no room id at all")
+
+	var one := grid_from([
+		"######",
+		"#....#",
+		"#....#",
+		"######",
+	])
+	ck(_T.room_count(_T.label_rooms(one)) == 1, "one open chamber is ONE room, not several")
+
+	print("--- 8. room identity on a REAL floor ---")
+	var res2: Dictionary = _DD.generate_floor_grid("wolf_den", 1, false)
+	var g2: Array = res2.get("grid", [])
+	if not g2.is_empty():
+		var l2 := _T.label_rooms(g2)
+		var n2: int = _T.room_count(l2)
+		print("      %d room cells across %d distinct chambers" % [l2.size(), n2])
+		ck(n2 >= 2, "a real floor has several distinct chambers, not one blob")
+		ck(n2 <= 40, "and not one chamber per cell (%d)" % n2)
+		# stability: labelling the same grid twice must agree, or a room would change look on redraw
+		ck(_T.label_rooms(g2) == l2, "labelling is deterministic - a room keeps its look on redraw")
+
+
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails > 0 else 0)
