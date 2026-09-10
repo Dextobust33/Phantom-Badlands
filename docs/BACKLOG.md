@@ -235,6 +235,27 @@ thing that will exist in multiples. Widening the upgrade pool can start earlier 
 today there are three reveal upgrades and five cycle types, which the owner's own playtest answer
 ("depends what upgrades hit your cards") already suggests is too thin to build a chase on.
 
+- [ ] **The upgrade pool cannot make ANYTHING rare — measured 2026-09-10.** The owner's goal for
+      this arc is *"wide enough that some players are telling their friends about ones they found
+      that their friends have probably never seen."* That is a statement about RARITY, and the
+      pool is currently incapable of it at any size.
+      **Why.** `draw_choices` does `pool.shuffle()` and takes the first 9. Selection is uniform, and
+      9 are shown at once. Measured against the real pool (51 upgrades, all wired):
+      | card kind | eligible at m1 | seen after m1 | after m3 | after m5 |
+      |---|---|---|---|---|
+      | damage | 22 | **41%** | 79% | 93% |
+      | buff | 19 | 47% | 86% | 96% |
+      | control | 18 | 50% | 87% | 97% |
+      A damage card shows **41% of everything it can ever be offered at its FIRST rank-up**, and
+      after five milestones the chance a given upgrade has never appeared is 7%. Adding entries
+      does not fix this: doubling the pool still shows 9 at once and still converges.
+      **So the fix is a rarity WEIGHT, not more content.** Simulated: 16 common + 6 rare (weight 1
+      against 10) leaves a player having seen 31% of the rare ones after five milestones; 30 + 12
+      leaves 15%. That is the "you found THAT?" moment, and it costs one field per upgrade plus a
+      weighted draw. Content widening still helps afterwards — CONTROL is thinnest at 18 — but
+      weighting is what makes width mean anything.
+      Do this BEFORE authoring more upgrades, or the new ones dissolve into the same uniform draw.
+
 - [x] **DONE 2026-09-10 — Props are no longer erased by anything standing on them.** Owner:
       *"when a sprite steps on a space with a decorative piece on it the decorative piece seems to
       go away"*, then after living with it: *"The occlusion just makes it look janky currently.
@@ -399,6 +420,43 @@ share of a pool plus a per-class engine, so its cost curve does not transfer. Ow
       predates this design — cards should now be authored WITH cycle values, so the content pass
       waits on the model being confirmed.
 
+## Phase 3.45 — SPRITE INTERIORS (owner direction 2026-09-10, NOT previously captured)
+
+Owner, on buying the Raven Fantasy collection: *"I eventually would like to make inside of posts,
+player sanctuary, and player posts use sprites. Not sure how feasible that is though since it
+would require our overworld to consist of sprites as well as the current ASCII."* And on the
+dungeon split: *"keep our dungeon corridors using what we currently do but make all of the actual
+rooms out of sprites from those packs."*
+
+This was discussed across two sessions and never reached the list. Recording it because the packs
+are now bought, unzipped and licence-cleared, so the blocker is design rather than assets.
+
+- [ ] **Answer the owner's own feasibility question first: does the OVERWORLD have to become
+      sprites too?** It does not. A post interior, the sanctuary and a dungeon room are each a
+      SEPARATE screen from the overworld map — `_render_house_map()` already draws the sanctuary
+      as its own thing. The dungeon proved a monospace text canvas can be a sprite grid with no
+      renderer rewrite, so an interior can be spritten without touching the overworld at all. The
+      mixed look is a deliberate split (sprite interiors, ASCII wilderness), not a compromise.
+- [ ] **The assets are ready and better than what we have.** Every Raven pack ships the SAME
+      tileset pre-rendered at 16, 32, 48 and 64px, so a 64px cell draws at native resolution with
+      zero scaling — sharper than the current dungeon floor, which is a 16px tile upscaled 4x.
+      178 of 190 files sit on a clean 16 grid. `interiors` covers post interiors, `cozy_home` the
+      sanctuary, `craft_stations` the forge and workbenches we already have, and
+      `green_dungeon` / `miners_cave` / `the_underworld` the dungeon rooms. They also ship RPG
+      Maker autotile sheets (`RF_*_A4` walls, `A5` floors, `B`/`C` objects), which is free
+      information about which cells are floor and which are wall.
+      One anomaly: `the_underworld` sheets are 654x366, NOT a multiple of 16 — it has padding the
+      others do not. Check before using it as a grid.
+- [ ] **Cost is not a reason to hesitate — measured 2026-09-10.** Client cost scales with CELLS ON
+      SCREEN, not with how many tiles are owned: a room built from sprites costs the same as a
+      corridor built from sprites. The SERVER has no idea sprites exist (not one `.png` reference
+      in `server.gd` or `shared/`), so none of this touches concurrent player capacity. The two
+      things that WOULD cost: a second draw layer per cell (doubles the inline images), and pck
+      size — 6.6MB unzipped, negligible.
+- [ ] **Slice it the way the dungeon was sliced**, which worked: one interior end-to-end
+      (the sanctuary, since `_render_house_map()` exists), screenshot, iterate — then posts, then
+      dungeon rooms. Do NOT start all three.
+
 ## Phase 3.5 — input and accessibility (owner direction 2026-09-10)
 
 Owner: *"we need to add support for players with no numpad on their keyboard. With no numpad they
@@ -435,6 +493,25 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       than the other two; do not start it inside another arc.
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
+
+- [ ] **Combat card hotkeys read R, 1, 2 instead of 1, 2, 3** (owner, 2026-09-06, never captured):
+      *"now that outsmart has been removed our card numbers shifted to R, 1, and 2. This is odd.
+      It should be 1, 2, 3 still."* No fix commit found in a search of the log since that date, so
+      treat it as still live until reproduced. Retiring a card should not renumber the hand — the
+      hand is always three cards and should always be 1/2/3 whatever else occupies the bar.
+- [ ] **Analyze shows the same thing every time** (owner, 2026-09-06, never captured): *"Analyze
+      needs an adjustment to show something fresh rather than the same crap."* A scouting card
+      that repeats itself is a dead button after the first cast. Needs a design answer (rotate
+      what it reveals? escalate with rank? reveal something the player cannot otherwise see?) —
+      ASK before implementing, since "fresh" is the owner's word and not yet a spec.
+- [ ] **Ranger and Ninja STARTER decks** (owner, 2026-09-06): *"They should start with cards from
+      their deck that make sense for their intended play styles. Likely just need to swap a few of
+      their enabler starter cards with a few they aren't using."* The 2026-09-07 theming pass
+      renamed and re-roled cards across all nine kits, which may have absorbed this — but the ask
+      was about which five cards a class STARTS with, which is a different thing from what they
+      are called. Verify against the current starters before doing anything.
+
+
 
 - [x] **"Exposed 995T" — the status chip lied twice, FIXED 2026-09-09.** Found in the 1080p
       capture above, not reported. Two defects in three lines:
@@ -608,6 +685,16 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       so something else may also be involved. Owner 2026-09-08: *"something we will need another
       example of since you were unable to find its cause."* Do not guess at a second fix — wait
       for a repro with the DUNGEON NAME, then trace that instance's `dungeon_level`.
+
+- [ ] **Accuracy audit: help screen, project docs, CLAUDE.md** (owner, 2026-09-07, partially done
+      and never tracked): *"audit project documentation, the help screen, claude files, we need to
+      check for accuracy."* A docs pass happened (`bebf7644`) and the help page's vestigial
+      ability LEVELS were removed in the same era, but nothing swept the help screen against the
+      game as it now is — and this release alone added cycling, changed how upgrades work and
+      renamed pages in the admin panel. The failure mode is specific and has bitten before: the
+      help page told new players they could not have their finisher until level 100.
+      Cheap version: `-- cardnames` and `-- statdesc` already print what each class is SHOWN, so
+      diff those against the help text rather than reading both by hand.
 
 ## Phase 4 — party (half-built; finish or cut)
 
