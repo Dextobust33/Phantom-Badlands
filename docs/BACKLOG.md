@@ -518,6 +518,33 @@ does not exist in the interiors case at all.
       Raven packs are 0.57-0.66. Rooms would read as brighter than the corridors leading to them
       — which is what a lit room off a dark passage should look like. Decide deliberately whether
       to lean into that or flatten it; do not correct it by reflex.
+- [ ] **Room VARIETY — every room currently looks the same** (owner, 2026-09-10, while walking the
+      first build): *"we will probably want more variety to the rooms in the future as well rather
+      than all of them sharing the exact same look. We have plenty of assets to make a huge variety
+      of rooms once we get these working properly."* Agreed, and the ordering in that sentence is
+      the right one — the plumbing has to be correct before variety is worth adding, or every new
+      room type multiplies whatever is still broken.
+      What exists to build on: 20 Raven packs, each shipping its tileset at 16/32/48/64px plus RPG
+      Maker autotile sheets that NAME which cells are floor, wall and object. The four-variant
+      hashing already written for the room floor is the mechanism — it just needs to select a
+      PACK per room rather than a tile per cell.
+      The real design question, and it should be settled before authoring: is a room's look tied
+      to the DUNGEON THEME (every room in a Wolf Den looks like a Wolf Den), or does it vary room
+      to room WITHIN a floor (a mushroom chamber next to a mine)? The first reinforces theme and
+      is less work; the second makes exploration surprising and risks reading as incoherent.
+      Owner's call. There is already a `dungeon_type` in scope at render time either way.
+
+- [ ] **WALLS around rooms — asked 2026-09-10, not yet decided.** *"Do we plan on making the walls
+      around rooms different tiles as well?"* Not yet, and it is a bigger change than the floor
+      was. Walls are currently drawn as a single rock RIM tile where floor meets void, with the
+      deep void left black — the owner's own Azure-Dreams call, and the reason the map reads as
+      carved-out space rather than a walled grid. Giving rooms their own walls means either a
+      second rim tile keyed on room-ness (cheap, and the room mask already exists), or real
+      directional autotiling (the Raven packs ship the sheets for it, but it is a different and
+      much larger piece of work than swapping one tile).
+      Do the cheap version first and look at it: the rim is one tile and the mask is already
+      computed, so it is close to free to try.
+
 - [ ] **Where is the SEAM?** A room entrance is a hard transition between two packs in adjacent
       cells. Options: a doorway/threshold tile from the room pack that reads as belonging to
       both; a one-tile border of rubble; or accepting the cut. Needs to be looked at on screen,

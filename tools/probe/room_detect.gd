@@ -76,10 +76,18 @@ func _init() -> void:
 	ck(not _T.is_room_cell(seam, 4, 3), "the corridor running off it -> corridor")
 	ck(not _T.is_room_cell(seam, 3, 3), "the cell where the corridor leaves -> corridor")
 
-	print("--- 5. walls and stairs are never room floor ---")
+	print("--- 5. a staircase inside a chamber STANDS ON the room floor ---")
+	# This first asserted the opposite, and the opposite was wrong. Excluding stairs from a
+	# room made the GROUND under them revert to corridor, so a staircase in a chamber sat on a
+	# brown square. Owner, first walkthrough: "I also found another one near the stairs that
+	# seems to be brown for no apparent reason." A staircase is an OBJECT ON the floor, not a
+	# hole in it - only a WALL breaks a room.
 	var st := grid_from(["####", "#..#", "#..#", "####"])
 	st[1][1] = 3   # EXIT stairs dropped into a chamber
-	ck(not _T.is_room_cell(st, 1, 1), "a staircase cell itself is not room floor")
+	ck(_T.is_room_cell(st, 1, 1), "the ground under a staircase in a chamber is room floor")
+	var st2 := grid_from(["#####", "#...#", "#####"])
+	st2[1][2] = 3  # stairs at the end of a CORRIDOR
+	ck(not _T.is_room_cell(st2, 2, 1), "a staircase in a corridor still stands on corridor floor")
 
 	print("--- 6. a REAL generated floor, not a diagram ---")
 	# It returns a Dictionary; the grid is one field of it. Reading the signature rather than

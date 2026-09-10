@@ -143,8 +143,14 @@ const PROP_COUNT := 11
 const PROP_CHANCE_IN := 7
 
 
-## Cells that are never part of a room's floor area: WALL and the two staircases.
-const _NOT_ROOM_FLOOR := [1, 2, 3]
+## Only a WALL breaks a room.
+##
+## This first also excluded the two staircases, which was wrong and showed up immediately: a
+## staircase inside a chamber is an OBJECT STANDING ON the room's floor, not a hole in it. Owner,
+## on the first walkthrough: *"The stairs still seem to suffer from occlusion... I also found
+## another one near the stairs that seems to be brown for no apparent reason."* That brown square
+## was the room's floor reverting to corridor under a landmark tile.
+const _NOT_ROOM_FLOOR := [1]
 
 
 static func is_room_cell(grid: Array, x: int, y: int) -> bool:
@@ -222,6 +228,17 @@ static func cell_img(sheet: String, cell: Vector2i, src_px: int) -> String:
 
 
 const FREE_FLOOR_DIR := "res://client/sprites/free_floor32/"
+
+
+static func free_backed_path(name: String) -> String:
+	"""The PATH of a floor-backed free-tileset tile, or "" if there is none.
+
+	Split out from `free_backed_img` because that one returns finished BBCODE, and anything that
+	wants to COMPOSITE the tile onto a different ground needs the file, not a tag. Passing the
+	BBCode to the compositor silently produced an `[img]` nested inside an `[img]` - the tile
+	would simply not have drawn."""
+	var p := FREE_FLOOR_DIR + name + ".png"
+	return p if ResourceLoader.exists(p) else ""
 
 
 static func free_backed_img(name: String) -> String:

@@ -44912,7 +44912,7 @@ func _dungeon_ground_at(grid: Array, x: int, y: int, tile: int) -> String:
 
 	Order matters: a prop sits ON the floor, so a prop in a room is the prop composited over the
 	ROOM floor, not the prop's own baked corridor floor."""
-	if tile == 1 or tile == 2 or tile == 3:
+	if tile == 1:
 		return ""
 	var room: bool = _dungeon_is_room(grid, x, y)
 	var prop: String = _dungeon_prop_at(x, y, tile)
@@ -44923,6 +44923,30 @@ func _dungeon_ground_at(grid: Array, x: int, y: int, tile: int) -> String:
 	# prop over the room floor: `over_prop` swaps the prop tile's own baked CORRIDOR floor for the
 	# room floor, which is the same operation it does for a sprite. Cached like any other pair.
 	return _DungeonComposite.over_prop(prop, _DungeonTiles.room_floor_for(x, y))
+
+
+func _dungeon_backed_cell(path: String, ground: String, url: String = "") -> String:
+	"""A floor-backed sprite, drawn onto the ground its cell ACTUALLY has.
+
+	Every dungeon sprite carries the corridor floor baked into it, because BBCode cannot layer two
+	images in one cell. That was fine while there was only one floor. The moment rooms got their
+	own, every branch that emitted a baked sprite without compositing started stamping a square of
+	CORRIDOR into the middle of a chamber — and there were four of them: the stairs, the landmark
+	art (chests, braziers, lava), the theme-tile glyphs, and anything standing on a staircase.
+	The owner found all four in one walkthrough, which is what four instances of one bug looks
+	like from the outside.
+
+	So there is one emitter now instead of four sites each remembering to composite. `over_prop`
+	swaps the sprite's baked corridor floor for `ground`; an empty `ground` means plain corridor,
+	where the baked floor is already correct and the cheapest thing is to draw the sprite as-is."""
+	# `path` must be a FILE, never finished BBCode. `free_backed_img` returns a tag rather than a
+	# path and was passed here on the first attempt, which nests an [img] inside an [img] and
+	# draws nothing at all - silently, since BBCode has no parse errors. An assert costs one
+	# comparison and turns an invisible blank tile into a named failure.
+	assert(not path.begins_with("["), "_dungeon_backed_cell needs a PATH, got BBCode: " + path)
+	var p: String = _DungeonComposite.over_prop(path, ground) if ground != "" else path
+	var img := "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, p]
+	return "[url=%s]%s[/url]" % [url, img] if url != "" else img
 
 
 func _dungeon_prop_at(x: int, y: int, tile: int) -> String:
@@ -44966,6 +44990,7 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 			# it does not crawl as the player walks (the grid is rebuilt on every step).
 			var ground: String = _dungeon_ground_at(grid, x, y, tile)
 			if ground != "" and ResourceLoader.exists(ground):
+				# already the finished cell (room floor, or a prop composited onto it)
 				return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, ground]
 			return _DungeonTiles.floor_img()
 		1:                                     # WALL
@@ -44973,11 +44998,15 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 				return _DungeonTiles.rock_img()
 			return _DungeonTiles.blank_img()
 		3:                                     # EXIT - stairs down
-			var _sd: String = _DungeonTiles.free_backed_img("stairs_down")
-			return _sd if _sd != "" else _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_DOWN)
+			var _sd: String = _DungeonTiles.free_backed_path("stairs_down")
+			if _sd != "":
+				return _dungeon_backed_cell(_sd, _dungeon_ground_at(grid, x, y, tile))
+			return _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_DOWN)
 		2:                                     # ENTRANCE - stairs up
-			var _su: String = _DungeonTiles.free_backed_img("stairs_up")
-			return _su if _su != "" else _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_UP)
+			var _su: String = _DungeonTiles.free_backed_path("stairs_up")
+			if _su != "":
+				return _dungeon_backed_cell(_su, _dungeon_ground_at(grid, x, y, tile))
+			return _DungeonTiles.free_img(_DungeonTiles.FREE_STAIRS_UP)
 	# Landmark tiles with real art - the places a player navigates TOWARD. Everything else keeps
 	# its glyph: the remaining ~46 are per-dungeon flavour tiles that read fine as coloured
 	# letters on the floor, and bespoke art for each would be 46 decisions for very little gain.
@@ -44985,7 +45014,7 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 	if _lm != "":
 		var _lp: String = _DungeonSprites.tile_path(_lm, _dungeon_anim_tick)
 		if _lp != "" and ResourceLoader.exists(_lp):
-			return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _lp]
+			return _dungeon_backed_cell(_lp, _dungeon_ground_at(grid, x, y, tile))
 
 	# Not yet sprited: keep the glyph, but pad it to a FULL CELL. At font 14 a Consolas char is
 	# 8px, so 4 characters are exactly the 32px an image occupies. Without this every text cell
@@ -44993,7 +45022,7 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 	var info := _get_dungeon_tile_display(tile)
 	# A theme tile is a glyph baked onto the floor, so it takes a prop behind it exactly the way
 	# plain floor does. This line is the one the owner's playtest was missing.
-	var _tprop: String = _dungeon_prop_at(x, y, tile)
+	var _tprop: String = _dungeon_ground_at(grid, x, y, tile)
 	# Hoverable ON THE FLOOR too, not only in the key - the tile you are about to step on is
 	# where the question "what does this do?" actually gets asked. Matched to the legend by
 	# GLYPH: within one dungeon type the theme glyphs are unique, and the alternative (a second
