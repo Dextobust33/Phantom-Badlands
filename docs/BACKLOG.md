@@ -577,6 +577,33 @@ does not exist in the interiors case at all.
            look, needs no wall art at all, and the room mask already exists. Note the repo rule
            against `color=` on floor-backed sprites — the rim is not floor-backed, but the art
            gate scans for that pattern and would need to know the difference.
+- [ ] **Border floor LOOT so decor cannot be mistaken for it** (owner, 2026-09-10): *"we could
+      always put a small border around floor loot to help differentiate it from decorations."*
+      **This inverts the constraint and is worth doing before widening decor.** The decor pool is
+      currently narrowed to three packs because a tileset's small objects are mostly items, and
+      an item-looking decoration is misleading when real loot is also a floor sprite. Marking the
+      LOOT removes that constraint entirely: crates, pots, weapons and skulls all become usable
+      scenery, which is most of what the other four packs have. One border unlocks four packs.
+      Cheap: floor loot already goes through one baked path (`loot_floor32`, five kinds), so the
+      border is a bake-time frame, not a renderer change. `tools/bake_floor_backed.py` is where
+      it would go.
+      Judge the border against the existing rarity COLOURS — floor loot already tints by rarity,
+      so the border must not fight that.
+
+- [ ] **Walls only where they explain the space** (owner, 2026-09-10): *"It may be better if only
+      the spaces below a corridor show those (almost as if they are holding up the corridors) and
+      then walls would only be placed above spaces in a room, helping people differentiate the
+      rooms from the corridors even further."*
+      So the rim stops being "wherever floor meets void" and becomes DIRECTIONAL: rock below a
+      corridor cell, rock above a room cell, void everywhere else. Two things recommend it beyond
+      the look — far less rock on screen, and the rim itself becomes a legibility cue that says
+      corridor-or-room before you read the floor at all. It also composes with the three-layer
+      plan rather than competing: less wall on screen means a per-room wall tile matters less,
+      which may retire the wall layer entirely.
+      Cheap to try: `_dungeon_touches_floor` already finds the rim and would become a directional
+      test. The owner has offered to judge sample rooms, so build the samples rather than
+      guessing at it.
+
         4. **Doors and chests at the seam** — which also answers "where is the seam", below: a
            door tile IS the transition, and is better than any blend.
 
