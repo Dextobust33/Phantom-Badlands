@@ -192,6 +192,39 @@ while the Paladin's stat realignment held.
       ability entry for no player-visible gain. If they are ever removed, do it in one pass and
       re-run `-- verify`.
 
+## Phase 3.5 — input and accessibility (owner direction 2026-09-10)
+
+Owner: *"we need to add support for players with no numpad on their keyboard. With no numpad they
+will have a hard time moving through the world... Ultimately it would be great if we had some type
+of controller or phone support as well."* A 2026-08-20 playtest had already recorded that
+"non-numpad keyboards need an answer at some point"; it was never written down anywhere actionable.
+
+- [x] **Keyboard parity — DONE 2026-09-10.** The overworld arrow fallback was FOUR-direction only
+      (the code said so), so on an 8-way map a laptop player could not take a diagonal at all and
+      was slower on every journey. WASD is unavailable — Q/W/E/R/Space are the action bar — so
+      diagonals are CHORDS: hold Up+Left for north-west. Owner asked the right question about it,
+      *"are we sure it won't fire the movement if one of the keys is hit slightly before the
+      other?"*, and without mitigation the answer was no: movement is polled per frame, a frame is
+      16.7ms, and a human chord lands 20-60ms apart, so the cardinal fired and MOVE_COOLDOWN
+      locked the diagonal out for 150ms. `ARROW_CHORD_GRACE_SEC` (70ms) holds the FIRST step only;
+      a diagonal seen inside the window resolves immediately, a release inside it still moves so
+      quick taps are not swallowed, and held travel re-reads live at full speed.
+      Also: **H hunts** (Hunt was the one action with no numpad-free route at all), opposite keys
+      cancel rather than racing, and the movement-keys rebind menu had `start_rebinding("move_4")`
+      immediately overwritten by `start_rebinding("hunt")` — so pressing 4 rebound Hunt and WEST
+      could not be rebound at all, in the exact menu a numpad-less player is sent to.
+      The help popup no longer opens with "the best way to control your character is the numpad".
+
+- [ ] **Controller support (NEXT).** Godot has joypad input built in; a D-pad or stick gives all
+      eight directions natively and the face buttons map to the action bar. Scope it as its own
+      piece. Note `_on_move_button` already exists as an orphaned 8-way handler with no caller —
+      an on-screen pad that was built and removed — and it is the natural target for both a
+      controller cursor and touch.
+
+- [ ] **Phone / touch (LATER, its own arc).** Needs a mobile export preset, a touch UI, and a
+      layout rework — the three-panel desktop layout does not survive a phone screen. Much larger
+      than the other two; do not start it inside another arc.
+
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 
 - [x] **"Exposed 995T" — the status chip lied twice, FIXED 2026-09-09.** Found in the 1080p
