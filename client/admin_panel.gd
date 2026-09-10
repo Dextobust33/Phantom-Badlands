@@ -180,7 +180,8 @@ func _render_page() -> void:
 			_add_button("Spring a Trap (here)", "dungeon_spring_trap", Color(1, 0.5, 0.5))
 			_add_button("Drop Loot Beside Me", "dungeon_drop_loot", Color(1, 0.84, 0))
 			_add_button("Flood the Run Log (12 lines)", "dungeon_flood_log", Color(0.7, 0.8, 1))
-			_subtitle_subline("Trap / loot / a deliberately overfull side-panel log, for the dungeon UI.")
+			_add_button("Finish Dungeon -> Final Chest", "dungeon_finish", Color(1, 0.7, 0.3))
+			_subtitle_subline("Trap / loot / an overfull log / jump to the end-of-dungeon chest screen.")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"combat":

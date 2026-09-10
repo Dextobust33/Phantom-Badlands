@@ -265,6 +265,11 @@ var pending_rescue_encounters: Dictionary = {}  # peer_id -> npc_data
 # peer to this dict instead of teleporting. Walking onto the chest (or
 # pressing "Leave Now") removes the entry and re-runs _complete_dungeon to
 # do the actual teleport + dungeon_complete payload.
+# peer_id -> true: make the next dungeon-card roll a certainty. Set only by the GM
+# "Finish Dungeon" button and CONSUMED on use, so it cannot leak into a later real run.
+# The card BANNER is the half of the final-chest screen that was broken, and a 5-30% chance
+# is not a test - you could clear three dungeons and still not know.
+var _gm_force_dungeon_card: Dictionary = {}
 var pending_final_chest: Dictionary = {}  # peer_id -> {instance_id, floor_num, chest_x, chest_y}
 # v0.9.679 — carry the final-chest loot lines into the dungeon_complete screen so
 # the player actually reads them (the old separate text message was wiped by the
@@ -2302,6 +2307,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_enter_dungeon(peer_id, message)
 		"gm_dungeon_drop":
 			handle_gm_dungeon_drop(peer_id, message)
+		"gm_finish_dungeon":
+			handle_gm_finish_dungeon(peer_id, message)
 		"gm_spring_trap":
 			handle_gm_spring_trap(peer_id, message)
 		"gm_apply_buff":
@@ -33627,7 +33634,7 @@ func _get_party_id(peer_id: int) -> int:
 			return party_id
 	return -1
 
-func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "") -> Dictionary:
+func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "", force: bool = false) -> Dictionary:
 	"""#38 (2026-08-27) — dungeon CARD DROP. A tier-scaled chance to earn the dungeon's
 	themed DUNGEON-EXCLUSIVE card (universal, permanent, found ONLY here). If the dungeon
 	has no themed card, or you already own the max (3) copies, it FALLS BACK to the legacy
@@ -33635,7 +33642,7 @@ func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "") 
 	new_count, exclusive}."""
 	var out := {"granted": false, "ability": "", "display": "", "new_count": 0, "exclusive": false}
 	var chance: float = min(0.30, 0.05 + float(tier) * 0.02)
-	if randf() >= chance:
+	if not force and randf() >= chance:
 		return out
 	# Prefer the themed dungeon-exclusive card for this dungeon type.
 	var dcard: String = DropTablesScript.dungeon_card_id_for_dungeon(dungeon_type) if dungeon_type != "" else ""
@@ -33787,7 +33794,12 @@ func _complete_dungeon(peer_id: int):
 			bonus_material_msgs.append("[color=#FF8800]+%s%s (Hard)[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
 
 	# v0.9.679 / #38 — dungeon CARD DROP (themed exclusive card, or copy-drop fallback).
-	var _card_reward = _roll_dungeon_card_reward(character, int(tier), dungeon_type)
+	# Consume the GM force flag rather than just reading it: a flag that survives its one use
+	# would silently guarantee a card in every later run on the same session.
+	var _forced: bool = bool(_gm_force_dungeon_card.get(peer_id, false))
+	if _forced:
+		_gm_force_dungeon_card.erase(peer_id)
+	var _card_reward = _roll_dungeon_card_reward(character, int(tier), dungeon_type, _forced)
 
 	# Record completion (cooldowns removed)
 	character.record_dungeon_completion(dungeon_type)
@@ -39188,6 +39200,42 @@ func handle_gm_dungeon_drop(peer_id: int, message: Dictionary) -> void:
 	send_to_peer(peer_id, {"type": "text",
 		"message": "[color=#FF4444]drop: no free tile beside %d,%d[/color]"
 			% [character.dungeon_x, character.dungeon_y]})
+
+
+func handle_gm_finish_dungeon(peer_id: int, message: Dictionary) -> void:
+	"""Jump straight to the end of the dungeon so the FINAL CHEST screen can be looked at.
+
+	Owner, on the release check: *"F. Need an easier way to test via admin panel."* Fair - the
+	only route to that screen was to clear an entire dungeon and kill its boss, which is several
+	minutes of play to see one panel. And this is the screen that most needs looking at: the
+	final chest's loot and its DUNGEON CARD banner were being built, sent, and thrown away, and
+	that shipped for weeks because nobody could cheaply reach the thing.
+
+	It calls the REAL `_complete_dungeon`, which places the actual FINAL_CHEST tile and defers
+	the teleport exactly as a boss kill does. The player still walks onto the chest. Faking the
+	completion payload would prove nothing about the path players take - which is the same
+	reasoning `handle_gm_spring_trap` records, and the same reason that trap bug was findable.
+
+	`force_card` guarantees the card reward rolls, because the banner is the half that was
+	broken and a percentage chance is not a test.
+	"""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not character.in_dungeon:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]Not in a dungeon.[/color]"})
+		return
+	if bool(message.get("force_card", true)):
+		_gm_force_dungeon_card[peer_id] = true
+	# Clear any half-finished state so this is the FIRST call and the chest actually spawns,
+	# rather than falling through to the completion branch and skipping the screen under test.
+	pending_final_chest.erase(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message":
+		"[color=#00FF88][GM][/color] Dungeon completed. Walk onto the chest that just appeared."})
+	_complete_dungeon(peer_id)
 
 
 func handle_gm_spring_trap(peer_id: int, message: Dictionary) -> void:

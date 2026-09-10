@@ -36008,6 +36008,14 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# also the overflow case for the side panel.
 			for _k in ["egg", "equipment", "valor"]:
 				send_to_server({"type": "gm_dungeon_drop", "kind": _k})
+		"dungeon_finish":
+			close_admin_menu()
+			# Owner, on the release check: "F. Need an easier way to test via admin panel." The
+			# end-of-dungeon screen was the one thing that still cost a full clear plus a boss kill
+			# to reach - and it is the screen whose loot and DUNGEON CARD banner were being built,
+			# sent and thrown away, which is exactly the bug nobody could cheaply look for.
+			# force_card because the banner is the broken half, and a 5-30%% chance is not a test.
+			send_to_server({"type": "gm_finish_dungeon", "force_card": true})
 		"dungeon_flood_log":
 			close_admin_menu()
 			# Deliberately overfill the side-panel log. Owner 2026-09-10: *"might be worth having
