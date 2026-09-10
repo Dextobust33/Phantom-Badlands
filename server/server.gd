@@ -32994,7 +32994,16 @@ func _send_dungeon_state(peer_id: int):
 				# sprite. Owner: "Can we ensure Eggs use these in the dungeon... you could tell
 				# what type of variant you are going to get by the artwork of the egg." That only
 				# works if the variant reaches the client, and only `kind` did.
-				"variant": String(it.get("item_data", {}).get("variant", ""))
+				"variant": String(it.get("item_data", {}).get("variant", "")),
+				# 2026-09-10 - the NAME and rarity, so the floor can be hovered. Owner: *"I wonder
+				# if it makes sense to make loot mouse hoverable to see what it is now?"* The
+				# brackets added the same day say THAT it is a pickup; only the name says WHICH.
+				# Two short strings rather than the whole item_data: the client needs to label a
+				# tooltip, not to reconstruct the item, and this payload already goes out on every
+				# dungeon step.
+				"name": String(it.get("item_data", {}).get("name", "")),
+				"rarity": String(it.get("item_data", {}).get("rarity", "")),
+				"amount": int(it.get("item_data", {}).get("valor", 0))
 			})
 
 	# Get rescue NPCs on current floor

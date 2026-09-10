@@ -36584,6 +36584,21 @@ func _on_log_meta_hover(meta) -> void:
 		_show_dungeon_tile_hover(String(e.get("glyph", "?")), String(e.get("color", "#FFFFFF")),
 			String(e.get("desc", "")))
 		return
+	if m.begins_with("loot:"):
+		# Addressed by position: `loot:<x>,<y>`. Floor loot carries no id, and the alternative -
+		# an index into `dungeon_floor_items_data` - would go stale the moment anything is picked
+		# up, which is exactly when a player is hovering.
+		var _lp: PackedStringArray = m.substr(5).split(",")
+		if _lp.size() != 2:
+			return
+		var _lx := int(_lp[0])
+		var _ly := int(_lp[1])
+		for _fi in dungeon_floor_items_data:
+			if int(_fi.get("x", -9999)) != _lx or int(_fi.get("y", -9999)) != _ly:
+				continue
+			_show_dungeon_loot_hover(_fi)
+			return
+		return
 	if m.begins_with("mon:"):
 		var _mid := int(m.substr(4))
 		for _mm in dungeon_monsters_data:
@@ -36648,6 +36663,46 @@ func _show_dungeon_monster_hover(monster_type: String, level: int, variant_name:
 [font_size=6]" + body + "[/font_size]"
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(txt, true)   # true = fixed-width, for the art
+
+func _show_dungeon_loot_hover(fi: Dictionary) -> void:
+	"""What this pickup actually is, on hover.
+
+	Owner 2026-09-10: *"I wonder if it makes sense to make loot mouse hoverable to see what it is
+	now?"* The corner brackets added the same day say THAT a cell is a pickup; this says which.
+	The colour already encodes rarity, so the two answer different halves of the question.
+
+	Falls back to the KIND when the server sent no name, which is the honest case rather than a
+	bug: valor is an amount and a material is a stack, neither of which has a proper noun."""
+	var kind := String(fi.get("kind", ""))
+	var nm := String(fi.get("name", ""))
+	var rarity := String(fi.get("rarity", ""))
+	var amount := int(fi.get("amount", 0))
+	var col := String(fi.get("color", "#FFFFFF"))
+
+	if nm == "":
+		match kind:
+			"valor": nm = "%d Valor" % amount if amount > 0 else "Valor"
+			"egg": nm = "%s Egg" % String(fi.get("variant", "")).strip_edges()
+			"material": nm = "Crafting material"
+			"consumable": nm = "Consumable"
+			"equipment": nm = "Equipment"
+			"escape_scroll": nm = "Escape Scroll"
+			"quest_relic": nm = "Quest relic"
+			_: nm = "Something"
+	nm = nm.strip_edges()
+	if nm == "" or nm == "Egg":
+		nm = "Egg"
+
+	var body := ""
+	if rarity != "":
+		body = "[color=%s]%s[/color] %s" % [col, rarity.capitalize(), kind]
+	elif kind != "":
+		body = kind
+	body += "\n[color=#AAAAAA]Walk onto it to pick it up.[/color]"
+	var text := "[color=%s]%s[/color]\n%s" % [col, nm, body]
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(text, false)
+
 
 func _show_dungeon_tile_hover(glyph: String, color: String, desc: String) -> void:
 	"""What a special floor tile actually does, on hover.
@@ -45316,10 +45371,15 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 						# the room floor showing through the sprite's baked corridor floor.
 						var _lit: String = _DungeonComposite.over_prop(_egg_spr, _prop)
 						_lit = _DungeonComposite.bordered(_lit, String(fi.get("color", "#FFFFFF")))
-						line += "[img=%dx%d]%s[/img]" % [_dungeon_cell_width(), _dungeon_cell_width(), _lit]
+						# Hoverable, the same `[url=]` + meta_hover idiom the monsters and theme
+						# tiles use - one tooltip mechanism in this game rather than a fourth.
+						# Addressed by POSITION because floor loot has no id, and position is what
+						# the grid already knows about the cell it is drawing.
+						line += "[url=loot:%d,%d][img=%dx%d]%s[/img][/url]" % [
+							x, y, _dungeon_cell_width(), _dungeon_cell_width(), _lit]
 					else:
 						line += _dungeon_glyph_cell(String(fi.get("char", "?")),
-							String(fi.get("color", "#FFFFFF")), "", _prop)
+							String(fi.get("color", "#FFFFFF")), "loot:%d,%d" % [x, y], _prop)
 				else:
 					line += _dungeon_tile_cell(grid, x, y, _tv)
 		lines.append(line)
