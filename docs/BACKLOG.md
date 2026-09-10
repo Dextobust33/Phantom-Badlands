@@ -332,6 +332,18 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       ENTITY — and a lamp head drawn over a monster's head is a perspective call, not a bug fix.
       Worth doing after the current playtest stack ships, not inside it.
 
+- [x] **SHIPPED v0.9.767 (2026-09-10).** Cycle values + the three reveal upgrades, arrow-key
+      diagonals for keyboards with no numpad, prop occlusion (entities draw OVER scatter) and
+      scatter under theme-tile glyphs, hoverable damage on companion/dungeon cards, the
+      absorbed-hit line, the egg hatch that blanked the dungeon floor, the final chest reward
+      that was being built/sent/discarded, and party leadership transfer on all three exit
+      paths plus permadeath. Plus two repaired gates: the dungeon-art scan (red on master for a
+      literal-newline split bug) and a new licensed-assets check. Admin panel reorganised.
+      Playtested A-F by the owner before shipping; server deployed and verified by hashing the
+      RUNNING process; all 7 assets live; published pck re-downloaded and confirmed 0.9.767.
+      STILL UNVERIFIED and shipped on code review: party equipment rewards (2 clients) and
+      leader logout/permadeath (3 clients) - `party3` and `party3_leader_dies` set both up.
+
 ## Phase 3.4 — the CYCLE VALUE (deck-width arc, owner direction 2026-09-10)
 
 Owner: *"make cards with mechanics that make you actually want to grow your deck to a larger size
