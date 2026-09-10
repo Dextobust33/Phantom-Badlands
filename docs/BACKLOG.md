@@ -518,21 +518,28 @@ does not exist in the interiors case at all.
       Raven packs are 0.57-0.66. Rooms would read as brighter than the corridors leading to them
       — which is what a lit room off a dark passage should look like. Decide deliberately whether
       to lean into that or flatten it; do not correct it by reflex.
-- [ ] **Room VARIETY — every room currently looks the same** (owner, 2026-09-10, while walking the
-      first build): *"we will probably want more variety to the rooms in the future as well rather
-      than all of them sharing the exact same look. We have plenty of assets to make a huge variety
-      of rooms once we get these working properly."* Agreed, and the ordering in that sentence is
-      the right one — the plumbing has to be correct before variety is worth adding, or every new
-      room type multiplies whatever is still broken.
-      What exists to build on: 20 Raven packs, each shipping its tileset at 16/32/48/64px plus RPG
-      Maker autotile sheets that NAME which cells are floor, wall and object. The four-variant
-      hashing already written for the room floor is the mechanism — it just needs to select a
-      PACK per room rather than a tile per cell.
-      The real design question, and it should be settled before authoring: is a room's look tied
-      to the DUNGEON THEME (every room in a Wolf Den looks like a Wolf Den), or does it vary room
-      to room WITHIN a floor (a mushroom chamber next to a mine)? The first reinforces theme and
-      is less work; the second makes exploration surprising and risks reading as incoherent.
-      Owner's call. There is already a `dungeon_type` in scope at render time either way.
+- [ ] **Room VARIETY — DECIDED 2026-09-10: unique and fun beats coherent.** Owner, walking the
+      first build: *"we will probably want more variety to the rooms... We have plenty of assets
+      to make a huge variety of rooms once we get these working properly."* Then, asked whether a
+      room's look should follow the DUNGEON THEME or vary within a floor: *"I'm less concerned
+      with if the room looks like it fits in with the dungeon and much more concerned that they
+      look unique and fun. The more the better since it will lead to more variety and
+      exploration, seeing things no other players have before."*
+      **So: vary room-to-room WITHIN a floor, from as wide a pool as we can build.** A mushroom
+      chamber next to a mine is the goal, not the failure mode. Note this is the same instinct as
+      the card-upgrade rarity item above — *"ones their friends have probably never seen"* — and
+      it should be built the same way: a wide pool with genuinely uncommon entries, not a uniform
+      shuffle where everything shows up by the third dungeon.
+      **The architectural consequence, which the current code does NOT satisfy.** The renderer
+      knows whether a cell IS room floor; it does not know WHICH room. Per-cell hashing is right
+      for breaking up a floor texture and wrong for this — it would speckle four looks through one
+      chamber instead of giving each chamber one look. Rooms need an IDENTITY: a connected-
+      component pass over room cells, labelled once per floor and cached beside the existing room
+      mask, so every cell of a chamber hashes to the same pack. That is a contained addition to
+      what already exists, but it must land before any packs are wired in or the first attempt
+      will look like static.
+      Assets are not the constraint: 20 packs, each shipping 16/32/48/64px plus RPG Maker
+      autotile sheets that NAME which cells are floor, wall and object.
 
 - [ ] **WALLS around rooms — asked 2026-09-10, not yet decided.** *"Do we plan on making the walls
       around rooms different tiles as well?"* Not yet, and it is a bigger change than the floor
