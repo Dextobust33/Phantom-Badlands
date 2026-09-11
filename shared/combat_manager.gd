@@ -3331,9 +3331,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		else:
 			messages.append("[color=#AA6666]- The Shield Guardian's shield crumbles to dust...[/color]")
 
-	# Arcane Hoarder ability: 35% chance to drop mage gear
+	# Arcane Hoarder: 35% naturally, guaranteed when a Scroll of Finding granted it.
 	if ABILITY_ARCANE_HOARDER in abilities and drop_tables != null:
-		if randf() < 0.35:  # 35% chance
+		if randf() < _hoarder_drop_chance(monster):
 			var mage_item = drop_tables.generate_mage_gear(monster.level)
 			if not mage_item.is_empty():
 				messages.append("[color=#66CCCC]The Arcane Hoarder drops magical equipment![/color]")
@@ -3348,9 +3348,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		else:
 			messages.append("[color=#AA66AA]- The Arcane Hoarder's magic dissipates...[/color]")
 
-	# Cunning Prey ability: 35% chance to drop trickster gear
+	# Cunning Prey: 35% naturally, guaranteed when a Scroll of Finding granted it.
 	if ABILITY_CUNNING_PREY in abilities and drop_tables != null:
-		if randf() < 0.35:  # 35% chance
+		if randf() < _hoarder_drop_chance(monster):
 			var trick_item = drop_tables.generate_trickster_gear(monster.level)
 			if not trick_item.is_empty():
 				messages.append("[color=#66FF66]The Cunning Prey drops elusive equipment![/color]")
@@ -3381,13 +3381,13 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			var find_scroll = drop_tables._generate_item(
 				{"item_type": "scroll_target_farm", "rarity": "common"}, monster.level)
 			if find_scroll is Dictionary and not find_scroll.is_empty():
-				messages.append("[color=#9F70FF]The apex leaves behind a Scroll of Finding — choose your next quarry.[/color]")
+				messages.append("[color=#9F70FF]The apex leaves behind a Scroll of Finding — mark your next prey’s hoard.[/color]")
 				if not combat.has("extra_drops"):
 					combat.extra_drops = []
 				combat.extra_drops.append(find_scroll)
 
 	if ABILITY_WARRIOR_HOARDER in abilities and drop_tables != null:
-		if randf() < 0.35:
+		if randf() < _hoarder_drop_chance(monster):
 			var war_item = drop_tables.generate_warrior_gear(monster.level)
 			if not war_item.is_empty():
 				messages.append("[color=#FF6600]The Warrior Hoarder drops battle-worn gear![/color]")
@@ -10959,6 +10959,26 @@ func generate_combat_start_message(character: Character, monster: Dictionary) ->
 	"""Generate the initial combat message (text only - art is rendered client-side)"""
 	return generate_encounter_text(monster)
 
+func _hoarder_drop_chance(monster: Dictionary) -> float:
+	"""How likely a class-gear hoarder is to actually drop its gear.
+
+	35% NATURALLY. A Minotaur that happens to carry `warrior_hoarder` is a lucky find, and class
+	bases are the strongest gear in the game, so this rate is a BALANCE quantity - raising it
+	globally would raise player power and stale the monster curve. Left alone deliberately.
+
+	GUARANTEED when a Scroll of Finding put the trait there. Owner 2026-09-10 chose to "raise the
+	35% ones", and the player's side of the bargain is why: the generic traits the SAME scroll
+	offers (weapon_master, shield_bearer) are guaranteed drops, so picking your own class's gear
+	was strictly the worse choice while sounding like the better one, and a whole scroll could
+	pay out nothing at all.
+
+	Raising it only for the scroll leaves the natural rate - and the curve - untouched. The scroll
+	is a consumable the player spends; the monster's own rate is not."""
+	if bool(monster.get("scroll_trait_guaranteed", false)):
+		return 1.0
+	return 0.35
+
+
 func generate_encounter_text(monster: Dictionary) -> String:
 	"""Generate encounter text WITHOUT ASCII art (for client-side art rendering)"""
 	# Get class affinity color. Empowered/apex monsters carry an explicit
@@ -11003,6 +11023,16 @@ func generate_encounter_text(monster: Dictionary) -> String:
 		notable_abilities.append("[color=#FF8000]* WEAPON MASTER *[/color]")
 	if ABILITY_SHIELD_BEARER in abilities:
 		notable_abilities.append("[color=#00FFFF]* SHIELD GUARDIAN *[/color]")
+	# 2026-09-10 - the three CLASS-GEAR hoarders were never announced, while the three that drop
+	# generic gear were. Owner used a Scroll of Finding on "Warrior Item drop", met "a normal
+	# wolf", and had no way to tell the trait had landed - because for those three it genuinely
+	# never appeared anywhere. Six options on the scroll, three of them invisible.
+	if ABILITY_WARRIOR_HOARDER in abilities:
+		notable_abilities.append("[color=#FF6600]* WARRIOR HOARDER *[/color]")
+	if ABILITY_ARCANE_HOARDER in abilities:
+		notable_abilities.append("[color=#9F70FF]* ARCANE HOARDER *[/color]")
+	if ABILITY_CUNNING_PREY in abilities:
+		notable_abilities.append("[color=#1EFF00]* CUNNING PREY *[/color]")
 	if ABILITY_CORROSIVE in abilities:
 		notable_abilities.append("[color=#FFFF00]! CORROSIVE ![/color]")
 	if ABILITY_SUNDER in abilities:

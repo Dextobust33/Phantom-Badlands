@@ -8996,6 +8996,10 @@ func trigger_encounter(peer_id: int):
 			if not monster.has("abilities"):
 				monster["abilities"] = []
 			monster.abilities.append(target_ability)
+		# Mark WHY this monster carries the trait. The class-gear hoarders pay 35% naturally and
+		# 100% when a scroll put them there - see `_hoarder_drop_chance`. Without this flag the two
+		# cases are indistinguishable and raising the rate would have moved the monster curve.
+		monster["scroll_trait_guaranteed"] = true
 
 		character.target_farm_remaining -= 1
 		if character.target_farm_remaining <= 0:
@@ -11301,19 +11305,22 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		var encounters = effect.get("encounters", 5)
 		var options = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey", "warrior_hoarder"]
 		var option_names = {
-			"weapon_master": "Weapon Master (weapon drops)",
-			"shield_bearer": "Shield Guardian (shield drops)",
-			"gem_bearer": "Gem Bearer (gem drops)",
-			"arcane_hoarder": "Arcane Hoarder (mage gear drops)",
-			"cunning_prey": "Cunning Prey (trickster gear drops)",
-			"warrior_hoarder": "Warrior Hoarder (warrior gear drops)"
+			# Every one of these is a GUARANTEED drop when the scroll grants it - the class-gear
+			# three used to be a hidden 35%, which made them the worse pick while sounding like the
+			# better one. Named so the player can see that, rather than having to measure it.
+			"weapon_master": "Weapon Master - a weapon, guaranteed",
+			"shield_bearer": "Shield Guardian - a shield, guaranteed",
+			"gem_bearer": "Gem Bearer - gems, guaranteed",
+			"arcane_hoarder": "Arcane Hoarder - MAGE gear, guaranteed",
+			"cunning_prey": "Cunning Prey - TRICKSTER gear, guaranteed",
+			"warrior_hoarder": "Warrior Hoarder - WARRIOR gear, guaranteed"
 		}
 		send_to_peer(peer_id, {
 			"type": "target_farm_select",
 			"options": options,
 			"option_names": option_names,
 			"encounters": encounters,
-			"message": "[color=#FF00FF]The %s glows with mystical energy...[/color]\n[color=#FFD700]Choose a trait to hunt for the next %d encounters![/color]" % [item_name, encounters]
+			"message": "[color=#FF00FF]The %s glows with mystical energy...[/color]\n[color=#FFD700]Choose what the next %d foes will be carrying — whatever they turn out to be.[/color]" % [item_name, encounters]
 		})
 		# Don't update character yet - wait for selection
 		return

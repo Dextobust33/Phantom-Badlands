@@ -47397,7 +47397,7 @@ func display_target_farm_options():
 
 	display_game("")
 	display_game("[color=#FF00FF]===== SCROLL OF FINDING =====[/color]")
-	display_game("[color=#808080]Choose a trait to hunt for the next %d encounters:[/color]" % target_farm_encounters)
+	display_game("[color=#808080]Choose what the next %d foes will carry. It marks their HOARD, not which monster you meet — use a Scroll of Summoning to pick that.[/color]" % target_farm_encounters)
 	display_game("")
 
 	for i2 in range(target_farm_options.size()):
