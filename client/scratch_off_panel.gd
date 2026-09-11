@@ -1178,9 +1178,9 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> Control:
 			"REFUND":
 				kind_label.text = "↺ MAT"
 			"DURABILITY_UP_1":
-				kind_label.text = "🛠 +"
+				kind_label.text = "⚒ +"
 			"DURABILITY_UP_2":
-				kind_label.text = "🛠 ++"
+				kind_label.text = "⚒ ++"
 			"EFFICIENCY_UP_1":
 				kind_label.text = "⚡ +"
 			"EFFICIENCY_UP_2":

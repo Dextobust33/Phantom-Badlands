@@ -179,28 +179,30 @@ confirmation. They can now accumulate real data instead of waiting.
 
 ## LIVE REPORT 2026-09-11 (post-v0.9.770, LINUX)
 
-- [ ] **Top-right toolbar icons do not render on Linux.** Owner: *"I've added a screenshot called
-      linux. The icons for the bug report and a few others aren't displaying properly (up in the
-      very top right)."* Screenshot at
-      `Desktop/Test_Install/phantom-badlands-launcher/claude_screenshots/linux.png`.
-      **Confirmed from the image.** The strip draws several buttons as the font's MISSING-GLYPH
-      BOX, while the music toggle renders correctly right beside them.
-      **Cause, read off the code rather than guessed:** those buttons use EMOJI as label text.
-      `client.gd:3017` builds Suggest Idea and Report Issue from emoji, and `client.gd:2960` does
-      the same for the screenshot button. The music toggle is U+266A, a plain BMP symbol, which
-      is exactly why it is the one that survives. Windows supplies the emoji from a system font;
-      the Linux build has no such guarantee, so each one falls back to tofu.
-      **Same class as the six tofu glyphs fixed on 2026-09-11** (baked tiles rendering as the
-      font's `.notdef` box), reached from the UI side instead of the bake side -- the lesson was
-      recorded and simply never applied to live button text.
-      **Three ways out, cheapest first:** (a) swap to BMP symbols the bundled font covers, the way
-      the music note already works; (b) short text labels (`Idea` / `Bug` / `Shot`), which also
-      helps anyone who cannot read a 13px pictogram; (c) bundle an emoji-capable font and force it
-      on those buttons -- heaviest, and only worth it if emoji are wanted elsewhere.
-      **Add a coverage assertion either way.** The tofu fix earlier today added exactly that for
-      baked glyphs; the same check belongs on any glyph used as a UI affordance. Must be verified
-      on the LINUX build, since it cannot reproduce on Windows.
-
+- [x] **FIXED 2026-09-11 — and it was NINE sites, not "a few icons".** Owner, on Linux: *"The
+      icons for the bug report and a few others aren't displaying properly (up in the very top
+      right)."*
+      **The distinction, measured rather than guessed.** The bundled font is Consolas and it
+      covers almost nothing beyond ASCII — **not even U+266A, the music note**. Yet the music note
+      RENDERS on the owner's Linux build, sitting right beside the broken icons. So symbols
+      already reach a fallback font there; what that fallback does not carry is the **ASTRAL
+      plane**, which is where every emoji lives. My first instinct — "use glyphs the bundled font
+      covers" — was wrong, because the bundled font covers none of them either.
+      **Nine sites, and the toolbar was the smallest part:** the screenshot, Suggest Idea and
+      Report Issue buttons; **`⚔ Review Damage`** in combat; two scratch-off labels; and **four in
+      the LAUNCHER**, which is the first thing a Linux player sees before the game even starts.
+      All replaced with BMP glyphs in **U+2600–26FF, the same block as the proven-good music
+      note** — U+26F6 screenshot, U+263C idea, U+26A0 report, U+2692 tools, U+2694 review damage,
+      U+2630 changes.
+      **THIS HAD ALREADY BEEN FIXED ONCE.** v0.9.636 stripped emoji from the bounty board and tool
+      slots for exactly this reason (*"was U+1F4B0 money bag, SMP range fonts tofu it"*), and new
+      ones were added afterwards. That is why the fix is a PROBE and not just an edit:
+      `ui_glyph_coverage.gd` fails on any astral codepoint reaching a control's text across 11
+      files, and passed 687 control-text lines. Comments and changelog prose are excluded on
+      purpose — several quote the old glyph while explaining its removal, and rewriting those
+      would falsify the record rather than fix a button.
+      **The launcher change means both launcher ZIPs must be rebuilt and re-uploaded** on the next
+      release — it does not self-update, so a Linux player keeps the broken launcher until then.
 
 ## ⚑ THE ORDER — 54 open items, sequenced so nothing gets built twice (2026-09-11)
 

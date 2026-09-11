@@ -963,7 +963,7 @@ const CHAT_MAX_FONT_SIZE = 48
 # Combat state
 var in_combat = false
 var _f12_was_down := false  # v0.9.695 — polled F12 screenshot edge-detect
-# In-game player feedback (v0.9.728) — 💡 Suggest Idea / 🐞 Report Issue → Discord webhook.
+# In-game player feedback (v0.9.728) — ☼ Suggest Idea / ⚠ Report Issue → Discord webhook.
 var _feedback_webhook_url := ""
 var _feedback_webhook_loaded := false
 var _feedback_kind := ""
@@ -2957,7 +2957,7 @@ func _ready():
 		if _ss_parent:
 			var ss_btn := Button.new()
 			ss_btn.name = "ScreenshotButton"
-			ss_btn.text = "📷"
+			ss_btn.text = "⛶"
 			ss_btn.tooltip_text = "Save a screenshot (claude_screenshots folder)"
 			ss_btn.add_theme_font_size_override("font_size", 13)
 			ss_btn.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -2978,8 +2978,8 @@ func _ready():
 			ss_btn.pressed.connect(_on_screenshot_button_pressed)
 			_ss_parent.add_child(ss_btn)
 			_ss_parent.move_child(ss_btn, music_toggle.get_index())
-			# v0.9.728 — player feedback buttons next to the 📷 button. Post to the same
-			# Discord webhook as the launcher (💡 idea / 🐞 issue), text + optional screenshot.
+			# v0.9.728 — player feedback buttons next to the ⛶ button. Post to the same
+			# Discord webhook as the launcher (☼ idea / ⚠ issue), text + optional screenshot.
 			# 2026-09-04 — combat speed, as two arrows and a readout. A VISIBLE control rather
 			# than a hotkey: the project rule is that a new entry point is a button someone can
 			# find, and this one has to be discoverable precisely because it is what makes
@@ -3014,7 +3014,7 @@ func _ready():
 			_ss_parent.add_child(_spd_box)
 			_ss_parent.move_child(_spd_box, music_toggle.get_index())
 			_refresh_combat_speed_label()
-			for _fb in [["SuggestIdeaButton", "💡", "Suggest an idea / change", "idea"], ["ReportIssueButton", "🐞", "Report an issue / bug", "issue"]]:
+			for _fb in [["SuggestIdeaButton", "☼", "Suggest an idea / change", "idea"], ["ReportIssueButton", "⚠", "Report an issue / bug", "issue"]]:
 				var fb_btn := Button.new()
 				fb_btn.name = String(_fb[0])
 				fb_btn.text = String(_fb[1])
@@ -5179,7 +5179,7 @@ func _process(delta):
 
 func _input(event):
 	# v0.9.663 — F12 (dev) screenshot. Works in ANY state, including combat, where
-	# the top-bar 📷 button click can be eaten by combat/menu input handling.
+	# the top-bar ⛶ button click can be eaten by combat/menu input handling.
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F12:
 		_on_screenshot_button_pressed()
 		get_viewport().set_input_as_handled()
@@ -30841,7 +30841,7 @@ func display_changelog():
 	display_game("  [color=#FF4444]\u2605 READ THIS ONE: THE GAME IS HARDER NOW.[/color] A companion's passive bonuses had [b]no upper limit[/b] and grew forever with its level. At high level one was handing you [b]twelve to twenty-one times your own health bar[/b], plus up to [b]+2275% damage[/b] and enough damage absorption to be [b]effectively immune[/b]. Monsters had been sized against that, so the game quietly split in two: with the right companion nothing could threaten you, and without one the same content was brutal. Companion bonuses now [b]keep growing with level forever[/b] but at a sane rate, and every monster has been [b]re-measured[/b] against a player who is not carrying a small god. Expect fights to be [b]genuinely harder[/b] — especially if you had a high-level companion doing the work.")
 	display_game("  [color=#1EFF00]\u25c6 Rarer companions still pay more — exactly more.[/color] The fix deliberately keeps the [b]hunt[/b] worth it: a rarer variant is worth [b]1.60x[/b] a common one at [b]every[/b] level, and a companion you levelled to 5000 is worth about [b]five times[/b] a low-level common. What is gone is only the runaway.")
 	display_game("  [color=#FF8000]\u2605 EVERY DUNGEON BOSS WAS INVISIBLE.[/color] Not some — [b]all twenty-one of them[/b]. A boss is named separately from its species (a [b]Spider Queen[/b] is a Giant Spider, a [b]Goblin King[/b] is a Goblin), and nothing connected the two, so every boss fight in the game showed an [b]empty battlefield[/b]. Reported by a player. Bosses now show their species' artwork. [color=#909090](Elementals and Sirens still have no art of their own — that is being drawn.)[/color]")
-	display_game("  [color=#FF8000]\u2605 THE SPACEBAR WAS BEING STOLEN.[/color] After clicking the [b]🐞 report[/b] button once, the report window [b]re-opened on every action[/b] — because the button kept keyboard focus and Space, your main action key, kept pressing it again. Reported by a player. The same fault meant the [b]📷 screenshot[/b] button was quietly saving a shot every time you pressed Space, the music toggle flipped on it, and the [b]volume slider ate the arrow keys[/b] — which are movement.")
+	display_game("  [color=#FF8000]\u2605 THE SPACEBAR WAS BEING STOLEN.[/color] After clicking the [b]⚠ report[/b] button once, the report window [b]re-opened on every action[/b] — because the button kept keyboard focus and Space, your main action key, kept pressing it again. Reported by a player. The same fault meant the [b]⛶ screenshot[/b] button was quietly saving a shot every time you pressed Space, the music toggle flipped on it, and the [b]volume slider ate the arrow keys[/b] — which are movement.")
 	display_game("  [color=#FF8000]\u2605 CARD RANK-UPS ARE A REAL CHOICE NOW.[/color] Every milestone used to offer the [b]same three options[/b] forever: more power, cheaper, or a rider. Now [b]nine[/b] upgrades are dealt from a pool of [b]48[/b], you study them, they are [b]shuffled face-down[/b], you turn over [b]three[/b] and keep [b]one[/b]. Later milestones add [b]trade-offs[/b] — picks that ask for something back, shown in amber. They differ by [b]when[/b] they pay: free on the first cast of a fight, every third cast, only below half health, only while the enemy is reeling.")
 	display_game("  [color=#FF4444]\u25c6 Party rank-ups never reached you.[/color] Ranking a card up [b]in a group[/b] queued the choice silently and told you nothing — you met it at your next login, and even then it showed the [b]old[/b] three-option menu. Both fixed.")
 	display_game("  [color=#FF4444]\u25c6 The party victory screen sometimes never appeared.[/color] The fight ended, the log said [b]Party victory[/b], and the monster stayed on screen at full health with your bars frozen until you pressed Space. The victory screen, the health bars, the monster's death and your companion's portrait all wait on the same signal, and it could simply never fire.")
@@ -30961,7 +30961,7 @@ func display_changelog():
 
 	# v0.9.730 — Feedback buttons fixed.
 	display_game("[color=#00FFFF]v0.9.730[/color]")
-	display_game("  [color=#1EFF00]◆ Feedback buttons work now.[/color] The [color=#FFE066]💡 Suggest Idea[/color] / [color=#FF8888]🐞 Report Issue[/color] buttons (in-game and on the launcher) were showing 'unavailable' in the packaged build — fixed. Please send us your ideas and bug reports; we're reading them!")
+	display_game("  [color=#1EFF00]◆ Feedback buttons work now.[/color] The [color=#FFE066]☼ Suggest Idea[/color] / [color=#FF8888]⚠ Report Issue[/color] buttons (in-game and on the launcher) were showing 'unavailable' in the packaged build — fixed. Please send us your ideas and bug reports; we're reading them!")
 	display_game("")
 
 	# (v0.9.725-729 rolled off the visible changelog window.)
@@ -31130,7 +31130,7 @@ func display_changelog():
 
 	# v0.9.695 — In-combat screenshot fix (dev/QA).
 	display_game("[color=#00FFFF]v0.9.695[/color]")
-	display_game("  [color=#1EFF00]◆ Screenshots work in combat.[/color] The [b]📷 button[/b] was being covered by the battle screen; it now sits on top and is clickable in combat, and [b]F12[/b] takes a shot from any screen. A brief on-screen confirmation shows the filename (saved to the claude_screenshots folder).")
+	display_game("  [color=#1EFF00]◆ Screenshots work in combat.[/color] The [b]⛶ button[/b] was being covered by the battle screen; it now sits on top and is clickable in combat, and [b]F12[/b] takes a shot from any screen. A brief on-screen confirmation shows the filename (saved to the claude_screenshots folder).")
 	display_game("")
 
 	# v0.9.694 — One consistent + more accurate damage number per card.
@@ -31396,7 +31396,7 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.639[/color]")
 	display_game("  [color=#FFD700]Five fixes from the polish backlog + an active login-screen bug.[/color]")
 	display_game("  • [b]Login screen no longer kicks players after 90 seconds[/b]. Player report: 'if players sit too long on the login screen it stops accepting login attempts.' AUTH_TIMEOUT bumped 90s → 30 min so you can step away from the keyboard without being reaped. Still bounded so genuinely abandoned bot connections eventually free up the slot.")
-	display_game("  • [b]Combat-log decorative emoji stripped[/b] (same player-font issue that broke 🪙 in v0.9.636). SMP-range emoji (🩸 💀 😠 👁️ 🔓 👻 💨 🔥 🛡️ 🏰 📯 🗡️ 🎲 🔍 💥 🪓 📖 🌿 🍄 🌸 🌱 🔒 🏠 📦 🐾 🥚 🏃 💰 📚 💪 🎯 🧠) replaced or removed from combat-log effects, momentum display, foraging art, locked quest indicator, and all 24 Sanctuary upgrade icons. BBCode color / pulse / wave / shake / fade wrappers retained so the visual signal stays.")
+	display_game("  • [b]Combat-log decorative emoji stripped[/b] (same player-font issue that broke 🪙 in v0.9.636). SMP-range emoji (⚔ 💀 😠 👁️ 🔓 👻 💨 🔥 🛡️ 🏰 📯 🗡️ 🎲 🔍 💥 🪓 📖 🌿 🍄 🌸 🌱 🔒 🏠 📦 🐾 🥚 🏃 💰 📚 💪 🎯 🧠) replaced or removed from combat-log effects, momentum display, foraging art, locked quest indicator, and all 24 Sanctuary upgrade icons. BBCode color / pulse / wave / shake / fade wrappers retained so the visual signal stays.")
 	display_game("  • [b]Title menu has a [color=#FFD700]? Help[/color] button now[/b]. New help topic explains earning / equipping / Q-W-E-R abilities / permadeath consequences.")
 	display_game("  • [b]Sanctuary sub-pages get Help buttons[/b]. Storage, Companions, and Upgrades tabs now have a [color=#FFD700]? Help[/color] slot pointing to the existing comprehensive sanctuary_page topic.")
 	display_game("  • [b]More → Bestiary opens the dedicated panel now[/b] instead of the legacy chat-output tier list. The Sanctuary entry already used the panel; both entries now consistent.")
@@ -31434,7 +31434,7 @@ func display_changelog():
 	display_game("    [color=#888888]–[/color] Top-bar autoskip toggles: [color=#888888]🪙 ⛏ 🔨[/color] → [color=#FFD700]$ G C[/color] (tooltips unchanged)")
 	display_game("    [color=#888888]–[/color] Bounty Board panel title, chat alerts, /bounty list header: [color=#888888]💰[/color] → [color=#FFD700]$[/color]")
 	display_game("    [color=#888888]–[/color] Tool slots: [color=#888888]🪓[/color] axe → [color=#FFD700]A[/color], [color=#888888]🎣[/color] rod → [color=#FFD700]R[/color]. Pickaxe (⛏) and Sickle (⚒) kept as-is — they're BMP and render in every font.")
-	display_game("  • Decorative combat-log emoji (🩸 💀 😠 etc.) left in place for now — they're surrounded by plain text, so even tofu reads as 'something happened.' Will sweep if reported.")
+	display_game("  • Decorative combat-log emoji (⚔ 💀 😠 etc.) left in place for now — they're surrounded by plain text, so even tofu reads as 'something happened.' Will sweep if reported.")
 	display_game("")
 
 	# v0.9.635 — Ten-fix batch: player-reported bugs + balance tuning.
@@ -31556,7 +31556,7 @@ func display_changelog():
 
 	# v0.9.619 — Review Damage button shows on victory screen again.
 	display_game("[color=#00FFFF]v0.9.619[/color]")
-	display_game("  [color=#FFD700]Fix: 🩸 Review Damage button was hidden during the entire victory window. Root cause: _drain_combat_queue's queue-empty branch fires show_victory_card BEFORE it schedules end_action_phase_after(grace), so at victory-card-display time _action_phase_active is still TRUE — and _update_review_button_visibility hard-hides the button while action phase is active. Then end_action_phase runs, persistent FX kicks in, hides the button again. The button only became visible AFTER the player had already pressed Continue — too late to use.[/color]")
+	display_game("  [color=#FFD700]Fix: ⚔ Review Damage button was hidden during the entire victory window. Root cause: _drain_combat_queue's queue-empty branch fires show_victory_card BEFORE it schedules end_action_phase_after(grace), so at victory-card-display time _action_phase_active is still TRUE — and _update_review_button_visibility hard-hides the button while action phase is active. Then end_action_phase runs, persistent FX kicks in, hides the button again. The button only became visible AFTER the player had already pressed Continue — too late to use.[/color]")
 	display_game("  • [b]Fix[/b]: when [color=#888888]_victory_interlude_active[/color] is true, override the [color=#888888]_action_phase_active[/color] gate. Victory card up = we WANT the Review button visible regardless of stale action-phase state.")
 	display_game("")
 
@@ -35097,7 +35097,7 @@ func _refresh_stats_panel_if_open() -> void:
 	stats_panel.refresh(level, xp, xp_to_next, stats, unspent)
 
 # ===================== In-game player feedback (v0.9.728) =====================
-# 💡 Suggest Idea / 🐞 Report Issue buttons (top bar) → a dialog (text + optional
+# ☼ Suggest Idea / ⚠ Report Issue buttons (top bar) → a dialog (text + optional
 # screenshot of the current screen) → POST to the same Discord webhook as the launcher.
 # Webhook lives in a gitignored res://webhook_secret.gd (bundled at export). Absent → the
 # feedback dialog tells the player it's unavailable.
@@ -35174,7 +35174,7 @@ func _on_feedback_send() -> void:
 	var txt := _feedback_text.text.strip_edges()
 	if txt == "" or _feedback_webhook_url == "":
 		return
-	var kind_tag := "💡 IDEA" if _feedback_kind == "idea" else "🐞 ISSUE"
+	var kind_tag := "☼ IDEA" if _feedback_kind == "idea" else "⚠ ISSUE"
 	var pname := String(character_data.get("name", "")) if character_data else ""
 	var who := pname if pname != "" else "unknown"
 	var meta := "in-game · player %s · v%s · %s" % [who, get_version(), OS.get_name()]
@@ -35185,7 +35185,7 @@ func _on_feedback_send() -> void:
 		_post_feedback_multipart(content, _feedback_shot)
 	else:
 		_post_feedback_json(content)
-	_flash_screenshot_toast("🙏 Feedback sent — thank you!")
+	_flash_screenshot_toast("★ Feedback sent — thank you!")
 
 func _post_feedback_json(content: String) -> void:
 	var req := HTTPRequest.new()
@@ -35349,7 +35349,7 @@ func _on_screenshot_button_pressed() -> void:
 	if err == OK:
 		display_game("[color=#5CE05C]Screenshot saved: %s[/color]" % fname)
 		print("[SCREENSHOT] saved: ", path)
-		_flash_screenshot_toast("📷 %s" % fname)  # survives combat's game_output wipe
+		_flash_screenshot_toast("⛶ %s" % fname)  # survives combat's game_output wipe
 	else:
 		display_game("[color=#FF6B6B]Screenshot failed (err %d)[/color]" % err)
 
@@ -39523,7 +39523,7 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = _replace_word(enhanced, "poison", "[color=#00FF00]☠ poison[/color]")
 
 	# Monster ability effects
-	# v0.9.639 — Stripped SMP-range decorative emoji (🩸 💀 😠 👁️ 🔓 👻 💨 ⚔️ ⚠️
+	# v0.9.639 — Stripped SMP-range decorative emoji (⚔ 💀 😠 👁️ 🔓 👻 💨 ⚔️ ⚠️
 	# ↩️ ✨ ♻️) and the BMP variation-selector emoji from these decorations.
 	# Same player-font issue that broke 🪙 in v0.9.636 — fonts without the SMP
 	# range render the emoji as a hex codepoint box. The BBCode color + pulse/

@@ -119,12 +119,12 @@ func _build_ui():
 	top.add_child(title)
 
 	var idea_btn := Button.new()
-	idea_btn.text = "💡 Suggest Idea"
+	idea_btn.text = "☼ Suggest Idea"
 	idea_btn.focus_mode = Control.FOCUS_NONE
 	idea_btn.pressed.connect(func(): _open_feedback("idea"))
 	top.add_child(idea_btn)
 	var issue_btn := Button.new()
-	issue_btn.text = "🐞 Report Issue"
+	issue_btn.text = "⚠ Report Issue"
 	issue_btn.focus_mode = Control.FOCUS_NONE
 	issue_btn.pressed.connect(func(): _open_feedback("issue"))
 	top.add_child(issue_btn)
@@ -196,7 +196,7 @@ func _build_ui():
 	pv.add_theme_constant_override("separation", 8)
 	panel.add_child(pv)
 	var ch_title := Label.new()
-	ch_title.text = "📜 Recent Changes"
+	ch_title.text = "☰ Recent Changes"
 	ch_title.add_theme_font_size_override("font_size", 16)
 	pv.add_child(ch_title)
 
@@ -610,7 +610,7 @@ func _on_feedback_send():
 	var txt := _feedback_text.text.strip_edges()
 	if txt == "" or _webhook_url == "":
 		return
-	var kind_tag := "💡 IDEA" if _feedback_kind == "idea" else "🐞 ISSUE"
+	var kind_tag := "☼ IDEA" if _feedback_kind == "idea" else "⚠ ISSUE"
 	var meta := "launcher v%s · %s · client %s" % [LAUNCHER_VERSION, OS.get_name(), (local_version if local_version else "not installed")]
 	# Discord hard-caps content at 2000 chars.
 	var content := "%s  (%s)\n%s" % [kind_tag, meta, txt]
@@ -620,7 +620,7 @@ func _on_feedback_send():
 		_post_feedback_multipart(content, _feedback_shot_path)
 	else:
 		_post_feedback_json(content)
-	status_label.text = "Thanks! Your feedback was sent. 🙏"
+	status_label.text = "Thanks! Your feedback was sent. ★"
 
 func _post_feedback_json(content: String):
 	var req := HTTPRequest.new()

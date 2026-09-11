@@ -556,7 +556,7 @@ func _build_layout() -> void:
 	# visuals so the player can re-read the per-actor strips (which become
 	# mouse-scrollable in review mode).
 	_review_button = Button.new()
-	_review_button.text = "🩸 Review Damage"
+	_review_button.text = "⚔ Review Damage"
 	_review_button.tooltip_text = "Re-open the FX scene to re-read this fight's damage / combat log"
 	_review_button.add_theme_font_size_override("font_size", 15)
 	_review_button.custom_minimum_size = Vector2(168, 36)
