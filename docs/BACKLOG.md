@@ -688,6 +688,48 @@ does not exist in the interiors case at all.
       wall RIM, so it is an idiom in this renderer rather than a new one. Cache per floor; the
       grid only changes when the floor does.
 
+## Phase 3.46 — 2D EFFECTS for dungeons (owner raised 2026-09-10, NOT previously recorded)
+
+Owner: *"I noticed there is documentation in `client/sprites/darkcave Add CRT effect` to make a
+CRT effect in Gamemaker. Not sure if doing this type of thing in GoDot is possible or would be
+beneficial to Dungeons or not."* Then, after the room work: *"are there any types of 2D effects
+(lighting or others) that you think would be good for our dungeons?"*
+
+Answered in conversation at the time and never written down, which is the gap the backlog audit
+was supposed to close. Recorded now with the feasibility actually checked rather than guessed.
+
+**The infrastructure already exists.** `client/shaders/low_hp_vignette.gdshader` is a canvas_item
+shader doing a radial falloff, attached to a full-rect `ColorRect` with `MOUSE_FILTER_IGNORE` on a
+CanvasLayer, driven by `set_shader_parameter`. Anything below is a second use of that pattern, not
+new plumbing. There is also `region_tint.gdshader`. So "is this possible in Godot" is settled: yes,
+and this project already does it.
+
+- [ ] **TORCH RADIUS is the one worth doing, and it is not only cosmetic.** Darken the dungeon
+      canvas with distance from the player. It serves the owner's own stated dungeon design -
+      *"most of the time you only see a room and corridors, only corridors or the corridor you are
+      in"* - so it makes a design pillar VISIBLE rather than just decorating. It also gives the
+      two-cell lampposts a reason to exist beyond flavour.
+      Implementation note that matters: the player is NOT always at the centre of the view. The
+      viewport clamps at floor edges (`view_x1 = clampi(...)`), so the light centre must be the
+      player's cell position within the view, passed as a uniform - a fixed `vec2(0.5, 0.5)` like
+      the HP vignette uses would put the torch in the wrong place at every floor edge.
+- [ ] **Light SOURCES from lamps, braziers and lava** — the natural extension once the radius
+      exists: pass an array of light positions in view space. The dungeon already knows where its
+      landmark tiles and tall props are, so the data is free. Do it AFTER the torch radius, and
+      only if the radius reads well.
+- [ ] **CRT / scanlines — possible, but I would not do it first.** A `ColorRect` overlay with a
+      scanline shader is straightforward and the pattern above shows how. Two honest reservations:
+      the game is TEXT-HEAVY, and scanlines over a combat log or a side panel cost legibility for
+      atmosphere; and at a 64px tile on a 1080p screen the effect is subtle enough that it may not
+      repay the cost. If done: scope it to the DUNGEON CANVAS only, never the whole window, and
+      ship it off by default as a setting.
+      The GameMaker documentation the owner found is a `.pdf` with subset-encoded fonts - its text
+      could not be extracted - so it is a reference for the LOOK, not a recipe to port.
+- [ ] **Cheaper atmosphere worth considering before any shader:** the compositor can already bake
+      per-cell variants, so a DIM version of a floor tile is a cached texture rather than a shader
+      pass. That is how the existing occlusion and decor work; it would not need a shader at all,
+      at the cost of more cache entries. Worth comparing before reaching for GPU work.
+
 ## Phase 3.5 — input and accessibility (owner direction 2026-09-10)
 
 Owner: *"we need to add support for players with no numpad on their keyboard. With no numpad they
