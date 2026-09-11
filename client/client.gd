@@ -32243,17 +32243,21 @@ func _get_variant_rarity_info(variant: String) -> Dictionary:
 	return {"tier": "Common", "color": "#9D9D9D"}
 
 func _get_variant_multiplier(variant: String) -> float:
-	"""Get the stat multiplier for a companion variant."""
-	# Rare special (+10% stats)
-	if variant in ["Shiny", "Radiant", "Blessed", "Starfall"]:
-		return 1.10
-	# Very rare (+25% stats)
-	if variant in ["Spectral", "Ethereal", "Celestial", "Bifrost"]:
-		return 1.25
-	# Legendary (+50% stats)
-	if variant in ["Prismatic", "Void", "Cosmic", "Divine"]:
-		return 1.50
-	return 1.0
+	"""Stat multiplier a variant earns, from the SHARED rarity-derived source.
+
+	2026-09-11. This was a hardcoded list of TWELVE variant NAMES - the stale per-name table that
+	was deleted on 2026-09-03 and replaced by `variant_mult_for_rarity`, and this is its FOURTH
+	surviving consumer. Owner: *"Is the info on it even still accurate?"*
+
+	Measured before the fix: **111 of 119 variants (93%) showed the wrong multiplier** on the
+	inspect screen. Golden read 1.00x and is really 1.05x; Infernal read 1.00x and is really
+	1.22x. Every variant outside those twelve names read as "no bonus at all", which is exactly
+	the bug the rarity-derived table was introduced to end.
+
+	Passes a NAME because that is what the callers hold; `variant_rarity_of` resolves a name
+	through EGG_VARIANTS, so this cannot silently read as commonest the way a private table did."""
+	var dt = load("res://shared/drop_tables.gd")
+	return dt.variant_mult_for_rarity(dt.variant_rarity_of({"variant": variant}))
 
 func _estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0, sub_tier: int = 1) -> Dictionary:
 	"""Estimate companion damage range for display purposes.
@@ -32280,7 +32284,10 @@ func _estimate_companion_damage(companion_tier: int, player_level: int, companio
 func _get_sub_tier_multiplier(sub_tier: int) -> float:
 	"""Get the stat multiplier for a companion's rank. 1-9; dungeons reach 9 as of 2026-09-11
 	(they used to stop at 8 while fusion reached 9), so both routes now share one ceiling."""
-	return {1:1.0, 2:1.1, 3:1.2, 4:1.3, 5:1.4, 6:1.5, 7:1.6, 8:1.7, 9:2.0}.get(sub_tier, 1.0)
+	# Read from the shared table rather than repeating it. The values happened to agree, but a
+	# hand-copy that agrees today is the "one value, two places" shape that made the variant
+	# multiplier above wrong for 93% of variants.
+	return float(load("res://shared/drop_tables.gd").COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
 
 func _get_companion_bonus_parts_with_variant(bonuses: Dictionary, multiplier: float) -> Array:
 	"""Get formatted bonus text parts for a companion with variant multiplier applied."""
@@ -43714,6 +43721,48 @@ func _on_comp_panel_inspect_back() -> void:
 	display_companions()
 	update_action_bar()
 
+# === COMPANION STAT HELP (2026-09-11) ===
+#
+# Owner: *"It should show their stats and each should be hoverable so players can see what they
+# do. For example, What does Aggro do? What does spd do for a companion, etc."*
+#
+# One table, consumed by the inspect screen and the companions panel, so the two cannot explain
+# the same stat differently. Wording says what the number DOES to this fight, not what it is.
+const COMPANION_STAT_HELP := {
+	"health":    "How much damage your companion can absorb before it is knocked out. Scales with YOUR max health, so it stays useful as you level rather than falling behind.",
+	"damage":    "Damage it deals on its turn. Rolls in this range each time it attacks.",
+	"aggro":     "How often enemies attack your companion INSTEAD OF YOU. Higher means it soaks more hits — a tank keeps you alive by being hit in your place.",
+	"speed":     "How often it gets to act. Higher speed means more turns over a fight, so every other bonus it has fires more often.",
+	"attack":    "Raises YOUR attack power by this percent while it is out.",
+	"defense":   "Raises YOUR defence by this percent while it is out.",
+	"hp_bonus":  "Raises YOUR maximum health by this percent while it is out.",
+	"hp_regen":  "Health you recover each turn of combat.",
+	"mana_bonus": "Raises your maximum mana by this percent.",
+	"mana_regen": "Mana you recover each turn of combat.",
+	"crit_chance": "Added chance for your hits to critical.",
+	"crit_damage": "Extra damage your criticals deal.",
+	"lifesteal": "Percent of the damage you deal that comes back as health.",
+	"flee_bonus": "Improves your chance to escape a fight you choose to leave.",
+	"gold_find": "Extra gold from kills.",
+	"gathering_yield": "Extra materials from fishing, mining and logging.",
+	"gathering_hint": "Improves the odds of spotting a rare gathering node.",
+	"wisdom_bonus": "Raises your Wisdom, which resists poison and other lingering effects.",
+	"power":     "Everything your companion's variant, rank and border are worth, combined into one number. A 2.0 companion has twice the health and damage of a plain one of the same species and level.",
+}
+
+
+func _companion_stat(label: String, value: String, help_key: String, color: String = "#FFFFFF") -> String:
+	"""One hoverable stat row. The LABEL carries the link, so the number stays plain and readable.
+
+	Every row goes through here so no stat can end up unexplained - the owner's complaint was not
+	that a particular stat was confusing, it was that none of them said what they did."""
+	var help: String = String(COMPANION_STAT_HELP.get(help_key, ""))
+	var name_part: String = label
+	if help != "":
+		name_part = "[url=%s]%s[/url]" % [help, label]
+	return "  [color=#8A8A96]%s[/color]  [color=%s]%s[/color]" % [name_part, color, value]
+
+
 func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	# Mirrors display_companion_inspection but returns BBCode text instead of
 	# writing to game_output. Used by the visual companions panel.
@@ -43736,9 +43785,6 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	var monster_type = str(companion.get("monster_type", comp_name))
 
 	var rarity_prefix = "[color=%s][%s][/color] " % [rarity.color, rarity.tier]
-	var variant_bonus = ""
-	if variant_mult > 1.0:
-		variant_bonus = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
 	# v0.9.499 — use authored ascended name so ascended companions show their
 	# veteran/champion/warlord/tyrant/apex prefix instead of the base name.
 	var display_name = _get_authored_companion_name(companion)
@@ -43746,7 +43792,6 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	# double-rarity stat layer). Renders alongside the variant badge.
 	var border_tier_id := int(companion.get("border_tier", 0))
 	var border_badge := ""
-	var border_bonus := ""
 	if border_tier_id > 0:
 		var bt_color := "#FFFFFF"
 		var bt_name := "Common"
@@ -43759,35 +43804,87 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 			5: bt_color = "#FF8000"; bt_name = "Legendary"; bt_mult = 2.00
 			6: bt_color = "#FFD700"; bt_name = "Mythic";    bt_mult = 3.00
 		border_badge = "[color=%s]◆ %s Border[/color] " % [bt_color, bt_name]
-		border_bonus = " [color=%s](+%d%% stats)[/color]" % [bt_color, int((bt_mult - 1.0) * 100)]
-	lines.append("%s%s[color=%s]%s %s[/color]%s%s" % [rarity_prefix, border_badge, variant_color, variant, display_name, variant_bonus, border_bonus])
-	lines.append("[color=#AAAAAA]Level %d  |  Tier %d-%d  (x%.1f stats)[/color]" % [level, tier, sub_tier, sub_mult])
+	# The two "(+N% stats)" suffixes are GONE from the name. They were two of the three
+	# multipliers, in a third format, sitting beside a name - and the combined Power figure on
+	# the next line is the number a player actually wants. Owner: *"The multiplier is confusing
+	# to the players in its current form."* One number, breakdown on hover.
+	lines.append("%s%s[color=%s]%s %s[/color]" % [rarity_prefix, border_badge, variant_color,
+		variant, display_name])
+	# 2026-09-11 - ONE power number, not three multipliers in three formats.
+	#
+	# Owner: *"The multiplier is confusing to the players in its current form so we need to
+	# simplify it or make it easier for them to understand what it is they are looking at."*
+	# It showed "(+60% stats)" for the variant, "(x1.4 stats)" for the rank and "(+25% stats)"
+	# for the border - three formats that MULTIPLY together and were never totalled, so a player
+	# had to combine +60%, x1.4 and +25% in their head and none of the three was the answer.
+	# Now: the combined figure, with the breakdown one hover away.
+	var border_mult: float = 1.0
+	match border_tier_id:
+		1: border_mult = 1.05
+		2: border_mult = 1.12
+		3: border_mult = 1.25
+		4: border_mult = 1.50
+		5: border_mult = 2.00
+		6: border_mult = 3.00
+	var power: float = variant_mult * sub_mult * border_mult
+	var power_help: String = "%s  Here: variant x%.2f, rank x%.2f, border x%.2f." % [
+		String(COMPANION_STAT_HELP.get("power", "")), variant_mult, sub_mult, border_mult]
+	lines.append("%s  [color=#AAAAAA]Level %d[/color]   [url=%s][color=#FFD700]Power x%.2f[/color][/url]" % [
+		PowerRank.rich_label(tier, sub_tier), level, power_help, power])
+	lines.append("[color=#5A5A66]%s[/color]" % PowerRank.pips(tier))
 
+	# XP toward the next level - kept from the old screen, it was the one thing here that worked.
 	if level < 10000:
-		var xp_to_next = int(pow(level + 1, 2.0) * 15)
-		var pct = int((float(xp) / float(xp_to_next)) * 100) if xp_to_next > 0 else 0
-		var bar_filled := int(20 * pct / 100)
-		var bar_text := "[" + "█".repeat(bar_filled) + "░".repeat(20 - bar_filled) + "]"
-		lines.append("[color=#00FF00]XP %s %d%%[/color]  [color=#808080](%d / %d)[/color]" % [bar_text, pct, xp, xp_to_next])
+		var xp_to_next: int = int(pow(level + 1, 2.0) * 15)
+		var xp_pct: int = int((float(xp) / float(xp_to_next)) * 100) if xp_to_next > 0 else 0
+		var xf: int = int(20 * xp_pct / 100)
+		lines.append("[color=#00FF00]XP %s %d%%[/color]  [color=#808080](%d / %d)[/color]" % [
+			"[" + "█".repeat(xf) + "░".repeat(20 - xf) + "]", xp_pct, xp, xp_to_next])
 	else:
 		lines.append("[color=#FFD700]MAX LEVEL[/color]")
 
+	# ---- STATS. Owner: *"It doesn't even show a log of the companions stats. It should show
+	# their stats and each should be hoverable so players can see what they do."* Every row goes
+	# through `_companion_stat`, so none of them can end up unexplained.
 	lines.append("")
-	lines.append("[color=#FF6666]── Combat Damage ──[/color]")
-	var player_level = int(character_data.get("level", 1))
-	var dmg = _estimate_companion_damage(tier, player_level, bonuses, level, variant_mult, sub_tier)
-	lines.append("  [color=#FF6666]%d - %d[/color] per turn" % [int(dmg.min), int(dmg.max)])
+	lines.append("[color=#FFD700]── Stats ──[/color]")
+	# Real combat HP from the SHARED calculation. The client used to carry two hand-maintained
+	# mirrors of this, one of which showed a Chimaera as 290/290 in combat and 665/665 out of it.
+	var owner_hp: int = int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
+	var owner_lv: int = int(character_data.get("level", 1))
+	var chp: int = Character.calculate_companion_max_hp(companion, owner_hp, owner_lv)
+	lines.append(_companion_stat("Health", str(chp), "health", "#77DD77"))
+	var dmg2 = _estimate_companion_damage(tier, owner_lv, bonuses, level, variant_mult, sub_tier)
+	lines.append(_companion_stat("Damage", "%d - %d per turn" % [int(dmg2.min), int(dmg2.max)],
+		"damage", "#FF6666"))
+	var raw_aggro: int = int(bonuses.get("aggro", 25))
+	var role = _get_aggro_role_info(raw_aggro)
+	lines.append(_companion_stat("Aggro", "[color=%s]%s[/color]  %d%% of enemy attacks" % [
+		role.color, role.label, raw_aggro], "aggro", "#FFFFFF"))
+	var spd: int = int(bonuses.get("speed", 0))
+	if spd > 0:
+		lines.append(_companion_stat("Speed", "+%d%%" % spd, "speed", "#87CEEB"))
 
-	# v0.9.499 — Aggro role with description (new on the panel inspect view;
-	# the legacy game_output inspect + tooltip already named the role).
-	var raw_aggro_inspect: int = int(bonuses.get("aggro", 25))
-	var role_info = _get_aggro_role_info(raw_aggro_inspect)
-	lines.append("")
-	lines.append("[color=#FF8800]── Aggro Role ──[/color]")
-	lines.append("  [color=%s][%s][/color]  [color=#888888]%d%%  draw chance per enemy turn[/color]" % [
-		role_info.color, role_info.label, raw_aggro_inspect
-	])
-	lines.append("  [color=#AAAAAA]%s[/color]" % role_info.short_desc)
+	# ---- THE CARD IT GIVES YOU. Owner: *"It also doesn't list the card they provide in combat
+	# or anything."* It was absent entirely, though every companion grants one.
+	var _dtl = load("res://shared/drop_tables.gd")
+	var card_data: Dictionary = _dtl.get_companion_card_data(monster_type)
+	if not card_data.is_empty():
+		lines.append("")
+		lines.append("[color=#00FFFF]── Its Combat Card ──[/color]")
+		lines.append("  [color=#FFFFFF][b]%s[/b][/color]" % String(card_data.get("name", "?")))
+		lines.append("  [color=#AAAAAA]%s[/color]" % String(card_data.get("desc", "")))
+		# Whether it is PERMANENT yet, because that is the thing a player is working toward.
+		var card_id: String = _dtl.companion_card_id_for(monster_type)
+		var owned: int = int(character_data.get("combat_deck_collection", {}).get(card_id, 0))
+		if owned > 0:
+			lines.append("  [color=#7CFF9B]Permanent — yours to keep.[/color]")
+		else:
+			var used: int = int(character_data.get("ability_uses", {}).get(card_id, 0))
+			var need: int = int(_dtl.companion_card_permanence_uses(Character.companion_card_type_from_id(card_id)))
+			if need > 0:
+				lines.append("  [color=#8A8A96]On loan while this companion is active — %d / %d casts to make it permanent.[/color]" % [used, need])
+
 
 	lines.append("")
 	lines.append("[color=#808080]── In-Combat Bonuses ──[/color]")

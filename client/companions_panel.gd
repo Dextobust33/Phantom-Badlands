@@ -560,7 +560,14 @@ func _rebuild_active_section() -> void:
 	var rarity_prefix = ""
 	if rarity_tag != "":
 		rarity_prefix = "[color=%s][%s][/color] " % [rarity_color, rarity_tag]
-	lines.append("[color=#00FFFF]Active:[/color] %s[color=%s]★ %s %s[/color] [color=#AAAAAA](Lv %d, %s[color=#AAAAAA])[/color]" % [rarity_prefix, variant_color, variant, name, level, PowerRank.tag(tier, sub_tier)])
+	# 2026-09-11 - `rich_label` (colour + the hover that explains the whole ladder) and the pip
+	# BAR, not the colour-only `tag`. Owner: *"all I see to signify Tier and rank is H1 and G1.
+	# What happened to the bars or ways to make it obvious which tiers and ranks are better?"*
+	# The colour alone was exactly what they said was not enough when the ladder was designed,
+	# and `pips()` existed the whole time and was not being used here.
+	lines.append("[color=#00FFFF]Active:[/color] %s[color=%s]★ %s %s[/color] [color=#AAAAAA](Lv %d)[/color]  %s [color=#5A5A66]%s[/color]" % [
+		rarity_prefix, variant_color, variant, name, level,
+		PowerRank.rich_label(tier, sub_tier), PowerRank.pips(tier)])
 
 	# XP bar
 	if level < 10000:
@@ -651,14 +658,19 @@ func _make_registered_card(rc: Dictionary) -> Control:
 	var partner = str(rc.get("hybrid_partner_type", ""))
 	if partner != "":
 		hybrid_marker = "  [color=#FF80FF][HYBRID×%s][/color]" % partner
+	# The pip BAR under the label, so a card says at a glance where it sits on the ladder
+	# without the player having to know the letters. Same reason as the active line above.
 	lbl.append_text(
-		"[b]%s[/b]%s%s\n[color=#888888]%s %s  Lv %d[/color]" % [
+		"[b]%s[/b]%s%s
+[color=#888888]%s %s  Lv %d[/color]
+[color=#5A5A66]%s[/color]" % [
 			name,
 			checkout_marker,
 			hybrid_marker,
 			variant_bb + monster_type,
 			PowerRank.tag(tier, sub_tier),
 			level,
+			PowerRank.pips(tier),
 		]
 	)
 	card.add_child(lbl)
@@ -751,7 +763,8 @@ func _make_companion_card(c: Dictionary, is_active: bool, index: int) -> PanelCo
 	var level = int(c.get("level", 1))
 	var tier = int(c.get("tier", 1))
 	var sub_tier = int(c.get("sub_tier", 1))
-	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s  [color=%s]%s[/color]" % [level, PowerRank.tag(tier, sub_tier), variant_color, variant]
+	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s [color=#5A5A66]%s[/color]  [color=%s]%s[/color]" % [
+		level, PowerRank.tag(tier, sub_tier), PowerRank.pips(tier), variant_color, variant]
 	vbox.add_child(meta)
 
 	var bonuses := RichTextLabel.new()

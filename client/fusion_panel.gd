@@ -761,7 +761,7 @@ func _make_hybrid_card(c: Dictionary, kennel_index: int) -> PanelContainer:
 	var tier = int(c.get("tier", 1))
 	var sub_tier = int(c.get("sub_tier", 1))
 	var monster_type = str(c.get("monster_type", "?"))
-	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s  [color=#AAAAAA]%s[/color]  [color=%s]%s[/color]" % [level, PowerRank.tag(tier, sub_tier), monster_type, variant_color, variant]
+	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s  [color=#AAAAAA]%s[/color]  [color=%s]%s[/color]" % [level, PowerRank.tag(tier, sub_tier) + " [color=#5A5A66]" + PowerRank.pips(tier) + "[/color]", monster_type, variant_color, variant]
 	vbox.add_child(meta)
 
 	var bonuses := RichTextLabel.new()

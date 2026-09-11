@@ -198,7 +198,7 @@ They need their own release.**
       of. The right assertion is "no player-facing string builds two numbers where a PowerRank
       label belongs".
 
-- [ ] **3. The companion INSPECT screen needs a real pass.** Owner: *"is this on the to do list for
+- [x] **3. DONE 2026-09-11 (local) — the companion INSPECT screen rebuilt.** Owner: *"is this on the to do list for
       us to update it? Is the info on it even still accurate? It doesn't even show a log of the
       companions stats. It should show their stats and each should be hoverable so players can see
       what they do. For example, What does Aggro do? What does spd do for a companion, etc. It
@@ -216,7 +216,7 @@ They need their own release.**
       `COMPANION_CARD_DATA`, giving name / kind / desc), which is absent entirely; and a
       multiplier breakdown read from the shared sources rather than copies.
 
-- [ ] **3b. The COMPANIONS SCREEN gets the same pass, and the MULTIPLIER must be simplified.**
+- [x] **3b. DONE 2026-09-11 (local) — companions screen + one Power number.**
       Owner, 2026-09-11: *"when we work the companions Inspect we also need to comb over the
       Companions Screen as well. The multiplier is confusing to the players in its current form so
       we need to simplify it or make it easier for them to understand what it is they are looking
@@ -235,13 +235,37 @@ They need their own release.**
       **And it must read from the shared sources** -- see item 3: the variant multiplier is
       currently wrong for 93% of variants precisely because this screen keeps its own copy.
 
-- [ ] **4. Tier/rank on the companion surfaces has no VISUAL ordering cue.** Owner: *"all I see to
+- [x] **4. DONE 2026-09-11 (local) — the bar is on every companion surface.** Owner: *"all I see to
       signify Tier and rank is H1 and G1. What happened to the bars or ways to make it obvious
       which tiers and ranks are better?"*
       The panels call `PowerRank.tag()`, which is colour-only. `rich_label()` (colour + the
       explaining hover) and `pips()` (the filled bar) both exist and are unused there -- colour
       alone is exactly what the owner said was not enough when the ladder was designed.
 
+      **What landed across 3 / 3b / 4, all in one pass:**
+      * **Accuracy.** `_get_variant_multiplier` was a hardcoded twelve-NAME list — the fourth
+        surviving consumer of the per-name table deleted on 2026-09-03. **111 of 119 variants
+        (93%) showed the wrong multiplier**; now zero, asserted over the whole variant table.
+        `_get_sub_tier_multiplier` reads `COMPANION_SUB_TIER_MULTIPLIERS` instead of repeating it.
+      * **ONE Power number.** variant x rank x border are combined into a single `Power x2.14`,
+        with the three-way breakdown in the hover. The two duplicate `(+N% stats)` suffixes are
+        off the name line, and the dead code behind them is gone.
+      * **Stats, each hoverable.** Health (through the SHARED
+        `Character.calculate_companion_max_hp`, not one of the client's old mirrors), Damage,
+        Aggro and Speed, every row built by `_companion_stat()` against one
+        `COMPANION_STAT_HELP` table so no stat can end up unexplained.
+      * **The combat card it grants** — absent entirely before — with its name, what it does, and
+        progress toward making it permanent, which is the thing a player is working for.
+      * **The ladder bar** (`PowerRank.pips`) on the inspect screen, the active companion line,
+        the kennel cards, the grid rows, the kennel panel and the fusion panel; the active line
+        and inspect header also carry `rich_label`, so the ladder explains itself on hover.
+      **A rendering bug found while verifying, which affected EVERY `rich_label` in the game:**
+      `PowerRank.hover()` marked the current tier as `[E]`, and `[url=VALUE]` ends at the first
+      `]` — so the whole ladder spilled into the visible line as plain text. The inspect header
+      read *"...any G beats every H.]G5  Level 12"*. Markers are now `>E<` and every hover goes
+      through a `_url_safe()` strip rather than relying on each string being written carefully.
+      Probe: `companion_inspect.gd`. Re-injection of three faults — the stale name table, the card
+      section removed, the bracket in the hover — fails 6 checks.
 - [x] **5. SOLVED 2026-09-11 (local) — 58 GHOST TRADING POSTS were projecting invisible safe
       zones.** Owner: *"I'm at coords -44, -34 and it is saying It's a Safe Zone in the top right
       of my screen but there is no post. I'm just standing on a road surrounded by a bunch of

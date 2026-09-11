@@ -89,12 +89,20 @@ static func tag(tier: int, rank: int) -> String:
 	return "[color=%s]%s[/color]" % [color(tier), label(tier, rank)]
 
 
+static func _url_safe(s: String) -> String:
+	"""BBCode `[url=VALUE]` ends at the first `]`, so a value containing one truncates the tag
+	and dumps the rest of the hover into the visible text. Every hover string this file produces
+	goes through here rather than relying on each of them being written carefully."""
+	return s.replace("[", "").replace("]", "")
+
+
 static func rich_label(tier: int, rank: int) -> String:
 	"""The label in its danger colour, wrapped in the hover that explains the ladder.
 
 	This is what callers should use. A bare `label()` tells a new player nothing about whether
 	E beats C, which is the owner's one condition on the whole change."""
-	return "[url=%s][color=%s]%s[/color][/url]" % [hover(tier, rank), color(tier), label(tier, rank)]
+	return "[url=%s][color=%s]%s[/color][/url]" % [
+		_url_safe(hover(tier, rank)), color(tier), label(tier, rank)]
 
 
 static func power_index(tier: int, rank: int) -> int:
@@ -121,7 +129,12 @@ static func hover(tier: int, rank: int) -> String:
 	for i in range(LADDER.size()):
 		if i > 0:
 			chain += " "
-		chain += ("[%s]" % LADDER[i]) if i == t - 1 else LADDER[i]
+		# NO SQUARE BRACKETS. This string is used as the VALUE of a `[url=...]` tag, and a `]`
+		# inside it terminates the tag early - the whole hover then spills into the visible
+		# line as plain text. Caught while rendering the companion inspect screen, where the
+		# header read "...any G beats every H.]G5  Level 12" with the ladder printed in front
+		# of the label it was supposed to explain. Angle brackets read as a marker and are safe.
+		chain += (">%s<" % LADDER[i]) if i == t - 1 else LADDER[i]
 	return "Tier %s, rank %d of %d — %s  (weakest → strongest)  %s  Higher rank is stronger within a tier; any %s beats every %s." % [
 		letter(t), r, RANKS, chain, pips(t), letter(t),
 		letter(maxi(1, t - 1)) if t > 1 else "lower tier"]
