@@ -231,6 +231,10 @@ func _render_page() -> void:
 			_add_button("Cartography -> 8 (anywhere sense)", "gm_cartography_8", Color(0.48, 0.88, 0.48))
 			_add_button("Cartography -> 1 (reset)", "gm_cartography_1", Color(0.7, 0.7, 0.7))
 			_add_separator()
+			_subtitle_subline("[color=#FF6666]DANGER.[/color] The map wipe. Accounts, characters, Sanctuary and VALOR all survive; the land, posts, dungeons, market and every built tile do not. Two presses: the first only tells you what it would destroy.")
+			_add_button("WORLD RESET - show me what it would destroy", "gm_world_reset", Color(1.0, 0.7, 0.3))
+			_add_button("...CONFIRM WORLD RESET (no undo)", "gm_world_reset_confirm", Color(1.0, 0.3, 0.3))
+			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"player":
 			_title_label.text = "ADMIN - PLAYER"

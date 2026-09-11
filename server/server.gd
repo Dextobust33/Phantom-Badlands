@@ -2271,6 +2271,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_test_stable(peer_id)
 		"gm_completequest":
 			handle_gm_completequest(peer_id, message)
+		"gm_world_reset":
+			handle_gm_world_reset(peer_id)
+		"gm_world_reset_confirm":
+			handle_gm_world_reset_confirm(peer_id)
 		"gm_resetquests":
 			handle_gm_resetquests(peer_id)
 		"gm_set_cartography":
@@ -39788,6 +39792,208 @@ func handle_gm_hire_test_guard(peer_id: int, _message: Dictionary):
 	var label = "tower-boosted " if hire.get("in_tower", false) else ""
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Hired %sguard at (%d, %d).[/color]" % [label, gx, gy]})
 	send_location_update(peer_id)
+
+# ===== WORLD RESET (map wipe) =====
+#
+# Owner 2026-09-11: "is it possible for us to do a map reset? ... I would like the map to reset
+# but NOT Accounts, character, or Valor." The capability was HALF built and never wired:
+# ChunkManager has `wipe_all_chunks()` ("Used for map wipe") and PersistenceManager has
+# `clear_all_market_data()` ("for wipes"), each with zero callers. This connects them and adds
+# what was missing - the new seed, the post regeneration, and putting the people who live there
+# somewhere that still exists.
+#
+# WHAT SURVIVES, including the one that is easy to get wrong:
+#   accounts.json  - logins, character slots, mastery, imprints
+#   characters/    - every character: level, gear, inventory, skills
+#   houses.json    - the Sanctuary, the kennel, AND VALOR. Valor is NOT in accounts.json;
+#                    `add_valor` writes it to the house. Anyone wiping "account extras" would
+#                    delete every player's Valor without noticing.
+#   clans, leaderboards
+#
+# WHAT RESETS: the world seed (so the land itself is new), every chunk delta, NPC/trading posts,
+# dungeon instances, depleted gathering nodes, player-built tiles, the market (owner: "Clear the
+# market too"), and the POSITION of every character and corpse.
+#
+# Two-step on purpose. The first call only REPORTS what it would destroy and arms a 60-second
+# window; nothing is touched until the confirm arrives. An irreversible action on live characters
+# should not be one mis-click.
+var _world_reset_armed_at: Dictionary = {}   # peer_id -> ticks_msec
+
+
+func handle_gm_world_reset(peer_id: int):
+	"""Step 1: report exactly what a reset would destroy, and arm the confirm."""
+	if not _is_admin(peer_id):
+		return
+	var chunk_files := 0
+	var d := DirAccess.open("user://data/world/")
+	if d:
+		d.list_dir_begin()
+		var f := d.get_next()
+		while f != "":
+			if f.begins_with("chunk_") and f.ends_with(".json"):
+				chunk_files += 1
+			f = d.get_next()
+		d.list_dir_end()
+	var char_count := 0
+	for acc_id in persistence.accounts_data.get("accounts", {}):
+		char_count += persistence.accounts_data["accounts"][acc_id].get("character_slots", []).size()
+	var corpse_count: int = persistence.corpses_data.get("corpses", []).size()
+	var listing_count: int = persistence.market_data.get("listings", {}).size()
+
+	_world_reset_armed_at[peer_id] = Time.get_ticks_msec()
+	var lines := [
+		"[color=#FF4444]===== WORLD RESET - NOTHING HAS HAPPENED YET =====[/color]",
+		"[color=#FFAA00]This will DESTROY:[/color]",
+		"  - the world seed: the land itself becomes a different continent",
+		"  - %d chunk files (every tree felled, vein mined, tile built)" % chunk_files,
+		"  - %d NPC/trading posts, regenerated in new places" % chunk_manager.npc_posts.size(),
+		"  - %d dungeon instances" % active_dungeons.size(),
+		"  - %d market listings" % listing_count,
+		"  - depleted gathering nodes, player-built tiles",
+		"[color=#00FF88]This will KEEP:[/color]",
+		"  - every account and all %d characters (level, gear, inventory)" % char_count,
+		"  - houses.json: Sanctuary, kennel, and VALOR",
+		"  - clans and leaderboards",
+		"[color=#FFAA00]And will MOVE:[/color]",
+		"  - all %d characters to the Crossroads (0,0)" % char_count,
+		"  - %d corpses to the nearest standable tile in the NEW world" % corpse_count,
+		"",
+		"[color=#FF4444]Press CONFIRM within 60 seconds. There is no undo.[/color]",
+	]
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+
+func handle_gm_world_reset_confirm(peer_id: int):
+	"""Step 2: actually do it."""
+	if not _is_admin(peer_id):
+		return
+	var armed: int = int(_world_reset_armed_at.get(peer_id, 0))
+	if armed <= 0 or Time.get_ticks_msec() - armed > 60000:
+		send_to_peer(peer_id, {"type": "error",
+			"message": "World reset is not armed (or the 60s window expired). Press RESET first."})
+		return
+	_world_reset_armed_at.erase(peer_id)
+	var report: Array = _do_world_reset()
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(report)})
+
+
+func _do_world_reset() -> Array:
+	"""The reset itself, ordered so no step reads state a later one invalidates."""
+	var out: Array = ["[color=#FF4444]===== WORLD RESET =====[/color]"]
+
+	# 1. Get everyone OUT of the old world first, while the old instances still exist.
+	for pid in characters.keys():
+		var ch = characters[pid]
+		if ch.in_dungeon:
+			ch.exit_dungeon()
+		ch.x = 0
+		ch.y = 0
+
+	# 2. Dungeons, in memory AND on disk. The file is reloaded at boot, so clearing the
+	#    dictionaries alone would resurrect every instance on the next restart.
+	var dungeon_n: int = active_dungeons.size()
+	active_dungeons.clear()
+	dungeon_floors.clear()
+	dungeon_floor_rooms.clear()
+	dungeon_monsters.clear()
+	dungeon_floor_items.clear()
+	dungeon_npcs.clear()
+	dungeon_traps.clear()
+	player_dungeon_instances.clear()
+	if FileAccess.file_exists(DUNGEON_STATE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(DUNGEON_STATE_PATH))
+	out.append("  cleared %d dungeon instances" % dungeon_n)
+
+	# 3. Chunk deltas + depleted nodes - the pre-built wipe, finally called.
+	chunk_manager.wipe_all_chunks()
+	out.append("  wiped every chunk delta and all depleted gathering nodes")
+
+	# 4. A NEW SEED. This is what makes it a different world rather than a tidied one.
+	var new_seed: int = absi(int(Time.get_unix_time_from_system()) ^ (randi() << 8))
+	chunk_manager.world_seed = new_seed
+	chunk_manager.save_world_seed()
+	# NOTE: world_system has no seed member of its own - generate_tile(x, y, seed) takes it as
+	# an argument, and chunk_manager is the single owner. Setting one here would have created a
+	# stray property that nothing reads and that could drift from the real seed.
+	out.append("  new world seed: %d" % new_seed)
+
+	# 5. Posts regenerated from the new seed. `_create_starter_post` pins Crossroads to (0,0)
+	#    for ANY seed, and `generate_tile` keeps a radius-5 safe zone at the origin - which is
+	#    why (0,0) is a guaranteed-standable destination and not a hopeful one.
+	var posts: Array = NpcPostDatabaseScript.generate_posts(new_seed)
+	chunk_manager.npc_posts = posts
+	chunk_manager.save_npc_posts(posts)
+	out.append("  regenerated %d posts (Crossroads stays at 0,0)" % posts.size())
+
+	# 6. Player-built tiles and the market.
+	persistence.player_tiles_data = {"tiles": {}}
+	persistence.save_player_tiles()
+	persistence.clear_all_market_data()
+	out.append("  cleared player-built tiles and every market listing")
+
+	# 7. EVERY character on disk, not just those online. A character logging in tomorrow holds
+	#    coordinates for terrain that no longer exists.
+	var moved := 0
+	for acc_id in persistence.accounts_data.get("accounts", {}):
+		for cname in persistence.accounts_data["accounts"][acc_id].get("character_slots", []):
+			var ch2: Character = persistence.load_character_as_object(acc_id, String(cname))
+			if ch2 == null:
+				continue
+			ch2.x = 0
+			ch2.y = 0
+			if ch2.in_dungeon:
+				ch2.exit_dungeon()
+			persistence.save_character(acc_id, ch2)
+			moved += 1
+	out.append("  moved %d characters to the Crossroads" % moved)
+
+	# 8. Corpses stay where they died, as close as the new land allows. Owner: "Reposition
+	#    corpse relatively close to where they currently are." They hold real loot, so deleting
+	#    them destroys player property - but the ground under them is new terrain now and may
+	#    well be ocean.
+	var corpses: Array = persistence.corpses_data.get("corpses", [])
+	var nudged := 0
+	for c in corpses:
+		if not (c is Dictionary):
+			continue
+		var from_pos := Vector2i(int(c.get("x", 0)), int(c.get("y", 0)))
+		var to_pos := _nearest_standable(from_pos, new_seed)
+		if to_pos != from_pos:
+			nudged += 1
+		c["x"] = to_pos.x
+		c["y"] = to_pos.y
+	persistence.corpses_data["corpses"] = corpses
+	persistence.save_corpses()
+	out.append("  kept %d corpses, moved %d onto standable ground" % [corpses.size(), nudged])
+
+	out.append("[color=#FFAA00]Restart the server so every client re-streams the new world.[/color]")
+	for l in out:
+		log_message("[WORLDRESET] " + str(l))
+	return out
+
+
+func _nearest_standable(from_pos: Vector2i, seed_val: int, max_radius: int = 60) -> Vector2i:
+	"""The closest tile to `from_pos` a player could stand on, in the world `seed_val` describes.
+
+	Searched in expanding RINGS so the answer is the nearest one rather than merely a valid one -
+	the whole point is that a corpse stays findable near where its owner actually died.
+
+	Reads the procedural generator directly rather than `chunk_manager.get_tile`, because the
+	deltas have just been wiped and the generator IS the new world."""
+	var t: Dictionary = world_system.generate_tile(from_pos.x, from_pos.y, seed_val)
+	if not bool(t.get("blocks_move", false)):
+		return from_pos
+	for r in range(1, max_radius + 1):
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				if absi(dx) != r and absi(dy) != r:
+					continue    # ring edge only
+				var c := Vector2i(from_pos.x + dx, from_pos.y + dy)
+				var ct: Dictionary = world_system.generate_tile(c.x, c.y, seed_val)
+				if not bool(ct.get("blocks_move", false)):
+					return c
+	return Vector2i(0, 0)   # nothing within 60 tiles; the Crossroads is always standable
+
 
 func handle_gm_settler_diag(peer_id: int):
 	"""Admin: dump settler bubble math at the player's current position so

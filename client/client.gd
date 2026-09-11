@@ -35851,6 +35851,13 @@ func _on_admin_panel_action(action_id: String) -> void:
 	gm_* server message or a small client-side helper. All server-side
 	commands are gated by _is_admin() server-side."""
 	match action_id:
+		# The map wipe. Two separate actions on purpose: the first only asks the server what it
+		# WOULD destroy, the second does it. Neither is a toggle and neither is undoable, so
+		# they are never collapsed into one button.
+		"gm_world_reset":
+			send_to_server({"type": "gm_world_reset"})
+		"gm_world_reset_confirm":
+			send_to_server({"type": "gm_world_reset_confirm"})
 		# Loot Lab (dev testing for Prize Shuffle rares + tool affixes)
 		"gm_loot_force":
 			send_to_server({"type": "gm_loot_force"})
