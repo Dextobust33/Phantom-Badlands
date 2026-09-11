@@ -572,7 +572,7 @@ func _make_mixed_card(c: Dictionary, kennel_index: int) -> PanelContainer:
 	meta.add_theme_font_size_override("normal_font_size", 12)
 	var level = int(c.get("level", 1))
 	var tier = int(c.get("tier", 1))
-	meta.text = "[color=#AAAAAA]Lv %d  T%d-8[/color]  [color=%s]%s[/color]" % [level, tier, variant_color, variant]
+	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s  [color=%s]%s[/color]" % [level, PowerRank.tag(tier, 8), variant_color, variant]
 	vbox.add_child(meta)
 
 	var bonuses := RichTextLabel.new()

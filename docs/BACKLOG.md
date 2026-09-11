@@ -229,22 +229,31 @@ They need their own release.**
       IGNORE control -- across nine client files, and asserts every rollable empowered modifier
       has hover text. Re-injection names the offending file and line.
 
-- [ ] **2. THE TIER SWEEP WAS INCOMPLETE, AND MY PROBE PASSED ANYWAY.** Owner: *"If I right click
-      and Inspect my companions I still see Tier 2-1. When I said we needed to update this in all
-      surfaces that's what I meant, not just some."* And: *"Stepping on a dungeon it shows
-      Forgotten Crypt [H7] then under that it shows Tier 1-7 Dungeon."*
-      **Cause, and it is my error rather than a missed file:** the sweep searched for the literal
-      `T%d-%d`. It never saw `T%d.%d` (the DOT form -- all three stable panels, 8 sites) or
-      `Tier %d-%d` (8 more in client.gd, including the companion inspect header and the dungeon
-      entrance line). The probe asserted "no surface still says `T%d-%d`" and passed, because that
-      was true and irrelevant. **An audit written around the wrong unit**, which CLAUDE.md already
-      records, hit from a new angle.
-      **Status: 15 of 16 converted locally, unreleased.** The inspect header is left for item 3,
-      which rewrites that whole screen.
-      **Rebuild the probe to catch ANY tier-rank pair**, not a list of formats I happened to think
-      of. The right assertion is "no player-facing string builds two numbers where a PowerRank
-      label belongs".
+- [x] **2. DONE 2026-09-11 — and the sweep failed THREE times before the right instrument existed.**
+      Owner: *"If I right click and Inspect my companions I still see Tier 2-1... that's what I
+      meant, not just some."* And: *"Stepping on a dungeon it shows Forgotten Crypt [H7] then under
+      that it shows Tier 1-7 Dungeon."*
 
+      | attempt | searched for | missed |
+      |---|---|---|
+      | 1st | `T%d-%d` | `T%d.%d` (all 3 stable panels) and `Tier %d-%d` (16 sites) |
+      | 2nd | those two as well | bare `T%d` (8 sites incl. the Dungeon Atlas and the region line) |
+      | 3rd | those as well | `quest_database`'s tier names, `T%d-8`, market rows, threat lines |
+
+      **Each time the probe passed, because what it asserted was true and irrelevant.** That is
+      CLAUDE.md's "audit written around the wrong UNIT" reached from three different angles in one
+      day, and it is worth the space: I kept enumerating FORMATS when the thing to enumerate was
+      SURFACES.
+      **`tools/probe/tier_notation_sweep.gd` is the fix.** It does not look for spellings. It walks
+      every player-facing line that FORMATS a tier-labelled specifier and demands the value go
+      through a ladder helper, or that the text name a ladder which has no letters (gear / node /
+      material / tool / mastery / chain). A surface written tomorrow is caught whatever format
+      string its author invents. GM and debug lines are excused deliberately and the reason is
+      stated in the file: an admin tool exists to read the DATA back, so the raw number that
+      matches `post.tier` is the useful thing there.
+      It found, and this pass fixed, roughly **40 more sites** across client, server, quest
+      database, market panel and fusion panel — the Dungeon Atlas, the region line, the spawn
+      picker, quest tier names, threat warnings, egg labels, fusion results, companion rows.
 - [x] **3. DONE 2026-09-11 (local) — the companion INSPECT screen rebuilt.** Owner: *"is this on the to do list for
       us to update it? Is the info on it even still accurate? It doesn't even show a log of the
       companions stats. It should show their stats and each should be hoverable so players can see
@@ -341,37 +350,10 @@ They need their own release.**
       blend (no — running the real function against the live post file returned level **11**).
       Only stubbing the legacy table into the repro found it, because that was the one input I
       had not reproduced.
-- [ ] **6. Decide whether a road should read as "Safe Zone" at all.** Falls out of 5: the owner was
-      on open road, and roads now cross water since the post/water gate was removed. Whatever the
-      level math says, "Safe Zone" far from any post is wrong to a player -- the flag means "no
-      monsters spawn here", which is not how it reads.
-
-## v0.9.770 SHIPPED (2026-09-11) — 30 commits, server deployed, 7 assets live
-
-The card-upgrade arc plus the tier/rank vocabulary. Released as documented: version bumped and
-pushed, editor recompile forced BEFORE export (the step that shipped stale code in v0.9.657-660),
-`VERSION.txt` copied into the build dir before gating (the sidecar that failed v0.9.760), release
-gate green on all eight checks including 930 dungeon-art lookups, Linux pair built, 60-second
-in-game countdown sent, server binary staged as `.new` and swapped inside the window.
-
-**Verified by the RUNNING process, not the file on disk**: `sha256 07a9b46d…` on `/proc/<pid>/exe`
-matches the local build. The new process then wrote a fresh account backup at 16:26:19 UTC, after
-its own 16:25:11 start, so it is doing real work rather than merely listening.
-
-All seven assets uploaded and both launcher URLs plus the delta manifest answer 200.
-
-**Operational note worth keeping:** the server's stdout is BLOCK-BUFFERED under systemd, so it logs
-in bursts and can go silent for hours while perfectly healthy — the previous process logged 03:00
-to 05:16, then nothing until its shutdown flush at 16:24. I briefly misread that as the shutdown
-countdown having failed. It had not: the journal showed `Server shutting down...` exactly ONCE
-(the v0.9.763 re-entrancy fix holding, against 61 copies before it) and one clean scheduled
-restart. **Judge a deploy by the process hash and by file activity, not by recent log lines.**
-`HP_TRACE_ENABLED` is on for this release, which will flush the buffer far more often once anyone
-fights — so live diagnosis is easier than usual right now, and that is the window to catch the
-666/750 monster-health report if it recurs.
-
-## Phase 1 — confirm the two releases landed (do first, cheap)
-
+- [x] **6. ANSWERED by the owner and by the fix. "Safe zones should be within posts normally."**
+      The ghost-post removal (item 5) achieves exactly that: those 194 tiles now report their real
+      danger level, and safety comes only from genuinely stamped post tiles. No reword needed —
+      the flag was not lying about the rule, it was being fed a lie by 58 posts that do not exist.
 - [x] **Shutdown handler fired every frame until the process exited — FIXED 2026-09-09.**
       `_execute_pending_shutdown` awaits a second (so the goodbye broadcast lands before sockets
       close), and `_process` keeps running across an await with `pending_update_active` still true

@@ -747,7 +747,7 @@ func populate_inspect(listing: Dictionary, valor: int) -> void:
 		meta_lines.append("[color=#87CEEB]Egg:[/color] %s (%s)" % [variant, PowerRank.tag(tier, sub)])
 	if item.get("type", "") == "card":
 		# #39 — earned combat card listing.
-		meta_lines.append("[color=#FFB347]Combat Card:[/color] T%d — a card you equip in your deck" % int(item.get("tier", 1)))
+		meta_lines.append("[color=#FFB347]Combat Card:[/color] %s — a card you equip in your deck" % PowerRank.letter(int(item.get("tier", 1))))
 	if qty > 1:
 		meta_lines.append("[color=#87CEEB]Quantity:[/color] %d" % qty)
 	meta_lines.append("[color=#87CEEB]Seller:[/color] %s" % seller)
@@ -1255,7 +1255,7 @@ func _build_card_rows() -> void:
 		var ctier := int(entry.get("tier", 1))
 		var ccount := int(entry.get("count", 1))
 		var is_buff := String(entry.get("category", "offense")) == "buff"
-		btn.text = "%s  (T%d)  ×%d owned" % [cname, ctier, ccount]
+		btn.text = "%s  (%s)  ×%d owned" % [cname, PowerRank.letter(ctier), ccount]
 		btn.add_theme_color_override("font_color", Color.from_string("#66D0C0" if is_buff else "#FFB347", Color.WHITE))
 		var captured_id := String(entry.get("card_id", ""))
 		var captured_name := cname
@@ -1337,7 +1337,7 @@ func _build_material_rows() -> void:
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.custom_minimum_size = Vector2(0, 28)
 		btn.add_theme_font_size_override("font_size", 14)
-		btn.text = "%s  (T%d, %s)  x%d" % [e.display, e.tier, e.type, e.qty]
+		btn.text = "%s  (%s, %s)  x%d" % [e.display, PowerRank.letter(int(e.tier)), e.type, e.qty]
 		var captured_name: String = e.name
 		var captured_qty: int = e.qty
 		var captured_display: String = e.display
@@ -1888,7 +1888,7 @@ func populate_order_picker(category: String, items: Array, valor: int) -> void:
 		btn.custom_minimum_size = Vector2(0, 26)
 		var label_text = name_str
 		if category == "material" and entry.has("tier"):
-			label_text += "  [T%d, value %d]" % [int(entry.get("tier", 1)), int(entry.get("value", 5))]
+			label_text += "  [%s, value %d]" % [PowerRank.letter(int(entry.get("tier", 1))), int(entry.get("value", 5))]
 		btn.text = label_text
 		btn.pressed.connect(_on_picker_item_pressed.bind(category, name_str))
 		_create_picker_vbox.add_child(btn)

@@ -2047,16 +2047,16 @@ static func _get_distance_text(from: Vector2i, to: Vector2i) -> String:
 static func _get_tier_name(tier: int) -> String:
 	"""Human-readable tier name for quest descriptions."""
 	match tier:
-		1: return "Tier 1 (Goblin/Rat)"
-		2: return "Tier 2 (Orc/Spider)"
-		3: return "Tier 3 (Troll/Wyvern)"
-		4: return "Tier 4 (Giant/Demon)"
-		5: return "Tier 5 (Dragon/Lich)"
-		6: return "Tier 6 (Golem/Hydra)"
-		7: return "Tier 7 (Void Walker)"
-		8: return "Tier 8 (Cosmic Horror)"
-		9: return "Tier 9 (Avatar)"
-	return "Tier %d" % tier
+		1: return "Tier %s (Goblin/Rat)" % PowerRank.letter(1)
+		2: return "Tier %s (Orc/Spider)" % PowerRank.letter(2)
+		3: return "Tier %s (Troll/Wyvern)" % PowerRank.letter(3)
+		4: return "Tier %s (Giant/Demon)" % PowerRank.letter(4)
+		5: return "Tier %s (Dragon/Lich)" % PowerRank.letter(5)
+		6: return "Tier %s (Golem/Hydra)" % PowerRank.letter(6)
+		7: return "Tier %s (Void Walker)" % PowerRank.letter(7)
+		8: return "Tier %s (Cosmic Horror)" % PowerRank.letter(8)
+		9: return "Tier %s (Avatar)" % PowerRank.letter(9)
+	return "Tier %s" % PowerRank.letter(tier)
 
 # Trading post locations for distance calculations
 const TRADING_POST_COORDS = {

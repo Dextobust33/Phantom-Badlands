@@ -6343,11 +6343,11 @@ func _populate_spawn_picker() -> void:
 	spawn_option.add_item("Origin (Crossroads — default)")
 	spawn_option.set_item_metadata(0, {})
 	for post in available_spawn_posts:
-		var label = "%s — (%d, %d)  T%d" % [
+		var label = "%s — (%d, %d)  %s" % [
 			String(post.get("name", "Post")),
 			int(post.get("x", 0)),
 			int(post.get("y", 0)),
-			int(post.get("effective_tier", post.get("tier", 1))),
+			String(load("res://shared/trading_post_database.gd").POST_TIER_NAMES.get(int(post.get("effective_tier", post.get("tier", 1))), "?")),
 		]
 		spawn_option.add_item(label)
 		spawn_option.set_item_metadata(spawn_option.item_count - 1, post)
@@ -17295,7 +17295,7 @@ func format_item_tooltip_bbcode(item: Dictionary) -> String:
 			dur_color = "#FF4444"
 		var subtype: String = item.get("subtype", "tool")
 		lines.append("")
-		lines.append("[color=#9ACD32]%s • Tier %d[/color]" % [subtype.capitalize(), int(item.get("tier", 1))])
+		lines.append("[color=#9ACD32]%s • tool tier %d[/color]" % [subtype.capitalize(), int(item.get("tier", 1))])
 		lines.append("[color=%s]Durability: %d/%d[/color]" % [dur_color, dur, maxd])
 		var bonuses = item.get("tool_bonuses", {})
 		var reveals: int = int(bonuses.get("reveals", 1 if bonuses.get("reveal", false) else 0))
@@ -19565,7 +19565,7 @@ func display_materials():
 			display_game("[color=%s]%s:[/color]" % [info.color, info.name])
 			for mat in grouped[mat_type]:
 				var qty_color = "#FF4444" if mat.quantity >= 999 else "#AAAAAA"
-				display_game("  [color=#AAAAAA]T%d[/color] %s [color=%s]x%d/999[/color]" % [mat.tier, mat.name, qty_color, mat.quantity])
+				display_game("  [color=#AAAAAA]material tier %d[/color] %s [color=%s]x%d/999[/color]" % [mat.tier, mat.name, qty_color, mat.quantity])
 			display_game("")
 
 	# Show any ungrouped materials
@@ -19574,7 +19574,7 @@ func display_materials():
 			display_game("[color=#FFFFFF]%s:[/color]" % mat_type.capitalize())
 			for mat in grouped[mat_type]:
 				var qty_color = "#FF4444" if mat.quantity >= 999 else "#AAAAAA"
-				display_game("  [color=#AAAAAA]T%d[/color] %s [color=%s]x%d/999[/color]" % [mat.tier, mat.name, qty_color, mat.quantity])
+				display_game("  [color=#AAAAAA]material tier %d[/color] %s [color=%s]x%d/999[/color]" % [mat.tier, mat.name, qty_color, mat.quantity])
 			display_game("")
 
 func _guess_material_type(mat_id: String) -> String:
@@ -20659,7 +20659,7 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	lines.append("")
 	# #40 — surface the card's explicit TIER number alongside its mastery Rank (the card
 	# face shows rank pips + fill; players asked to also read the tier as a number).
-	lines.append("[color=#C8A24A]Tier %d[/color] · Rank %d — %s" % [Character.tier_for_uses(uses), rank, rank_name])
+	lines.append("[color=#C8A24A]mastery tier %d[/color] · Rank %d — %s" % [Character.tier_for_uses(uses), rank, rank_name])
 	lines.append("Damage modifier: %s" % mult_str)
 	lines.append(progress)
 	if next_preview != "":
@@ -24971,7 +24971,7 @@ func handle_server_message(message: Dictionary):
 						"power": ra_line = "Power — effect now ×%.2f" % float(message.get("effect_mult", 1.0))
 						"rider": ra_line = "Rider — Bleed level %d" % int(message.get("rider_level", 0))
 						"efficiency": ra_line = "Efficiency — cost now ×%.2f" % float(message.get("cost_mult", 1.0))
-					display_game("[color=#9ACD32]%s milestone (Tier %d): %s.[/color]" % [ra_label, ra_tier, ra_line])
+					display_game("[color=#9ACD32]%s milestone (mastery tier %d): %s.[/color]" % [ra_label, ra_tier, ra_line])
 				elif ra_choice == "variant":
 					# Slice 6f (v0.9.549) — variant imprint applied to account.
 					var v_name = str(message.get("variant_trait_name", "Imprint"))
@@ -32909,7 +32909,10 @@ func update_region_label():
 	# Slice 6k — Region line now shows the authored region name (e.g.,
 	# "Greenmeadow Reach") instead of the generic tier name. Tier color +
 	# number stay so the tier identity is still legible at a glance.
-	var region_line = "[color=#9ACD32]Region:[/color] [color=%s]T%d %s[/color]" % [hud_region_tier_color, hud_region_tier, hud_region_name]
+	# POST tier, not the monster ladder - `region_tier` comes from get_nearest_npc_post_with_tier.
+	# Posts have had names since POST_TIER_NAMES shipped; "T5" was the number beside them.
+	var _rtn: String = String(load("res://shared/trading_post_database.gd").POST_TIER_NAMES.get(hud_region_tier, ""))
+	var region_line = "[color=#9ACD32]Region:[/color] [color=%s]%s · %s[/color]" % [hud_region_tier_color, _rtn if _rtn != "" else ("T%d" % hud_region_tier), hud_region_name]
 
 	# Slice 6a — biome line (perpendicular axis to tier; same biome can span
 	# T1 → T6). Hidden when the server hasn't sent biome info (e.g., older
@@ -35913,17 +35916,17 @@ func display_dungeon_atlas(message: Dictionary) -> void:
 		if st >= 3:  # discovered — full detail (name is click-to-locate)
 			shown += 1
 			var comp := String(e.get("companion", ""))
-			display_game("[color=%s]◆ %s[/color] [color=#808080](T%d · Lv %d-%d · %d clears)[/color]  [url=atlas_locate:%s][color=#5AC8FF][b][‹ Locate ›][/b][/color][/url]" % [tcol, String(e.get("name", "?")), tier, int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), String(e.get("id", ""))])
+			display_game("[color=%s]◆ %s[/color] [color=#808080](%s · Lv %d-%d · %d clears)[/color]  [url=atlas_locate:%s][color=#5AC8FF][b][‹ Locate ›][/b][/color][/url]" % [tcol, String(e.get("name", "?")), PowerRank.letter(tier), int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), String(e.get("id", ""))])
 			var monsters: Array = e.get("monsters", [])
 			if monsters.size() > 0:
 				display_game("   [color=#909090]Monsters:[/color] %s" % ", ".join(monsters))
 			display_game("   [color=#909090]Boss:[/color] %s   [color=#A335EE]Companion egg:[/color] %s" % [String(e.get("boss", "?")), (comp if comp != "" else "—")])
 		elif st == 2:  # spotted
 			shown += 1
-			display_game("[color=%s]◇ %s[/color] [color=#808080](T%d · seen near %d,%d — not yet explored)[/color]" % [tcol, String(e.get("name", "?")), tier, int(e.get("x", 0)), int(e.get("y", 0))])
+			display_game("[color=%s]◇ %s[/color] [color=#808080](%s · seen near %d,%d — not yet explored)[/color]" % [tcol, String(e.get("name", "?")), tier, int(e.get("x", 0)), int(e.get("y", 0))])
 		elif st == 1:  # rumored
 			shown += 1
-			display_game("[color=#808080]? [i]??? — a Tier %d dungeon, whispered of nearby[/i][/color]" % tier)
+			display_game("[color=#808080]? [i]??? — a Tier %s dungeon, whispered of nearby[/i][/color]" % PowerRank.letter(tier))
 		else:
 			unknown += 1
 	if shown == 0:
@@ -41202,7 +41205,7 @@ func display_gathering_round():
 	"""Display the 3-choice gathering interface with per-type unique mechanics."""
 	game_output.clear()
 	var job_label = gathering_job_type.capitalize()
-	var tier_label = "T%d" % gathering_tier
+	var tier_label = "node tier %d" % gathering_tier
 	var color = _get_gathering_color(gathering_job_type)
 
 	display_game("[color=%s]═══════ %s (%s) ═══════[/color]" % [color, job_label, tier_label])
@@ -42351,7 +42354,7 @@ func display_craft_recipe_details():
 			var tier_group = parts[1] if parts.size() > 1 else "minor"
 			var display = CraftingDatabase.PART_GROUP_DISPLAY.get(stat_group, stat_group)
 			var tier_range = CraftingDatabase.RUNE_TIER_RANGES.get(tier_group, [1, 9])
-			var tier_label = "T%d-T%d" % [tier_range[0], tier_range[1]]
+			var tier_label = "node tier %d-%d" % [tier_range[0], tier_range[1]]
 			var mat_name = "%s (%s)" % [display, tier_label]
 			var color = "#00FF00" if owned >= required else "#FF4444"
 			display_game("  [color=%s]%s: %d/%d[/color]" % [color, mat_name, owned, required])
@@ -42473,7 +42476,7 @@ func _get_group_material_label(group_key: String) -> String:
 	var tier_group = parts[1] if parts.size() > 1 else "minor"
 	var display = CraftingDatabase.PART_GROUP_DISPLAY.get(stat_group, stat_group)
 	var tier_range = CraftingDatabase.RUNE_TIER_RANGES.get(tier_group, [1, 9])
-	return "%s (T%d-T%d)" % [display, tier_range[0], tier_range[1]]
+	return "%s (node tier %d-%d)" % [display, tier_range[0], tier_range[1]]
 
 func _get_simple_material_name(mat_id: String) -> String:
 	return CraftingDatabase.get_material_name(mat_id)
@@ -44175,7 +44178,7 @@ func handle_dungeon_list(message: Dictionary):
 		if int(sub_tier) > 0:
 			display_game("    %s | Levels %d-%d | Distance: %d tiles" % [PowerRank.rich_label(tier, sub_tier), min_level, max_level, distance])
 		else:
-			display_game("    Tier %d | Levels %d-%d | Distance: %d tiles" % [tier, min_level, max_level, distance])
+			display_game("    Tier %s | Levels %d-%d | Distance: %d tiles" % [PowerRank.letter(tier), min_level, max_level, distance])
 		display_game("")
 		idx += 1
 
@@ -44733,7 +44736,7 @@ func handle_egg_hatched(message: Dictionary):
 	display_game("Your egg has hatched into:")
 	display_game("")
 	display_game("  [color=%s]%s %s[/color]" % [variant_color, variant, companion_name])
-	display_game("  [color=#AAAAAA]Tier %d Companion[/color]" % tier)
+	display_game("  [color=#AAAAAA]Tier %s Companion[/color]" % PowerRank.letter(tier))
 	display_game("")
 
 	# Show companion bonuses
@@ -45082,7 +45085,7 @@ func display_dungeon_food_select():
 			"herb": type_color = "#44FF44"
 			"fungus": type_color = "#CC88FF"
 			"plant": type_color = "#88CC44"
-		display_game("  [color=#FFD700][%d][/color] %s x%d [color=%s][%s T%d][/color]" % [num, food.name, food.quantity, type_color, food.type.capitalize(), food.tier])
+		display_game("  [color=#FFD700][%d][/color] %s x%d [color=%s][%s material tier %d][/color]" % [num, food.name, food.quantity, type_color, food.type.capitalize(), food.tier])
 	display_game("")
 	if total_pages > 1:
 		display_game("[color=#808080]Page %d/%d[/color]" % [dungeon_food_page + 1, total_pages])
@@ -46230,7 +46233,7 @@ func _display_dungeon_entrance_info():
 	if int(sub_tier) > 0:
 		display_game("%s Dungeon | Levels %d-%d" % [PowerRank.rich_label(tier, sub_tier), min_level, max_level])
 	else:
-		display_game("Tier %d Dungeon | Levels %d-%d [color=#808080](exact depth is set when you enter)[/color]" % [tier, min_level, max_level])
+		display_game("Tier %s Dungeon | Levels %d-%d [color=#808080](exact depth is set when you enter)[/color]" % [PowerRank.letter(tier), min_level, max_level])
 
 	# Show level requirement warning if player is too low
 	if player_level < min_level:
@@ -46262,7 +46265,7 @@ func enter_dungeon_at_location():
 	if int(entry_sub_tier) > 0:
 		display_game("%s Dungeon" % PowerRank.rich_label(int(dungeon_entrance_info.get("tier", 1)), entry_sub_tier))
 	else:
-		display_game("Tier %d Dungeon" % dungeon_entrance_info.get("tier", 1))
+		display_game("Tier %s Dungeon" % PowerRank.letter(int(dungeon_entrance_info.get("tier", 1))))
 	display_game("Level Range: %d - %d" % [min_level, dungeon_entrance_info.get("max_level", 100)])
 	display_game("")
 	display_game("[color=#FFFF00]Entering dungeon...[/color]")
@@ -46335,7 +46338,7 @@ func _display_trading_post_ui():
 		if t_severe:
 			display_game("[color=#FF2020]⚠⚠ SEVERELY THREATENED — %d active dungeons in the corridor[/color]" % t_count)
 		else:
-			display_game("[color=#FFAA00]⚠ Under Threat — %s (T%d) looms %d tiles %s.[/color]" % [t_name, t_tier, t_dist, t_dir])
+			display_game("[color=#FFAA00]⚠ Under Threat — %s (%s) looms %d tiles %s.[/color]" % [t_name, t_tier, t_dist, t_dir])
 		display_game("[color=#888888]Threatened posts charge higher markups + ⚠ THREAT BOUNTY quests appear on the board. Clear the dungeon to restore the post.[/color]")
 	display_game("")
 	display_game("[color=#808080]Walk into tiles to interact:[/color]")
@@ -46356,7 +46359,7 @@ func _display_trading_post_ui():
 			var r_color = String(rumor.get("color", "#88FF88"))
 			var r_tier = int(rumor.get("tier", 1))
 			var r_dir = String(rumor.get("direction_text", "somewhere"))
-			display_game("  [color=#808080]\"They say[/color] [color=%s]%s[/color] [color=#808080](T%d) lies %s.\"[/color]" % [r_color, r_name, r_tier, r_dir])
+			display_game("  [color=#808080]\"They say[/color] [color=%s]%s[/color] [color=#808080](%s) lies %s.\"[/color]" % [r_color, r_name, r_tier, r_dir])
 
 	display_game("")
 	display_game("[color=#808080]Walk outside to leave.[/color]")
@@ -49652,7 +49655,7 @@ func display_house_companions():
 
 			# Show battles fought
 			var battles = companion.get("battles_fought", 0)
-			display_game("    [color=#808080]Tier %d | %d battles fought[/color]" % [comp_tier, battles])
+			display_game("    [color=#808080]Tier %s | %d battles fought[/color]" % [PowerRank.letter(comp_tier), battles])
 
 	display_game("")
 	display_game("[color=#808080]Registered companions survive permadeath![/color]")
@@ -49731,7 +49734,7 @@ func display_house_kennel():
 			elif pending_house_action == "register_select" and house_kennel_register_index == i:
 				marker = " [color=#00FF00]<< REGISTER[/color]"
 
-			display_game("[%d] %s%s Lv.%d T%d%s%s" % [display_idx, variant_tag, name, level, tier, sub_tier_tag, marker])
+			display_game("[%d] %s%s Lv.%d %s%s%s" % [display_idx, variant_tag, name, level, PowerRank.letter(tier), sub_tier_tag, marker])
 			# Show compact bonuses for fusion decision-making
 			var k_bonuses = comp.get("bonuses", {})
 			var k_variant_mult = _get_variant_multiplier(variant)
@@ -49833,7 +49836,7 @@ func display_house_fusion():
 				var variant_tag = ""
 				if variant != "" and variant != "Normal":
 					variant_tag = "[color=%s][%s][/color] " % [variant_color, variant]
-				display_game("[%d] %s%s Lv.%d T%d-8%s" % [display_idx, variant_tag, comp.get("name", "?"), comp.get("level", 1), comp.get("tier", 1), marker])
+				display_game("[%d] %s%s Lv.%d %s%s" % [display_idx, variant_tag, comp.get("name", "?"), comp.get("level", 1), PowerRank.label(int(comp.get("tier", 1)), 8), marker])
 
 	display_game("")
 	display_game("[color=#FFD700]═════════════════════════════════[/color]")

@@ -10868,7 +10868,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				var frozen_tag = " [FROZEN]" if egg.get("frozen", false) else ""
 				options.append({
 					"index": i,
-					"label": "%s (Tier %d) - %d/%d steps%s" % [egg.get("monster_type", "Unknown") + " Egg", egg.get("tier", 1), steps_done, steps_total, frozen_tag]
+					"label": "%s (Tier %s) - %d/%d steps%s" % [egg.get("monster_type", "Unknown") + " Egg", PowerRank.letter(int(egg.get("tier", 1))), steps_done, steps_total, frozen_tag]
 				})
 			character.set_meta("pending_home_stone_index", index)
 			send_to_peer(peer_id, {
@@ -15695,7 +15695,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 		if persistence.fuse_companions(account_id, int_indices, output):
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#FF66FF]Hybrid Fusion! Created %s (T%d-1)![/color]" % [output.name, output.tier]
+				"message": "[color=#FF66FF]Hybrid Fusion! Created %s (%s)![/color]" % [output.name, PowerRank.label(int(output.tier), 1)]
 			})
 			_send_house_update(peer_id)
 			send_character_update(peer_id)
@@ -15752,7 +15752,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 		if persistence.fuse_companions(account_id, int_indices, output):
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#FFAA66]Tier Ascension! Created %s (T%d-1)![/color]" % [output.name, output.tier]
+				"message": "[color=#FFAA66]Tier Ascension! Created %s (%s)![/color]" % [output.name, PowerRank.label(int(output.tier), 1)]
 			})
 			_send_house_update(peer_id)
 			send_character_update(peer_id)
@@ -23904,18 +23904,18 @@ func handle_request_zone_deck(peer_id: int, _message: Dictionary):
 		job_type = "mining"
 		tier_val = world_system.get_ore_tier(x, y)
 		catches = DropTablesScript.MINING_CATCHES.get(tier_val, [])
-		zone_label = "Mining T%d" % tier_val
+		zone_label = "Mining node tier %d" % tier_val
 	elif world_system.is_dense_forest(x, y):
 		job_type = "logging"
 		tier_val = world_system.get_wood_tier(x, y)
 		catches = DropTablesScript.LOGGING_CATCHES.get(tier_val, [])
-		zone_label = "Logging T%d" % tier_val
+		zone_label = "Logging node tier %d" % tier_val
 	elif world_system.is_foraging_spot(x, y):
 		job_type = "foraging"
 		var chunk_t = chunk_manager.get_tile(x, y)
 		tier_val = int(chunk_t.get("tier", 1))
 		catches = DropTablesScript.FORAGING_CATCHES.get(tier_val, [])
-		zone_label = "Foraging T%d" % tier_val
+		zone_label = "Foraging node tier %d" % tier_val
 
 	if catches.is_empty() or job_type == "":
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]No gathering deck here. Stand on water, ore, dense forest, or a herb tile.[/color]"})
@@ -31416,7 +31416,7 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	var header_parts: Array = []
 	header_parts.append("[color=#FFD700]═ %s ═[/color]" % post_name)
 	if region_name != "":
-		header_parts.append("[color=%s]T%d %s[/color]" % [tier_color, tier, region_name])
+		header_parts.append("[color=%s]%s · %s[/color]" % [tier_color, String(trading_post_db.POST_TIER_NAMES.get(tier, "T%d" % tier)), region_name])
 	send_to_peer(peer_id, {"type": "text", "message": " — ".join(header_parts)})
 
 	# (b) Rumor cache — look up the cached rumor for this account at this post.
@@ -32180,7 +32180,7 @@ func _build_player_post_status(post_meta: Dictionary, owner_username: String, is
 	var threat = _compute_post_threat_state(cx, cy)
 	if threat.get("threatened", false):
 		var threat_color = String(threat.get("color", "#FF6644"))
-		lines.append("  [color=%s]Under Threat: %s (T%d, %d tiles %s)[/color]" % [
+		lines.append("  [color=%s]Under Threat: %s (%s, %d tiles %s)[/color]" % [
 			threat_color,
 			String(threat.get("dungeon_name", "?")),
 			int(threat.get("tier", 0)),

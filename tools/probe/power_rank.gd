@@ -70,7 +70,9 @@ func _init() -> void:
 
 	print("\n--- and the explanation actually explains ---")
 	var h := PR.hover(4, 6)
-	ck(h.contains("H G F") and h.contains("[E]"),
+	# The marker is >E<, not [E]: a square bracket inside a [url=...] value terminates the
+	# tag and dumps the hover into the visible line. See PowerRank._url_safe.
+	ck(h.contains("H G F") and h.contains(">E<"),
 		"the hover shows the whole ladder with THIS tier marked")
 	ck(h.contains("weakest") and h.contains("strongest"), "...and which end is which")
 	ck(h.contains("Higher rank is stronger"), "...and the within-tier rule, in words")
@@ -100,12 +102,18 @@ func _init() -> void:
 	ck(cli.contains('"content": _tier_rank_help()'),
 		"the Tier & Rank topic calls a generator rather than a written-out table")
 	var g0 := cli.find("func _tier_rank_help()")
-	var gbody := cli.substr(g0, cli.find("
-func ", g0 + 10) - g0) if g0 >= 0 else ""
-	ck(gbody.contains("PowerRank.LADDER") and gbody.contains("PowerRank.color(") and gbody.contains("TIER_LEVEL_RANGES"),
-		"...and reads the ladder, the colours and the level bands from their real sources")
-	ck(not gbody.contains("L1-12") and not gbody.contains("H G F E D C B A S"),
-		"...with no band or letter typed into it by hand")
+	var gbody := cli.substr(g0, cli.find("\nfunc ", g0 + 10) - g0) if g0 >= 0 else ""
+	ck(gbody.contains("PowerRank.LADDER") and gbody.contains("PowerRank.color("),
+		"...and reads the ladder and the colours from their real sources")
+	# Comments STRIPPED first. The generator explains in a COMMENT why the level band was removed,
+	# and that comment mentions L1-12 - a check that cannot tell a comment from a typed table
+	# fails on the explanation for its own rule. The same confusion cost a cycle earlier today.
+	var code_only := ""
+	for gl in gbody.split("\n"):
+		if not gl.strip_edges().begins_with("#"):
+			code_only += gl + "\n"
+	ck(not code_only.contains("L1-12") and not code_only.contains("H G F E D C B A S"),
+		"...with no band or letter typed into the generated text by hand")
 
 	print("
 --- DUNGEONS reach the top rank, same as companions ---")
