@@ -1396,7 +1396,6 @@ func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffi
 	var _mhp: int = -1
 	if combat.get("monster", null) is Dictionary:
 		_mhp = int(combat["monster"].get("current_hp", -1))
-	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount, "mhp": _mhp})
 	# 2026-09-11 - HP-BAR DIAGNOSTIC. Owner: "something isn't right with the health on this
 	# monster or am I missing something in the log?" A log showing 284 + 328 + companion hits
 	# against a bar that had moved 84 - exactly the companion's share.
@@ -1427,6 +1426,21 @@ func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffi
 	# out white and stopped standing out at all ("now its no longer a different color which
 	# makes it no longer standout"). Nesting the colour inside the tag keeps it.
 	# No bold: with the link underline that read as a different FONT rather than a highlight.
+	# 2026-09-11 - the mark carries the TEXT it will appear in, not only an index.
+	#
+	# `at: messages.size()` is the index the line is ABOUT to take - which is only true if
+	# nothing else appends to the same array between this call and that append. Something does:
+	# measured at 36% of player actions (tools/probe/damage_attribution.gd), worst case a monster
+	# losing 243 while the lines claimed 41 and the Power Strike itself carried zero. A hit that
+	# lands with no number, and - for a monster the player has not learned - a bar that
+	# under-moves, which is the shape of the owner's report.
+	#
+	# The token is the exact substring this function is about to return, so the attach step can
+	# find the line by CONTENT. Content cannot drift; an index can. `at` is kept as a fallback
+	# for marks made by `_note_dmg`, which builds no text of its own.
+	var _tok := "[url=%s][color=#00E5FF]%d[/color][/url]" % [detail, amount]
+	combat["_dmg_marks"].append({
+		"arr": messages, "at": messages.size(), "dmg": amount, "mhp": _mhp, "token": _tok})
 	return "[url=%s][color=#00E5FF]%d[/color][/url] %s" % [detail, amount, suffix]
 
 func _note_dmg(combat: Dictionary, messages: Array, amount: int) -> void:
@@ -1486,13 +1500,50 @@ func _attach_actors(combat: Dictionary, result: Dictionary) -> Dictionary:
 	var mhp_out: Array = []
 	mhp_out.resize(msgs.size())
 	mhp_out.fill(-1)
+	# Resolve each mark to a LINE. By content where we have it, by index only as a fallback.
+	# A line already claimed by an earlier mark is skipped, so two identical hits in one beat
+	# land on their own lines instead of both on the first.
+	var claimed: Dictionary = {}
 	for m in (combat.get("_dmg_marks", []) if combat.get("_dmg_marks", null) is Array else []):
-		if not is_same(m.get("arr", null), msgs):
-			continue   # a mark against a DIFFERENT array - see _note_dmg
-		var at := int(m.get("at", -1))
-		if at >= 0 and at < dmg_out.size():
-			dmg_out[at] = int(m.get("dmg", 0))
-			mhp_out[at] = int(m.get("mhp", -1))
+		var idx := -1
+		var own_arr = m.get("arr", null)
+		var same_arr: bool = is_same(own_arr, msgs)
+		# 1. By CONTENT, when the mark knows the text it was written into. Content cannot drift;
+		#    an index can, and did.
+		var tok := String(m.get("token", ""))
+		if tok != "":
+			for k in range(msgs.size()):
+				if claimed.has(k):
+					continue
+				if String(msgs[k]).find(tok) >= 0:
+					idx = k
+					break
+		# 2. A mark against a DIFFERENT array is not necessarily foreign. The monster's turn
+		#    builds its OWN messages array, and the caller then appends those lines into the
+		#    result - so a player-applied poison ticking on the monster during that turn marks
+		#    one array while its line ends up in another. Dropping it meant the tick was applied
+		#    and never reported: measured as the bulk of a 36% under-report, worst case a monster
+		#    losing 243 while the lines claimed 41.
+		#    Look the line up in the array the mark DOES belong to, then find that exact line here.
+		if idx < 0 and not same_arr and own_arr is Array:
+			var oat := int(m.get("at", -1))
+			if oat >= 0 and oat < own_arr.size():
+				var line := String(own_arr[oat])
+				for k in range(msgs.size()):
+					if claimed.has(k):
+						continue
+					if String(msgs[k]) == line:
+						idx = k
+						break
+		# 3. Finally the raw index, and only for a mark against THIS array.
+		if idx < 0 and same_arr:
+			var at := int(m.get("at", -1))
+			if at >= 0 and at < dmg_out.size() and not claimed.has(at):
+				idx = at
+		if idx >= 0 and idx < dmg_out.size():
+			claimed[idx] = true
+			dmg_out[idx] = int(m.get("dmg", 0))
+			mhp_out[idx] = int(m.get("mhp", -1))
 	result["message_damage"] = dmg_out
 	result["message_monster_hp"] = mhp_out
 	# Deliberately does NOT clear the marks. `process_combat_action` calls `process_attack` and
