@@ -44486,9 +44486,36 @@ func _set_dungeon_side_boxes_visible(vis: bool) -> void:
 	update_tool_status_overlay()
 
 
+func _dungeon_redraw_blocked() -> bool:
+	"""Is something ELSE currently the owner of `game_output`?
+
+	Owner: "when my character died in the dungeon I attempted to view the Log but all I see is
+	the dungeon screen." The death screen and the [L] combat-log view both write into
+	`game_output`, and so does the dungeon floor - and the floor had no idea the other two
+	existed. Any `character_update` / `dungeon_update` arriving afterwards repainted the map over
+	whatever the player was reading. This is the exact shape CLAUDE.md's Player-Visible Output
+	Rule describes, and it had seventeen call sites.
+
+	The guard lives in `display_dungeon_floor` rather than at those seventeen sites, because the
+	question "may I paint right now" belongs to the thing doing the painting. Adding it to the
+	callers would be seventeen chances to miss one - and the next caller would miss it too."""
+	if _victory_legacy_view:
+		return true            # the [L] full-text log is up and owns the panel
+	if game_state == GameState.DEAD:
+		return true            # the death screen is up; the floor is not what you are reading
+	if combat_scene_panel and is_instance_valid(combat_scene_panel):
+		if combat_scene_panel.has_method("is_death_interlude_active") 				and combat_scene_panel.is_death_interlude_active():
+			return true
+		if combat_scene_panel.has_method("is_victory_interlude_active") 				and combat_scene_panel.is_victory_interlude_active():
+			return true
+	return false
+
+
 func display_dungeon_floor():
 	"""Display the current dungeon floor - map goes in MapDisplay, status in GameOutput"""
 	if not dungeon_mode or dungeon_data.is_empty():
+		return
+	if _dungeon_redraw_blocked():
 		return
 
 	var dungeon_name = dungeon_data.get("dungeon_name", "Dungeon")
