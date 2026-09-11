@@ -25,6 +25,12 @@ ceiling, since it removes the most expensive per-player work the server does.
   inheriting the shared progress; the hand and deck carry copies; a sold copy takes its upgrades
   to the buyer; card listings never merge; thinning benches a copy and `+` brings it back.
   Probe `card_instances.gd` (47 checks), `card_market_roundtrip.gd` rewritten.
+- **SERVER: the overworld tile cache.** A location update costs 15.4 ms instead of 46.7 ms and
+  ~1,390 disk stats per move are gone. **Needs a DEPLOY**; no client change, nothing visual —
+  `tile_cache.gd`.
+- **The sprite SANCTUARY**, with companions on cushions, animation, the 2x player, station
+  highlights and the MIRROR (account look). The mirror needs the server deploy too —
+  `sanctuary_room.gd`.
 - Recall on the Sanctuary companions page — `companion_recall.gd`.
 - Party combat CONFIRM step, party only — `party_confirm.gd`.
 - Tier level bands in one table — `tier_bands.gd`.
