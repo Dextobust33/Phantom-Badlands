@@ -4,9 +4,27 @@ class_name CombatManager
 extends Node
 
 # Combat actions
-## HP-bar diagnostic (2026-09-11). Prints one line per damaging log line: what the line claims
-## and what the monster's pool actually reads afterwards. Left ON while the owner's
-## "monster health does not match the log" report is open; flip to false once it is closed.
+## HP-bar diagnostic. Prints one line per damaging log line: what the line CLAIMS and what the
+## monster's pool actually reads afterwards.
+##
+## ON, deliberately, and it has NEVER RUN LIVE - the server has not been redeployed since it was
+## added. It exists for the owner's "monster health does not match the log" report (a bar that
+## had moved 84 against a log claiming ~706).
+##
+## It is NOT closed by the damage-attribution fix, and it was nearly turned off on that basis.
+## That fix cured marks being attached by array index (36% of player actions lost their damage
+## number; now 0% across 1600 actions / 200 fights, tools/probe/damage_attribution.gd). But
+## `message_damage` only drives the enemy bar for a monster the player has NOT learned. The
+## monster in the report WAS known, so its bar read the server's `current_hp` directly - a
+## different path entirely, and still unexplained.
+##
+## TWO theories about this exact report have already been wrong, which is precisely the condition
+## under which CLAUDE.md says to stop guessing and measure. So it ships on for one release: if it
+## recurs we get the numbers instead of a third theory, and if a release passes without it, turn
+## this off.
+##
+## Cost is one print per damaging line, into journald. Cheap, but not free - do not leave it on
+## out of habit once the report is settled either way.
 const HP_TRACE_ENABLED := true
 
 enum CombatAction {

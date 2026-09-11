@@ -701,6 +701,46 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       **Correction worth keeping:** my first pass read `send_combat_command`'s body, found no
       playback check, and reported "in SOLO nothing gates the press". Wrong UNIT — the gate is
       one level up, in the two callers. The probe now checks those, and says so.
+- [ ] **RENAME Tier/sub-tier to Tier(letter) + Rank(number).** Owner, 2026-09-09, raised in the
+      same message as the companion-multiplier audit and lost under it — never answered, never
+      filed until 2026-09-11. Recovered verbatim:
+      > *"the Tier and subtier are confusing, we should probably rename them Tier and rank or
+      > something like D9 being low while D1 is the highest of the D's, C is the next Tier and
+      > again the rank goes from 9(low all the way to 1)high. S or SS would be highest tier."*
+
+      **Why it is worth doing:** `[T1-5]` is two numbers that look alike and mean opposite kinds
+      of thing, and the SECOND one runs in a direction nobody expects. It is not a cosmetic
+      complaint — the owner has twice misread a dungeon's depth from its label, and the "said
+      T1-2, entered a T1-7" report sat unexplained partly because nobody could tell at a glance
+      which number was wrong.
+
+      **The current shape, measured:** tiers **1-9** (`TIER_LEVEL_RANGES`, L1-12 up to L5001-10000),
+      sub-tiers **1-8** within each (`get_sub_tier_level_range` divides the band into 8), higher
+      sub-tier = harder (further from origin). Labels are built in `get_dungeon_display_name` as
+      `"%s [T%d-%d]"`. **335 references across 13 files** — client.gd, combat_scene_panel,
+      companions_panel, companion_stable_panel, fusion_panel, kennel_panel, market_panel,
+      sanctuary_stable_panel, character.gd, combat_manager.gd, drop_tables.gd, dungeon_database.gd,
+      server.gd. It is not only dungeons: companions carry a sub_tier too, and so does fusion.
+
+      **Do it at the DISPLAY layer, not as a data migration.** Keep `tier: int` / `sub_tier: int`
+      exactly as they are on disk and on the wire; add ONE formatter that turns `(tier, sub_tier)`
+      into `"C3"` and route every label through it. Rewriting 335 sites or migrating saved
+      companions and live dungeon instances would be a large risk for a naming change, and
+      CLAUDE.md's rename rule (a rename touches SEVEN surfaces) says the half-landed version is
+      the likely outcome. One formatter cannot half-land.
+      The surfaces that must all read from it: dungeon name, dungeon list, entrance panel,
+      overworld tile hover, companion cards, kennel, stable, fusion, market listings, quest text.
+      `-- cardnames`-style sweep afterwards, or the old notation survives somewhere.
+
+      **The rank INVERTS the current direction** — today sub-tier 8 is the hardest, under this
+      scheme rank 1 is. That is deliberate and matches the S/A/B convention, but it means every
+      existing label flips meaning, so the two notations must never appear in the same build.
+
+      **One question still open before this can be written** (asked 2026-09-11): there are NINE
+      tiers and the owner's example names six letters (D C B A S SS). The ladder needs deciding.
+      Sub-tiers are 1-8, so rank maps cleanly to 8(low)-1(high) without touching data — the "9"
+      in the owner's example was illustrative of direction, not of count.
+
 - [~] **LIKELY SOLVED 2026-09-11, awaiting one confirmation.** Almost certainly the same cause as
       the bossless dungeon and the re-farm: the owner was re-entering a personal instance that had
       already been completed, which KEEPS its original sub-tier and skips the whole
