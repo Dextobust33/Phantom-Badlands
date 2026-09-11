@@ -10,26 +10,50 @@ common way to lose a session.
 
 ---
 
-## ▶ NEXT SESSION — START HERE (written 2026-09-11, end of session)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-11, second session of the day)
 
-**Nothing is half-finished. The tree is clean, master is pushed at `f2ab4d81`, and v0.9.772 is
-live with all seven assets.** No build, deploy or upload is mid-flight. Pick up cold.
+**Master is clean and pushed. ONE thing is half-finished and PARKED on a branch:**
+`wip/card-instances` (commit `cc5318c0`). It is NOT on master. Read this before touching cards.
 
-**Do this first, in this order:**
+**Shipped to master this session (unreleased, all probed):**
+- Recall on the Sanctuary companions page (owner's call) — probe `companion_recall.gd`.
+- Party combat CONFIRM step, party only — probe `party_confirm.gd`. Both are in
+  `docs/PLAYTEST_QUEUE.md` items 7-8.
+- Tier level bands: ONE table in `PowerRank` (eight copies retired, dungeon reach named) —
+  probe `tier_bands.gd`.
+- Licences: darkcave = PixelHouse, tilemap_pack = Henry Software CC0, both credited; owner chose
+  to keep restricted art untracked and send no emails yet.
+- Backlog recount (47 → 44 open after the above).
 
-1. **Read `## ⚑ THE ORDER` below.** Step 0 (cut the release) is DONE — that gate is cleared and
-   the five data-blocked items can now accumulate real play data. **Start at step 0b.**
-2. **0b — put the three owner decisions to the owner in ONE batch**, before touching code, because
-   each one stalls a different later arc:
-     * returning a checked-out companion (what happens to a companion left checked out);
-     * the two asset-licence questions;
-     * whether to reconcile the monster and dungeon tier LEVEL tables — **they diverge below
-       tier 6**, which is a trap for whoever tunes them next. The two tier LADDERS are already
-       unified (`shared/power_rank.gd`); it is only the level bands that disagree.
-3. **Then step 1 — CARD INSTANCES.** This is the single biggest recreate-work risk on the board
-   and it must land **before** the 53 dungeon cards are authored, because the cards are the thing
-   that will exist in multiples. It reaches the save format, the deck UI, the combat hand, the
-   milestone system and the market.
+**The parked branch — card instances (step 1 of THE ORDER):**
+Owner said *"Proceed now"*. The model is written and COMPILES on all five files (character,
+combat_manager, server, client, combat_scene_panel): every copy of a card is an instance
+(`cleave`, `cleave#2`), `combat_deck_collection` is keyed per copy with 1 = in deck / 0 = benched,
+uses / milestone picks / effect ranks are keyed per copy, legacy counts split on load, the hand
+carries copies, a bare name resolves to the copy being played (`set_active_card_instance`), the
+market sells ONE copy and its progress travels to the buyer. The commit message on the branch
+lists what is done and what is not. To resume:
+  1. `git checkout wip/card-instances`, then `git rebase master` (master moved by docs only).
+  2. Fix `tools/probe/card_instances.gd`: nine `:=` on untyped returns — declare them
+     (`var r: Dictionary = ...`, `var g: String = ...`). Run it.
+  3. Run the probes NOT yet run: `preview_drift`, `card_market`, `card_market_roundtrip`,
+     `mimic_hp`, `analyze_readout`, `tools/deck_seed_test.gd`, and the sim `-- preflight`.
+     **ONE AT A TIME** — four parallel Godot batches is what stalled the session.
+  4. Ten probes already pass against it: cycle_value, reveal_upgrade, card_damage_hover,
+     compcard_scaling, cycled_shield, card_upgrade_effects, rankup_offer_test,
+     upgrade_new_wired, combat_card_hotkeys, upgrade_triggers.
+  5. Known gap for a SECOND slice, not this one: the deck screen still shows one tile per CARD
+     (`+` is disabled when 1 copy is in the deck even if another copy is benched); per-instance
+     tiles and a per-copy market picker come next. `client/ability_panel.gd:862`.
+  6. Then merge, and it invalidates the monster curve (Track B) — do not run the chain until
+     the rest of Track B is batched.
+
+**Help-screen accuracy audit is DONE (not fixed):** `docs/design/help_audit_2026-09-11.md`
+— 26 wrong entries with the code line for each (title costs ~100x high, fishing describes a dead
+minigame, soul gem list invented, affix ladder off by one). The class-path topics matched.
+Fixing them is the next cheap Track A item.
+
+**Four owner decisions are answered (0b done)** — see THE ORDER.
 
 **Five items are waiting on live play data now that v0.9.772 shipped** — the five characters at
 L25+, the rest-change feel check, the "party play isn't working" repro, the dungeon-level mismatch
@@ -310,7 +334,7 @@ every "before" below is a case where doing it the other way means redoing the fi
       the numbers a dungeon uses today do not move. A probe asserts all three agree with the one
       source and that every dungeon band is identical to before.
 
-**1. CARD INSTANCES (3 items) — the biggest recreate-work risk on the board.** This arc's own
+**1. CARD INSTANCES (3 items) — PARKED on branch `wip/card-instances` (2026-09-11), see NEXT SESSION.** This arc's own
    note already says it: *"this decision comes BEFORE authoring 53 dungeon cards, because the
    cards are the thing that will exist in multiples."* It is an identity change reaching the save
    format, the deck UI, the combat hand, the milestone system and the market. Authoring the cards
@@ -2146,7 +2170,9 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       example of since you were unable to find its cause."* Do not guess at a second fix — wait
       for a repro with the DUNGEON NAME, then trace that instance's `dungeon_level`.
 
-- [ ] **Accuracy audit: help screen, project docs, CLAUDE.md** (owner, 2026-09-07, partially done
+- [~] **AUDITED 2026-09-11, fixes pending — `docs/design/help_audit_2026-09-11.md` lists 26 wrong
+      entries with the code that disagrees. Class-path topics match `cardnames`/`statdesc`.**
+      Accuracy audit: help screen, project docs, CLAUDE.md (owner, 2026-09-07, partially done
       and never tracked): *"audit project documentation, the help screen, claude files, we need to
       check for accuracy."* A docs pass happened (`bebf7644`) and the help page's vestigial
       ability LEVELS were removed in the same era, but nothing swept the help screen against the
