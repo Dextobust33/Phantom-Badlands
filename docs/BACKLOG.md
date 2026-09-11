@@ -161,6 +161,89 @@ Two scenarios were added for it: **`cycle_cards`** (dungeon cards carrying cycle
 reveal upgrade already taken on a class card) and **`in_dungeon`** (parked on a dungeon entrance,
 stocked, for the hover / chest / run-log checks).
 
+## LIVE REPORTS, 2026-09-11 post-v0.9.770 (owner, one session) -- NOTHING HERE IS SHIPPED
+
+Owner: *"Please make sure you're documenting my messages and adding them to the to do or ensuring
+they don't get lost. Historically when you send multiple things in a short span you tend to forget
+about things and not document them and move onto something else."* Fair, and it had already
+started happening in this batch. Every report below is written down BEFORE any more code.
+
+**All six arrived while the owner was playing v0.9.770, which shipped before any of these fixes.
+They need their own release.**
+
+- [x] **1. "Frenzied" in a monster's name is red and underlined but hovering does nothing.**
+      FIXED (local). `_monster_name_label` had `meta_hover_started` connected on one line and
+      `MOUSE_FILTER_IGNORE` on the next -- IGNORE means the control receives no mouse events, so
+      the handler was unreachable while the `[url=]` still RENDERED as a coloured, underlined
+      link. The worst shape of the bug: it advertises an explanation that cannot be reached, and
+      reading the code shows a hover wired correctly one line above. Every other hoverable label
+      in that panel uses PASS; this was the only IGNORE.
+      Probe `hover_reachable.gd` checks the whole CLASS -- any `meta_hover_started` listener on an
+      IGNORE control -- across nine client files, and asserts every rollable empowered modifier
+      has hover text. Re-injection names the offending file and line.
+
+- [ ] **2. THE TIER SWEEP WAS INCOMPLETE, AND MY PROBE PASSED ANYWAY.** Owner: *"If I right click
+      and Inspect my companions I still see Tier 2-1. When I said we needed to update this in all
+      surfaces that's what I meant, not just some."* And: *"Stepping on a dungeon it shows
+      Forgotten Crypt [H7] then under that it shows Tier 1-7 Dungeon."*
+      **Cause, and it is my error rather than a missed file:** the sweep searched for the literal
+      `T%d-%d`. It never saw `T%d.%d` (the DOT form -- all three stable panels, 8 sites) or
+      `Tier %d-%d` (8 more in client.gd, including the companion inspect header and the dungeon
+      entrance line). The probe asserted "no surface still says `T%d-%d`" and passed, because that
+      was true and irrelevant. **An audit written around the wrong unit**, which CLAUDE.md already
+      records, hit from a new angle.
+      **Status: 15 of 16 converted locally, unreleased.** The inspect header is left for item 3,
+      which rewrites that whole screen.
+      **Rebuild the probe to catch ANY tier-rank pair**, not a list of formats I happened to think
+      of. The right assertion is "no player-facing string builds two numbers where a PowerRank
+      label belongs".
+
+- [ ] **3. The companion INSPECT screen needs a real pass.** Owner: *"is this on the to do list for
+      us to update it? Is the info on it even still accurate? It doesn't even show a log of the
+      companions stats. It should show their stats and each should be hoverable so players can see
+      what they do. For example, What does Aggro do? What does spd do for a companion, etc. It
+      also doesn't list the card they provide in combat or anything."*
+      **On accuracy: NO, and measurably so.** `_get_variant_multiplier` in client.gd is a
+      hardcoded twelve-NAME list -- the stale per-name table deleted on 2026-09-03 and replaced by
+      a rarity-derived function. It is the FOURTH surviving consumer of that dead table. Measured:
+      **111 of 119 variants (93%) show the wrong stat multiplier** -- Golden reads 1.00x and is
+      really 1.05x; Infernal reads 1.00x and is really 1.22x.
+      `_get_sub_tier_multiplier` has the right values but is a hand-copy of
+      `COMPANION_SUB_TIER_MULTIPLIERS` -- the same "one value, two places" shape, not yet wrong.
+      **What the screen must gain:** the companion's own STATS (combat HP via
+      `Character.calculate_companion_max_hp`, damage range, aggro role, speed), each HOVERABLE
+      with what it actually does; the **combat card it grants** (`companion_card_id_for` ->
+      `COMPANION_CARD_DATA`, giving name / kind / desc), which is absent entirely; and a
+      multiplier breakdown read from the shared sources rather than copies.
+
+- [ ] **4. Tier/rank on the companion surfaces has no VISUAL ordering cue.** Owner: *"all I see to
+      signify Tier and rank is H1 and G1. What happened to the bars or ways to make it obvious
+      which tiers and ranks are better?"*
+      The panels call `PowerRank.tag()`, which is colour-only. `rich_label()` (colour + the
+      explaining hover) and `pips()` (the filled bar) both exist and are unused there -- colour
+      alone is exactly what the owner said was not enough when the ladder was designed.
+
+- [ ] **5. "Safe Zone" on an empty road with no post.** Owner: *"I'm at coords -44, -34 and it is
+      saying It's a Safe Zone in the top right of my screen but there is no post. I'm just
+      standing on a road surrounded by a bunch of water."*
+      **Traced, not solved.** The HUD flag is NOT `is_safe_zone()` despite the wording -- it is
+      `"area_is_safe": area_level_hud <= 0`, i.e. the area's MONSTER LEVEL is zero. Confirmed from
+      live chunk data: `chunk_61_61.json` holds `-44,-34 = {"type": "path"}` and all 45 modified
+      tiles in that chunk are paths, so there is genuinely no post and the owner is right.
+      Ruled out: `path` is not in the safe tile-type list; WATER is `safe: false`;
+      `_distance_to_level` floors at **1** and can never return 0 (distance there is ~55.6).
+      **So the zero comes from `get_post_anchored_level`** -- a settler bubble or the pull-down
+      blend. `_bubble_influence_at` reads `effective_tier` through `level_for_tier()`, so the next
+      steps are: does `level_for_tier(1)` return 0, and did a player-post bubble record survive
+      the world reset without its tiles? The latter would be the SAME logical-record-versus-
+      physical-tiles split as "a reset post existed on the minimap and nowhere else".
+      **Read the live post records; do not theorise a third time.**
+
+- [ ] **6. Decide whether a road should read as "Safe Zone" at all.** Falls out of 5: the owner was
+      on open road, and roads now cross water since the post/water gate was removed. Whatever the
+      level math says, "Safe Zone" far from any post is wrong to a player -- the flag means "no
+      monsters spawn here", which is not how it reads.
+
 ## v0.9.770 SHIPPED (2026-09-11) — 30 commits, server deployed, 7 assets live
 
 The card-upgrade arc plus the tier/rank vocabulary. Released as documented: version bumped and
