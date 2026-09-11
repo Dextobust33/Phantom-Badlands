@@ -29393,6 +29393,27 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		var _inherit_sub: int = int(_tile_dungeon.get("sub_tier", -1))
 		instance_id = _create_player_dungeon_instance(peer_id, "", dungeon_type, character.level,
 			"", "", 0, _inherit_sub)
+		# 2026-09-10 - this is the SECOND report of "the tile said T1-2 and it opened a T1-7",
+		# after the 2026-09-08 inherit was supposed to end it. The inherit reads correctly, so a
+		# third theory is worth less than one measurement: log what the tile actually resolved to
+		# and what the instance actually got, so the next occurrence names its own cause.
+		#
+		# The interesting case is `tile=NONE`: that means `_get_dungeon_at_location` found nothing
+		# at the player's feet even though the entrance panel had just printed a sub-tier from it,
+		# and the depth then falls back to a fresh distance roll.
+		if active_dungeons.has(instance_id):
+			var _got: int = int(active_dungeons[instance_id].get("sub_tier", -1))
+			var _tile_desc: String = "NONE"
+			if not _tile_dungeon.is_empty():
+				_tile_desc = "%s sub_tier=%d" % [String(_tile_dungeon.get("instance_id", "?")), _inherit_sub]
+			var _flag: String = ""
+			if _inherit_sub > 0 and _got != _inherit_sub:
+				_flag = "  <<< MISMATCH: inherit was ignored"
+			elif _inherit_sub <= 0:
+				_flag = "  <<< no tile sub-tier to inherit; depth was rolled from distance"
+			log_message("DUNGEON-ENTER %s at (%d,%d) type=%s tile=[%s] -> instance %s sub_tier=%d%s" % [
+				character.name, character.x, character.y, dungeon_type, _tile_desc,
+				instance_id, _got, _flag])
 		if instance_id == "":
 			send_to_peer(peer_id, {"type": "error", "message": "Failed to create dungeon instance!"})
 			return
