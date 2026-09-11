@@ -410,12 +410,48 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       disagrees with the server, an unknown fact claiming live, one state builder dropping the
       counts, the hand not consulting the shared evaluator — fails 5 checks.
 
-- [ ] **3. THEN author upward.** Use the channel table above rather than adding a fourteenth
-      damage multiplier — the thin channels (extra turn, mitigation, crit, chip-from-discard, one
-      entry each) ARE the variety, and the thin RARITY cells are buff-uncommon (4) and epic for
-      buff and control (2 each). Now unblocked: a new upgrade can declare a trigger, so a
-      conditional one arrives already legible instead of adding another invisible pick.
+- [x] **3. DONE 2026-09-11 — authored AGAINST the measurement, five upgrades, all wired.**
+      Pool 51 → 56. Nothing added moves the damage number, because damage already held 13 of the
+      13 / 9 / 6 / 6 / 6 / 5 / 5 / 2 / 2 / 1 / 1 channel spread, and three of the five are
+      `KIND_ANY` because that is the only way to lift BUFF and CONTROL at once.
 
+      | upgrade | kind | rarity | trigger | channel it widens |
+      |---|---|---|---|---|
+      | **Sure Strike** | damage | rare | first use | crit (1 → 2) |
+      | **Last Stand** | any | **epic** | you under 25% | mitigation (1 → 2) |
+      | **Second Look** | any | **epic** | if NOT played | REVEAL (3 → 5) |
+      | **Slow Mend** | any | uncommon | if NOT played | REVEAL |
+      | **Rally Point** | any | uncommon | foe under 50% | engine |
+
+      **The thin cells moved**, which was the whole point:
+      buff-uncommon **4 → 6**, epic-for-buff **2 → 4**, epic-for-control **2 → 4**,
+      damage-uncommon 10 → 12, damage-epic 4 → 6.
+
+      **Two of the five cost almost nothing to wire, because the lever already existed.** The
+      cycle system supported FIVE effect types (engine / shield / heal / resource / chip) and the
+      three REVEALs used only three of them — `heal` and `resource` were sitting unused. New
+      content in the pool's most distinctive channel for the price of a table row.
+
+      **What I did NOT add, and why.** The extra-turn channel still has one entry. Expanding it
+      was rejected on reading the code rather than on taste: `combat_manager` already notes that
+      two stacking extra-turn rolls is how an infinite chain becomes possible, and Swift rides the
+      existing roll for exactly that reason. Adding a second source is a real risk for a channel
+      that is thin on purpose.
+      Several other thin cells could only have been filled with NEAR-DUPLICATES — a buff-card
+      shield below half health is Bulwark, a shield while the foe is stunned is Demoralising, a
+      free first cast is Opening Act. **Those cells need new LEVERS in the combat code, not new
+      table rows**, and adding the duplicates would have made the exact "bit of the same" problem
+      worse while appearing to fix it. That is the honest remaining work.
+
+      **Each one is proven to FIRE, not merely to exist** — `tools/probe/upgrade_new_wired.gd`
+      drives real casts and looks for the effect, because an upgrade that sits in the table and
+      never fires is the dead option this whole arc removes, and it is the failure that looks
+      finished: card renders, rarity shows, trigger tag reads correctly, effect absent.
+      Re-injection (Sure Strike unwired, Last Stand unwired, one of the two reveal chains
+      half-updated) fails 6 checks.
+      **One shared-state bug caught while wiring:** the crit announcement was hard-coded to
+      "Keen Edge", so Sure Strike would have announced an upgrade the card does not carry. The
+      line now names its real source via `combat["_crit_label"]`.
 - [ ] **WIDEN the pool with genuinely distinctive upgrades — owner, 2026-09-11.** *"I don't think
       our upgrade pool currently offers enough distinctive and interesting options as of yet but
       this is a start at least."* Agreed, and the rarity work makes the gap measurable rather

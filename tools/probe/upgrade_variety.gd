@@ -16,16 +16,16 @@ const CU := preload("res://shared/card_upgrades.gd")
 const CHANNEL := {
 	"damage":   ["power", "rider", "executioner", "opener", "overdraw", "reckless", "slow_burn",
 	             "wild_swing", "brittle", "all_in", "greedy", "sacrificial", "bloodprice"],
-	"crit":     ["keen"],
-	"heal":     ["leeching", "mending", "vindication", "renewing"],
+	"crit":     ["keen", "sure_strike"],
+	"heal":     ["leeching", "mending", "vindication", "renewing", "slow_mend"],
 	"shield":   ["warding", "bulwark", "entrenched", "demoralising", "reveal_ward", "fragile_ward"],
 	"resource": ["efficiency", "second_wind", "relentless", "refund", "opening_act", "hair_trigger",
-	             "gamblers_cut", "costly_vigil"],
-	"engine":   ["momentum_feed", "kindling", "desperate", "harrying", "reveal_engine"],
+	             "gamblers_cut", "costly_vigil", "second_look"],
+	"engine":   ["momentum_feed", "kindling", "desperate", "harrying", "reveal_engine", "rally_point"],
 	"buff_str": ["duration", "preload", "shared", "concentrated", "reckless_guard", "slow_cast"],
 	"control":  ["unsettling", "disorienting", "pinning", "provoking", "unstable_hex"],
 	"turn":     ["swift"],
-	"mitigate": ["steadfast"],
+	"mitigate": ["steadfast", "last_stand"],
 	"chip":     ["reveal_spark"],
 }
 
@@ -40,6 +40,11 @@ const CHANCE := ["rider", "keen", "swift", "pinning", "hair_trigger", "wild_swin
 ## conditional id -> [what it keys off, is that state ON SCREEN at decision time]
 const CONDITIONAL := {
 	"executioner":   ["foe below 30% HP",      true],
+	"rally_point":   ["foe below 50% HP",      true],
+	"last_stand":    ["you below 25%",         true],
+	"sure_strike":   ["first use this fight",  false],
+	"second_look":   ["you DON'T play it",     false],
+	"slow_mend":     ["you DON'T play it",     false],
 	"refund":        ["this cast kills",       true],
 	"vindication":   ["this cast kills",       true],
 	"desperate":     ["you below a threshold", true],

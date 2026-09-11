@@ -87,6 +87,45 @@ func _init() -> void:
 		ck(CU.rarity_by_id(id) == CU.RARITY_COMMON,
 			"the legacy pick '%s' stays common (it is also the fallback)" % id)
 
+	print("--- what a player actually SEES, measured over %d runs ---" % RUNS)
+	print("    %-9s %-5s %8s %9s %7s %7s" % ["kind", "m", "common", "uncommon", "rare", "epic"])
+	var at5 := {}
+	for kind in ["damage", "buff", "control"]:
+		for m in [1, 3, 5]:
+			var r := _seen_after(kind, m)
+			print("    %-9s %-5d %7.0f%% %8.0f%% %6.0f%% %6.0f%%" % [kind, m,
+				r["common"] * 100.0, r["uncommon"] * 100.0, r["rare"] * 100.0, r["epic"] * 100.0])
+			if m == 5:
+				at5[kind] = r
+		print("")
+
+	print("")
+	print("--- every card kind can actually BE offered the top tier ---")
+	# Measured 2026-09-11: control saw 0% epics at every milestone, because all four epics were
+	# DAMAGE- or BUFF-kind. A tier a whole card-kind can never be offered is not a tier, and no
+	# weight would have revealed it - only counting the eligible pool per kind does.
+	for kind in ["damage", "buff", "control"]:
+		var el := _eligible_ids(kind, 5)
+		for r in CU.RARITY_ORDER:
+			ck(el[r].size() > 0, "a %s card can be offered %s upgrades (%d eligible)" % [
+				kind, r, el[r].size()])
+
+	print("")
+	print("--- the gradient is real, not just labelled ---")
+	for kind in at5:
+		var r: Dictionary = at5[kind]
+		var ordered: bool = r["common"] > r["uncommon"] and r["uncommon"] > r["rare"] and r["rare"] > r["epic"]
+		ck(ordered, "%s: seen-by-milestone-5 falls with every tier (%.0f > %.0f > %.0f > %.0f)" % [
+			kind, r["common"] * 100.0, r["uncommon"] * 100.0, r["rare"] * 100.0, r["epic"] * 100.0])
+		# Judged as a GAP below common, not an absolute band: control's pool is the thinnest and
+		# OFFER_SIZE is 9, so nine-of-twenty-odd shown five times covers most of it. That is
+		# arithmetic no weight beats; the answer is more control content.
+		ck(r["common"] - r["uncommon"] > 0.08,
+			"...%s: uncommon is meaningfully scarcer than common (%.0f%% vs %.0f%%)" % [
+				kind, r["uncommon"] * 100.0, r["common"] * 100.0])
+		ck(r["common"] > 0.75, "...%s: commons stay freely available (%.0f%%)" % [kind, r["common"] * 100.0])
+		ck(r["epic"] < 0.40, "...%s: epics stay genuinely scarce (%.0f%%)" % [kind, r["epic"] * 100.0])
+		ck(r["epic"] > 0.01, "...%s: but reachable (%.0f%%)" % [kind, r["epic"] * 100.0])
 	print("")
 	print("--- and the player can SEE which tier it is, at a glance ---")
 	# Owner: *"They should also be visually distinct, colored by [rarity] or have a visual gauge

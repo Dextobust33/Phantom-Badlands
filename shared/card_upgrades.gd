@@ -84,6 +84,32 @@ const UPGRADES := [
 	{"id": "momentum_feed", "wired": true, "name": "Building", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Grants an extra point of your class engine (Momentum, Rage, Conviction, Focus or Read)."},
 
+
+	# ---------------------------------------------------------------- 2026-09-11 pool widening
+	# Step 3 of the variety work, and authored AGAINST THE MEASUREMENT rather than by taste.
+	# `tools/probe/upgrade_variety.gd` said damage held 13 entries while crit, mitigation, the
+	# extra turn and chip-from-discard held ONE EACH, and that the thin RARITY cells were
+	# buff-uncommon and epic for buff and control. So: nothing here moves the damage number, and
+	# three of the five are KIND_ANY, which is the only way to lift buff and control at once.
+	#
+	# Every one declares a trigger, so it arrives legible instead of becoming another invisible
+	# pick - the whole point of steps 1 and 2.
+	{"id": "sure_strike", "rarity": "rare", "trigger": "first_use", "wired": true,
+	 "name": "Sure Strike", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	 "desc": "Your FIRST cast each fight is a guaranteed critical."},
+	{"id": "last_stand", "rarity": "epic", "trigger": "self_hp_below", "at": 0.25, "wired": true,
+	 "name": "Last Stand", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Below a quarter health, playing this also cuts incoming damage by 25% for 2 rounds."},
+	{"id": "second_look", "rarity": "epic", "trigger": "on_cycle", "wired": true,
+	 "name": "Second Look", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "REVEAL: when you do NOT play this card, it gives part of your bar back as it cycles."},
+	{"id": "slow_mend", "rarity": "uncommon", "trigger": "on_cycle", "wired": true,
+	 "name": "Slow Mend", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "REVEAL: when you do NOT play this card, it knits a little health as it cycles."},
+	{"id": "rally_point", "rarity": "uncommon", "trigger": "foe_hp_below", "at": 0.50, "wired": true,
+	 "name": "Rally Point", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Once the foe is wounded, this also feeds your class engine (Momentum, Rage, Conviction, Focus or Read)."},
+
 	# ------------------------------------------------------- REVEAL (the cycle value) --------
 	# Owner 2026-09-10: *"we could take advantage of card upgrades and make these types of reveal
 	# options show up in that pool as well."* Right, and it is the better half of the opt-in:
@@ -506,6 +532,7 @@ const DAMAGE_MULTS := {
 	"opener":       {"mult": 1.50, "estimate": false, "when": "first use each fight"},
 	"sacrificial":  {"mult": 2.00, "estimate": false, "when": "once per fight"},
 	"all_in":       {"mult": 1.60, "estimate": false, "when": "on a near-empty bar"},
+	"sure_strike":  {"mult": 1.50, "estimate": false, "when": "first use each fight"},
 }
 
 

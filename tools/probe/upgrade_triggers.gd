@@ -28,8 +28,20 @@ func _init() -> void:
 	for u in CU.UPGRADES:
 		if CU.trigger_of(u) != CU.TRIGGER_NONE:
 			tagged += 1
-	ck(tagged == 24, "24 of %d upgrades carry a machine-readable trigger - got %d" % [
-		CU.UPGRADES.size(), tagged])
+	# A COUNT, not a constant. "== 24" broke the moment five upgrades were added, which makes it
+	# a maintenance tax rather than a check. What actually matters is that the number never goes
+	# DOWN and that every value is one the evaluator understands - a typo'd trigger would be
+	# silently always-off, which is the dead option this arc exists to remove.
+	ck(tagged >= 24, "at least 24 upgrades carry a machine-readable trigger - got %d" % tagged)
+	var known := [CU.TRIGGER_NONE, CU.TRIGGER_CHANCE, CU.TRIGGER_FOE_HP, CU.TRIGGER_SELF_HP,
+		CU.TRIGGER_FIRST_USE, CU.TRIGGER_RESOURCE_FULL, CU.TRIGGER_RESOURCE_LOW,
+		CU.TRIGGER_FOE_STUNNED, CU.TRIGGER_ON_KILL, CU.TRIGGER_CADENCE, CU.TRIGGER_ON_CYCLE]
+	var bad: Array[String] = []
+	for u in CU.UPGRADES:
+		if not (CU.trigger_of(u) in known):
+			bad.append("%s=%s" % [String(u.get("id", "?")), CU.trigger_of(u)])
+	ck(bad.is_empty(), "every trigger is one the evaluator understands%s" % (
+		"" if bad.is_empty() else " - unknown: " + ", ".join(bad)))
 	# Every conditional upgrade the audit named must be tagged. A trigger that exists only in the
 	# description is exactly the state this work is undoing.
 	for id in ["executioner", "bulwark", "desperate", "kindling", "all_in", "harrying",

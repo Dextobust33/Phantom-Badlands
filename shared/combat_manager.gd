@@ -4718,6 +4718,14 @@ func _cycle_preview_text(character, card_id: String) -> String:
 			cyc = {"type": "shield", "amount": 3}
 		elif "reveal_spark" in picks:
 			cyc = {"type": "chip", "amount": 25}
+		# Second Look / Slow Mend (2026-09-11). The REVEAL family was the most distinctive thing
+		# in the pool and had three entries; the cycle system already supported five effect
+		# TYPES and two of them - resource and heal - had no reveal using them. New content for
+		# the price of a table row, in the channel that most deserved widening.
+		elif "second_look" in picks:
+			cyc = {"type": "resource", "amount": 8}
+		elif "slow_mend" in picks:
+			cyc = {"type": "heal", "amount": 3}
 	if cyc.is_empty():
 		return ""
 	var amt: int = int(cyc.get("amount", 1))
@@ -7464,7 +7472,9 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 
 	if bool(combat.get("_keen_crit", false)):
 		combat["_keen_crit"] = false
-		result.messages.append("[color=#FFD700]Keen Edge: a clean critical.[/color]")
+		var _crit_src: String = String(combat.get("_crit_label", "Keen Edge"))
+		combat["_crit_label"] = "Keen Edge"
+		result.messages.append("[color=#FFD700]%s: a clean critical.[/color]" % _crit_src)
 
 	# Cast-time upgrades that do not depend on damage: these fire whether or not the card hit.
 	if "warding" in picks:
@@ -7504,6 +7514,21 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 		var bw: int = maxi(1, int(float(character.get_total_max_hp()) * 0.09))
 		combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + bw
 		result.messages.append("[color=#7AA8FF]Bulwark: %d shield — it holds while you are hurt.[/color]" % bw)
+	# Last Stand (2026-09-11) - the mitigation channel's second entry; it held only Steadfast.
+	# Deliberately a HARDER floor than Steadfast at a much lower threshold, so the two are a
+	# choice rather than a strictly-better pair: Steadfast is 10% always, this is 25% but only
+	# when you are nearly dead.
+	if "last_stand" in picks and float(character.current_hp) < 0.25 * float(character.get_total_max_hp()):
+		character.add_buff("damage_reduction", 25, _buff_duration(character, ability_name, 2))
+		result.messages.append("[color=#9FD0FF]Last Stand: you plant your feet — 25% less damage taken.[/color]")
+	# Rally Point (2026-09-11). Another engine feeder, and that is the point: the existing four
+	# differ by WHEN they pay, which is what the pool's own design note says makes upgrades play
+	# differently rather than just read differently. Building is always, Kindling is a full bar,
+	# Desperation is low health, Harrying is a rattled foe - none of them is "the foe is hurt".
+	if "rally_point" in picks and monster is Dictionary:
+		var _rp_max: float = maxf(1.0, float(monster.get("max_hp", 1)))
+		if float(monster.get("current_hp", _rp_max)) / _rp_max < 0.50:
+			_feed_class_engine(combat, character, 1, result, "Rally Point")
 	if "steadfast" in picks:
 		character.add_buff("damage_reduction", 10, _buff_duration(character, ability_name, 2))
 		result.messages.append("[color=#9FD0FF]Steadfast: you brace — 10% less damage taken.[/color]")
@@ -7818,6 +7843,20 @@ func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg:
 		if randf() < float(CardUpgrades.DAMAGE_MULTS["keen"]["chance"]) * float(keen_stacks):
 			dmg *= CardUpgrades.damage_mult_for("keen")
 			combat["_keen_crit"] = true
+	# Sure Strike (2026-09-11). A GUARANTEED crit on the first cast each fight, which is the
+	# crit channel's second entry - it held only Keen Edge before. Uses the same
+	# once-per-fight flag pattern as `opener` two blocks down rather than reading the new
+	# casts_this_fight counter: that counter is maintained in a different function, and
+	# depending on which runs first would be an ordering bug waiting for a refactor.
+	if "sure_strike" in picks and combat != null and combat is Dictionary:
+		var ss_key := "sure_strike_%s" % ability_name
+		if not bool(combat.get(ss_key, false)):
+			combat[ss_key] = true
+			dmg *= CardUpgrades.damage_mult_for("sure_strike")
+			combat["_keen_crit"] = true
+			# The crit line names the upgrade that caused it. Without this it would announce
+			# "Keen Edge" on a card that does not carry Keen Edge.
+			combat["_crit_label"] = "Sure Strike"
 	if "sacrificial" in picks and combat != null and combat is Dictionary:
 		var spent_key := "sacrificed_%s" % ability_name
 		if not bool(combat.get(spent_key, false)):
@@ -13996,6 +14035,14 @@ func _cycle_unplayed(combat: Dictionary, cards: Array, msgs: Array) -> void:
 				cyc = {"type": "shield", "amount": 3}
 			elif "reveal_spark" in picks:
 				cyc = {"type": "chip", "amount": 25}
+			# Second Look / Slow Mend (2026-09-11). The REVEAL family was the most distinctive thing
+			# in the pool and had three entries; the cycle system already supported five effect
+			# TYPES and two of them - resource and heal - had no reveal using them. New content for
+			# the price of a table row, in the channel that most deserved widening.
+			elif "second_look" in picks:
+				cyc = {"type": "resource", "amount": 8}
+			elif "slow_mend" in picks:
+				cyc = {"type": "heal", "amount": 3}
 		if cyc.is_empty():
 			continue
 		var amount: int = int(cyc.get("amount", 1))
