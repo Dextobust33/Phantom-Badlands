@@ -41,6 +41,12 @@ var pending_update_seconds_remaining: float = 0.0
 # Resolves to /home/ubuntu/.local/share/godot/app_userdata/PhantomBadlands/
 # on the Hetzner host. File is deleted once consumed.
 const SHUTDOWN_SENTINEL_PATH := "user://pending_shutdown.txt"
+# The map wipe, triggerable without an in-game admin. Same shape as the shutdown sentinel
+# above and for the same reason: the headless cloud server has no admin sitting in it, and
+# the reset lives behind two /admin buttons. The file must contain the exact word RESET so
+# a stray or truncated file cannot wipe the world by accident. Consumed and deleted on read,
+# BEFORE the reset runs, so a crash mid-wipe cannot re-trigger it on the next boot.
+const WORLD_RESET_SENTINEL_PATH := "user://pending_world_reset.txt"
 # Chance of being ambushed per rest / meditate tick outside a safe zone. 2026-09-05: was an
 # inline 15 at two separate sites; named so recovery is tunable in ONE place.
 # 2026-09-07 — 5 -> 4, and rest ticks got bigger at the same time (REST_HEAL_MIN/MAX below).
@@ -816,6 +822,37 @@ func _send_toast_broadcast(message: String, duration: float = 8.0) -> void:
 		send_to_peer(peer_id, toast_msg)
 
 
+func _check_world_reset_sentinel() -> void:
+	"""Run the map wipe when the deploy operator drops a sentinel file.
+
+	The in-game route is two /admin buttons with a live report and a 60-second confirm, which is
+	the right interface for a person. This is the route for a maintenance window: the cloud
+	server is headless, nobody is logged in, and the operator has already decided.
+
+	Requires the literal word RESET in the file. A zero-byte or half-written file does nothing —
+	the whole point of a guard on an irreversible action is that the accidental case is inert."""
+	if not FileAccess.file_exists(WORLD_RESET_SENTINEL_PATH):
+		return
+	var content: String = ""
+	var f = FileAccess.open(WORLD_RESET_SENTINEL_PATH, FileAccess.READ)
+	if f != null:
+		content = f.get_as_text()
+		f.close()
+	# Delete FIRST. If the reset throws halfway, the next poll must not run it again.
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(WORLD_RESET_SENTINEL_PATH))
+	if content.strip_edges() != "RESET":
+		log_message("[WORLDRESET] Sentinel present but did not contain RESET — ignored.")
+		return
+	log_message("[WORLDRESET] Sentinel accepted. Wiping the map.")
+	var report: Array = _do_world_reset()
+	# Tell anyone who happens to be connected, then ask them to reconnect: their client is
+	# streaming chunks from a world that no longer exists.
+	for pid in peers.keys():
+		send_to_peer(pid, {"type": "text", "message": "\n".join(report)})
+		send_to_peer(pid, {"type": "text",
+			"message": "[color=#FFAA00]The realm has been remade. Please log out and back in.[/color]"})
+
+
 func _check_shutdown_sentinel() -> void:
 	"""v0.9.381 — poll for the SSH-writable shutdown sentinel file. Lets a
 	deploy script trigger the warned-shutdown countdown remotely without an
@@ -1354,6 +1391,7 @@ func _process(delta):
 	_shutdown_sentinel_timer += delta
 	if _shutdown_sentinel_timer >= SHUTDOWN_SENTINEL_POLL_INTERVAL:
 		_shutdown_sentinel_timer = 0.0
+		_check_world_reset_sentinel()
 		_check_shutdown_sentinel()
 
 	# Process pending update countdown
