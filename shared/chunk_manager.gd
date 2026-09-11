@@ -71,6 +71,23 @@ func world_to_local(world_x: int, world_y: int) -> Vector2i:
 
 # ===== TILE ACCESS =====
 
+## Procedurally generated tiles, keyed "x,y". Terrain is a pure function of (x, y, world_seed),
+## so a generated tile never changes and can be kept. MODIFIED tiles are NOT in here - they are
+## checked first, straight out of the chunk - so a player's edit can never be masked by this.
+##
+## 2026-09-11, measured (tools/probe/overworld_render_cost.gd): one `get_tile` cost 21us and a
+## single player MOVE made ~1,390 of them (529 for the map, 861 for the minimap) - 29ms of the
+## 46ms the server spent on one location update. Two causes, both fixed here:
+##   1. every call re-ran `generate_tile` for the same tile;
+##   2. worse, a chunk with NO modified tiles was never remembered, so every call also ran
+##      `FileAccess.file_exists` - about 1,390 disk stats per move, per player.
+var _gen_tile_cache: Dictionary = {}
+## Chunks known to hold no modified tiles, so their absence is not re-checked on disk every call.
+var _empty_chunks: Dictionary = {}
+## Bounded, so a long walk cannot grow it forever. 40k tiles is ~39 chunks around the player.
+const GEN_TILE_CACHE_MAX := 40000
+
+
 func get_tile(world_x: int, world_y: int) -> Dictionary:
 	"""Get the tile data at world coordinates.
 	Returns modified tile if chunk has been changed, otherwise generates procedurally."""
@@ -81,11 +98,13 @@ func get_tile(world_x: int, world_y: int) -> Dictionary:
 	var chunk_key = get_chunk_key(world_x, world_y)
 	var tile_key = "%d,%d" % [world_x, world_y]
 
-	# Load chunk from disk if not already loaded
-	if not _loaded_chunks.has(chunk_key):
+	# Load chunk from disk if not already loaded (and remember chunks that have nothing in them)
+	if not _loaded_chunks.has(chunk_key) and not _empty_chunks.has(chunk_key):
 		var loaded = _load_or_create_chunk(chunk_key)
 		if not loaded.get("modified_tiles", {}).is_empty():
 			_loaded_chunks[chunk_key] = loaded
+		else:
+			_empty_chunks[chunk_key] = true
 
 	# Check if this chunk has modifications
 	if _loaded_chunks.has(chunk_key):
@@ -94,9 +113,16 @@ func get_tile(world_x: int, world_y: int) -> Dictionary:
 		if modified_tiles.has(tile_key):
 			return modified_tiles[tile_key]
 
-	# No modification — generate procedurally
+	# No modification — the generated tile, cached
+	if _gen_tile_cache.has(tile_key):
+		return _gen_tile_cache[tile_key]
+
 	if terrain_generator:
-		return terrain_generator.generate_tile(world_x, world_y, world_seed)
+		var gen: Dictionary = terrain_generator.generate_tile(world_x, world_y, world_seed)
+		if _gen_tile_cache.size() >= GEN_TILE_CACHE_MAX:
+			_gen_tile_cache.clear()
+		_gen_tile_cache[tile_key] = gen
+		return gen
 
 	# Fallback if terrain_generator not set yet
 	return {"type": "empty", "blocks_move": false, "blocks_los": false}
@@ -109,7 +135,9 @@ func set_tile(world_x: int, world_y: int, data: Dictionary) -> void:
 	var chunk_key = get_chunk_key(world_x, world_y)
 	var tile_key = "%d,%d" % [world_x, world_y]
 
-	# Ensure chunk is loaded
+	# Ensure chunk is loaded. It now HAS a modified tile, so it is no longer an "empty" chunk:
+	# forget that note or get_tile would skip loading it and never see this edit.
+	_empty_chunks.erase(chunk_key)
 	if not _loaded_chunks.has(chunk_key):
 		_loaded_chunks[chunk_key] = _load_or_create_chunk(chunk_key)
 
@@ -359,6 +387,11 @@ func save_world_seed() -> void:
 func regenerate_world_seed() -> void:
 	"""Generate a new random world seed and save it. Used during map/full wipe."""
 	world_seed = randi()
+	# Every cached tile was generated from the OLD seed and is now wrong. Cheap insurance: the
+	# world reset of 2026-09-11 is exactly the sort of once-a-year path where a stale cache
+	# would show as terrain that does not match the map anyone else sees.
+	_gen_tile_cache.clear()
+	_empty_chunks.clear()
 	save_world_seed()
 	print("Regenerated world seed: %d" % world_seed)
 
@@ -379,6 +412,9 @@ func wipe_all_chunks() -> void:
 	"""Delete all chunk files and reset in-memory state. Used for map wipe."""
 	_loaded_chunks.clear()
 	_dirty_chunks.clear()
+	# The caches describe the OLD world (and a wipe can change the seed), so they go too.
+	_gen_tile_cache.clear()
+	_empty_chunks.clear()
 	depleted_nodes.clear()
 	# Remove persisted depleted nodes file
 	if FileAccess.file_exists(DEPLETED_NODES_FILE):

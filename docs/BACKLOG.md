@@ -299,7 +299,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 47 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 48 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -1113,8 +1113,47 @@ Owner: *"the more I think about it the more I wonder if we can just do sprites f
 overworld? ... How will it effect server and client performance? How will it impact the number
 of supported players on the server at once?"*
 
-**Measured first, and the answer inverts the worry.** All figures from
-`tools/probe/overworld_sprite_cost.gd` and a standalone timing of `generate_map_display`.
+**RE-MEASURED 2026-09-11 against the REAL server world, and it overturns the plan below.**
+`tools/probe/overworld_render_cost.gd` builds a live chunk manager and calls the real
+`generate_map_display`, then times its parts. The old figures came from a standalone timing with
+no chunk manager wired (the caveat at the end of this section said so); they were wrong about
+both the size and the CAUSE.
+
+| per location update, at (40,40) | BEFORE | AFTER the tile-cache fix |
+|---|---:|---:|
+| whole call | **46.7 ms** | **15.4 ms** |
+| ...minimap | 21.1 ms | 5.7 ms |
+| ...map grid: tile fetch | 11.2 ms | 0.8 ms |
+| ...map grid: line of sight | 1.6 ms | 1.6 ms |
+| ...map grid: **building the text** | **1.4 ms** | 1.4 ms |
+| bytes on the wire | 25,590 | 25,590 |
+
+**So "move rendering to the client" was aimed at 1.4 ms of a 46.7 ms cost - 3%.** The cost was
+never the drawing. It was `chunk_manager.get_tile`: 21us a call and ~1,390 calls per move (529
+map + 861 minimap), because every call re-generated the tile AND, for any chunk with no player
+edits, ran `FileAccess.file_exists` - ~1,390 disk stats per move per player. Fixed (see below):
+the whole update is now 3x cheaper with no visual change at all.
+
+**What this means for the two steps.** Phase 1 is still worth doing, but for the RIGHT reasons:
+it is the **enabler for Phase 2** (the client cannot draw sprites for tiles it has never been
+sent) and it cuts the WIRE (25.6 KB a move, of which the map grid is only 4.7 KB - the rest is
+the minimap and header). It is NOT the server-CPU fix; that was the tile cache, and the next
+CPU win is the minimap's post-proximity loop, not rendering.
+
+- [x] **DONE 2026-09-11 — the tile cache, and the disk stat per tile.** `get_tile` now keeps
+      generated tiles (terrain is a pure function of x, y, seed) and remembers chunks that hold
+      no modified tiles. 46.7 ms -> 15.4 ms per update; `get_tile` 21us -> 1.5us. MODIFIED tiles
+      are still checked first, so a player's wall can never be masked; the cache is capped at
+      40k tiles and cleared on a world wipe or a new seed. Probe `tile_cache.gd` (8 checks)
+      compares warmed vs cold map output character for character; re-injecting "cache wins over
+      modified" fails it. **Server-side only: needs a deploy, no client change, nothing visual.**
+
+- [ ] **NEXT SERVER WIN — the minimap's post-proximity loop (5.7 ms of the remaining 15.4).**
+      `_generate_minimap` walks 861 cells and, for each, loops over EVERY post point in the world
+      (60 posts plus their wing rooms, ~240 points) doing an abs() box test before it will even
+      look at the tile. That is ~200k comparisons per move. A set of post tile keys, or a coarse
+      spatial bucket, replaces the whole loop with one lookup. Same shape as the tile cache: no
+      visual change, server only.
 
 |                          | overworld today (ASCII) | dungeon today (sprites) |
 |--------------------------|------------------------:|------------------------:|
@@ -1137,14 +1176,21 @@ So the cost is not "sprites". It is "rendered on the server".
 scope, because they are all tiles in the same grid.**
 
 - [ ] **PHASE 1 — move overworld rendering to the CLIENT. No art, no visual change.**
-      Send tile DATA and let the client draw, exactly as the dungeon already does. Purely
-      architectural, independently valuable, and measurable on its own:
-      server render CPU -> ~0, wire 13,333 bytes -> ~529 bytes + entities (roughly 10-25x less).
-      **Player capacity goes UP**, because this removes the most expensive per-player operation
-      the server performs.
-      Do this FIRST and alone. Coupling it with the art would make a performance regression and
-      an art regression indistinguishable — the exact trap that hid the boss ring and the
-      missing post-stamping.
+      Send tile DATA and let the client draw, exactly as the dungeon already does. Do this FIRST
+      and alone: coupling it with the art would make a performance regression and an art
+      regression indistinguishable — the exact trap that hid the boss ring and the missing
+      post-stamping.
+      **Why, re-stated after the 2026-09-11 measurement** (the CPU claim that used to be here was
+      wrong - rendering is 1.4 ms of the call):
+        * it is the **ENABLER for Phase 2** - the client cannot draw a tile it has never been sent;
+        * it cuts the **WIRE**: 25.6 KB per move today. A compact grid (one byte of type + one of
+          state per tile) plus entity lists is ~1-2 KB, and the minimap comes from the same data
+          instead of being a second 21 KB of BBCode;
+        * it removes ~1.4 ms of server CPU per move, which is real but is NOT the headline.
+      **What the client needs, and the trap to avoid:** the server must keep deciding what a
+      player may SEE (line of sight, fog) - send resolved per-tile state (visible / remembered /
+      unknown), never raw chunk data, or the client can see through walls. The dungeon already
+      works this way.
 
 - [ ] **SPRITE SCALE across the game (owner direction 2026-09-11, while reviewing the sprite
       Sanctuary):** *"This makes me also wonder if we should increase player, companion, and
