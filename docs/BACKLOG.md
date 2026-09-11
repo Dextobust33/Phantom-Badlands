@@ -461,6 +461,18 @@ share of a pool plus a per-class engine, so its cost curve does not transfer. Ow
       predates this design — cards should now be authored WITH cycle values, so the content pass
       waits on the model being confirmed.
 
+- [x] **SHIPPED v0.9.768 (2026-09-10) - the dungeon ROOM pass.** Per-room floors from 7 packs
+      and per-room decor from 7, room IDENTITY via connected components, the rim rule changed from
+      outline to SUPPORT, two-cell props (whole lampposts), loot corner-brackets in rarity colour,
+      hoverable loot, the consumable sprite, and dungeon LIGHTING at 62% ambient with lamps.
+      Plus the 3x3 room fix the owner caught in play, and the player-facing "a wall blocks your
+      path" message corrected to "solid rock" - dungeons have not drawn walls in a long time.
+      Server redeployed for the loot-hover payload and verified by hashing the RUNNING process.
+      All 7 assets live; launcher endpoints answer 200; 804 remote refs audit clean of restricted
+      art.
+      STILL UNVERIFIED and shipped on code review, unchanged from v0.9.767: party equipment
+      rewards and leader logout/permadeath. `party3` sets both up in one command.
+
 ## Phase 3.45 — SPRITE INTERIORS (owner direction 2026-09-10, NOT previously captured)
 
 Owner, on buying the Raven Fantasy collection: *"I eventually would like to make inside of posts,
