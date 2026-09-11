@@ -401,6 +401,44 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       STILL UNVERIFIED and shipped on code review: party equipment rewards (2 clients) and
       leader logout/permadeath (3 clients) - `party3` and `party3_leader_dies` set both up.
 
+## Phase 2.8 — DAMAGE ATTRIBUTION IS LOSSY (found 2026-09-11, REPRODUCED, not yet fixed)
+
+- [ ] **36% of player actions report less damage to the client than the monster actually loses.**
+      `tools/probe/damage_attribution.gd` reproduces it: 160 player actions across 40 fights,
+      58 of them (36%) where `message_damage` sums to less than the monster's pool moved.
+      Monsters that HEAL (life steal, regeneration) are excluded from the run, because those are
+      legitimate reasons for the pool to move against the claims and would let it pass falsely.
+
+      Worst observed: the monster lost 243, the lines claimed 41.
+      ```
+      dmg=0   | poison 1424 (10t)
+      dmg=0   | CRITICAL!
+      dmg=0   | Power Strike — ...        <- the hit that landed, carrying ZERO
+      dmg=41  | Your Bone Servant attacks for 41 damage!
+      ```
+      The Power Strike is applied (the pool moves) but its mark never reaches `message_damage`,
+      so the client cannot attribute it. Consistent runs happen too — it is INTERMITTENT, which
+      is why the earlier hand-run of a plain monster came back 428/428 and looked fine.
+
+      **Why it matters.** `message_damage` drives the floating damage number and, for monsters
+      the player has NOT learned, the enemy HP bar (via `damage_dealt_to_current_enemy`). A lost
+      mark means a hit with no number and a bar that under-moves.
+
+      **The likely cause, to confirm before fixing.** A mark records `at: messages.size()` at the
+      moment `_damage_with_detail` is CALLED, and the line is appended afterwards. Anything that
+      appends to the same array between those two points shifts every later index by one. The
+      "CRITICAL!" line in the sample above is appended by `apply_ability_damage_modifiers`, which
+      runs in the same statement.
+
+      **The structural fix is to stop recording an index at all** — attach the damage to the LINE
+      (append first, then mark the last entry), so there is no window in which it can drift.
+      Adding another guard to the index arithmetic would leave the same class open.
+
+      **NOT yet proven to be the owner's 666/750 report.** That monster was KNOWN to the player,
+      so its bar was server-authoritative rather than accumulator-driven. This is a real bug found
+      while chasing that one; the two may or may not be the same thing. The HP trace
+      (`HP_TRACE_ENABLED`) is still in place for the original.
+
 ## Phase 2.95 — SPRITE THE OVERWORLD (owner direction 2026-09-11)
 
 Owner: *"the more I think about it the more I wonder if we can just do sprites for the entire
