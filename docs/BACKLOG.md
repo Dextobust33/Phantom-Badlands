@@ -1307,7 +1307,14 @@ scope, because they are all tiles in the same grid.**
       * **FIGURES** - the player, companions, monsters and other players, at the owner's scale
         rule (player > companion; monsters bigger in dungeons), and wearing their COSMETIC
         VARIANT via `DungeonComposite.tinted` (owner: the tint belongs "everywhere pretty much";
-        every other sprite surface already does this). `sanctuary_room.gd::overlay_cells`
+        every other sprite surface already does this).
+      * **DUNGEON ENTRANCES get a sprite AND a hover.** Owner 2026-09-11, agreeing the density
+        work: *"We will also want to make sure the entrances are hoverable and sprited once we
+        get all of the overworld spriting in."* An entrance is an overworld tile, so the sprite
+        comes with this phase for free; the HOVER is the same surface as the three tooltip
+        faults in Phase 3 and should be built on whatever fix those get, not beside it. With
+        ~3,150 dungeons in the world (the agreed density) the hover is not a nicety - it is how
+        a player tells an H4 from an S9 without walking onto it. `sanctuary_room.gd::overlay_cells`
         already solves a figure larger than its cell: the room is one composed image and figures
         are overlays that may span cells. Reuse it rather than writing a second one.
       * **What NOT to redo**: the Sanctuary is finished and is its own screen; it does not become
@@ -2529,9 +2536,20 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       then H7-9, then move to G - only makes sense if G beats H. Today it does not, so a player
       who climbs H to rank 9 has no reason to ever leave it. **Fix the ladder before, or with,
       the dungeon placement work**, or the placement work ships a progression nobody should
-      follow. Options: make tier a real multiplier on HP and bonuses (not just the damage term);
-      or make ascension carry rank and level across; or route both through `power_index` so one
-      number orders the whole 81-cell ladder and the probe finally means something.
+      follow.
+
+      **OWNER DECIDED 2026-09-11: make TIER REAL.** Tier multiplies HP and the bonuses granted to
+      the owner, not only the 0.06 damage term, sized so the weakest of a tier beats the strongest
+      of the one below. Both ladders route through `PowerRank.power_index` so ONE number orders
+      all 81 cells and `tools/probe/power_rank.gd` finally asserts a stat rather than a label.
+      Ascension stops being a downgrade as a consequence, without changing what it does.
+      Owner also asked the fair question behind it: *"the alternative is if our current system
+      holds and we can make a clear progression path for players that they will be able to
+      understand easily."* Worth keeping in view - if tier is made real, the player-facing
+      promise becomes simply "further right on the ladder is stronger, always", which is the
+      easiest thing to explain and the thing the display already implies.
+      **Re-calibration:** this is a player-power change, so the monster curve is stale after it
+      (`speciescal` / `refcal` / `rolecal`). Budget that into the work.
 
 - [ ] **A WORLD DUNGEON BUILDS ITS WHOLE INTERIOR AND NOBODY EVER LOOKS AT IT.** Found 2026-09-11
       while costing the owner's *"massively increase the amount of dungeons"*. This is the reason
@@ -2689,10 +2707,22 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
           `TIER_LEVEL_BANDS` stops describing anything.
         * **(c) BOTH ladders get re-drawn** - accept that the distance curve and the tier rings
           are two descriptions of the same thing and derive one from the other. Cleanest, biggest.
-      **(a) is what I would do**, because it changes placement only and leaves every number that
-      balance work depends on alone. Measurable: spawn 500 dungeons, compare each one's band
-      against `get_post_anchored_level` at its tile, and require the overlap.
-      **Owner decision. Ask before building.**
+      **OWNER DECIDED 2026-09-11: (a), MOVE THE DUNGEONS** - place each one at the radius where
+      the land already reaches its own band. No level formula changes, no grade changes meaning.
+      Measurable: spawn 500 dungeons, compare each one's band against `get_post_anchored_level`
+      at its tile, and require the overlap.
+
+      **And DENSITY: about one dungeon per 100 tiles walked, everywhere.** `tools/dungeon_density.gd`
+      prices that at roughly **3,150 dungeons** against a live cap of 200. That number is only
+      affordable after the world-dungeon interior work below - see the item on it - because today
+      each one costs ~600 ms to spawn, ~620 KB to hold, and three linear scans per player move.
+      **Do the cost work FIRST.** Raising the cap on the current implementation just moves the
+      spike somewhere else.
+
+      **Owner, same breath:** *"We will also want to make sure the entrances are hoverable and
+      sprited once we get all of the overworld spriting in."* Recorded in Phase 2.95 PHASE 2 -
+      a dungeon entrance is an overworld tile, so it sprites with everything else, and hover is
+      the same surface as the three tooltip faults in Phase 3.
 
 - [x] **SHIPPED v0.9.760-767 — the dungeon RENDERER, its sprites, and the hoverable key.**
       This replaces three separate open entries (~245 lines) that were still describing this as
