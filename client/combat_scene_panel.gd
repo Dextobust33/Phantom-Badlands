@@ -341,6 +341,13 @@ var _hand_status_label: RichTextLabel
 var _combat_hand: Array = []
 var _combat_deck_count: int = 0
 var _combat_discard_count: int = 0
+# 2026-09-11 - TRUE while the round just played is still animating, so the hand must not look
+# playable. Combat input has been gated on the animation since 2026-09-04 (client.gd
+# `_combat_input_gated`), but the gate refused SILENTLY and the cards went on rendering at full
+# colour - so the player pressed, nothing happened, and nothing said why. Measured 2026-09-11:
+# a multi-hit round takes up to 4.55s to play out, which is a long time to look at a live card
+# that is not.
+var _hand_gated: bool = false
 # v0.9.385 — optional Lufia-box mirror widgets (HP + deck info inside the
 # player's stat box, beside the portrait). Created in
 # _build_lufia_player_box_content and updated alongside the shared widgets;
@@ -4760,7 +4767,9 @@ func _refresh_hand() -> void:
 		# v0.9.696 — Warrior Devastate is gated behind Momentum: it can't be played
 		# with 0 Momentum. Render it as uncastable (dimmed + hint) until the meter
 		# has at least 1 pip, mirroring the server gate in _process_warrior_ability.
-		var castable := bool(info.get("can_afford", true))
+		# The animation gate dims the whole hand: these cards are genuinely unplayable right now,
+		# and that is the same thing "uncastable" already means here.
+		var castable := bool(info.get("can_afford", true)) and not _hand_gated
 		if _momentum_active and card_name == "devastate" and _momentum < 1:
 			castable = false
 			cell.set_meta("can_afford", false)
@@ -4790,7 +4799,17 @@ func _refresh_hand() -> void:
 
 	# Status line
 	if _hand_status_label:
-		_hand_status_label.text = "[color=#5CE05C]Deck %d[/color]  [color=#888888]·[/color]  [color=#FF6B6B]Discard %d[/color]" % [_combat_deck_count, _combat_discard_count]
+		if _hand_gated:
+			# The escape hatch already exists - `acknowledge_continue` fast-forwards the round -
+			# it was simply never advertised at the moment a player wants it.
+			var _skip := "Space"
+			if client_ref and client_ref.has_method("get_action_key_name"):
+				var _k := str(client_ref.get_action_key_name(0))
+				if _k != "":
+					_skip = _k
+			_hand_status_label.text = "[color=#FFD700]Round playing… press [%s] to skip ahead[/color]" % _skip
+		else:
+			_hand_status_label.text = "[color=#5CE05C]Deck %d[/color]  [color=#888888]·[/color]  [color=#FF6B6B]Discard %d[/color]" % [_combat_deck_count, _combat_discard_count]
 	# v0.9.385 — mirror deck / hand / discard into the Lufia in-box label.
 	if _lufia_player_deck_label and is_instance_valid(_lufia_player_deck_label):
 		var hand_size := _combat_hand.size()
@@ -4799,6 +4818,23 @@ func _refresh_hand() -> void:
 	if _overlay_player_deck_label and is_instance_valid(_overlay_player_deck_label):
 		var hand_size_overlay := _combat_hand.size()
 		_overlay_player_deck_label.text = "Deck %d · Hand %d · Discard %d" % [_combat_deck_count, hand_size_overlay, _combat_discard_count]
+
+
+func set_hand_gated(gated: bool) -> void:
+	"""Show the hand as unplayable while the round it answers is still playing out.
+
+	This does not CREATE the restriction - `_combat_input_gated()` has refused input during
+	playback since 2026-09-04. It makes the restriction visible, which is the half that was
+	missing: the owner reported picking a second card before their health bar had moved, and at a
+	measured 4.55s of playback for a multi-hit round they were not being hasty. The press was
+	being swallowed in silence.
+
+	Cheap to call repeatedly - a no-op unless the state actually changed."""
+	if _hand_gated == gated:
+		return
+	_hand_gated = gated
+	if is_inside_tree():
+		_refresh_hand()
 
 
 func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:

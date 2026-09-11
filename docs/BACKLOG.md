@@ -667,38 +667,40 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       the monster's name string, so they need the name split before they can be wrapped, which
       is the fiddlier half.
 
-- [~] **MEASURED 2026-09-11 — the bar is right; the WINDOW is real and unguarded. Owner's call.**
-      Owner asked, and hedged: *"I may have been moving too fast though."* They were not.
-      The bar was never the fault. Its tween is 0.3s, it reads `current_hp` directly, and it is
-      held back on purpose: since 2026-09-02 `update_player_hp_bar` waits on
-      `_coop_playback_pending()` (solo included) so HP cannot drop before the line that explains
-      the hit. That is correct and should stay.
-      What was never measured is how LONG that hold lasts. Priced at the client's own pacing
-      constants, against real rounds driven through the real combat manager
-      (`tools/probe/hp_bar_timing.gd`):
+- [x] **DONE 2026-09-11 — the bar was right, the gate was right, and neither was VISIBLE.**
+      Owner asked and hedged: *"I may have been moving too fast though."* They were not.
+      Nothing here was broken. The bar's tween is 0.3s, it reads `current_hp` directly, and it is
+      held on purpose — since 2026-09-02 `update_player_hp_bar` waits on `_coop_playback_pending()`
+      (solo included) so HP cannot drop before the line explaining the hit. Input has ALSO been
+      refused during playback since 2026-09-04 (`_combat_input_gated`, applied in `trigger_action`
+      and `_on_combat_card_played`).
+      What nobody had measured is how LONG that lasts. Real rounds driven through the real combat
+      manager, priced at the client's own pacing constants (`tools/probe/hp_bar_timing.gd`):
 
       | monster | worst round | playback |
       |---|---|---|
       | Giant Spider | 10 messages | **4.55s** |
       | Wolf | 10 messages | **4.55s** |
-      | Skeleton | 8 messages | 3.65s |
+      | Skeleton | 8-10 messages | 3.65-4.55s |
       | Goblin | 4 messages | 1.85s |
 
-      And in SOLO nothing gates the press: `send_combat_command` checks `connected`, `in_combat`
-      and the party turn, and no playback state at all. So for up to **4.6 seconds** the cards
-      are live while the bar still reads the PREVIOUS round. Under permadeath that is exactly the
-      decision that kills you — picking a card without knowing your own HP.
-      **Three materially different answers, so ASK rather than pick:**
-      (a) gate the cards until the round has played, with Space to fast-forward (the escape hatch
-      already exists — `acknowledge_continue` sets `_combat_fastforward`). Nobody waits more than
-      one keypress, nobody decides blind. Note input-blocking was rejected 2026-09-01, but for
-      CO-OP specifically, because one slow client would hold up the party. Solo has no party.
-      (b) fast-forward on the press: the press both catches the round up and plays the card.
-      Never swallows input — but the decision was still made blind, and the existing
-      `_combat_queue_pending_rounds() >= 1` catch-up already snaps the bar a round-trip later, so
-      this buys only ~150ms.
-      (c) leave it, and accept that a fast player acts a round behind their own health.
-
+      So for up to **4.55 seconds** the cards rendered at full colour, the press was swallowed in
+      silence, and nothing said why or how to skip. That is the whole report: not a lagging bar,
+      an invisible rule.
+      Fixed by making the existing rule legible — no mechanic changed. All three card-slot
+      builders fold `_combat_input_gated()` into `enabled`; the combat panel's hand renders gated
+      cards as uncastable (the state it already had) and swaps its deck/discard line for
+      *"Round playing… press [Space] to skip ahead"* — the fast-forward has existed all along in
+      `acknowledge_continue`, it was simply never advertised at the moment a player wants it.
+      Driven from ONE tick in `_process`, not from each enqueue site (there are several: solo,
+      co-op, flock chains, fast-forward) — a gate that is right at only some of them would teach
+      players the dimming means nothing. Deliberately NOT keyed off `in_combat`, which is cleared
+      at combat_end while the round is still animating; that is the exact trap `_combat_ui_busy`
+      exists for and six bugs walked into before.
+      Re-injection: removing the dimming fails 3 of the probe's 13 checks.
+      **Correction worth keeping:** my first pass read `send_combat_command`'s body, found no
+      playback check, and reported "in SOLO nothing gates the press". Wrong UNIT — the gate is
+      one level up, in the two callers. The probe now checks those, and says so.
 - [~] **LIKELY SOLVED 2026-09-11, awaiting one confirmation.** Almost certainly the same cause as
       the bossless dungeon and the re-farm: the owner was re-entering a personal instance that had
       already been completed, which KEEPS its original sub-tier and skips the whole

@@ -1887,6 +1887,9 @@ var combat_phase_paused: bool = false
 # queue drain freezes. Active tweens (lunge / popup fade) complete on their
 # own — pause only halts NEW messages from arriving.
 var _combat_paused: bool = false
+# 2026-09-11 - what the hand is currently SHOWING, so the gate UI refreshes on change rather
+# than every frame (update_action_bar rebuilds ten buttons).
+var _combat_hand_gated_shown: bool = false
 # v0.9.417 — universal combat pacing (speed tiering removed). Single set of
 # delay values used by _drain_combat_queue.
 # v0.9.422 — ~20% speedup across the board. User feedback: turns took too
@@ -3915,6 +3918,23 @@ func _process(delta):
 		if combat_phase_timer <= 0:
 			combat_phase_paused = false
 			_drain_combat_queue()
+
+	# 2026-09-11 - keep the hand's APPEARANCE in step with whether it can actually be played.
+	# Driven from _process rather than from each enqueue site: there are several of those
+	# (solo, co-op, flock chains, fast-forward) and a gate that is only right at some of them
+	# is worse than none - it would teach the player that the dimming means nothing. Both
+	# calls below are no-ops unless the state actually changed.
+	# Not gated on `in_combat`: that is cleared at combat_end while the round is STILL playing
+	# (the whole reason `_combat_ui_busy` exists), and the hand must stay dimmed through the
+	# victory playout. Outside a fight `_combat_input_gated()` is false, so this also un-dims
+	# on the way out rather than stranding the last fight's state on the next one.
+	var _gated: bool = _combat_input_gated()
+	if _gated != _combat_hand_gated_shown:
+		_combat_hand_gated_shown = _gated
+		var _csp = combat_scene_panel
+		if _csp != null and is_instance_valid(_csp) and _csp.has_method("set_hand_gated"):
+			_csp.set_hand_gated(_gated)
+		update_action_bar()
 
 	# Escape handling (only in playing state)
 	if game_state == GameState.PLAYING:
@@ -12963,7 +12983,13 @@ func _get_combat_ability_actions() -> Array:
 						"label": display_name,
 						"action_type": "combat",
 						"action_data": command,
-						"enabled": has_resource,
+						# 2026-09-11 - dim while the ROUND IS STILL PLAYING. `_combat_input_gated()` has refused
+						# these presses since 2026-09-04, but silently, and the slot went on rendering as live,
+						# so the press vanished with no explanation. Measured: up to 4.55s of playback for a
+						# multi-hit round. Owner: "I didn't see my health bar drop from the first round of the
+						# combat before I selected my second round card." At 4.55s that is not haste. The
+						# refusal was already right; only its visibility was missing.
+						"enabled": has_resource and not _combat_input_gated(),
 						"cost": cost,
 						"resource_type": resource_type
 					})
@@ -13031,7 +13057,13 @@ func _get_combat_ability_actions() -> Array:
 				"label": ability_info.display,
 				"action_type": "combat",
 				"action_data": ability_name,
-				"enabled": has_resource,
+				# 2026-09-11 - dim while the ROUND IS STILL PLAYING. `_combat_input_gated()` has refused
+				# these presses since 2026-09-04, but silently, and the slot went on rendering as live,
+				# so the press vanished with no explanation. Measured: up to 4.55s of playback for a
+				# multi-hit round. Owner: "I didn't see my health bar drop from the first round of the
+				# combat before I selected my second round card." At 4.55s that is not haste. The
+				# refusal was already right; only its visibility was missing.
+				"enabled": has_resource and not _combat_input_gated(),
 				"cost": cost,
 				"resource_type": resource_type
 			})
@@ -13092,7 +13124,13 @@ func _get_combat_hand_actions() -> Array:
 				"label": _ability_display_name(card_name),
 				"action_type": "combat",
 				"action_data": card_name,
-				"enabled": has_resource,
+				# 2026-09-11 - dim while the ROUND IS STILL PLAYING. `_combat_input_gated()` has refused
+				# these presses since 2026-09-04, but silently, and the slot went on rendering as live,
+				# so the press vanished with no explanation. Measured: up to 4.55s of playback for a
+				# multi-hit round. Owner: "I didn't see my health bar drop from the first round of the
+				# combat before I selected my second round card." At 4.55s that is not haste. The
+				# refusal was already right; only its visibility was missing.
+				"enabled": has_resource and not _combat_input_gated(),
 				"cost": cost,
 				"resource_type": rt
 			})

@@ -104,28 +104,50 @@ func _init() -> void:
 		"update_player_hp_bar is gated on playback - correct, and deliberate since 2026-09-02")
 	ck(src.contains("_settle_combat_bars()"), "bars settle only when the queue empties")
 
-	print("\n--- so this is the window, and nothing guards it ---")
-	print("    a player can act for ~%.1fs while their HP bar still shows the PREVIOUS round" % worst)
-	# The real finding: send_combat_command gates on connected / in_combat / party turn, and on
-	# nothing else. In SOLO there is no playback check at all.
+	print("
+--- so that is the window a player stares at a hand they cannot play ---")
+	print("    up to %.1fs, with the HP bar still reading the PREVIOUS round" % worst)
+	# Where the refusal actually lives - NOT here. See the correction below.
 	var a := src.find("func send_combat_command(")
 	var body := src.substr(a, src.find("\nfunc ", a + 10) - a) if a >= 0 else ""
 	ck(a >= 0, "found send_combat_command")
-	ck(body.contains("if not in_combat:") and body.contains("_party_action_blocked()"),
-		"send_combat_command gates on connection, on being in combat, and on your party turn")
-	# NOT a check - an OPEN FINDING, printed with its number so the decision is the owner's.
-	# Turning it into a failing assertion would be asserting a fix nobody has chosen: the
-	# options (gate the cards until the round has played, fast-forward on the press, or leave
-	# it) are materially different games, not implementation details.
-	var guarded: bool = body.contains("_combat_playback_active(") or body.contains("_combat_fastforward")
+	# CORRECTION, same day. My first pass read send_combat_command's body, found no playback
+	# check, and reported "in SOLO nothing gates the press". Wrong UNIT: the gate is one level
+	# UP, in `trigger_action` (hotkey) and `_on_combat_card_played` (mouse), and it has been
+	# there since 2026-09-04. Input was never ungated. What was missing was any SIGN of it.
+	ck(src.contains("func _combat_input_gated() -> bool:"), "the animation gate exists")
+	var trig := src.find("func trigger_action(")
+	var trig_body := src.substr(trig, src.find("
+func ", trig + 10) - trig) if trig >= 0 else ""
+	ck(trig_body.contains("_combat_input_gated()"), "the hotkey path refuses during playback")
+	var click := src.find("func _on_combat_card_played(")
+	var click_body := src.substr(click, src.find("
+func ", click + 10) - click) if click >= 0 else ""
+	ck(click_body.contains("_combat_input_gated()"), "and so does the mouse path")
+
 	print("")
-	if not guarded:
-		print("    FINDING: in SOLO nothing gates the press. send_combat_command checks connected,")
-		print("    in_combat and the party turn - and no playback state. So for up to %.1fs the" % worst)
-		print("    cards are live while the bar still reads the PREVIOUS round's HP. The owner")
-		print("    hedged with \"I may have been moving too fast\" - at %.1fs, they were not." % worst)
-	else:
-		print("    A playback guard is now present in send_combat_command.")
+	print("--- ...and now the player can SEE it, which is the half that was missing ---")
+	# Every combat card slot, not just the server-pushed hand: _get_combat_ability_actions
+	# falls back to two legacy branches that build the same buttons.
+	var dimmed := src.count('"enabled": has_resource and not _combat_input_gated(),')
+	ck(dimmed == 3, "all 3 card-slot builders dim while the round plays - got %d" % dimmed)
+	ck(src.contains("set_hand_gated(_gated)"), "the combat panel's hand is dimmed too")
+	var panel := FileAccess.get_file_as_string("res://client/combat_scene_panel.gd")
+	ck(panel.contains("and not _hand_gated"),
+		"a gated card renders as uncastable - the state the panel already had for this")
+	ck(panel.contains("to skip ahead"),
+		"and the hand says HOW to skip - the fast-forward existed but was never advertised")
+
+	print("")
+	print("--- the dimming must never outlive the reason for it ---")
+	var proc := src.find("_combat_hand_gated_shown = _gated")
+	ck(proc >= 0, "the gate UI is driven from one tick, not from each enqueue site")
+	# Driving it off `in_combat` would strand the hand dimmed: in_combat is cleared at
+	# combat_end while the round is still animating. That is the exact trap _combat_ui_busy
+	# was created for, and six separate bugs walked into it before.
+	var seg := src.substr(maxi(0, proc - 900), 900)
+	ck(not seg.contains("if in_combat:"),
+		"...and NOT off `in_combat`, which is cleared while the round is still playing")
 
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails > 0 else 0)
