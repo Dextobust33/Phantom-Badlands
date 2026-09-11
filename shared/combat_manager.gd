@@ -7942,7 +7942,7 @@ func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Ar
 			# the card face would have rendered every pick as common without this line - the client
 			# change would have been a no-op that looked finished. Caught before shipping by asking
 			# what the wire actually carries rather than assuming the dict travels whole.
-			"rare": bool(u.get("rare", false)),
+			"rarity": CU.rarity_of(u),
 		})
 	return out
 

@@ -21134,6 +21134,36 @@ func _rebuild_milestone_grid() -> void:
 		var face_up: bool = (_ms_phase == "preview") or bool(_ms_revealed.get(slot, false))
 		_ms_grid.add_child(_make_milestone_tile(slot, up, face_up))
 
+func _upgrade_rarity(up: Dictionary) -> String:
+	"""The rarity tier of an offered upgrade, resolved through the shared table.
+
+	Reads the field the SERVER sent. The offer is rebuilt as a subset on the way out
+	(`_build_upgrade_offer`), so this is the only field that is actually here - do not try to
+	look the upgrade up again by id, because the client has no reason to hold the pool."""
+	return CardUpgrades.rarity_of(up)
+
+
+func _upgrade_rarity_color(up: Dictionary) -> Color:
+	"""Rarity colour, from the SAME table loot uses (`DropTables.RARITY_COLORS`).
+
+	Not a second palette. A player already reads a purple item as better than a green one, so an
+	upgrade that borrows the ramp needs no explaining - the same reasoning that settled the tier
+	vocabulary. If the loot ramp is ever re-hued these follow, which is the point."""
+	var tbl = load("res://shared/drop_tables.gd").RARITY_COLORS
+	return Color(String(tbl.get(_upgrade_rarity(up), "#FFFFFF")))
+
+
+func _upgrade_rarity_gauge(rank: int) -> String:
+	"""The rarity as a SHAPE, not only a colour: `◆◇◇◇` .. `◆◆◆◆`.
+
+	Owner asked for a gauge alongside the colour, and it is the half that still works for a
+	colour-blind player - green and blue are the pair most often confused, and they are exactly
+	uncommon and rare. Four cells because RARITY_ORDER has four tiers; it reads off the same
+	array, so adding a tier cannot leave the gauge behind."""
+	var n: int = clampi(rank + 1, 1, CardUpgrades.RARITY_ORDER.size())
+	return "◆".repeat(n) + "◇".repeat(CardUpgrades.RARITY_ORDER.size() - n)
+
+
 func _make_milestone_tile(slot: int, up: Dictionary, face_up: bool) -> Control:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = Vector2(168, 104)
@@ -21144,12 +21174,24 @@ func _make_milestone_tile(slot: int, up: Dictionary, face_up: bool) -> Control:
 		# Trade-offs are visually distinct because they are a different KIND of decision, not a
 		# better or worse one — the player should be able to see at a glance which picks ask
 		# for something back.
+		# TWO signals on one card, on two different surfaces so neither hides the other:
+		#   BACKGROUND     = does this ask something back (the existing warm/cool split)
+		#   BORDER + name + gauge = how rare it is
+		# Keeping the trade-off on the BACKGROUND matters: orange is a WARNING and rarity is
+		# decoration, and decoration must never overwrite a warning. A rare trade-off has to read
+		# as a trade-off first.
 		sb.bg_color = Color("#2A1F14") if tradeoff else Color("#141A22")
-		sb.border_color = Color("#E0902A") if tradeoff else Color("#4A7FB5")
+		var _rc: Color = _upgrade_rarity_color(up)
+		# Prominence rises WITH rarity. Straight RARITY_COLORS would make common - which is white -
+		# the brightest border on screen, so the plainest pick would shout the loudest.
+		var _pr: float = [0.38, 0.72, 1.0, 1.0][CardUpgrades.rarity_rank(_upgrade_rarity(up))]
+		sb.border_color = _rc.lerp(Color("#141A22"), 1.0 - _pr)
 	else:
 		sb.bg_color = Color("#0E0E12")
 		sb.border_color = Color("#3A3A46")
-	sb.set_border_width_all(2)
+	# Rare and above also get a heavier frame, so the tiers stay separable without relying on
+	# colour alone - roughly 1 in 12 men cannot tell the green from the blue.
+	sb.set_border_width_all(3 if (face_up and CardUpgrades.rarity_rank(_upgrade_rarity(up)) >= 2) else 2)
 	sb.set_corner_radius_all(8)
 	sb.content_margin_left = 9
 	sb.content_margin_right = 9
@@ -21170,18 +21212,21 @@ func _make_milestone_tile(slot: int, up: Dictionary, face_up: bool) -> Control:
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_theme_font_size_override("normal_font_size", 11)
 	if face_up:
-		# 2026-09-11 - SAY when a pick is rare. Rarity was added to the draw so some upgrades would
-		# be things *"players are telling their friends about"* - and a rare pick that looks exactly
-		# like a common one cannot be told about, because nobody knows they found anything.
-		# Gold plus a marker. The colour stays ORANGE on a rare trade-off: orange already means
-		# "asks something back", and that warning must not be overwritten by a decoration.
-		var rare: bool = bool(up.get("rare", false))
-		title.text = ("✦ " + String(up.get("name", "?"))) if rare else String(up.get("name", "?"))
-		var tcol: Color = Color("#E0902A") if tradeoff else (Color("#FFD24A") if rare else Color("#9FD0FF"))
-		title.add_theme_color_override("font_color", tcol)
+		# SAY how rare a pick is, at a glance. Rarity exists so some upgrades are things
+		# *"players are telling their friends about"* - and a rare pick that renders like a common
+		# one cannot be told about, because nobody knows they found anything.
+		# Owner 2026-09-11: *"They should also be visually distinct, colored by [rarity] or have a
+		# visual gauge so they can be differentiated from commons at a glance."* Both, because
+		# colour alone fails for colour-blind players: the NAME takes the rarity colour and a
+		# four-cell GAUGE shows the same thing as a shape.
+		var _r: String = _upgrade_rarity(up)
+		var _rank: int = CardUpgrades.rarity_rank(_r)
+		title.text = String(up.get("name", "?"))
+		title.add_theme_color_override("font_color", _upgrade_rarity_color(up))
 		var tail: String = ""
-		if rare:
-			tail += "\n[color=#FFD24A]— rarely offered —[/color]"
+		if _rank > 0:
+			tail += "\n[color=%s]%s %s[/color]" % [_upgrade_rarity_color(up).to_html(false),
+				_upgrade_rarity_gauge(_rank), _r.capitalize()]
 		if tradeoff:
 			tail += "\n[color=#E0902A]— asks something back —[/color]"
 		body.text = "[color=#BFBFBF]%s[/color]%s" % [String(up.get("desc", "")), tail]
@@ -21219,12 +21264,15 @@ func _on_milestone_tile_hover(slot: int) -> void:
 			"heal":   now_line = "now: [color=#77DD77]%d healing[/color]" % val
 			_:        now_line = ""
 	var tradeoff: bool = bool(up.get("tradeoff", false))
-	var rare: bool = bool(up.get("rare", false))
-	var head_col := "#E0902A" if tradeoff else ("#FFD24A" if rare else "#9FD0FF")
-	var txt := "[color=%s][b]%s%s[/b][/color] — [color=#BFBFBF]%s[/color]" % [
-		head_col, "✦ " if rare else "", String(up.get("name", "?")), String(up.get("desc", ""))]
-	if rare:
-		txt += "\n[color=#FFD24A]Rarely offered — most players will not have seen this one.[/color]"
+	var _r: String = _upgrade_rarity(up)
+	var _rank: int = CardUpgrades.rarity_rank(_r)
+	var head_col := "#E0902A" if tradeoff else _upgrade_rarity_color(up).to_html(false)
+	var txt := "[color=%s][b]%s[/b][/color] — [color=#BFBFBF]%s[/color]" % [
+		head_col, String(up.get("name", "?")), String(up.get("desc", ""))]
+	if _rank > 0:
+		txt += "\n[color=%s]%s %s[/color] [color=#8A8A96]— %s[/color]" % [
+			_upgrade_rarity_color(up).to_html(false), _upgrade_rarity_gauge(_rank), _r.capitalize(),
+			"most players will not have seen this one" if _rank >= 2 else "offered less often"]
 	if now_line != "":
 		txt += "\n[color=#8A8A96]%s[/color]" % now_line
 		# 2026-09-07 — and what the card becomes if you take it. "+12% effect" is a fact about

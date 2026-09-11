@@ -67,9 +67,9 @@ const UPGRADES := [
 	 "desc": "+2 rounds."},
 
 	# ---------------------------------------------------------------- damage, upside --------
-	{"id": "executioner", "wired": true, "name": "Executioner", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "executioner", "rarity": "uncommon", "wired": true, "name": "Executioner", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "+40% damage against a foe below 30% health."},
-	{"id": "opener", "wired": true, "name": "Opener", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "opener", "rarity": "uncommon", "wired": true, "name": "Opener", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "+50% damage on your FIRST use each fight."},
 	# "Overkill" (excess damage carries to the next flock member) was designed and then CUT
 	# before it shipped: every ability body clamps the monster's HP at zero, so by the time any
@@ -93,17 +93,17 @@ const UPGRADES := [
 	# KIND_ANY because EVERY card can be discarded unplayed; there is no card shape this cannot
 	# apply to. That also makes them the first upgrades whose effect fires when the card is NOT
 	# used, which is why the wiring lives in `_cycle_unplayed` rather than in a cast path.
-	{"id": "reveal_engine", "rare": true, "wired": true, "name": "Foretold", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_engine", "rarity": "rare", "wired": true, "name": "Foretold", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it feeds 1 point of your class engine as it cycles."},
-	{"id": "reveal_ward", "rare": true, "wired": true, "name": "Held in Reserve", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_ward", "rarity": "rare", "wired": true, "name": "Held in Reserve", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it leaves a small ward (3% of your max health) as it cycles."},
-	{"id": "reveal_spark", "rare": true, "wired": true, "name": "Smouldering", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_spark", "rarity": "rare", "wired": true, "name": "Smouldering", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it still stings the enemy for a little damage as it cycles."},
 
 	# ---------------------------------------------------------------- buff, upside ----------
-	{"id": "preload", "rare": true, "wired": true, "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "preload", "rarity": "epic", "wired": true, "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "The buff is already active on the first round of your NEXT fight."},
-	{"id": "shared", "rare": true, "wired": true, "name": "Shared", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "shared", "rarity": "rare", "wired": true, "name": "Shared", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "In a party, an ally also receives it at half strength."},
 	{"id": "warding", "wired": true, "name": "Warding", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "Also grants a small shield when cast."},
@@ -120,9 +120,9 @@ const UPGRADES := [
 	# them. Revisit if debuffs ever gain real durations.
 
 	# ---------------------------------------------------------------- any, upside -----------
-	{"id": "refund", "wired": true, "name": "Closing Cost", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "refund", "rarity": "uncommon", "wired": true, "name": "Closing Cost", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Refunds its cost when it lands the killing blow."},
-	{"id": "swift", "rare": true, "wired": true, "name": "Swift", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "swift", "rarity": "epic", "wired": true, "name": "Swift", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "12% chance the enemy loses its turn, so you act again. Damaging cards only."},
 
 	# ---------------------------------------------------------------- TRADE-OFFS ------------
@@ -151,23 +151,23 @@ const UPGRADES := [
 	 "desc": "Shields you for 9% of your health — but only while you are below half."},
 	{"id": "steadfast", "wired": true, "name": "Steadfast", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Take 10% less damage for 2 rounds after playing this."},
-	{"id": "kindling", "wired": true, "name": "Kindling", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "kindling", "rarity": "uncommon", "wired": true, "name": "Kindling", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Cast it on a FULL resource bar and it grants a point of your class engine (Momentum, Rage, Conviction, Focus or Read) instead of wasting the cast."},
-	{"id": "desperate", "wired": true, "name": "Desperation", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "desperate", "rarity": "uncommon", "wired": true, "name": "Desperation", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Grants TWO points of your class engine (Momentum, Rage, Conviction, Focus or Read) while you are below a third health."},
-	{"id": "opening_act", "rare": true, "wired": true, "name": "Opening Act", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "opening_act", "rarity": "epic", "wired": true, "name": "Opening Act", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "The FIRST time you play this in a fight, it costs nothing."},
-	{"id": "relentless", "wired": true, "name": "Relentless", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "relentless", "rarity": "uncommon", "wired": true, "name": "Relentless", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Every third cast of this card gives back a third of your mana / stamina / energy."},
-	{"id": "vindication", "wired": true, "name": "Vindication", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "vindication", "rarity": "uncommon", "wired": true, "name": "Vindication", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Heals you for 6% of your health when this lands a killing blow."},
 	{"id": "disorienting", "wired": true, "name": "Disorienting", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "One cast in four leaves the enemy swinging wide."},
 	{"id": "pinning", "wired": true, "name": "Pinning", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "12% chance to stun the enemy outright."},
-	{"id": "harrying", "wired": true, "name": "Harrying", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	{"id": "harrying", "rarity": "uncommon", "wired": true, "name": "Harrying", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "Grants a point of your class engine (Momentum, Rage, Conviction, Focus or Read) whenever the enemy is stunned or distracted."},
-	{"id": "demoralising", "wired": true, "name": "Demoralising", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	{"id": "demoralising", "rarity": "uncommon", "wired": true, "name": "Demoralising", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "Shields you for 5% of your health while the enemy is stunned or rattled."},
 	{"id": "entrenched", "wired": true, "name": "Entrenched", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "Also shields you for 7% of your health when the buff goes up."},
@@ -178,25 +178,25 @@ const UPGRADES := [
 	 "desc": "+30% damage, but it costs 25% more."},
 	{"id": "reckless", "wired": true, "name": "Reckless", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+35% damage, but you take 5% of your health as recoil."},
-	{"id": "slow_burn", "wired": true, "name": "Slow Burn", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "slow_burn", "rarity": "uncommon", "wired": true, "name": "Slow Burn", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "-25% immediate damage, but leaves a burn worth far more over time."},
-	{"id": "concentrated", "rare": true, "wired": true, "name": "Concentrated", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
+	{"id": "concentrated", "rarity": "rare", "wired": true, "name": "Concentrated", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "Double strength, half the duration."},
 	{"id": "reckless_guard", "wired": true, "name": "Open Guard", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "+50% to the buff, but -15% defence while it lasts."},
-	{"id": "hair_trigger", "wired": true, "name": "Hair Trigger", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "hair_trigger", "rarity": "uncommon", "wired": true, "name": "Hair Trigger", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Costs 40% less, but its effect varies wildly (50%-150%)."},
 	# The trade-off sub-pool needs to be as deep as the main one, or the LATE milestones - the
 	# ones that are supposed to be the interesting decisions - start repeating exactly where the
 	# stakes are highest. Owner: "trade-offs should likely be a large enough pool that repeats
 	# are rare as well."
-	{"id": "wild_swing", "wired": true, "name": "Wild Swing", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "wild_swing", "rarity": "uncommon", "wired": true, "name": "Wild Swing", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+45% damage, but a real chance to miss outright."},
-	{"id": "bloodprice", "rare": true, "wired": true, "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "bloodprice", "rarity": "rare", "wired": true, "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Paid in health instead of your resource."},
 	{"id": "brittle", "wired": true, "name": "Brittle Strike", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+30% damage, but your guard is down until your next turn."},
-	{"id": "all_in", "rare": true, "wired": true, "name": "All In", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "all_in", "rarity": "epic", "wired": true, "name": "All In", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Hits far harder the EMPTIER your resource bar is, and weakly when it is full."},
 	{"id": "greedy", "wired": true, "name": "Heavy Draw", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+25% damage, but the card is slower to come back around."},
@@ -206,13 +206,13 @@ const UPGRADES := [
 	 "desc": "+50% to the buff, but the foe acts before you this round."},
 	{"id": "costly_vigil", "wired": true, "name": "Costly Vigil", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "Lasts twice as long, but drains resource every round it holds."},
-	{"id": "provoking", "rare": true, "wired": true, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "provoking", "rarity": "epic", "wired": true, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, and the foe turns off your companion and onto YOU."},
-	{"id": "unstable_hex", "rare": true, "wired": true, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "unstable_hex", "rarity": "rare", "wired": true, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, with a small chance it lands on you instead."},
-	{"id": "gamblers_cut", "rare": true, "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "gamblers_cut", "rarity": "rare", "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Half cost, but a quarter of the time it does nothing at all."},
-	{"id": "sacrificial", "rare": true, "wired": true, "name": "Sacrificial", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "sacrificial", "rarity": "epic", "wired": true, "name": "Sacrificial", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Far stronger, but the card is spent for the rest of the fight."},
 ]
 
@@ -285,16 +285,52 @@ const OFFER_SIZE := 9
 # leaving the power curve flat. The rare set is the upgrades that break a rule the player has
 # learned - pay off from the discard, act before the fight starts, reach an ally, take another
 # turn, cost health, or sometimes do nothing at all.
-const WEIGHT_COMMON := 10.0
-const WEIGHT_RARE := 1.0
+# FOUR TIERS, not two. Owner 2026-09-11: *"If we are going to have rarity with cards we may want
+# to add more than just rare, maybe uncommon as well."* Two tiers gives a player one bit of
+# information - special or not - and a chase loop wants a gradient.
+#
+# The NAMES and the COLOURS are the ones the game already uses for loot
+# (`DropTables.RARITY_COLORS`). Reusing them rather than inventing a scale means a player reads
+# a purple upgrade the same way they already read a purple item, with nothing new to learn -
+# the same reasoning that settled the tier-vocabulary sweep earlier the same day.
+const RARITY_COMMON := "common"
+const RARITY_UNCOMMON := "uncommon"
+const RARITY_RARE := "rare"
+const RARITY_EPIC := "epic"
+
+## Weakest to strongest presence. Index is also the gauge fill, so ORDER IS MEANINGFUL.
+const RARITY_ORDER: Array[String] = [RARITY_COMMON, RARITY_UNCOMMON, RARITY_RARE, RARITY_EPIC]
+
+## Draw weight per tier. Tuned against the measured curve in tools/probe/upgrade_rarity.gd
+## rather than picked - see that probe's table for what a player actually ends up seeing.
+const RARITY_WEIGHTS := {
+	RARITY_COMMON: 10.0,
+	RARITY_UNCOMMON: 2.5,
+	RARITY_RARE: 0.8,
+	RARITY_EPIC: 0.30,
+}
+
+
+static func rarity_of(u: Dictionary) -> String:
+	"""An upgrade with no `rarity` field is COMMON. Omission is the default on purpose: the
+	majority of the table is common, and tagging 25 entries to say 'ordinary' would be noise
+	that drifts."""
+	var r := String(u.get("rarity", RARITY_COMMON))
+	return r if r in RARITY_ORDER else RARITY_COMMON
 
 
 static func weight_of(u: Dictionary) -> float:
-	return WEIGHT_RARE if bool(u.get("rare", false)) else WEIGHT_COMMON
+	return float(RARITY_WEIGHTS.get(rarity_of(u), 10.0))
 
 
-static func is_rare(id: String) -> bool:
-	return bool(upgrade_by_id(id).get("rare", false))
+static func rarity_rank(rarity: String) -> int:
+	"""0-3. Drives the visual gauge, so it must match RARITY_ORDER."""
+	var i := RARITY_ORDER.find(rarity)
+	return i if i >= 0 else 0
+
+
+static func rarity_by_id(id: String) -> String:
+	return rarity_of(upgrade_by_id(id))
 const REVEALS_ALLOWED := 3
 
 static func draw_choices(kind: String, milestone: int, taken: Array, count: int = OFFER_SIZE, exclude: Array = []) -> Array:

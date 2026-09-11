@@ -299,8 +299,59 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       travels whole; the probe now asserts that line specifically.
       Probe: `tools/probe/upgrade_rarity.gd`. Re-injection (uniform draw + `rare` stripped from
       the wire) fails 4 checks.
-      **Content widening still helps afterwards** — CONTROL is thinnest at 18 eligible — but
-      weighting is what makes width mean anything, so it landed first as planned.
+      **EXTENDED to FOUR TIERS the same day, on the owner's direction.** *"If we are going to
+      have rarity with cards we may want to add more than just rare, maybe uncommon as well. They
+      should also be visually distinct, colored by [rarity] or have a visual gauge so they can be
+      differentiated from commons at a glance during the upgrade offer."*
+      `common / uncommon / rare / epic` — **the loot vocabulary, not a new one**. Same names, same
+      `DropTables.RARITY_COLORS` hues, so a purple upgrade reads like a purple item with nothing
+      new to learn. Distribution 25 / 12 / 10 / 4, weights 10 / 2.5 / 0.8 / 0.30. Measured over
+      4 000 runs on the real draw:
+
+      | kind | | common | uncommon | rare | epic |
+      |---|---|---|---|---|---|
+      | damage | m1 → m5 | 69 → 97% | 25 → 62% | 9 → 26% | 3 → 10% |
+      | buff | m1 → m5 | 76 → 98% | 29 → 71% | 10 → 32% | 4 → 16% |
+      | control | m1 → m5 | 78 → 100% | 32 → 88% | 11 → 45% | 5 → 18% |
+
+      **THE MEASUREMENT FOUND A REAL DEFECT, not just a tuning number: CONTROL could never be
+      offered an epic — 0% at every milestone.** All four epics were DAMAGE- or BUFF-kind, so a
+      control card was structurally locked out of the top tier. No weight would have revealed
+      that; only counting the eligible pool per kind does. `opening_act` (ANY) and `provoking`
+      (CONTROL) were promoted, and the probe now asserts every kind can be offered every tier.
+      **Visual:** the tile BORDER takes the rarity colour — dimmed by rarity so common, which is
+      white, does not end up the brightest thing on screen — the NAME takes the colour, and a
+      four-cell **gauge** (`◆◇◇◇` … `◆◆◆◆`) carries the same information as a SHAPE, because
+      green and blue are the pair most often confused and they are exactly uncommon and rare.
+      Rare+ also gets a heavier frame. The gauge is sized off `RARITY_ORDER`, so a fifth tier
+      cannot leave it behind.
+      **The trade-off warning keeps the BACKGROUND.** Orange is a warning, rarity is decoration,
+      and decoration must not overwrite a warning — so an epic trade-off still reads as a
+      trade-off first.
+      Re-injection: flattening the weights and stripping `rarity` from the wire fails 2 checks.
+
+- [ ] **WIDEN the pool with genuinely distinctive upgrades — owner, 2026-09-11.** *"I don't think
+      our upgrade pool currently offers enough distinctive and interesting options as of yet but
+      this is a start at least."* Agreed, and the rarity work makes the gap measurable rather
+      than a feeling. Eligible counts per kind now:
+
+      | kind | common | uncommon | rare | epic |
+      |---|---|---|---|---|---|
+      | damage | 14 | 10 | 5 | 4 |
+      | buff | 14 | **4** | 6 | **2** |
+      | control | **9** | 6 | 5 | **2** |
+
+      The thin cells are where a player runs out of new things to see: **buff-uncommon (4)**, and
+      **epic for buff and control (2 each)**. Control's COMMON pool is also the smallest at 9,
+      which is why its coverage saturates — nine-of-twenty-two shown five times will cover most
+      of a thin pool, and that is arithmetic no weight beats.
+      **Author upward, not outward:** more commons do not help: they are already at 97-100%
+      coverage by milestone 5. The value is in uncommon and above.
+      **The bar for a new entry, from what the rare set already does:** it should BREAK A RULE the
+      player has learned — pay off from the discard, act before the fight starts, reach an ally,
+      take another turn, cost health instead of resource, invert the resource relationship, pull
+      the enemy off your companion, land on YOU, or sometimes do nothing at all. A percentage on
+      an existing number is a common, however large the percentage.
 - [x] **DONE 2026-09-10 — Props are no longer erased by anything standing on them.** Owner:
       *"when a sprite steps on a space with a decorative piece on it the decorative piece seems to
       go away"*, then after living with it: *"The occlusion just makes it look janky currently.
