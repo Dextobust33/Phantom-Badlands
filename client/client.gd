@@ -19013,11 +19013,43 @@ func _panel_use_item(index: int) -> void:
 	# In combat, the server expects combat_use_item; otherwise inventory_use.
 	if in_combat:
 		send_to_server({"type": "combat_use_item", "index": index})
-	else:
-		# Cache the next text message so display_inventory surfaces it in the
-		# panel's status row (the panel hides game_output, so direct prints aren't seen)
-		awaiting_item_use_result = true
+		return
+	# A TREASURE CHEST is not a potion. Opening one empties the whole stack and reports a
+	# multi-line haul - every material, every quantity, the gold - and the status row it was
+	# being funnelled into is a one-line 13pt label between two buttons, wiped by the very next
+	# character_update. Owner 2026-09-11: "Small Treasure Chests still flash for an instant and
+	# the player doesn't get to read what they got out of them before it clears."
+	#
+	# This is the salvage lesson, unlearned in a second place: v0.9.634/635 moved the bulk-salvage
+	# result out of that status row and into game_output for exactly these two reasons, and held
+	# the panel shut so it could actually be read. A chest result is the same shape, so it takes
+	# the same road rather than a third variation of it.
+	if _is_read_the_result_item(index):
+		pending_inventory_action = "awaiting_salvage_result"
 		send_to_server({"type": "inventory_use", "index": index})
+		update_action_bar()
+		return
+	# Cache the next text message so display_inventory surfaces it in the
+	# panel's status row (the panel hides game_output, so direct prints aren't seen)
+	awaiting_item_use_result = true
+	send_to_server({"type": "inventory_use", "index": index})
+
+
+func _is_read_the_result_item(index: int) -> bool:
+	"""Does using this item produce something the player must READ, rather than a one-liner?
+
+	Kept as a predicate rather than an `if type == chest` at the call site, because the next item
+	with a multi-line result will want it too and the honest question is "is this readable in a
+	status row", not "is this a chest"."""
+	var inv: Array = character_data.get("inventory", [])
+	if index < 0 or index >= inv.size():
+		return false
+	var it = inv[index]
+	if not (it is Dictionary):
+		return false
+	var t := String(it.get("type", ""))
+	var st := String(it.get("item_type", ""))
+	return t == "treasure_chest" or st == "treasure_chest"
 
 func _panel_equip_item(index: int, item: Dictionary) -> void:
 	if not inventory_mode or index < 0:
@@ -21622,6 +21654,13 @@ func select_inventory_item(index: int):
 			rune_apply_index = actual_index
 			pending_inventory_action = "rune_apply"
 			_display_rune_apply_slots(use_item)
+			update_action_bar()
+			return
+		# Same rule as the panel path — a chest's haul is too long for the status row.
+		# Both routes ask the ONE predicate rather than each deciding for itself.
+		if _is_read_the_result_item(actual_index):
+			pending_inventory_action = "awaiting_salvage_result"
+			send_to_server({"type": "inventory_use", "index": actual_index})
 			update_action_bar()
 			return
 		awaiting_item_use_result = true
