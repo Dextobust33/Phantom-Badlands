@@ -2,6 +2,16 @@
 # Client with account system, character selection, and permadeath handling
 extends Control
 
+## The wire form of the overworld map (Phase 2.95 PHASE 1). One definition, shared with the
+## server, so the client cannot draw something the server would not have drawn.
+const MapPayload = preload("res://shared/map_payload.gd")
+
+## What this BUILD can read off the wire, sent with login. The server checks it before sending
+## anything an older build would not understand, and a client that says nothing keeps getting
+## the shape clients have always been sent - which is what lets an old exe survive a new server.
+##   map 1 = the compact overworld payload instead of ~28 KB of BBCode per step.
+const CLIENT_CAPS := {"map": 1}
+
 # Monster art helper - loaded lazily to avoid initialization issues
 var _monster_art_script = null
 func _get_monster_art():
@@ -6210,7 +6220,7 @@ func _dev_try_auto_login() -> bool:
 		return false
 	_dev_auto_login_sent = true
 	display_game("[color=#8FE3FF][dev] auto-login as %s[/color]" % _dev_auto["user"])
-	send_to_server({"type": "login", "username": _dev_auto["user"], "password": _dev_auto["pass"]})
+	send_to_server({"type": "login", "username": _dev_auto["user"], "password": _dev_auto["pass"], "caps": CLIENT_CAPS})
 	return true
 
 
@@ -7270,7 +7280,8 @@ func _on_login_button_pressed():
 	send_to_server({
 		"type": "login",
 		"username": user,
-		"password": passwd
+		"password": passwd,
+		"caps": CLIENT_CAPS,
 	})
 
 func _on_register_button_pressed():
@@ -7312,7 +7323,8 @@ func _on_register_button_pressed():
 	send_to_server({
 		"type": "register",
 		"username": user,
-		"password": passwd
+		"password": passwd,
+		"caps": CLIENT_CAPS
 	})
 
 func _on_password_submitted(_text: String):
@@ -24251,7 +24263,16 @@ func handle_server_message(message: Dictionary):
 			_update_remote_facings()
 			# Don't update map when in dungeon - dungeon has its own map display
 			if not dungeon_mode:
-				var desc = message.get("description", "")
+				# PHASE 1: a capable client is sent `map` (a palette plus one byte per cell) and
+				# inflates it here. `description` is the old whole-BBCode form, still sent to
+				# builds that did not announce the capability, and still the fallback if a
+				# payload ever arrives empty.
+				var desc = ""
+				var map_payload = message.get("map", null)
+				if map_payload is Dictionary and not map_payload.is_empty():
+					desc = MapPayload.inflate(map_payload)
+				if desc == "":
+					desc = message.get("description", "")
 				# Don't clear game_output on location updates - map is displayed separately
 				# Only update the map display panel
 				update_map(desc)

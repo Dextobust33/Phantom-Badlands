@@ -3,6 +3,9 @@
 class_name WorldSystem
 extends Node
 
+## The wire form of the map, and the only definition of what a payload means. See map_payload.gd.
+const MapPayload = preload("res://shared/map_payload.gd")
+
 # World boundaries
 const WORLD_MIN_X = -2000
 const WORLD_MAX_X = 2000
@@ -1294,14 +1297,30 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 var map_diag_always: bool = false
 
 func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_centers: Array = [], current_post_threatened: bool = false, pvp_sack_locations: Array = []) -> String:
-	"""Generate complete map display with location info header.
+	"""The map as the display string, for callers that want text: `build_map_payload` inflated.
+	Keeping it as an inflate rather than a second renderer is the whole point - see MapPayload."""
+	return MapPayload.inflate(build_map_payload(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_centers, current_post_threatened, pvp_sack_locations))
+
+
+func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_centers: Array = [], current_post_threatened: bool = false, pvp_sack_locations: Array = []) -> Dictionary:
+	"""PHASE 1 (2026-09-11): the map as DATA. This is the single implementation; the display
+	STRING is this payload inflated, so the text a player sees and the bytes on the wire cannot
+	describe two different maps.
+
+	The server still resolves every cell - line of sight, fog, which overlay wins - and ships
+	the resolved cell, never raw chunk data. A client cannot see past a wall because the tile
+	behind it was never sent.
+
+	What it used to say, and still does:
+	Generate complete map display with location info header.
 	Slice 6j — explored_tiles dict (key: "x,y", value: true) is mutated in
 	place: LOS-visible tiles are marked, and LOS-blocked tiles that were
 	previously seen render as a dim fog version of the static terrain.
 	Audit #11 Slice 8 — threatened_post_centers ("x,y" keys) overlay red
 	warning glyphs on visible threatened post tiles; current_post_threatened
-	flips the at-post 'Safe' header to 'Under Threat'."""
-	var output = ""
+	flips the at-post 'Safe' header to 'Under Threat'.
+	"""
+	var segs: Array = []
 
 	# Pre-compute lookup set for the inner renderer to avoid repeated linear
 	# scans during the per-tile loop.
@@ -1326,40 +1345,45 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 			# variant. The bold font has slightly different line metrics,
 			# which shifted the map block ~2px lower when entering a post
 			# vs the wilderness wrapper. Color alone distinguishes the name.
-			output += "[color=#FFD700]%s[/color] [color=#5F9EA0](%d, %d)[/color]\n" % [post.get("name", "Trading Post"), center_x, center_y]
+			MapPayload.append_text(segs, "[color=#FFD700]%s[/color] [color=#5F9EA0](%d, %d)[/color]\n" % [post.get("name", "Trading Post"), center_x, center_y])
 			# Audit #11 Slice 8 — header reflects threat state of this post.
 			if current_post_threatened:
-				output += "[color=#FF4400]Under Threat[/color]"
+				MapPayload.append_text(segs, "[color=#FF4400]Under Threat[/color]")
 			else:
-				output += "[color=#00FF00]Safe[/color]"
+				MapPayload.append_text(segs, "[color=#00FF00]Safe[/color]")
 			# Compass to nearest OTHER post — appended inline with the Safe
 			# marker (matches the wilderness path) so the header is 2 lines
 			# total. Putting the compass on its own line previously made the
 			# map block start a row lower than the client sprite overlay
 			# expected (header_lines=2 in client.gd), drawing the player
 			# figure one tile too high. Inline keeps both layouts consistent.
-			output += _get_compass_line(center_x, center_y, post)
-			output += "\n"
-			output += "[center]"
-			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
-			output += "[/center]"
+			MapPayload.append_text(segs, _get_compass_line(center_x, center_y, post))
+			MapPayload.append_text(segs, "\n")
+			MapPayload.append_text(segs, "[center]")
+			segs.append(MapPayload.grid(_map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set), "\n", ""))
+			MapPayload.append_text(segs, "[/center]")
 			# Minimap — zoomed-out overview at small font, appended below the main map
-			output += "\n" + _generate_minimap(center_x, center_y, dungeon_locations)
-			return output
+			# The minimap, as cells rather than as 21 KB of repeated colour tags.
+			MapPayload.append_text(segs, "\n")
+			if chunk_manager:
+				MapPayload.append_text(segs, MINIMAP_OPEN)
+				segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
+				MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
+			return {"f": MapPayload.FORMAT, "segs": segs}
 
 	# Check legacy Trading Post
 	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
 		var tp = trading_post_db.get_trading_post_at(center_x, center_y)
 		# v0.9.350 — drop [b] for consistent map alignment (see NPC post path)
-		output += "[color=#FFD700]%s[/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y]
-		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
-		output += "[center]"
+		MapPayload.append_text(segs, "[color=#FFD700]%s[/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y])
+		MapPayload.append_text(segs, "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver"))
+		MapPayload.append_text(segs, "[center]")
 		if chunk_manager:
-			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
+			segs.append(MapPayload.grid(_map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set), "\n", ""))
 		else:
-			output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
-		output += "[/center]"
-		return output
+			MapPayload.append_text(segs, generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations))
+		MapPayload.append_text(segs, "[/center]")
+		return {"f": MapPayload.FORMAT, "segs": segs}
 
 	# Check if in a player enclosure — treat as safe zone
 	var in_enclosure = false
@@ -1374,45 +1398,50 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 	var level_range = get_monster_level_range(center_x, center_y)
 
 	# Location header - compact format with compass
-	output += "[color=#5F9EA0](%d, %d)[/color] %s" % [center_x, center_y, info.name]
+	MapPayload.append_text(segs, "[color=#5F9EA0](%d, %d)[/color] %s" % [center_x, center_y, info.name])
 
 	# Merchant at current location
 	if is_merchant_at(center_x, center_y):
 		var merchant = get_merchant_at(center_x, center_y)
-		output += " [color=#FFD700]$%s[/color]" % merchant.name
+		MapPayload.append_text(segs, " [color=#FFD700]$%s[/color]" % merchant.name)
 
-	output += "\n"
+	MapPayload.append_text(segs, "\n")
 
 	# Danger marker only — the precise level is shown in the Status HUD to avoid
 	# duplicating the same info above and below the map.
 	if in_enclosure:
-		output += "[color=#00FF00]Safe[/color]"
+		MapPayload.append_text(segs, "[color=#00FF00]Safe[/color]")
 	elif not info.safe and level_range.min > 0:
 		if level_range.is_hotspot:
-			output += "[color=#FF0000]!DANGER![/color]"
+			MapPayload.append_text(segs, "[color=#FF0000]!DANGER![/color]")
 		else:
-			output += "[color=#FF8800]Wilds[/color]"
+			MapPayload.append_text(segs, "[color=#FF8800]Wilds[/color]")
 	else:
-		output += "[color=#00FF00]Safe[/color]"
+		MapPayload.append_text(segs, "[color=#00FF00]Safe[/color]")
 
 	# Compass to nearest NPC post
 	if chunk_manager:
-		output += _get_compass_line(center_x, center_y)
+		MapPayload.append_text(segs, _get_compass_line(center_x, center_y))
 
-	output += "\n"
+	MapPayload.append_text(segs, "\n")
 
 	# Add the main map (centered)
-	output += "[center]"
+	MapPayload.append_text(segs, "[center]")
 	if chunk_manager:
-		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
+		segs.append(MapPayload.grid(_map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set), "\n", ""))
 	else:
-		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
-	output += "[/center]"
+		MapPayload.append_text(segs, generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations))
+	MapPayload.append_text(segs, "[/center]")
 
 	# Minimap — zoomed-out overview at small font, appended below the main map
-	output += "\n" + _generate_minimap(center_x, center_y, dungeon_locations)
+	# The minimap, as cells rather than as 21 KB of repeated colour tags.
+	MapPayload.append_text(segs, "\n")
+	if chunk_manager:
+		MapPayload.append_text(segs, MINIMAP_OPEN)
+		segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
+		MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
 
-	return output
+	return {"f": MapPayload.FORMAT, "segs": segs}
 
 func is_apex_frontier(x: int, y: int) -> bool:
 	"""Audit #10 v0.9.512 — true when the coord is in the apex frontier zone
@@ -2068,13 +2097,13 @@ func bresenham_line(x0: int, y0: int, x1: int, y1: int) -> Array[Vector2i]:
 
 # ===== NEW MAP RENDERER (Chunk-based with LOS) =====
 
-func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}, pvp_sack_set: Dictionary = {}) -> String:
+func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}, pvp_sack_set: Dictionary = {}) -> Array:
 	"""Generate ASCII map using chunk-based tile data with LOS raycasting.
 	Slice 6j — explored_tiles is mutated in place: any tile that resolves
 	to LOS-visible inside the vision circle is added to the set, and any
 	tile that is LOS-blocked but previously seen renders as fog instead
 	of blank."""
-	var map_lines: PackedStringArray = PackedStringArray()
+	var rows: Array = []
 
 	# v0.9.427 — pre-collect hotspot clusters for the entire vision area in a
 	# single window scan. Replaces per-tile _is_hotspot() (121 hash checks
@@ -2295,11 +2324,11 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				else:
 					line_parts.append(_render_tile_bbcode(tile_type, tile_tier, x, y))
 
-		map_lines.append("".join(line_parts))
+		rows.append(line_parts)
 	var _diag_render_us: int = Time.get_ticks_usec() - _diag_render_start
-	var _diag_join_start: int = Time.get_ticks_usec()
-	var _joined: String = "\n".join(map_lines)
-	var _diag_join_us: int = Time.get_ticks_usec() - _diag_join_start
+	# The join moved out of this function with PHASE 1: cells go on the wire and the client
+	# joins them. Reported as 0 so the timing line keeps its shape.
+	var _diag_join_us: int = 0
 	# v0.9.428 — fine-grained map-render timing. Emit if total ≥ 80ms so we can
 	# see whether the cost is setup, LOS pre-compute, the per-tile render
 	# loop, or the final string join. Spike threshold is 80ms = the bottom of
@@ -2317,7 +2346,15 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 			radius,
 			visible_tiles.size(),
 		])
-	return _joined
+	return rows
+
+func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}, pvp_sack_set: Dictionary = {}) -> String:
+	"""The main map as a string. One line per row, exactly as `_map_cells` produced them."""
+	var lines: PackedStringArray = PackedStringArray()
+	for r in _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set):
+		lines.append("".join(r))
+	return "\n".join(lines)
+
 
 func _render_tile_bbcode(tile_type: String, tier: int = 1, world_x: int = 0, world_y: int = 0) -> String:
 	"""Render a single tile as BBCode. 2 chars wide: space + character.
@@ -3547,13 +3584,35 @@ func _near_npc_post(buckets: Dictionary, wx: int, wy: int) -> bool:
 	return false
 
 
+## What wraps the minimap grid. Held here rather than written twice: the string form and the
+## payload form both need them, and a mismatch would misplace the map on screen.
+const MINIMAP_OPEN := "[right][font_size=9]"
+const MINIMAP_CLOSE := "[/font_size][/right]"
+const MINIMAP_STEP := 2
+const MINIMAP_HALF_W := 20
+
+
+func _minimap_caption() -> String:
+	return "[center][color=#555555][font_size=8]minimap (±%d tiles)[/font_size][/color][/center]" % [MINIMAP_HALF_W * MINIMAP_STEP]
+
+
 func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = []) -> String:
-	"""Generate a compact zoomed-out minimap centered on the player.
-	Samples every 2 world tiles → each minimap character covers a 2×2 tile area.
-	Coverage: ±40 tiles east/west, ±20 tiles north/south (41×21 chars).
-	Displayed at small font size for compact appearance below the main map."""
+	"""The minimap as a string, built from the same cells the payload ships - so the two forms
+	cannot disagree about what the player is looking at."""
 	if not chunk_manager:
 		return ""
+	var out := MINIMAP_OPEN
+	for r in _minimap_cells(center_x, center_y, dungeon_locations):
+		out += "".join(r) + "\n"
+	return out + MINIMAP_CLOSE + _minimap_caption()
+
+
+func _minimap_cells(center_x: int, center_y: int, dungeon_locations: Array = []) -> Array:
+	"""A compact zoomed-out minimap centred on the player, one BBCode cell per character.
+	Samples every 2 world tiles, so each character covers a 2x2 tile area; coverage is +/-40 tiles
+	east/west and +/-20 north/south (41x21 characters)."""
+	if not chunk_manager:
+		return []
 
 	# Sample step: 2 world tiles per minimap char
 	const STEP = 2
@@ -3568,16 +3627,16 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 	# NPC posts, in a coarse spatial bucket rather than a list to scan — see `_near_npc_post`.
 	var post_buckets: Dictionary = _bucket_post_points(chunk_manager.get_npc_posts())
 
-	var output = "[right][font_size=9]"
+	var rows: Array = []
 	for miny in range(MAP_HALF_H, -MAP_HALF_H - 1, -1):
-		var line = ""
+		var line: PackedStringArray = PackedStringArray()
 		for minx in range(-MAP_HALF_W, MAP_HALF_W + 1):
 			var wx = center_x + minx * STEP
 			var wy = center_y + miny * STEP
 
 			# Player marker (exact center)
 			if minx == 0 and miny == 0:
-				line += "[color=#FFFF00]@[/color]"
+				line.append("[color=#FFFF00]@[/color]")
 				continue
 
 			# Dungeon — check nearby world tiles in the 2x2 sample block
@@ -3590,12 +3649,12 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 				if has_dungeon:
 					break
 			if has_dungeon:
-				line += "[color=#FF4444]D[/color]"
+				line.append("[color=#FF4444]D[/color]")
 				continue
 
 			# NPC post
 			if _near_npc_post(post_buckets, wx, wy):
-				line += "[color=#FFD700]P[/color]"
+				line.append("[color=#FFD700]P[/color]")
 				continue
 
 			# Tile type from chunk
@@ -3604,36 +3663,34 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 
 			match tile_type:
 				"water":
-					line += "[color=#4488FF]~[/color]"
+					line.append("[color=#4488FF]~[/color]")
 				"deep_water":
-					line += "[color=#2244AA]~[/color]"
+					line.append("[color=#2244AA]~[/color]")
 				"bridge":
-					line += "[color=#C4A882]=[/color]"
+					line.append("[color=#C4A882]=[/color]")
 				"path":
-					line += "[color=#8B7355]:[/color]"
+					line.append("[color=#8B7355]:[/color]")
 				"wall":
-					line += "[color=#888888]#[/color]"
+					line.append("[color=#888888]#[/color]")
 				"tree", "dense_brush":
-					line += "[color=#1A6B1A]T[/color]"
+					line.append("[color=#1A6B1A]T[/color]")
 				"stone", "ore_vein":
-					line += "[color=#887766]o[/color]"
+					line.append("[color=#887766]o[/color]")
 				"floor", "door", "forge", "apothecary", "workbench", "enchant_table",\
 				"writing_desk", "market", "inn", "quest_board", "post_marker",\
 				"blacksmith", "healer", "throne", "storage", "guard":
-					line += "[color=#FFD700].[/color]"
+					line.append("[color=#FFD700].[/color]")
 				_:
 					# Slice 6a — minimap also picks up biome tint so the overview
 					# shows biome regions at a glance. Dimmed (~45% brightness) so
 					# the small chars stay legible.
 					var minimap_seed = chunk_manager.world_seed if chunk_manager else 0
 					var minimap_biome = get_biome_at(wx, wy, minimap_seed)
-					line += "[color=%s].[/color]" % _dim_color(get_biome_empty_color(minimap_biome), 0.45)
+					line.append("[color=%s].[/color]" % _dim_color(get_biome_empty_color(minimap_biome), 0.45))
 
-		output += line + "\n"
+		rows.append(line)
 
-	output += "[/font_size][/right]"
-	output += "[center][color=#555555][font_size=8]minimap (±%d tiles)[/font_size][/color][/center]" % [MAP_HALF_W * STEP]
-	return output
+	return rows
 
 func to_dict() -> Dictionary:
 	"""Serialize world system state"""

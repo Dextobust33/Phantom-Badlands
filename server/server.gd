@@ -2425,7 +2425,21 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 
 # ===== ACCOUNT HANDLERS =====
 
+func _remember_caps(peer_id: int, message: Dictionary) -> void:
+	"""What this client build can READ. A client that says nothing gets what clients have always
+	been sent, which is how an old build keeps working against a new server."""
+	if not peers.has(peer_id):
+		return
+	var caps = message.get("caps", {})
+	peers[peer_id]["caps"] = caps if caps is Dictionary else {}
+
+
+func _peer_reads_map_payload(peer_id: int) -> bool:
+	return int(peers.get(peer_id, {}).get("caps", {}).get("map", 0)) >= 1
+
+
 func handle_register(peer_id: int, message: Dictionary):
+	_remember_caps(peer_id, message)
 	# Security: Block registration if already authenticated
 	if peers[peer_id].get("authenticated", false):
 		send_to_peer(peer_id, {"type": "register_failed", "reason": "Already logged in"})
@@ -2449,6 +2463,7 @@ func handle_register(peer_id: int, message: Dictionary):
 		})
 
 func handle_login(peer_id: int, message: Dictionary):
+	_remember_caps(peer_id, message)
 	var username = message.get("username", "")
 	var password = message.get("password", "")
 	var peer_ip = peers[peer_id].get("ip", "")
@@ -7995,8 +8010,12 @@ func send_location_update(peer_id: int):
 					if visit_account_id != "" and visit_post_name != "":
 						persistence.record_post_visit(visit_account_id, visit_post_name)
 
-	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs, character.explored_tiles, threatened_post_centers, current_post_threatened, visible_pvp_sacks)
+	# The map. Built once as a PAYLOAD (palette + one byte per cell); a client that announced it
+	# can read it gets that, and anything older gets the same payload inflated into the whole
+	# BBCode string it has always been sent. ~28 KB -> ~3.4 KB per step for the ones that can.
+	var map_payload = world_system.build_map_payload(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs, character.explored_tiles, threatened_post_centers, current_post_threatened, visible_pvp_sacks)
+	var peer_reads_payload: bool = _peer_reads_map_payload(peer_id)
+	var map_display = "" if peer_reads_payload else world_system.MapPayload.inflate(map_payload)
 
 	# Check for gathering node at this location OR adjacent tiles
 	var gathering_node = get_gathering_node_nearby(character.x, character.y)
@@ -8162,6 +8181,7 @@ func send_location_update(peer_id: int):
 		"x": character.x,
 		"y": character.y,
 		"description": map_display,
+		"map": map_payload if peer_reads_payload else {},
 		"at_water": is_at_water,
 		"water_type": water_type,
 		"at_ore_deposit": is_at_ore,

@@ -262,6 +262,25 @@ Log in: the Sanctuary is now a sprite room on the main canvas, text on the right
 - [ ] The MIRROR: click a look, go back - the room shows it; log out and in - it is kept; "Use my
       hero" puts back your last character's look.
 
+## 11. The overworld map arrives as DATA  *(one client + a server deploy, 2026-09-11, UNRELEASED)*
+
+The map the server sends is no longer a wall of BBCode. It is a palette plus one byte per square,
+and the client rebuilds the same string: ~28 KB a step becomes ~3.4 KB. Nothing should look any
+different, so this list is entirely about "did anything move".
+
+- [ ] Walk in open wilderness: the map, the fog you have already explored, and the minimap below
+      it all draw exactly as before. Nothing shifted a row.
+- [ ] Stand on an NPC post and on a legacy trading post: both headers still read right and the
+      map sits in the same place under them.
+- [ ] Your sprite and other players' sprites sit on the correct tiles (the overlay is positioned
+      off the header, so a header that grew a line would show up here first).
+- [ ] Walk into a hotzone and past a dungeon, a corpse and a bounty: every coloured glyph is the
+      colour it was.
+- [ ] Enter and leave a dungeon: the overworld map comes back intact.
+- [ ] Watch another player (the spectate path) - that one still sends the old string on purpose.
+- [ ] **Old client against the new server**: keep a previous build and log in with it. It must
+      still get a map. This is the one that cannot be checked any other way.
+
 ## Order I would go in
 
 1. **Arrow movement** — highest risk, and independent of everything else.

@@ -29,6 +29,9 @@ ceiling, since it removes the most expensive per-player work the server does.
   gone) and the minimap's post bucket. Together a location update costs **15.6 ms instead of
   31.1 ms** in the real world, and the server no longer re-generates a tile it just made.
   **Needs a DEPLOY**; no client change, nothing visual — `tile_cache.gd`, `minimap_posts.gd`.
+- **The overworld map as DATA** (Phase 2.95 PHASE 1). 28.2 KB a step becomes 3.4 KB, with the
+  display string rebuilt on the client byte for byte. **Server deploy AND client release, and
+  the old-client path is the thing to check by hand** — `map_payload.gd`, `map_payload_golden.gd`.
 - **Cosmetic VARIANTS on sprites.** A lime wolf is lime in the dungeon and on its Sanctuary
   cushion, not only in its ASCII art; eleven patterns, and the baked floor under the sprite is
   left alone — `monster_tint.gd`. Client-side, nothing to deploy.
@@ -309,7 +312,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 47 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 48 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -1207,22 +1210,37 @@ So the cost is not "sprites". It is "rendered on the server".
 - wilderness, NPC POST INTERIORS, player-built posts, other players, monsters - is step 2's
 scope, because they are all tiles in the same grid.**
 
-- [ ] **PHASE 1 — move overworld rendering to the CLIENT. No art, no visual change.**
-      Send tile DATA and let the client draw, exactly as the dungeon already does. Do this FIRST
-      and alone: coupling it with the art would make a performance regression and an art
-      regression indistinguishable — the exact trap that hid the boss ring and the missing
-      post-stamping.
-      **Why, re-stated after the 2026-09-11 measurement** (the CPU claim that used to be here was
-      wrong - rendering is 1.4 ms of the call):
-        * it is the **ENABLER for Phase 2** - the client cannot draw a tile it has never been sent;
-        * it cuts the **WIRE**: 25.6 KB per move today. A compact grid (one byte of type + one of
-          state per tile) plus entity lists is ~1-2 KB, and the minimap comes from the same data
-          instead of being a second 21 KB of BBCode;
-        * it removes ~1.4 ms of server CPU per move, which is real but is NOT the headline.
-      **What the client needs, and the trap to avoid:** the server must keep deciding what a
-      player may SEE (line of sight, fog) - send resolved per-tile state (visible / remembered /
-      unknown), never raw chunk data, or the client can see through walls. The dungeon already
-      works this way.
+- [x] **DONE 2026-09-11 — PHASE 1. The map goes over the wire as DATA. 28.2 KB -> 3.4 KB a step.**
+      `shared/map_payload.gd` is the wire form and the only definition of what a payload means:
+      a PALETTE of distinct cells plus one byte per square, base64'd. 1,390 squares (the 23x23
+      map and the 41x21 minimap) come from 21 distinct cells, which is the whole reason the old
+      string was 96% repetition.
+      **There is one implementation, not two.** `build_map_payload` builds it and
+      `generate_map_display` is now literally `MapPayload.inflate(build_map_payload(...))`, so
+      the text a player sees and the bytes on the wire cannot describe two different maps. The
+      renderers were split into cell producers (`_map_cells`, `_minimap_cells`) that both forms
+      consume.
+      **The server still decides what may be SEEN.** Line of sight, fog and overlay priority are
+      resolved server-side and only the resolved cell is sent - a probe asserts no tile internals
+      (`blocks_los`, `encounter_rate`, monster levels) ride along, so a modified client cannot
+      look through a wall.
+      **Old clients keep working.** The client announces `CLIENT_CAPS` at login; a client that
+      says nothing is sent the same inflated string it has always been sent. That negotiation is
+      the thing to check by hand, and it is item 11 in the playtest queue.
+      Probes: `map_payload_golden.gd` (21 views captured on the OLD code, byte-identical after)
+      and `map_payload.gd` (18 checks). **Note the trap that nearly shipped:** the obvious
+      round-trip check compares `inflate(build(x))` with `generate_map_display`, which is now the
+      same expression - it passed happily with an encoder that corrupted every index. The real
+      check compares a decoded grid against the CELLS it was built from; that one fails on the
+      injected fault, and so does the golden.
+      **Needs a DEPLOY and a client release together** (the saving only lands for clients that
+      can read it; either half alone is still correct).
+
+- [ ] **What PHASE 1 did NOT do, so PHASE 2 does not assume it.** The payload carries a cell's
+      rendered BBCode, not yet its TILE TYPE. Sprites need the type (and tier) beside the glyph;
+      that is an additive field on the palette entry, which is why the palette exists rather than
+      a flat byte grid. The spectate path (`watch_location`) still sends the old string, and the
+      1.4 ms of server-side string building is still spent for clients that cannot read a payload.
 
 - [x] **DONE 2026-09-11 — cosmetic VARIANTS show on sprites, not just in ASCII art.** Owner:
       *"all monsters have variants that change what their ASCII art looks like (like lime ones, or
@@ -2068,6 +2086,26 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       than the other two; do not start it inside another arc.
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
+
+- [ ] **HOVER TOOLTIPS: three faults, reported live 2026-09-11 by the owner.** All three are the
+      same surface and should be fixed together, because two of them are almost certainly one
+      cause (nothing owns the tooltip's lifetime or its placement).
+      1. **A tooltip gets STUCK on screen and never leaves.** Owner: *"I've got a Thorned -
+         reflects melee damage box stuck on my screen after hovering a Thorned hobgoblin. It has
+         persisted through fights."* Surviving a combat end means the hide path is tied to the
+         hover-exit signal alone, with nothing clearing it when the thing hovered is destroyed or
+         the screen is rebuilt. **Find what owns the hide, not just this one trait** - a box that
+         outlives its own subject will do it again on the next surface that forgets.
+      2. **The tooltip opens in the wrong PLACE.** Owner: *"when hovering the underlined Damage
+         word on a companion inspect ... the hoverbox appeared way over on the right of my
+         screen."* Placement is presumably computed against the wrong control's rect, or against
+         the viewport rather than the hovered word.
+      3. **APEX is not hoverable and should be.** It appears in monster names like the traits do,
+         and every other term beside it explains itself. Owner: *"APEX should be a hoverable term
+         in names as well."*
+      Worth a probe that enumerates every term the name line can contain and asserts each one has
+      a tooltip entry - that is the same "a lookup table is checked by CALLING the lookup" rule
+      that caught the `.png.png` dungeon sprites.
 
 - [x] **FIXED 2026-09-11.** The ramp is now ONE computation, `CombatManager.engine_damage_ramp`,
       called by the funnel for both classes and sent as combat state (`engine_damage_ramp`)
