@@ -32,6 +32,11 @@ ceiling, since it removes the most expensive per-player work the server does.
 - **The overworld map as DATA** (Phase 2.95 PHASE 1). 28.2 KB a step becomes 3.4 KB, with the
   display string rebuilt on the client byte for byte. **Server deploy AND client release, and
   the old-client path is the thing to check by hand** — `map_payload.gd`, `map_payload_golden.gd`.
+- **Dungeon markers stop building rooms nobody enters.** A world dungeon no longer generates its
+  floors and ~70 monsters at spawn; that happens on demand, and logs when it does so the claim is
+  proven rather than assumed. Server-side, **needs a DEPLOY** - `lazy_dungeon_interior.gd`.
+- **Floor eggs follow the dungeon rank.** Mean egg rank goes from a flat 4.5 everywhere to 1.5 at
+  rank 1 and 8.0 at rank 9. Server-side, **needs a DEPLOY** - `floor_egg_rank.gd`.
 - **Cosmetic VARIANTS on sprites.** A lime wolf is lime in the dungeon and on its Sanctuary
   cushion, not only in its ASCII art; eleven patterns, and the baked floor under the sprite is
   left alone — `monster_tint.gd`. Client-side, nothing to deploy.
@@ -2582,18 +2587,65 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       whatever the cap becomes. Raising the count without fixing this just moves the spike.
 
       **The order to do it in:**
-        1. **Make the interior LAZY, not deleted.** Generate floors and monsters on first read
-           behind one accessor, and log when a world dungeon's interior is ever generated. If the
-           log never fires in play, the generation is proven dead rather than assumed dead. This
-           is the ~90% win and it changes no behaviour.
-        2. **Cache grids by (type, floor)** - ~370 of them serve everything. Player instances must
-           take a copy, because `_spawn_all_dungeon_floor_items` mutates the grid in place.
-        3. **Index dungeons by position** so the map and threat lookups stop scanning. This is
-           what actually unlocks a big count.
-        4. Only then decide whether placement becomes a pure function of (x, y, seed). What
+        1. [x] **DONE 2026-09-11 - the interior is LAZY.** All three world-dungeon creators
+           (`_create_world_dungeon`, `_create_world_dungeon_near`, `_ensure_starter_dungeon_exists`)
+           now build nothing, and `_ensure_dungeon_interior` builds floors, rooms and monsters if
+           anything ever asks. Made lazy rather than deleted ON PURPOSE: deleting would assert
+           "nothing reads this", and this PROVES it, because the accessor logs `[LAZY-DUNGEON]`
+           whenever it fires. **Watch the live log - if that line appears for a `world_dungeon_*`,
+           the interior IS read somewhere and the caller needs finding.** Player instances are
+           untouched, and for them the accessor is one dictionary lookup.
+           Probe `lazy_dungeon_interior.gd`; re-adding an eager build fails it.
+        2. [ ] ~~Cache grids by (type, floor).~~ **MEASURED AND WRONG - do not do this as stated.**
+           `generate_floor_grid` seeds itself on `hash(dungeon_id + floor_num)` and plainly means
+           to be reproducible, so a cache of ~370 grids looked like the next win. It is NOT
+           reproducible: two `Array.shuffle()` calls in `_carve_alcove_spurs` draw from the GLOBAL
+           rng and escape the seed, so the same type and floor give a different layout every
+           call. Caching today would silently change what dungeons look like.
+           **The prior question is a design one: SHOULD every `goblin_caves` floor 2 in the world
+           be identical?** The seed line says someone intended yes; the shuffles have delivered no
+           for a long time and nobody noticed. Decide that before touching it. (This is the
+           measure-before-building rule earning its keep - the cache was three lines from being
+           written on the strength of reading the seed.)
+        3. [ ] **Index dungeons by position** so the map and threat lookups stop scanning. A move
+           costs ~3 linear passes over every active dungeon today. **This is what actually
+           unlocks the ~3,150 dungeons the owner asked for**; everything else is memory.
+        4. [ ] Only then decide whether placement becomes a pure function of (x, y, seed). What
            blocks that is not placement but three pieces of mutable state: `cleared_by` (which
            should be per-character anyway, and is already implicated in a re-farm bug),
            the despawn/threat lifecycle, and the post threat-cap pacing.
+
+- [ ] **PERSONAL dungeons are never cleaned up on logout or death. Owner 2026-09-11:** *"we need
+      to ensure we have proper cleanup of those after players logout for so long or their
+      character dies so they don't just linger on the map."* **Confirmed, and it is worse than
+      lingering on the map.**
+      `_cleanup_player_dungeon` is called from exactly two places: quest completion and quest
+      abandon. Nothing else.
+        * **Disconnect deliberately keeps them** - the handler says so, so a reconnecting player
+          can resume mid-dungeon. Reasonable, but there is no timer that ever ends that grace.
+        * **Death does not clean them either** - no death path calls the cleanup.
+        * **World dungeons get a 24-hour age cull; personal ones get none.**
+        * They DO show on the owner's map: `get_visible_dungeons` filters out other players'
+          personal dungeons, not your own.
+        * And `player_dungeon_instances` is keyed by PEER ID, which is reassigned on reconnect,
+          so an entry can be orphaned from the account that owns it and then be unreachable by
+          any cleanup that does exist.
+      **The fix wants care, not speed:** the reconnect grace is a real feature, so this is an
+      age-based sweep (the world dungeons' own 24-hour cull is the model) plus a death hook, not
+      a cleanup on disconnect. Do it as part of step 3 above, since a positional index has to
+      know what is actually live anyway.
+
+- [ ] **A DUNGEON CONTAINS EXACTLY ONE SPECIES, and the Atlas advertises otherwise.** Found
+      2026-09-11 answering the owner's question about how monster tiers work in dungeons.
+      Every regular monster on every floor is generated from `boss.monster_type` - one string. A
+      Goblin Caves is 100% Goblins, and even the map letter is that species' first character.
+      `monster_pool` (`["Goblin", "Giant Rat", "Kobold"]` and so on for all 53 types) is read by
+      **one line in the whole codebase**: the Dungeon Atlas UI, which shows it to the player. So
+      the Atlas promises three species and the dungeon delivers one. Either the pool should drive
+      spawning or the Atlas should stop claiming it - and the first is almost certainly what was
+      meant, since the data has been sitting there unused.
+
+
 
 - [ ] **RANK DOES NOT PAY OFF IN EGGS, which is the reason to climb it. Owner 2026-09-11:**
       *"each of those higher ranked ones should ideally have a higher chance to drop higher rank

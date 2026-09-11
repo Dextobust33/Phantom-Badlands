@@ -30828,20 +30828,11 @@ func _ensure_starter_dungeon_exists():
 		"sub_tier": 1
 	}
 
-	# Generate all floor grids (BSP rooms + corridors)
-	var floor_grids = []
-	var floor_rooms = []
-	for floor_num in range(dungeon_data.floors):
-		var is_boss_floor = floor_num == dungeon_data.floors - 1
-		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
-		floor_grids.append(floor_data.grid)
-		floor_rooms.append(floor_data.rooms)
-
-	dungeon_floors[instance_id] = floor_grids
-	dungeon_floor_rooms[instance_id] = floor_rooms
-
-	# Spawn monsters on all floors
-	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
+	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
+	# building its floors and ~70 monsters here spent ~4.3 ms of grid generation and ~528 KB on
+	# rooms nobody enters, because entering spins up a personal instance that generates its own.
+	# (Measured by tools/probe/lazy_dungeon_interior.gd on a dev box; the monster spawn is on top
+	# of that and the code's own note has bursts of eight costing ~5 s on the live server.)
 
 	log_message("Spawned starter dungeon: %s (%s) [T%d-1] at (%d, %d)" % [instance_id, dungeon_data.name, dungeon_data.tier, spawn_x, spawn_y])
 
@@ -30999,16 +30990,11 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 		"sub_tier": sub_tier,
 		"completed_at": 0
 	}
-	var floor_grids = []
-	var floor_rooms = []
-	for floor_num in range(dungeon_data.floors):
-		var is_boss_floor = floor_num == dungeon_data.floors - 1
-		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
-		floor_grids.append(floor_data.grid)
-		floor_rooms.append(floor_data.rooms)
-	dungeon_floors[instance_id] = floor_grids
-	dungeon_floor_rooms[instance_id] = floor_rooms
-	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
+	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
+	# building its floors and ~70 monsters here spent ~4.3 ms of grid generation and ~528 KB on
+	# rooms nobody enters, because entering spins up a personal instance that generates its own.
+	# (Measured by tools/probe/lazy_dungeon_interior.gd on a dev box; the monster spawn is on top
+	# of that and the code's own note has bursts of eight costing ~5 s on the live server.)
 	return instance_id
 
 func _save_dungeon_state() -> void:
@@ -31202,22 +31188,51 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		"completed_at": 0  # 0 means not completed yet
 	}
 
-	# Generate all floor grids (BSP rooms + corridors)
-	var floor_grids = []
-	var floor_rooms = []
-	for floor_num in range(dungeon_data.floors):
-		var is_boss_floor = floor_num == dungeon_data.floors - 1
-		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
+	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
+	# building its floors and ~70 monsters here spent ~4.3 ms of grid generation and ~528 KB on
+	# rooms nobody enters, because entering spins up a personal instance that generates its own.
+	# (Measured by tools/probe/lazy_dungeon_interior.gd on a dev box; the monster spawn is on top
+	# of that and the code's own note has bursts of eight costing ~5 s on the live server.)
+	return instance_id
+
+func _ensure_dungeon_interior(instance_id: String) -> bool:
+	"""Build a dungeon's floors, rooms and monsters if anything ever actually asks for them.
+
+	2026-09-11. A world dungeon used to build its whole interior the moment it spawned: every
+	floor's BSP grid (~7 floors of ~56x56) and ~70 monster entities, each paying a full
+	`generate_monster_by_name` roll. That is ~600 ms of CPU and ~620 KB of RAM per marker, and at
+	the 200-dungeon cap roughly 100-130 MB held for rooms nobody had entered. Entering a world
+	`D` calls `_create_player_dungeon_instance`, which generates its OWN grids from scratch, so
+	none of it was ever read.
+
+	It is made LAZY rather than deleted on purpose. Deleting asserts "nothing reads this"; this
+	PROVES it, because the log line below fires if anything ever does - and until it fires, the
+	eager build is demonstrated dead rather than assumed dead.
+
+	Player instances are unaffected: they still build their interior up front, and the first line
+	here makes this a single dictionary lookup for them."""
+	if dungeon_floors.has(instance_id):
+		return true
+	if not active_dungeons.has(instance_id):
+		return false
+	var inst: Dictionary = active_dungeons[instance_id]
+	var dungeon_type: String = String(inst.get("dungeon_type", ""))
+	var dungeon_data: Dictionary = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty():
+		return false
+	var floor_grids: Array = []
+	var floor_rooms: Array = []
+	var floors: int = int(dungeon_data.get("floors", 1))
+	for floor_num in range(floors):
+		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, floor_num == floors - 1)
 		floor_grids.append(floor_data.grid)
 		floor_rooms.append(floor_data.rooms)
-
 	dungeon_floors[instance_id] = floor_grids
 	dungeon_floor_rooms[instance_id] = floor_rooms
+	_spawn_all_dungeon_monsters(instance_id, dungeon_type, int(inst.get("dungeon_level", 1)))
+	log_message("[LAZY-DUNGEON] built %s on demand. If this line appears for a world_dungeon_*, its interior IS read somewhere and the eager build was not dead after all - find the caller." % instance_id)
+	return true
 
-	# Spawn monsters on all floors
-	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
-
-	return instance_id
 
 func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 	"""Check if there's a dungeon entrance at the given coordinates.
