@@ -1825,6 +1825,34 @@ func _distance_to_level(distance: float) -> int:
 	var t = min(1.0, (distance - 1800) / 1028.0)  # 0 to 1
 	return int(4000 + t * 6000)
 
+## Cached answers for `distance_for_level`. The curve never changes at runtime, and the dungeon
+## placer asks the same handful of levels over and over.
+var _dist_for_level_cache: Dictionary = {}
+
+
+func distance_for_level(level: int) -> float:
+	"""How far from origin the wilderness first reaches `level`.
+
+	The inverse of `_distance_to_level`, found by bisection over the real function rather than by
+	a second table - the curve has eight hand-tuned bands and a copy of it would go stale the
+	first time one moved. Monotonic, so bisection is exact to within a tile.
+
+	Added 2026-09-11 for dungeon placement: a dungeon is now put where the land already reaches
+	its own levels, instead of in a ring derived from a tier number."""
+	if _dist_for_level_cache.has(level):
+		return _dist_for_level_cache[level]
+	var lo := 0.0
+	var hi := 2828.0
+	for _i in range(48):
+		var mid := (lo + hi) * 0.5
+		if _distance_to_level(mid) < level:
+			lo = mid
+		else:
+			hi = mid
+	_dist_for_level_cache[level] = hi
+	return hi
+
+
 func get_hotspot_at(x: int, y: int) -> Dictionary:
 	"""Get hotspot info for a location. Returns {in_hotspot: bool, intensity: float}.
 	Safe terrain (roads, trading posts, safe zones) suppresses hotspots so the map

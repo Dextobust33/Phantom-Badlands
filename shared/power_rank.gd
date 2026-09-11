@@ -133,6 +133,28 @@ static func dungeon_band(tier: int) -> Dictionary:
 	return {"min": int(b["min"]), "max": int(b["max"]) + int(DUNGEON_REACH.get(t, 0))}
 
 
+static func rank_for_level(tier: int, level: int) -> int:
+	"""Which of the nine RANKS of `tier` a level sits in.
+
+	The inverse of `DungeonDatabase.get_sub_tier_level_range`, and the reason it lives here: from
+	2026-09-11 a dungeon's grade is decided by the LAND it stands in rather than by a number
+	hardcoded on its type, so something has to turn a level back into (tier, rank). Doing that
+	from distance, as the old `get_sub_tier_for_distance` did, bakes in an assumption about where
+	tiers live - which was exactly the fault the owner reported."""
+	var b: Dictionary = dungeon_band(tier)
+	var lo: int = int(b["min"])
+	var hi: int = int(b["max"])
+	var span: int = maxi(1, hi - lo + 1)
+	return clampi(1 + int(float(level - lo) / float(span) * float(RANKS)), 1, RANKS)
+
+
+static func grade_for_level(level: int) -> Dictionary:
+	"""The {tier, rank} a monster level belongs to. One call, so nothing has to know that the
+	tier comes from the MONSTER band and the rank from the wider DUNGEON band."""
+	var t: int = tier_for_level(level)
+	return {"tier": t, "rank": rank_for_level(t, level)}
+
+
 static func letter(tier: int) -> String:
 	"""The tier's letter. Clamped rather than erroring: a bad tier must still print something."""
 	return LADDER[clampi(tier - 1, 0, LADDER.size() - 1)]
