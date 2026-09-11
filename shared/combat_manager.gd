@@ -6476,11 +6476,45 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	match ability_name:
 		"analyze":
 			messages.append("[color=#00FF00]%s[/color]" % ability_line(character, "analyze", "title", "ANALYZE!"))
-			messages.append("[color=#808080]%s (Level %d)[/color]" % [monster.name, monster.level])
-			messages.append("[color=#FF4444]HP:[/color] %d/%d" % [monster.current_hp, monster.max_hp])
-			messages.append("[color=#FFFF00]Damage:[/color] ~%d" % monster.strength)
-			var monster_int = monster.get("intelligence", 15)
-			messages.append("[color=#FFA500]Intelligence:[/color] %d" % monster_int)
+			messages.append("[color=#808080]%s (Level %d)[/color]" % [
+				annotate_empowered_name(String(monster.name), monster.get("empowered_mods", [])),
+				monster.level])
+			# 2026-09-11 - Analyze was showing FOUR facts out of the thirty a monster carries, and
+			# the same four every cast. Owner: *"Analyze needs an adjustment to show something
+			# fresh rather than the same crap."* It did not need new information invented; it was
+			# withholding most of what it already had. Defence - the other half of "how hard is
+			# this to kill" - was simply absent, as were the two things that change how you play
+			# the fight: whether MORE of them arrive, and whether this one is worth killing.
+			messages.append("[color=#FF4444]  HP[/color]        %d/%d" % [monster.current_hp, monster.max_hp])
+			messages.append("[color=#FFFF00]  Damage[/color]    ~%-8d [color=#00FF88]Defense[/color]  %d" % [
+				int(monster.strength), int(monster.get("defense", 0))])
+			# "Guile", not "Intelligence", and it says what it DOES. The bare number was opaque:
+			# a player had no way to know it is what their Distract rolls against
+			# (`raw_chance = 50 + wits - monster.intelligence`).
+			messages.append("[color=#FFA500]  Speed[/color]     %-8d [color=#C8A2FF]Guile[/color]    %d [color=#808080](resists Distract)[/color]" % [
+				int(monster.get("speed", 0)), int(monster.get("intelligence", 15))])
+			# TRAITS, through the same table the encounter line uses, so a name here and a name
+			# there cannot drift - and each stays hoverable for what it does.
+			var _an_traits: Array = []
+			for _mod in monster.get("empowered_mods", []):
+				var _mh: String = empowered_mod_hover(String(_mod))
+				if _mh != "":
+					_an_traits.append("[url=%s]%s[/url]" % [_mh, _mh.split(" ")[0]])
+			for _tk in MONSTER_TRAITS:
+				if _tk in monster.get("abilities", []):
+					var _tr: Dictionary = MONSTER_TRAITS[_tk]
+					_an_traits.append("[url=%s — %s][color=%s]%s[/color][/url]" % [
+						_tr.get("label", _tk), _tr.get("desc", ""),
+						_tr.get("color", "#FFFFFF"), _tr.get("label", _tk)])
+			if _an_traits.size() > 0:
+				messages.append("[color=#B0B0B0]  Traits[/color]    %s" % ", ".join(_an_traits))
+			# Does killing this one bring friends? Purely tactical and previously invisible.
+			var _flock: int = int(monster.get("flock_chance", 0))
+			if _flock > 0:
+				messages.append("[color=#FF8866]  Pack[/color]      %d%% chance more arrive" % _flock)
+			# Is it worth the fight?
+			messages.append("[color=#FFD700]  Spoils[/color]    %d%% drop  |  %s XP" % [
+				int(monster.get("drop_chance", 0)), _short_num(int(monster.get("experience_reward", 0)))])
 
 			# 2026-09-05 — this used to carry its OWN copy of the odds maths, and the copy had
 			# drifted: 18.0*log WITS scaling against the real 9.0, a flat +20 Trickster bonus

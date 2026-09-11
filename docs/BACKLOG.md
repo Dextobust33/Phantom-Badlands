@@ -1165,11 +1165,21 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       It should be 1, 2, 3 still."* No fix commit found in a search of the log since that date, so
       treat it as still live until reproduced. Retiring a card should not renumber the hand — the
       hand is always three cards and should always be 1/2/3 whatever else occupies the bar.
-- [ ] **Analyze shows the same thing every time** (owner, 2026-09-06, never captured): *"Analyze
-      needs an adjustment to show something fresh rather than the same crap."* A scouting card
-      that repeats itself is a dead button after the first cast. Needs a design answer (rotate
-      what it reveals? escalate with rank? reveal something the player cannot otherwise see?) —
-      ASK before implementing, since "fresh" is the owner's word and not yet a spec.
+- [x] **DONE 2026-09-11 — it was not repeating, it was WITHHOLDING.** Owner: *"Analyze needs an
+      adjustment to show something fresh rather than the same crap."* Asked before implementing;
+      owner chose "show more of what it already knows" over rotating or escalating. The card was
+      printing FOUR facts — name, HP, damage, and a bare unexplained "Intelligence" — out of the
+      thirty a monster carries, so it read as canned because most of what it knew never reached
+      the player. It now reports **Defense** (the other half of "how hard is this to kill", simply
+      absent before), **Speed**, **Guile** (the same number, relabelled and captioned *resists
+      Distract* — it is what Distract rolls against, which nothing said), **Traits** through the
+      shared `MONSTER_TRAITS` table so each stays hoverable and cannot drift from the encounter
+      line, **Pack** (whether killing it brings friends — purely tactical and previously
+      invisible), and **Spoils** (drop chance + XP, i.e. whether it is worth the fight). Probe:
+      `analyze_readout.gd`. Re-injection: restoring the old four-fact block fails 9 of 13 checks.
+      Two checks were FALSE POSITIVES on the first pass and only re-injection exposed them —
+      "the two readouts differ" passed on differing HP alone, and a file-wide search for
+      `MONSTER_TRAITS` matched the ENCOUNTER line's copy. Both are now scoped.
 - [x] **DONE — and my first verification of it was WRONG (2026-09-11).** I reported "every pair
       shares 4 of 5 cards, differentiation is one slot" and filed it as a design concern. Owner:
       *"Ranger, Ninja, and Grifter all have different starter decks and build different engines.
