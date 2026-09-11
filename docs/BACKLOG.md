@@ -704,19 +704,37 @@ CanvasLayer, driven by `set_shader_parameter`. Anything below is a second use of
 new plumbing. There is also `region_tint.gdshader`. So "is this possible in Godot" is settled: yes,
 and this project already does it.
 
-- [ ] **TORCH RADIUS is the one worth doing, and it is not only cosmetic.** Darken the dungeon
-      canvas with distance from the player. It serves the owner's own stated dungeon design -
-      *"most of the time you only see a room and corridors, only corridors or the corridor you are
-      in"* - so it makes a design pillar VISIBLE rather than just decorating. It also gives the
-      two-cell lampposts a reason to exist beyond flavour.
-      Implementation note that matters: the player is NOT always at the centre of the view. The
-      viewport clamps at floor edges (`view_x1 = clampi(...)`), so the light centre must be the
-      player's cell position within the view, passed as a uniform - a fixed `vec2(0.5, 0.5)` like
-      the HP vignette uses would put the torch in the wrong place at every floor edge.
-- [ ] **Light SOURCES from lamps, braziers and lava** — the natural extension once the radius
-      exists: pass an array of light positions in view space. The dungeon already knows where its
-      landmark tiles and tall props are, so the data is free. Do it AFTER the torch radius, and
-      only if the radius reads well.
+- [ ] **DECIDED 2026-09-10: torch + lamps, and DARKNESS IS A DUNGEON TRAIT.** Owner, after
+      seeing five treatments: *"I like the 4th one of Torch + lamps but I don't want the dungeon
+      to be too dark if players don't have a torch. The only way I'd be open to that is if players
+      don't have to micromanage it. Entering dark dungeons all the time would get old. I guess we
+      could possibly have some really dark dungeons and torches or lamps as a later game or
+      specific dungeon thing though."*
+      **That is a better design than the samples asked for, and it is worth naming why.** Making
+      darkness a property OF THE DUNGEON rather than a resource the player carries removes the
+      micromanagement entirely - there is no torch to buy, light, refuel or forget - while keeping
+      everything darkness is good for. It also gives the two-cell lampposts a real job, because a
+      lamp only matters where it is dark.
+      **The shape:**
+        * A normal dungeon is GENTLY lit. Atmosphere, nothing hidden, no new thing to manage.
+          Candidate default around 62-75% ambient floor - the owner is choosing from a rendered
+          set rather than a number.
+        * A dungeon carries a LIGHT LEVEL as a property, the way it already carries a theme, a
+          tier and a boss. Most sit at the default; a few are dark.
+        * DARK dungeons are a late-game or specific-dungeon thing, where lamps, braziers and lava
+          become navigation rather than decoration.
+      **Implementation notes, so this is not re-derived:**
+        * `low_hp_vignette.gdshader` is the working precedent - canvas_item shader, full-rect
+          `ColorRect`, `MOUSE_FILTER_IGNORE`, driven by `set_shader_parameter`.
+        * The player is NOT always centred: the viewport clamps at floor edges, so the light
+          centre must be passed as a uniform in view space. A fixed `vec2(0.5, 0.5)` puts the
+          torch in the wrong place at every edge.
+        * Light positions are free - the renderer already knows where tall props and landmark
+          tiles are while it draws the grid.
+        * `tools/probe/light_samples.gd` + `tools/light_variants.py` regenerate the comparison
+          sheets for any future tuning, so the numbers can be re-judged on screen rather than
+          argued about.
+
 - [ ] **CRT / scanlines — possible, but I would not do it first.** A `ColorRect` overlay with a
       scanline shader is straightforward and the pattern above shows how. Two honest reservations:
       the game is TEXT-HEAVY, and scanlines over a combat log or a side panel cost legibility for
