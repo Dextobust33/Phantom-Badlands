@@ -115,12 +115,19 @@ func _init() -> void:
 	print("=== 4. THE ACTUAL GAP ===")
 	var cli := FileAccess.get_file_as_string("res://client/client.gd")
 	var panel := FileAccess.get_file_as_string("res://client/combat_scene_panel.gd")
-	print("  upgrade table carries a machine-readable trigger : %s" % (
-		"yes" if CU.UPGRADES[4].has("trigger") else "NO"))
+	var _tagged := 0
+	for u in CU.UPGRADES:
+		if CU.trigger_of(u) != CU.TRIGGER_NONE:
+			_tagged += 1
+	print("  upgrade table carries a machine-readable trigger : %s (%d of %d tagged)" % [
+		("yes" if _tagged > 0 else "NO"), _tagged, CU.UPGRADES.size()])
 	print("  a card in hand shows WHICH upgrades it carries    : %s" % (
 		"yes" if panel.contains("milestone_picks") or panel.contains("card_upgrades") else "NO"))
+	# Checked by the real symbol, not a name I guessed the implementation would use. The first
+	# version searched for "upgrade_live", which was never the name, so it reported NO against a
+	# feature that shipped - an audit lying about its own project.
 	print("  ...or that one of them is LIVE this turn          : %s" % (
-		"yes" if cli.contains("upgrade_live") or panel.contains("upgrade_live") else "NO"))
+		"yes" if panel.contains("CardUpgrades.trigger_live(") else "NO"))
 	
 	print("")
 	print("=== 5. THE CLASSIFICATION ABOVE MUST NOT GO STALE ===")

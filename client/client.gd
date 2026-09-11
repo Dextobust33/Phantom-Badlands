@@ -30749,13 +30749,29 @@ func display_changelog():
 	# v0.9.768 — the dungeon ROOM pass: every chamber draws its own floor and its own decoration
 	# from a pool of tilesets, walls became support rather than outline, floor loot is marked and
 	# hoverable, and the dungeon is lit.
+	# v0.9.771 — the accuracy release: 58 ghost safe zones removed, companion stat multipliers
+	# fixed for 93% of variants, the inspect screen rebuilt with hoverable stats and the card a
+	# companion grants, and ~40 surfaces still speaking the old tier notation converted.
 	# v0.9.770 — the card-upgrade arc plus a vocabulary fix: tiers became letters with a rank that
 	# climbs the same way, card upgrades gained four rarities and now say when they are worth
 	# using, and 36% of player hits stopped under-reporting their damage.
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.770[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.771[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ 58 PHANTOM SAFE ZONES EXISTED WHERE NOTHING DOES.[/color] Fifty-eight trading posts from an older version of the world were still claiming ground — [b]194 tiles within 120 of the Crossroads alone[/b]. You could stand on open road and be told you were safe, with no post in sight, and [b]no monster could spawn there[/b]. They are gone.")
+	display_game("  [color=#FF8000]★ THE COMPANION SCREENS WERE LYING ABOUT YOUR STATS.[/color] The variant bonus shown on a companion was [b]wrong for 111 of 119 variants[/b] — most read as 'no bonus at all' when they had one. Now read from the real source.")
+	display_game("  [color=#FF8000]★ INSPECT A COMPANION AND ACTUALLY LEARN SOMETHING.[/color] It now lists [color=#FFFFFF]Health[/color], [color=#FFFFFF]Damage[/color], [color=#FFFFFF]Aggro[/color] and [color=#FFFFFF]Speed[/color] — [b]hover any of them[/b] to read what it does — plus [b]the combat card that companion gives you[/b] and how close it is to being yours permanently. And the kennel can inspect now too.")
+	display_game("  [color=#1EFF00]◆ One [b]Power[/b] number instead of three multipliers.[/color] Variant, rank and border used to be shown as [color=#808080]+60%[/color], [color=#808080]x1.4[/color] and [color=#808080]+25%[/color] — three formats that multiply together and were never added up. Now a single [color=#FFD700]Power x2.14[/color], with the breakdown on hover.")
+	display_game("  [color=#1EFF00]◆ Every screen speaks the new tier ladder.[/color] Around 40 places still said [color=#808080]T1-7[/color] or [color=#808080]Tier 2-1[/color] — the Dungeon Atlas, quest text, the market, fusion, threat warnings, egg labels. All converted, and the ladder BAR now appears on every companion surface.")
+	display_game("  [color=#1EFF00]◆ Hovering a monster's prefix works again.[/color] [color=#FF5555]Frenzied[/color] drew as a link and did nothing — the nameplate could not receive the mouse at all. The same fault was hiding on the companion inspect screen.")
+	display_game("  [color=#1EFF00]◆ Your shield now SAYS when it ate part of a hit.[/color] A ward smaller than the blow absorbed correctly but reported nothing, so a 6-point shield against a 22-point swing looked like it never existed. Reads [color=#7AA8FF]shield eats 6[/color] in the line now.")
+	display_game("  [color=#1EFF00]◆ A companion's Valor Find finally does something.[/color] It was displayed on companions and consumed by nothing. It now raises the chance a kill opens the loot minigame.")
+	display_game("  [color=#1EFF00]◆ Dungeon names describe the right dungeon.[/color] The list matched by type alone and took whichever came first — so the tier, the level band and the map coordinates could all belong to a dungeon you had already finished, or someone else's.")
+	display_game("  [color=#1EFF00]◆ Help-screen formulas corrected.[/color] Hit chance subtracts HALF the enemy's speed, not all of it, and two different pages stated two different wrong initiative formulas.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.770[/color]")
 	display_game("  [color=#FF8000]★ TIERS ARE LETTERS NOW, AND A LABEL YOU CAN ACTUALLY ORDER.[/color] [b]T1-5[/b] was two numbers that looked alike and meant different things. Everything now reads as a [b]letter and a rank[/b] — tiers run [color=#FFFFFF]H G F E D C B A S[/color] weakest to strongest, rank 1-9 inside a tier, and [b]both climb the same way[/b]. So D9 beats D1, and C1 beats D9. Every label is coloured by danger and hovering one shows you the whole ladder.")
 	display_game("  [color=#1EFF00]◆ Dungeons go all the way to the top rank.[/color] They stopped at 9-of-8 while a fused companion could reach the ninth — so the best dungeon you could find was labelled a rank below the best companion you could own. Same ceiling, one more step.")
 	display_game("  [color=#FF8000]★ CARD UPGRADES ARE RARE NOW — AND YOU CAN SEE WHICH.[/color] Every rank-up drew from one flat pool, so nothing could ever be uncommon: you saw [b]41%[/b] of everything a card could be offered at its very first rank-up. Upgrades now come in [color=#FFFFFF]common[/color] / [color=#1EFF00]uncommon[/color] / [color=#0070DD]rare[/color] / [color=#A335EE]epic[/color], with the colour, a gauge and a heavier frame on the card.")
@@ -30810,13 +30826,6 @@ func display_changelog():
 	display_game("[color=#808080]v0.9.766[/color]")
 	display_game("  [color=#1EFF00]◆ More room on the dungeon panel.[/color] The [b]Tools[/b] readout no longer takes up space underground — a pickaxe does nothing down there. Backpack, Pouch and Eggs stay, since those still matter while you are exploring. The panel is about [b]13% taller[/b] as a result, so the run log and the key have more breathing room.")
 	display_game("  [color=#1EFF00]◆ You can rebind West again.[/color] In [b]Settings → Movement Keys[/b], pressing [color=#FFFFFF]4[/color] was rebinding [b]Hunt[/b] instead of West — so West could not be rebound at all. [color=#FFFFFF]4[/color] is West and [color=#FFFFFF]5[/color] is Hunt now.")
-	display_game("")
-
-	display_game("[color=#808080]v0.9.765[/color]")
-	display_game("  [color=#FF8000]★ A MIMIC'S DISGUISE WAS EATING YOUR DAMAGE.[/color] Reported from live play: a Magic Bolt hit an apex Mimic for [b]593[/b] and its health bar didn't move. The disguise was hiding the monster's health in a [b]second pool[/b] — half its real total — and when it revealed, the bar was recalculated and [b]jumped back up[/b], swallowing everything you had dealt. There is one health pool now, it is the real one, and every point you deal stays dealt. A disguised monster simply won't [b]show[/b] you its health until it reveals.")
-	display_game("  [color=#1EFF00]◆ Casters can reveal a disguise at all.[/color] The reveal only ever triggered from a [b]basic attack[/b], so if you spent the fight casting spells the monster stayed disguised the whole way through.")
-	display_game("  [color=#FF8000]★ THE DUNGEON PANEL ON THE RIGHT WORKS NOW.[/color] Three things were wrong at once: the [b]overworld minimap[/b] was still drawing down there — trees, water and roads, underground — and eating a third of the panel; scrolling was [b]being undone[/b] two or three times a second by the floor's idle animation, so you could never read anything below the fold; and a counting-down status like [color=#FFFFFF]You are blinded! (11 rounds remaining)[/color] took a new slot every step, pushing your finds off the list. Picking something up is readable again.")
-	display_game("  [color=#1EFF00]◆ The panel trims itself to fit.[/color] If a floor ever has more to say than fits, the oldest log line goes rather than the key dropping off the bottom.")
 	display_game("")
 
 	display_game("[color=#00FFFF]v0.9.745[/color]")
