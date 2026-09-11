@@ -161,6 +161,55 @@ Two scenarios were added for it: **`cycle_cards`** (dungeon cards carrying cycle
 reveal upgrade already taken on a class card) and **`in_dungeon`** (parked on a dungeon entrance,
 stocked, for the hover / chest / run-log checks).
 
+## ⚑ THE ORDER — 54 open items, sequenced so nothing gets built twice (2026-09-11)
+
+Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
+recreating work."* Counted after ticking 11 items that were resolved but never checked off:
+**54 open across 15 arcs, 72 done.** The order below is dependency-driven, not preference —
+every "before" below is a case where doing it the other way means redoing the first piece.
+
+**0. CUT THE RELEASE.** Not an item, a gate. **Five open items cannot progress without live
+   data** — watch the five characters at L25+, feel-check the rest change, the "party play isn't
+   working" repro, the dungeon-level mismatch second example, and the dungeon-depth confirmation.
+   All five are waiting on a build in players' hands, and ~60 commits of player-facing work is
+   sitting unplayed. Every extra day also means new reports land against an older build, which is
+   what made this session's six reports harder to place.
+
+**0b. BATCH THE THREE OWNER DECISIONS** so none of them stalls a later arc:
+   returning a checked-out companion · the two asset-licence questions · whether to reconcile the
+   monster and dungeon tier LEVEL tables (they diverge below tier 6 and that is a trap for
+   whoever tunes them next).
+
+**1. CARD INSTANCES (3 items) — the biggest recreate-work risk on the board.** This arc's own
+   note already says it: *"this decision comes BEFORE authoring 53 dungeon cards, because the
+   cards are the thing that will exist in multiples."* It is an identity change reaching the save
+   format, the deck UI, the combat hand, the milestone system and the market. Authoring the cards
+   first means rewriting all of that around them afterwards.
+
+**2. SPRITE INTERIORS, Phase 3.45 (13 items) — but SLICE it.** The arc's own instruction is
+   *"slice it the way the dungeon was sliced, which worked: one interior end-to-end"*, and that
+   instruction exists to stop 53 rooms being redone. One room end to end, look at it, then the
+   remaining twelve items.
+
+**3. 2D EFFECTS, Phase 3.46 (3 items)** — torch/lamp lighting and the atmosphere pass sit ON TOP
+   of the interiors. Done first, they would be redone against the new floors.
+
+**4. OVERWORLD SPRITES, Phase 2.95 (2 items), strictly in order.** Phase 1 moves rendering to the
+   client with NO visual change; Phase 2 is the art. Phase 2 without Phase 1 is a rewrite.
+
+**5. THE DUNGEON ARC, Phase 5 (6 items)** — atlas hub, dungeon-centred questing, the dungeon card
+   pass, themed floor equipment. The 53-card content lives here and is unblocked by step 1.
+
+**6. BALANCE, Phase 2 (2 items) — deliberately AFTER the above, not before.** CLAUDE.md: *"anything
+   that changes player power invalidates it."* Card instances and the widened upgrade pool are
+   player-side changes, so a per-class death-rate refit measured before them is measured against a
+   player who will not exist by the time it lands. The Sage/Barbarian/Ranger gap is real but not
+   broken (all three clear the endgame bar), so it can wait for one honest refit rather than two.
+
+**7. EVERYTHING ELSE, parallel-safe (18 items).** Combat UX debt (5), party (3), input and
+   accessibility (2), realm meta and sinks (3), unscheduled (5). None of these blocks or is
+   blocked by the arcs above, so they are the right filler for a short session.
+
 ## STAT DESCRIPTIONS ARE A BIBLE. THEY MUST BE READ OFF THE CODE, NOT WRITTEN FROM MEMORY
 
 Owner, 2026-09-11: *"When putting in stat descriptions that are meant to be our bible it's not
@@ -747,7 +796,7 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       STILL MISSING: `prop_floor32` (11), `free_floor32` (5) and `egg_floor32` (100). Those three
       remain irreplaceable data.
 
-- [ ] ~~Write the BAKE GENERATORS as committed tools. The real fix behind the backup above.
+- [x] ~~Write the BAKE GENERATORS as committed tools. The real fix behind the backup above.
       `prop_floor32` (11), `tile_floor32` (18), `free_floor32` (5) and `egg_floor32` (100) are
       134 baked PNGs whose generator scripts **do not exist** - checked, no commit ever added
       one. They were ad-hoc and are gone, so those files are currently irreplaceable data rather
@@ -826,7 +875,7 @@ can actually roll:
       `tools/probe/item_comparison_stats.gd` covers it, and asserts STR/CON still FOLD rather than
       going raw, so a later "helpful" edit is caught as a contract change.
 
-- [ ] ~~Three attributes produce no comparison line of their own.~~ DEX, INT and WIS are read
+- [x] ~~Three attributes produce no comparison line of their own.~~ DEX, INT and WIS are read
       ONLY to compute the resource pool (`RES`), so a ring with +6 DEX and no max_energy shows
       nothing at all — while the same ring with +6 WITS would show `+6WIT`. DEX drives hit
       chance, dodge, initiative, flee and (for most classes) crit; INT is a mage's entire
@@ -860,7 +909,7 @@ to a Ranger BY DESIGN, and now say so on their face.
       on the monster marked one array while its line ended up in another. Proven by re-injecting
       the foreign-array skip: 41% and a clean fail.
 
-- [ ] ~~36% of player actions report less damage than the monster loses.~~
+- [x] ~~36% of player actions report less damage than the monster loses.~~
       `tools/probe/damage_attribution.gd` reproduces it: 160 player actions across 40 fights,
       58 of them (36%) where `message_damage` sums to less than the monster's pool moved.
       Monsters that HEAL (life steal, regeneration) are excluded from the run, because those are
@@ -1029,7 +1078,7 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       instance itself (`completed_at`), which the reload prune, the despawn sweep and the
       entrance lookup all already keyed off and were never told.
 
-- [ ] ~~A dungeon completed with no boss in it. Owner: *"I just did a T1-1 Goblin Dungeon and
+- [x] ~~A dungeon completed with no boss in it. Owner: *"I just did a T1-1 Goblin Dungeon and
       the chest was just sitting there on the last floor I didn't have to fight a boss to get it
       to appear"*, then, correcting my first theory, *"I didn't fight a boss as there wasn't
       one."* It happened TWICE, so it is systematic, not a rare roll.
@@ -1054,7 +1103,7 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       NAME is hoverable on both the combat log and the nameplate (which had no hover listener at
       all). Probes: `monster_traits.gd`, `empowered_hover.gd`.
 
-- [ ] ~~Make variant names and traits HOVERABLE. Owner 2026-09-10: *"We should also consider
+- [x] ~~Make variant names and traits HOVERABLE. Owner 2026-09-10: *"We should also consider
       making variant names hoverable so players can see what they do (swift, weapon master,
       champion, venemous, etc.)"* Two different things are being named there and both want it:
       the monster VARIANT baked into the name ("Venomous Orc", "Skeleton Champion") and the
@@ -1228,7 +1277,7 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       is now stamped on the instance, so a finished run can no longer be re-entered.
       The entry diagnostic is still in place; confirm on the next fresh dungeon and close it.
 
-- [ ] ~~A dungeon still opens at a different depth than the tile advertised.~~ Owner: *"On the
+- [x] ~~A dungeon still opens at a different depth than the tile advertised.~~ Owner: *"On the
       overworld this said it was a T1-2 Forgotten Crypt. I entered and it is a T1-7."* This is the
       SECOND report; the 2026-09-08 inherit was supposed to end it and reads correctly on the
       page. A diagnostic now logs, at entry, what the tile resolved to and what the instance got,
@@ -1526,7 +1575,7 @@ does not exist in the interiors case at all.
 - [x] **DONE.** Floor loot emits `[url=loot:<x>,<y>]` and resolves through the same
       `meta_hover_started` popup as monsters and theme tiles. Verified present in client.gd.
 
-- [ ] ~~Floor loot should be HOVERABLE (owner, 2026-09-10): *"I wonder if it makes sense to make
+- [x] ~~Floor loot should be HOVERABLE (owner, 2026-09-10): *"I wonder if it makes sense to make
       loot mouse hoverable to see what it is now?"* Yes, and it is nearly free: the dungeon
       already hovers monsters and theme tiles through one idiom (`[url=...]` +
       `meta_hover_started` -> popup), floor loot already carries its full `item_data` on the wire,
@@ -1691,7 +1740,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       either constant cannot desync the card face again. Display-only: no damage changed, no
       calibration run needed.
 
-- [ ] ~~EVERY Ranger and Barbarian card understates its damage, by up to 88%.~~ Found 2026-09-10
+- [x] ~~EVERY Ranger and Barbarian card understates its damage, by up to 88%.~~ Found 2026-09-10
       while chasing the owner's report on Killing Shot; the finisher was the symptom, not the bug.
       **The cause.** `Steady Aim` (+11% per Aim held) and `Rage` (the Barbarian twin) are applied
       inside `apply_ability_damage_modifiers`, the shared funnel every damaging card passes
@@ -1710,7 +1759,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 - [x] **ADDRESSED 2026-09-11 (visibility) and DECIDED (no conversion).** See Phase 2.75.
 
-- [ ] ~~A Ranger cannot crit with abilities, so every crit buff is dead weight for them.~~ Raised
+- [x] ~~A Ranger cannot crit with abilities, so every crit buff is dead weight for them.~~ Raised
       by the owner: *"does hunter's instinct increase crit chance for abilities on the ranger?"*
       Answer: no, and not because of a bug. The Ranger passive `Steady Hand` sets `no_glance`, and
       the ability crit path reads `if _passive_has_no_glance(character): cc = 0` — the companion's
@@ -1733,7 +1782,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       screenshots show the same. Fixed at some point without a traceable commit;
       `tools/probe/combat_card_hotkeys.gd` now guards it so it cannot drift back.
 
-- [ ] ~~Combat card hotkeys read R, 1, 2 instead of 1, 2, 3~~ (owner, 2026-09-06):
+- [x] ~~Combat card hotkeys read R, 1, 2 instead of 1, 2, 3~~ (owner, 2026-09-06):
       *"now that outsmart has been removed our card numbers shifted to R, 1, and 2. This is odd.
       It should be 1, 2, 3 still."* No fix commit found in a search of the log since that date, so
       treat it as still live until reproduced. Retiring a card should not renumber the hand — the
@@ -1770,7 +1819,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Recorded as [[reference-card-ids-vs-display-names]] — resolve through
       `_ability_display_name` before counting anything player-facing.
 
-- [ ] ~~Ranger and Ninja STARTER decks~~ (owner, 2026-09-06): *"They should start with cards from
+- [x] ~~Ranger and Ninja STARTER decks~~ (owner, 2026-09-06): *"They should start with cards from
       their deck that make sense for their intended play styles. Likely just need to swap a few of
       their enabler starter cards with a few they aren't using."* The 2026-09-07 theming pass
       renamed and re-roled cards across all nine kits, which may have absorbed this — but the ask
