@@ -161,6 +161,30 @@ Two scenarios were added for it: **`cycle_cards`** (dungeon cards carrying cycle
 reveal upgrade already taken on a class card) and **`in_dungeon`** (parked on a dungeon entrance,
 stocked, for the hover / chest / run-log checks).
 
+## v0.9.770 SHIPPED (2026-09-11) — 30 commits, server deployed, 7 assets live
+
+The card-upgrade arc plus the tier/rank vocabulary. Released as documented: version bumped and
+pushed, editor recompile forced BEFORE export (the step that shipped stale code in v0.9.657-660),
+`VERSION.txt` copied into the build dir before gating (the sidecar that failed v0.9.760), release
+gate green on all eight checks including 930 dungeon-art lookups, Linux pair built, 60-second
+in-game countdown sent, server binary staged as `.new` and swapped inside the window.
+
+**Verified by the RUNNING process, not the file on disk**: `sha256 07a9b46d…` on `/proc/<pid>/exe`
+matches the local build. The new process then wrote a fresh account backup at 16:26:19 UTC, after
+its own 16:25:11 start, so it is doing real work rather than merely listening.
+
+All seven assets uploaded and both launcher URLs plus the delta manifest answer 200.
+
+**Operational note worth keeping:** the server's stdout is BLOCK-BUFFERED under systemd, so it logs
+in bursts and can go silent for hours while perfectly healthy — the previous process logged 03:00
+to 05:16, then nothing until its shutdown flush at 16:24. I briefly misread that as the shutdown
+countdown having failed. It had not: the journal showed `Server shutting down...` exactly ONCE
+(the v0.9.763 re-entrancy fix holding, against 61 copies before it) and one clean scheduled
+restart. **Judge a deploy by the process hash and by file activity, not by recent log lines.**
+`HP_TRACE_ENABLED` is on for this release, which will flush the buffer far more often once anyone
+fights — so live diagnosis is easier than usual right now, and that is the window to catch the
+666/750 monster-health report if it recurs.
+
 ## Phase 1 — confirm the two releases landed (do first, cheap)
 
 - [x] **Shutdown handler fired every frame until the process exited — FIXED 2026-09-09.**
