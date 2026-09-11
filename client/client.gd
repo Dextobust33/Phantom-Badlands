@@ -30490,7 +30490,21 @@ func display_changelog():
 	# v0.9.767 — the deck-width arc opens (cards you DON'T play now pay out), arrow keys work as
 	# diagonals for keyboards with no numpad, the final chest's loot stopped being thrown away,
 	# and a party stopped being stranded when its leader logged out.
-	display_game("[color=#00FF00]v0.9.767[/color] [color=#808080](Current)[/color]")
+	# v0.9.768 — the dungeon ROOM pass: every chamber draws its own floor and its own decoration
+	# from a pool of tilesets, walls became support rather than outline, floor loot is marked and
+	# hoverable, and the dungeon is lit.
+	display_game("[color=#00FF00]v0.9.768[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ EVERY ROOM LOOKS LIKE ITS OWN PLACE NOW.[/color] Dungeon chambers no longer share one floor. Each room draws its [b]own material[/b] — cut stone, brick, grass, timber, pale sand, violet rock — and its [b]own decoration[/b], from a pool of tilesets. Corridors keep the old cave floor, so stepping out of a passage into a room is a visible change of ground rather than more of the same.")
+	display_game("  [color=#FF8000]★ THE DUNGEON IS LIT.[/color] A [b]torch radius[/b] follows you, and lamps, braziers and lava light their own surroundings. Nothing is hidden and there is [b]nothing to manage[/b] — no torches to carry or refuel. Some dungeons will be genuinely dark later; those are the ones where a lamp is worth walking toward.")
+	display_game("  [color=#1EFF00]◆ Lampposts are whole lampposts.[/color] The two-square props used to render as the bottom half of a lamp. They now stand properly, and rise into the dark when they sit at the edge of a space.")
+	display_game("  [color=#FF8000]★ YOU CAN TELL LOOT FROM SCENERY, AND SEE WHAT IT IS.[/color] Anything you can pick up now carries [b]corner brackets in its rarity colour[/b], and [b]hovering it names the item[/b]. Decoration has no brackets. Previously a dropped weapon and a piece of floor decoration were both just a sprite on the ground.")
+	display_game("  [color=#1EFF00]◆ Walls hold the floor up instead of outlining it.[/color] Rock is now drawn only beneath the ground you walk on, which halves the stone on screen and lets the rooms be the thing you notice.")
+	display_game("  [color=#1EFF00]◆ A Floor Skip Charm on the ground is a Floor Skip Charm.[/color] It had no sprite and drew as a bare symbol next to five kinds that did.")
+	display_game("  [color=#1EFF00]◆ \"A wall blocks your path\" — except dungeons have not drawn walls for a long time.[/color] Walking into the dark now says [b]solid rock[/b], which is what is actually there.")
+	display_game("  [color=#1EFF00]◆ Decorations stay put under theme tiles.[/color] Mud, moss and webbing patches carry scatter behind them like any other floor.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.767[/color]")
 	display_game("  [color=#FF8000]★ THE CARDS YOU DON'T PLAY NOW DO SOMETHING.[/color] Every card in your hand that you [b]didn't[/b] cast this turn now pays out a smaller benefit as it cycles — a ward, a heal, chip damage, or a point of your class engine. The card face tells you which, on a new [color=#FFFFFF]cycles:[/color] line, so you can read it before you commit. A wider deck used to mean a thinner one; now the cards you pass over are still working for you.")
 	display_game("  [color=#1EFF00]◆ New card upgrades that show you the payout in advance.[/color] [color=#FFFFFF]Foretold[/color], [color=#FFFFFF]Held in Reserve[/color] and [color=#FFFFFF]Smouldering[/color] can appear at a milestone on any card, and print exactly what that card will pay when it cycles.")
 	display_game("  [color=#FF8000]★ NO NUMPAD? THE ARROW KEYS DO DIAGONALS NOW.[/color] Holding [color=#FFFFFF]Up+Left[/color] moves you north-west in a single step instead of north then west — including when you press one key slightly before the other. Pressing opposite arrows cancels rather than picking one, a quick tap still takes its step, and holding an arrow travels at full speed. [color=#FFFFFF]H[/color] hunts. Numpad players are unaffected.")
@@ -30532,25 +30546,6 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ The key said 'Letters = Monsters'.[/color] Every monster is a sprite now, so the only letters left on a floor are special tiles — the key was telling you a bull-rune was a goblin.")
 	display_game("")
 
-	display_game("[color=#808080]v0.9.762[/color]")
-	display_game("  [color=#FF8000]★ DUNGEONS ARE FULLY ILLUSTRATED NOW.[/color] Monsters are [b]animated sprites[/b] instead of letters — an orc looks like an orc, a skeleton like a skeleton — and they keep moving while you stand still. Floor loot is real item art: coins, ore, scrolls, shields, and eggs that show which variant you are about to pick up. Stones, grass and rubble are scattered across the ground so a corridor is no longer a hundred identical tiles.")
-	display_game("  [color=#FF8000]★ YOUR COMPANION FOLLOWS YOU UNDERGROUND.[/color] It walks in your footsteps, one tile behind, the way it does on the surface.")
-	display_game("  [color=#FF8000]★ EVERY CHARACTER CAN NOW WALK AND TURN.[/color] Only 32 of the 80 character designs had directional artwork; the rest stood frozen, facing one way, [b]on the overworld as well as underground[/b]. All 80 are complete — they face the way you move and animate as they go.")
-	display_game("  [color=#1EFF00]◆ Your sprite turns whichever way you move it.[/color] Moving with the on-screen buttons never turned you, because that path never told the sprite — so it looked permanently stuck facing left.")
-	display_game("  [color=#1EFF00]◆ The floor is even.[/color] Monsters, loot, glyphs and your own sprite all sat in [b]black holes[/b] punched out of the ground, and an alert monster turned its tile red. Everything is drawn on the floor now.")
-	display_game("  [color=#1EFF00]◆ No more line drawn through monsters.[/color] Hovering still works.")
-	display_game("  [color=#1EFF00]◆ A Giant Bat is no longer a Giant.[/color] Monster artwork was matched on a loose name check, so anything containing another monster’s name borrowed its picture.")
-	display_game("")
-	display_game("[color=#808080]v0.9.761[/color]")
-	display_game("  [color=#FF8000]★ THE DUNGEON YOU ENTER IS THE DUNGEON THE SIGN PROMISED.[/color] A tile could read [color=#FFFFFF]Forgotten Crypt [T1-2] | Levels 2-3[/color], warn you that monsters here are [b]level 2[/b], and then open into a [b]T1-7 with a level 9 skeleton[/b] on the first floor. Entering built a private copy of the dungeon at a [b]random spot 25-40 tiles away[/b] and took its depth from THAT spot — so the depth was a dice roll made after you had already committed, and no warning could ever have been right. Your dungeon now inherits the depth of the tile you walked to, which also means [b]walking further out finds deeper dungeons[/b] again.")
-	display_game("  [color=#FF8000]★ DUNGEONS ARE DRAWN WITH REAL TILES NOW.[/color] Cave floor, rock walls carved around every room and corridor, and [b]your own sprite[/b] standing on the ground instead of an [color=#FFFFFF]@[/color]. Tiles are four times the size and the map fills the window. Monsters are sprites too — and they animate as they roam.")
-	display_game("  [color=#1EFF00]◆ You can see what a monster IS before you walk into it.[/color] Hover one on the floor for its art, level and full name — [color=#FFFFFF]Level 8 Venomous Orc[/color], not just \"an Orc\". Its variant is decided when it [b]spawns[/b] rather than when the fight starts, so a nasty one can be spotted and avoided.")
-	display_game("  [color=#1EFF00]◆ Eggs are real egg art.[/color] 119 variants, each with its own egg — so the artwork tells you which variant you are holding, on the Egg screen and on a dungeon floor.")
-	display_game("  [color=#1EFF00]◆ Half a monster is no longer invisible.[/color] A two-tone variant could paint one half in pure black on a black panel — a [color=#FFFFFF]Duality[/color] rat really did show only its left side. 21 colours were effectively invisible; all are lifted without losing their hue.")
-	display_game("  [color=#1EFF00]◆ Your cards tell the truth about your engine.[/color] A [color=#2F4F4F]Grifter[/color]’s Distract, Sabotage and Size Up showed [b]two[/b] Leverage pips and paid [b]one[/b] about half the time. A guaranteed point is now a solid pip, a chance is a hollow one, and the card states the odds on hover.")
-	display_game("")
-	# v0.9.745 — The early game was too hard for a measurable reason: the calibration was
-	# being overwritten by its own smoothing step, and was measuring a monster that never spawns.
 	display_game("[color=#00FFFF]v0.9.745[/color]")
 	display_game("  [color=#FF8000]\u2605 THE EARLY GAME WAS TOO HARD — AND IT WAS OUR BUG, NOT YOUR BUILD.[/color] Levels [b]1 to 50[/b] were measurably harsher than intended: a fair fight there is meant to be winnable about [b]60%[/b] of the time and it was running at [b]42-47%[/b]. Two separate faults in the tool that sizes monsters, both now fixed. Those levels now measure [b]57-64%[/b].")
 	display_game("  [color=#1EFF00]\u25c6 Fault one: the tuning was being thrown away after it was done.[/color] Monster sizes are worked out by simulating thousands of real fights, and a smoothing step ran afterwards to iron out flukes. That step used an [b]average[/b] of each level and its neighbours — which, on a curve that climbs steeply, [b]pushes every value upward[/b]. It was inflating the freshly-tuned numbers by [b]25-37%[/b] at levels 5, 10 and 50. Eighteen rounds of tuning could never fix those levels because nothing they produced survived to be used. It now uses a [b]median[/b], which removes a genuine fluke completely but leaves a real climb untouched.")
