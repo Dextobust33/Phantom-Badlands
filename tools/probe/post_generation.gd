@@ -39,37 +39,26 @@ func _init() -> void:
 	ck(int(p3[5].x) != int(p1[5].x) or int(p3[5].y) != int(p1[5].y),
 		"a different seed gives a different layout")
 
-	print("\n--- the water rule asks HOW WET, not merely whether wet ---")
-	# The old rule rejected on a single water tile anywhere in a 25x25 bubble. Show that such
-	# sites exist and are now accepted — otherwise this fix would be indistinguishable from
-	# simply deleting the check.
-	var seed_v := 2178175570
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_v
-	var one_or_two := 0
-	var accepted := 0
-	var soaked := 0
-	var soaked_rejected := 0
-	for i in range(240):
-		var x := rng.randi_range(-600, 600)
-		var y := rng.randi_range(-600, 600)
-		if absi(x) < 30 and absi(y) < 30:
-			continue
-		var wet: int = NP._post_water_tiles(x, y, seed_v, 12)
-		var rejected: bool = NP._location_has_nearby_water(x, y, seed_v)
-		if wet >= 1 and wet <= 3:
-			one_or_two += 1
-			if not rejected:
-				accepted += 1
-		if wet > 40:
-			soaked += 1
-			if rejected:
-				soaked_rejected += 1
-	print("      %d sites with 1-3 water tiles, %d accepted" % [one_or_two, accepted])
-	print("      %d genuinely soaked sites (>40 tiles), %d rejected" % [soaked, soaked_rejected])
-	ck(one_or_two > 0, "the sample contains lightly-ponded sites (not a vacuous test)")
-	ck(accepted == one_or_two, "a lone pond no longer refuses a whole trading post")
-	ck(soaked == soaked_rejected, "a genuinely wet site is STILL rejected (a lake is not a pond)")
-
+	print("")
+	print("--- water does not gate placement at all any more ---")
+	# Owner 2026-09-11: "Posts should overwrite any type of tile that was already down. Water
+	# shouldn't be an obstruction moving forward." A post is stamped as tile DELTAS, which
+	# overwrite the terrain underneath, so a post on a lake is simply a post.
+	var src := FileAccess.get_file_as_string("res://shared/npc_post_database.gd")
+	ck(not src.contains("_location_has_nearby_water("),
+		"the any-water rejection is gone entirely, not merely relaxed")
+	ck(not src.contains("_location_has_water_in_margin("),
+		"and so is the densify variant of it")
+	var ws = load("res://shared/world_system.gd").new()
+	var seed_w := 424242
+	var pw: Array = NP.generate_posts(seed_w)
+	var on_water := 0
+	for q in pw:
+		var t: Dictionary = ws.generate_tile(int(q.x), int(q.y), seed_w)
+		if String(t.get("type", "")) in ["water", "deep_water"]:
+			on_water += 1
+	print("      %d of %d posts sit on water (allowed - the stamp overwrites it)"
+		% [on_water, pw.size()])
+	ck(pw.size() >= 50, "and the target count is still met with no water filtering")
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails > 0 else 0)

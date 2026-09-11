@@ -142,9 +142,13 @@ static func generate_posts(seed: int) -> Array:
 		if too_close:
 			continue
 
-		# Reject locations that are on or near water (posts should not spawn in lakes/rivers)
-		if _location_has_nearby_water(x, y, seed):
-			continue
+		# NO WATER CHECK. Owner 2026-09-11: "Posts should overwrite any type of tile that was
+		# already down. Water shouldn't be an obstruction moving forward."
+		#
+		# A post is STAMPED into the chunk as tile deltas, and a delta overwrites whatever the
+		# procedural terrain says - so a post on a lake simply becomes a post, with its own floor
+		# and walls, the same as one on grass. The rejection was never protecting anything; it
+		# was only refusing sites. See the note on the deleted `_location_has_nearby_water`.
 
 		posts.append(_generate_post(rng, x, y, false))
 
@@ -312,23 +316,10 @@ static func densify_posts(existing_posts: Array, seed: int) -> Array:
 		# margin (6 vs the strict 12) so densely water-flecked worlds can still
 		# reach the target. Posts placed near water still stamp walls/floors over
 		# whatever's under them, so a single fringe tile becoming a wall is fine.
-		if _location_has_water_in_margin(x, y, seed, 6):
-			continue
 
 		posts.append(_generate_post(rng, x, y, false))
 
 	return posts
-
-static func _location_has_water_in_margin(cx: int, cy: int, seed: int, margin: int) -> bool:
-	"""Generalized water check with caller-controlled margin (Audit #11 Slice 5).
-	Mirrors _location_has_nearby_water but lets densify use a smaller bubble
-	for water-heavy seeds where the strict 12-tile margin makes target counts
-	unreachable."""
-	for dx in range(-margin, margin + 1):
-		for dy in range(-margin, margin + 1):
-			if _is_water_static(cx + dx, cy + dy, seed):
-				return true
-	return false
 
 static func backfill_post_fields(posts: Array, seed: int) -> Array:
 	"""Slice 6L — migrate posts saved before tier/region_name existed. Re-uses
@@ -756,47 +747,16 @@ static func _stamp_legacy_post(post: Dictionary, chunk_manager) -> void:
 # Duplicated from WorldSystem so it can run in a static context during post generation.
 # Keep in sync with WorldSystem._is_water_tile_generated / _water_noise / _seeded_hash_float.
 
-static func _location_has_nearby_water(cx: int, cy: int, seed: int) -> bool:
-	"""Is (cx,cy) too wet to build a post on?
-
-	2026-09-11 - THIS REJECTED EVERY SITE IN THE WORLD. Measured: 300 of 300 candidates refused,
-	for the live seed and for every other seed tried, so `generate_posts` could only ever return
-	the starter. It was invisible because the live world's 60 posts were generated before this
-	check existed and have simply persisted in npc_posts.json ever since; nothing regenerates
-	them in normal play. A map reset regenerated them, and the world came back with one post.
-
-	The cause is the shape of the test, not the margin. It asked "is ANY of these 625 tiles
-	water" and `_is_water_static` counts a 0.3%-chance single-tile POND as water. At a typical
-	spot 1 tile in 625 is water, so the odds that a 25x25 block contains at least one are
-	essentially certain - and one isolated pond twelve tiles away is not a reason to refuse to
-	build a trading post.
-
-	So it now asks how wet, not whether wet at all. A lake or a river fills a real share of the
-	bubble; a pond does not. The threshold is a FRACTION so it stays meaningful if the margin
-	ever changes."""
-	const POST_WATER_MARGIN = 12       # >= max half-size of any post room + walls
-	const POST_MAX_WATER_FRAC = 0.02   # 2% of the bubble - a pond passes, a shoreline does not
-	var side: int = POST_WATER_MARGIN * 2 + 1
-	var budget: int = int(float(side * side) * POST_MAX_WATER_FRAC)
-	var wet := 0
-	for dx in range(-POST_WATER_MARGIN, POST_WATER_MARGIN + 1):
-		for dy in range(-POST_WATER_MARGIN, POST_WATER_MARGIN + 1):
-			if _is_water_static(cx + dx, cy + dy, seed):
-				wet += 1
-				if wet > budget:
-					return true
-	return false
-
-
-static func _post_water_tiles(cx: int, cy: int, seed: int, margin: int) -> int:
-	"""How many tiles within `margin` of (cx,cy) are water. Exposed for the probe, which needs
-	to show that the old any-water rule and the new how-much rule genuinely differ."""
-	var n := 0
-	for dx in range(-margin, margin + 1):
-		for dy in range(-margin, margin + 1):
-			if _is_water_static(cx + dx, cy + dy, seed):
-				n += 1
-	return n
+# WATER NO LONGER GATES POST PLACEMENT (2026-09-11).
+#
+# `_location_has_nearby_water` and `_post_water_tiles` lived here and both are gone. The first
+# rejected a site if ANY tile within 12 was water, which - because `_is_water_static` counts a
+# 0.3%-chance single-tile pond - refused 300 of 300 candidate sites and meant `generate_posts`
+# could never place anything but the starter. That was fixed on 2026-09-11 by asking how wet
+# rather than whether wet; the owner then made the better call and removed the question.
+#
+# Posts are stamped as tile DELTAS, which overwrite the procedural terrain underneath. A post on
+# a lake is just a post. `_is_water_static` below is kept: the terrain generator still uses it.
 
 static func _is_water_static(x: int, y: int, seed: int) -> bool:
 	var water_noise = _water_noise_static(x, y, seed)
