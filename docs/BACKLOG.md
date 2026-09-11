@@ -2522,23 +2522,50 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       onto the map are clamped INTO the local band, so beside this dungeon you meet its Orcs at
       L15-17 while the same Orcs inside it are L7-9.
 
-      **The question for the owner, because the obvious fix has a consequence.** If a dungeon's
-      level follows the land, then either:
-        * **(a) the GRADE follows too** - a dungeon in a L16 region is picked from the types whose
-          tier covers L16, so "G2" keeps meaning "L7-22" and you simply stop finding G2s out
-          there. Grades stay honest, but the variety at any one spot narrows, and a low-level
-          player exploring far from home finds nothing they can enter.
-        * **(b) the grade stays a label and the LEVEL is re-anchored** - a G2 Kelpie Marsh in a
-          L16 region hosts L16 monsters. Every dungeon anywhere is enterable at local level, but
-          "G2" no longer tells you the difficulty, and the tier bands in `power_rank.gd` stop
-          describing dungeons.
-        * **(c) keep both and make the SPAWN honest** - leave the level maths alone and simply
-          stop spawning a tier-2 dungeon in a L16 region, by filtering type choice on the local
-          overworld level. Smallest change, and it makes `spawn_weight` mean something at last.
-      **(c) is what I would do first** - it is a filter at one call site, it changes no level
-      formula, and it can be measured (spawn 500 dungeons, compare each one's band against the
-      overworld level at its tile). (a) and (b) are design changes that want the owner's call.
-      **Ask before building.**
+      **The mismatch is every tier, both directions, and the top end is enormous.** A dungeon's
+      spawn ring is `tier*30 .. tier*60`, which has nothing to do with where the land reaches
+      that dungeon's levels:
+
+      | tier | spawns at | land there | its monsters | where the land would match |
+      |---|---|---|---|---|
+      | G1 | 30-60 | L4-14 | L1-12 | 0-55 |
+      | G2 | 60-120 | L14-38 | L6-22 | 40-80 |
+      | G3 | 90-180 | L26-68 | L16-40 | 65-125 |
+      | G4 | 120-240 | L38-104 | L31-60 | 102-166 |
+      | G5 | 150-300 | L50-140 | L51-120 | 151-266 |
+      | G6 | 180-360 | L68-176 | L101-500 | 235-700 |
+      | G7 | 210-420 | L86-220 | L501-2000 | 701-1320 |
+      | G8 | 240-480 | L104-280 | L2001-5000 | 1320-1971 |
+      | G9 | 270-540 | L122-340 | L5001-10000 | 1971-2828 |
+
+      Tiers 1-5 sit BELOW their land; tiers 6-9 sit wildly above it. An S-rank dungeon holding
+      L5001-10000 monsters stands in wilderness running L122-340.
+
+      **And it exposes a second thing nobody had noticed.** Because every tier's ring is
+      `tier*60` or less, **all 150-200 world dungeons live inside a radius of 540** - 5.7% of the
+      world by area. The outer 94% of the map has no dungeons in it at all. The right-hand column
+      above is also the fix for that: place a dungeon where the land matches its levels and the
+      set spreads from the origin to the rim.
+
+      **Correction to an earlier note here: this cannot be done as a pure filter.** "Only spawn
+      types whose band fits the local level" sounds like the smallest change, but for tiers 6-9
+      there is NO point in their current ring where the land fits, so a strict filter would stop
+      them spawning entirely. The choice is really:
+        * **(a) MOVE the dungeons** - replace `get_spawn_location_for_tier`'s `tier*30..tier*60`
+          with the radius at which the land reaches that dungeon's own band (the last column).
+          No level formula changes, no grade changes meaning, `power_rank.gd` stays the authority
+          for both ladders, and the empty outer world fills in. Cost: high-tier dungeons become
+          genuinely remote, which is a real change to how the endgame is reached.
+        * **(b) RE-ANCHOR the levels** - the grade stays a flavour label and a dungeon's monsters
+          take the overworld level at its tile. Every dungeon anywhere is enterable at local
+          level. Cost: "G2" stops predicting difficulty, and the dungeon half of
+          `TIER_LEVEL_BANDS` stops describing anything.
+        * **(c) BOTH ladders get re-drawn** - accept that the distance curve and the tier rings
+          are two descriptions of the same thing and derive one from the other. Cleanest, biggest.
+      **(a) is what I would do**, because it changes placement only and leaves every number that
+      balance work depends on alone. Measurable: spawn 500 dungeons, compare each one's band
+      against `get_post_anchored_level` at its tile, and require the overlap.
+      **Owner decision. Ask before building.**
 
 - [x] **SHIPPED v0.9.760-767 — the dungeon RENDERER, its sprites, and the hoverable key.**
       This replaces three separate open entries (~245 lines) that were still describing this as
