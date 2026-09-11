@@ -225,7 +225,7 @@ var dungeon_monsters: Dictionary = {}     # instance_id -> {floor_num: [monster_
 var next_dungeon_monster_id: int = 0
 # Dungeon revamp B (2026-08-26) — Azure Dreams-style FLOOR LOOT: pickup items placed on
 # floor tiles, auto-collected on step. Unifies + replaces the old TREASURE/SCATTERED_LOOT/
-# GOLD_HOARD tile loot. Eggs found this way match the dungeon type + tier (random sub-tier).
+# GOLD_HOARD tile loot. Eggs found this way match the dungeon type + tier (random rank).
 var dungeon_floor_items: Dictionary = {}  # instance_id -> {floor_num: [item_entity, ...]}
 var next_dungeon_floor_item_id: int = 0
 var dungeon_combat_breather: Dictionary = {}  # peer_id -> true: skip monster movement on next move after combat
@@ -10165,7 +10165,7 @@ func _handle_companion_stable_station(peer_id: int, character) -> void:
 			"body": (
 				"You have found a [color=#FFD700]Companion Stable[/color] — a living link to your Sanctuary's companion storage.\n\n"
 				+ "[color=#FFD700]Manage tab:[/color] Deposit / Withdraw / Return to Slot.\n"
-				+ "[color=#FFD700]Fuse tab:[/color] Same-type fusion (3 companions of the same type + sub-tier → 1 of the next sub-tier). Inputs can come from the kennel or registered slots. If any input is registered, the output is auto-registered.\n\n"
+				+ "[color=#FFD700]Fuse tab:[/color] Same-type fusion (3 companions of the same type + rank → 1 of the next rank). Inputs can come from the kennel or registered slots. If any input is registered, the output is auto-registered.\n\n"
 				+ "Deposit and registration are independent — depositing never changes a companion's registered status.\n\n"
 				+ "Companion Stables appear at [color=#87CEEB]Tier 5+ trading posts[/color]."
 			),
@@ -15588,7 +15588,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 		for idx in indices:
 			var comp = kennel[int(idx)]
 			if comp.get("monster_type") != first.get("monster_type") or int(comp.get("sub_tier", 1)) != int(first.get("sub_tier", 1)):
-				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be same type and sub-tier!"})
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be same type and rank!"})
 				return
 		var current_sub_tier = int(first.get("sub_tier", 1))
 		var new_sub_tier = mini(current_sub_tier + 1, 9)
@@ -15616,19 +15616,19 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 
 	elif fusion_type == "mixed":
 		if indices.size() != 8:
-			send_to_peer(peer_id, {"type": "error", "message": "Mixed T9 fusion requires exactly 8 companions!"})
+			send_to_peer(peer_id, {"type": "error", "message": "Mixed A9 fusion requires exactly 8 companions!"})
 			return
-		# v0.9.495 — require T8.8 specifically (Tier 8 AND sub-tier 8). Was
-		# only checking sub_tier == 8, which let lower-tier sub_tier 8s
-		# through. Mixed T9 is the capstone; only maxed-out T8 inputs count.
+		# v0.9.495 — require A8 specifically (tier A AND rank 8). Was
+		# only checking sub_tier == 8, which let lower-tier rank 8s
+		# through. Mixed A9 is the capstone; only maxed-out T8 inputs count.
 		for idx in indices:
 			var comp = kennel[int(idx)]
 			if int(comp.get("tier", 1)) != 8 or int(comp.get("sub_tier", 1)) != 8:
-				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be T8.8 (Tier 8, sub-tier 8)!"})
+				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be A8 (tier A, rank 8)!"})
 				return
 		var random_type = kennel[int(indices[randi() % indices.size()])].get("monster_type")
 		var inherited = _check_variant_inheritance(kennel, indices)
-		# v0.9.570 — Mixed T9 inherits the highest border_tier across all 8 inputs.
+		# v0.9.570 — Mixed A9 inherits the highest border_tier across all 8 inputs.
 		var mixed_best_border := 0
 		for idx in indices:
 			var bt = int(kennel[int(idx)].get("border_tier", 0))
@@ -15663,7 +15663,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 			send_to_peer(peer_id, {"type": "error", "message": "Hybrid fusion requires DIFFERENT monster types!"})
 			return
 		if int(parent_a.get("sub_tier", 1)) < 5 or int(parent_b.get("sub_tier", 1)) < 5:
-			send_to_peer(peer_id, {"type": "error", "message": "Both parents must be sub-tier 5 or higher!"})
+			send_to_peer(peer_id, {"type": "error", "message": "Both parents must be rank 5 or higher!"})
 			return
 		# Find a Hybrid Catalyst in the character's inventory.
 		if not characters.has(peer_id):
@@ -15720,7 +15720,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same monster type!"})
 				return
 			if int(comp.get("tier", 1)) != asc_tier:
-				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same tier (sub-tier may differ)!"})
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same tier (rank may differ)!"})
 				return
 			asc_parents.append(comp)
 		if not characters.has(peer_id):
@@ -15857,7 +15857,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 		var first = companions[0]
 		for comp in companions:
 			if comp.get("monster_type") != first.get("monster_type") or int(comp.get("sub_tier", 1)) != int(first.get("sub_tier", 1)):
-				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be same type and sub-tier!"})
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be same type and rank!"})
 				return
 		var current_sub_tier = int(first.get("sub_tier", 1))
 		var new_sub_tier = mini(current_sub_tier + 1, 9)
@@ -15871,18 +15871,18 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 		output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited, best_border)
 	elif fusion_type == "mixed":
 		if companions.size() != 8:
-			send_to_peer(peer_id, {"type": "error", "message": "Mixed T9 fusion requires exactly 8 companions!"})
+			send_to_peer(peer_id, {"type": "error", "message": "Mixed A9 fusion requires exactly 8 companions!"})
 			return
-		# v0.9.495 — Mixed T9 is the capstone fusion; all 8 inputs must be
-		# T8.8 (Tier 8, sub-tier 8). Previously only checked sub_tier == 8,
-		# which let lower-tier sub_tier 8s through (e.g. T1.8 Goblins).
+		# v0.9.495 — Mixed A9 is the capstone fusion; all 8 inputs must be
+		# A8 (tier A, rank 8). Previously only checked sub_tier == 8,
+		# which let lower-tier rank 8s through (e.g. H8 Goblins).
 		for comp in companions:
 			if int(comp.get("tier", 1)) != 8 or int(comp.get("sub_tier", 1)) != 8:
-				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be T8.8 (Tier 8, sub-tier 8)!"})
+				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be A8 (tier A, rank 8)!"})
 				return
 		var random_type = companions[randi() % companions.size()].get("monster_type")
 		var inherited = _check_variant_inheritance_list(companions)
-		# v0.9.570 — Mixed T9 (stable variant): inherit highest border_tier across inputs.
+		# v0.9.570 — Mixed A9 (stable variant): inherit highest border_tier across inputs.
 		var mixed_best_border := 0
 		for c in companions:
 			var bt = int(c.get("border_tier", 0))
@@ -15899,7 +15899,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 			send_to_peer(peer_id, {"type": "error", "message": "Hybrid fusion requires DIFFERENT monster types!"})
 			return
 		if int(parent_a.get("sub_tier", 1)) < 5 or int(parent_b.get("sub_tier", 1)) < 5:
-			send_to_peer(peer_id, {"type": "error", "message": "Both parents must be sub-tier 5 or higher!"})
+			send_to_peer(peer_id, {"type": "error", "message": "Both parents must be rank 5 or higher!"})
 			return
 		var catalyst_idx = -1
 		for i in range(character.inventory.size()):
@@ -15936,7 +15936,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same monster type!"})
 				return
 			if int(comp.get("tier", 1)) != asc_tier:
-				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same tier (sub-tier may differ)!"})
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same tier (rank may differ)!"})
 				return
 		var asc_catalyst_idx = -1
 		for i in range(character.inventory.size()):
@@ -16851,7 +16851,7 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 		+ "[color=#FFD700]── Eggs ──[/color]\n"
 		+ "Eggs hatch as you walk (steps remaining). [color=#87CEEB]Dungeons are the main egg source[/color] — the boss guarantees an egg of the dungeon's type, and you can find more as floor loot inside. Overworld kills only [color=#87CEEB]very rarely[/color] yield an egg (any tier is possible, but the odds plummet with tier — a top-tier egg from the wild is a once-in-a-lifetime find). Use [color=#FFD700]Home Stone (Egg)[/color] to send an incubating egg to your Sanctuary so it survives permadeath.\n\n"
 		+ "[color=#FFD700]── Fusion ──[/color]\n"
-		+ "At a [color=#FF80FF]Companion Stable[/color] (T5+ NPC posts, or build one) you can fuse companions: Same Type (3→1 next sub-tier), Mixed T9 (8 T8.8s → 1 T9), Hybrid (2 different types + Hybrid Catalyst), or Tier Ascend (3 same type + Ascension Catalyst → tier+1)."
+		+ "At a [color=#FF80FF]Companion Stable[/color] (T5+ NPC posts, or build one) you can fuse companions: Same Type (3→1 next rank), Mixed A9 (8 A8s → 1 T9), Hybrid (2 different types + Hybrid Catalyst), or Tier Ascend (3 same type + Ascension Catalyst → tier+1)."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -29161,7 +29161,7 @@ func find_dungeon_instance(dungeon_type: String, from_x: int, from_y: int,
 	  * the quest restore (~L2727) - correct: skips completed, skips owned
 	  * `handle_cartographer_locate` (~L15098) - correct: same, plus nearest
 	  * `handle_dungeon_list` (~L29196) - matched on dungeon_type ALONE and took the first hit
-	    in DICTIONARY ORDER, so the sub-tier in the name, the recommended level band and the
+	    in DICTIONARY ORDER, so the rank in the name, the recommended level band and the
 	    coordinates the player then walked to could all belong to a different dungeon: one
 	    already finished, one belonging to another player, or simply the far side of the map.
 
@@ -29169,7 +29169,7 @@ func find_dungeon_instance(dungeon_type: String, from_x: int, from_y: int,
 
 	  1. A COMPLETED run is not somewhere you can go. Re-entering one is the bug that produced
 	     the bossless dungeon and the re-farm; `completed_at` is stamped for exactly this.
-	  2. Another player's PERSONAL instance is invisible - listing its sub-tier leaks their run
+	  2. Another player's PERSONAL instance is invisible - listing its rank leaks their run
 	     and its coordinates point at an entrance that is not theirs.
 	  3. Your OWN live run wins outright, whatever the distance: it is the one you are part way
 	     through and the only one holding your progress. (`world_only` suppresses this for
@@ -29218,16 +29218,16 @@ func handle_dungeon_list(peer_id: int):
 		# Find active instance of this type
 		var active_instance = ""
 		var instance_location = Vector2i(0, 0)
-		# 2026-09-08 - -1 means "not known yet", NOT sub-tier 1. This defaulted to 1, so every
+		# 2026-09-08 - -1 means "not known yet", NOT rank 1. This defaulted to 1, so every
 		# dungeon with no live instance was listed as "<tier>-1" and priced against the 1-1 band.
-		# A personal dungeon has no instance until you ENTER it (the sub-tier is assigned then,
+		# A personal dungeon has no instance until you ENTER it (the rank is assigned then,
 		# from distance, with variance) - so the label was a guess presented as a fact, and it
 		# guessed the easiest band every time.
 		#
 		# This is the third number in one report that disagreed with the other two: the owner saw
 		# a "1-1" Wolf Den recommending level 3 whose floor-1 wolves were level 6. The name said
 		# 1-1 (this default), the recommendation said 3 (the TYPE's static min_level, fixed in
-		# v0.9.758), and the wolves were 6 (the INSTANCE, created at sub-tier 4-5 and clamped to
+		# v0.9.758), and the wolves were 6 (the INSTANCE, created at rank 4-5 and clamped to
 		# the level-6 player). A genuine 1-1 tops out at level 2.
 		var inst_sub_tier = -1
 		active_instance = find_dungeon_instance(dungeon_type, int(character.x), int(character.y),
@@ -29237,7 +29237,7 @@ func handle_dungeon_list(peer_id: int):
 			instance_location = Vector2i(int(inst.get("world_x", 0)), int(inst.get("world_y", 0)))
 			inst_sub_tier = int(inst.get("sub_tier", 1))
 
-		# Use sub-tier level range if instance exists, otherwise use dungeon defaults
+		# Use rank level range if instance exists, otherwise use dungeon defaults
 		var display_min = dungeon_data.min_level
 		var display_max = dungeon_data.max_level
 		var display_name = dungeon_data.name
@@ -29314,7 +29314,7 @@ func _dungeon_expected_levels(dungeon_type: String, instance_id: String, player_
 		lvl = int(active_dungeons[instance_id].get("dungeon_level", 0))
 	if lvl <= 0:
 		# A personal instance has not been made yet; it is created at the player's own level,
-		# clamped into the sub-tier band. Mirror that so the warning matches what follows.
+		# clamped into the rank band. Mirror that so the warning matches what follows.
 		#
 		# 2026-09-08 - the band comes from the TILE, which is what the new instance now inherits.
 		# This previously read `dungeon_data.sub_tier`, a static field on the dungeon TYPE, and so
@@ -29388,7 +29388,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		# the recommended Level was 3. The wolves in here are level 6 though on the first floor."*
 		#
 		# `dungeon_data.min_level` is a static number on the dungeon TYPE. The monsters are sized
-		# from the INSTANCE's `dungeon_level` — rolled inside the sub-tier band for a world
+		# from the INSTANCE's `dungeon_level` — rolled inside the rank band for a world
 		# dungeon, or clamped to the player's own level for a personal one — and then scaled again
 		# per floor (`monster_level = dungeon_level x (1 + floor x 0.07)`). Two unrelated numbers,
 		# one of them shown as if it described the other.
@@ -29494,7 +29494,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		# and what the instance actually got, so the next occurrence names its own cause.
 		#
 		# The interesting case is `tile=NONE`: that means `_get_dungeon_at_location` found nothing
-		# at the player's feet even though the entrance panel had just printed a sub-tier from it,
+		# at the player's feet even though the entrance panel had just printed a rank from it,
 		# and the depth then falls back to a fresh distance roll.
 		if active_dungeons.has(instance_id):
 			var _got: int = int(active_dungeons[instance_id].get("sub_tier", -1))
@@ -29505,7 +29505,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 			if _inherit_sub > 0 and _got != _inherit_sub:
 				_flag = "  <<< MISMATCH: inherit was ignored"
 			elif _inherit_sub <= 0:
-				_flag = "  <<< no tile sub-tier to inherit; depth was rolled from distance"
+				_flag = "  <<< no tile rank to inherit; depth was rolled from distance"
 			log_message("DUNGEON-ENTER %s at (%d,%d) type=%s tile=[%s] -> instance %s sub_tier=%d%s" % [
 				character.name, character.x, character.y, dungeon_type, _tile_desc,
 				instance_id, _got, _flag])
@@ -30435,7 +30435,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y) and not world_system.is_safe_zone(spawn_x, spawn_y):
 			break
 
-	# Calculate sub-tier based on distance from origin
+	# Calculate rank based on distance from origin
 	var distance = sqrt(float(spawn_x * spawn_x + spawn_y * spawn_y))
 	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
@@ -30535,7 +30535,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 				and not existing_coords.has(Vector2i(spawn_x, spawn_y)):
 			break
 
-	# Calculate sub-tier based on distance from origin
+	# Calculate rank based on distance from origin
 	var distance = sqrt(float(spawn_x * spawn_x + spawn_y * spawn_y))
 	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
 	#
@@ -30544,18 +30544,18 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	#
 	# The cause was not a display bug, and no display fix could have reached it. Entering a world
 	# 'D' creates a PERSONAL instance, and this function placed that instance at a fresh RANDOM
-	# point 25-40 tiles from the player, then took the sub-tier from THAT point's distance to the
+	# point 25-40 tiles from the player, then took the rank from THAT point's distance to the
 	# world origin. The tile the player actually walked to contributed nothing but its
 	# dungeon_type, so the depth was a fresh dice roll that no surface could have predicted.
 	#
-	# Inheriting the tile's own sub-tier makes the advertised depth TRUE, and restores the meaning
+	# Inheriting the tile's own rank makes the advertised depth TRUE, and restores the meaning
 	# the overworld is supposed to carry: walking further out finds deeper dungeons. The distance
 	# roll stays for instances with no originating tile (quests, fabled bosses).
 	if force_sub_tier > 0:
 		sub_tier = force_sub_tier
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
 
-	# Scale dungeon level to player, clamped to sub-tier range
+	# Scale dungeon level to player, clamped to rank range
 	var dungeon_level = clampi(player_level, sub_range.min_level, sub_range.max_level)
 
 	# Create instance
@@ -30662,7 +30662,7 @@ func _ensure_starter_dungeon_exists():
 	var spawn_x = int(cos(angle) * SPAWN_DISTANCE)
 	var spawn_y = int(sin(angle) * SPAWN_DISTANCE)
 
-	# Starter dungeons always get sub-tier 1 (easiest)
+	# Starter dungeons always get rank 1 (easiest)
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, 1)
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 
@@ -31033,7 +31033,7 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		next_dungeon_id -= 1  # Reclaim the ID
 		return ""
 
-	# Calculate sub-tier based on distance from origin
+	# Calculate rank based on distance from origin
 	var distance = sqrt(float(world_x * world_x + world_y * world_y))
 	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
@@ -33471,7 +33471,7 @@ func _open_dungeon_treasure(peer_id: int):
 	if active_dungeons.has(instance_id):
 		inst_sub_tier = active_dungeons[instance_id].get("sub_tier", 1)
 
-	# Get treasure (sub-tier scales gold)
+	# Get treasure (rank scales gold)
 	var treasure = DungeonDatabaseScript.roll_treasure(character.current_dungeon_type, character.dungeon_floor, inst_sub_tier)
 
 	# Give rewards
@@ -33484,7 +33484,7 @@ func _open_dungeon_treasure(peer_id: int):
 		var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
 		reward_messages.append("[color=#1EFF00]+%s%s[/color]" % [mat.id.capitalize().replace("_", " "), qty_text])
 
-	# Egg (inherits dungeon sub-tier)
+	# Egg (inherits dungeon rank)
 	var egg_info = treasure.get("egg", {})
 	if not egg_info.is_empty():
 		var egg_sub_tier = egg_info.get("sub_tier", inst_sub_tier)
@@ -33779,7 +33779,7 @@ func _open_final_chest(peer_id: int):
 		else:
 			reward_lines.append("[color=#808080]%s found but inventory full![/color]" % str(best_eq.get("name", "Equipment")))
 
-	# 1-3 monster-themed crafting materials, scaled by sub-tier.
+	# 1-3 monster-themed crafting materials, scaled by rank.
 	var resource_tier = DungeonDatabaseScript.get_dungeon_resource_tier(dungeon_tier)
 	var mat_count = 1 + (randi() % 3)
 	if dungeon_tier >= 6:
@@ -33960,7 +33960,7 @@ func _complete_dungeon(peer_id: int):
 		origin_wx = int(active_dungeons[instance_id].get("origin_wx", -999999))
 		origin_wy = int(active_dungeons[instance_id].get("origin_wy", -999999))
 
-	# Calculate rewards (sub-tier scales XP)
+	# Calculate rewards (rank scales XP)
 	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier)
 
 	# Hard mode bonus: +75% XP, +50% materials
@@ -34003,7 +34003,7 @@ func _complete_dungeon(peer_id: int):
 			var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
 			bonus_material_msgs.append("[color=#00FFCC]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
 
-	# Give GUARANTEED boss egg (inherits dungeon sub-tier)!
+	# Give GUARANTEED boss egg (inherits dungeon rank)!
 	var boss_egg_given = false
 	var boss_egg_name = ""
 	var boss_egg_lost_to_full = false
@@ -34111,7 +34111,7 @@ func _complete_dungeon(peer_id: int):
 	#
 	# This also retires four other symptoms that shared this cause: re-entering skips the whole
 	# `if instance_id == "":` branch, and that branch is where the re-farm guard, the world-tile
-	# despawn timer (hence the 'D' that never left), the sub-tier inherit (hence a "T1-2" tile
+	# despawn timer (hence the 'D' that never left), the rank inherit (hence a "T1-2" tile
 	# opening a T1-7) and the origin stamping all live.
 	if active_dungeons.has(instance_id):
 		active_dungeons[instance_id]["completed_at"] = int(Time.get_unix_time_from_system())
@@ -35022,7 +35022,7 @@ func _roll_floor_item(dungeon_type: String, tier: int, sub_tier: int, level: int
 	if force_egg:
 		if boss_egg_monster == "":
 			return {}
-		var egg_sub := 1 + (randi() % 8)  # random sub-tier within the dungeon's tier
+		var egg_sub := 1 + (randi() % 8)  # random rank within the dungeon's tier
 		var egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, egg_sub)
 		if egg.is_empty():
 			return {}
@@ -39430,7 +39430,7 @@ func handle_gm_test_b2(peer_id: int):
 
 	var summary: String = "\n".join([
 		"[color=#FFD700][GM] Phase B2 test scenario ready:[/color]",
-		"  • Active companion: [color=#DC143C]B2 Test Companion[/color] (sub-tier 8, ~24%% damage reduction, Wolf 25%% aggro)",
+		"  • Active companion: [color=#DC143C]B2 Test Companion[/color] (rank 8, ~24%% damage reduction, Wolf 25%% aggro)",
 		"  • Companion is [color=#FF4444]KO'd[/color] — try a revive potion to bring it back.",
 		"  • Inventory: 3x Companion Revive Potion, 5x Hedge Elixir, 3x Taunt Charm.",
 		"  • Walk into combat (or use /spawnmonster) to see DR in action after reviving.",

@@ -236,8 +236,8 @@ const TILE_COLORS = {
 	TileType.GAMBLE_CACHE: "#5AC8FF" # cyan — gamble
 }
 
-# Sub-tier level ranges per overarching tier (1-9)
-# Each tier spans a level range; sub-tiers (1-8) subdivide that range
+# Rank level ranges per overarching tier (1-9)
+# Each tier spans a level range; ranks (1-8) subdivide that range
 const TIER_LEVEL_RANGES = {
 	1: {"min": 1, "max": 12},
 	2: {"min": 6, "max": 22},
@@ -2875,7 +2875,7 @@ const TREASURE_EGG_CHANCE_BY_TIER = {
 }
 
 static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1) -> Dictionary:
-	"""Roll for treasure chest contents. Eggs use tier-based rarity. Sub-tier scales material quantity."""
+	"""Roll for treasure chest contents. Eggs use tier-based rarity. Rank scales material quantity."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
 		return {"materials": [], "egg": {}}
@@ -2887,7 +2887,7 @@ static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1)
 	var materials = []
 	var material_drops = dungeon.get("material_drops", [])
 	if not material_drops.is_empty():
-		# 60% chance for each material, quantity scales with floor and sub-tier
+		# 60% chance for each material, quantity scales with floor and rank
 		for mat in material_drops:
 			if randi() % 100 < 60:
 				var qty = int((1 + randi() % 3 + floor_num) * sub_tier_mult)
@@ -2930,7 +2930,7 @@ static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1)
 
 static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int, sub_tier: int = 1) -> Dictionary:
 	"""Calculate rewards for completing a dungeon. Includes GUARANTEED boss egg!
-	Sub-tier scales XP by +10% per sub-tier above 1."""
+	Rank scales XP by +10% per rank above 1."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
 		return {}
@@ -2946,7 +2946,7 @@ static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int
 	if floors_cleared >= total_floors:
 		base_xp *= 1.5
 
-	# Sub-tier scales rewards: +10% per sub-tier above 1
+	# Rank scales rewards: +10% per rank above 1
 	var sub_tier_mult = 1.0 + (sub_tier - 1) * 0.1
 	base_xp *= sub_tier_mult
 
@@ -2976,11 +2976,20 @@ static func get_spawn_location_for_tier(tier: int) -> Vector2i:
 	)
 
 static func get_sub_tier_level_range(tier: int, sub_tier: int) -> Dictionary:
-	"""Get level range for a specific tier + sub-tier combo.
-	Sub-tiers 1-8 subdivide the tier's level range into 8 segments."""
+	"""Get level range for a specific tier + rank combo.
+	Ranks 1-9 subdivide the tier's level range into 9 segments.
+
+	2026-09-11 - was EIGHT. Dungeons stopped one rank short of the ladder's real top while
+	companions reached 9 through fusion, so the best dungeon a player could find was labelled a
+	rank below the best companion they could own, for no reason anyone could state. Owner:
+	*"Let's do dungeons all the way up to the top rank."*
+
+	The tier's level BAND is unchanged - rank 9 still tops out at exactly TIER_LEVEL_RANGES[tier]
+	.max, because the last segment ends at min + 9*(range/9) just as it used to end at
+	min + 8*(range/8). This adds a slice, it does not raise the ceiling."""
 	var tr = TIER_LEVEL_RANGES.get(tier, {"min": 1, "max": 12})
 	var range_size = tr.max - tr.min
-	var segment = float(range_size) / 8.0
+	var segment = float(range_size) / 9.0
 	var sub_min = tr.min + int(segment * (sub_tier - 1))
 	var sub_max = tr.min + int(segment * sub_tier)
 	sub_min = clampi(sub_min, tr.min, tr.max)
@@ -2990,18 +2999,22 @@ static func get_sub_tier_level_range(tier: int, sub_tier: int) -> Dictionary:
 	return {"min_level": sub_min, "max_level": maxi(sub_min, sub_max)}
 
 static func get_sub_tier_for_distance(tier: int, distance: float) -> int:
-	"""Calculate sub-tier (1-8) based on distance within tier's spawn band.
-	Further from origin within the tier band = higher sub-tier.
-	Includes random variance of +/-1 (25% chance of +/-2)."""
+	"""Calculate rank (1-9) based on distance within tier's spawn band.
+	Further from origin within the tier band = higher rank.
+	Includes random variance of +/-1 (25% chance of +/-2).
+
+	2026-09-11 - the ceiling was 8, and `progress * 7.0` could only ever reach 8 at the very
+	outer edge of the band. Now 1-9, matching PowerRank.RANKS and the rank a fused companion can
+	already reach."""
 	var min_dist = tier * 30
 	var max_dist = tier * 60
 	var progress = clampf((distance - min_dist) / float(maxi(1, max_dist - min_dist)), 0.0, 1.0)
-	var base = 1 + int(progress * 7.0)
+	var base = 1 + int(progress * 8.0)
 	# Random variance: usually +/-1, 25% chance of +/-2
 	var variance = (randi() % 3) - 1
 	if randi() % 4 == 0:
 		variance = (randi() % 5) - 2
-	return clampi(base + variance, 1, 8)
+	return clampi(base + variance, 1, PowerRank.RANKS)
 
 static func get_dungeon_display_name(dungeon_id: String, tier: int, sub_tier: int) -> String:
 	"""Get display name with tier notation, e.g. 'Goblin Caves [T1-5]'."""

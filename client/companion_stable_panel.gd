@@ -5,7 +5,7 @@ class_name CompanionStablePanel
 # NPC posts.
 #
 # v0.9.485: Two-column Manage view (collected ↔ kennel) with deposit/withdraw.
-# v0.9.489: Adds a "Fuse" tab. Same-type fusion only this slice; Mixed T9 +
+# v0.9.489: Adds a "Fuse" tab. Same-type fusion only this slice; Mixed A9 +
 #           Hybrid land in v0.9.490+. Inputs can be drawn from kennel OR
 #           registered slots; output is auto-registered if any input was
 #           registered (slot-preserving via the server's stable_fusion path).
@@ -380,27 +380,27 @@ func _refresh_fuse() -> void:
 	match _current_fuse_mode:
 		FUSE_SAME:
 			_fuse_hint_label.append_text(
-				"[color=#FFD700]Same Type Fusion[/color] — Select [b]3[/b] companions of the same monster type AND same sub-tier. "
-				+ "They combine into [b]1[/b] companion of the next sub-tier (sub_tier 8 caps out).\n"
+				"[color=#FFD700]Same Type Fusion[/color] — Select [b]3[/b] companions of the same monster type AND same rank. "
+				+ "They combine into [b]1[/b] companion of the next rank (rank 9 is the cap).\n"
 				+ "[color=#888888]Inputs can come from kennel or registered slots. If any input is registered, the output is automatically registered (slot-preserving).[/color]"
 			)
 		FUSE_MIXED:
 			_fuse_hint_label.append_text(
-				"[color=#FF00FF]Mixed T9 Fusion[/color] — Select [b]8[/b] companions all at [b]T8.8 (Tier 8, sub-tier 8)[/b]. Types can differ. "
-				+ "Output is a [b]random Tier 9[/b] companion (rolls from one of the selected types).\n"
-				+ "[color=#888888]The capstone fusion — only maxed-out Tier 8 companions count as inputs. Inputs can be kennel or registered.[/color]"
+				"[color=#FF00FF]Mixed A9 Fusion[/color] — Select [b]8[/b] companions all at [b]A8 (tier A, rank 8)[/b]. Types can differ. "
+				+ "Output is a [b]random A9[/b] companion (rolls from one of the selected types).\n"
+				+ "[color=#888888]The capstone fusion — only maxed-out tier A companions count as inputs. Inputs can be kennel or registered.[/color]"
 			)
 		FUSE_HYBRID:
 			_fuse_hint_label.append_text(
-				"[color=#FF66FF]Hybrid Fusion[/color] — Select [b]2[/b] companions of [b]DIFFERENT[/b] monster types, both at sub-tier [b]5+[/b]. "
+				"[color=#FF66FF]Hybrid Fusion[/color] — Select [b]2[/b] companions of [b]DIFFERENT[/b] monster types, both at rank [b]5+[/b]. "
 				+ "Output is a hybrid that blends both parents' bonuses + abilities. Consumes [color=#FFD700]1 Hybrid Catalyst[/color].\n"
 				+ "[color=#888888]Catalysts available: %d. Inputs can be kennel or registered. If any input is registered, output is auto-registered.[/color]" % _hybrid_catalyst_count
 			)
 		FUSE_ASCEND:
 			_fuse_hint_label.append_text(
-				"[color=#FFAA66]Tier Ascension[/color] — Select [b]3[/b] companions of the [b]SAME[/b] monster type AND [b]SAME tier[/b] (any sub-tier). "
-				+ "They combine into [b]1[/b] companion of the [b]same type at tier+1[/b], sub-tier 1. Consumes [color=#FFD700]1 Ascension Catalyst[/color].\n"
-				+ "[color=#888888]Catalysts available: %d. Lets you keep your favorite pet's identity while raising its rank. Tier 9 is the cap. Inputs can be kennel or registered.[/color]" % _ascension_catalyst_count
+				"[color=#FFAA66]Tier Ascension[/color] — Select [b]3[/b] companions of the [b]SAME[/b] monster type AND [b]SAME tier[/b] (any rank). "
+				+ "They combine into [b]1[/b] companion of the [b]same type one tier letter higher[/b], rank 1. Consumes [color=#FFD700]1 Ascension Catalyst[/color].\n"
+				+ "[color=#888888]Catalysts available: %d. Lets you keep your favorite pet's identity while raising its rank. Tier S is the cap. Inputs can be kennel or registered.[/color]" % _ascension_catalyst_count
 			)
 	_populate_fuse_candidates()
 	_refresh_fuse_selection_state()
@@ -419,7 +419,7 @@ func _candidate_matches_mode(c: Dictionary, mode: String) -> bool:
 	var st = int(c.get("sub_tier", 1))
 	if st < int(rules.get("min_sub_tier", 1)) or st > int(rules.get("max_sub_tier", 9)):
 		return false
-	# v0.9.495 — Mixed T9 specifically requires T8.8 (Tier 8 + sub-tier 8).
+	# v0.9.495 — Mixed A9 specifically requires A8 (Tier 8 + rank 8).
 	if mode == FUSE_MIXED and int(c.get("tier", 1)) != 8:
 		return false
 	# v0.9.496 — Tier Ascension requires tier < 9 (T9 is the cap).
@@ -451,15 +451,15 @@ func _populate_fuse_candidates() -> void:
 			FUSE_SAME:
 				msg = "[color=#808080]No fusion candidates yet. Deposit companions or register some via a Home Stone (Companion).[/color]"
 			FUSE_MIXED:
-				msg = "[color=#808080]No T8.8 companions available. Mixed T9 needs Tier 8 companions maxed to sub-tier 8 — the capstone of the tier ladder.[/color]"
+				msg = "[color=#808080]No A8 companions available. Mixed A9 needs tier A companions maxed to rank 8 — the capstone of the tier ladder.[/color]"
 			FUSE_HYBRID:
-				msg = "[color=#808080]No sub-tier 5+ companions available. Build them up via Same Type fusion first.[/color]"
+				msg = "[color=#808080]No rank 5+ companions available. Build them up via Same Type fusion first.[/color]"
 			FUSE_ASCEND:
-				msg = "[color=#808080]No ascendable companions available. Tier Ascension accepts any sub-tier but excludes Tier 9 (already maxed).[/color]"
+				msg = "[color=#808080]No ascendable companions available. Tier Ascension accepts any rank but excludes tier S (already maxed).[/color]"
 		lbl.append_text(msg)
 		_fuse_candidates_list.add_child(lbl)
 		return
-	# Sort: by monster_type then sub_tier so same-type same-sub-tier groups
+	# Sort: by monster_type then sub_tier so same-type same-rank groups
 	# are visually adjacent for easy picking.
 	candidates.sort_custom(func(a, b):
 		var at = String(a.companion.get("monster_type", ""))
@@ -605,7 +605,7 @@ func _refresh_fuse_selection_state() -> void:
 				if not same_type:
 					preview = "[color=#FF6644]All 3 must share the same monster type.[/color]"
 				elif not same_st:
-					preview = "[color=#FF6644]All 3 must share the same sub-tier.[/color]"
+					preview = "[color=#FF6644]All 3 must share the same rank.[/color]"
 				else:
 					fuse_ready = true
 					var new_st = mini(int(first.get("sub_tier", 1)) + 1, 9)
@@ -625,7 +625,7 @@ func _refresh_fuse_selection_state() -> void:
 						all_t88 = false
 						break
 				if not all_t88:
-					preview = "[color=#FF6644]All 8 must be T8.8 (Tier 8, sub-tier 8).[/color]"
+					preview = "[color=#FF6644]All 8 must be A8 (tier A, rank 8).[/color]"
 				else:
 					fuse_ready = true
 					preview = "[color=#88FF88]→ Random T9 companion will be added to %s.[/color]" % dest_str
@@ -638,9 +638,9 @@ func _refresh_fuse_selection_state() -> void:
 				if a.get("monster_type") == b.get("monster_type"):
 					preview = "[color=#FF6644]Hybrid requires DIFFERENT monster types.[/color]"
 				elif int(a.get("sub_tier", 1)) < 5 or int(b.get("sub_tier", 1)) < 5:
-					preview = "[color=#FF6644]Both must be at sub-tier 5 or higher.[/color]"
+					preview = "[color=#FF6644]Both must be at rank 5 or higher.[/color]"
 				elif _hybrid_catalyst_count < 1:
-					preview = "[color=#FF6644]Need 1 Hybrid Catalyst (T5+ dungeon chest drop).[/color]"
+					preview = "[color=#FF6644]Need 1 Hybrid Catalyst (tier D+ dungeon chest drop).[/color]"
 				else:
 					fuse_ready = true
 					preview = "[color=#88FF88]→ Hybrid %s-%s will be added to %s (consumes 1 catalyst).[/color]" % [
@@ -665,7 +665,7 @@ func _refresh_fuse_selection_state() -> void:
 				elif not same_asc_tier:
 					preview = "[color=#FF6644]All 3 must share the same tier.[/color]"
 				elif int(first_asc.get("tier", 1)) >= 9:
-					preview = "[color=#FF6644]Tier 9 is the cap — cannot ascend further.[/color]"
+					preview = "[color=#FF6644]Tier S is the cap — cannot ascend further.[/color]"
 				elif _ascension_catalyst_count < 1:
 					preview = "[color=#FF6644]Need 1 Ascension Catalyst (T6+ dungeon chest drop).[/color]"
 				else:
@@ -947,13 +947,13 @@ func _build_fuse_view() -> Control:
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)
 
-	# v0.9.494 — mode selector (Same Type / Mixed T9 / Hybrid).
+	# v0.9.494 — mode selector (Same Type / Mixed A9 / Hybrid).
 	var mode_row := HBoxContainer.new()
 	mode_row.add_theme_constant_override("separation", 6)
 	vb.add_child(mode_row)
 	_fuse_mode_same_btn = _make_fuse_mode_button("Same Type", FUSE_SAME)
 	mode_row.add_child(_fuse_mode_same_btn)
-	_fuse_mode_mixed_btn = _make_fuse_mode_button("Mixed T9", FUSE_MIXED)
+	_fuse_mode_mixed_btn = _make_fuse_mode_button("Mixed A9", FUSE_MIXED)
 	mode_row.add_child(_fuse_mode_mixed_btn)
 	_fuse_mode_hybrid_btn = _make_fuse_mode_button("Hybrid", FUSE_HYBRID)
 	mode_row.add_child(_fuse_mode_hybrid_btn)
@@ -993,7 +993,7 @@ func _build_fuse_view() -> Control:
 	cand_header.fit_content = true
 	cand_header.scroll_active = false
 	cand_header.add_theme_font_size_override("normal_font_size", 14)
-	cand_header.append_text("[color=#FFD700]Fusion Candidates[/color]   [color=#888888](sorted by monster type → sub-tier → level)[/color]")
+	cand_header.append_text("[color=#FFD700]Fusion Candidates[/color]   [color=#888888](sorted by monster type → rank → level)[/color]")
 	cand_vb.add_child(cand_header)
 
 	var scroll := ScrollContainer.new()

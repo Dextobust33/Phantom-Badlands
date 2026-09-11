@@ -8637,7 +8637,7 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "Same Type", "action_type": "local", "action_data": "fusion_same_start", "enabled": has_same_fuseable},
-					{"label": "Mixed T9", "action_type": "local", "action_data": "fusion_mixed_start", "enabled": has_mixed_fuseable},
+					{"label": "Mixed A9", "action_type": "local", "action_data": "fusion_mixed_start", "enabled": has_mixed_fuseable},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -29556,7 +29556,7 @@ func display_character_status():
 		# Calculate TOTAL combat bonuses: base companion bonuses + passive ability effects
 		# This matches what actually happens in combat (combat_manager.gd start_combat)
 		var total_bonuses = {}
-		# 1) Base companion bonuses (scaled by variant × sub-tier)
+		# 1) Base companion bonuses (scaled by variant × rank)
 		for key in comp_bonuses:
 			total_bonuses[key] = int(float(comp_bonuses[key]) * effective_mult)
 
@@ -30659,7 +30659,7 @@ func display_changelog():
 	# the colour floor, and the dungeon presentation pass: canvas, zoom, room spread, forking
 	# corridors, alcoves, monster hover.
 	# v0.9.759 — non-combat abilities could earn combat upgrades (teleport/cloak), monster
-	# debuff chips moved under the monster, dungeons stopped inventing a sub-tier, milestone
+	# debuff chips moved under the monster, dungeons stopped inventing a rank, milestone
 	# overlay given an opaque ground, duplicate-client warning, sim watchdog + orphan reaper.
 	# v0.9.758 — six player-reported surface bugs, all of them one name or number told two ways;
 	# then the same root causes swept across all nine classes rather than the reported symptoms.
@@ -31905,7 +31905,7 @@ func _get_companion_sort_damage_value(companion: Dictionary) -> int:
 	# Base damage formula: tier * 5 + level * 2
 	var base_damage = tier * 5 + level * 2
 
-	# Apply variant and sub-tier multipliers
+	# Apply variant and rank multipliers
 	var variant_mult = _get_variant_multiplier(variant)
 	var st_mult = _get_sub_tier_multiplier(sub_tier)
 	return int(base_damage * variant_mult * st_mult)
@@ -31966,7 +31966,7 @@ func display_companions():
 		else:
 			display_game("  [color=#FFD700]MAX LEVEL[/color]")
 
-		# Show bonuses with variant × sub-tier multiplier (effective values)
+		# Show bonuses with variant × rank multiplier (effective values)
 		var effective_mult = variant_mult * _get_sub_tier_multiplier(comp_sub_tier)
 		var bonus_parts = _get_companion_bonus_parts_with_variant(bonuses, effective_mult)
 		if bonus_parts.size() > 0:
@@ -32183,7 +32183,7 @@ func _estimate_companion_damage(companion_tier: int, player_level: int, companio
 	# Apply attack bonus from companion bonuses
 	var attack_bonus = companion_bonuses.get("attack", 0)
 	var base = int(base_total * (1.0 + float(attack_bonus) / 100.0))
-	# Apply sub-tier multiplier
+	# Apply rank multiplier
 	base = int(base * _get_sub_tier_multiplier(sub_tier))
 	# Apply variant multiplier
 	base = int(base * variant_mult)
@@ -32194,7 +32194,8 @@ func _estimate_companion_damage(companion_tier: int, player_level: int, companio
 	return {"min": min_dmg, "max": max_dmg, "avg": avg_dmg}
 
 func _get_sub_tier_multiplier(sub_tier: int) -> float:
-	"""Get the stat multiplier for a companion's sub-tier (1-8 from dungeons, 9 fusion)."""
+	"""Get the stat multiplier for a companion's rank. 1-9; dungeons reach 9 as of 2026-09-11
+	(they used to stop at 8 while fusion reached 9), so both routes now share one ceiling."""
 	return {1:1.0, 2:1.1, 3:1.2, 4:1.3, 5:1.4, 6:1.5, 7:1.6, 8:1.7, 9:2.0}.get(sub_tier, 1.0)
 
 func _get_companion_bonus_parts_with_variant(bonuses: Dictionary, multiplier: float) -> Array:
@@ -33235,7 +33236,7 @@ func display_companion_inspection(companion: Dictionary):
 		info_lines.append("[color=#FFD700]MAX LEVEL[/color]")
 	info_lines.append("")
 
-	# Combat Damage Estimation (includes sub-tier multiplier)
+	# Combat Damage Estimation (includes rank multiplier)
 	info_lines.append("[color=#FF6666]── Combat Damage ──[/color]")
 	var player_level = character_data.get("level", 1)
 	var damage_est = _estimate_companion_damage(comp_tier, player_level, bonuses, comp_level, variant_mult, comp_sub_tier)
@@ -34170,7 +34171,7 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [color=#FF6600]![/color]=Hotspot (+50-150% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
 [color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone, Boss Hunt, Dungeon Clear, Chains (multi-stage with egg+title bonuses). Board regenerates — no daily caps. Max 3 active.
 [color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
-  All monsters match dungeon theme (Orc Stronghold = Orcs). Sub-tiers (T3-1, T3-2) = harder variants, better loot!
+  All monsters match dungeon theme (Orc Stronghold = Orcs). Ranks (F1 up to F9) = harder variants, better loot!
   [color=#FF8800]Hard Mode:[/color] Clear any dungeon once to unlock Hard Mode (+50% stats, -20% steps, +75% XP, bonus loot)!
 [color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Crossroads. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
 
@@ -34223,8 +34224,8 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
   • Store companions for later fusion at the Fusion Station
   • Base capacity: 30 slots, upgradeable up to 500
 [color=#DA70D6]Fusion Station (F tile):[/color] Combine companions into stronger versions!
-  • [color=#00FF00]Same-Type:[/color] 3 same monster + sub-tier → 1 with sub-tier+1 (max sub-tier 9)
-  • [color=#FF00FF]Mixed T9:[/color] 8 sub-tier 8 companions → 1 random Tier 9 companion
+  • [color=#00FF00]Same-Type:[/color] 3 same monster + rank → 1 with rank+1 (rank 9 is the cap)
+  • [color=#FF00FF]Mixed A9:[/color] 8 A8 companions → 1 random A9 companion
   • Fused companions start at Lv1 with a new random variant
 [color=#FF69B4]Baddie Points (BP):[/color] Meta-currency earned when characters die. Spend on upgrades:
   • Storage (+10 slots/lv) | Registered Companions (+1 slot/lv) | Kennel Capacity
@@ -34255,8 +34256,8 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [color=#00FFFF]Repeatable starter chains:[/color] T1 + T2 + T3 chains (13 total) are immediately repeatable after completion. Higher tiers stay one-shot.
 [color=#00FFFF]Threat Corridor HUD:[/color] Within 80 tiles of an active T2+ world dungeon, the Area line surfaces [color=#FF6600]⚠ Threat: <type> spillover from <dungeon>[/color].
 [color=#00FFFF]Sanctuary Stable:[/color] Magenta [color=#FF80FF]C[/color] tile at T5+ posts — live kennel access mid-character (Deposit / Withdraw / Return / Check Out / Fuse). Build one yourself (Construction Lv 35).
-[color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any sub-tier mix) + Ascension Catalyst → same type at tier+1. Keeps your favorite pet, raises rank. Catalysts drop T6+.
-[color=#00FFFF]Hybrid Fusion:[/color] 2 different sub-tier 5+ + Hybrid Catalyst → blended companion. Catalysts drop T5+.
+[color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any rank mix) + Ascension Catalyst → same type one TIER letter higher. Keeps your favourite pet, raises its tier. Catalysts drop at tier C+.
+[color=#00FFFF]Hybrid Fusion:[/color] 2 different rank 5+ + Hybrid Catalyst → blended companion. Catalysts drop at tier D+.
 [color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
 [color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
 [color=#00FFFF]Help discovery:[/color] [color=#9ACD32]/topics[/color] lists every help-panel topic key + title; [color=#9ACD32]/topic <key>[/color] opens any topic from anywhere.
@@ -34601,7 +34602,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		},
 		{
 			"title": "TIER & RANK",
-			"keywords": ["tier", "rank", "letter", "label", "power", "strong", "stronger", "weak", "weaker", "better", "ladder", "subtier", "sub-tier", "grade"],
+			"keywords": ["tier", "rank", "letter", "label", "power", "strong", "stronger", "weak", "weaker", "better", "ladder", "subtier", "rank", "grade"],
 			# GENERATED, not written. The first draft of this page hand-typed the ladder, the
 			# colours and the level bands into the string - a second copy of three constants, in
 			# the one place a player goes when they are already confused. That is the "one value,
@@ -43121,7 +43122,7 @@ func _format_companion_abilities_summary(c: Dictionary) -> String:
 # the day. Today's lesson, applied — see the card-damage drift that produced v0.9.742.
 func _companion_effective_stats(c: Dictionary) -> Dictionary:
 	"""Everything worth comparing about a companion, on one dict. Bonuses are scaled by the
-	variant and sub-tier multipliers so the numbers match what the companion actually
+	variant and rank multipliers so the numbers match what the companion actually
 	contributes, not the unscaled table values."""
 	var out := {"hp": 0, "bonuses": {}}
 	if c == null or c.is_empty():
@@ -43179,7 +43180,7 @@ func _get_companion_multiplier_breakdown(c: Dictionary) -> String:
 		v_txt += "[color=#808080] (looks only)[/color]"
 	parts.append(v_txt)
 	var s_m := float(st.get("sub_mult", 1.0))
-	parts.append("[color=%s]sub-tier %d x%.2f[/color]" % ["#00FF00" if s_m > 1.0 else "#808080", int(st.get("sub_tier", 1)), s_m])
+	parts.append("[color=%s]rank %d x%.2f[/color]" % ["#00FF00" if s_m > 1.0 else "#808080", int(st.get("sub_tier", 1)), s_m])
 	var b_m := float(st.get("border_mult", 1.0))
 	if b_m != 1.0 or int(st.get("border_tier", 0)) > 0:
 		parts.append("[color=%s]border %d x%.2f[/color]" % ["#00FF00" if b_m > 1.0 else "#808080", int(st.get("border_tier", 0)), b_m])
@@ -46025,7 +46026,7 @@ func _display_dungeon_entrance_info():
 	display_game("")
 	display_game("[color=%s]===== %s =====[/color]" % [color, dungeon_name])
 	# 2026-09-08 - the server sends sub_tier = -1 when the dungeon has no instance yet, because
-	# the sub-tier is not decided until you enter. Printing "Tier 1-1" there was a guess shown as
+	# the rank is not decided until you enter. Printing "Tier 1-1" there was a guess shown as
 	# a fact, and it always guessed the easiest band. Say what is actually known instead.
 	if int(sub_tier) > 0:
 		display_game("Tier %d-%d Dungeon | Levels %d-%d" % [tier, sub_tier, min_level, max_level])
@@ -49565,8 +49566,8 @@ func display_house_fusion():
 		# Main fusion menu
 		display_game("[color=#FFD700]Combine companions to create stronger ones![/color]")
 		display_game("")
-		display_game("[color=#00FF00]Same-Type Fusion:[/color] 3 same monster + sub-tier -> 1 higher sub-tier")
-		display_game("[color=#FF00FF]Mixed T9 Fusion:[/color] 8 sub-tier 8 companions -> 1 random T9")
+		display_game("[color=#00FF00]Same-Type Fusion:[/color] 3 same monster + rank -> 1 higher rank")
+		display_game("[color=#FF00FF]Mixed A9 Fusion:[/color] 8 A8 companions -> 1 random A9")
 		display_game("")
 
 		# Show fuseable groups
@@ -49576,7 +49577,7 @@ func display_house_fusion():
 			for group in groups:
 				display_game("  %s %s: %d companions [FUSEABLE]" % [group.monster_type, PowerRank.rich_label(group.tier, group.sub_tier), group.count])
 		else:
-			display_game("[color=#808080]No fuseable groups yet. Need 3+ of same type and sub-tier.[/color]")
+			display_game("[color=#808080]No fuseable groups yet. Need 3+ of same type and rank.[/color]")
 
 		display_game("")
 		var t8_count = _count_t8_companions(kennel_companions)
@@ -49600,7 +49601,7 @@ func display_house_fusion():
 				display_game("[color=#FF4444]This will DESTROY the 3 input companions![/color]")
 				display_game("[color=#00FF00]Press Fuse! to confirm or Back to cancel.[/color]")
 		else:
-			display_game("[color=#00FF00]Select a group to fuse (3 same type + sub-tier):[/color]")
+			display_game("[color=#00FF00]Select a group to fuse (3 same type + rank):[/color]")
 			display_game("")
 			for gi in range(mini(5, groups.size())):
 				var group = groups[gi]
@@ -49611,12 +49612,12 @@ func display_house_fusion():
 
 	elif house_fusion_type == "mixed":
 		if pending_house_action == "mixed_confirm":
-			display_game("[color=#FF00FF]Fuse 8 T8 companions into 1 random T9?[/color]")
+			display_game("[color=#FF00FF]Fuse 8 A8 companions into 1 random A9?[/color]")
 			display_game("")
 			display_game("[color=#FF4444]This will DESTROY all 8 selected companions![/color]")
 			display_game("[color=#00FF00]Press Fuse! to confirm or Back to cancel.[/color]")
 		else:
-			display_game("[color=#FF00FF]Select 8 sub-tier 8 companions for T9 fusion:[/color]")
+			display_game("[color=#FF00FF]Select 8 A8 companions for Mixed A9 fusion:[/color]")
 			display_game("[color=#808080]Selected: %d/8[/color]" % house_fusion_selected.size())
 			display_game("")
 			var t8_companions = _get_t8_companions(kennel_companions)
@@ -49647,7 +49648,7 @@ func _get_fuseable_groups(kennel_companions: Array) -> Array:
 		var mt = comp.get("monster_type", "")
 		var st = int(comp.get("sub_tier", 1))
 		if st >= 9:
-			continue  # Already max sub-tier
+			continue  # Already at rank 9, the cap
 		var key = mt + "|" + str(st)
 		if not counts.has(key):
 			counts[key] = {"monster_type": mt, "tier": comp.get("tier", 1), "sub_tier": st, "count": 0, "indices": []}
@@ -49660,7 +49661,7 @@ func _get_fuseable_groups(kennel_companions: Array) -> Array:
 	return result
 
 func _count_t8_companions(kennel_companions: Array) -> int:
-	"""Count companions valid for Mixed T9 fusion: T8.8 (Tier 8, sub-tier 8).
+	"""Count companions valid for Mixed A9 fusion: A8 (tier A, rank 8).
 	v0.9.495 — added tier check; was previously counting any sub_tier 8."""
 	var count = 0
 	for comp in kennel_companions:
@@ -49669,8 +49670,8 @@ func _count_t8_companions(kennel_companions: Array) -> int:
 	return count
 
 func _get_t8_companions(kennel_companions: Array) -> Array:
-	"""Get all T8.8 (Tier 8, sub-tier 8) companions with their kennel indices.
-	v0.9.495 — added tier check to match Mixed T9's capstone intent."""
+	"""Get all A8 (tier A, rank 8) companions with their kennel indices.
+	v0.9.495 — added tier check to match Mixed A9's capstone intent."""
 	var result = []
 	for i in range(kennel_companions.size()):
 		var c = kennel_companions[i]

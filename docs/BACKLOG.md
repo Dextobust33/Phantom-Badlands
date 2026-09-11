@@ -749,7 +749,35 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       Re-injection of the three rejected designs (rank-1-best, the SS/SSS ladder, the 8 cap)
       fails 9 of its 24 checks.
 
-      **Still open:** why dungeons stop at rank 8 when companions reach 9 — filed, not assumed.
+      **FOLLOW-UP DONE 2026-09-11, same session.** Owner: *"Let's do dungeons all the way up to
+      the top rank. Also, ensure every companion surface is covered so we no longer see the old
+      TX-X system."*
+      - **Dungeons now reach rank 9.** `get_sub_tier_for_distance` went 1-8 → 1-9 and
+        `get_sub_tier_level_range` slices each tier band into 9 segments instead of 8. The
+        CEILING did not move: the top rank still ends exactly at the tier's max level, because
+        the last segment ends at `min + 9*(range/9)` just as it used to end at `min + 8*(range/8)`.
+        Probe asserts both ends of every tier, and that all nine ranks actually occur across
+        20 000 spawn rolls with no gap and nothing outside the range.
+        *Honest note on balance:* at a given distance the rank is now drawn from `p*8` rather than
+        `p*7`, so difficulty-per-distance rises by roughly 2%. That is well inside the ±10pp band
+        CLAUDE.md says to judge against, and it is a MONSTER-side change, not a player-side one,
+        so it does not invalidate the reference-player curve and no refit was run.
+      - **Every companion surface converted.** 122 prose replacements plus ~40 targeted ones
+        across 14 files. The probe now fails if `T%d-%d`, `T8.8`, `Mixed T9` or `sub-tier`
+        reappears on any of twelve surfaces, and names the file.
+      - **Two stale facts found while converting, both pre-existing:** the help text said Same
+        Type "caps at sub-tier 8" while the code has capped at 9 since v0.9.495; and the capstone
+        fusion was called **"Mixed T9"** producing a "Tier 9 companion" when it actually consumes
+        tier-8 rank-8 companions and yields RANK 9 of the same tier. It reads **Mixed A9**
+        (A8 → A9) now, which is what it has always done.
+
+      **Deliberately NOT renamed — and this needs a decision:** there are at least FOUR separate
+      tier ladders in player-facing text and only the monster/dungeon/companion one was in scope.
+      Trading-post tiers (1-7, their own colour table), equipment tiers, and gathering material
+      tiers all still read "Tier 5+". That was already ambiguous; the letters make it more so,
+      because "Tier 5+ trading posts" now sits near a dungeon labelled `[D3]` and a reader may
+      reasonably connect them. Options: give posts their own vocabulary, letter them too, or
+      leave them and accept the collision.
 - [~] **LIKELY SOLVED 2026-09-11, awaiting one confirmation.** Almost certainly the same cause as
       the bossless dungeon and the re-farm: the owner was re-entering a personal instance that had
       already been completed, which KEEPS its original sub-tier and skips the whole

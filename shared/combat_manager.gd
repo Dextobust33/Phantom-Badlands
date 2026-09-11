@@ -1654,7 +1654,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 		messages.append("[color=#00FFFF]Your %s lunges but misses![/color]" % companion.get("name", "companion"))
 		return
 
-	# Calculate companion damage (now scales with companion level and sub-tier)
+	# Calculate companion damage (now scales with companion level and rank)
 	var companion_damage = 0
 	if drop_tables:
 		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses, companion_level, companion_sub_tier, companion_border_tier)
@@ -1692,7 +1692,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 				_cmp_bar = float(monster_database.reference_monster_hp(companion_level))
 		if _cmp_bar > 0.0:
 			var _cmp_g: float = 1.0
-			# Tier and sub-tier stay as the companion's own quality spread, bounded so a rare
+			# Tier and rank stay as the companion's own quality spread, bounded so a rare
 			# companion is better without turning the share into a different order of magnitude.
 			var _cmp_quality: float = 1.0 + 0.06 * float(maxi(1, int(companion_tier)) - 1) + 0.05 * float(maxi(1, int(companion_sub_tier)) - 1)
 			# IDENTITY (user 2026-09-02: "percentage damage makes them all feel the same rather
@@ -2144,7 +2144,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		# Store for use by active/threshold handlers later
 		combat_state["companion_abilities"] = companion_abilities
 
-		# Apply passive abilities (values already scaled by level + variant + sub-tier)
+		# Apply passive abilities (values already scaled by level + variant + rank)
 		if not companion_abilities.passive.is_empty():
 			var passive = companion_abilities.passive
 			if passive.has("effect") and passive.has("value"):
@@ -5807,8 +5807,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 ## How much a companion card's damage grows with the companion's own QUALITY.
 ##
-## Same shape and same slope as `Character.calculate_companion_max_hp` uses for its sub-tier
-## spread, deliberately: sub-tier is the companion's quality axis and it should mean one thing
+## Same shape and same slope as `Character.calculate_companion_max_hp` uses for its rank
+## spread, deliberately: rank is the companion's quality axis and it should mean one thing
 ## across everything a companion contributes, not two different curves in two files.
 const COMPANION_CARD_SUBTIER_STEP := 0.05
 ## What one companion CARD is worth as a share of the level's reference monster HP bar, before
@@ -7828,7 +7828,7 @@ func _buff_duration(character: Character, ability_name: String, base_rounds: int
 	Centralised 2026-09-03 because the new upgrades SCALE duration rather than adding to it -
 	Concentrated halves it, Costly Vigil doubles it - and the seven call sites each computed
 	`base + get_ability_duration_bonus(...)` inline, which cannot express a multiplier. Seven
-	copies of an expression is also how the sub-tier table ended up with three drifting
+	copies of an expression is also how the rank table ended up with three drifting
 	versions."""
 	var rounds: float = float(base_rounds + character.get_ability_duration_bonus(ability_name))
 	var picks: Array = character.get_milestone_picks(ability_name)
@@ -9151,7 +9151,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			else:
 				messages.append("[color=#FF8888]The %s attacks your %s for [color=#FF8800]%d[/color] damage![/color]" % [monster.name, companion_target_name, damage_to_companion])
 			if dr_amount > 0:
-				messages.append("[color=#3DD9FF]  Sub-tier %d toughness absorbs %d damage.[/color]" % [comp_sub_tier, dr_amount])
+				messages.append("[color=#3DD9FF]  Rank %d toughness absorbs %d damage.[/color]" % [comp_sub_tier, dr_amount])
 			if comp_new_hp <= 0 and comp_hp_before > 0:
 				messages.append("[color=#808080]Your %s is knocked out![/color]" % companion_target_name)
 			# Only short-circuit when the companion soaked the WHOLE round. If some hits landed

@@ -2002,7 +2002,7 @@ func get_monster_companion_abilities(monster_type: String, companion_level: int,
 	"""Get all abilities for a companion based on monster type and level.
 	Returns dict with 'passive', 'active', 'threshold' keys, each containing scaled ability data.
 	variant_multiplier: Applies to base values for rarer variants (from VARIANT_STAT_MULTIPLIERS).
-	sub_tier: Dungeon sub-tier multiplier applied on top of variant mult.
+	sub_tier: Dungeon rank multiplier applied on top of variant mult.
 	hybrid_partner_type: Audit #4 Slice 4 — when non-empty, swaps the threshold
 	slot with the partner's threshold and replaces the passive with a static
 	'Hybrid Vigor' passive. Active stays from monster_type so the hybrid keeps
@@ -2010,7 +2010,7 @@ func get_monster_companion_abilities(monster_type: String, companion_level: int,
 
 	var result = {"passive": {}, "active": {}, "threshold": {}}
 
-	# Combine variant and sub-tier multipliers
+	# Combine variant and rank multipliers
 	var effective_mult = variant_multiplier * COMPANION_SUB_TIER_ABILITY_MULT.get(sub_tier, 1.0)
 
 	# Check for monster-specific abilities
@@ -2209,15 +2209,15 @@ const EGG_HATCH_STEPS_BY_TIER = {
 	9: 750    # Tier 9: 750 steps
 }
 
-# Sub-tier stat multiplier for companion bonuses and combat damage
-# Sub-tiers 1-8 from dungeons, 9 reserved for future fusion system
+# Rank stat multiplier for companion bonuses and combat damage
+# Ranks 1-8 from dungeons, 9 reserved for future fusion system
 const COMPANION_SUB_TIER_MULTIPLIERS = {
 	1: 1.0, 2: 1.1, 3: 1.2, 4: 1.3,
 	5: 1.4, 6: 1.5, 7: 1.6, 8: 1.7,
 	9: 2.0  # Fusion-only (Phase 4)
 }
 
-# Sub-tier ability enhancement multiplier (applied on top of variant mult)
+# Rank ability enhancement multiplier (applied on top of variant mult)
 const COMPANION_SUB_TIER_ABILITY_MULT = {
 	1: 1.0, 2: 1.05, 3: 1.10, 4: 1.15,
 	5: 1.20, 6: 1.30, 7: 1.40, 8: 1.50,
@@ -2252,7 +2252,7 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 	"""Generate an egg dictionary for a given monster type.
 	If pre_rolled_variant is provided, uses that variant. Otherwise rolls a new one.
 	Variant is determined at egg creation and affects egg display and hatch times.
-	sub_tier: Dungeon sub-tier (1-8) that affects companion power when hatched."""
+	sub_tier: Dungeon rank (1-8) that affects companion power when hatched."""
 	var companion = COMPANION_DATA.get(monster_name, {})
 	if companion.is_empty():
 		return {}
@@ -2726,7 +2726,7 @@ func roll_egg_drop(monster_name: String, monster_tier: int, is_dungeon: bool = f
 	"""Roll for an OVERWORLD egg drop from a defeated monster. Returns egg info if dropped.
 	Dungeon revamp B — dungeon kills DON'T drop per-kill eggs (dungeon eggs come from the
 	guaranteed boss egg + dungeon floor loot); overworld kills use the all-tier lottery
-	(rare surprise, steeply tier-scaled, T9 ≈ Mirror rare) with a RANDOM sub-tier."""
+	(rare surprise, steeply tier-scaled, T9 ≈ Mirror rare) with a RANDOM rank."""
 	if is_dungeon:
 		return {}  # dungeon eggs = boss egg + floor loot, not per-kill
 	if not COMPANION_DATA.has(monster_name):
@@ -2847,7 +2847,7 @@ func get_companion_border_mult(border_tier: int) -> float:
 
 func get_companion_attack_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int = 1, sub_tier: int = 1, border_tier: int = 0) -> int:
 	"""Calculate damage dealt by companion in combat.
-	Damage scales with tier, player level, companion level, and sub-tier for meaningful progression
+	Damage scales with tier, player level, companion level, and rank for meaningful progression
 	without trivializing combat.
 	v0.9.570 — border_tier multiplier folded in for the double-rarity stat layer."""
 	# Base damage scales with tier (T1=5, T2=10, ... T9=45)
@@ -2861,7 +2861,7 @@ func get_companion_attack_damage(companion_tier: int, player_level: int, compani
 	# Apply companion's attack bonus percentage
 	var attack_bonus = companion_bonuses.get("attack", 0)
 	total = int(total * (1.0 + float(attack_bonus) / 100.0))
-	# Apply sub-tier multiplier (1.0x to 1.7x for sub-tiers 1-8)
+	# Apply rank multiplier (1.0x to 1.7x for ranks 1-8)
 	total = int(total * COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
 	# v0.9.570 — apply border-tier multiplier (1.00x base, up to 3.00x Mythic)
 	total = int(total * get_companion_border_mult(border_tier))
@@ -5647,7 +5647,7 @@ const EGG_TIER_BASE_VALOR = {
 }
 
 func calculate_egg_valor(egg: Dictionary) -> int:
-	"""Calculate valor for a companion egg based on tier, sub-tier, variant rarity, and bonuses."""
+	"""Calculate valor for a companion egg based on tier, rank, variant rarity, and bonuses."""
 	var tier = int(egg.get("tier", 1))
 	var base = EGG_TIER_BASE_VALOR.get(tier, 200)
 	var sub_tier = int(egg.get("sub_tier", 1))

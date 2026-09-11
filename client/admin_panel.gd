@@ -155,7 +155,7 @@ func _render_page() -> void:
 			_title_label.text = "ADMIN - COMPANIONS"
 			_subtitle_label.text = "[color=#aaaaaa]Eggs, KO and revive, aggro items, fusion catalysts. Everything companion-shaped is here now; it used to be spread across three pages, with Revive Companion on two of them.[/color]"
 			_add_button("Setup Companion Test Scenario  (recommended)", "gm_test_b2", Color(1, 0.84, 0))
-			_subtitle_subline("Sub-tier 8 companion (~24% DR), KO'd, +3x revive potions, 5x elixirs, 3x taunt charms.")
+			_subtitle_subline("Rank 8 companion (~24% DR), KO'd, +3x revive potions, 5x elixirs, 3x taunt charms.")
 			_add_button("KO Active Companion (instant)", "gm_ko_companion")
 			_add_button("Revive Companion to Full HP", "gm_revive_companion")
 			_add_button("Give 3x Companion Revive Potion", "give_revive_x3")
@@ -167,7 +167,7 @@ func _render_page() -> void:
 			_subtitle_subline("A buildable Companion Stable. Place inside your own enclosure for Sanctuary kennel access at your post.")
 			_add_separator()
 			_add_button("Give 3x Hybrid Catalyst", "give_hybrid_catalyst_x3", Color(1, 0.5, 1))
-			_subtitle_subline("Enables Hybrid fusion (2 different monster types, both sub-tier 5+).")
+			_subtitle_subline("Enables Hybrid fusion (2 different monster types, both rank 5+).")
 			_add_button("Give 3x Ascension Catalyst", "give_ascension_catalyst_x3", Color(1, 0.67, 0.4))
 			_subtitle_subline("Enables Tier Ascend fusion (3 same monster type + same tier -> tier+1).")
 			_add_separator()

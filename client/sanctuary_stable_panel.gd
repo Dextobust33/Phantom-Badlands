@@ -10,7 +10,7 @@ class_name SanctuaryStablePanel
 #   Kennel — list of kennel companions with [Register to Slot] [Release] per
 #   row. Pagination via action bar.
 #
-#   Fuse — Same Type / Mixed T9 (no catalyst requirement, so both work in
+#   Fuse — Same Type / Mixed A9 (no catalyst requirement, so both work in
 #   sanctuary). Hybrid + Ascend hidden in sanctuary because their catalysts
 #   live in CHARACTER inventory (no character context here in HOUSE_SCREEN).
 #
@@ -238,13 +238,13 @@ func _refresh_fuse() -> void:
 	match _current_fuse_mode:
 		FUSE_SAME:
 			_fuse_hint_label.append_text(
-				"[color=#FFD700]Same Type Fusion[/color] — Select [b]3[/b] kennel companions of the same monster type AND same sub-tier. "
-				+ "They combine into [b]1[/b] companion of the next sub-tier (sub_tier 8 caps).\n"
+				"[color=#FFD700]Same Type Fusion[/color] — Select [b]3[/b] kennel companions of the same monster type AND same rank. "
+				+ "They combine into [b]1[/b] companion of the next rank (rank 9 is the cap).\n"
 				+ "[color=#888888]Output goes to the kennel.[/color]"
 			)
 		FUSE_MIXED:
 			_fuse_hint_label.append_text(
-				"[color=#FF00FF]Mixed T9 Fusion[/color] — Select [b]8[/b] kennel companions all at [b]T8.8 (Tier 8, sub-tier 8)[/b]. Types can differ. "
+				"[color=#FF00FF]Mixed A9 Fusion[/color] — Select [b]8[/b] kennel companions all at [b]A8 (tier A, rank 8)[/b]. Types can differ. "
 				+ "Output is a [b]random Tier 9[/b] companion (rolls from one of the selected types).\n"
 				+ "[color=#888888]The capstone fusion. Output goes to the kennel.[/color]"
 			)
@@ -292,7 +292,7 @@ func _populate_fuse_candidates() -> void:
 			FUSE_SAME:
 				msg = "[color=#808080]No kennel companions available. Send some via Home Stone (Companion) → Kennel.[/color]"
 			FUSE_MIXED:
-				msg = "[color=#808080]No T8.8 companions in the kennel. Mixed T9 needs maxed-out Tier 8 inputs.[/color]"
+				msg = "[color=#808080]No A8 companions in the kennel. Mixed A9 needs maxed-out Tier 8 inputs.[/color]"
 		lbl.append_text(msg)
 		_fuse_candidates_list.add_child(lbl)
 		return
@@ -415,7 +415,7 @@ func _refresh_fuse_selection_state() -> void:
 				if not same_type:
 					preview = "[color=#FF6644]All 3 must share the same monster type.[/color]"
 				elif not same_st:
-					preview = "[color=#FF6644]All 3 must share the same sub-tier.[/color]"
+					preview = "[color=#FF6644]All 3 must share the same rank.[/color]"
 				else:
 					fuse_ready = true
 					var new_st = mini(int(first.get("sub_tier", 1)) + 1, 9)
@@ -434,7 +434,7 @@ func _refresh_fuse_selection_state() -> void:
 						all_t88 = false
 						break
 				if not all_t88:
-					preview = "[color=#FF6644]All 8 must be T8.8 (Tier 8, sub-tier 8).[/color]"
+					preview = "[color=#FF6644]All 8 must be A8 (tier A, rank 8).[/color]"
 				else:
 					fuse_ready = true
 					preview = "[color=#88FF88]→ Random T9 companion will be added to kennel.[/color]"
@@ -631,7 +631,7 @@ func _build_fuse_view() -> Control:
 	vb.add_child(mode_row)
 	_fuse_mode_same_btn = _make_fuse_mode_button("Same Type", FUSE_SAME)
 	mode_row.add_child(_fuse_mode_same_btn)
-	_fuse_mode_mixed_btn = _make_fuse_mode_button("Mixed T9", FUSE_MIXED)
+	_fuse_mode_mixed_btn = _make_fuse_mode_button("Mixed A9", FUSE_MIXED)
 	mode_row.add_child(_fuse_mode_mixed_btn)
 
 	_fuse_hint_label = RichTextLabel.new()

@@ -3,11 +3,11 @@ class_name FusionPanel
 
 # Visual surface for the F-tile (Fusion Station) sub-mode of the Sanctuary.
 # Three tabs:
-# - Same Type: list of fuseable groups (3 same monster + sub-tier → 1 higher
-#   sub-tier). Click a group → confirm → fuse the first 3 in the group.
-# - Mixed T9: grid of all sub-tier 8 companions. Click cards to toggle
+# - Same Type: list of fuseable groups (3 same monster + rank → 1 higher
+#   rank). Click a group → confirm → fuse the first 3 in the group.
+# - Mixed A9: grid of all rank 8 companions. Click cards to toggle
 #   selection (up to 8). Fuse button activates when exactly 8 are selected.
-# - Hybrid (Audit #4 Slice 4): grid of companions at sub-tier 5+. Pick
+# - Hybrid (Audit #4 Slice 4): grid of companions at rank 5+. Pick
 #   exactly 2 of DIFFERENT monster_types, consumes 1 Hybrid Catalyst from
 #   inventory, produces a hybrid that blends bonuses + abilities.
 
@@ -43,7 +43,7 @@ var _same_tab: VBoxContainer
 var _same_list_vbox: VBoxContainer
 var _same_empty_label: Label
 
-# Mixed T9 tab nodes
+# Mixed A9 tab nodes
 var _mixed_tab: VBoxContainer
 var _mixed_count_label: RichTextLabel
 var _mixed_grid: HFlowContainer
@@ -130,7 +130,7 @@ func _build_layout() -> void:
 	root_vbox.add_child(tab_row)
 
 	_tab_same_btn = _make_tab_button("Same Type", _on_tab_same_pressed)
-	_tab_mixed_btn = _make_tab_button("Mixed T9", _on_tab_mixed_pressed)
+	_tab_mixed_btn = _make_tab_button("Mixed A9", _on_tab_mixed_pressed)
 	_tab_hybrid_btn = _make_tab_button("Hybrid", _on_tab_hybrid_pressed)
 	tab_row.add_child(_tab_same_btn)
 	tab_row.add_child(_tab_mixed_btn)
@@ -151,7 +151,7 @@ func _build_layout() -> void:
 	same_hint.fit_content = true
 	same_hint.scroll_active = false
 	same_hint.add_theme_font_size_override("normal_font_size", 12)
-	same_hint.text = "[color=#888888]3 same-type companions at the same sub-tier → 1 companion at the next sub-tier (max T9). The 3 inputs are destroyed.[/color]"
+	same_hint.text = "[color=#888888]3 same-type companions at the same rank → 1 companion at the next rank (rank 9 is the cap). The 3 inputs are destroyed.[/color]"
 	_same_tab.add_child(same_hint)
 
 	var same_panel := _make_subpanel()
@@ -171,13 +171,13 @@ func _build_layout() -> void:
 	same_scroll.add_child(_same_list_vbox)
 
 	_same_empty_label = Label.new()
-	_same_empty_label.text = "No fuseable groups yet — need 3+ companions of the same type and sub-tier in the kennel."
+	_same_empty_label.text = "No fuseable groups yet — need 3+ companions of the same type and rank in the kennel."
 	_same_empty_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 	_same_empty_label.add_theme_font_size_override("font_size", 13)
 	_same_empty_label.visible = false
 	_same_list_vbox.add_child(_same_empty_label)
 
-	# Mixed T9 tab body
+	# Mixed A9 tab body
 	_mixed_tab = VBoxContainer.new()
 	_mixed_tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_mixed_tab.add_theme_constant_override("separation", 6)
@@ -188,7 +188,7 @@ func _build_layout() -> void:
 	mixed_hint.fit_content = true
 	mixed_hint.scroll_active = false
 	mixed_hint.add_theme_font_size_override("normal_font_size", 12)
-	mixed_hint.text = "[color=#888888]Combine 8 sub-tier 8 companions of any type into 1 random T9 companion. All 8 inputs are destroyed.[/color]"
+	mixed_hint.text = "[color=#888888]Combine 8 rank 8 companions of any type into 1 random A9 companion. All 8 inputs are destroyed.[/color]"
 	_mixed_tab.add_child(mixed_hint)
 
 	var mixed_count_row := HBoxContainer.new()
@@ -238,7 +238,7 @@ func _build_layout() -> void:
 	mixed_scroll.add_child(_mixed_grid)
 
 	_mixed_empty_label = Label.new()
-	_mixed_empty_label.text = "No sub-tier 8 companions in the kennel yet."
+	_mixed_empty_label.text = "No A8 companions in the kennel yet."
 	_mixed_empty_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 	_mixed_empty_label.add_theme_font_size_override("font_size", 13)
 	_mixed_empty_label.visible = false
@@ -255,7 +255,7 @@ func _build_layout() -> void:
 	hybrid_hint.fit_content = true
 	hybrid_hint.scroll_active = false
 	hybrid_hint.add_theme_font_size_override("normal_font_size", 12)
-	hybrid_hint.text = "[color=#888888]Pick 2 companions of [color=#FF66FF]different monster types[/color], both at sub-tier 5+. Costs 1 [color=#FFD700]Hybrid Catalyst[/color] (T5+ chest drop). Output: tier = max(parents), sub-tier 1, bonuses averaged +10% hybrid vigor, threshold ability inherited from parent B.[/color]"
+	hybrid_hint.text = "[color=#888888]Pick 2 companions of [color=#FF66FF]different monster types[/color], both at rank 5+. Costs 1 [color=#FFD700]Hybrid Catalyst[/color] (tier D+ chest drop). Output: tier = max(parents), rank 1, bonuses averaged +10% hybrid vigor, threshold ability inherited from parent B.[/color]"
 	_hybrid_tab.add_child(hybrid_hint)
 
 	var hybrid_count_row := HBoxContainer.new()
@@ -305,7 +305,7 @@ func _build_layout() -> void:
 	hybrid_scroll.add_child(_hybrid_grid)
 
 	_hybrid_empty_label = Label.new()
-	_hybrid_empty_label.text = "No sub-tier 5+ companions in the kennel yet."
+	_hybrid_empty_label.text = "No rank 5+ companions in the kennel yet."
 	_hybrid_empty_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 	_hybrid_empty_label.add_theme_font_size_override("font_size", 13)
 	_hybrid_empty_label.visible = false
@@ -336,7 +336,7 @@ func _build_layout() -> void:
 
 	_mixed_confirm_dialog = ConfirmationDialog.new()
 	_mixed_confirm_dialog.title = "Confirm T9 Fusion"
-	_mixed_confirm_dialog.dialog_text = "Fuse 8 selected sub-tier 8 companions into 1 random T9? All 8 inputs will be destroyed."
+	_mixed_confirm_dialog.dialog_text = "Fuse 8 selected A8 companions into 1 random A9? All 8 inputs will be destroyed."
 	_mixed_confirm_dialog.confirmed.connect(_on_mixed_confirm_dialog_confirmed)
 	add_child(_mixed_confirm_dialog)
 
@@ -430,7 +430,7 @@ func _update_summary() -> void:
 	var groups_count := _groups.size()
 	var t8_count := _t8_companions.size()
 	var hybrid_count := _hybrid_candidates.size()
-	_summary_label.text = "[color=#00FF00]Fuseable groups:[/color] %d   [color=#FF00FF]T8 companions:[/color] %d / 8   [color=#FF66FF]Hybrid pool (ST5+):[/color] %d   [color=#FFD700]Catalysts:[/color] %d" % [groups_count, t8_count, hybrid_count, _catalyst_count]
+	_summary_label.text = "[color=#00FF00]Fuseable groups:[/color] %d   [color=#FF00FF]A8 companions:[/color] %d / 8   [color=#FF66FF]Hybrid pool (rank 5+):[/color] %d   [color=#FFD700]Catalysts:[/color] %d" % [groups_count, t8_count, hybrid_count, _catalyst_count]
 
 
 func _rebuild_same_list() -> void:

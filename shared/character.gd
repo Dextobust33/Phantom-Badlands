@@ -4585,7 +4585,7 @@ func set_companion_field(companion_id: String, field: String, value) -> void:
 
 func get_companion_bonus(bonus_type: String) -> float:
 	"""Get active companion's bonus value for a type (e.g., 'attack', 'hp_regen', 'flee_bonus').
-	Applies variant stat multiplier and sub-tier multiplier automatically."""
+	Applies variant stat multiplier and rank multiplier automatically."""
 	if active_companion.is_empty():
 		return 0.0
 	var bonuses = active_companion.get("bonuses", {})
@@ -4593,7 +4593,7 @@ func get_companion_bonus(bonus_type: String) -> float:
 	# Apply variant multiplier
 	# 2026-09-03 — derived from the variant's RARITY (drop_tables.companion_variant_mult), which
 	# covers all 111 variants, instead of VARIANT_STAT_MULTIPLIERS, a per-name table that had no
-	# entry for 90% of them. Sub-tier comes from the shared table rather than a third inline copy.
+	# entry for 90% of them. Rank comes from the shared table rather than a third inline copy.
 	var _dt = load("res://shared/drop_tables.gd")
 	var multiplier = _dt.companion_variant_mult(active_companion)
 	var sub_tier = active_companion.get("sub_tier", 1)
@@ -4608,7 +4608,7 @@ func get_active_companion() -> Dictionary:
 	"""Get the active companion data.
 
 	Stamps the DERIVED `combat_max_hp` onto the copy. Companion max HP is a real calculation
-	(two anchors, an aggro-solved share, sub-tier and bonus multipliers) and the client had two
+	(two anchors, an aggro-solved share, rank and bonus multipliers) and the client had two
 	separate hand-maintained mirrors of it — one of which fell back to the long-dead absolute
 	formula `30 + level*5 + sub_tier*10` and showed a Chimaera as 290/290 in combat while the
 	out-of-combat card correctly read 665/665. Shipping the computed value means no consumer
@@ -4633,7 +4633,7 @@ func get_active_companion() -> Dictionary:
 # Companion HP is now a SHARE OF ITS OWNER'S, so survivability holds at every level by
 # construction, exactly as monster stats are now anchored to the reference player.
 #
-#   hp = owner_max_hp * COMPANION_HP_SHARE * g(comp_level / owner_level) * tier/sub-tier mult
+#   hp = owner_max_hp * COMPANION_HP_SHARE * g(comp_level / owner_level) * tier/rank mult
 #
 # g() is deliberately ASYMMETRIC:
 #   * UNDER-levelled companions stay USEFUL — floored at 0.60, so a fresh companion is still a
@@ -4728,7 +4728,7 @@ static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int 
 	if owner_max_hp <= 0:
 		# Legacy/no-owner path (tools, display of a companion with no owner context).
 		return 30 + level * 5 + sub_tier * 10 + hp_bonus
-	# Sub-tier is the companion's own quality axis; keep it as a modest spread so a rarer
+	# Rank is the companion's own quality axis; keep it as a modest spread so a rarer
 	# companion is meaningfully beefier without breaking the share model.
 	var sub_mult: float = 1.0 + 0.05 * float(maxi(1, sub_tier) - 1)
 	# hp_bonus is a PERCENTAGE everywhere else it is consumed (combat_manager applies it as
@@ -5095,7 +5095,7 @@ func increment_companion_battles() -> void:
 			break
 
 func get_companion_effective_bonuses() -> Dictionary:
-	"""Get active companion bonuses with variant and sub-tier multipliers applied."""
+	"""Get active companion bonuses with variant and rank multipliers applied."""
 	if active_companion.is_empty():
 		return {}
 
@@ -5136,7 +5136,7 @@ func get_companion_unlocked_abilities() -> Array:
 	return unlocked
 
 func get_companion_scaled_abilities() -> Dictionary:
-	"""Get all abilities for the active companion, scaled by level, variant, and sub-tier.
+	"""Get all abilities for the active companion, scaled by level, variant, and rank.
 	Returns dict with 'passive', 'active', 'threshold' keys."""
 	if active_companion.is_empty():
 		return {"passive": {}, "active": {}, "threshold": {}}

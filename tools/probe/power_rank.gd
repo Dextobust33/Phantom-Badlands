@@ -107,5 +107,61 @@ func ", g0 + 10) - g0) if g0 >= 0 else ""
 	ck(not gbody.contains("L1-12") and not gbody.contains("H G F E D C B A S"),
 		"...with no band or letter typed into it by hand")
 
+	print("
+--- DUNGEONS reach the top rank, same as companions ---")
+	# Owner 2026-09-11: "Let's do dungeons all the way up to the top rank." Dungeons stopped at
+	# 8 while fusion reached 9, so the best dungeon findable was labelled a rank below the best
+	# companion ownable, for no stated reason.
+	var ranks_seen := {}
+	for i in range(20000):
+		ranks_seen[DD.get_sub_tier_for_distance(1, randf_range(30.0, 60.0))] = true
+	ck(ranks_seen.has(PR.RANKS), "rank %d is actually REACHABLE from a spawn roll" % PR.RANKS)
+	ck(ranks_seen.size() == PR.RANKS, "every rank 1..%d occurs - no gap in the ladder" % PR.RANKS)
+	var lo := 1 << 30
+	var hi := -1
+	for r in ranks_seen:
+		lo = mini(lo, int(r))
+		hi = maxi(hi, int(r))
+	ck(lo == 1 and hi == PR.RANKS, "and nothing spawns outside 1..%d" % PR.RANKS)
+
+	# The CEILING must not have moved. Adding a slice is not the same as raising difficulty:
+	# the last segment still ends exactly at the tier band's max, as it did with eight.
+	var ceiling_held := true
+	var floor_held := true
+	for t in range(1, 10):
+		var band: Dictionary = DD.TIER_LEVEL_RANGES[t]
+		var top: Dictionary = DD.get_sub_tier_level_range(t, PR.RANKS)
+		var bot: Dictionary = DD.get_sub_tier_level_range(t, 1)
+		if int(top.max_level) != int(band.max):
+			ceiling_held = false
+		if int(bot.min_level) != int(band.min):
+			floor_held = false
+	ck(ceiling_held, "the top rank of every tier still ends at that tier's max level")
+	ck(floor_held, "...and rank 1 still starts at its min - the band is sliced, not stretched")
+
+	print("
+--- no COMPANION surface still speaks the old system ---")
+	# Owner: "ensure every companion surface is covered so we no longer see the old TX-X system."
+	var surfaces := ["res://client/client.gd", "res://client/help_panel.gd",
+		"res://client/fusion_panel.gd", "res://client/admin_panel.gd",
+		"res://client/companion_stable_panel.gd", "res://client/sanctuary_stable_panel.gd",
+		"res://client/companions_panel.gd", "res://client/kennel_panel.gd",
+		"res://client/market_panel.gd", "res://server/server.gd",
+		"res://shared/drop_tables.gd", "res://shared/character.gd"]
+	for dead in ["T%d-%d", "T8.8", "Mixed T9", "sub-tier", "Sub-tier"]:
+		var hits := 0
+		var where := ""
+		for f in surfaces:
+			var c: int = FileAccess.get_file_as_string(f).count(dead)
+			if c > 0:
+				hits += c
+				where += " " + f.get_file()
+		ck(hits == 0, "no surface still says %-10s - %d left%s" % [dead, hits, where])
+
+	# The fusion capstone was mislabelled long before the rename: it consumes tier-8 rank-8
+	# companions and yields RANK 9 of the same tier, so "Mixed T9" was wrong in both halves.
+	var stable := FileAccess.get_file_as_string("res://client/companion_stable_panel.gd")
+	ck(stable.contains("Mixed A9"), "the capstone reads A8 -> A9, which is what it actually does")
+
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails > 0 else 0)
