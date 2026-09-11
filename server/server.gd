@@ -2809,6 +2809,8 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		var _inst = active_dungeons[_iid]
 		if String(_inst.get("owner_username", "")) == username:
 			_inst["owner_peer_id"] = peer_id
+			# They came back inside the grace, so the run is theirs again.
+			_inst.erase("abandoned_at")
 			var _qid = String(_inst.get("quest_id", ""))
 			if _qid == "":
 				_qid = "_free_run_" + _iid
@@ -7824,6 +7826,10 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 	# Clear dungeon state if player was in a dungeon
 	if character.in_dungeon:
 		character.exit_dungeon()
+	# And drop the instances themselves. Owner 2026-09-11: a dead character's dungeons must not
+	# linger. `exit_dungeon()` only clears the CHARACTER's side of it; the instance would have
+	# survived with nothing left that could ever reach it.
+	_drop_personal_dungeons(String(peers.get(peer_id, {}).get("username", "")), peer_id, "permadeath")
 
 	print("PERMADEATH: %s (Level %d) killed by %s" % [character.name, character.level, cause_of_death])
 
@@ -8839,6 +8845,14 @@ func handle_disconnect(peer_id: int):
 				if not instance.has("owner_username"):
 					instance["owner_username"] = username
 			# DON'T call exit_dungeon() — dungeon state is saved to character for reconnect
+
+	# Start the clock on every personal dungeon this player owns. The run is KEPT so they can
+	# come back to it; `_sweep_personal_dungeons` is what eventually lets it go if they do not.
+	if peers.has(peer_id):
+		var _dc_user: String = String(peers[peer_id].get("username", ""))
+		var _dc_now: int = int(Time.get_unix_time_from_system())
+		for _dc_iid in _personal_dungeons_of(_dc_user, peer_id):
+			active_dungeons[_dc_iid]["abandoned_at"] = _dc_now
 
 	if characters.has(peer_id):
 		characters.erase(peer_id)
@@ -30747,6 +30761,90 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	log_message("Created player dungeon instance: %s (%s) for peer %d at (%d, %d)" % [instance_id, dungeon_data.name, peer_id, spawn_x, spawn_y])
 	return instance_id
 
+## How long a personal dungeon outlives its owner going offline. The disconnect handler keeps
+## the run alive ON PURPOSE so a player can reconnect straight back into it; this is the end of
+## that grace, not a contradiction of it.
+const PERSONAL_DUNGEON_GRACE_SECONDS := 1800
+## And a hard ceiling, matching the 24 hours world dungeons already get.
+const PERSONAL_DUNGEON_MAX_AGE_SECONDS := 86400
+
+
+func _erase_dungeon_instance(instance_id: String) -> void:
+	"""Forget a dungeon instance completely. The ONE place that knows which dictionaries hold
+	dungeon state, because there were three lists of erases and one of them had already fallen a
+	dictionary behind (the world cull never erased `dungeon_traps`)."""
+	active_dungeons.erase(instance_id)
+	dungeon_floors.erase(instance_id)
+	dungeon_floor_rooms.erase(instance_id)
+	dungeon_monsters.erase(instance_id)
+	dungeon_floor_items.erase(instance_id)
+	dungeon_traps.erase(instance_id)
+	dungeon_npcs.erase(instance_id)
+
+
+func _personal_dungeons_of(username: String, peer_id: int = -1) -> Array:
+	"""Every personal instance belonging to this player. Matched on USERNAME first: `peer_id` is
+	reassigned on reconnect, so an instance keyed only by the old peer is orphaned from its own
+	account and unreachable by anything that tries to clean it up."""
+	var out: Array = []
+	for iid in active_dungeons:
+		var inst: Dictionary = active_dungeons[iid]
+		if int(inst.get("owner_peer_id", -1)) < 0:
+			continue   # a world dungeon
+		if username != "" and String(inst.get("owner_username", "")) == username:
+			out.append(iid)
+		elif peer_id >= 0 and int(inst.get("owner_peer_id", -1)) == peer_id:
+			out.append(iid)
+	return out
+
+
+func _drop_personal_dungeons(username: String, peer_id: int, why: String) -> int:
+	"""Erase every personal dungeon this player owns. Used when there is no coming back to them -
+	permadeath, or a grace period that has run out."""
+	var gone: Array = _personal_dungeons_of(username, peer_id)
+	for iid in gone:
+		_erase_dungeon_instance(iid)
+	if player_dungeon_instances.has(peer_id):
+		player_dungeon_instances.erase(peer_id)
+	if not gone.is_empty():
+		log_message("[DUNGEON-CLEANUP] dropped %d personal dungeon(s) for %s: %s" % [gone.size(), username, why])
+	return gone.size()
+
+
+func _sweep_personal_dungeons() -> void:
+	"""End the reconnect grace, and cap the age.
+
+	Owner 2026-09-11: *"we need to ensure we have proper cleanup of those after players logout for
+	so long or their character dies so they don't just linger on the map."* Before this, a personal
+	dungeon was erased only when its quest completed or was abandoned - never on disconnect, never
+	on death, and with no age limit at all, while world dungeons have had a 24-hour cull for ages.
+	They also draw a `D` on their owner's map, so a stale one is visible as well as resident."""
+	var now: int = int(Time.get_unix_time_from_system())
+	var stale: Array = []
+	for iid in active_dungeons:
+		var inst: Dictionary = active_dungeons[iid]
+		if int(inst.get("owner_peer_id", -1)) < 0:
+			continue
+		if not inst.get("active_players", []).is_empty():
+			continue
+		var abandoned: int = int(inst.get("abandoned_at", 0))
+		if abandoned > 0 and now - abandoned >= PERSONAL_DUNGEON_GRACE_SECONDS:
+			stale.append([iid, "owner offline %d min" % ((now - abandoned) / 60)])
+		elif now - int(inst.get("spawned_at", now)) >= PERSONAL_DUNGEON_MAX_AGE_SECONDS:
+			stale.append([iid, "age %d h" % ((now - int(inst.get("spawned_at", now))) / 3600)])
+	for row in stale:
+		var iid: String = String(row[0])
+		var owner: int = int(active_dungeons.get(iid, {}).get("owner_peer_id", -1))
+		_erase_dungeon_instance(iid)
+		if player_dungeon_instances.has(owner):
+			for qid in player_dungeon_instances[owner].keys():
+				if String(player_dungeon_instances[owner][qid]) == iid:
+					player_dungeon_instances[owner].erase(qid)
+			if player_dungeon_instances[owner].is_empty():
+				player_dungeon_instances.erase(owner)
+		log_message("[DUNGEON-CLEANUP] swept personal dungeon %s (%s)" % [iid, String(row[1])])
+
+
 func _cleanup_player_dungeon(peer_id: int, quest_id: String):
 	"""Clean up a player's personal dungeon instance when quest is completed/abandoned"""
 	if not player_dungeon_instances.has(peer_id):
@@ -30757,18 +30855,7 @@ func _cleanup_player_dungeon(peer_id: int, quest_id: String):
 
 	var instance_id = player_dungeon_instances[peer_id][quest_id]
 
-	# Remove from active dungeons
-	if active_dungeons.has(instance_id):
-		active_dungeons.erase(instance_id)
-	if dungeon_floors.has(instance_id):
-		dungeon_floors.erase(instance_id)
-	if dungeon_floor_rooms.has(instance_id):
-		dungeon_floor_rooms.erase(instance_id)
-	if dungeon_monsters.has(instance_id):
-		dungeon_monsters.erase(instance_id)
-	dungeon_floor_items.erase(instance_id)
-	if dungeon_traps.has(instance_id):
-		dungeon_traps.erase(instance_id)
+	_erase_dungeon_instance(instance_id)
 
 	# Remove from player's tracking
 	player_dungeon_instances[peer_id].erase(quest_id)
@@ -30889,12 +30976,12 @@ func _check_dungeon_spawns():
 
 	# Remove dungeons marked for removal
 	for instance_id in dungeons_to_remove:
-		active_dungeons.erase(instance_id)
-		dungeon_floors.erase(instance_id)
-		dungeon_floor_rooms.erase(instance_id)
-		dungeon_monsters.erase(instance_id)
-		dungeon_floor_items.erase(instance_id)
+		_erase_dungeon_instance(instance_id)
 		world_dungeon_count -= 1
+
+	# The personal ones get their own sweep - they are not in the loop above, which skips
+	# anything with an owner.
+	_sweep_personal_dungeons()
 
 	# v0.9.377 — enqueue spawns instead of running them all in this frame.
 	# _process drains one queue entry per frame so the burst that used to

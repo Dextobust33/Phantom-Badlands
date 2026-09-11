@@ -32,6 +32,9 @@ ceiling, since it removes the most expensive per-player work the server does.
 - **The overworld map as DATA** (Phase 2.95 PHASE 1). 28.2 KB a step becomes 3.4 KB, with the
   display string rebuilt on the client byte for byte. **Server deploy AND client release, and
   the old-client path is the thing to check by hand** — `map_payload.gd`, `map_payload_golden.gd`.
+- **Personal dungeons get cleaned up.** A 30-minute grace after their owner goes offline, a
+  24-hour age cap, and an immediate drop on permadeath. Server-side, **needs a DEPLOY** -
+  `personal_dungeon_cleanup.gd`.
 - **Dungeon markers stop building rooms nobody enters.** A world dungeon no longer generates its
   floors and ~70 monsters at spawn; that happens on demand, and logs when it does so the claim is
   proven rather than assumed. Server-side, **needs a DEPLOY** - `lazy_dungeon_interior.gd`.
@@ -2630,10 +2633,62 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
         * And `player_dungeon_instances` is keyed by PEER ID, which is reassigned on reconnect,
           so an entry can be orphaned from the account that owns it and then be unreachable by
           any cleanup that does exist.
-      **The fix wants care, not speed:** the reconnect grace is a real feature, so this is an
-      age-based sweep (the world dungeons' own 24-hour cull is the model) plus a death hook, not
-      a cleanup on disconnect. Do it as part of step 3 above, since a positional index has to
-      know what is actually live anyway.
+      **DONE 2026-09-11.** Owner: *"Personal dungeons cleanup is a must."*
+        * Disconnect now STAMPS `abandoned_at` instead of deleting anything, so reconnecting into
+          a run still works. `_sweep_personal_dungeons` ends that grace after
+          `PERSONAL_DUNGEON_GRACE_SECONDS` (30 min), and caps any personal dungeon at
+          `PERSONAL_DUNGEON_MAX_AGE_SECONDS` (24 h, matching world dungeons). Coming back inside
+          the grace clears the stamp.
+        * Permadeath drops every instance the player owned. `exit_dungeon()` had only ever
+          cleared the CHARACTER's side, leaving the instance alive with nothing able to reach it.
+        * Instances are found by USERNAME, not peer id, which is what made the orphan possible.
+        * A dungeon somebody is standing in is never swept.
+        * And `_erase_dungeon_instance` is now the ONE place that knows which dictionaries hold
+          dungeon state. There were three hand-written erase lists; the world cull's had fallen a
+          dictionary behind and never erased `dungeon_traps`. That is the same "one value, two
+          places" shape as everything else on this list.
+      Probe `personal_dungeon_cleanup.gd` (24 checks), including that disconnect does NOT erase -
+      cleaning up there is the opposite mistake and would break reconnect. Stopping the sweep
+      from running fails it.
+
+- [ ] **A DUNGEON TYPE STOPS OWNING ITS GRADE. Owner direction 2026-09-11, and it is the biggest
+      of the four.** Owner: *"We do want lower types of monster dungeons to be possible in high
+      level areas (example an A5 Goblin Dungeon, or a S2 Kelpie one etc)."*
+
+      Today `tier` is a hardcoded field on the dungeon TYPE, and it decides three separate things
+      at once: what the dungeon is called (the grade letter), how strong its monsters are, and
+      where in the world it may appear. Splitting a Goblin Caves off from "tier 1" means pulling
+      those three apart:
+        * **GRADE becomes a property of the instance**, rolled where it spawns, not read off the
+          type. Combined with the agreed placement change, the land decides the grade and the
+          grade decides the levels - so an A5 Goblin Dungeon is simply a goblin_caves that spawned
+          in A-grade country.
+        * **The type keeps what it is FOR:** its species, its boss, its egg, its name and colour.
+          That is arguably a better Atlas: you hunt a TYPE for the companion it yields, at whatever
+          GRADE you can survive. It also gives the Cartography rank-seeking something real to seek.
+        * **Monsters scale fine.** A species has no level ceiling - `scale_monster_to_level` will
+          build a level-3000 Goblin correctly. **One thing to check before building:**
+          `_apply_out_of_tier_bonus` only adjusts a species placed ABOVE its home tier and does
+          nothing when it is below, so a goblin in A-grade country gets no correction at all. Find
+          out whether that is right or whether under-tier needs the mirror treatment.
+        * **`min_level`/`max_level` on the type become advisory only** (they already are, outside
+          the dungeon-list UI), and `dungeon_band(tier)` starts being asked about the INSTANCE's
+          grade rather than the type's.
+      **This supersedes part of the placement item above:** placement no longer follows a type's
+      fixed tier, it follows the instance's rolled grade. Do them together.
+
+- [ ] **DUNGEONS GET A RARITY. Owner 2026-09-11:** *"Dungeons should have a rarity moving
+      forward."* The data is already written and has never been read: `spawn_weight` sits on all
+      53 types with values from 50 down to about 18, appears about forty times in
+      `dungeon_database.gd`, and **nothing in the codebase reads it**. Selection is
+      `dungeon_types[randi() % dungeon_types.size()]` - uniform over every type in the game.
+      Two axes to decide between, and they are not the same thing:
+        1. **Type rarity** - a Kelpie Marsh is a rarer sight than a Goblin Caves. That is what
+           `spawn_weight` was authored for; making the picker weighted is a few lines.
+        2. **Grade rarity** - a rank 9 is rarer than a rank 1 in the same country. That belongs
+           with the grade roll in the item above, not with `spawn_weight`.
+      Owner probably means both. Worth confirming which, because (1) alone leaves every grade
+      equally common and the climb the owner described has no scarcity in it.
 
 - [ ] **A DUNGEON CONTAINS EXACTLY ONE SPECIES, and the Atlas advertises otherwise.** Found
       2026-09-11 answering the owner's question about how monster tiers work in dungeons.
@@ -2644,6 +2699,23 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       the Atlas promises three species and the dungeon delivers one. Either the pool should drive
       spawning or the Atlas should stop claiming it - and the first is almost certainly what was
       meant, since the data has been sitting there unused.
+
+      **OWNER DIRECTION 2026-09-11, which settles it:** *"I would be fine with dungeons having
+      other monsters of the same tier spawning within them (more rare, less likely than the main
+      dungeon monster/boss type). The floor loot eggs could also be of any of the monster types
+      that spawn in that dungeon, the boss should still be of the dungeon type and the guaranteed
+      egg should be of it as well."*
+      So, precisely:
+        * floor monsters are mostly the dungeon's own species, with a minority drawn from other
+          species **of the same tier as the dungeon's grade** (which, after the grade change
+          above, means the instance's grade, not the type's);
+        * the BOSS stays the dungeon's own species, always;
+        * the guaranteed clear EGG stays the dungeon's own species, always;
+        * FLOOR eggs may come from any species that actually spawned in that dungeon - so the
+          mixed pool feeds the egg pool, and a rarer species in the mix is a rarer egg.
+      Note this makes the map letter question real: every monster currently shows the first
+      letter of the one species, so a mixed floor needs the letter (and the sprite) to follow the
+      individual monster.
 
 
 
