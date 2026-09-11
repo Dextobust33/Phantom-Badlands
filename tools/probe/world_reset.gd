@@ -120,5 +120,38 @@ func _init() -> void:
 	ck(conf.contains("_is_admin(peer_id)") and arm.contains("_is_admin(peer_id)"),
 		"both halves are admin-gated")
 
+	print("")
+	print("--- a post must be BUILT, not merely recorded ---")
+	# A post record is coordinates and a name; the walls, market, crafting stations and quest
+	# board are TILES. Generating records without stamping leaves a post that shows on the
+	# minimap and nowhere else — which is exactly what the first live reset produced.
+	ck(reset.contains("stamp_post_into_chunks("),
+		"the reset stamps every post layout into the chunks")
+	ck(reset.contains("save_dirty_chunks()"),
+		"...and flushes them, so a restart is not required for the world to exist")
+	var stamp_i := -1
+	var gen_i := -1
+	var rl := reset.split("
+")
+	for i in range(rl.size()):
+		var t: String = rl[i].strip_edges()
+		if gen_i < 0 and t.begins_with("var posts: Array = NpcPostDatabaseScript.generate_posts("):
+			gen_i = i
+		if stamp_i < 0 and t.contains("stamp_post_into_chunks("):
+			stamp_i = i
+	ck(gen_i >= 0 and stamp_i > gen_i, "it stamps AFTER generating, not before")
+	# and both must come after the chunk wipe, or the wipe would erase the stamps
+	var wipe_i := -1
+	for i in range(rl.size()):
+		if rl[i].strip_edges() == "chunk_manager.wipe_all_chunks()":
+			wipe_i = i
+	ck(wipe_i >= 0 and stamp_i > wipe_i, "...and after the wipe, so the wipe cannot erase them")
+
+	print("
+--- and the OLD roads must not survive into the new world ---")
+	# paths.json lives INSIDE data/world/, but wipe_all_chunks deletes chunk_*.json only.
+	ck(reset.contains("PATHS_FILE"), "the reset deletes the persisted road network")
+	ck(reset.contains("initialize_post_graph("), "and re-seeds the post graph on the new posts")
+
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails > 0 else 0)

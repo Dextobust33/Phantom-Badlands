@@ -39963,6 +39963,31 @@ func _do_world_reset() -> Array:
 	chunk_manager.save_npc_posts(posts)
 	out.append("  regenerated %d posts (Crossroads stays at 0,0)" % posts.size())
 
+	# BUILD them. A post record is coordinates and a name; the walls, floors, doors, market,
+	# crafting stations and quest board are TILES, stamped into the chunks. Generating the
+	# records without stamping leaves a post that exists on the minimap and nowhere else.
+	#
+	# Reported immediately after the first live reset: "There is no post at 0,0 now or something.
+	# It looks like there is on the minimap but the ASCII map I'm not seeing any walls, Market,
+	# crafting stations, quests, etc." Boot re-stamps every post ("ensures walls/floors exist
+	# after wipes"), so a restart repaired it — but a reset that only works if you remember to
+	# restart afterwards is a reset with a trap in it.
+	for post in posts:
+		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
+	chunk_manager.save_dirty_chunks()
+	out.append("  stamped all %d post layouts into the world" % posts.size())
+
+	# ROADS. `paths.json` lives INSIDE data/world/, but `wipe_all_chunks` deletes `chunk_*.json`
+	# only - so the old world's road network survived the wipe and was reloaded at the next boot,
+	# 86 segments joining posts that no longer exist. Roads form incrementally as players clear
+	# terrain, so an empty network is the correct state for a new world.
+	if FileAccess.file_exists(ChunkManagerScript.PATHS_FILE):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(ChunkManagerScript.PATHS_FILE))
+	world_system._path_waypoints = {}
+	world_system._path_graph = {}
+	world_system.initialize_post_graph(posts)
+	out.append("  cleared the old road network and re-seeded the post graph")
+
 	# 6. Player-built tiles and the market.
 	persistence.player_tiles_data = {"tiles": {}}
 	persistence.save_player_tiles()
