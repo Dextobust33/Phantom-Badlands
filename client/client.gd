@@ -13473,6 +13473,20 @@ func _estimate_outgoing_damage_multiplier(is_spell: bool) -> float:
 	# excluded — estimates should bias toward "what you'll see most of the
 	# time" rather than best-case spikes.
 	var mult := 1.0
+	# The class ENGINE's live ramp — Steady Aim (+11%/Aim) for a Ranger, Rage (+16%/Rage) for a
+	# Barbarian. Applied by the server inside `apply_ability_damage_modifiers`, which every
+	# damaging card passes through, so it lifts EVERY card and not just the finisher.
+	#
+	# 2026-09-11. The card faces knew nothing about it: right at an empty meter and understated
+	# by stacks x 11% (or 16%) at every other value — up to 88% low on a full Aim bar. Owner
+	# found it as "Killing shot on the ranger seems like it may not be estimating damage
+	# properly. Possibly just on higher Aim meters"; the finisher was the symptom, every other
+	# card was wrong too.
+	#
+	# Taken from combat STATE, never recomputed here. A client-side copy of RANGER_AIM_DMG_PER
+	# would be right until the day someone tunes it and only the server finds out — which is the
+	# exact shape of the bug being fixed.
+	mult *= _combat_engine_ramp
 	var damage_buff = _get_buff_value("damage")
 	if damage_buff != 0:
 		mult *= max(0.0, 1.0 + float(damage_buff) / 100.0)
@@ -20698,6 +20712,11 @@ var _duplicate_instance_warned := false
 # The finisher as the SERVER computes it: "roll" (percent) or "guaranteed" (damage).
 var _combat_finisher_kind: String = ""
 var _combat_finisher_value: int = 0
+# The class ENGINE's live damage multiplier, straight from the server (Steady Aim / Rage).
+# 1.0 outside combat and for classes with no ramp. Cached here for the same reason
+# _combat_finisher_value is: the card face needs it, and the client must not own a copy of the
+# constant behind it.
+var _combat_engine_ramp: float = 1.0
 # 2026-09-08 - held so the panel can be re-fitted when the overlay opens. Owner: "there appears
 # to be extra padding on the right side until you actually click or interact with it then it
 # shrinks to fit the size of the selections." A PanelContainer keeps the largest size its
@@ -25330,6 +25349,8 @@ func handle_server_message(message: Dictionary):
 			current_enemy_is_elite = false
 			current_enemy_is_apex_species = false
 			damage_dealt_to_current_enemy = 0
+			# a stale ramp must not inflate the next fight's first card face
+			_combat_engine_ramp = 1.0
 			analyze_revealed_max_hp = -1  # Reset Analyze flag
 
 			# Note: Background reset is handled in acknowledge_continue() when player presses Space
@@ -36405,6 +36426,7 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	_combat_assassinate_chance = int(state.get("assassinate_chance", 0)) if is_trickster else 0
 	_combat_finisher_kind = String(state.get("finisher_kind", ""))
 	_combat_finisher_value = int(state.get("finisher_value", 0))
+	_combat_engine_ramp = maxf(0.01, float(state.get("engine_damage_ramp", 1.0)))
 	if is_warrior:
 		# The meter's NAME comes from the server (Momentum / Rage / Conviction) so the three
 		# Warrior classes read differently without the client keeping its own class table — the

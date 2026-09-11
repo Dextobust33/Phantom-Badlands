@@ -806,6 +806,36 @@ func player_crit_chance(character, combat: Dictionary, ability_name: String = ""
 	crit_chance += int(ABILITY_CRIT_BONUS.get(ability_name, 0))
 	return clampi(crit_chance, 0, _cap)
 
+func engine_damage_ramp(character, combat: Dictionary) -> float:
+	"""The multiplier the class ENGINE currently adds to every damaging card. 1.0 = none.
+
+	Steady Aim (+11% per Aim) and Rage (+16% per Rage) are applied inside
+	`apply_ability_damage_modifiers`, the shared funnel every damaging card passes through — so
+	they lift EVERY card, not just the finisher.
+
+	The client card faces knew nothing about either. There was no mention of Steady Aim in
+	client.gd at all, so a Ranger's card read correctly at 0 Aim and understated itself by
+	`stacks x 11%` at every other value: 11% low at one, 88% low on a full bar. The Barbarian's
+	Rage did the same at 16% a stack.
+
+	This is sent as combat STATE rather than reimplemented client-side, exactly as
+	`finisher_value` and `assassinate_chance` are. A client copy of a server constant is the
+	shape that caused this whole class of bug — the ramp would be right until the day someone
+	tunes RANGER_AIM_DMG_PER and only the server learns about it.
+
+	Deliberately reads the SAME constants and the SAME meters the funnel does, so the two cannot
+	disagree: if this function and the funnel ever drift, the card is wrong again."""
+	if character == null:
+		return 1.0
+	if String(character.class_type) == "Ranger":
+		var aim: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+		return 1.0 + float(aim) * RANGER_AIM_DMG_PER
+	if String(character.class_type) == "Barbarian":
+		var rage: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
+		return 1.0 + float(rage) * BARBARIAN_RAGE_DMG_PER
+	return 1.0
+
+
 func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dictionary, character = null, combat: Dictionary = {}, messages = null) -> int:
 	"""Apply 50% defense and level penalty to ability damage"""
 	var mod_damage = damage
@@ -836,7 +866,9 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 	if character != null and character.class_type == "Ranger":
 		var _aim: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
 		if _aim > 0:
-			mod_damage = int(float(mod_damage) * (1.0 + float(_aim) * RANGER_AIM_DMG_PER))
+			# Through the shared helper, so the number on the card face and the number applied
+			# here are the same computation rather than two that agree today.
+			mod_damage = int(float(mod_damage) * engine_damage_ramp(character, combat))
 			_note_modifier(combat, "Steady Aim +%d%%" % int(float(_aim) * RANGER_AIM_DMG_PER * 100.0))
 	# Barbarian "Rage" — the Warrior counterpart of Steady Aim. Banked Rage is a passive damage
 	# ramp on every card, and Rampage discharges it. Same funnel, same reason: the ramp has to
@@ -844,7 +876,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 	if character != null and character.class_type == "Barbarian":
 		var _rage: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
 		if _rage > 0:
-			mod_damage = int(float(mod_damage) * (1.0 + float(_rage) * BARBARIAN_RAGE_DMG_PER))
+			mod_damage = int(float(mod_damage) * engine_damage_ramp(character, combat))
 			_note_modifier(combat, "Rage +%d%%" % int(float(_rage) * BARBARIAN_RAGE_DMG_PER * 100.0))
 	var _an_bonus: int = int(combat.get("analyze_bonus", 0))
 	if _an_bonus > 0:
@@ -10926,6 +10958,10 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# percent when it is a roll and damage when it is not.
 		"finisher_kind": _finisher_kind(character),
 		"finisher_value": _finisher_value(character, combat),
+		# The class ENGINE's live damage multiplier, so a card face can show what it will
+		# actually hit for. 1.0 when the class has no ramp or the meter is empty. Sent as state
+		# for the same reason finisher_value is: the client must not own a copy of the constant.
+		"engine_damage_ramp": engine_damage_ramp(character, combat),
 		# Live Assassinate % so players can decide when to spring it (single source: helper).
 		"assassinate_chance": (assassinate_chance(character, combat.monster, combat) if (character.get_class_path() == "trickster" and combat.has("monster")) else 0),
 		"focus": int(combat.get("focus", 0)),  # v0.9.697 Mage Focus

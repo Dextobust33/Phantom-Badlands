@@ -449,9 +449,17 @@ Do not reopen this as a balance change without the owner asking: it was consider
 The three pure-crit companion cards (Hunter's Instinct / Sky Talon / Godsbane) remain worthless
 to a Ranger BY DESIGN, and now say so on their face.
 
-## Phase 2.8 — DAMAGE ATTRIBUTION IS LOSSY (found 2026-09-11, REPRODUCED, not yet fixed)
+## Phase 2.8 — DAMAGE ATTRIBUTION WAS LOSSY (found AND FIXED 2026-09-11)
 
-- [ ] **36% of player actions report less damage to the client than the monster actually loses.**
+- [x] **FIXED 2026-09-11: 36% -> 0%.** Two causes. The visible one was a mark recording an INDEX
+      before its line was appended, so anything appending in between shifted it; marks now carry
+      the TEXT they are written into and resolve by content. The real one was the attach step
+      SKIPPING any mark made against a different array — the monster turn builds its own messages
+      array and the caller appends those lines into the result, so player-applied poison ticking
+      on the monster marked one array while its line ended up in another. Proven by re-injecting
+      the foreign-array skip: 41% and a clean fail.
+
+- [ ] ~~36% of player actions report less damage than the monster loses.~~
       `tools/probe/damage_attribution.gd` reproduces it: 160 player actions across 40 fights,
       58 of them (36%) where `message_damage` sums to less than the monster's pool moved.
       Monsters that HEAL (life steal, regeneration) are excluded from the run, because those are
@@ -1072,7 +1080,14 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 
-- [ ] **EVERY Ranger and Barbarian card understates its damage, by up to 88%.** Found 2026-09-10
+- [x] **FIXED 2026-09-11.** The ramp is now ONE computation, `CombatManager.engine_damage_ramp`,
+      called by the funnel for both classes and sent as combat state (`engine_damage_ramp`)
+      exactly as `finisher_value` is. The client caches and multiplies by it; the probe asserts no
+      copy of RANGER_AIM_DMG_PER or BARBARIAN_RAGE_DMG_PER exists in client CODE, so tuning
+      either constant cannot desync the card face again. Display-only: no damage changed, no
+      calibration run needed.
+
+- [ ] ~~EVERY Ranger and Barbarian card understates its damage, by up to 88%.~~ Found 2026-09-10
       while chasing the owner's report on Killing Shot; the finisher was the symptom, not the bug.
       **The cause.** `Steady Aim` (+11% per Aim held) and `Rage` (the Barbarian twin) are applied
       inside `apply_ability_damage_modifiers`, the shared funnel every damaging card passes
@@ -1089,7 +1104,9 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       **Display-only**: this changes no damage, so it does not invalidate the monster curve and
       does not need a calibration run. It can ship on its own.
 
-- [ ] **A Ranger cannot crit with abilities, so every crit buff is dead weight for them.** Raised
+- [x] **ADDRESSED 2026-09-11 (visibility) and DECIDED (no conversion).** See Phase 2.75.
+
+- [ ] ~~A Ranger cannot crit with abilities, so every crit buff is dead weight for them.~~ Raised
       by the owner: *"does hunter's instinct increase crit chance for abilities on the ranger?"*
       Answer: no, and not because of a bug. The Ranger passive `Steady Hand` sets `no_glance`, and
       the ability crit path reads `if _passive_has_no_glance(character): cc = 0` — the companion's
