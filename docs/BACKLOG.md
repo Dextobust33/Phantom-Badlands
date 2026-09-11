@@ -771,13 +771,52 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
         tier-8 rank-8 companions and yields RANK 9 of the same tier. It reads **Mixed A9**
         (A8 → A9) now, which is what it has always done.
 
-      **Deliberately NOT renamed — and this needs a decision:** there are at least FOUR separate
-      tier ladders in player-facing text and only the monster/dungeon/companion one was in scope.
-      Trading-post tiers (1-7, their own colour table), equipment tiers, and gathering material
-      tiers all still read "Tier 5+". That was already ambiguous; the letters make it more so,
-      because "Tier 5+ trading posts" now sits near a dungeon labelled `[D3]` and a reader may
-      reasonably connect them. Options: give posts their own vocabulary, letter them too, or
-      leave them and accept the collision.
+      **THE FOUR-LADDER COLLISION — RESOLVED 2026-09-11.** There were actually **five** tier
+      ladders in player-facing text, all using the same word and the same bare numbers, so
+      "Tier 5+" could mean five different things depending on the sentence:
+
+      | ladder | steps | vocabulary |
+      |---|---|---|
+      | monster / dungeon / companion | 9 × 9 | `H G F E D C B A S` + rank 1-9 |
+      | trading post | 7 | Core · Inner · Mid · Mid-Outer · Outer · Extreme · World's Edge |
+      | consumable / material | 9 | Minor … Master · Divine · Mythic · Primordial |
+      | gathering node | 9 | none |
+      | equipment | 9 | none |
+
+      **THREE OF THE FIVE ALREADY HAD NAMES** — `POST_TIER_NAMES`, `CONSUMABLE_TIERS`,
+      `TOOL_SUBTYPES`, all shipping. Nothing needed inventing; the text had simply stopped using
+      vocabulary the game already shows on the map and on the items themselves. So the rule is:
+      the lettered ladder keeps the word "tier"; the named ladders use their names; the two
+      nameless ones keep numbers but must NAME THE LADDER ("gear tier 5+", "node tier 1-2"),
+      because the ambiguity was always the bare noun, never the digit.
+      Probe: `tools/probe/tier_vocabulary.gd` fails if any live player-facing surface says a bare
+      "Tier <n>" again.
+      **Patch notes are excluded on purpose** — `display_changelog` is a historical record of what
+      shipped in a given version. Rewriting it would falsify the record, not fix a label.
+
+      **A REAL DIVERGENCE found while doing it, and it needed a design answer, not a rename:**
+      monster tiers and dungeon tiers are DIFFERENT ladders below tier 6 — monster tier 1 is
+      L1-5, dungeon tier 1 is L1-12; they converge from tier 6 up. Companions and eggs carry the
+      MONSTER tier, dungeons carry the DUNGEON tier, and the ladder help page was printing dungeon
+      bands beside every letter — contradicting the Bestiary on the one page a confused player
+      opens. The page now shows letters and pips only (the ORDERING, which genuinely is shared)
+      and says the levels depend on what carries the label. The Bestiary keeps its own monster
+      bands and now carries letters.
+      **Still open, and it is a balance question rather than a text one:** should those two tables
+      be reconciled? Nine tiers with two different level meanings is a trap for whoever tunes them
+      next.
+
+      **Two stale facts corrected, both pre-existing:** the *Trial of Blood* title read
+      *"Defeat 1,000 Tier 8+ monsters (Level 250+)"* — the tracker gates on `monster_tier >= 8`,
+      and tier-8 monsters are L2001-5000, so the level claim was wrong by 8× and is gone. And
+      `server.gd` built a fusion message as `(T%d-9)`, an old-notation pair the first sweep's
+      `T%d-%d` search could not see; it goes through `PowerRank.tag()` now.
+
+      **`Divine` names both consumable tier 7 and a rarity-1 companion variant. Checked, and it
+      is safe** — the two live in unrelated dictionaries and nothing does a name→value lookup
+      across them. The one place that did (a per-name variant multiplier table) was deleted on
+      2026-09-03 for exactly this class of reason; its replacement derives from rarity. Owner:
+      *"I'm fine with Divine on both as long as it doesn't cause bugs."* It does not.
 - [~] **LIKELY SOLVED 2026-09-11, awaiting one confirmation.** Almost certainly the same cause as
       the bossless dungeon and the re-farm: the owner was re-entering a personal instance that had
       already been completed, which KEEPS its original sub-tier and skips the whole

@@ -100,7 +100,7 @@ const PILGRIMAGE_STAGES = {
 	},
 	"trial_blood": {
 		"name": "Trial of Blood",
-		"description": "Defeat 1,000 Tier 8+ monsters (Level 250+).",
+		"description": "Defeat 1,000 tier A+ monsters.",
 		"requirement": 1000,
 		"type": "tier8_kills",
 		"shrine_reward_stat": "strength",
@@ -130,7 +130,7 @@ const PILGRIMAGE_STAGES = {
 	},
 	"crucible": {
 		"name": "The Crucible",
-		"description": "Complete a gauntlet of 10 consecutive Tier 9 boss fights.",
+		"description": "Complete a gauntlet of 10 consecutive tier S boss fights.",
 		"requirement": 10,
 		"type": "crucible_bosses"
 	}

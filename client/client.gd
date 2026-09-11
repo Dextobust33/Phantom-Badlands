@@ -19274,10 +19274,10 @@ func _get_affix_category_name(stat: String) -> String:
 		"int_bonus": return "Intelligence (INT)"
 		"wis_bonus": return "Wisdom (WIS)"
 		"wits_bonus": return "Cunning (WITS)"
-		"proc_lifesteal": return "Lifesteal (Tier 6+)"
-		"proc_shocking": return "Lightning Damage (Tier 6+)"
-		"proc_damage_reflect": return "Damage Reflect (Tier 6+)"
-		"proc_execute": return "Execute (Tier 6+)"
+		"proc_lifesteal": return "Lifesteal (tier C+ drop)"
+		"proc_shocking": return "Lightning Damage (tier C+ drop)"
+		"proc_damage_reflect": return "Damage Reflect (tier C+ drop)"
+		"proc_execute": return "Execute (tier C+ drop)"
 		_: return ""
 
 func _enter_affix_filter_mode():
@@ -31740,50 +31740,50 @@ func display_bestiary():
 	display_game("")
 
 	# Tier 1
-	display_game("[color=#AAAAAA]Tier 1[/color] [color=#808080](Levels 1-5)[/color]")
+	display_game("[color=#AAAAAA]Tier H[/color] [color=#808080](Levels 1-5)[/color]")
 	display_game("  Goblin, Giant Rat, Kobold, Skeleton, Wolf")
 	display_game("")
 
 	# Tier 2
-	display_game("[color=#FFFFFF]Tier 2[/color] [color=#808080](Levels 6-15)[/color]")
+	display_game("[color=#FFFFFF]Tier G[/color] [color=#808080](Levels 6-15)[/color]")
 	display_game("  Orc, Hobgoblin, Gnoll, Zombie, Giant Spider, Wight, Siren, Kelpie, Mimic")
 	display_game("")
 
 	# Tier 3
-	display_game("[color=#00FF00]Tier 3[/color] [color=#808080](Levels 16-30)[/color]")
+	display_game("[color=#00FF00]Tier F[/color] [color=#808080](Levels 16-30)[/color]")
 	display_game("  Ogre, Troll, Wraith, Wyvern, Minotaur, Gargoyle, Harpy, Shrieker")
 	display_game("")
 
 	# Tier 4 - Home Stones start dropping
-	display_game("[color=#0070DD]Tier 4[/color] [color=#808080](Levels 31-50)[/color]")
+	display_game("[color=#0070DD]Tier E[/color] [color=#808080](Levels 31-50)[/color]")
 	display_game("  Giant, Dragon Wyrmling, Demon, Vampire, Gryphon, Chimaera, Succubus")
 	display_game("  [color=#00FFFF]→ Home Stone (Egg), Home Stone (Supplies) start dropping[/color]")
 	display_game("")
 
 	# Tier 5
-	display_game("[color=#A335EE]Tier 5[/color] [color=#808080](Levels 51-100)[/color]")
+	display_game("[color=#A335EE]Tier D[/color] [color=#808080](Levels 51-100)[/color]")
 	display_game("  Ancient Dragon, Demon Lord, Lich, Titan, Balrog, Cerberus, Jabberwock")
 	display_game("  [color=#00FFFF]→ Home Stone (Equipment) starts dropping[/color]")
 	display_game("")
 
 	# Tier 6
-	display_game("[color=#FF8000]Tier 6[/color] [color=#808080](Levels 101-500)[/color]")
+	display_game("[color=#FF8000]Tier C[/color] [color=#808080](Levels 101-500)[/color]")
 	display_game("  Elemental, Iron Golem, Sphinx, Hydra, Phoenix, Nazgul")
 	display_game("  [color=#00FFFF]→ Home Stone (Companion) starts dropping[/color]")
 	display_game("")
 
 	# Tier 7
-	display_game("[color=#FF4444]Tier 7[/color] [color=#808080](Levels 501-2000)[/color]")
+	display_game("[color=#FF4444]Tier B[/color] [color=#808080](Levels 501-2000)[/color]")
 	display_game("  Void Walker, World Serpent, Elder Lich, Primordial Dragon")
 	display_game("")
 
 	# Tier 8
-	display_game("[color=#FF00FF]Tier 8[/color] [color=#808080](Levels 2001-5000)[/color]")
+	display_game("[color=#FF00FF]Tier A[/color] [color=#808080](Levels 2001-5000)[/color]")
 	display_game("  Cosmic Horror, Time Weaver, Death Incarnate")
 	display_game("")
 
 	# Tier 9
-	display_game("[color=#FFD700]Tier 9[/color] [color=#808080](Levels 5001+)[/color]")
+	display_game("[color=#FFD700]Tier S[/color] [color=#808080](Levels 5001+)[/color]")
 	display_game("  Avatar of Chaos, The Nameless One, God Slayer, Entropy")
 	display_game("")
 
@@ -33910,12 +33910,19 @@ func _tier_rank_help() -> String:
 	player what is better than what... they need to know and understand if they have higher tier
 	and rank monster."* Three affordances carry that, and this is the one they can go and read:
 	the in-game hover (PowerRank.hover), the danger colour on every label, and this page."""
+	# NO LEVEL BAND HERE, deliberately. The first version printed
+	# DungeonDatabase.TIER_LEVEL_RANGES beside each letter, which is wrong for most labels a
+	# player actually sees: monster tiers and dungeon tiers are DIFFERENT ladders below tier 6
+	# (monster tier 1 is L1-5, dungeon tier 1 is L1-12; they converge from tier 6 up), and
+	# companions and eggs carry the MONSTER tier while dungeons carry the dungeon tier. Printing
+	# one band next to a letter that means both would have contradicted the Bestiary on the very
+	# page a confused player opens.
+	# The letters are the ORDERING, which is identical for both. Each system shows its own levels
+	# where it knows them - the Bestiary prints monster bands, a dungeon prints its own range.
 	var rows: Array[String] = []
 	for t in range(1, PowerRank.LADDER.size() + 1):
-		var band: Dictionary = DungeonDatabase.TIER_LEVEL_RANGES.get(t, {})
-		rows.append("[color=%s]%s[/color]  %s  [color=#808080]L%d-%d[/color]" % [
-			PowerRank.color(t), PowerRank.letter(t), PowerRank.pips(t),
-			int(band.get("min", 0)), int(band.get("max", 0))])
+		rows.append("[color=%s]%s[/color]  %s" % [
+			PowerRank.color(t), PowerRank.letter(t), PowerRank.pips(t)])
 	var top: String = PowerRank.letter(PowerRank.LADDER.size())
 	var low: String = PowerRank.letter(1)
 	return "
@@ -33938,7 +33945,11 @@ func _tier_rank_help() -> String:
 		"",
 		"[color=#808080]%s is the gentlest, %s the deadliest. Colour matches the danger" % [low, top],
 		"you already read on the map: green is safe, red is extreme,",
-		"purple is the world's edge. Hover any label in game to see this again.[/color]"
+		"purple is the world's edge. Hover any label in game to see this again.",
+		"",
+		"The letters order everything the same way, but the LEVELS behind a tier",
+		"depend on what carries it — see the Bestiary for monster levels, or a",
+		"dungeon's own entry for its range.[/color]"
 	])
 
 
@@ -34296,16 +34307,16 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 	# New features section (added separately to avoid format string complexity)
 	display_game("")
 	display_game("[b][color=#FFD700]══ NEW FEATURES ══[/color][/b]")
-	display_game("[color=#FF80FF]Companion Stable (T5+ posts):[/color] Bump the magenta C tile at any Tier 5+ NPC post to deposit/withdraw kennel companions WITHOUT dying.")
+	display_game("[color=#FF80FF]Companion Stable (Outer+ posts):[/color] Bump the magenta C tile at any Outer-region or deeper NPC post to deposit/withdraw kennel companions WITHOUT dying.")
 	display_game("  Finally makes Fusion usable across one character's lifetime — collect, deposit, combine, withdraw, repeat. First visit shows a teaching overlay.")
 	display_game("[color=#FFD700]Quest Board Regenerates:[/color] No more daily caps — your post board refills the moment you turn in a quest.")
 	display_game("  3 active at a time max (triage to your top three). Chain quests still run alongside the procedural board.")
 	display_game("[color=#A335EE]NPC Vendors at Category Posts:[/color] Exotic / mine / farm / shrine / haven / market / tower / camp / fortress posts")
 	display_game("  each host a themed trader at the top of their market browse. Daily-rotating stock (3-4 slots/day, hash-based) — same items for")
 	display_game("  every visitor on the same day, fresh roll tomorrow. NPC prices ignore supply markup but still hike at threatened posts.")
-	display_game("[color=#88AAFF]Travel Stone:[/color] New consumable — buy from any remote market listing without traveling. Drops T5+ chests, exotic Curiosity Trader sells one for 3000v.")
+	display_game("[color=#88AAFF]Travel Stone:[/color] New consumable — buy from any remote market listing without traveling. Drops from tier D+ dungeon chests, exotic Curiosity Trader sells one for 3000v.")
 	display_game("  In Network Browse, inspect any remote listing → 'Buy (Stone x N)' button appears if you have one. Specialty discounts still require physical visit.")
-	display_game("[color=#FF6644]Under Threat — Mechanical Bite:[/color] When a T2+ active dungeon is within 80 tiles of a post, the post shows ⚠ Under Threat.")
+	display_game("[color=#FF6644]Under Threat — Mechanical Bite:[/color] When a tier G+ active dungeon is within 80 tiles of a post, the post shows ⚠ Under Threat.")
 	display_game("  Now means: +50% service costs / +20% market markup / threat-zone encounters spawn the dungeon's monster type / your settler bubble loses 1 suppression. Clear the dungeon to remove all four.")
 	display_game("[color=#FFD700]Clan Vault Panel:[/color] More → Clan → Open Vault. 30 shared slots; rarity-colored item rows; one-click Withdraw / Deposit.")
 	display_game("  Auto-refreshes when other members act. `/vault` chat command still works as fallback.")
@@ -34533,7 +34544,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "ITEMS & POTIONS",
 			"keywords": ["item", "items", "potion", "potions", "scroll", "scrolls", "buff", "debuff", "health", "mana", "stamina", "energy", "strength", "defense", "speed", "crit", "lifesteal", "thorns", "forcefield", "rage", "haste", "weakness", "vulnerability", "slow", "doom", "summoning", "finding", "time", "stop", "resurrect", "bane", "mystery", "box", "cursed", "coin", "tome", "stat", "skill"],
-			"content": "[color=#00FFFF]Potions:[/color] Health, Resource (restores your class's primary resource) | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Special Scrolls (Tier 6+):[/color]\n• Time Stop - Skip monster's next turn\n• Monster Bane (Dragon/Undead/Beast) - +50% damage vs type for 3 battles\n• Resurrect (Tier 8+) - Revive at 25% HP once if killed\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n• Cursed Coin - 50% double Valor, 50% lose half Valor\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Tier 6+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Tier 7+) - -10% ability cost or +15% damage"
+			"content": "[color=#00FFFF]Potions:[/color] Health, Resource (restores your class's primary resource) | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Special Scrolls (Master+):[/color]\n• Time Stop - Skip monster's next turn\n• Monster Bane (Dragon/Undead/Beast) - +50% damage vs type for 3 battles\n• Resurrect (Mythic+) - Revive at 25% HP once if killed\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n• Cursed Coin - 50% double Valor, 50% lose half Valor\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Master+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Divine+) - -10% ability cost or +15% damage"
 		},
 		{
 			"title": "EQUIPMENT & GEAR",
@@ -34558,7 +34569,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "ETERNAL PILGRIMAGE",
 			"keywords": ["pilgrimage", "eternal", "awakening", "trial", "blood", "mind", "wealth", "ember", "crucible", "donate", "shrine", "flame"],
-			"content": "[color=#00FFFF]ETERNAL PILGRIMAGE[/color] (Elder only, use Seek Flame to track)\n\n[color=#FFFFFF]1. The Awakening[/color] - Slay 5,000 monsters\n[color=#FF4444]2. Trial of Blood[/color] - Kill 1,000 Tier 8+ monsters (Lv250+) → +3 STR\n[color=#FFFF00]3. Trial of Mind[/color] - End 200 fights without beating them down (Assassinate) → +3 WIT\n[color=#FFD700]4. Trial of Wealth[/color] - Donate 10M gold (/donate <amount>) → +3 WIS\n[color=#FF8800]5. Ember Hunt[/color] - Collect 500 Flame Embers (T8: 10%, T9: 25%)\n[color=#FF0000]6. The Crucible[/color] - Defeat 10 consecutive T9 bosses (/crucible)\n\n[color=#808080]Commands:[/color] /donate <amount> (at shrine), /crucible (start gauntlet)\n[color=#808080]Note:[/color] Crucible death resets progress but keeps previous trials."
+			"content": "[color=#00FFFF]ETERNAL PILGRIMAGE[/color] (Elder only, use Seek Flame to track)\n\n[color=#FFFFFF]1. The Awakening[/color] - Slay 5,000 monsters\n[color=#FF4444]2. Trial of Blood[/color] - Kill 1,000 tier A+ monsters → +3 STR\n[color=#FFFF00]3. Trial of Mind[/color] - End 200 fights without beating them down (Assassinate) → +3 WIT\n[color=#FFD700]4. Trial of Wealth[/color] - Donate 10M gold (/donate <amount>) → +3 WIS\n[color=#FF8800]5. Ember Hunt[/color] - Collect 500 Flame Embers (tier A: 10%, tier S: 25%)\n[color=#FF0000]6. The Crucible[/color] - Defeat 10 consecutive tier S bosses (/crucible)\n\n[color=#808080]Commands:[/color] /donate <amount> (at shrine), /crucible (start gauntlet)\n[color=#808080]Note:[/color] Crucible death resets progress but keeps previous trials."
 		},
 		{
 			"title": "TITLE ABILITIES",
@@ -34578,12 +34589,12 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "PROC EQUIPMENT",
 			"keywords": ["proc", "procs", "vampire", "lifesteal", "thunder", "shocking", "reflection", "reflect", "slayer", "execute", "suffix", "special", "gear", "effect"],
-			"content": "[color=#A335EE]Proc Equipment (Tier 6+)[/color]\n\nHigh-tier monsters can drop equipment with special proc effects:\n\n[color=#FF4444]of the Vampire[/color] - Lifesteal: Heal 10% of damage dealt\n[color=#FFFF00]of Thunder[/color] - Shocking: 20% chance for +15% bonus lightning damage\n[color=#6666FF]of Reflection[/color] - Damage Reflect: Return 20% of damage taken to attacker\n[color=#FF6666]of the Slayer[/color] - Execute: 15% chance to instant-kill monsters below 20% HP\n\n[color=#00FFFF]Note:[/color] Proc effects stack from multiple equipped items!"
+			"content": "[color=#A335EE]Proc Equipment (tier C+ monsters)[/color]\n\nHigh-tier monsters can drop equipment with special proc effects:\n\n[color=#FF4444]of the Vampire[/color] - Lifesteal: Heal 10% of damage dealt\n[color=#FFFF00]of Thunder[/color] - Shocking: 20% chance for +15% bonus lightning damage\n[color=#6666FF]of Reflection[/color] - Damage Reflect: Return 20% of damage taken to attacker\n[color=#FF6666]of the Slayer[/color] - Execute: 15% chance to instant-kill monsters below 20% HP\n\n[color=#00FFFF]Note:[/color] Proc effects stack from multiple equipped items!"
 		},
 		{
 			"title": "TROPHIES",
 			"keywords": ["trophy", "trophies", "dragon", "scale", "phylactery", "titan", "heart", "entropy", "shard", "collector", "prestige", "collectible"],
-			"content": "[color=#FF69B4]Trophy Drops (Tier 8+)[/color]\n\nPowerful monsters have a chance to drop rare trophies:\n\n[color=#FFD700]• Dragon Scale[/color] - 5% from Primordial Dragon\n[color=#A335EE]• Lich Phylactery[/color] - 5% from Elder Lich\n[color=#FFA500]• Titan Heart[/color] - 5% from Titan\n[color=#00FFFF]• Entropy Shard[/color] - 2% from Entropy\n[color=#FF00FF]• Phoenix Feather[/color] - 5% from Phoenix\n...and more!\n\n[color=#00FFFF]Trophies are prestige collectibles[/color] - show them off in your status!"
+			"content": "[color=#FF69B4]Trophy Drops (tier A+)[/color]\n\nPowerful monsters have a chance to drop rare trophies:\n\n[color=#FFD700]• Dragon Scale[/color] - 5% from Primordial Dragon\n[color=#A335EE]• Lich Phylactery[/color] - 5% from Elder Lich\n[color=#FFA500]• Titan Heart[/color] - 5% from Titan\n[color=#00FFFF]• Entropy Shard[/color] - 2% from Entropy\n[color=#FF00FF]• Phoenix Feather[/color] - 5% from Phoenix\n...and more!\n\n[color=#00FFFF]Trophies are prestige collectibles[/color] - show them off in your status!"
 		},
 		{
 			"title": "COMPANIONS",
@@ -34593,7 +34604,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "CRAFTING & GATHERING",
 			"keywords": ["craft", "crafting", "gather", "gathering", "salvage", "essence", "fish", "fishing", "mine", "mining", "log", "logging", "chop", "ore", "wood", "material", "materials", "fail", "wrong", "key", "button"],
-			"content": "[color=#FFD700]Crafting & Gathering System[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Fishing[/color] - At water tiles (~), press R to fish\n• Wait for bite, then press the CORRECT key shown to catch\n• [color=#FF4444]Wrong key = FAIL![/color] Watch the action bar carefully!\n• Shallow vs Deep water have different catches\n• Rare: pearls, treasure chests\n\n[color=#8B4513]Mining[/color] - At ore deposits (mountains), press R to mine\n• 9 tiers based on distance from origin\n• T1-2: 1 reaction, T3-5: 2 reactions, T6+: 3 reactions\n• [color=#FF4444]Wrong key = FAIL![/color] Press the correct button only!\n• Drops: ore, gems, herbs, treasure\n\n[color=#228B22]Logging[/color] - At dense forests, press R to chop\n• 6 tiers based on distance from origin\n• [color=#FF4444]Wrong key = FAIL![/color]\n• Drops: wood, herbs, sap, enchanting materials\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] Fishing/Mining/Logging XP from catches → better odds + faster reaction windows"
+			"content": "[color=#FFD700]Crafting & Gathering System[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Fishing[/color] - At water tiles (~), press R to fish\n• Wait for bite, then press the CORRECT key shown to catch\n• [color=#FF4444]Wrong key = FAIL![/color] Watch the action bar carefully!\n• Shallow vs Deep water have different catches\n• Rare: pearls, treasure chests\n\n[color=#8B4513]Mining[/color] - At ore deposits (mountains), press R to mine\n• 9 tiers based on distance from origin\n• Node tier 1-2: 1 reaction, 3-5: 2 reactions, 6+: 3 reactions\n• [color=#FF4444]Wrong key = FAIL![/color] Press the correct button only!\n• Drops: ore, gems, herbs, treasure\n\n[color=#228B22]Logging[/color] - At dense forests, press R to chop\n• 6 tiers based on distance from origin\n• [color=#FF4444]Wrong key = FAIL![/color]\n• Drops: wood, herbs, sap, enchanting materials\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] Fishing/Mining/Logging XP from catches → better odds + faster reaction windows"
 		},
 		{
 			"title": "GUARDS & TOWERS",
@@ -34613,7 +34624,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "DUNGEONS",
 			"keywords": ["dungeon", "dungeons", "floor", "floors", "boss", "instance", "clear", "entrance", "explore", "find", "first", "into", "depths", "haven", "companion", "egg", "pet"],
-			"content": "[color=#9932CC]Dungeon System[/color]\n\nDungeons are multi-floor instances that spawn in the wilderness!\n\n[color=#FFD700]Finding Your First Dungeon:[/color]\n• Get the [color=#00FFFF]\"Into the Depths\"[/color] quest at Crossroads after completing First Blood\n• Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads (0,0) in all directions\n• Look for [color=#9932CC]D[/color] on your map - that's a dungeon entrance!\n• Tier 1 dungeons: Goblin Caves, Wolf Den (levels 1-12)\n\n[color=#00FFFF]How Dungeons Work:[/color]\n• Press R at a dungeon entrance to view/enter\n• Navigate floors, fight monsters, find treasure\n• Boss awaits on the final floor!\n• Monsters scale to dungeon tier\n\n[color=#FFD700]Rewards:[/color]\n• XP and gold per floor cleared\n• [color=#FFD700]GUARANTEED[/color] companion egg on boss kill!\n• Treasure chests may contain bonus eggs\n• Dungeon quests give extra rewards\n\n[color=#00FFFF]Companion eggs ONLY drop from dungeons![/color]"
+			"content": "[color=#9932CC]Dungeon System[/color]\n\nDungeons are multi-floor instances that spawn in the wilderness!\n\n[color=#FFD700]Finding Your First Dungeon:[/color]\n• Get the [color=#00FFFF]\"Into the Depths\"[/color] quest at Crossroads after completing First Blood\n• Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads (0,0) in all directions\n• Look for [color=#9932CC]D[/color] on your map - that's a dungeon entrance!\n• Tier H dungeons: Goblin Caves, Wolf Den (levels 1-12)\n\n[color=#00FFFF]How Dungeons Work:[/color]\n• Press R at a dungeon entrance to view/enter\n• Navigate floors, fight monsters, find treasure\n• Boss awaits on the final floor!\n• Monsters scale to dungeon tier\n\n[color=#FFD700]Rewards:[/color]\n• XP and gold per floor cleared\n• [color=#FFD700]GUARANTEED[/color] companion egg on boss kill!\n• Treasure chests may contain bonus eggs\n• Dungeon quests give extra rewards\n\n[color=#00FFFF]Companion eggs ONLY drop from dungeons![/color]"
 		},
 		{
 			"title": "QUESTS",
@@ -36308,7 +36319,7 @@ func display_gm_help():
 	display_game("")
 	display_game("[color=#FFD700]World & Quests:[/color]")
 	display_game("  /tp <x> <y>          Teleport to coordinates")
-	display_game("  /tpstable            Teleport to nearest T5+ Companion Stable")
+	display_game("  /tpstable            Teleport to nearest Outer+ Companion Stable")
 	display_game("  /teststable          Seed +3 collected and +3 kennel companions for Companion Stable testing")
 	display_game("  /completequest [n]   Complete quest (or all)")
 	display_game("  /resetquests         Clear all active quests")
@@ -44277,7 +44288,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "b", "color": "#F4A460", "desc": "Sphinx sand — riddle dust you can fling. Touching one banks 20% monster-miss chance for the first 2 rounds of your next combat. One-time per pile (consumed)."}
 	],
 	"void_walker_rift": [
-		{"glyph": "i", "color": "#ADD8E6", "desc": "Frost shards — void cold that bites through your boots for ~4% of your max HP on step. Persistent. Strongest persistent damage tile in the pool — plan T8 paths carefully."}
+		{"glyph": "i", "color": "#ADD8E6", "desc": "Frost shards — void cold that bites through your boots for ~4% of your max HP on step. Persistent. Strongest persistent damage tile in the pool — plan tier A paths carefully."}
 	],
 	"gnoll_den": [
 		{"glyph": "y", "color": "#8B2500", "desc": "Torn carrion — gnoll pack-kill scraps. Step on one to heal ~2% of your max HP. One-time per scrap (consumed). Pairs with Pack Frenzy — heal pickups counter-balance the per-round damage ramp."}
@@ -44325,7 +44336,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "Q", "color": "#2A0033", "desc": "Shadow pool — cold nazgul shadow saps your warmth. Stepping ticks ~3% of your max HP. Persistent — plan paths around the dark patches."}
 	],
 	"primordial_dragon_domain": [
-		{"glyph": "F", "color": "#FF4500", "desc": "Dragon breath — primordial elemental fire that lingers in the air. Stepping burns ~5% of your max HP. Persistent. Strongest persistent damage in the pool — plan T7 paths very carefully."}
+		{"glyph": "F", "color": "#FF4500", "desc": "Dragon breath — primordial elemental fire that lingers in the air. Stepping burns ~5% of your max HP. Persistent. Strongest persistent damage in the pool — plan tier B paths very carefully."}
 	],
 	"world_serpent_coil": [
 		{"glyph": "Z", "color": "#003344", "desc": "Coiled scales — the floor IS the world serpent's muscled body. The rippling coils cost double time, so the floor stirs much sooner. Persistent."}
@@ -44346,7 +44357,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "O", "color": "#FF00AA", "desc": "Soul vortexes — places where the dead are still being drained. Stepping ticks ~4% of your max HP. Persistent — plan paths around the pink swirls."}
 	],
 	"chaos_sanctum": [
-		{"glyph": "W", "color": "#FF00FF", "desc": "Chaos warps — raw chaos eats at your form. Stepping ticks ~5% of your max HP. Persistent. T9 damage tile — plan paths very carefully."}
+		{"glyph": "W", "color": "#FF00FF", "desc": "Chaos warps — raw chaos eats at your form. Stepping ticks ~5% of your max HP. Persistent. Tier S damage tile — plan paths very carefully."}
 	],
 	"nameless_void": [
 		{"glyph": "N", "color": "#444466", "desc": "Void whispers — the void erodes your sense of motion, costing double time so the floor stirs much sooner. Persistent — plan paths around the dim patches."}
@@ -44355,7 +44366,7 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "D", "color": "#FFFFAA", "desc": "Divine blood — god-killing power lingers in pools. Step on one to heal ~8% of your max HP. Strongest heal tile in the pool. One-time per pool (consumed)."}
 	],
 	"entropy_end": [
-		{"glyph": "U", "color": "#884466", "desc": "Decay motes — entropy itself rots at you. Stepping ticks ~6% of your max HP. Strongest persistent damage tile in the pool. Persistent. Plan T9 paths VERY carefully."}
+		{"glyph": "U", "color": "#884466", "desc": "Decay motes — entropy itself rots at you. Stepping ticks ~6% of your max HP. Strongest persistent damage tile in the pool. Persistent. Plan tier S paths VERY carefully."}
 	],
 }
 
@@ -46871,7 +46882,7 @@ func display_market_network_inspect():
 		if ni_stones > 0:
 			display_game("[color=#9ACD32]Or press [%s] to spend 1 of your %d Travel Stone%s and buy from here.[/color]" % [get_action_key_name(1), ni_stones, "" if ni_stones == 1 else "s"])
 		else:
-			display_game("[color=#808080]A Travel Stone (T5+ chest drop or Curiosity Trader) would let you buy without traveling.[/color]")
+			display_game("[color=#808080]A Travel Stone (tier D+ dungeon chest, or the Curiosity Trader) would let you buy without traveling.[/color]")
 	display_game("")
 	display_game("[color=#FFD700]%s[/color] Back" % get_action_key_name(0))
 
@@ -49582,9 +49593,9 @@ func display_house_fusion():
 		display_game("")
 		var t8_count = _count_t8_companions(kennel_companions)
 		if t8_count > 0:
-			display_game("[color=#FF00FF]T8 companions: %d/8 for mixed fusion[/color]" % t8_count)
+			display_game("[color=#FF00FF]A8 companions: %d/8 for mixed fusion[/color]" % t8_count)
 		else:
-			display_game("[color=#808080]No T8 companions for mixed fusion.[/color]")
+			display_game("[color=#808080]No A8 companions for mixed fusion.[/color]")
 
 	elif house_fusion_type == "same":
 		var groups = _get_fuseable_groups(kennel_companions)

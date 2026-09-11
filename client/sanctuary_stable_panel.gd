@@ -245,11 +245,11 @@ func _refresh_fuse() -> void:
 		FUSE_MIXED:
 			_fuse_hint_label.append_text(
 				"[color=#FF00FF]Mixed A9 Fusion[/color] — Select [b]8[/b] kennel companions all at [b]A8 (tier A, rank 8)[/b]. Types can differ. "
-				+ "Output is a [b]random Tier 9[/b] companion (rolls from one of the selected types).\n"
+				+ "Output is a [b]random A9[/b] companion (rolls from one of the selected types).\n"
 				+ "[color=#888888]The capstone fusion. Output goes to the kennel.[/color]"
 			)
 	_fuse_hint_label.append_text(
-		"\n[color=#888888]Hybrid & Tier Ascend modes need an [b]active character[/b] (their catalysts come from inventory). Visit the [color=#A335EE]Companion Stable[/color] at any Tier 5+ NPC post to use those.[/color]"
+		"\n[color=#888888]Hybrid & Tier Ascend modes need an [b]active character[/b] (their catalysts come from inventory). Visit the [color=#A335EE]Companion Stable[/color] at any Outer+ NPC post to use those.[/color]"
 	)
 	_populate_fuse_candidates()
 	_refresh_fuse_selection_state()

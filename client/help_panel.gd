@@ -20,7 +20,7 @@ const HELP_TOPICS := {
 	"companion_stable": {
 		"title": "[color=#FFD700]Companion Stable[/color]",
 		"body": (
-			"A [color=#FFD700]Companion Stable[/color] (the magenta [color=#FF80FF]C[/color] tile at Tier 5+ trading posts, or a player-built one inside an enclosure) is a living link to your Sanctuary's companion storage. Bump the tile to open it.\n\n"
+			"A [color=#FFD700]Companion Stable[/color] (the magenta [color=#FF80FF]C[/color] tile at Outer+ trading posts, or a player-built one inside an enclosure) is a living link to your Sanctuary's companion storage. Bump the tile to open it.\n\n"
 			+ "[color=#888888]Build your own:[/color] Construction skill 35 unlocks a [color=#FFD700]Companion Stable[/color] recipe (8 wooden plank + 4 iron ore + 2 heartwood + 2 arcane crystal + 3 magic dust). Place inside your own enclosure for Sanctuary access at your settlement.\n\n"
 			+ "[color=#FFD700]MANAGE TAB[/color]\n"
 			+ "[color=#A335EE]✦ Deposit[/color] — non-registered active companion → kennel. Frees a roster slot.\n"
@@ -63,7 +63,7 @@ const HELP_TOPICS := {
 		"body": (
 			"Your active pet, your collected roster, and your Sanctuary-registered companions — all on one page.\n\n"
 			+ "[color=#FFD700]Active Companion[/color] — the pet currently fighting alongside you. Shown at the top with full ability text + XP bar.\n\n"
-			+ "[color=#FFD700]Sanctuary Registered[/color] (when present) — companions stored in your account's permadeath-resistant slots. Read-only here; manage at any Tier 5+ NPC [color=#A335EE]Companion Stable[/color] or the Sanctuary's K tile. The currently checked-out slot is dimmed and marked [color=#FFD700][CHECKED OUT][/color].\n\n"
+			+ "[color=#FFD700]Sanctuary Registered[/color] (when present) — companions stored in your account's permadeath-resistant slots. Read-only here; manage at any Outer+ NPC [color=#A335EE]Companion Stable[/color] or the Sanctuary's K tile. The currently checked-out slot is dimmed and marked [color=#FFD700][CHECKED OUT][/color].\n\n"
 			+ "[color=#FFD700]Roster[/color] — your collected (non-registered) companions. Left-click to activate; right-click for Inspect / Release.\n\n"
 			+ "[color=#FFD700]── Card info ──[/color]\n"
 			+ "  • [color=#FF80FF][REG][/color] — currently checked out from a Sanctuary slot.\n"
@@ -102,7 +102,7 @@ const HELP_TOPICS := {
 			+ "[color=#FFD700]── Equipment comparison ──[/color]\n"
 			+ "When you hover an equipable item the tooltip shows green/red deltas vs whatever's currently in that slot, including Sanctuary house bonuses (HP multipliers, resource max).\n\n"
 			+ "[color=#FFD700]── Home Stones ──[/color]\n"
-			+ "Special consumables (Egg / Supplies / Equipment / Companion) that send items to your Sanctuary — survive permadeath. Drop from Tier 4+ chests or buy at NPC posts (`/stones`).\n\n"
+			+ "Special consumables (Egg / Supplies / Equipment / Companion) that send items to your Sanctuary — survive permadeath. Drop from tier E+ dungeon chests or buy at NPC posts (`/stones`).\n\n"
 			+ "[color=#888888]Capacity is shown at the top right. Upgrade in Sanctuary → Storage tier for more slots.[/color]"
 		),
 	},
@@ -237,7 +237,7 @@ const HELP_TOPICS := {
 			+ "[color=#FFD700]── Why it matters ──[/color] Different monster types unlock different lore + drops. The Bestiary tracks which monster types you've killed and at what cumulative count. Locked monsters appear as [color=#888888]???[/color] until you've fought one.\n\n"
 			+ "[color=#FFD700]── How to fill it ──[/color] Every kill on a new monster type adds an entry. Subsequent kills tick up the count. Variants (Corrosive / Frenzied / Cursed / etc.) share the entry with their base species — they're the same monster ledger-wise.\n\n"
 			+ "[color=#FFD700]── How it pairs with HP discovery ──[/color] The client's known-HP system separately tracks how much damage you've dealt killing each (monster + level) pair. Used to estimate monster HP on the bar. Independent from the Bestiary, but both grow with combat experience.\n\n"
-			+ "[color=#FFD700]── Tier coverage ──[/color] Bestiary entries span all 9 monster tiers (T1 Lv 1-5 → T9 Lv 5001+). The display groups by tier so you can see your progression at a glance.\n\n"
+			+ "[color=#FFD700]── Tier coverage ──[/color] Bestiary entries span all 9 monster tiers (H, Lv 1-5 → S, Lv 5001+). The display groups by tier so you can see your progression at a glance.\n\n"
 			+ "[color=#888888]Account-level — survives permadeath. Visit your Sanctuary → Bestiary to view.[/color]"
 		),
 	},
@@ -271,7 +271,7 @@ const HELP_TOPICS := {
 			+ "[color=#A335EE]✦ Hybrid[/color] — 2 companions of [b]different[/b] monster types, both at rank 5+, plus 1 [color=#FFD700]Hybrid Catalyst[/color] → a hybrid companion that blends both parents' bonuses and inherits the second parent's threshold ability.\n\n"
 			+ "[color=#A335EE]✦ Tier Ascend[/color] — 3 companions of the [b]same monster type and same tier[/b] (any rank mix), plus 1 [color=#FFD700]Ascension Catalyst[/color] → 1 companion of the [b]same type at tier+1[/b], rank 1. Lets you raise your favorite pet's rank without changing what it is.\n\n"
 			+ "[color=#FFD700]Hybrid Catalysts[/color] drop from tier D+ dungeon chests. [color=#FFD700]Ascension Catalysts[/color] drop from tier C+ dungeon chests.\n\n"
-			+ "[color=#87CEEB]Walk to a Companion Stable (Tier 5+ NPC posts) to deposit/withdraw without needing to die.[/color]"
+			+ "[color=#87CEEB]Walk to a Companion Stable (Outer+ NPC posts) to deposit/withdraw without needing to die.[/color]"
 		),
 	},
 	# Audit #15 v0.9.515 — three more help topics covering Fusion Panel, Kennel Panel,
@@ -307,7 +307,7 @@ const HELP_TOPICS := {
 			+ "[color=#FFD700]── Sorting ──[/color]\n"
 			+ "Header buttons toggle the sort key (level / tier / rank / variant / name / type) and ascending/descending order. Great for hunting same-tier or same-type groups for Tier Ascend / Same Type fusions.\n\n"
 			+ "[color=#FFD700]── How to fill ──[/color]\n"
-			+ "  • Bring an active companion to a [color=#FF80FF]Companion Stable[/color] (T5+ NPC posts or player-built) and Deposit it.\n"
+			+ "  • Bring an active companion to a [color=#FF80FF]Companion Stable[/color] (Outer+ NPC posts or player-built) and Deposit it.\n"
 			+ "  • Wild eggs hatched into kennel storage.\n"
 			+ "  • Tier Ascend Fusion outputs (if no inputs were registered) land here.\n\n"
 			+ "[color=#FFD700]── Capacity ──[/color]\n"
@@ -344,7 +344,7 @@ const HELP_TOPICS := {
 			+ "  • [color=#FFD700]Equipment[/color] (1500 valor, cap 2) — sends one equipped item to Sanctuary storage. Best for irreplaceable gear (chest finds, crafted exotics).\n"
 			+ "  • [color=#FF6347]Companion[/color] (3000 valor, cap 2) — [b]registers[/b] your active companion to a Sanctuary slot. Survives permadeath. The single most valuable purchase here for serious pet investment.\n\n"
 			+ "[color=#FFD700]── Cap rules ──[/color]\n"
-			+ "Caps are per-character lifetime purchase limits at this NPC. Once you hit a stone's cap, you cannot buy more of it on this character (the row disables). Stones drop in T4+ chests as a non-buy alternative.\n\n"
+			+ "Caps are per-character lifetime purchase limits at this NPC. Once you hit a stone's cap, you cannot buy more of it on this character (the row disables). Stones drop in tier E+ dungeon chests as a non-buy alternative.\n\n"
 			+ "[color=#FFD700]── How to use ──[/color]\n"
 			+ "After buying, the stone appears in your inventory. Use it from inventory to trigger the transfer. The Companion stone in particular opens a register-or-kennel choice modal.\n\n"
 			+ "[color=#FF8888]Notes[/color]:\n"
@@ -410,7 +410,7 @@ const HELP_TOPICS := {
 			+ "Each ability you use accumulates uses → ranks up. Higher rank = more damage. R0 [color=#FF8888]Untrained[/color] hits at 80%; R6 [color=#88FFFF]Mythic[/color] hits at 145%. Rank thresholds: 10 / 50 / 250 / 1200 / 4000 / 10000 uses. See [color=#9ACD32]/abilities[/color] for your current ranks.\n\n"
 			+ "[color=#FFD700]── Can't afford your abilities? ──[/color]\n"
 			+ "If your resource pool is too small for the cards you draw, [b]upgrade gear[/b]:\n"
-			+ "  • [color=#FFD700]Equipment[/color] is the main lever — armor, accessories, weapons all roll resource bonuses at higher tiers. Tier 5+ gear typically rolls +N max resource lines.\n"
+			+ "  • [color=#FFD700]Equipment[/color] is the main lever — armor, accessories, weapons all roll resource bonuses at higher tiers. Gear tier 5+ typically rolls +N max resource lines.\n"
 			+ "  • [color=#88FF88]Sources[/color] — drops from monster kills (scratch-off), dungeon chests, crafting (specialty recipes), market listings, salvaging for materials → crafting.\n"
 			+ "  • [color=#A335EE]Sanctuary upgrades[/color] — the [color=#FFAA66]Combat[/color] tab in Sanctuary boosts max resource pool account-wide. Spend Baddie Points (earned on death).\n"
 			+ "  • [color=#9ACD32]Stat allocation[/color] — INT raises Mana, CON raises Stamina, DEX raises Energy. Spend points in /stats.\n"
@@ -472,7 +472,7 @@ const HELP_TOPICS := {
 			+ "When the prompt appears, press the [color=#88FF88]correct key[/color] within the window. Hit = success → catch added to inventory. Miss = no catch. The window length depends on your skill level + tool quality.\n\n"
 			+ "[color=#FFD700]── Tier scaling ──[/color]\n"
 			+ "  • Mining has [b]9 tiers[/b], Logging [b]6 tiers[/b], Fishing scales similarly.\n"
-			+ "  • Higher tiers = better materials but require multiple successful reactions per catch (T1-2: 1 hit, T3-5: 2 hits, T6+: 3 hits).\n"
+			+ "  • Higher tiers = better materials but require multiple successful reactions per catch (node tier 1-2: 1 hit, 3-5: 2 hits, 6+: 3 hits).\n"
 			+ "  • Higher-tier ore / wood / fish spawn farther from origin or in specific biomes.\n\n"
 			+ "[color=#FFD700]── Tools ──[/color]\n"
 			+ "Better tools widen the reaction window. Tools drop in chests or craft at specialty stations.\n\n"
@@ -585,7 +585,7 @@ const HELP_TOPICS := {
 			+ "  • Confirm to consume the item and credit your account with ESS.\n\n"
 			+ "[color=#FFD700]── What to salvage ──[/color]\n"
 			+ "  • [b]Duplicate equipment[/b] — most efficient ESS source.\n"
-			+ "  • [b]Low-tier finds[/b] you've outgrown — early Tier 1-2 gear once you're at Tier 4+.\n"
+			+ "  • [b]Low-tier finds[/b] you've outgrown — early gear tier 1-2 once you're wearing gear tier 4+.\n"
 			+ "  • [b]Equipment you can't equip[/b] — wrong class / wrong slot.\n"
 			+ "  • [b]Not[/b]: anything you might want to bring home via Home Stone (Equipment) for a future character.\n\n"
 			+ "[color=#FFD700]── Bonus material rolls ──[/color]\n"

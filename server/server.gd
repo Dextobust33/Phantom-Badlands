@@ -10167,7 +10167,7 @@ func _handle_companion_stable_station(peer_id: int, character) -> void:
 				+ "[color=#FFD700]Manage tab:[/color] Deposit / Withdraw / Return to Slot.\n"
 				+ "[color=#FFD700]Fuse tab:[/color] Same-type fusion (3 companions of the same type + rank → 1 of the next rank). Inputs can come from the kennel or registered slots. If any input is registered, the output is auto-registered.\n\n"
 				+ "Deposit and registration are independent — depositing never changes a companion's registered status.\n\n"
-				+ "Companion Stables appear at [color=#87CEEB]Tier 5+ trading posts[/color]."
+				+ "Companion Stables appear at [color=#87CEEB]Outer+ trading posts[/color] (Outer, Extreme, World’s Edge)."
 			),
 		})
 
@@ -13801,7 +13801,7 @@ func _maybe_send_apex_frontier_hint(peer_id: int) -> void:
 		+ "• Apex variants give an additional [color=#88FF88]+20%% XP[/color] (total +30%% per kill) and drop [color=#88FF88]+50%% Soul Gems[/color] to balance the extra effort.\n\n"
 		+ "[color=#FF2020]⚔ Apex zones are PvP zones.[/color] Other players can attack you here — KO drops a loot sack with valor, items, eggs, and a companion. Your character survives (permadeath is PvE-only); you respawn at your home post.\n"
 		+ "Want to PvP without the apex risk? Use [color=#FFD700]/duel <player>[/color] anywhere — both players must consent and agree on stakes (which can be nothing, valor only, or full apex stakes).\n\n"
-		+ "Apex content is the first beat of endgame frontier rewards — future updates will stack named zones, unique drops, and T9 encounter pools on top of this geometric definition."
+		+ "Apex content is the first beat of endgame frontier rewards — future updates will stack named zones, unique drops, and tier S encounter pools on top of this geometric definition."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -15644,7 +15644,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 		if persistence.fuse_companions(account_id, int_indices, output):
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#FF00FF]T9 Fusion! Created %s (T%d-9)![/color]" % [output.name, output.tier]
+				"message": "[color=#FF00FF]Rank 9 Fusion! Created %s (%s)![/color]" % [output.name, PowerRank.tag(int(output.tier), 9)]
 			})
 			_send_house_update(peer_id)
 
@@ -15677,7 +15677,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				catalyst_idx = i
 				break
 		if catalyst_idx == -1:
-			send_to_peer(peer_id, {"type": "error", "message": "You need a Hybrid Catalyst (drops from T5+ dungeon chests)."})
+			send_to_peer(peer_id, {"type": "error", "message": "You need a Hybrid Catalyst (drops from tier D+ dungeon chests)."})
 			return
 		var output = drop_tables.create_hybrid_companion(parent_a, parent_b)
 		if output.is_empty():
@@ -15711,7 +15711,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 		var asc_type = String(first_asc.get("monster_type", ""))
 		var asc_tier = int(first_asc.get("tier", 1))
 		if asc_tier >= 9:
-			send_to_peer(peer_id, {"type": "error", "message": "Tier 9 is the maximum — cannot ascend further!"})
+			send_to_peer(peer_id, {"type": "error", "message": "Tier S is the maximum — cannot ascend further!"})
 			return
 		var asc_parents: Array = []
 		for idx in indices:
@@ -15734,7 +15734,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				asc_catalyst_idx = i
 				break
 		if asc_catalyst_idx == -1:
-			send_to_peer(peer_id, {"type": "error", "message": "You need an Ascension Catalyst (drops from T6+ dungeon chests)."})
+			send_to_peer(peer_id, {"type": "error", "message": "You need an Ascension Catalyst (drops from tier C+ dungeon chests)."})
 			return
 		var inherited_asc = _check_variant_inheritance(kennel, indices)
 		var output = drop_tables.create_ascended_companion(asc_parents, inherited_asc)
@@ -15908,7 +15908,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 				catalyst_idx = i
 				break
 		if catalyst_idx == -1:
-			send_to_peer(peer_id, {"type": "error", "message": "You need a Hybrid Catalyst (T5+ dungeon chest drop)."})
+			send_to_peer(peer_id, {"type": "error", "message": "You need a Hybrid Catalyst (tier D+ dungeon chest drop)."})
 			return
 		output = drop_tables.create_hybrid_companion(parent_a, parent_b)
 		if not output.is_empty():
@@ -15929,7 +15929,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 		var asc_type = String(first_asc.get("monster_type", ""))
 		var asc_tier = int(first_asc.get("tier", 1))
 		if asc_tier >= 9:
-			send_to_peer(peer_id, {"type": "error", "message": "Tier 9 is the maximum — cannot ascend further!"})
+			send_to_peer(peer_id, {"type": "error", "message": "Tier S is the maximum — cannot ascend further!"})
 			return
 		for comp in companions:
 			if String(comp.get("monster_type", "")) != asc_type:
@@ -15945,7 +15945,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 				asc_catalyst_idx = i
 				break
 		if asc_catalyst_idx == -1:
-			send_to_peer(peer_id, {"type": "error", "message": "You need an Ascension Catalyst (T6+ dungeon chest drop)."})
+			send_to_peer(peer_id, {"type": "error", "message": "You need an Ascension Catalyst (tier C+ dungeon chest drop)."})
 			return
 		var inherited_asc = _check_variant_inheritance_list(companions)
 		output = drop_tables.create_ascended_companion(companions, inherited_asc)
@@ -16851,7 +16851,7 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 		+ "[color=#FFD700]── Eggs ──[/color]\n"
 		+ "Eggs hatch as you walk (steps remaining). [color=#87CEEB]Dungeons are the main egg source[/color] — the boss guarantees an egg of the dungeon's type, and you can find more as floor loot inside. Overworld kills only [color=#87CEEB]very rarely[/color] yield an egg (any tier is possible, but the odds plummet with tier — a top-tier egg from the wild is a once-in-a-lifetime find). Use [color=#FFD700]Home Stone (Egg)[/color] to send an incubating egg to your Sanctuary so it survives permadeath.\n\n"
 		+ "[color=#FFD700]── Fusion ──[/color]\n"
-		+ "At a [color=#FF80FF]Companion Stable[/color] (T5+ NPC posts, or build one) you can fuse companions: Same Type (3→1 next rank), Mixed A9 (8 A8s → 1 T9), Hybrid (2 different types + Hybrid Catalyst), or Tier Ascend (3 same type + Ascension Catalyst → tier+1)."
+		+ "At a [color=#FF80FF]Companion Stable[/color] (Outer+ NPC posts, or build one) you can fuse companions: Same Type (3→1 next rank), Mixed A9 (8 A8s → 1 A9), Hybrid (2 different types + Hybrid Catalyst), or Tier Ascend (3 same type + Ascension Catalyst → tier+1)."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -16896,8 +16896,8 @@ func _maybe_send_gather_hint(peer_id: int, gather_type: String) -> void:
 		+ "  • [color=#FFD700]React phase[/color] — a target key appears. Hit it before the window closes to %s and land the catch.\n"
 		+ "  • Miss the window → you lose the catch but keep your tool.\n\n"
 		+ "[color=#FFD700]── Tier scaling ──[/color]\n"
-		+ "  • Nodes are tiered (T1–T9) based on distance from origin. Higher tier = better drops.\n"
-		+ "  • T1–T2 need 1 reaction; T3–T5 need 2; T6+ need 3.\n"
+		+ "  • Nodes are tiered (node tier 1–9) based on distance from origin. Higher tier = better drops.\n"
+		+ "  • Node tier 1–2 need 1 reaction; 3–5 need 2; 6+ need 3.\n"
 		+ "  • Find nodes by exploring: %s.\n\n"
 		+ "[color=#FFD700]── Skill XP ──[/color]\n"
 		+ "  • Each successful gather raises your [color=%s]%s skill[/color]. Higher skill = faster waits + wider react windows + better drop rolls.\n"
@@ -16930,11 +16930,11 @@ func _maybe_send_equip_hint(peer_id: int, item: Dictionary) -> void:
 		+ "  • Hovering an inventory item shows side-by-side stats vs your current slot, including Sanctuary HP / resource multipliers.\n"
 		+ "  • Greens are upgrades; reds are downgrades.\n\n"
 		+ "[color=#FFD700]── Tier + bonuses ──[/color]\n"
-		+ "  • Gear is tiered T1–T9 with prefix/suffix bonuses (e.g., \"of the Bear\" = +CON).\n"
+		+ "  • Gear is tiered (gear tier 1–9) with prefix/suffix bonuses (e.g., \"of the Bear\" = +CON).\n"
 		+ "  • Variant colors mark rarity: white → green → blue → purple → orange → red.\n\n"
 		+ "[color=#FFD700]── Salvage ──[/color]\n"
 		+ "  • Don't sell low-tier gear — [color=#88FF88]Salvage[/color] it for [color=#FFD700]Salvage Essence[/color] used to upgrade tools and craft consumables.\n\n"
-		+ "[color=#FFD700]Home Stone (Equipment)[/color] (T5+ loot) lets one equipped piece survive permadeath by stashing it in your Sanctuary storage."
+		+ "[color=#FFD700]Home Stone (Equipment)[/color] (gear tier 5+ loot) lets one equipped piece survive permadeath by stashing it in your Sanctuary storage."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -16963,7 +16963,7 @@ func _maybe_send_chain_hint(peer_id: int, quest: Dictionary) -> void:
 		+ "  • [color=#FFD700]Home Stones[/color] (Egg + Equipment / Companion) — these survive permadeath via your Sanctuary.\n"
 		+ "  • A [color=#FFD700]Chain Title[/color] (worn via Titles command).\n\n"
 		+ "[color=#FFD700]── Repeatable starter chains ──[/color]\n"
-		+ "T1, T2, and T3 chains are [color=#9ACD32]immediately repeatable[/color] — they reappear on the quest board after completion, so you can run them as many times as you like. Great for valor / egg / title farming. Higher-tier chains (T4+) stay one-shot."
+		+ "Chain tiers 1, 2 and 3 are [color=#9ACD32]immediately repeatable[/color] — they reappear on the quest board after completion, so you can run them as many times as you like. Great for valor / egg / title farming. Higher chain tiers (4+) stay one-shot."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -18059,7 +18059,7 @@ func handle_market_network_buy(peer_id: int, message: Dictionary):
 			stone_index = i
 			break
 	if stone_index < 0:
-		send_to_peer(peer_id, {"type": "market_error", "message": "You need a Travel Stone to buy remotely. Drops from T5+ chests or sold by the Curiosity Trader at exotic posts."})
+		send_to_peer(peer_id, {"type": "market_error", "message": "You need a Travel Stone to buy remotely. Drops from tier D+ dungeon chests or sold by the Curiosity Trader at exotic posts."})
 		return
 
 	# Locate the listing at its actual post.
@@ -37219,7 +37219,7 @@ func handle_start_crucible(peer_id: int):
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FF4444]═══ THE CRUCIBLE BEGINS ═══[/color]\n\n[color=#FFD700]Face 10 consecutive Tier 9 bosses![/color]\n[color=#FF0000]Death will reset all progress.[/color]\n\n[color=#00FFFF]Progress: %d/10[/color]\n\nThe first champion approaches..." % crucible_state[peer_id].progress
+		"message": "[color=#FF4444]═══ THE CRUCIBLE BEGINS ═══[/color]\n\n[color=#FFD700]Face 10 consecutive tier S bosses![/color]\n[color=#FF0000]Death will reset all progress.[/color]\n\n[color=#00FFFF]Progress: %d/10[/color]\n\nThe first champion approaches..." % crucible_state[peer_id].progress
 	})
 
 	# Spawn first crucible boss
@@ -38954,7 +38954,7 @@ func handle_gm_tp_stable(peer_id: int):
 			best_d2 = d2
 			best_post = post
 	if best_post == null:
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] No T5+ posts found in world.[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] No Outer+ posts found in world.[/color]"})
 		return
 	# Scan the post's interior for a companion_stable tile. Posts are roughly
 	# centered at (px, py) with their main_room extents; scan a generous 24-tile
@@ -38975,7 +38975,7 @@ func handle_gm_tp_stable(peer_id: int):
 		# legacy or migration didn't run).
 		ch.x = px
 		ch.y = py
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00][GM] Teleported to T5+ post '%s' at (%d, %d) — no companion_stable found (legacy post?).[/color]" % [best_post.get("name", "?"), px, py]})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00][GM] Teleported to Outer+ post '%s' at (%d, %d) — no companion_stable found (legacy post?).[/color]" % [best_post.get("name", "?"), px, py]})
 	else:
 		# Land on the first walkable cardinal neighbor.
 		var landing = Vector2i(px, py)  # safe fallback

@@ -148,7 +148,7 @@ func _render_page() -> void:
 			_subtitle_subline("Places the real FINAL_CHEST tile and defers the teleport exactly as a boss kill does - walk onto it. Forces the card reward so the DUNGEON CARD banner always shows.")
 			_add_separator()
 			_add_button("Test Dungeon Chest Drops (1 of each new item)", "give_chest_test_kit", Color(1, 0.84, 0))
-			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a T6 equipment piece.")
+			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a gear-tier-6 equipment piece.")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"companions":
@@ -219,7 +219,7 @@ func _render_page() -> void:
 			_title_label.text = "ADMIN - WORLD"
 			_subtitle_label.text = "[color=#aaaaaa]Posts, guards, the settler bubble, and finding things on the map.[/color]"
 			_add_button("Build Test Post Here  (5x5 + 2 tower-boosted guards)", "gm_build_test_post", Color(0.6, 1, 0.6))
-			_subtitle_subline("Drops a fresh enclosure at your feet and hires 2 free guards. Monsters in the bubble drop to T1.")
+			_subtitle_subline("Drops a fresh enclosure at your feet and hires 2 free guards. Monsters in the bubble drop to tier H.")
 			_add_button("Hire Free Guard (north of you)", "gm_hire_test_guard")
 			_subtitle_subline("Stacks more suppression on a post. Auto-detects tower adjacency.")
 			_add_button("Diagnose Settler Bubble Here", "gm_settler_diag")
