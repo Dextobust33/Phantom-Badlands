@@ -30749,10 +30749,29 @@ func display_changelog():
 	# v0.9.768 — the dungeon ROOM pass: every chamber draws its own floor and its own decoration
 	# from a pool of tilesets, walls became support rather than outline, floor loot is marked and
 	# hoverable, and the dungeon is lit.
+	# v0.9.770 — the card-upgrade arc plus a vocabulary fix: tiers became letters with a rank that
+	# climbs the same way, card upgrades gained four rarities and now say when they are worth
+	# using, and 36% of player hits stopped under-reporting their damage.
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.769[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.770[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ TIERS ARE LETTERS NOW, AND A LABEL YOU CAN ACTUALLY ORDER.[/color] [b]T1-5[/b] was two numbers that looked alike and meant different things. Everything now reads as a [b]letter and a rank[/b] — tiers run [color=#FFFFFF]H G F E D C B A S[/color] weakest to strongest, rank 1-9 inside a tier, and [b]both climb the same way[/b]. So D9 beats D1, and C1 beats D9. Every label is coloured by danger and hovering one shows you the whole ladder.")
+	display_game("  [color=#1EFF00]◆ Dungeons go all the way to the top rank.[/color] They stopped at 9-of-8 while a fused companion could reach the ninth — so the best dungeon you could find was labelled a rank below the best companion you could own. Same ceiling, one more step.")
+	display_game("  [color=#FF8000]★ CARD UPGRADES ARE RARE NOW — AND YOU CAN SEE WHICH.[/color] Every rank-up drew from one flat pool, so nothing could ever be uncommon: you saw [b]41%[/b] of everything a card could be offered at its very first rank-up. Upgrades now come in [color=#FFFFFF]common[/color] / [color=#1EFF00]uncommon[/color] / [color=#0070DD]rare[/color] / [color=#A335EE]epic[/color], with the colour, a gauge and a heavier frame on the card.")
+	display_game("  [color=#FF8000]★ YOUR CARDS SHOW WHICH UPGRADES ARE WORTH USING RIGHT NOW.[/color] A card in your hand lists the upgrades it carries, and [b]lights up the one whose moment has come[/b] — Executioner when the foe is nearly dead, Last Stand when you are, Relentless on the cast that completes its third. The rank-up screen also tags each pick with when it pays.")
+	display_game("  [color=#1EFF00]◆ Five new upgrades, and none of them just add damage.[/color] [color=#FFFFFF]Sure Strike[/color] (first cast each fight is a guaranteed crit), [color=#FFFFFF]Last Stand[/color], [color=#FFFFFF]Second Look[/color] and [color=#FFFFFF]Slow Mend[/color] (both pay out when you do NOT play the card) and [color=#FFFFFF]Rally Point[/color].")
+	display_game("  [color=#FF8000]★ 36% OF YOUR HITS UNDER-REPORTED THEIR DAMAGE.[/color] More than a third of player actions applied damage the log never mentioned — a hit landing with no number, and an enemy health bar that moved less than it should. Now zero, measured over 1,600 actions.")
+	display_game("  [color=#1EFF00]◆ Every Ranger and Barbarian card told you the wrong number.[/color] Steady Aim and Rage lift every card you play, and no card face knew it — understating itself by up to [b]88%[/b] on a full meter.")
+	display_game("  [color=#1EFF00]◆ ANALYZE tells you something worth knowing.[/color] It reported four facts out of the thirty a monster carries. It now shows defence, speed, its traits, whether killing it [b]brings friends[/b], and whether it is worth the fight.")
+	display_game("  [color=#1EFF00]◆ Your hand dims while the round plays out.[/color] A multi-hit round takes up to [b]4.5 seconds[/b] to read out, and the cards looked playable the whole time while your health bar still showed the previous round. They now dim, and say [b]press Space to skip ahead[/b].")
+	display_game("  [color=#1EFF00]◆ Equipment comparison shows DEX, INT and WIS.[/color] A ring with +6 DEX produced no line at all, while the same ring with +6 WITS did.")
+	display_game("  [color=#1EFF00]◆ A dungeon's name described whichever dungeon came first in a list.[/color] The tier, the level band and the map coordinates could all belong to a different dungeon — one already finished, one belonging to another player, or one on the far side of the map.")
+	display_game("  [color=#1EFF00]◆ Every egg variant has its own artwork.[/color] Twenty variants shared a picture with another one. 119 variants, 119 distinct eggs.")
+	display_game("  [color=#1EFF00]◆ Trading posts can be built over water, and a Ranger's crit is honestly described.[/color] Posts no longer refuse a site for a nearby pond; and a crit buff that does nothing for a Ranger now says so instead of sitting in the buff panel.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.769[/color]")
 	display_game("  [color=#FF8000]\u2605 A DUNGEON YOU HAD ALREADY FINISHED LET YOU FINISH IT AGAIN.[/color] A completed run could be re-entered with [b]its reward chest still sitting on the last floor and its boss already dead[/b] \u2014 so it read as a dungeon with no boss and free loot, repeatable. Completion is now recorded on the dungeon itself, which is what the despawn, the reload and the entrance check were all already looking for.")
 	display_game("  [color=#FF8000]\u2605 THE BOSS LOOKED EXACTLY LIKE EVERY OTHER MONSTER.[/color] Bosses have always carried a red marker, but only the [b]letter[/b] version of the map ever drew it \u2014 so the moment dungeon monsters got sprites, the Goblin King became an ordinary goblin. Bosses now wear a [b]solid ring[/b], and a fabled boss rings gold.")
 	display_game("  [color=#FF8000]\u2605 SHRINES, ELITE DENS AND JACKPOT GAMBLES HAVE ART.[/color] Three of the four special rooms had none \u2014 and the Elite Den was drawing the font's [b]missing-glyph box[/b], a literal [color=#FFFFFF][?][/color]. Shrine is a candle on a stone altar, Elite Den a skull, Jackpot Gamble a locked purple-and-gold chest. Five other symbols were the same box and are now real symbols.")
@@ -30798,15 +30817,6 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ Casters can reveal a disguise at all.[/color] The reveal only ever triggered from a [b]basic attack[/b], so if you spent the fight casting spells the monster stayed disguised the whole way through.")
 	display_game("  [color=#FF8000]★ THE DUNGEON PANEL ON THE RIGHT WORKS NOW.[/color] Three things were wrong at once: the [b]overworld minimap[/b] was still drawing down there — trees, water and roads, underground — and eating a third of the panel; scrolling was [b]being undone[/b] two or three times a second by the floor's idle animation, so you could never read anything below the fold; and a counting-down status like [color=#FFFFFF]You are blinded! (11 rounds remaining)[/color] took a new slot every step, pushing your finds off the list. Picking something up is readable again.")
 	display_game("  [color=#1EFF00]◆ The panel trims itself to fit.[/color] If a floor ever has more to say than fits, the oldest log line goes rather than the key dropping off the bottom.")
-	display_game("")
-
-	display_game("[color=#808080]v0.9.763[/color]")
-	display_game("  [color=#FF8000]★ THE DUNGEON TALKS TO YOU BESIDE THE MAP, NOT OVER IT.[/color] Traps, finds and tile effects used to [b]blank the whole floor[/b] for a full-screen notice, or get buried in the chat strip where they were cut off. There is now a [b]run log on the right, above the key[/b], and the map never goes away. [b]Rest, food and the gather prompt[/b] moved there too — only full screens like your inventory still take the canvas.")
-	display_game("  [color=#FF8000]★ SPECIAL FLOOR TILES EXPLAIN THEMSELVES.[/color] [b]Hover any tile[/b] — in the key on the right, or on the floor itself — to see exactly what it does. Poison, healing pools, embers, briars: what was written once on the entrance sign is now available the moment you are standing on it.")
-	display_game("  [color=#1EFF00]◆ Stepping on a trap no longer shows you a blank screen.[/color] The trap took the canvas away and put nothing back — a black screen with one button, and the text you needed sent to the chat log.")
-	display_game("  [color=#1EFF00]◆ Tiles stopped advertising a rule the game no longer has.[/color] Thirteen tiles said crossing them 'costs +1 step', left over from the retired step budget. They still cost you [b]time[/b] — the floor stirs sooner and wandering monsters arrive faster — and now they say so.")
-	display_game("  [color=#1EFF00]◆ Five egg variants were the same blank white egg.[/color] Ivory, Arctic, Marked, Halo and Blessed all drew as an [b]untextured white blob[/b], indistinguishable from each other. They now look like what they were always meant to be.")
-	display_game("  [color=#1EFF00]◆ The key said 'Letters = Monsters'.[/color] Every monster is a sprite now, so the only letters left on a floor are special tiles — the key was telling you a bull-rune was a goblin.")
 	display_game("")
 
 	display_game("[color=#00FFFF]v0.9.745[/color]")
