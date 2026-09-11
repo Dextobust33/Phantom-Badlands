@@ -20239,7 +20239,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"iron_skin": return "60% damage reduction for 4 rounds. Variable cost 11-35 stamina — reduction magnitude scales with spend; duration stays 4 rounds."
 		"devastate":
 			match String(character_data.get("class", "")):
-				"Barbarian": return "RAMPAGE — discharges all your Rage; damage scales with each point spent, on top of the +11%-per-Rage ramp those points were already giving every card. Variable cost 15-50 stamina; a fuller bar hits harder."
+				"Barbarian": return "RAMPAGE — discharges all your Rage; damage scales with each point spent, on top of the +%d%%-per-Rage ramp those points were already giving every card. Variable cost 15-50 stamina; a fuller bar hits harder." % int(round(CombatManager.BARBARIAN_RAGE_DMG_PER * 100.0))
 				"Paladin": return "JUDGEMENT — always lands, and each point of Conviction spent raises both its damage and the chance (2% + 3% per point) that it simply kills outright. Variable cost 15-50 stamina; a fuller bar hits harder."
 				_: return "Spends all your Momentum; damage scales with each point spent. Variable cost 15-50 stamina — a fuller bar hits harder (up to 1.5x)."
 		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds. Variable cost 8-25 stamina — defense magnitude scales with spend; duration stays 5 rounds."
@@ -34106,6 +34106,27 @@ func _help_passive_block(classes: Array) -> String:
 			String(p.get("name", "?")), String(p.get("description", ""))])
 	return "\n".join(lines)
 
+func _title_costs_line(abilities: Dictionary) -> String:
+	"""One help line of title ability costs, READ from shared/titles.gd.
+
+	2026-09-11 — two help topics typed these costs out by hand and both were about 100x too high
+	and in 'g': written when title abilities cost gold, never updated when they moved to valor.
+	Generated so a retune in titles.gd reaches the help page on its own."""
+	var parts: Array[String] = []
+	for k in abilities:
+		var a: Dictionary = abilities[k]
+		var cost := ""
+		if a.has("valor_cost_percent"):
+			cost = "%d%% of your valor" % int(a["valor_cost_percent"])
+		elif int(a.get("valor_cost", 0)) > 0:
+			cost = "%s valor" % format_number(int(a["valor_cost"]))
+		if int(a.get("gem_cost", 0)) > 0:
+			cost += " + %d gems" % int(a["gem_cost"])
+		if int(a.get("cooldown", 0)) > 0:
+			cost += ("" if cost == "" else ", ") + "%dh cooldown" % int(int(a["cooldown"]) / 3600)
+		parts.append(("%s %s" % [String(a.get("name", k)), cost]) if cost != "" else String(a.get("name", k)))
+	return ", ".join(parts)
+
 func _tier_rank_help() -> String:
 	"""The Tier/Rank ladder, built from the SAME constants the labels are built from.
 
@@ -34159,356 +34180,7 @@ func _tier_rank_help() -> String:
 func show_help():
 	# Clear output before showing help
 	game_output.clear()
-
-	# Build action key names dynamically for help text
-	var k0 = get_action_key_name(0)  # Primary (default: Space)
-	var k1 = get_action_key_name(1)  # Quick 1 (default: Q)
-	var k2 = get_action_key_name(2)  # Quick 2 (default: W)
-	var k3 = get_action_key_name(3)  # Quick 3 (default: E)
-	var k4 = get_action_key_name(4)  # Quick 4 (default: R)
-	var k5 = get_action_key_name(5)  # Additional 1 (default: 1)
-	var k6 = get_action_key_name(6)  # Additional 2 (default: 2)
-	var k7 = get_action_key_name(7)  # Additional 3 (default: 3)
-	var k8 = get_action_key_name(8)  # Additional 4 (default: 4)
-
-	var help_text = """[b][color=#FF6666]⚠ PERMADEATH ENABLED - Death is permanent![/color][/b]
-[color=#808080]Tip: Use [/color][color=#00FFFF]/search <term>[/color][color=#808080] to find specific topics (e.g., /search warrior, /search flee)[/color]
-
-[b][color=#FFD700]══ GETTING STARTED ══[/color][/b]
-[color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage. [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)
-  Start hunting immediately. Use Power Strike for damage. War Cry when hurt. Tank and outlast enemies.
-  [color=#C0C0C0]Fighter[/color]=Momentum (bank, guard, burst), [color=#8B0000]Barbarian[/color]=Rage (ramp, no guard), [color=#FFD700]Paladin[/color]=Conviction (built by blows you TAKE). [color=#808080]Races: Dwarf(survive), Orc(damage), Ogre(healing)[/color]
-
-[color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management. [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)
-  Use Magic Bolt to kill - costs mana but deals INT-scaled damage. Meditate to recover HP+mana.
-  Mages regen 2% mana/round (Sage 3%). [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
-
-[color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options. [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)
-  Build your engine ([color=#7FD8C8]Leverage / Aim / Read[/color]) with your cards, then spend it on your finisher. Analyze to learn stats. Flee if outmatched.
-  [color=#2F4F4F]Grifter[/color]=Leverage (stall, bank, cash out), [color=#228B22]Ranger[/color]=Aim (a steady damage ramp), [color=#191970]Ninja[/color]=Read (gamble on a kill that skips the health bar). [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
-
-[b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
-[color=#808080]General reference. Which pool you actually SPEND, and which stat is YOUR ability damage, depend on your class — the "What each stat does FOR YOUR CLASS" table above is the one to build gear around.[/color]
-[color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2% attack damage per point[/color] | Warrior ability damage | Stamina pool
-[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] - [color=#FFFFFF]+5 max HP per point[/color] | +0.5 defense per point | Contributes to Stamina pool
-[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1% hit, +2% flee, -1% enemy hit per 5 DEX (max 30% dodge)[/color] | +0.5% crit | Energy pool
-[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3% spell damage per point[/color] | Contributes to Mana pool
-[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] - [color=#FFFFFF]Increases mana pool[/color] | Resists enemy abilities (curse, drain, etc.)
-[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Trickster ability damage; Assassinate odds vs enemy INT (Ninja only — the Grifter and Ranger finishers are guaranteed, not rolled)[/color] | Contributes to Energy pool
-
-[b][color=#FFD700]══ RACES ══[/color][/b]
-[color=#FFFFFF]Human[/color]=+10%XP | [color=#66FF99]Elf[/color]=+50%poison res,+20%magic res,+25%mana | [color=#FFA366]Dwarf[/color]=34%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
-[color=#D2691E]Halfling[/color]=+10%dodge,+15%Valor | [color=#556B2F]Orc[/color]=+20%dmg below 50%HP | [color=#DDA0DD]Gnome[/color]=-15%ability costs | [color=#708090]Undead[/color]=curse immune,poison heals
-
-[b][color=#FFD700]══ BASICS ══[/color][/b]
-[color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [%s]=Primary | [%s][%s][%s][%s]=Quick | [%s][%s][%s][%s]=Extra
-[color=#00FFFF]Cmds:[/color] /inventory ([%s]) | /abilities ([%s]) | /who | /examine <name> | /help | /clear
-[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger P=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You [color=#00FF00]G[/color]=Guard [color=#FFD700]^[/color]=Tower
-
-[b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
-[color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]
-{{WARRIOR_PASSIVES}}
-[color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
-{{MAGE_PASSIVES}}
-[color=#66FF66]TRICKSTER (WIT>10, Energy=(WIT+DEX)×0.75)[/color]
-{{TRICKSTER_PASSIVES}}
-
-[b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
-[color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%+DEX×0.5%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60% reduction
-[color=#00FFFF]Lvl Penalty:[/color] -1.5%/lvl (max-25%) for attacks vs higher monsters. [color=#FF4444]Monster +4%/lvl exponential![/color]
-[color=#00FFFF]Hit:[/color] 75%+(DEX-spd) [30-95%] | [color=#00FFFF]Flee:[/color] 40%+DEX+spd+WIT/2-monSpd/2-lvldiff | [color=#00FFFF]Enemy:[/color] 85%+lvl-DEX/5(max30%)-spd/2 [40-95%]
-[color=#66FF66]Trickster Dodge:[/color] +WIT/50% dodge (max 15%). Combined with DEX dodge, tricksters are harder to hit!
-[color=#FF4444]Initiative:[/color] rises with the enemy's speed, falls with your DEX (min 5%, max 55%, ambusher +8)
-
-[b][color=#FFD700]══ ABILITIES ══[/color][/b]
-[color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75% dodge[/color] on enemy turn!
-[color=#9932CC]Cloak[/color](L20): 8%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
-[color=#FF00FF]All or Nothing[/color]: ~3% instakill, fail=monster 2x STR/SPD, +0.1%/use permanent (max 34%)
-
-[color=#FF6666]WARRIOR ABILITIES[/color] [color=#808080](Stamina = STR + CON)[/color]
-[color=#808080]Every card is available from level 1 — your DECK decides what you draw.[/color]
-  [color=#FFFFFF]Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
-  [color=#FFFFFF]War Cry[/color]      [color=#808080](15 stam)[/color] - +2 to your class stack + rattle foe (-25% accuracy)
-  [color=#FFFFFF]Shield Bash[/color]  [color=#808080](20 stam)[/color] - 1.5× damage + stun (enemy skips 1 turn)
-  [color=#FFFFFF]Fortify[/color]      [color=#808080](25 stam)[/color] - +30% defense + √STR×3 for 5 rounds
-  [color=#FFFFFF]Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20% STR/rnd, 4 rounds)
-  [color=#FFFFFF]Rally[/color]        [color=#808080](35 stam)[/color] - Heal 30+√CON×10 HP, +STR buff for 3 rounds
-  [color=#FFFFFF]Berserk[/color]      [color=#808080](40 stam)[/color] - +75-200% damage (more when hurt), -40% defense, 4 rounds
-  [color=#FFFFFF]Iron Skin[/color]    [color=#808080](35 stam)[/color] - Reduce all damage by 60% for 4 rounds
-  [color=#FFFFFF]Devastate[/color]   [color=#808080](50 stam)[/color] - FINISHER. Fighter: Devastate. Barbarian: Rampage. Paladin: Judgement
-
-[color=#66FFFF]MAGE ABILITIES[/color] [color=#808080](Mana = INT×3 + WIS×1.5, regen 2%/round, Sage 3%)[/color]
-  [color=#FFFFFF]Magic Bolt[/color]   [color=#808080](variable)[/color] - Spend mana to deal damage: mana × (1 + √INT/5). "bolt 50" = spend 50 mana
-  [color=#FFFFFF]Forcefield[/color]   [color=#808080](20+2%)[/color]  - Absorb shield worth 100 + INT×8 HP. Blocks all damage until depleted
-  [color=#FFFFFF]Cloak[/color]        [color=#808080](30+3%)[/color]  - 50% enemy miss chance for 1 attack
-  [color=#FFFFFF]Blast[/color]        [color=#808080](50+5%)[/color]  - 2× INT-scaled damage + burn (20% INT/rnd for 3 rounds)
-  [color=#FFFFFF]Haste[/color]        [color=#808080](35+3%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
-  [color=#FFFFFF]Paralyze[/color]     [color=#808080](60+6%)[/color]  - 50%+INT/2 chance (max 85%) to stun 1-2 turns
-  [color=#FFFFFF]Frost Nova[/color]       [color=#808080](30+5%)[/color]  - Chip frost dmg + chill (-30% enemy accuracy). Builds Focus, soft control
-  [color=#FFFFFF]Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
-  [color=#FFFFFF]Meteor[/color]      [color=#808080](100+8%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
-  [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4% mana (8% if already full HP)
-
-[color=#FFA500]TRICKSTER ABILITIES[/color] [color=#808080](Energy = (WIT+DEX)×0.75)[/color]
-  [color=#FFFFFF]Analyze[/color]      [color=#808080](5 en)[/color]   - Reveal monster stats + 10% damage bonus for this fight
-  [color=#FFFFFF]Distract[/color]     [color=#808080](15 en)[/color]  - -50% enemy accuracy for 1 attack
-  [color=#FFFFFF]Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal Valor (50+lvl×2)×(1+WIT×5%). 1-3 attempts per fight
-  [color=#FFFFFF]Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%+WIT/3 (stacks, max 50%)
-  [color=#FFFFFF]Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50% crit chance, scales with √WIT
-  [color=#FFFFFF]Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
-  [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next damaging action auto-crits
-  [color=#FFFFFF]Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
-  [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]engine stack[/color] (Leverage / Aim / Read), ±WIT (capped) vs enemy INT, -2%/level above you. Each stack also raises the ceiling: 60% cold, 85% at full. Fail = free enemy attack
-
-[b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
-[color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
-[color=#FF4444]Offense:[/color]
-  [color=#FFFFFF]Multi-Strike[/color] - Hits 2-3 times per turn (each hit reduced damage)
-  [color=#FFFFFF]Enrage[/color] - +10% damage per round, stacks up to 10 (max +100%)
-  [color=#FFFFFF]Berserker[/color] - +3% damage per 10% HP lost. Deadlier when wounded!
-  [color=#FFFFFF]Life Steal[/color] - Heals for portion of damage dealt
-  [color=#FFFFFF]Glass Cannon[/color] - 3× damage but only 50% HP. Kill fast!
-  [color=#FFFFFF]Ambusher[/color] - First hit auto-crits, +15% initiative
-  [color=#FF00FF]Poison[/color] - 30% STR damage/round for 35 rounds. [color=#FF4444]PERSISTS outside combat![/color]
-[color=#808080]Debuffs:[/color]
-  [color=#FFFFFF]Curse[/color] - -25% attack for 20 rounds | [color=#FFFFFF]Weakness[/color] - -25% attack for 20 rounds
-  [color=#FFFFFF]Disarm[/color] - Removes weapon damage bonus | [color=#FFFFFF]Blind[/color] - -30% hit chance, hides HP bar, 15 rounds
-  [color=#FFFFFF]Bleed[/color] - Stacking DoT (stack×3 damage/round) | [color=#FFFFFF]Slow[/color] - Reduces flee chance
-  [color=#FFFFFF]Charm[/color] - Forces you to hit yourself | [color=#FFFFFF]Drain[/color] - Steals mana/stamina/energy
-  [color=#FFFFFF]Buff Destroy[/color] - Removes one active buff | [color=#FFFFFF]Shield Shatter[/color] - Destroys forcefield
-[color=#6666FF]Defense:[/color]
-  [color=#FFFFFF]Armored[/color] - +50% defense | [color=#FFFFFF]Ethereal[/color] - 50% chance to dodge attacks
-  [color=#FFFFFF]Regen[/color] - Heals 10% max HP per round | [color=#FFFFFF]Reflect[/color] - Returns 25% of damage dealt
-  [color=#FFFFFF]Thorns[/color] - Melee attacks hurt you back | [color=#FFFFFF]Disguise[/color] - Hidden stats for first 2 rounds
-[color=#FFD700]Special:[/color]
-  [color=#FFFFFF]Death Curse[/color] - Deals 10% max HP damage when killed (can't kill you)
-  [color=#FFFFFF]Summoner[/color] - Calls reinforcement monster mid-fight
-  [color=#FFFFFF]Corrosive/Sunder[/color] - Damages your gear (repair at blacksmith stations!)
-  [color=#FFFFFF]XP Steal[/color] - Steals 1-3% of your XP per hit | [color=#FFFFFF]Item Steal[/color] - 5% chance to steal equipped item
-[color=#00FF00]Loot Abilities:[/color]
-  [color=#FFFFFF]Gold Hoarder[/color] - Drops 3× Valor | [color=#FFFFFF]Gem Bearer[/color] - Always drops Monster Gems
-  [color=#FFFFFF]Weapon/Shield Master[/color] - 35% guaranteed equipment drop
-  [color=#FFFFFF]Arcane/Cunning/Warrior Hoarder[/color] - 35% class-specific gear drop
-  [color=#FFFFFF]Wish Granter[/color] - 10% chance for a wish (materials, gear, buff, stats, or equip upgrade!)
-[color=#AAAAAA]Wishes:[/color] Gems | Gear | Buff | Equip Upgrade(×12) | Permanent Stats
-[color=#00FFFF]HP Bar:[/color] [color=#FFFFFF]150/200[/color]=Known | [color=#808080]~150/200[/color]=Estimated | [color=#808080]???[/color]=Unknown. Kill to learn!
-
-[b][color=#FFD700]══ EMPOWERED MONSTERS ══[/color][/b]
-[color=#AAAAAA]15% of Lv5+ monsters carry 1-3 stacking modifiers. Name color = danger: [color=#4FC3F7]1 mod[/color], [color=#BA68C8]2 mods[/color] (Lv20+), [color=#FFB74D]3 mods[/color] (Lv40+).[/color]
-[color=#AAAAAA]Modifiers are announced at combat start — read them, then fight or flee. Each mod = +30% XP, +20% drop chance, +1 loot reveal![/color]
-  [color=#FF5555]Frenzied[/color]=damage ramps/round | [color=#C71585]Vampiric[/color]=heals from hits | [color=#9ACD32]Thorned[/color]=reflects melee | [color=#00E5EE]Swift[/color]=2-3 strikes/turn
-  [color=#B8860B]Juggernaut[/color]=+50% HP, stun-immune | [color=#BA55D3]Venomous[/color]=poison attacks | [color=#7B68EE]Warded[/color]=-35% ability dmg taken
-  [color=#FFD700]Gilded[/color]=harmless, +2 loot reveals | [color=#FF8C00]Broodcalling[/color]=kin avenge it (guaranteed chain fight!)
-
-[b][color=#FFD700]══ ☠ APEX SPECIES ══[/color][/b]
-[color=#AAAAAA]A handful of species per tier are tuned to be [b]genuinely dangerous[/b] — well above the rest of their band, on purpose. They are tagged [color=#FF4C40]☠ [APEX][/color] on the enemy's health bar.[/color]
-[color=#AAAAAA]They pay for the risk: [color=#FFD700]2× experience[/color] and [color=#FFD700]3× drop chance[/color]. Learn which ones to respect — then hunt them when you can take them.[/color]
-  [color=#FF8888]Mimic | Wyvern | Wraith | Chimaera | Titan | Jabberwock | Hydra[/color]
-  [color=#FF8888]Phoenix | Primordial Dragon | World Serpent | Death Incarnate | Cosmic Horror | Entropy | God Slayer[/color]
-[color=#AAAAAA]Apex stacks with ELITE and Empowered — an elite apex carries both tags, and both rewards.[/color]
-
-[b][color=#FFD700]══ ⚜ PATHS (TALENT TREE) ══[/color][/b]
-[color=#AAAAAA]Permanent talents for this life. Open via [/color][color=#FFD700]Stats → ⚜ Paths[/color][color=#AAAAAA]. Earn 1 point per 5 levels + 1 per feat (first dungeon/boss/Empowered/3-mod/100 kills/apex kill).[/color]
-[color=#AAAAAA]3 branches per archetype, unlock top-down, every node costs 1 point. Branch [color=#FFB74D]★ keystones[/color] trade power for a downside. Class keystone unlocks at 8 points spent. Choices are permanent — full clear is impossible, build with intent![/color]
-
-[b][color=#FFD700]══ PARTY COMBAT ══[/color][/b]
-Party up and hit a monster together and you all fight [b]ONE shared enemy[/b]. Everyone locks in a
-card at the same time, then the round plays out actor by actor in speed order.
-[color=#00FFFF]Locking in:[/color] a card you pick is shown first — [b]Space[/b] (or the card's own key again) locks it
-in, [b]Q[/b] goes back to your hand. Once locked in you cannot change it until the round resolves.
-[color=#00FFFF]The monster acts against EVERY member each round[/color] (you or your companion) — a party is not
-a way to take less heat. It lands at most one hit per member per round.
-[color=#00FFFF]Items:[/color] your FIRST item each round is free and you can still play a card. A SECOND item
-costs [b]you[/b] your action for that round — nobody else's.
-[color=#00FFFF]Targeting:[/color] items and the buffs [b]Forcefield, Iron Skin, Fortify, Rally, Berserk, Haste[/b] can be
-aimed at a [b]teammate or their companion[/b] — a picker opens with [b]Yourself first[/b], so a quick
-self-cast is [b][1][/b] or the [color=#FFE066]Cast on Self[/color] button. You pay the cost and your own stats set
-the strength, so supporting the party is worth building for.
-
-[b][color=#FFD700]══ PARTY OUT IN THE WORLD ══[/color][/b]
-A party is up to [b]five[/b] (leader plus four). Out in the world the [b]leader[/b] moves, hunts, gathers
-and crafts; the others follow. [color=#00FFFF]Leadership rotates after every fight[/color] so nobody does all the
-work — the leader can switch this with [color=#FFE066]Lead: Fixed[/color] in the Party menu.
-[color=#00FFFF]Inside a trading post everyone acts freely[/color] (shop, craft, quests, move between stations), but
-the party may only [b]leave together[/b]: gather up first, and nobody is left at the gate.
-[color=#00FFFF]Gathering rewards and job XP are copied IN FULL to every member[/color] — no splitting. Crafting
-shares its XP with the party; the crafted item stays with the crafter.
-[color=#FF6666]Death is still permanent in a party.[/color] Falling in a party fight kills your character exactly
-as it would solo — your allies fight on without you.
-XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
-
-[b][color=#FFD700]══ ITEMS ══[/color][/b]
-[color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
-[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
-[color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50% vs type)
-[color=#A335EE]Runes:[/color] Enchanting-crafted consumables. Use on equipped gear to add affixes or proc effects.
-  Stat runes set affix caps (+8 def, +200 HP, etc). Proc runes add lifesteal/shocking/reflect/execute.
-  Runes stack in inventory. Sell on market under the Runes category.
-[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50% 2x Valor or lose half)
-[color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10% cost or +15% dmg
-[color=#00FF00]Equip/Unequip:[/color] In the Inventory panel: [b]double-click[/b] an item to equip/use it, [b]drag[/b] it onto its slot to equip, [b]drag a slot off[/b] the doll to unequip, or [b]right-click[/b] for all options (Inspect/Use/Equip/Lock/Salvage/Drop).
-[color=#FF4444]Lock:[/color] Right-click an item → Lock protects it from Salvage All, accidental discard, and single salvage.
-[color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100% = BROKEN (no stats). Repair via wandering blacksmiths only!
-
-[b][color=#FFD700]══ GEAR HUNTING ══[/color][/b]
-[color=#FF6666]Warrior:[/color] Minotaur(t3), Iron Golem(t6), Death Incarnate(t8) - 35% drop
-[color=#66CCCC]Mage:[/color] Wraith(t3), Lich(t5), Elemental/Sphinx(t6), Elder Lich(t7), Time Weaver(t8) - 35%
-[color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%
-[color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%) - 35% guaranteed drop!
-[color=#FF8000]★ UNIQUES:[/color] 15 named items with fixed rule-breaking powers (Bloodletter's Hook, The Second Sun, Juggernaut's Heart...). Tiny drop chance, [b]boosted by Empowered modifiers (+0.75%/mod) and bosses (+2.5%)[/b]. Stats scale to drop level — re-find them stronger forever. Tradeable on the market!
-[color=#1EFF00]◆ SETS:[/color] 3 item sets of 3 pieces (Gravewalker's Vigil, Stormcaller's Regalia, Magpie's Hoard). Equip 2 pieces for the first bonus, all 3 for the big one. Drop from the same Empowered/boss hunt as uniques.
-[color=#A335EE]Proc Gear(T6+):[/color] Vampire(lifesteal) | Thunder(shock dmg) | Reflection(reflect) | Slayer(execute<20%HP)
-[color=#FFD700]Synergy*:[/color] Asterisk (*) after affix name = double bonus synergy (e.g., Arcane* Hoarder's Ring)
-
-[color=#AAAAAA]Buff Display:[/color] [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Life [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Force | #=rounds, #+B=battles
-
-[b][color=#FFD700]══ JOBS & GATHERING ══[/color][/b]
-[color=#FFD700]Jobs:[/color] 5 Gathering Jobs (Mining, Logging, Foraging, Fishing, Soldier) + 5 Specialty Jobs (Phase 2).
-  Try any job up to Lv5, then commit permanently. More→Jobs to view and commit.
-[color=#00FFFF]Gathering:[/color] Walk to a resource node → press [%s] → 3-choice minigame. Pick correctly to gain materials!
-  Each correct pick chains to the next round. Wrong pick ends the chain. Higher job level = better hints.
-[color=#FFA500]Fishing:[/color] At water ([color=#00FFFF]~[/color]) | [color=#CD7F32]Mining:[/color] At ore ([color=#CD7F32]O[/color]) | [color=#228B22]Logging:[/color] At forests ([color=#228B22]T[/color]) | [color=#9ACD32]Foraging:[/color] At herbs/bushes
-[color=#FF6600]Soldier:[/color] After killing a monster, press Harvest to extract bonus parts (3-choice minigame).
-[color=#808080]Tools:[/color] Pickaxe/Axe/Sickle/Rod — optional but powerful! Reveal shows correct answer, Save cancels 1 mistake.
-  Tools have durability (T1=10, T5=100). New characters start with T1 starter tools.
-[color=#FFD700]Bulk Craft:[/color] Stackable recipes (structures, scrolls, runes, etc.) support crafting 1-99x at once!
-  Use -Qty/+Qty/Max buttons when a recipe is selected. One minigame for the whole batch.
-[color=#808080]Skip Minigames:[/color] Settings→Game→Skip Craft/Gather. Instant results but ~65% average rewards.
-[color=#FF8800]Tempered Craft:[/color] Equipment recipes have a "Temper" option — target a bonus stat (+ATK/DEF/HP/SPD).
-  Costs 50% extra materials and halves success chance. Materials lost on failure! High risk, high reward.
-[color=#FFD700]Recipe Discovery:[/color] Advanced recipes (difficulty 50+) require Recipe Scrolls found in dungeon treasure (T4+).
-[color=#AA66FF]Salvage:[/color] Breaks items into [color=#AA66FF]crafting materials[/color]. Right-click an item → Salvage, or use the panel's Salvage ▾ menu (Junk / All / Consumables / auto-salvage filters). Higher rarity = more materials.
-[color=#00FFFF]Material Pouch:[/color] Inventory→Materials shows resources (ore, wood, fish, monster parts). Max 999 per stack.
-[color=#A335EE]Companion Bonus:[/color] Wolf, Troll, Hobgoblin = +gathering yield. Kobold, Spider, Wyvern = +gathering hints.
-
-[b][color=#FFD700]══ WORLD ══[/color][/b]
-[color=#00FF00]Posts(58):[/color] Crossroads(0,0)=spawn & throne | Frostgate(0,-100)=boss. Recharge([%s])!
-[color=#FFD700]Merchants:[/color] Couriers on roads between posts with markets. Browse carried goods when encountered.
-[color=#FF6600]![/color]=Hotspot (+50-150% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
-[color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone, Boss Hunt, Dungeon Clear, Chains (multi-stage with egg+title bonuses). Board regenerates — no daily caps. Max 3 active.
-[color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
-  All monsters match dungeon theme (Orc Stronghold = Orcs). Ranks (F1 up to F9) = harder variants, better loot!
-  [color=#FF8800]Hard Mode:[/color] Clear any dungeon once to unlock Hard Mode (+50% stats, -20% steps, +75% XP, bonus loot)!
-[color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Crossroads. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
-
-[b][color=#FFD700]══ GUARDS & TOWERS ══[/color][/b]
-[color=#C0C0C0]Guard Post:[/color] Construction Lv15 recipe. Place anywhere (10-tile spacing). Bump to interact.
-[color=#00FF00]Hire Guard:[/color] 50 Valor + 5 food (fish/herbs). Suppresses random encounters in 15-tile radius.
-[color=#FFD700]Tower Boost:[/color] Place guard post within 2 tiles of a Watch Tower → radius jumps to 45 tiles!
-[color=#FF8800]Feeding:[/color] Guards need food. Initial=7 days. Feed 3 materials = +3 days (max 14). Unfed guards leave.
-[color=#808080]Map:[/color] [color=#00FF00]G[/color]=Active guard | [color=#555555]G[/color]=Empty post | [color=#FFD700]^[/color]=Tower boosting a guard
-[color=#808080]Wall Decay:[/color] Walls not part of an enclosure crumble after 72 hours. Enclosed walls are safe.
-[color=#00FFFF]Hunting:[/color] You CAN still hunt for monsters in guard-protected areas (voluntary combat).
-
-[b][color=#FFD700]══ PROGRESSION ══[/color][/b]
-[color=#00FFFF]Gems:[/color] Drop from monsters 5+ levels above you. Sell 1=1000g. Pay for upgrades.
-[color=#FFD700]Lucky Finds:[/color] Treasure, [color=#FF69B4]Legendary Adventurer[/color] (perm stat!) - Press [%s] to continue.
-[color=#00FFFF]Level Up:[/color] Full heal + stat gains by class (2.5 total/level):
-[color=#FF6666]WARRIOR:[/color] [color=#C0C0C0]Fighter[/color]=STR1.25/CON.75/DEX.25/WIT.25 | [color=#8B0000]Barbarian[/color]=STR1.5/CON.75/DEX.25 | [color=#FFD700]Paladin[/color]=STR.75/CON1/DEX.25/WIS.25/WIT.25
-[color=#66FFFF]MAGE:[/color] [color=#4169E1]Wizard[/color]=INT1.25/WIS.75/CON.25/DEX.25 | [color=#9400D3]Sorcerer[/color]=INT1.5/WIS.5/CON.25/DEX.25 | [color=#20B2AA]Sage[/color]=WIS1/INT.75/CON.5/DEX.25
-[color=#66FF66]TRICK:[/color] [color=#2F4F4F]Thief[/color]=WIT1.5/DEX.75/CON.25 | [color=#228B22]Ranger[/color]=DEX.75/WIT.75/STR.5/CON.5 | [color=#191970]Ninja[/color]=DEX1.25/WIT.75/STR.25/CON.25
-
-[b][color=#FFD700]══ ENDGAME ══[/color][/b]
-[color=#AAAAAA]Chase Items:[/color] [color=#C0C0C0]Jarl's Ring[/color](Lv50+) | [color=#A335EE]Unforged Crown[/color](Lv200+, forge at Fire Mt -400,0) | [color=#00FFFF]Eternal Flame[/color](hidden)
-[color=#AAAAAA]Titles:[/color]
-  [color=#C0C0C0]Jarl[/color](50-500): Ring + (0,0). ONE only. Summon/Tax/Gift/Tribute. Lost on death or Lv500+.
-  [color=#FFD700]High King[/color](200-1000): Crown + (0,0). ONE only. Knight/Cure/Exile/Treasury. Survives 1 death!
-  [color=#9400D3]Elder[/color](1000+): Auto. Many exist. Heal/Mentor/Seek Flame. Can find Eternal Flame.
-  [color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives! Restore/Bless/Smite/Guardian.
-[color=#FF69B4]Trophies(T8+):[/color] 5% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
-[color=#00FFFF]Companions:[/color] Companion eggs drop from [color=#9932CC]dungeons only[/color] - bosses guarantee their egg, treasure may have extras!
-  Wolf(+10%atk) | Phoenix(2%HP/rnd) | Shadow(+15%flee) | Frost(+10%def) | Storm(+5%crit) + more
-  [color=#00FFFF]More[/color]→[color=#00FFFF]Companions[/color]: View/activate companions, [color=#00FF00]Inspect[/color] for stats & abilities. [color=#FFAA00]Eggs[/color]: View incubating eggs with art!
-  Each monster type has unique abilities in combat! Lv5=active, Lv15=threshold. Scales with level. Hatch eggs by walking!
-
-[b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
-[color=#DAA520]Blacksmith[/color] (3% chance when gear damaged): Offers repairs while traveling. Cost = wear% × item_level × 5 Valor.
-  Repair All = 10%% discount! Select items with [1-9] keys, or repair all with [%s].
-[color=#00FF00]Healer[/color] (4% chance when HP<80%): Offers healing while traveling. Costs scale with level:
-  [%s] Quick (25%% HP) = level×22g | [%s] Full (100%% HP) = level×90g | [%s] Cure All (full+debuffs) = level×180g
-[color=#DAA520]Tax Collector[/color] (5% chance when 100+g): 8% tax (min 10g). Bumbling=5%, Veteran=10%. Jarls/High Kings immune.
-
-[b][color=#FFD700]══ SANCTUARY (HOUSE) ══[/color][/b]
-[color=#00FFFF]Account-Level Home:[/color] Your Sanctuary persists across all characters on your account!
-[color=#00FFFF]Access:[/color] After login, you'll see your Sanctuary before character select. Store items for future characters!
-[color=#FFA500]Storage:[/color] Base 20 slots. Store items from current character. Withdraw items when creating new characters.
-[color=#A335EE]Registered Companions:[/color] Register companions to your Sanctuary - they survive permadeath!
-  • Use [color=#00FFFF]Home Stone (Companion)[/color] to register or kennel your active companion
-  • Registered companions return home when your character dies
-  • Checkout registered companions on new characters
-  • Recall a companion a character is holding back to its slot (that character must be logged out)
-[color=#FF8800]Companion Kennel (K tile):[/color] Bulk companion storage for fusion!
-  • Store companions for later fusion at the Fusion Station
-  • Base capacity: 30 slots, upgradeable up to 500
-[color=#DA70D6]Fusion Station (F tile):[/color] Combine companions into stronger versions!
-  • [color=#00FF00]Same-Type:[/color] 3 same monster + rank → 1 with rank+1 (rank 9 is the cap)
-  • [color=#FF00FF]Mixed A9:[/color] 8 A8 companions → 1 random A9 companion
-  • Fused companions start at Lv1 with a new random variant
-[color=#FF69B4]Baddie Points (BP):[/color] Meta-currency earned when characters die. Spend on upgrades:
-  • Storage (+10 slots/lv) | Registered Companions (+1 slot/lv) | Kennel Capacity
-  • Escape Training (+2% flee/lv) | Family Inheritance (+50g start/lv)
-  • Ancestral Wisdom (+1% XP/lv) | Homesteading (+5% gathering/lv)
-  • Combat: HP/Resource Max/Regen (+5%/lv) | Stats: STR/CON/DEX/INT/WIS/WITS (+1/lv)
-[color=#FFD700]Home Stones:[/color] Found in tier 4-9 loot. Use outside combat/dungeons to send things home:
-  • Home Stone (Egg) - Send one incubating egg to storage
-  • Home Stone (Supplies) - Send up to 10 consumables to storage
-  • Home Stone (Equipment) - Send one equipment item from inventory to storage
-  • Home Stone (Companion) - Register your active companion to Sanctuary
-[color=#00BFFF]Egg Freezing:[/color] [color=#FFAA00]More[/color]→[color=#FFAA00]Eggs[/color]: Press Freeze/Unfreeze buttons to pause egg hatching!
-  • Frozen eggs don't progress when you walk - perfect for saving until you find a Home Stone
-  • Frozen eggs can still be traded with other players
-
-[b][color=#FFD700]══ MISC ══[/color][/b]
-[color=#AAAAAA]Whisper:[/color] /w <name> <msg> to send private message. /reply or /r to respond. Also: /msg, /tell
-[color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [%s]=approve, [%s]=deny. Esc/unwatch to stop.
-[color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
-[color=#AAAAAA]Bug:[/color] "/bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
-[color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
-[color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
-
-[b][color=#FFD700]══ RECENT ADDITIONS ══[/color][/b]
-[color=#00FFFF]Mentor System:[/color] [color=#9ACD32]/mentor on[/color] (Lv 20+) volunteers you as a mentor — gold [color=#FFD700]★[/color] shows on your name. [color=#9ACD32]/mentors[/color] lists who's online.
-[color=#00FFFF]Apex Frontier:[/color] >1500 tiles from origin = [color=#9F70FF]⚡ APEX[/color] zone. +10% XP. Four named zones (Burning Reach NE / Frostbound Verge NW / Sundered Hollows SW / Cinder Wastes SE).
-[color=#00FFFF]Apex Variants:[/color] Every monster spawned in apex frontier is an [color=#9F70FF]Apex[/color] variant — +25% HP, +10% damage, +30% XP total, +50% Soul Gems. Drops Apex Crystal (750 valor) at 12% rate.
-[color=#00FFFF]Repeatable starter chains:[/color] T1 + T2 + T3 chains (13 total) are immediately repeatable after completion. Higher tiers stay one-shot.
-[color=#00FFFF]Threat Corridor HUD:[/color] Within 80 tiles of an active T2+ world dungeon, the Area line surfaces [color=#FF6600]⚠ Threat: <type> spillover from <dungeon>[/color].
-[color=#00FFFF]Sanctuary Stable:[/color] Magenta [color=#FF80FF]C[/color] tile at T5+ posts — live kennel access mid-character (Deposit / Withdraw / Return / Check Out / Fuse). Build one yourself (Construction Lv 35).
-[color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any rank mix) + Ascension Catalyst → same type one TIER letter higher. Keeps your favourite pet, raises its tier. Catalysts drop at tier C+.
-[color=#00FFFF]Hybrid Fusion:[/color] 2 different rank 5+ + Hybrid Catalyst → blended companion. Catalysts drop at tier D+.
-[color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
-[color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
-[color=#00FFFF]Help discovery:[/color] [color=#9ACD32]/topics[/color] lists every help-panel topic key + title; [color=#9ACD32]/topic <key>[/color] opens any topic from anywhere.
-[color=#00FFFF]Trade history:[/color] [color=#9ACD32]/trades [N][/color] (default 10, max 50) — your rolling log of direct trades and market buys/sales, account-level + persistent across deaths.
-[color=#00FFFF]Friend list:[/color] [color=#9ACD32]/friend add|accept|reject|cancel|remove|list|requests[/color] — account-level bidirectional friends, online status + current character on the list. [color=#9ACD32]/block <user>[/color] silences whispers from a user; [color=#9ACD32]/blocklist[/color] shows your blocks.
-[color=#00FFFF]Mentor reward bonus:[/color] A Lv 20+ [color=#9ACD32]/mentor on[/color] partied with a Lv < 10 player grants [color=#FFD700]+25% XP[/color] to the whole party on every kill.
-[color=#00FFFF]Social chat channels:[/color] [color=#9ACD32]/c[/color] clan chat ([color=#88FFCC][CLAN][/color]), [color=#9ACD32]/p[/color] party chat ([color=#FFAA66][PARTY][/color]), [color=#9ACD32]/clist[/color] online clanmates roster.
-[color=#00FFFF]/afk status:[/color] [color=#9ACD32]/afk [reason][/color] marks you away ([color=#FFAA66][AFK][/color] badge); auto-clears on move/chat. [color=#9ACD32]/back[/color] to clear explicitly.
-[color=#00FFFF]Clan presence:[/color] Green/gray/orange ● dots on the clan roster, N/M online header chip, login/logout chat broadcasts to clanmates.
-[color=#00FFFF]Whisper tags:[/color] Whispers from Lv < 10 players display a gold [color=#FFD700][NEW Lv X][/color] tag for Lv 20+ recipients — mentors can prioritize newbies.
-[color=#00FFFF]Tutorial overlays:[/color] Twelve first-touch teaching modals (progression, quest board, dungeons, crafting, signposts, apex frontier, market, chains, companions, companion stable, gather, equip).
-[color=#00FFFF]Status page:[/color] Progression Vectors dashboard names every advanceable track. Includes Quest Chains completed + titles earned. Respawn point line.
-[color=#00FFFF]Threat HUD:[/color] [color=#FF6600]⚠ Threat[/color] tag on Area line shows spillover monster type + dungeon + tile distance + (+N more) when multiple T2+ dungeons threaten.
-[color=#00FFFF]No real-time gates:[/color] Daily quests + repeatable chains have no 24h cooldown — re-accept and re-run as fast as you like. World-state systems (resource regrowth, vendor rotation, post inactivity, wall decay) still tick normally.
-[color=#00FFFF]Cosmetic buildables:[/color] Cairn, Garden Plot, Birdbath, Easel, Scarecrow, Bench, Tent, Torch, Hedge, Crate, Beehive, Signpost, Pylon, Banner, Brazier, Totem, Lectern, Pedestal, Lamp Post, Cage, Mosaic, Well, Shrine, Fountain, Statue, Obelisk, Sundial — twenty-seven structures across Construction skill 3 → 25, mixing walkable / blocking / line-of-sight / floor types.
-[color=#00FFFF]Severe Threat:[/color] When 2+ T2+ active dungeons share an 80-tile threat corridor around a post, the post is [color=#FF2020]Severely Threatened[/color] — market markup escalates to +50%, service prices to +100%, player-post bubble suppression doubles. Clearing one dungeon steps it back to normal.
-[color=#00FFFF]Variant Imprints:[/color] Rank up an ability while a companion is active → 3rd ✦ Imprint option on the popup. 10 trait categories ([color=#FF6B6B]Predator's Mark[/color], [color=#FFD700]Hunter's Eye[/color], [color=#B22222]Rending[/color], etc.) cover all 53 companion types. Account-level, stackable to 4. View at [color=#FFD700]Sanctuary → Imprints[/color].
-[color=#00FFFF]/duel <player> [valor]:[/color] Bilateral PvP, any zone, any level. Mutual-consent modal + agreed stakes (none or 10% valor). Instant dice-roll resolution comparing duel power (level + STR + DEX + weapon dmg, ±30% variance).
-[color=#00FFFF]Apex PvP:[/color] Apex Frontier (>1500 tiles) is now a [color=#FF2020]⚔ PvP zone[/color] — adjacent players can be attacked without consent. Triggering the attack opens a [b]combat-scene[/b] modal where both players pick from [color=#FF8888]Attack[/color] / [color=#88B8FF]Special[/color] / [color=#88FF88]Defend[/color] each round; both submit, both resolve simultaneously. HP 0 ends the fight (round cap 15). KO drops a gold [color=#FFD700]$[/color] sack at the death tile (15% valor + 1 equipped + 3 inventory + up to 3 eggs + 1 non-active companion). Any player who walks onto the tile auto-claims it. Victim respawns at origin with full HP — character survives (permadeath stays PvE-only).
-[color=#00FFFF]Bounties:[/color] [color=#9ACD32]/bounty post <player> <valor>[/color] (min 50, escrowed) places a public bounty. Collected when the target is KO'd in the apex zone. [color=#9ACD32]/bounty list[/color] shows the board, [color=#9ACD32]/bounty on <player>[/color] checks a single target, [color=#9ACD32]/bounty cancel <player>[/color] refunds yours.
-[color=#00FFFF]Clan-shared posts:[/color] Owner stands inside their post → [b]Share with Clan[/b] button on the post status panel (or [color=#9ACD32]/clanpost share[/color]). Clan-mates then get build + demolish permissions AND keep the decay timer fresh just by visiting. [color=#9ACD32]/clanposts[/color] lists every post shared with your clan, freshest-first.
-[color=#00FFFF]Pathfinder's Trial:[/color] New starter chain at [color=#FFD700]Crossroads[/color] (4 stages): fish 3 → mine 2 → kill 2 → kill 3. Each stage rewards a piece of Tier 1 gear ([color=#9AFF9A]weapon → armor → boots → ring[/color]) plus a final companion egg + [color=#9ACD32]Pathfinder[/color] title. Designed for fresh characters with empty slots.
-[color=#00FFFF]Post auto-reclaim:[/color] Posts untended for 120+ days are mechanically reclaimed — walls, structures, guards inside the bubble are wiped and the slot is freed. 14-day warning shows on the post status panel ([color=#FF2020]⚠⚠ AUTO-RECLAIM in Xd[/color]); any visit resets the timer to fresh. Clan-shared posts: any clan member's visit counts.
-
-[color=#808080]Open [/color][color=#00FFFF]More → Changes[/color][color=#808080] for the per-version detailed history.[/color]
-""" % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
-	# 2026-09-06 — the three class blocks are GENERATED from Character.class_passive_for rather
-	# than typed here. This page was the last surviving hand-copy of the passive table and it was
-	# badly wrong: it listed "Thief" (a class that has not existed for a long time), gave the
-	# Ranger an effect it never had, and described the Ninja with the GRIFTER's passive — the
-	# exact swap the owner reported on the character-creation screen, still live on this page.
-	# Substituted AFTER the positional format above so that 23-argument list stays untouched.
-	help_text = _help_fill_passives(help_text)
-	display_game(help_text)
+	display_game(_main_help_text())
 
 	# New features section (added separately to avoid format string complexity)
 	display_game("")
@@ -34591,17 +34263,368 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 	await get_tree().process_frame
 	game_output.scroll_to_line(0)
 
-func search_help(search_term: String):
-	"""Search the help text and display matching sections with context"""
-	game_output.clear()
 
-	var term = search_term.to_lower().strip_edges()
-	if term.is_empty():
-		display_game("[color=#FF0000]Please provide a search term.[/color]")
-		return
+func _main_help_text() -> String:
+	"""The main help page, built. Its own function so tools/probe/help_topics.gd can check the
+	FORMATTED text headlessly - a format fault only shows up when the string is evaluated."""
+	# Build action key names dynamically for help text
+	var k0 = get_action_key_name(0)  # Primary (default: Space)
+	var k1 = get_action_key_name(1)  # Quick 1 (default: Q)
+	var k2 = get_action_key_name(2)  # Quick 2 (default: W)
+	var k3 = get_action_key_name(3)  # Quick 3 (default: E)
+	var k4 = get_action_key_name(4)  # Quick 4 (default: R)
+	var k5 = get_action_key_name(5)  # Additional 1 (default: 1)
+	var k6 = get_action_key_name(6)  # Additional 2 (default: 2)
+	var k7 = get_action_key_name(7)  # Additional 3 (default: 3)
+	var k8 = get_action_key_name(8)  # Additional 4 (default: 4)
 
-	# Define searchable help sections with keywords
-	var help_sections = [
+	var help_text = """[b][color=#FF6666]⚠ PERMADEATH ENABLED - Death is permanent![/color][/b]
+[color=#808080]Tip: Use [/color][color=#00FFFF]/search <term>[/color][color=#808080] to find specific topics (e.g., /search warrior, /search flee)[/color]
+
+[b][color=#FFD700]══ GETTING STARTED ══[/color][/b]
+[color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage. [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)
+  Start hunting immediately. Use Power Strike for damage. War Cry when hurt. Tank and outlast enemies.
+  [color=#C0C0C0]Fighter[/color]=Momentum (bank, guard, burst), [color=#8B0000]Barbarian[/color]=Rage (ramp, no guard), [color=#FFD700]Paladin[/color]=Conviction (built by blows you TAKE). [color=#808080]Races: Dwarf(survive), Orc(damage), Ogre(healing)[/color]
+
+[color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management. [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)
+  Use Magic Bolt to kill - costs mana but deals INT-scaled damage. Meditate to recover HP+mana.
+  Mages regen 2% mana/round (Sage 3%). [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
+
+[color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options. [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)
+  Build your engine ([color=#7FD8C8]Leverage / Aim / Read[/color]) with your cards, then spend it on your finisher. Analyze to learn stats. Flee if outmatched.
+  [color=#2F4F4F]Grifter[/color]=Leverage (stall, bank, cash out), [color=#228B22]Ranger[/color]=Aim (a steady damage ramp), [color=#191970]Ninja[/color]=Read (gamble on a kill that skips the health bar). [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
+
+[b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
+[color=#808080]General reference. Which pool you actually SPEND, and which stat is YOUR ability damage, depend on your class — the "What each stat does FOR YOUR CLASS" table above is the one to build gear around.[/color]
+[color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2% attack damage per point[/color] | Warrior ability damage | Stamina pool
+[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] - [color=#FFFFFF]+5 max HP per point[/color] | +0.5 defense per point | Contributes to Stamina pool
+[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1% hit, +2% flee, -1% enemy hit per 5 DEX (max 30% dodge)[/color] | +0.5% crit | Energy pool
+[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3% spell damage per point[/color] | Contributes to Mana pool
+[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] - [color=#FFFFFF]Increases mana pool[/color] | Resists enemy abilities (curse, drain, etc.)
+[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Trickster ability damage; Assassinate odds vs enemy INT (Ninja only — the Grifter and Ranger finishers are guaranteed, not rolled)[/color] | Contributes to Energy pool
+
+[b][color=#FFD700]══ RACES ══[/color][/b]
+[color=#FFFFFF]Human[/color]=+10%XP | [color=#66FF99]Elf[/color]=+50%poison res,+20%magic res,+25%mana | [color=#FFA366]Dwarf[/color]=34%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
+[color=#D2691E]Halfling[/color]=+10%dodge,+15%Valor | [color=#556B2F]Orc[/color]=+20%dmg below 50%HP | [color=#DDA0DD]Gnome[/color]=-15%ability costs | [color=#708090]Undead[/color]=curse immune,poison heals
+
+[b][color=#FFD700]══ BASICS ══[/color][/b]
+[color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [{k0}]=Primary | [{k1}][{k2}][{k3}][{k4}]=Quick | [{k5}][{k6}][{k7}][{k8}]=Extra
+[color=#00FFFF]Cmds:[/color] /inventory ([{k1}]) | /abilities ([{k5}]) | /who | /examine <name> | /help | /clear
+[color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger P=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You [color=#00FF00]G[/color]=Guard [color=#FFD700]^[/color]=Tower
+
+[b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
+[color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]
+{{WARRIOR_PASSIVES}}
+[color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
+{{MAGE_PASSIVES}}
+[color=#66FF66]TRICKSTER (WIT>10, Energy=(WIT+DEX)×0.75)[/color]
+{{TRICKSTER_PASSIVES}}
+
+[b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
+[color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%+DEX×0.5%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60% reduction
+[color=#00FFFF]Lvl Penalty:[/color] -1.5%/lvl (max-25%) for attacks vs higher monsters. [color=#FF4444]Monster +4%/lvl exponential![/color]
+[color=#00FFFF]Hit:[/color] 75%+(DEX-spd) [30-95%] | [color=#00FFFF]Flee:[/color] 40%+DEX+spd+WIT/2-monSpd/2-lvldiff | [color=#00FFFF]Enemy:[/color] 85%+lvl-DEX/5(max30%)-spd/2 [40-95%]
+[color=#66FF66]Trickster Dodge:[/color] +WIT/50% dodge (max 15%). Combined with DEX dodge, tricksters are harder to hit!
+[color=#FF4444]Initiative:[/color] rises with the enemy's speed, falls with your DEX (min 5%, max 55%, ambusher +8)
+
+[b][color=#FFD700]══ ABILITIES ══[/color][/b]
+[color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75% dodge[/color] on enemy turn!
+[color=#9932CC]Cloak[/color](L20): 8%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
+[color=#FF00FF]All or Nothing[/color]: ~3% instakill, fail=monster 2x STR/SPD, +0.1%/use permanent (max 34%)
+
+[color=#FF6666]WARRIOR ABILITIES[/color] [color=#808080](Stamina = STR + CON)[/color]
+[color=#808080]Every card is available from level 1 — your DECK decides what you draw.[/color]
+  [color=#FFFFFF]Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
+  [color=#FFFFFF]War Cry[/color]      [color=#808080](15 stam)[/color] - +2 to your class stack + rattle foe (-25% accuracy)
+  [color=#FFFFFF]Shield Bash[/color]  [color=#808080](20 stam)[/color] - 1.5× damage + stun (enemy skips 1 turn)
+  [color=#FFFFFF]Fortify[/color]      [color=#808080](25 stam)[/color] - +30% defense + √STR×3 for 5 rounds
+  [color=#FFFFFF]Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20% STR/rnd, 4 rounds)
+  [color=#FFFFFF]Rally[/color]        [color=#808080](35 stam)[/color] - Heal 30+√CON×10 HP, +STR buff for 3 rounds
+  [color=#FFFFFF]Berserk[/color]      [color=#808080](40 stam)[/color] - +75-200% damage (more when hurt), -40% defense, 4 rounds
+  [color=#FFFFFF]Iron Skin[/color]    [color=#808080](35 stam)[/color] - Reduce all damage by 60% for 4 rounds
+  [color=#FFFFFF]Devastate[/color]   [color=#808080](50 stam)[/color] - FINISHER. Fighter: Devastate. Barbarian: Rampage. Paladin: Judgement
+
+[color=#66FFFF]MAGE ABILITIES[/color] [color=#808080](Mana = INT×3 + WIS×1.5, regen 2%/round, Sage 3%)[/color]
+  [color=#FFFFFF]Magic Bolt[/color]   [color=#808080](variable)[/color] - Spend mana to deal damage: mana × (1 + √INT/5). "bolt 50" = spend 50 mana
+  [color=#FFFFFF]Forcefield[/color]   [color=#808080](20+2%)[/color]  - Absorb shield worth 100 + INT×8 HP. Blocks all damage until depleted
+  [color=#FFFFFF]Cloak[/color]        [color=#808080](30+3%)[/color]  - 50% enemy miss chance for 1 attack
+  [color=#FFFFFF]Blast[/color]        [color=#808080](50+5%)[/color]  - 2× INT-scaled damage + burn (20% INT/rnd for 3 rounds)
+  [color=#FFFFFF]Haste[/color]        [color=#808080](35+3%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
+  [color=#FFFFFF]Paralyze[/color]     [color=#808080](60+6%)[/color]  - 50%+INT/2 chance (max 85%) to stun 1-2 turns
+  [color=#FFFFFF]Frost Nova[/color]       [color=#808080](30+5%)[/color]  - Chip frost dmg + chill (-30% enemy accuracy). Builds Focus, soft control
+  [color=#FFFFFF]Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
+  [color=#FFFFFF]Meteor[/color]      [color=#808080](100+8%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
+  [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4% mana (8% if already full HP)
+
+[color=#FFA500]TRICKSTER ABILITIES[/color] [color=#808080](Energy = (WIT+DEX)×0.75)[/color]
+  [color=#FFFFFF]Analyze[/color]      [color=#808080](5 en)[/color]   - Reveal monster stats + 10% damage bonus for this fight
+  [color=#FFFFFF]Distract[/color]     [color=#808080](15 en)[/color]  - -50% enemy accuracy for 1 attack
+  [color=#FFFFFF]Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal Valor (50+lvl×2)×(1+WIT×5%). 1-3 attempts per fight
+  [color=#FFFFFF]Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%+WIT/3 (stacks, max 50%)
+  [color=#FFFFFF]Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50% crit chance, scales with √WIT
+  [color=#FFFFFF]Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
+  [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next damaging action auto-crits
+  [color=#FFFFFF]Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
+  [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]engine stack[/color] (Leverage / Aim / Read), ±WIT (capped) vs enemy INT, -2%/level above you. Each stack also raises the ceiling: 60% cold, 85% at full. Fail = free enemy attack
+
+[b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
+[color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
+[color=#FF4444]Offense:[/color]
+  [color=#FFFFFF]Multi-Strike[/color] - Hits 2-3 times per turn (each hit reduced damage)
+  [color=#FFFFFF]Enrage[/color] - +10% damage per round, stacks up to 10 (max +100%)
+  [color=#FFFFFF]Berserker[/color] - +3% damage per 10% HP lost. Deadlier when wounded!
+  [color=#FFFFFF]Life Steal[/color] - Heals for portion of damage dealt
+  [color=#FFFFFF]Glass Cannon[/color] - 3× damage but only 50% HP. Kill fast!
+  [color=#FFFFFF]Ambusher[/color] - First hit auto-crits, +8% chance to strike first
+  [color=#FF00FF]Poison[/color] - 1.5% of your max HP per turn for 12 turns, WIS resists. [color=#FF4444]PERSISTS outside combat![/color]
+[color=#808080]Debuffs:[/color]
+  [color=#FFFFFF]Curse[/color] - -25% defense for the rest of the fight, WIS resists | [color=#FFFFFF]Weakness[/color] - -25% attack for 20 rounds
+  [color=#FFFFFF]Disarm[/color] - Removes weapon damage bonus | [color=#FFFFFF]Blind[/color] - -30% hit chance and a smaller map view, 15 rounds
+  [color=#FFFFFF]Bleed[/color] - Stacking DoT (stack×3 damage/round) | [color=#FFFFFF]Slow[/color] - Reduces flee chance
+  [color=#FFFFFF]Charm[/color] - Forces you to hit yourself | [color=#FFFFFF]Drain[/color] - Steals mana/stamina/energy
+  [color=#FFFFFF]Buff Destroy[/color] - Removes one active buff | [color=#FFFFFF]Shield Shatter[/color] - Destroys forcefield
+[color=#6666FF]Defense:[/color]
+  [color=#FFFFFF]Armored[/color] - +50% defense | [color=#FFFFFF]Ethereal[/color] - 50% chance to dodge attacks
+  [color=#FFFFFF]Regen[/color] - Heals 10% max HP per round | [color=#FFFFFF]Reflect[/color] - Returns 25% of damage dealt
+  [color=#FFFFFF]Thorns[/color] - Melee attacks hurt you back | [color=#FFFFFF]Disguise[/color] - Hidden stats for first 2 rounds
+[color=#FFD700]Special:[/color]
+  [color=#FFFFFF]Death Curse[/color] - Deals 10% max HP damage when killed (can't kill you)
+  [color=#FFFFFF]Summoner[/color] - Calls reinforcement monster mid-fight
+  [color=#FFFFFF]Corrosive/Sunder[/color] - Damages your gear (repair at blacksmith stations!)
+  [color=#FFFFFF]XP Steal[/color] - Steals 1-3% of your XP per hit | [color=#FFFFFF]Item Steal[/color] - 5% chance to steal equipped item
+[color=#00FF00]Loot Abilities:[/color]
+  [color=#FFFFFF]Gold Hoarder[/color] - Drops 3× Valor | [color=#FFFFFF]Gem Bearer[/color] - Always drops Monster Gems
+  [color=#FFFFFF]Weapon/Shield Master[/color] - 35% guaranteed equipment drop
+  [color=#FFFFFF]Arcane/Cunning/Warrior Hoarder[/color] - 35% class-specific gear drop
+  [color=#FFFFFF]Wish Granter[/color] - 10% chance for a wish (materials, gear, buff, stats, or equip upgrade!)
+[color=#AAAAAA]Wishes:[/color] Gems | Gear | Buff | Equip Upgrade(×12) | Permanent Stats
+[color=#00FFFF]HP Bar:[/color] [color=#FFFFFF]150/200[/color]=Known | [color=#808080]~150/200[/color]=Estimated | [color=#808080]???[/color]=Unknown. Kill to learn!
+
+[b][color=#FFD700]══ EMPOWERED MONSTERS ══[/color][/b]
+[color=#AAAAAA]15% of Lv5+ monsters carry 1-3 stacking modifiers. Name color = danger: [color=#4FC3F7]1 mod[/color], [color=#BA68C8]2 mods[/color] (Lv20+), [color=#FFB74D]3 mods[/color] (Lv40+).[/color]
+[color=#AAAAAA]Modifiers are announced at combat start — read them, then fight or flee. Each mod = +30% XP, +20% drop chance, +1 loot reveal![/color]
+  [color=#FF5555]Frenzied[/color]=damage ramps/round | [color=#C71585]Vampiric[/color]=heals from hits | [color=#9ACD32]Thorned[/color]=reflects melee | [color=#00E5EE]Swift[/color]=2-3 strikes/turn
+  [color=#B8860B]Juggernaut[/color]=+50% HP, stun-immune | [color=#BA55D3]Venomous[/color]=poison attacks | [color=#7B68EE]Warded[/color]=-35% ability dmg taken
+  [color=#FFD700]Gilded[/color]=harmless, +2 loot reveals | [color=#FF8C00]Broodcalling[/color]=kin avenge it (guaranteed chain fight!)
+
+[b][color=#FFD700]══ ☠ APEX SPECIES ══[/color][/b]
+[color=#AAAAAA]A handful of species per tier are tuned to be [b]genuinely dangerous[/b] — well above the rest of their band, on purpose. They are tagged [color=#FF4C40]☠ [APEX][/color] on the enemy's health bar.[/color]
+[color=#AAAAAA]They pay for the risk: [color=#FFD700]2× experience[/color] and [color=#FFD700]3× drop chance[/color]. Learn which ones to respect — then hunt them when you can take them.[/color]
+  [color=#FF8888]Mimic | Wyvern | Wraith | Chimaera | Titan | Jabberwock | Hydra[/color]
+  [color=#FF8888]Phoenix | Primordial Dragon | World Serpent | Death Incarnate | Cosmic Horror | Entropy | God Slayer[/color]
+[color=#AAAAAA]Apex stacks with ELITE and Empowered — an elite apex carries both tags, and both rewards.[/color]
+
+[b][color=#FFD700]══ ⚜ PATHS (TALENT TREE) ══[/color][/b]
+[color=#AAAAAA]Permanent talents for this life. Open via [/color][color=#FFD700]Stats → ⚜ Paths[/color][color=#AAAAAA]. Earn 1 point per 5 levels + 1 per feat (first dungeon/boss/Empowered/3-mod/100 kills/apex kill).[/color]
+[color=#AAAAAA]3 branches per archetype, unlock top-down, every node costs 1 point. Branch [color=#FFB74D]★ keystones[/color] trade power for a downside. Class keystone unlocks at 8 points spent. Choices are permanent — full clear is impossible, build with intent![/color]
+
+[b][color=#FFD700]══ PARTY COMBAT ══[/color][/b]
+Party up and hit a monster together and you all fight [b]ONE shared enemy[/b]. Everyone locks in a
+card at the same time, then the round plays out actor by actor in speed order.
+[color=#00FFFF]Locking in:[/color] a card you pick is shown first — [b]Space[/b] (or the card's own key again) locks it
+in, [b]Q[/b] goes back to your hand. Once locked in you cannot change it until the round resolves.
+[color=#00FFFF]The monster acts against EVERY member each round[/color] (you or your companion) — a party is not
+a way to take less heat. It lands at most one hit per member per round.
+[color=#00FFFF]Items:[/color] your FIRST item each round is free and you can still play a card. A SECOND item
+costs [b]you[/b] your action for that round — nobody else's.
+[color=#00FFFF]Targeting:[/color] items and the buffs [b]Forcefield, Iron Skin, Fortify, Rally, Berserk, Haste[/b] can be
+aimed at a [b]teammate or their companion[/b] — a picker opens with [b]Yourself first[/b], so a quick
+self-cast is [b][1][/b] or the [color=#FFE066]Cast on Self[/color] button. You pay the cost and your own stats set
+the strength, so supporting the party is worth building for.
+
+[b][color=#FFD700]══ PARTY OUT IN THE WORLD ══[/color][/b]
+A party is up to [b]five[/b] (leader plus four). Out in the world the [b]leader[/b] moves, hunts, gathers
+and crafts; the others follow. [color=#00FFFF]Leadership rotates after every fight[/color] so nobody does all the
+work — the leader can switch this with [color=#FFE066]Lead: Fixed[/color] in the Party menu.
+[color=#00FFFF]Inside a trading post everyone acts freely[/color] (shop, craft, quests, move between stations), but
+the party may only [b]leave together[/b]: gather up first, and nobody is left at the gate.
+[color=#00FFFF]Gathering rewards and job XP are copied IN FULL to every member[/color] — no splitting. Crafting
+shares its XP with the party; the crafted item stays with the crafter.
+[color=#FF6666]Death is still permanent in a party.[/color] Falling in a party fight kills your character exactly
+as it would solo — your allies fight on without you.
+XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
+
+[b][color=#FFD700]══ ITEMS ══[/color][/b]
+[color=#00FFFF]Potions([{k4}]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
+[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
+[color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50% vs type)
+[color=#A335EE]Runes:[/color] Enchanting-crafted consumables. Use on equipped gear to add affixes or proc effects.
+  Stat runes set affix caps (+8 def, +200 HP, etc). Proc runes add lifesteal/shocking/reflect/execute.
+  Runes stack in inventory. Sell on market under the Runes category.
+[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50% 2x Valor or lose half)
+[color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10% cost or +15% dmg
+[color=#00FF00]Equip/Unequip:[/color] In the Inventory panel: [b]double-click[/b] an item to equip/use it, [b]drag[/b] it onto its slot to equip, [b]drag a slot off[/b] the doll to unequip, or [b]right-click[/b] for all options (Inspect/Use/Equip/Lock/Salvage/Drop).
+[color=#FF4444]Lock:[/color] Right-click an item → Lock protects it from Salvage All, accidental discard, and single salvage.
+[color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100% = BROKEN (no stats). Repair via wandering blacksmiths only!
+
+[b][color=#FFD700]══ GEAR HUNTING ══[/color][/b]
+[color=#FF6666]Warrior:[/color] Minotaur(t3), Iron Golem(t6), Death Incarnate(t8) - 35% drop
+[color=#66CCCC]Mage:[/color] Wraith(t3), Lich(t5), Elemental/Sphinx(t6), Elder Lich(t7), Time Weaver(t8) - 35%
+[color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%
+[color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%) - 35% guaranteed drop!
+[color=#FF8000]★ UNIQUES:[/color] 15 named items with fixed rule-breaking powers (Bloodletter's Hook, The Second Sun, Juggernaut's Heart...). Tiny drop chance, [b]boosted by Empowered modifiers (+0.75%/mod) and bosses (+2.5%)[/b]. Stats scale to drop level — re-find them stronger forever. Tradeable on the market!
+[color=#1EFF00]◆ SETS:[/color] 3 item sets of 3 pieces (Gravewalker's Vigil, Stormcaller's Regalia, Magpie's Hoard). Equip 2 pieces for the first bonus, all 3 for the big one. Drop from the same Empowered/boss hunt as uniques.
+[color=#A335EE]Proc Gear(T6+):[/color] Vampire(lifesteal) | Thunder(shock dmg) | Reflection(reflect) | Slayer(execute<20%HP)
+[color=#FFD700]Synergy*:[/color] Asterisk (*) after affix name = double bonus synergy (e.g., Arcane* Hoarder's Ring)
+
+[color=#AAAAAA]Buff Display:[/color] [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Life [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Force | #=rounds, #+B=battles
+
+[b][color=#FFD700]══ JOBS & GATHERING ══[/color][/b]
+[color=#FFD700]Jobs:[/color] 5 Gathering Jobs (Mining, Logging, Foraging, Fishing, Soldier) + 5 Specialty Jobs (Phase 2).
+  Try any job up to Lv5, then commit permanently. More→Jobs to view and commit.
+[color=#00FFFF]Gathering:[/color] Walk to a resource node → press [{k4}] → 3-choice minigame. Pick correctly to gain materials!
+  Each correct pick chains to the next round. Wrong pick ends the chain. Higher job level = better hints.
+[color=#FFA500]Fishing:[/color] At water ([color=#00FFFF]~[/color]) | [color=#CD7F32]Mining:[/color] At ore ([color=#CD7F32]O[/color]) | [color=#228B22]Logging:[/color] At forests ([color=#228B22]T[/color]) | [color=#9ACD32]Foraging:[/color] At herbs/bushes
+[color=#FF6600]Soldier:[/color] After killing a monster, press Harvest to extract bonus parts (3-choice minigame).
+[color=#808080]Tools:[/color] Pickaxe/Axe/Sickle/Rod — optional but powerful! Reveal shows correct answer, Save cancels 1 mistake.
+  Tools have durability (T1=10, T5=100). New characters start with T1 starter tools.
+[color=#FFD700]Bulk Craft:[/color] Stackable recipes (structures, scrolls, runes, etc.) support crafting 1-99x at once!
+  Use -Qty/+Qty/Max buttons when a recipe is selected. One minigame for the whole batch.
+[color=#808080]Skip Minigames:[/color] Settings→Game→Skip Craft/Gather. Instant results but ~65% average rewards.
+[color=#FF8800]Tempered Craft:[/color] Equipment recipes have a "Temper" option — target a bonus stat (+ATK/DEF/HP/SPD).
+  Costs 50% extra materials and halves success chance. Materials lost on failure! High risk, high reward.
+[color=#FFD700]Recipe Discovery:[/color] Advanced recipes (difficulty 50+) require Recipe Scrolls found in dungeon treasure (T4+).
+[color=#AA66FF]Salvage:[/color] Breaks items into [color=#AA66FF]crafting materials[/color]. Right-click an item → Salvage, or use the panel's Salvage ▾ menu (Junk / All / Consumables / auto-salvage filters). Higher rarity = more materials.
+[color=#00FFFF]Material Pouch:[/color] Inventory→Materials shows resources (ore, wood, fish, monster parts). Max 999 per stack.
+[color=#A335EE]Companion Bonus:[/color] Wolf, Troll, Hobgoblin = +gathering yield. Kobold, Spider, Wyvern = +gathering hints.
+
+[b][color=#FFD700]══ WORLD ══[/color][/b]
+[color=#00FF00]Posts(58):[/color] Crossroads(0,0)=spawn & throne | Frostgate(0,-100)=boss. Recharge([{k1}])!
+[color=#FFD700]Merchants:[/color] Couriers on roads between posts with markets. Browse carried goods when encountered.
+[color=#FF6600]![/color]=Hotspot (+50-150% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
+[color=#00FFFF]Quests([{k4}]):[/color] Board: Dungeon Clear, Rescue, Fabled Boss Hunt, Gather. Story chains at posts (multi-stage with egg+title bonuses). Board regenerates — no daily caps. Max 3 active.
+[color=#9932CC]Dungeons([{k4}]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
+  All monsters match dungeon theme (Orc Stronghold = Orcs). Ranks (F1 up to F9) = harder variants, better loot!
+  [color=#FF8800]Hard Mode:[/color] Clear any dungeon once to unlock Hard Mode (+50% stats, -20% steps, +75% XP, bonus loot)!
+[color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Crossroads. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
+
+[b][color=#FFD700]══ GUARDS & TOWERS ══[/color][/b]
+[color=#C0C0C0]Guard Post:[/color] Construction Lv15 recipe. Place anywhere (10-tile spacing). Bump to interact.
+[color=#00FF00]Hire Guard:[/color] 50 Valor + 5 food (fish/herbs). Suppresses random encounters in 15-tile radius.
+[color=#FFD700]Tower Boost:[/color] Place guard post within 2 tiles of a Watch Tower → radius jumps to 45 tiles!
+[color=#FF8800]Feeding:[/color] Guards need food. Initial=7 days. Feed 3 materials = +3 days (max 14). Unfed guards leave.
+[color=#808080]Map:[/color] [color=#00FF00]G[/color]=Active guard | [color=#555555]G[/color]=Empty post | [color=#FFD700]^[/color]=Tower boosting a guard
+[color=#808080]Wall Decay:[/color] Walls not part of an enclosure crumble after 72 hours. Enclosed walls are safe.
+[color=#00FFFF]Hunting:[/color] You CAN still hunt for monsters in guard-protected areas (voluntary combat).
+
+[b][color=#FFD700]══ PROGRESSION ══[/color][/b]
+[color=#00FFFF]Gems:[/color] Drop from monsters 5+ levels above you. Sell 1=1000g. Pay for upgrades.
+[color=#FFD700]Lucky Finds:[/color] Treasure, [color=#FF69B4]Legendary Adventurer[/color] (perm stat!) - Press [{k0}] to continue.
+[color=#00FFFF]Level Up:[/color] Full heal + stat gains by class (2.5 total/level):
+[color=#FF6666]WARRIOR:[/color] [color=#C0C0C0]Fighter[/color]=STR1.25/CON.75/DEX.25/WIT.25 | [color=#8B0000]Barbarian[/color]=STR1.5/CON.75/DEX.25 | [color=#FFD700]Paladin[/color]=STR.75/CON1/DEX.25/WIS.25/WIT.25
+[color=#66FFFF]MAGE:[/color] [color=#4169E1]Wizard[/color]=INT1.25/WIS.75/CON.25/DEX.25 | [color=#9400D3]Sorcerer[/color]=INT1.5/WIS.5/CON.25/DEX.25 | [color=#20B2AA]Sage[/color]=WIS1/INT.75/CON.5/DEX.25
+[color=#66FF66]TRICK:[/color] [color=#2F4F4F]Thief[/color]=WIT1.5/DEX.75/CON.25 | [color=#228B22]Ranger[/color]=DEX.75/WIT.75/STR.5/CON.5 | [color=#191970]Ninja[/color]=DEX1.25/WIT.75/STR.25/CON.25
+
+[b][color=#FFD700]══ ENDGAME ══[/color][/b]
+[color=#AAAAAA]Chase Items:[/color] [color=#C0C0C0]Jarl's Ring[/color](Lv50+) | [color=#A335EE]Unforged Crown[/color](Lv200+, forge at Fire Mt -400,0) | [color=#00FFFF]Eternal Flame[/color](hidden)
+[color=#AAAAAA]Titles:[/color]
+  [color=#C0C0C0]Jarl[/color](50-500): Ring + (0,0). ONE only. Summon/Tax/Gift/Tribute. Lost on death or Lv500+.
+  [color=#FFD700]High King[/color](200-1000): Crown + (0,0). ONE only. Knight/Cure/Exile/Treasury. Survives 1 death!
+  [color=#9400D3]Elder[/color](1000+): Auto. Many exist. Heal/Mentor/Seek Flame. Can find Eternal Flame.
+  [color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives! Restore/Bless/Smite/Guardian.
+[color=#FF69B4]Trophies(T8+):[/color] 5% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
+[color=#00FFFF]Companions:[/color] Companion eggs come mainly from [color=#9932CC]dungeons[/color] - bosses guarantee their egg, floor loot may have extras. Overworld kills very rarely drop one.
+  [color=#00FFFF]More[/color]→[color=#00FFFF]Companions[/color]: View/activate companions, [color=#00FF00]Inspect[/color] for stats & abilities. [color=#FFAA00]Eggs[/color]: View incubating eggs with art!
+  Each monster type has unique abilities in combat! Lv5=active, Lv15=threshold. Scales with level. Hatch eggs by walking!
+
+[b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
+[color=#DAA520]Blacksmith[/color] (3% chance when gear damaged): Offers repairs while traveling. Cost = wear% × item_level × 5 Valor.
+  Repair All = 10% discount! Select items with [1-9] keys, or repair all with [{k1}].
+[color=#00FF00]Healer[/color] (4% chance when HP<80%): Offers healing while traveling. Costs scale with level:
+  [{k1}] Quick (25% HP) = level×22g | [{k2}] Full (100% HP) = level×90g | [{k3}] Cure All (full+debuffs) = level×180g
+[color=#DAA520]Tax Collector[/color] (5% chance when 100+g): 8% tax (min 10g). Bumbling=5%, Veteran=10%. Jarls/High Kings immune.
+
+[b][color=#FFD700]══ SANCTUARY (HOUSE) ══[/color][/b]
+[color=#00FFFF]Account-Level Home:[/color] Your Sanctuary persists across all characters on your account!
+[color=#00FFFF]Access:[/color] After login, you'll see your Sanctuary before character select. Store items for future characters!
+[color=#FFA500]Storage:[/color] Base 20 slots. Store items from current character. Withdraw items when creating new characters.
+[color=#A335EE]Registered Companions:[/color] Register companions to your Sanctuary - they survive permadeath!
+  • Use [color=#00FFFF]Home Stone (Companion)[/color] to register or kennel your active companion
+  • Registered companions return home when your character dies
+  • Checkout registered companions on new characters
+  • Recall a companion a character is holding back to its slot (that character must be logged out)
+[color=#FF8800]Companion Kennel (K tile):[/color] Bulk companion storage for fusion!
+  • Store companions for later fusion at the Fusion Station
+  • Base capacity: 30 slots, upgradeable up to 500
+[color=#DA70D6]Fusion Station (F tile):[/color] Combine companions into stronger versions!
+  • [color=#00FF00]Same-Type:[/color] 3 same monster + rank → 1 with rank+1 (rank 9 is the cap)
+  • [color=#FF00FF]Mixed A9:[/color] 8 A8 companions → 1 random A9 companion
+  • Fused companions start at Lv1 with a new random variant
+[color=#FF69B4]Baddie Points (BP):[/color] Meta-currency earned when characters die. Spend on upgrades:
+  • Storage (+10 slots/lv) | Registered Companions (+1 slot/lv) | Kennel Capacity
+  • Escape Training (+2% flee/lv) | Family Inheritance (+50g start/lv)
+  • Ancestral Wisdom (+1% XP/lv) | Homesteading (+5% gathering/lv)
+  • Combat: HP/Resource Max/Regen (+5%/lv) | Stats: STR/CON/DEX/INT/WIS/WITS (+1/lv)
+[color=#FFD700]Home Stones:[/color] Found in tier 4-9 loot. Use outside combat/dungeons to send things home:
+  • Home Stone (Egg) - Send one incubating egg to storage
+  • Home Stone (Supplies) - Send up to 10 consumables to storage
+  • Home Stone (Equipment) - Send one equipment item from inventory to storage
+  • Home Stone (Companion) - Register your active companion to Sanctuary
+[color=#00BFFF]Egg Freezing:[/color] [color=#FFAA00]More[/color]→[color=#FFAA00]Eggs[/color]: Press Freeze/Unfreeze buttons to pause egg hatching!
+  • Frozen eggs don't progress when you walk - perfect for saving until you find a Home Stone
+  • Frozen eggs can still be traded with other players
+
+[b][color=#FFD700]══ MISC ══[/color][/b]
+[color=#AAAAAA]Whisper:[/color] /w <name> <msg> to send private message. /reply or /r to respond. Also: /msg, /tell
+[color=#AAAAAA]Watch:[/color] "watch <name>" to spectate. [{k1}]=approve, [{k2}]=deny. Esc/unwatch to stop.
+[color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
+[color=#AAAAAA]Bug:[/color] "/bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
+[color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
+[color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
+
+[b][color=#FFD700]══ RECENT ADDITIONS ══[/color][/b]
+[color=#00FFFF]Mentor System:[/color] [color=#9ACD32]/mentor on[/color] (Lv 20+) volunteers you as a mentor — gold [color=#FFD700]★[/color] shows on your name. [color=#9ACD32]/mentors[/color] lists who's online.
+[color=#00FFFF]Apex Frontier:[/color] >1500 tiles from origin = [color=#9F70FF]⚡ APEX[/color] zone. +10% XP. Four named zones (Burning Reach NE / Frostbound Verge NW / Sundered Hollows SW / Cinder Wastes SE).
+[color=#00FFFF]Apex Variants:[/color] Every monster spawned in apex frontier is an [color=#9F70FF]Apex[/color] variant — +25% HP, +10% damage, +30% XP total, +50% Soul Gems. Drops Apex Crystal (750 valor) at 12% rate.
+[color=#00FFFF]Repeatable starter chains:[/color] T1 + T2 + T3 chains (13 total) are immediately repeatable after completion. Higher tiers stay one-shot.
+[color=#00FFFF]Threat Corridor HUD:[/color] Within 80 tiles of an active T2+ world dungeon, the Area line surfaces [color=#FF6600]⚠ Threat: <type> spillover from <dungeon>[/color].
+[color=#00FFFF]Sanctuary Stable:[/color] Magenta [color=#FF80FF]C[/color] tile at T5+ posts — live kennel access mid-character (Deposit / Withdraw / Return / Check Out / Fuse). Build one yourself (Construction Lv 35).
+[color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any rank mix) + Ascension Catalyst → same type one TIER letter higher. Keeps your favourite pet, raises its tier. Catalysts drop at tier C+.
+[color=#00FFFF]Hybrid Fusion:[/color] 2 different rank 5+ + Hybrid Catalyst → blended companion. Catalysts drop at tier D+.
+[color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
+[color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
+[color=#00FFFF]Help discovery:[/color] [color=#9ACD32]/topics[/color] lists every help-panel topic key + title; [color=#9ACD32]/topic <key>[/color] opens any topic from anywhere.
+[color=#00FFFF]Trade history:[/color] [color=#9ACD32]/trades [N][/color] (default 10, max 50) — your rolling log of direct trades and market buys/sales, account-level + persistent across deaths.
+[color=#00FFFF]Friend list:[/color] [color=#9ACD32]/friend add|accept|reject|cancel|remove|list|requests[/color] — account-level bidirectional friends, online status + current character on the list. [color=#9ACD32]/block <user>[/color] silences whispers from a user; [color=#9ACD32]/blocklist[/color] shows your blocks.
+[color=#00FFFF]Mentor reward bonus:[/color] A Lv 20+ [color=#9ACD32]/mentor on[/color] partied with a Lv < 10 player grants [color=#FFD700]+25% XP[/color] to the whole party on every kill.
+[color=#00FFFF]Social chat channels:[/color] [color=#9ACD32]/c[/color] clan chat ([color=#88FFCC][CLAN][/color]), [color=#9ACD32]/p[/color] party chat ([color=#FFAA66][PARTY][/color]), [color=#9ACD32]/clist[/color] online clanmates roster.
+[color=#00FFFF]/afk status:[/color] [color=#9ACD32]/afk [reason][/color] marks you away ([color=#FFAA66][AFK][/color] badge); auto-clears on move/chat. [color=#9ACD32]/back[/color] to clear explicitly.
+[color=#00FFFF]Clan presence:[/color] Green/gray/orange ● dots on the clan roster, N/M online header chip, login/logout chat broadcasts to clanmates.
+[color=#00FFFF]Whisper tags:[/color] Whispers from Lv < 10 players display a gold [color=#FFD700][NEW Lv X][/color] tag for Lv 20+ recipients — mentors can prioritize newbies.
+[color=#00FFFF]Tutorial overlays:[/color] Twelve first-touch teaching modals (progression, quest board, dungeons, crafting, signposts, apex frontier, market, chains, companions, companion stable, gather, equip).
+[color=#00FFFF]Status page:[/color] Progression Vectors dashboard names every advanceable track. Includes Quest Chains completed + titles earned. Respawn point line.
+[color=#00FFFF]Threat HUD:[/color] [color=#FF6600]⚠ Threat[/color] tag on Area line shows spillover monster type + dungeon + tile distance + (+N more) when multiple T2+ dungeons threaten.
+[color=#00FFFF]No real-time gates:[/color] Daily quests + repeatable chains have no 24h cooldown — re-accept and re-run as fast as you like. World-state systems (resource regrowth, vendor rotation, post inactivity, wall decay) still tick normally.
+[color=#00FFFF]Cosmetic buildables:[/color] Cairn, Garden Plot, Birdbath, Easel, Scarecrow, Bench, Tent, Torch, Hedge, Crate, Beehive, Signpost, Pylon, Banner, Brazier, Totem, Lectern, Pedestal, Lamp Post, Cage, Mosaic, Well, Shrine, Fountain, Statue, Obelisk, Sundial — twenty-seven structures across Construction skill 3 → 25, mixing walkable / blocking / line-of-sight / floor types.
+[color=#00FFFF]Severe Threat:[/color] When 2+ T2+ active dungeons share an 80-tile threat corridor around a post, the post is [color=#FF2020]Severely Threatened[/color] — market markup escalates to +50%, service prices to +100%, player-post bubble suppression doubles. Clearing one dungeon steps it back to normal.
+[color=#00FFFF]Variant Imprints:[/color] Rank up an ability while a companion is active → 3rd ✦ Imprint option on the popup. 10 trait categories ([color=#FF6B6B]Predator's Mark[/color], [color=#FFD700]Hunter's Eye[/color], [color=#B22222]Rending[/color], etc.) cover all 53 companion types. Account-level, stackable to 4. View at [color=#FFD700]Sanctuary → Imprints[/color].
+[color=#00FFFF]/duel <player> [valor]:[/color] Bilateral PvP, any zone, any level. Mutual-consent modal + agreed stakes (none or 10% valor). Instant dice-roll resolution comparing duel power (level + STR + DEX + weapon dmg, ±30% variance).
+[color=#00FFFF]Apex PvP:[/color] Apex Frontier (>1500 tiles) is now a [color=#FF2020]⚔ PvP zone[/color] — adjacent players can be attacked without consent. Triggering the attack opens a [b]combat-scene[/b] modal where both players pick from [color=#FF8888]Attack[/color] / [color=#88B8FF]Special[/color] / [color=#88FF88]Defend[/color] each round; both submit, both resolve simultaneously. HP 0 ends the fight (round cap 15). KO drops a gold [color=#FFD700]$[/color] sack at the death tile (15% valor + 1 equipped + 3 inventory + up to 3 eggs + 1 non-active companion). Any player who walks onto the tile auto-claims it. Victim respawns at origin with full HP — character survives (permadeath stays PvE-only).
+[color=#00FFFF]Bounties:[/color] [color=#9ACD32]/bounty post <player> <valor>[/color] (min 50, escrowed) places a public bounty. Collected when the target is KO'd in the apex zone. [color=#9ACD32]/bounty list[/color] shows the board, [color=#9ACD32]/bounty on <player>[/color] checks a single target, [color=#9ACD32]/bounty cancel <player>[/color] refunds yours.
+[color=#00FFFF]Clan-shared posts:[/color] Owner stands inside their post → [b]Share with Clan[/b] button on the post status panel (or [color=#9ACD32]/clanpost share[/color]). Clan-mates then get build + demolish permissions AND keep the decay timer fresh just by visiting. [color=#9ACD32]/clanposts[/color] lists every post shared with your clan, freshest-first.
+[color=#00FFFF]Pathfinder's Trial:[/color] New starter chain at [color=#FFD700]Crossroads[/color] (4 stages): fish 3 → mine 2 → kill 2 → kill 3. Each stage rewards a piece of Tier 1 gear ([color=#9AFF9A]weapon → armor → boots → ring[/color]) plus a final companion egg + [color=#9ACD32]Pathfinder[/color] title. Designed for fresh characters with empty slots.
+[color=#00FFFF]Post auto-reclaim:[/color] Posts untended for 120+ days are mechanically reclaimed — walls, structures, guards inside the bubble are wiped and the slot is freed. 14-day warning shows on the post status panel ([color=#FF2020]⚠⚠ AUTO-RECLAIM in Xd[/color]); any visit resets the timer to fresh. Clan-shared posts: any clan member's visit counts.
+
+[color=#808080]Open [/color][color=#00FFFF]More → Changes[/color][color=#808080] for the per-version detailed history.[/color]
+""".format({"k0": k0, "k1": k1, "k2": k2, "k3": k3, "k4": k4, "k5": k5, "k6": k6, "k7": k7, "k8": k8})
+	# 2026-09-11 — NAMED tokens, not a positional `%` format. The old 23-argument `%` failed on
+	# every call (the text is full of literal percent signs, and "34%survive" parses as a %s), and
+	# Godot returns the string UNFORMATTED on error - so every key on this page read "[%s]" and
+	# every "25%%" showed both signs. `{kN}` cannot collide with a percent sign.
+	# 2026-09-06 — the three class blocks are GENERATED from Character.class_passive_for rather
+	# than typed here. This page was the last surviving hand-copy of the passive table and it was
+	# badly wrong: it listed "Thief" (a class that has not existed for a long time), gave the
+	# Ranger an effect it never had, and described the Ninja with the GRIFTER's passive — the
+	# exact swap the owner reported on the character-creation screen, still live on this page.
+	# Substituted AFTER the positional format above so that 23-argument list stays untouched.
+	help_text = _help_fill_passives(help_text)
+	return help_text
+
+func _help_sections() -> Array:
+	"""The searchable help topics. Its own function so tools/probe/help_topics.gd can BUILD every
+	topic headlessly: several are format strings reading live constants, and a bad `%` only
+	fails when the string is evaluated, never at compile time."""
+	return [
 		{
 			"title": "GETTING STARTED",
 			"keywords": ["start", "starting", "begin", "beginner", "new", "player", "how", "play", "guide", "tutorial", "first", "tips", "advice", "build", "focus"],
@@ -34644,12 +34667,12 @@ Devastate / Rampage / Judgement - the FINISHER, one card that works differently 
 [color=#FFD700]The three Warriors run three different engines[/color], and every Warrior card builds
 whichever one you have:
   [color=#C0C0C0]Fighter - Momentum[/color]: banked stacks are damage REDUCTION, and Devastate spends them all at once.
-  [color=#8B0000]Barbarian - Rage[/color]: banked stacks are a damage RAMP on every card (+11% each), and Rampage discharges them.
+  [color=#8B0000]Barbarian - Rage[/color]: banked stacks are a damage RAMP on every card (+%d%% each), and Rampage discharges them.
   [color=#FFD700]Paladin - Conviction[/color]: Judgement always lands, and each stack raises both its damage and the
-  chance it simply ends them. Retribution means every blow you take builds Conviction too." % [
-			CharacterScript.class_passive_for("Fighter").get("description", ""),
-			CharacterScript.class_passive_for("Barbarian").get("description", ""),
-			CharacterScript.class_passive_for("Paladin").get("description", "")]
+  chance it simply ends them. Retribution means every blow you take builds Conviction too." % int(round(CombatManager.BARBARIAN_RAGE_DMG_PER * 100.0))
+			# 2026-09-11 — this used to pass the three class passives as format args to a string with
+			# no %s, AND carried a literal "+11%", so the whole page failed to format. The passives
+			# already arrive through {{WARRIOR_PASSIVES}}; the ramp is read from its constant (16%).
 
 		},
 		{
@@ -34732,12 +34755,12 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "UNIVERSAL ABILITIES",
 			"keywords": ["cloak", "stealth", "teleport", "travel", "all", "nothing", "gamble", "buff", "advantage"],
-			"content": "[color=#9932CC]Cloak[/color] (Level 20+) - Stealth movement, 8% resource per step, no encounters\n[color=#AA66FF]Teleport[/color] - Mage L30, Trickster L45, Warrior L60. Cost: 10 + distance\n[color=#FF00FF]All or Nothing[/color] - ~3% instant kill, fail = monster 2x STR/SPD, +0.1%/use permanent (max 34%)\nButton shows your trained base rate. Actual chance varies by level difference.\n[color=#00FF00]Buff Advantage:[/color] Defensive abilities give 75% chance to avoid enemy turn"
+			"content": "[color=#9932CC]Cloak[/color] (Level 20+) - Stealth movement, 8%% resource per step, no encounters\n[color=#AA66FF]Teleport[/color] - Mage L30, Trickster L45, Warrior L60. Cost: 10 + distance\n[color=#00FF00]Defensive Reprieve:[/color] casting Forcefield, Fortify, Iron Skin, Cloak or a successful Paralyze gives a %d%% chance the enemy loses its attack that turn" % CombatManager.DEFENSIVE_REPRIEVE_CHANCE
 		},
 		{
 			"title": "MONSTER ABILITIES",
 			"keywords": ["monster", "ability", "abilities", "multi", "strike", "berserker", "enrage", "life", "steal", "glass", "cannon", "poison", "blind", "curse", "disarm", "bleed", "drain", "armored", "ethereal", "regeneration", "reflect", "thorns", "death", "summoner", "corrosive", "sunder", "wish", "granter", "gem", "gold", "hoarder"],
-			"content": "[color=#FF4444]Offensive:[/color] Multi-Strike (2-3x), Berserker (+dmg when hurt), Enrage (+dmg/round), Life Steal, Glass Cannon (3x dmg, 50% HP)\n[color=#808080]Debuffs:[/color] Curse (-def), Disarm (-atk), Bleed (DoT), Slow (-flee), Drain (resources)\n[color=#FF00FF]Poison:[/color] 30% monster STR damage/round, 35 rounds. Cure: Recharge\n[color=#808080]Blind:[/color] -30% hit, hides monster HP, 15 rounds. Cure: Recharge\n[color=#6666FF]Defensive:[/color] Armored (+50% def), Ethereal (50% dodge), Regeneration, Reflect (25%), Thorns\n[color=#FFD700]Special:[/color] Death Curse (damage on death), Summoner (reinforcements), Corrosive/Sunder (gear damage)\n[color=#00FF00]Rewards:[/color] Wish Granter (10% wish), Gem Bearer (gems scale with level), Gold Hoarder (3x Valor)"
+			"content": "[color=#FF4444]Offensive:[/color] Multi-Strike (2-3x), Berserker (+dmg when hurt), Enrage (+dmg/round), Life Steal, Glass Cannon (3x dmg, 50%% HP)\n[color=#808080]Debuffs:[/color] Curse (-def), Disarm (-atk), Bleed (DoT), Slow (-flee), Drain (resources)\n[color=#FF00FF]Poison:[/color] %s%% of YOUR max HP per turn for %d turns, in and out of combat. WIS resists both the chance and the damage (up to half).\n[color=#808080]Blind:[/color] -30%% hit chance and a smaller map view, 15 turns.\n[color=#00FFFF]Cure either:[/color] the Recharge service at a merchant or trading post, or a wandering healer.\n[color=#6666FF]Defensive:[/color] Armored (+50%% def), Ethereal (33%% dodge, and your hits land less often), Regeneration, Reflect (25%%), Thorns\n[color=#FFD700]Special:[/color] Death Curse (damage on death), Summoner (reinforcements), Corrosive/Sunder (gear damage)\n[color=#00FF00]Rewards:[/color] Wish Granter (10%% wish), Gem Bearer (gems scale with level), Weapon Master / Shield Guardian (50%% chance to drop that item)" % [str(snappedf(CombatManager.POISON_TICK_PCT_OF_MAX_HP * 100.0, 0.1)), CombatManager.POISON_DURATION_TURNS]
 		},
 		{
 			"title": "APEX SPECIES",
@@ -34750,12 +34773,12 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "ITEMS & POTIONS",
 			"keywords": ["item", "items", "potion", "potions", "scroll", "scrolls", "buff", "debuff", "health", "mana", "stamina", "energy", "strength", "defense", "speed", "crit", "lifesteal", "thorns", "forcefield", "rage", "haste", "weakness", "vulnerability", "slow", "doom", "summoning", "finding", "time", "stop", "resurrect", "bane", "mystery", "box", "cursed", "coin", "tome", "stat", "skill"],
-			"content": "[color=#00FFFF]Potions:[/color] Health, Resource (restores your class's primary resource) | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision\n[color=#A335EE]Special Scrolls (Master+):[/color]\n• Time Stop - Skip monster's next turn\n• Monster Bane (Dragon/Undead/Beast) - +50% damage vs type for 3 battles\n• Resurrect (Mythic+) - Revive at 25% HP once if killed\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n• Cursed Coin - 50% double Valor, 50% lose half Valor\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Master+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Divine+) - -10% ability cost or +15% damage"
+			"content": "[color=#00FFFF]Potions:[/color] Health, Resource (restores your class's primary resource), crafted stat potions (Strength, Fortitude, Resilience, Vigor, Insight), Companion Revive\n[color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism (lifesteal), Thorns, Precision (crit)\n[color=#A335EE]Special Scrolls (Master+):[/color]\n• Time Stop - Skip monster's next turn\n• Resurrect (Mythic+) - Revive at 25% HP once if killed\n[color=#FF6666]Bane Potions:[/color] Dragon / Undead / Beast / Demon / Elemental - +50% damage vs that type for 3 battles\n[color=#FFD700]Mystery Items:[/color]\n• Mysterious Box - Opens to random item from same tier or +1 higher\n[color=#FF69B4]Permanent Upgrades:[/color]\n• Stat Tomes (Master+) - +1 permanent stat bonus!\n• Skill Enhancer Tomes (Divine+) - one card gets 10-15% cheaper or 15-25% stronger (Swift Analyze makes Analyze free)"
 		},
 		{
 			"title": "EQUIPMENT & GEAR",
 			"keywords": ["equipment", "gear", "weapon", "armor", "shield", "helm", "boots", "ring", "amulet", "wear", "condition", "broken", "repair", "upgrade", "warrior", "mage", "trickster", "class"],
-			"content": "[color=#AAAAAA]Wear:[/color] Corrosive/Sunder monsters damage gear. 100% wear = broken (no bonuses). Repair at merchants.\n[color=#AAAAAA]Condition:[/color] Pristine → Excellent → Good → Worn → Damaged → BROKEN\n\n[color=#FF6666]Warrior Gear:[/color] Minotaur (t3), Iron Golem (t6), Death Incarnate (t8) - 35% drop\n[color=#66CCCC]Mage Gear:[/color] Wraith (t3), Lich (t5), Elemental/Sphinx (t6), Elder Lich (t7), Time Weaver (t8)\n[color=#66FF66]Trickster Gear:[/color] Goblin (t1), Hobgoblin/Spider (t2), Void Walker (t7)\n[color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%) - 35% guaranteed drop"
+			"content": "[color=#AAAAAA]Wear:[/color] Corrosive/Sunder monsters damage gear. 100% wear = broken (no bonuses). Repair at a Blacksmith station or a wandering blacksmith.\n[color=#AAAAAA]Condition:[/color] Pristine → Excellent → Good → Worn → Damaged → Nearly Broken → BROKEN\n\n[color=#FF6666]Warrior Gear:[/color] Minotaur (t3), Iron Golem (t6), Death Incarnate (t8) - 35% drop\n[color=#66CCCC]Mage Gear:[/color] Wraith (t3), Lich (t5), Elemental/Sphinx (t6), Elder Lich (t7), Time Weaver (t8)\n[color=#66FF66]Trickster Gear:[/color] Goblin (t1), Hobgoblin/Spider (t2), Void Walker (t7)\n[color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as a Weapon Master or Shield Guardian (4%) - 50% chance to drop it"
 		},
 		{
 			"title": "TRADING POSTS & MERCHANTS",
@@ -34765,27 +34788,27 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "LOOT & PROGRESSION",
 			"keywords": ["gem", "gems", "gold", "currency", "level", "experience", "xp", "drop", "reward", "lucky", "find", "treasure", "legendary", "adventurer", "rarity", "affix", "common", "uncommon", "rare", "epic", "artifact"],
-			"content": "[color=#00FFFF]Monster Gems:[/color] Crafting material\n• Drop from monsters 5+ levels ABOVE you\n• Higher level difference = better drop chance\n• Used in crafting recipes\n\n[color=#FFD700]D2-Style Loot:[/color] Equipment rarity rolled dynamically!\n• Common (0 affixes) → salvage fodder\n• Rare (2 affixes) → prefix AND suffix\n• Epic (3), Legendary (4), Artifact (5+ proc)\n• Higher tier monsters = better rarity odds\n\n[color=#FFD700]Lucky Finds:[/color] While moving/hunting you may find:\n• Hidden treasure (Valor or items)\n• [color=#FF69B4]Legendary Adventurer[/color] - Permanent stat boost!"
+			"content": "[color=#00FFFF]Monster Gems:[/color] Crafting material\n• Drop from monsters level 50+, and from monsters well above YOUR level\n• The bigger the level gap, the better the odds\n• Used in crafting recipes and title abilities\n\n[color=#FFD700]D2-Style Loot:[/color] Equipment rarity rolled dynamically!\n• Common 1 affix, Uncommon 2 (prefix AND suffix)\n• Rare 3, Epic 4, Legendary 5, Artifact 6 + a guaranteed proc\n• Higher tier monsters = better rarity odds\n\n[color=#FFD700]Lucky Finds:[/color] While moving/hunting you may find:\n• Hidden treasure (Valor or items)\n• [color=#FF69B4]Legendary Adventurer[/color] - Permanent stat boost!"
 		},
 		{
 			"title": "TITLES & ENDGAME",
 			"keywords": ["title", "titles", "jarl", "king", "high", "elder", "eternal", "flame", "ring", "crown", "endgame", "chase", "fire", "mountain", "obtain", "get", "claim", "pilgrimage", "crucible", "donate", "knight", "mentor", "guardian", "bless"],
-			"content": "[color=#FFD700]HOW TO OBTAIN TITLES[/color]\n\n[color=#C0C0C0]Jarl[/color] [color=#808080](Level 50-500, ONE per realm)[/color]\n1. Hunt monsters Lv50+ for [color=#C0C0C0]Jarl's Ring[/color] (0.5% drop)\n2. Go to The High Seat at (0,0) - use [color=#FFD700]High Seat[/color] action bar button\n3. Claim title | Abilities: Summon (500g), Tax (1K), Gift (5%), Tribute (1hr CD)\n\n[color=#FFD700]High King[/color] [color=#808080](Level 200-1000, ONE per realm)[/color]\n1. Hunt monsters Lv200+ for [color=#A335EE]Unforged Crown[/color] (0.2% drop)\n2. Forge at Fire Mountain (-400,0) - use Check Forge button\n3. Claim at (0,0) | Abilities: Knight (50K+5g), Cure (5K), Exile (10K), Treasury (2hr CD)\n\n[color=#9400D3]Elder[/color] [color=#808080](Level 1000+, auto-granted)[/color]\nAbilities: Heal (10K), Mentor (500K+25g), Seek Flame (25K)\n\n[color=#00FFFF]Eternal[/color] [color=#808080](Elder only, max 3, 3 lives)[/color]\nComplete the Eternal Pilgrimage. Abilities: Restore (50K), Bless (5M+100g), Smite (100K+10g), Guardian (2M+50g)"
+			"content": "[color=#FFD700]HOW TO OBTAIN TITLES[/color]\n\n[color=#C0C0C0]Jarl[/color] [color=#808080](Level 50-500, ONE per realm)[/color]\n1. Hunt monsters Lv50+ for [color=#C0C0C0]Jarl's Ring[/color] (0.5%% drop)\n2. Go to The High Seat at (0,0) - use [color=#FFD700]High Seat[/color] action bar button\n3. Claim title | Abilities: %s\n\n[color=#FFD700]High King[/color] [color=#808080](Level 200-1000, ONE per realm)[/color]\n1. Hunt monsters Lv200+ for [color=#A335EE]Unforged Crown[/color] (0.2%% drop)\n2. Forge at Fire Mountain (-400,0) - use the [color=#FFD700]Fire Mt[/color] button\n3. Claim at (0,0) | Abilities: %s\n\n[color=#9400D3]Elder[/color] [color=#808080](Level 1000+, auto-granted)[/color]\nAbilities: %s\n\n[color=#00FFFF]Eternal[/color] [color=#808080](Elder only, max 3, 3 lives)[/color]\nComplete the Eternal Pilgrimage. Abilities: %s" % [_title_costs_line(Titles.JARL_ABILITIES), _title_costs_line(Titles.HIGH_KING_ABILITIES), _title_costs_line(Titles.ELDER_ABILITIES), _title_costs_line(Titles.ETERNAL_ABILITIES)]
 		},
 		{
 			"title": "ETERNAL PILGRIMAGE",
 			"keywords": ["pilgrimage", "eternal", "awakening", "trial", "blood", "mind", "wealth", "ember", "crucible", "donate", "shrine", "flame"],
-			"content": "[color=#00FFFF]ETERNAL PILGRIMAGE[/color] (Elder only, use Seek Flame to track)\n\n[color=#FFFFFF]1. The Awakening[/color] - Slay 5,000 monsters\n[color=#FF4444]2. Trial of Blood[/color] - Kill 1,000 tier A+ monsters → +3 STR\n[color=#FFFF00]3. Trial of Mind[/color] - End 200 fights without beating them down (Assassinate) → +3 WIT\n[color=#FFD700]4. Trial of Wealth[/color] - Donate 10M gold (/donate <amount>) → +3 WIS\n[color=#FF8800]5. Ember Hunt[/color] - Collect 500 Flame Embers (tier A: 10%, tier S: 25%)\n[color=#FF0000]6. The Crucible[/color] - Defeat 10 consecutive tier S bosses (/crucible)\n\n[color=#808080]Commands:[/color] /donate <amount> (at shrine), /crucible (start gauntlet)\n[color=#808080]Note:[/color] Crucible death resets progress but keeps previous trials."
+			"content": "[color=#00FFFF]ETERNAL PILGRIMAGE[/color] (Elder only, use Seek Flame to track)\n\n[color=#FFFFFF]1. The Awakening[/color] - Slay 5,000 monsters\n[color=#FF4444]2. Trial of Blood[/color] - Kill 1,000 tier A+ monsters → +3 STR\n[color=#FFFF00]3. Trial of Mind[/color] - End 200 fights without beating them down (Assassinate) → +3 WIT\n[color=#FFD700]4. Trial of Wealth[/color] - Donate %s valor (/donate <amount>) → +3 WIS\n[color=#FF8800]5. Ember Hunt[/color] - Collect 500 Flame Embers (tier A: 10%%, tier S: 25%%)\n[color=#FF0000]6. The Crucible[/color] - Defeat 10 consecutive tier S bosses (/crucible)\n\n[color=#808080]Commands:[/color] /donate <amount> (at shrine), /crucible (start gauntlet)\n[color=#808080]Note:[/color] Crucible death resets progress but keeps previous trials." % format_number(int(Titles.PILGRIMAGE_STAGES["trial_wealth"]["requirement"]))
 		},
 		{
 			"title": "TITLE ABILITIES",
 			"keywords": ["title", "ability", "abilities", "summon", "tax", "gift", "tribute", "knight", "cure", "exile", "treasury", "heal", "mentor", "restore", "bless", "smite", "guardian", "consent"],
-			"content": "[color=#FFD700]TITLE ABILITY COSTS[/color] (gold + gems where noted)\n\n[color=#C0C0C0]JARL:[/color] Summon 500g, Tax 1K, Gift 5% of gold, Tribute 1hr CD\n[color=#FFD700]HIGH KING:[/color] Knight 50K+5g, Cure 5K, Exile 10K, Royal Treasury 2hr CD\n[color=#9400D3]ELDER:[/color] Heal 10K, Mentor 500K+25g, Seek Flame 25K\n[color=#00FFFF]ETERNAL:[/color] Restore 50K, Bless 5M+100g (+5 stat), Smite 100K+10g, Guardian 2M+50g\n\n[color=#AAAAAA]Special Effects:[/color]\n• [color=#87CEEB]Knight[/color] status: +15% dmg, +10% gold (permanent until replaced)\n• [color=#DDA0DD]Mentee[/color] status: +30% XP, +20% gold (Lv500 max)\n• [color=#00FFFF]Guardian[/color]: One-time death save (permanent until used)\n• [color=#00FFFF]Bless[/color]: Choose stat via action bar, permanent +5\n• Summon requires target's consent via action bar prompt"
+			"content": "[color=#FFD700]TITLE ABILITY COSTS[/color] (valor, plus Monster Gems where noted)\n\n[color=#C0C0C0]JARL:[/color] %s\n[color=#FFD700]HIGH KING:[/color] %s\n[color=#9400D3]ELDER:[/color] %s\n[color=#00FFFF]ETERNAL:[/color] %s\n\n[color=#AAAAAA]Special Effects:[/color]\n• [color=#87CEEB]Knight[/color] status: +15%% dmg, +10%% market listing value (permanent until replaced)\n• [color=#DDA0DD]Mentee[/color] status: +30%% XP (Lv500 max)\n• [color=#00FFFF]Guardian[/color]: One-time death save (permanent until used)\n• [color=#00FFFF]Bless[/color]: Choose stat via action bar, permanent +5\n• Summon requires target's consent via action bar prompt" % [_title_costs_line(Titles.JARL_ABILITIES), _title_costs_line(Titles.HIGH_KING_ABILITIES), _title_costs_line(Titles.ELDER_ABILITIES), _title_costs_line(Titles.ETERNAL_ABILITIES)]
 		},
 		{
 			"title": "SOCIAL & MISC",
 			"keywords": ["watch", "spectate", "gambling", "dice", "bug", "report", "trade", "trading", "player", "exchange", "give"],
-			"content": "[color=#AAAAAA]Trading:[/color] \"trade <name>\" to request a trade with another player\n• Both players must be at the same location\n• Add items from your inventory, toggle ready when done\n• Trade completes when both players are ready\n• Items display with the owner's class theme until traded\n[color=#AAAAAA]Watch:[/color] \"watch <name>\" to spectate another player (requires approval)\n[color=#AAAAAA]Gambling:[/color] Dice game at merchants - Roll 3d6 vs merchant's 3d6. Triples pay big!\n[color=#AAAAAA]Bug Reports:[/color] \"bug <description>\" to generate a report"
+			"content": "[color=#AAAAAA]Trading:[/color] \"trade <name>\" to request a trade with another player\n• Add items from your inventory, toggle ready when done\n• Trade completes when both players are ready\n• Items display with the owner's class theme until traded\n[color=#AAAAAA]Watch:[/color] \"watch <name>\" to spectate another player (requires approval)\n[color=#AAAAAA]Gambling:[/color] Dice game at merchants - Roll 3d6 vs merchant's 3d6. Triples pay big!\n[color=#AAAAAA]Bug Reports:[/color] \"bug <description>\" to generate a report"
 		},
 		{
 			"title": "MONSTER HP KNOWLEDGE",
@@ -34805,12 +34828,12 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "COMPANIONS",
 			"keywords": ["companion", "companions", "soul", "gem", "gems", "pet", "wolf", "phoenix", "shadow", "wisp", "guardian", "spirit", "ember", "bonus"],
-			"content": "[color=#00FFFF]Companion System[/color]\n\nSoul Gems summon companion spirits that provide combat bonuses:\n\n[color=#808080]Wolf Spirit[/color] - +10% attack damage\n[color=#FF6666]Phoenix Ember[/color] - Regenerate 2% HP per combat round\n[color=#9932CC]Shadow Wisp[/color] - +15% flee chance\n[color=#4169E1]Frost Guardian[/color] - +10% defense\n[color=#FFD700]Storm Spirit[/color] - +5% critical chance\n[color=#00FF00]Nature's Bond[/color] - +3% HP regen per round\n[color=#FF00FF]Void Familiar[/color] - +8% damage, +8% crit\n\n[color=#AAAAAA]Sources:[/color] Dungeon completion (GUARANTEED!), fishing, mining, logging (rare drops)\n[color=#AAAAAA]Only one companion active at a time. Use soul gems from inventory to summon/swap.[/color]"
+			"content": "[color=#00FFFF]Companions[/color]\n\nA companion fights beside you, earns a share of the XP, and grows stronger as you play. Only one is active at a time - activate, swap and inspect it from [color=#00FFFF]More → Companions[/color].\n\n[color=#FFD700]Eggs:[/color] companions hatch from eggs as you walk. [color=#87CEEB]Dungeons are the main source[/color] - the boss guarantees an egg of the dungeon's type, and more turn up as floor loot. Overworld kills very rarely drop one.\n[color=#FFD700]Its card:[/color] every companion lends you a combat card. Cast it enough and it becomes a permanent card in your collection.\n[color=#FFD700]Tier & rank:[/color] a label like [color=#FFCC00]E5[/color] - a later letter is stronger, and a higher number is stronger within a letter. See the Tier & Rank page.\n[color=#FFD700]Keeping them:[/color] register a companion to your Sanctuary and it survives your character's death. At a [color=#FF80FF]Companion Stable[/color] you can deposit, withdraw and fuse companions.\n\n[color=#AAAAAA]Soul Gems[/color] are a separate, rare find from tier 7+ monsters: Wolf Spirit, Phoenix Ember, Shadow Wisp, Dragon Essence, Titan's Soul, Void Fragment, Celestial Spark. They are collected automatically and activated from the same Companions screen."
 		},
 		{
 			"title": "CRAFTING & GATHERING",
 			"keywords": ["craft", "crafting", "gather", "gathering", "salvage", "essence", "fish", "fishing", "mine", "mining", "log", "logging", "chop", "ore", "wood", "material", "materials", "fail", "wrong", "key", "button"],
-			"content": "[color=#FFD700]Crafting & Gathering System[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Fishing[/color] - At water tiles (~), press R to fish\n• Wait for bite, then press the CORRECT key shown to catch\n• [color=#FF4444]Wrong key = FAIL![/color] Watch the action bar carefully!\n• Shallow vs Deep water have different catches\n• Rare: pearls, treasure chests\n\n[color=#8B4513]Mining[/color] - At ore deposits (mountains), press R to mine\n• 9 tiers based on distance from origin\n• Node tier 1-2: 1 reaction, 3-5: 2 reactions, 6+: 3 reactions\n• [color=#FF4444]Wrong key = FAIL![/color] Press the correct button only!\n• Drops: ore, gems, herbs, treasure\n\n[color=#228B22]Logging[/color] - At dense forests, press R to chop\n• 6 tiers based on distance from origin\n• [color=#FF4444]Wrong key = FAIL![/color]\n• Drops: wood, herbs, sap, enchanting materials\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] Fishing/Mining/Logging XP from catches → better odds + faster reaction windows"
+			"content": "[color=#FFD700]Crafting & Gathering[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Gathering[/color] - stand on a resource and press R:\n• [color=#00FFFF]Fishing[/color] at water, [color=#8B4513]Mining[/color] at stone and ore, [color=#228B22]Logging[/color] at trees and brush, [color=#9ACD32]Foraging[/color] at herbs, flowers and mushrooms\n• Each round offers [b]3 choices[/b]. Pick the right one to gain materials and keep the chain going; a wrong pick ends it\n• Tier rises with distance from the origin, and so does what you can find\n• [color=#808080]Tools[/color] (Rod, Pickaxe, Axe, Sickle) are optional but strong: Reveal shows the right answer, Save cancels one mistake\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] each gathering job levels up as you use it, and a higher level makes the right choice easier to spot"
 		},
 		{
 			"title": "GUARDS & TOWERS",
@@ -34830,14 +34853,26 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "DUNGEONS",
 			"keywords": ["dungeon", "dungeons", "floor", "floors", "boss", "instance", "clear", "entrance", "explore", "find", "first", "into", "depths", "haven", "companion", "egg", "pet"],
-			"content": "[color=#9932CC]Dungeon System[/color]\n\nDungeons are multi-floor instances that spawn in the wilderness!\n\n[color=#FFD700]Finding Your First Dungeon:[/color]\n• Get the [color=#00FFFF]\"Into the Depths\"[/color] quest at Crossroads after completing First Blood\n• Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads (0,0) in all directions\n• Look for [color=#9932CC]D[/color] on your map - that's a dungeon entrance!\n• Tier H dungeons: Goblin Caves, Wolf Den (levels 1-12)\n\n[color=#00FFFF]How Dungeons Work:[/color]\n• Press R at a dungeon entrance to view/enter\n• Navigate floors, fight monsters, find treasure\n• Boss awaits on the final floor!\n• Monsters scale to dungeon tier\n\n[color=#FFD700]Rewards:[/color]\n• XP and gold per floor cleared\n• [color=#FFD700]GUARANTEED[/color] companion egg on boss kill!\n• Treasure chests may contain bonus eggs\n• Dungeon quests give extra rewards\n\n[color=#00FFFF]Companion eggs ONLY drop from dungeons![/color]"
+			"content": "[color=#9932CC]Dungeon System[/color]\n\nDungeons are multi-floor instances that spawn in the wilderness!\n\n[color=#FFD700]Finding Your First Dungeon:[/color]\n• Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads (0,0) in all directions\n• Look for [color=#9932CC]D[/color] on your map - that's a dungeon entrance!\n• The Pathfinder's Trial starter quests and the quest board's Dungeon Clear quests point you at one\n• Tier H dungeons: Goblin Caves, Wolf Den (levels 1-12)\n\n[color=#00FFFF]How Dungeons Work:[/color]\n• Press R at a dungeon entrance to view/enter\n• Navigate floors, fight monsters, find treasure\n• Boss awaits on the final floor!\n• Monsters scale to dungeon tier\n\n[color=#FFD700]Rewards:[/color]\n• XP when you finish, scaled by how many floors you cleared (a full clear pays 1.5x)\n• [color=#FFD700]GUARANTEED[/color] companion egg on boss kill!\n• Floor loot and chests may hold more eggs, gear and dungeon cards\n• Dungeon quests give extra rewards\n\n[color=#00FFFF]Dungeons are the main source of companion eggs.[/color] Overworld kills only very rarely drop one."
 		},
 		{
 			"title": "QUESTS",
 			"keywords": ["quest", "quests", "kill", "slay", "hunt", "bounty", "reward", "trading", "post", "daily", "hotzone", "boss"],
-			"content": "[color=#00FFFF]Quest System[/color]\n\nAccept quests at trading posts (press R → Quests):\n\n[color=#FF6666]Kill Any[/color] - Slay X monsters of any type\n[color=#FFA500]Kill Type[/color] - Hunt specific monster species\n[color=#FFD700]Kill Level[/color] - Defeat a monster above target level\n[color=#FF4444]Hotzone Kill[/color] - Kill in danger zones (!) for bonus rewards\n[color=#A335EE]Boss Hunt[/color] - Track down and slay a powerful monster\n[color=#9932CC]Dungeon Clear[/color] - Complete a dungeon instance\n\n[color=#00FFFF]Rewards:[/color] XP, Gold, Gems (at higher tiers)\n[color=#00FFFF]Scaling:[/color] Quest difficulty and rewards scale with your level\n[color=#00FFFF]Tip:[/color] Hotzone quests give bonus rewards - look for [color=#FF6600]![/color] on the map!"
+			"content": "[color=#00FFFF]Quest System[/color]\n\nAccept quests at trading posts (press R → Quests).\n\n[color=#FFD700]The quest board[/color] offers dungeon quests:\n[color=#9932CC]Dungeon Clear[/color] - Complete a dungeon instance\n[color=#00FF88]Rescue[/color] - Bring someone out of a dungeon\n[color=#A335EE]Fabled Boss Hunt[/color] - A named, buffed boss waits in a dungeon\n[color=#9ACD32]Gather[/color] - Recover materials or relics\n\n[color=#FFD700]Story chains[/color] at posts ask for specific hunts, deliveries and exploration, with a bonus for finishing the whole chain.\n\n[color=#00FFFF]Rewards:[/color] XP and Valor, sometimes eggs or items\n[color=#00FFFF]Scaling:[/color] Quest difficulty and rewards scale with your level"
 		}
 	]
+
+func search_help(search_term: String):
+	"""Search the help text and display matching sections with context"""
+	game_output.clear()
+
+	var term = search_term.to_lower().strip_edges()
+	if term.is_empty():
+		display_game("[color=#FF0000]Please provide a search term.[/color]")
+		return
+
+	# Define searchable help sections with keywords
+	var help_sections = _help_sections()
 
 	# Find matching sections
 	var matches = []

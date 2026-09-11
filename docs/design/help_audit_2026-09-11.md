@@ -4,7 +4,29 @@ Audited topics in `client/client.gd::show_help()` against the code: ITEMS & POTI
 LOOT & PROGRESSION, COMPANIONS, DUNGEONS, QUESTS, CRAFTING & GATHERING, MONSTER ABILITIES,
 UNIVERSAL ABILITIES, TITLES & ENDGAME, SOCIAL & MISC. ~153 numeric/mechanic claims checked;
 **26 entries wrong** (52 individual claims); 5 unverified. Every entry below names the code that
-disagrees. **Not yet fixed** — this is the worklist for the "Accuracy audit" backlog item.
+disagrees.
+
+**FIXED 2026-09-11 (Opus), every claim re-verified against the code before editing**, and pinned by
+`tools/probe/help_topics.gd`. Corrections to the audit itself:
+- *Buff Advantage* was NOT removed: it is `DEFENSIVE_REPRIEVE_CHANCE` = **40%**, for Forcefield /
+  Fortify / Iron Skin / Cloak / a landed Paralyze. The help now reads the constant.
+- *Monster Gems*: the level GAP matters a lot (up to 50%), not "only 2%". Worded accordingly.
+- *Gold Hoarder*: removed from the page; the constant is marked legacy-no-effect.
+- **Found while fixing, and bigger than any single line:** the MAIN help page (`show_help`) was a
+  23-argument positional `%` format over text containing 145 literal percent signs. It failed on
+  every call and Godot returned it UNFORMATTED, so every key binding on the page read `[%s]` and
+  every `25%%` showed both signs. Now named `{kN}` tokens via `String.format`. Same fault, smaller:
+  the WARRIOR PATH search topic passed three unused format args and carried a literal "+11%".
+- **Rage is +16% per stack** (`BARBARIAN_RAGE_DMG_PER`), not +11%: the Rampage card text and the
+  Warrior page both said 11%. Both read the constant now.
+- The main page also had stale Poison / Curse / Blind / Ambusher / quest / soul-gem lines; fixed.
+  `stat_claims.gd` missed the Ambusher one because it matched one spelling; widened.
+- In combat, the Weapon Master / Shield Guardian badge said "Guaranteed"; the roll is 50%.
+- Title costs in both topics are GENERATED from `titles.gd` (`_title_costs_line`).
+
+**Left for the owner (not fixed):** Knight's +15% damage and Mentee's +30% XP are promised but
+NOTHING applies them (`get_knight_damage_bonus`, `get_mentee_xp_bonus` have no callers) - same shape
+as the dead `gold_find`. Wiring them is a balance call.
 
 The class-path topics (WARRIOR / MAGE / TRICKSTER) were checked separately against `-- cardnames`
 and `-- statdesc` and match.

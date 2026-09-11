@@ -427,8 +427,8 @@ const ABILITY_ENRAGE = "enrage"
 const ABILITY_AMBUSHER = "ambusher"
 const ABILITY_EASY_PREY = "easy_prey"
 const ABILITY_THORNS = "thorns"
-const ABILITY_WEAPON_MASTER = "weapon_master"    # Guaranteed weapon drop
-const ABILITY_SHIELD_BEARER = "shield_bearer"    # Guaranteed shield drop
+const ABILITY_WEAPON_MASTER = "weapon_master"    # 50% weapon drop (see the roll in the loot path)
+const ABILITY_SHIELD_BEARER = "shield_bearer"    # 50% shield drop
 const ABILITY_CORROSIVE = "corrosive"            # Chance to damage player's equipment on hit
 const ABILITY_SUNDER = "sunder"                  # Specifically damages weapons/shields
 const ABILITY_BLIND = "blind"                    # Reduces player hit chance
@@ -11344,8 +11344,8 @@ const MONSTER_TRAITS := {
 	"life_steal":     {"label": "Life Stealer",   "color": "#FF4444", "desc": "Heals itself for half the damage it deals you."},
 	"gem_bearer":     {"label": "Gem Bearer",     "color": "#00FFFF", "desc": "Drops Monster Gems, more of them the higher its level."},
 	"wish_granter":   {"label": "Wish Granter",   "color": "#FFD700", "desc": "10% chance to offer you a wish when you kill it."},
-	"weapon_master":  {"label": "* WEAPON MASTER *", "color": "#FF8000", "desc": "Drops a weapon. Guaranteed."},
-	"shield_bearer":  {"label": "* SHIELD GUARDIAN *", "color": "#00FFFF", "desc": "Drops a shield. Guaranteed."},
+	"weapon_master":  {"label": "* WEAPON MASTER *", "color": "#FF8000", "desc": "50% chance to drop a weapon."},
+	"shield_bearer":  {"label": "* SHIELD GUARDIAN *", "color": "#00FFFF", "desc": "50% chance to drop a shield."},
 	"warrior_hoarder": {"label": "* WARRIOR HOARDER *", "color": "#FF6600", "desc": "Drops WARRIOR gear — 35%, or guaranteed if a Scroll of Finding marked it."},
 	"arcane_hoarder": {"label": "* ARCANE HOARDER *", "color": "#9F70FF", "desc": "Drops MAGE gear — 35%, or guaranteed if a Scroll of Finding marked it."},
 	"cunning_prey":   {"label": "* CUNNING PREY *", "color": "#1EFF00", "desc": "Drops TRICKSTER gear — 35%, or guaranteed if a Scroll of Finding marked it."},

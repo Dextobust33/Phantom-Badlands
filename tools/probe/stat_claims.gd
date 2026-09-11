@@ -59,7 +59,10 @@ func _init() -> void:
 		"initiative clamps 5-55 in code")
 	ck(not help.contains("max 45%"), "no help block still claims a 45% initiative ceiling")
 	ck(cm.contains("monster_initiative_chance += 8"), "an ambusher adds 8 to initiative")
-	ck(not help.contains("ambusher +15%"), "...and no help block still claims +15%")
+	# Matched on the NUMBER, not one spelling: the main page wrote "Ambusher - First hit auto-crits,
+	# +15% initiative", which "ambusher +15%" never matched, so this passed while the page was wrong.
+	ck(not help.contains("ambusher +15%") and not help.to_lower().contains("15% initiative"),
+		"...and no help block still claims +15%, however it is worded")
 	# Both help blocks stated a DIFFERENT wrong initiative formula, which is why this checks the
 	# shape as well as the numbers: a stale formula with the right clamp still misleads.
 	ck(not help.contains("(speed-DEX)"), "no help block still states the old (speed-DEX) formula")

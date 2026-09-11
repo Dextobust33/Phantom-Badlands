@@ -38,10 +38,9 @@ upgrades. The server already accepts a specific copy id (`cull_ability_card`,
 second copy now levels on its own instead of sharing the first's rank). Batch it with the rest of
 Track B for the single chain run; do not run the chain for it alone.
 
-**Help-screen accuracy audit is DONE (not fixed):** `docs/design/help_audit_2026-09-11.md`
-— 26 wrong entries with the code line for each (title costs ~100x high, fishing describes a dead
-minigame, soul gem list invented, affix ladder off by one). The class-path topics matched.
-Fixing them is the next cheap Track A item.
+**Help screen FIXED (Track A, unreleased):** all 26 audited entries corrected, and the main help
+page now formats; it had shown every key binding as `[%s]`. Pinned by `tools/probe/help_topics.gd`.
+Two owner questions came out of it: the dead Knight/Mentee bonuses (see Phase 3 list).
 
 **Four owner decisions are answered (0b done)** — see THE ORDER.
 
@@ -291,7 +290,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 46 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 47 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -2112,6 +2111,15 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Several of those (the Reveals, Bulwark, Executioner-family triggers) are wired and proven by
       `upgrade_new_wired.gd` / `upgrade_triggers.gd`. Derive the list from what actually fires,
       or delete the section — a stale list reads as a real finding.
+- [ ] **Knight +15% damage and Mentee +30% XP are DEAD — owner's call.** Both are promised in
+      the title UI and help, and `get_knight_damage_bonus` / `get_mentee_xp_bonus` /
+      `get_mentee_extra_xp_bonus` have no callers. Same shape as `gold_find`. Wire them (a
+      player-power change, rare endgame titles only) or remove the promise.
+- [ ] **New players get no gathering tutorial.** `_maybe_send_gather_hint` is only called from
+      `handle_fish_start` / `handle_mine_start` / `handle_log_start`, which nothing routes to; the
+      live path is `gathering_start`. The hint's text also describes the dead reaction minigame.
+      Rewrite it for the 3-choice minigame and send it from `handle_gathering_start`, and delete
+      the three dead handlers.
 - [ ] **Buff panel, party half.** Same strip for each party member, plus a STACKING indicator.
 - [x] **Card upgrade preview — DONE 2026-09-07.** The estimate counted `power` picks alone while
       the combat manager applied nine more multipliers from hard-coded literals, so five upgrades
@@ -2169,8 +2177,11 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       example of since you were unable to find its cause."* Do not guess at a second fix — wait
       for a repro with the DUNGEON NAME, then trace that instance's `dungeon_level`.
 
-- [~] **AUDITED 2026-09-11, fixes pending — `docs/design/help_audit_2026-09-11.md` lists 26 wrong
-      entries with the code that disagrees. Class-path topics match `cardnames`/`statdesc`.**
+- [x] **DONE 2026-09-11 — help screen fixed and pinned by `tools/probe/help_topics.gd`.** All 26
+      audited entries corrected after re-verifying each against the code; the main help page, which
+      had shown every key binding as `[%s]` because its format string failed on every call, now
+      formats; Rage's ramp corrected to +16% on two surfaces. Details and what the audit itself got
+      wrong: `docs/design/help_audit_2026-09-11.md`. (Project docs and CLAUDE.md were not swept.)
       Accuracy audit: help screen, project docs, CLAUDE.md (owner, 2026-09-07, partially done
       and never tracked): *"audit project documentation, the help screen, claude files, we need to
       check for accuracy."* A docs pass happened (`bebf7644`) and the help page's vestigial
