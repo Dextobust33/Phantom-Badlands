@@ -432,6 +432,25 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       has to be read first. Confirm by logging the value of `forcefield_shield` immediately
       before the monster's damage is applied.
 
+- [ ] **A dungeon completed with no boss in it.** Owner: *"I just did a T1-1 Goblin Dungeon and
+      the chest was just sitting there on the last floor I didn't have to fight a boss to get it
+      to appear"*, then, correcting my first theory, *"I didn't fight a boss as there wasn't
+      one."* It happened TWICE, so it is systematic, not a rare roll.
+      **Ruled out by measurement, not by reading:** the boss placement search. I replayed
+      `_find_monster_spawn_position` against 3 generated boss floors, 2000 runs each — 0 failures
+      (the boss floor is 64x64 with ~11% walkable, so 100 random darts effectively always land).
+      **Also ruled out:** my own theory that the boss was killed unrecognised. The owner says
+      there wasn't one, and that outranks the theory. (The boss WAS invisible as a boss — that is
+      a real bug, fixed separately with the ring — but it is not this.)
+      **Still unexplained**, and the three completion paths all read correctly on the page:
+      boss victory (`server.gd` ~6869), stepping on an EXIT while on the last floor
+      (`_advance_dungeon_floor`), and the final-chest open/skip handlers.
+      **Instrumented rather than theorised a third time** (2026-09-10): spawn now asserts the boss
+      floor got exactly one boss and WARNs otherwise — it previously appended nothing and said
+      nothing on a placement failure — and completion logs which floor the player was on, of how
+      many, and whether any boss is still alive, flagging "completed WITHOUT killing the boss".
+      Read those two lines from the next run before touching anything.
+
 - [ ] **Does the health bar lag on multi-hits / monster abilities?** Owner asked, and hedged:
       *"I may have been moving too fast though."* Two things ruled OUT: the bar's tween is 0.3s
       (`animate_hp_bar_change`), and the bar reads `character_data.current_hp` directly, so it is
