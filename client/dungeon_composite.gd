@@ -181,6 +181,47 @@ static func bordered(path: String, color_hex: String) -> String:
 	return dyn
 
 
+static func ringed(path: String, color_hex: String) -> String:
+	"""`path` with a full RECTANGLE outline in `color_hex`, marking it as a BOSS.
+
+	Deliberately a closed ring and not the corner brackets `bordered` draws. Players have already
+	learned brackets = something you can pick up; reusing them here would teach that a boss is
+	loot. A solid frame is the opposite reading and cannot be confused with four corners.
+
+	Owner 2026-09-10: *"I couldn't locate a boss and when I grabbed the chest it gave me the
+	dungeon loot and teleported me out of the dungeon."* They had already killed it. The boss
+	spawns as a wandering entity carrying display_char "B" and a red colour, and the renderer set
+	both - but only the GLYPH fallback ever read them. Once every dungeon monster had a sprite,
+	the boss was drawn as an ordinary Goblin and its marker became dead code.
+
+	The colour is the server's own: #FF0000 for a boss, #FFD700 for a fabled one, so the rarer
+	thing stays visibly rarer."""
+	if path == "" or color_hex == "":
+		return path
+	var key := path + "@ring@" + color_hex
+	if _out_cache.has(key):
+		return _out_cache[key]
+	var base := _image_for(path)
+	if base == null:
+		return path
+	var out := base.duplicate() as Image
+	var c := Color(color_hex)
+	var w := out.get_width()
+	var h := out.get_height()
+	for x in range(w):
+		out.set_pixel(x, 0, c)
+		out.set_pixel(x, h - 1, c)
+	for y in range(h):
+		out.set_pixel(0, y, c)
+		out.set_pixel(w - 1, y, c)
+	var tex := ImageTexture.create_from_image(out)
+	var dyn := _DYN_DIR + "r%d.png" % abs(hash(key))
+	tex.take_over_path(dyn)
+	_keepalive.append(tex)
+	_out_cache[key] = dyn
+	return dyn
+
+
 static func _image_for(path: String) -> Image:
 	if _img_cache.has(path):
 		return _img_cache[path]

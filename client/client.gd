@@ -45545,9 +45545,18 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 						# the same mistake reached the screen (player, then companion, then here),
 						# which is why the rule is now absolute: never `color=` a floor-backed
 						# sprite. `tools/verify_dungeon_art.gd` fails the build if one appears.
+						var _mimg: String = _DungeonComposite.over_prop(_msprite, _prop)
+						# A BOSS gets a ring. `mchar`/`mcolor` above have carried a red "B" for bosses
+						# since long before sprites, but ONLY the glyph fallback below ever read them -
+						# so the moment every dungeon monster had art, the boss became visually
+						# indistinguishable from any other monster of its type. Owner walked a floor,
+						# killed the Goblin King thinking it was a goblin, and reported the resulting
+						# chest as appearing with no boss fight.
+						# The server's own colour, so a FABLED boss (#FFD700) still reads rarer.
+						if mon.get("is_boss", false):
+							_mimg = _DungeonComposite.ringed(_mimg, String(mon.get("color", "#FF0000")))
 						line += "[url=%s][img=%dx%d]%s[/img][/url]" % [
-							_murl, _DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX,
-							_DungeonComposite.over_prop(_msprite, _prop)]
+							_murl, _DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _mimg]
 					else:
 						line += _dungeon_glyph_cell(mchar, mcolor, _murl, _prop)
 				elif trap_map.has(mkey):
