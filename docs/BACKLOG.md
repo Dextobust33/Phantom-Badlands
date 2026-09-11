@@ -693,10 +693,23 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       `tile=NONE`: `_get_dungeon_at_location` finding nothing at the player's feet even though
       the entrance panel had just printed a sub-tier from the same call, after which the depth
       falls back to a distance roll.
-      Separately and definitely wrong, found while reading: the dungeon LIST
-      (`server.gd` ~29136) matches an instance by dungeon_type ALONE — no location, owner or
-      completed filter — so it reports the sub-tier of whichever instance of that type comes
-      first in dictionary order, which may be a different dungeon entirely.
+      **The second half of this is FIXED (2026-09-11).** The dungeon LIST matched an instance by
+      dungeon_type ALONE and took the first hit in DICTIONARY ORDER — no owner, completion or
+      distance filter — so the sub-tier in the name, the recommended level band AND the map
+      coordinates the player then walked to could all describe a different dungeon: one already
+      finished, one belonging to another player, or simply the far side of the map. That alone
+      reproduces "said T1-2, entered a T1-7" without any entry-path fault at all.
+      Fixed as the CAUSE rather than a third patch: three sites were separately answering "which
+      instance of this type is the relevant one" and two of the three had the right predicate
+      while the list had none. They now share `find_dungeon_instance()`, which owns the four
+      rules — skip completed, skip other players' personal runs, prefer your OWN live run at any
+      distance, else nearest — with a `world_only` flag for the Cartographer, whose question is
+      about a 'D' on the map and so cannot be answered by a personal instance.
+      Probe: `dungeon_instance_match.gd`, calling the real finder against a synthetic instance
+      table rather than reading its source — the fault was never in what the code SAID, it was
+      in which row it picked. Re-injecting the type-only rule fails 6 of its 10 checks.
+      **Still open: the entry-path half.** Read the DUNGEON-ENTER diagnostic from a fresh run
+      before theorising again.
 
 - [ ] **The kennel screen does not show a companion's sub-tier, and cannot inspect one.** Owner,
       in passing: *"it doesn't list its current subtier in that screen or let you inspect them"*.

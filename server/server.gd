@@ -2721,12 +2721,10 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		var quest_dungeon_type = quest_data.get("dungeon_type", "")
 		if quest_dungeon_type != "":
 			# Check if a world dungeon of this type already exists
-			var found_matching = false
-			for did in active_dungeons:
-				var d = active_dungeons[did]
-				if d.get("dungeon_type", "") == quest_dungeon_type and d.get("completed_at", 0) == 0 and not d.has("owner_peer_id"):
-					found_matching = true
-					break
+			# Same three rules, through the shared finder. This site was already correct; routing it
+			# through the helper is what keeps it correct when the rules next change.
+			var found_matching = find_dungeon_instance(quest_dungeon_type,
+				int(quest_data.get("origin_x", 0)), int(quest_data.get("origin_y", 0)), 0, "", true) != ""
 			if not found_matching:
 				var origin_x = int(quest_data.get("origin_x", 0))
 				var origin_y = int(quest_data.get("origin_y", 0))
@@ -15091,24 +15089,13 @@ func handle_dungeon_locate(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#C8A24A]🧭 The realm's dungeons shift too often to track from memory. Visit a [b]Cartographer at a trading post[/b] to have one marked — or reach [b]Cartography rank %d[/b] to sense them anywhere. [color=#808080](You are Cartography rank %d.)[/color][/color]" % [CARTOGRAPHY_SENSE_RANK, rank]})
 		return
 	# Nearest active world 'D' of this type: matching type, not completed, no owner (world entry).
-	var best_dist := 1 << 30
-	var bx := 0
-	var by := 0
-	var found := false
-	for id in active_dungeons:
-		var d: Dictionary = active_dungeons[id]
-		if String(d.get("dungeon_type", "")) != dungeon_type:
-			continue
-		if d.has("owner_peer_id") or int(d.get("completed_at", 0)) != 0:
-			continue
-		var wx := int(d.get("world_x", 0))
-		var wy := int(d.get("world_y", 0))
-		var dist: int = absi(wx - int(character.x)) + absi(wy - int(character.y))
-		if dist < best_dist:
-			best_dist = dist
-			bx = wx
-			by = wy
-			found = true
+	# world_only: the Cartographer marks a 'D' on the MAP, so a personal instance - which
+	# has no map presence for anyone else - is not an answer to the question asked.
+	var _found_id := find_dungeon_instance(dungeon_type, int(character.x), int(character.y), 0, "", true)
+	var found := _found_id != ""
+	var bx := int(active_dungeons.get(_found_id, {}).get("world_x", 0))
+	var by := int(active_dungeons.get(_found_id, {}).get("world_y", 0))
+	var best_dist := absi(bx - int(character.x)) + absi(by - int(character.y))
 	if not found:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]No active %s stirs in the realm right now — check back soon, or explore to find one.[/color]" % dname})
 		return
@@ -29164,6 +29151,54 @@ func handle_storage_withdraw(peer_id: int, message: Dictionary):
 
 # ===== DUNGEON SYSTEM =====
 
+func find_dungeon_instance(dungeon_type: String, from_x: int, from_y: int,
+		for_peer: int = 0, for_username: String = "", world_only: bool = false) -> String:
+	"""Which live instance of `dungeon_type` is the one this player can actually walk into?
+
+	2026-09-11. THREE sites asked this question and each answered it differently, which is why
+	they disagreed in front of the owner:
+
+	  * the quest restore (~L2727) - correct: skips completed, skips owned
+	  * `handle_cartographer_locate` (~L15098) - correct: same, plus nearest
+	  * `handle_dungeon_list` (~L29196) - matched on dungeon_type ALONE and took the first hit
+	    in DICTIONARY ORDER, so the sub-tier in the name, the recommended level band and the
+	    coordinates the player then walked to could all belong to a different dungeon: one
+	    already finished, one belonging to another player, or simply the far side of the map.
+
+	The rules, in one place so a fourth caller cannot invent a fourth set:
+
+	  1. A COMPLETED run is not somewhere you can go. Re-entering one is the bug that produced
+	     the bossless dungeon and the re-farm; `completed_at` is stamped for exactly this.
+	  2. Another player's PERSONAL instance is invisible - listing its sub-tier leaks their run
+	     and its coordinates point at an entrance that is not theirs.
+	  3. Your OWN live run wins outright, whatever the distance: it is the one you are part way
+	     through and the only one holding your progress. (`world_only` suppresses this for
+	     callers that specifically want a world 'D' on the map, like the Cartographer.)
+	  4. Otherwise the NEAREST, because distance is what decides which one you reach.
+
+	Returns "" when there is none."""
+	var best: String = ""
+	var best_dist: int = 1 << 30
+	for id in active_dungeons:
+		var d: Dictionary = active_dungeons[id]
+		if String(d.get("dungeon_type", "")) != dungeon_type:
+			continue
+		if int(d.get("completed_at", 0)) != 0:
+			continue
+		var owned: bool = d.has("owner_peer_id")
+		if owned and world_only:
+			continue
+		if owned and int(d.get("owner_peer_id", 0)) != for_peer 				and String(d.get("owner_username", "")) != for_username:
+			continue
+		var dist: int = absi(int(d.get("world_x", 0)) - from_x) + absi(int(d.get("world_y", 0)) - from_y)
+		if owned:
+			dist = -1
+		if dist < best_dist:
+			best_dist = dist
+			best = id
+	return best
+
+
 func handle_dungeon_list(peer_id: int):
 	"""Send list of available dungeons to player"""
 	if not characters.has(peer_id):
@@ -29195,13 +29230,12 @@ func handle_dungeon_list(peer_id: int):
 		# v0.9.758), and the wolves were 6 (the INSTANCE, created at sub-tier 4-5 and clamped to
 		# the level-6 player). A genuine 1-1 tops out at level 2.
 		var inst_sub_tier = -1
-		for inst_id in active_dungeons:
-			var inst = active_dungeons[inst_id]
-			if inst.dungeon_type == dungeon_type:
-				active_instance = inst_id
-				instance_location = Vector2i(inst.world_x, inst.world_y)
-				inst_sub_tier = inst.get("sub_tier", 1)
-				break
+		active_instance = find_dungeon_instance(dungeon_type, int(character.x), int(character.y),
+			peer_id, String(peers.get(peer_id, {}).get("username", "")))
+		if active_instance != "":
+			var inst: Dictionary = active_dungeons[active_instance]
+			instance_location = Vector2i(int(inst.get("world_x", 0)), int(inst.get("world_y", 0)))
+			inst_sub_tier = int(inst.get("sub_tier", 1))
 
 		# Use sub-tier level range if instance exists, otherwise use dungeon defaults
 		var display_min = dungeon_data.min_level
