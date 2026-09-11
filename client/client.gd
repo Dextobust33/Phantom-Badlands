@@ -36472,7 +36472,12 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
 		"companion_data": character_data.get("active_companion", {}),
 		"companion_font_size": companion_font_size,
-		"monster_name": monster_name,
+		# The empowered prefix is hoverable on the NAMEPLATE too, not only in the combat log.
+		# Owner hovered "Juggernaut" in the name and got nothing; the name is the part that
+		# stays on screen for the whole fight, so it is where the explanation belongs.
+		# Annotated through the SHARED helper so the plate and the log cannot word it differently.
+		"monster_name": CombatManager.annotate_empowered_name(
+			monster_name, combat_state.get("empowered_mods", [])),
 		"monster_level": monster_level,
 		"monster_name_color": monster_name_color,
 		"monster_art_bbcode": art_bbcode,

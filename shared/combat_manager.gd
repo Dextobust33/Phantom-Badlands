@@ -504,6 +504,49 @@ const EMPOWERED_MOD_DISPLAY = {
 	"broodcalling": {"label": "BROODCALLING — its kin WILL avenge it",    "color": "#FF8C00"},
 }
 
+static func empowered_mod_hover(mod_id: String) -> String:
+	"""What an empowered modifier does, as one line of hover text.
+
+	Reads the PREFIX from MonsterDatabase (which owns placement) and the DESCRIPTION from
+	EMPOWERED_MOD_DISPLAY above (which owns wording), rather than restating either."""
+	var disp: Dictionary = EMPOWERED_MOD_DISPLAY.get(mod_id, {})
+	if disp.is_empty():
+		return ""
+	# The label is already "JUGGERNAUT - massive bulk, immune to stun".
+	return String(disp.get("label", mod_id))
+
+
+static func annotate_empowered_name(monster_name: String, mods) -> String:
+	"""`monster_name` with each empowered PREFIX wrapped in a hover link.
+
+	Owner 2026-09-11: "I just ran into a Juggernaut Giant Spider and tried to hover the
+	Juggernaut in it's name and didn't get anything to tell me what Juggernaut does."
+
+	The EMPOWERED FOE banner does explain it - but only in one line at the moment the fight
+	starts, which scrolls away. The NAME is the part that stays on screen, in the log and on the
+	nameplate, and the name is what a player reaches for. This is the same lesson the Scroll of
+	Finding taught earlier the same day: put it where it persists.
+
+	Wraps only the prefixes this monster actually HAS, matched at the start of the name, so a
+	species that merely happens to contain the word is untouched."""
+	if monster_name == "" or not (mods is Array) or mods.is_empty():
+		return monster_name
+	var out := monster_name
+	for mod_id in mods:
+		var m := String(mod_id)
+		var md: Dictionary = MonsterDatabase.EMPOWERED_MODIFIERS.get(m, {})
+		var prefix := String(md.get("prefix", ""))
+		if prefix == "" or not out.begins_with(prefix):
+			continue
+		var desc := empowered_mod_hover(m)
+		if desc == "":
+			continue
+		var color := String(md.get("color", "#FFFFFF"))
+		out = "[url=%s][color=%s]%s[/color][/url]%s" % [
+			desc, color, prefix, out.substr(prefix.length())]
+	return out
+
+
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
 	var raw_art_array = _get_raw_monster_ascii_art(monster_name)
@@ -11047,7 +11090,14 @@ func generate_encounter_text(monster: Dictionary) -> String:
 	var name_color = String(monster.get("name_color", "")) if String(monster.get("name_color", "")) != "" else _get_affinity_color(affinity)
 
 	# Build encounter message with colored monster name (color indicates class affinity)
-	var msg = "[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster.name, monster.level]
+	# The empowered prefix in the name is HOVERABLE - see `annotate_empowered_name`. It carries
+	# its own colour, so the name is split rather than wrapped whole.
+	var _shown_name: String = annotate_empowered_name(String(monster.name), monster.get("empowered_mods", []))
+	var msg: String = ""
+	if _shown_name != String(monster.name):
+		msg = "[color=#FFD700]You encounter a [/color]%s[color=#FFD700] (Lvl %d)![/color]" % [_shown_name, monster.level]
+	else:
+		msg = "[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster.name, monster.level]
 
 	# Empowered banner (v0.9.651) — one line per modifier so the player can
 	# read the threat and decide to fight or flee BEFORE committing a turn.
@@ -11059,7 +11109,9 @@ func generate_encounter_text(monster: Dictionary) -> String:
 		for mod_id in empowered_mods:
 			var disp: Dictionary = EMPOWERED_MOD_DISPLAY.get(mod_id, {})
 			if not disp.is_empty():
-				mod_lines.append("[color=%s]  ◆ %s[/color]" % [disp.get("color", "#FFFFFF"), disp.get("label", mod_id)])
+				# Hoverable as well, so the banner and the name behave the same way.
+				mod_lines.append("[url=%s][color=%s]  ◆ %s[/color][/url]" % [
+					disp.get("label", mod_id), disp.get("color", "#FFFFFF"), disp.get("label", mod_id)])
 		if mod_lines.size() > 0:
 			msg += "\n[color=%s]⚡ EMPOWERED FOE ⚡[/color]\n%s" % [name_color, "\n".join(mod_lines)]
 

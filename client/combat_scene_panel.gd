@@ -2952,6 +2952,9 @@ func _build_monster_column() -> VBoxContainer:
 	_monster_name_label.scroll_active = false
 	_monster_name_label.add_theme_font_size_override("normal_font_size", 16)
 	_monster_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# The name can carry a hoverable empowered prefix ("Juggernaut Giant Spider"). Same popup
+	# every other chip in this panel uses, rather than a second tooltip style to maintain.
+	_monster_name_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
 	_monster_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(_monster_name_label)
 
