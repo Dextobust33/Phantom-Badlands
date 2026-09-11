@@ -17864,6 +17864,26 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		var c = "#FF00FF" if wits_diff > 0 else "#808080"
 		all_diffs["WIT"] = "[color=%s]%+dWIT[/color]" % [c, wits_diff]
 
+	# DEX / INT / WIS — raw, the same way WITS is shown directly above.
+	#
+	# 2026-09-11. Owner: *"equipment comparisons may be missing some stats like Dex"*. They were,
+	# and it was wider than DEX: of the six attributes gear can roll, STRENGTH folded into ATK and
+	# CONSTITUTION into DEF and HP, WITS had its own line — and DEXTERITY, INTELLIGENCE and WISDOM
+	# were read ONLY to size the resource pool further down. A ring with +6 DEX and no max_energy
+	# produced no line at all, while the same ring with +6 WITS produced "+6WIT".
+	#
+	# Shown RAW rather than folded into a derived number, because unlike strength (which is just
+	# attack) these each drive several unrelated things: DEX is hit chance, dodge, initiative,
+	# flee and crit; INT is a mage's entire ability damage; WIS gates poison resistance. There is
+	# no single honest number to fold them into, and inventing one would hide the same
+	# information differently.
+	for _attr in [["dexterity", "DEX", "#00BFFF"], ["intelligence", "INT", "#66CCFF"],
+			["wisdom", "WIS", "#66FFCC"]]:
+		var _ad: int = int(new_bonuses.get(_attr[0], 0)) - int(old_bonuses.get(_attr[0], 0))
+		if _ad != 0:
+			var _ac: String = String(_attr[2]) if _ad > 0 else "#808080"
+			all_diffs[String(_attr[1])] = "[color=%s]%+d%s[/color]" % [_ac, _ad, String(_attr[1])]
+
 	# Effective resource comparison — fold attribute contributions into pool sizes,
 	# then apply the house resource_max multiplier so the diff matches the actual
 	# character delta. Mirrors character.gd:1049/1061/1072 (get_total_max_mana/

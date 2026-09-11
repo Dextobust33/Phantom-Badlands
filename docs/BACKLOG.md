@@ -416,7 +416,16 @@ can actually roll:
 | **intelligence** | mana pool only                  | **NO**   |
 | **wisdom**       | mana pool only                  | **NO**   |
 
-- [ ] **Three attributes produce no comparison line of their own.** DEX, INT and WIS are read
+- [x] **DONE 2026-09-11.** DEX / INT / WIS now produce their own bracket lines, shown RAW the way
+      WITS already was. Raw rather than folded because unlike strength (which is just attack)
+      each drives several unrelated things — there is no single honest number to fold them into.
+      The DETAIL view was already correct; only the inline bracket was short, which is why this
+      was invisible to anyone reading the item screen. `_get_tool_comparison_parts` needs nothing:
+      tools carry no attributes. All four bracket call sites share the one function.
+      `tools/probe/item_comparison_stats.gd` covers it, and asserts STR/CON still FOLD rather than
+      going raw, so a later "helpful" edit is caught as a contract change.
+
+- [ ] ~~Three attributes produce no comparison line of their own.~~ DEX, INT and WIS are read
       ONLY to compute the resource pool (`RES`), so a ring with +6 DEX and no max_energy shows
       nothing at all — while the same ring with +6 WITS would show `+6WIT`. DEX drives hit
       chance, dodge, initiative, flee and (for most classes) crit; INT is a mage's entire
