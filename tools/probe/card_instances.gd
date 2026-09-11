@@ -48,7 +48,7 @@ func _init() -> void:
 		and int(ch.ability_effect_ranks.get("cleave#2", 0)) == 2, "the second Cleave inherited uses, picks and effect rank")
 	ck(int(ch.combat_deck_collection.get("berserk", -1)) == 0 and not ch.combat_deck_collection.has("berserk#2"), "a benched card (0) stays one benched instance")
 	ck(ch.card_copies_owned("cleave") == 2 and ch.card_copies_in_deck("cleave") == 2 and ch.card_copies_owned(vf) == 3, "counts read per card")
-	var before := ch.combat_deck_collection.duplicate(true)
+	var before: Dictionary = ch.combat_deck_collection.duplicate(true)
 	ch.initialize_deck_collection_if_needed()
 	ck(ch.combat_deck_collection == before, "migration is idempotent")
 
@@ -88,7 +88,7 @@ func _init() -> void:
 	ck(ch.get_milestone_picks("cleave") == ["executioner"], "with cleave#2 active, 'cleave' reads cleave#2's picks")
 	ck(ch.get_milestone_picks("berserk") == [], "...but another card is untouched")
 	ch.clear_active_card_instance()
-	var r := ch.apply_milestone_pick("cleave#2", "swift")
+	var r: Dictionary = ch.apply_milestone_pick("cleave#2", "swift")
 	ck(bool(r.get("ok", false)) and "swift" in ch.ability_milestone_picks["cleave#2"] and not ("swift" in ch.ability_milestone_picks["cleave"]),
 		"a pick applied to 'cleave#2' lands only there")
 	ck(int(ch.get_ability_rank_bonus("cleave#2")) == int(ch.get_ability_rank_bonus("cleave")), "gear rank bonus is per CARD, whichever copy")
@@ -100,7 +100,6 @@ func _init() -> void:
 	var costs: Dictionary = sim.combat_mgr._build_ability_cost_info(c)
 	ck(costs.has("cleave") and costs.has("cleave#2"), "...and a cost entry")
 	ck(ch._active_card_iid == "", "the builders leave no active copy behind")
-	sim.combat_mgr.end_combat(0) if sim.combat_mgr.has_method("end_combat") else null
 
 	print("\n--- thin / restore / mint / sell ---")
 	var ch2 = sim.make_char(30, "average", "Fighter", "Human")
@@ -113,28 +112,28 @@ func _init() -> void:
 	ch2.combat_deck_collection["devastate"] = 1
 	ch2.ability_milestone_picks["cleave"] = ["power", "rider"]
 	ch2.ability_milestone_picks["cleave#2"] = []
-	var cull := ch2.cull_ability_card("cleave")
+	var cull: Dictionary = ch2.cull_ability_card("cleave")
 	ck(bool(cull.get("ok", false)) and String(cull.get("instance", "")) == "cleave#2",
 		"thinning 'cleave' benches the copy with the least invested (cleave#2, no picks)")
 	ck(int(ch2.combat_deck_collection["cleave#2"]) == 0 and int(ch2.combat_deck_collection["cleave"]) == 1 and int(cull.get("new_count", -1)) == 1,
 		"...it is benched, not deleted; the upgraded copy stays in")
-	var add := ch2.add_ability_copy("cleave", false)
+	var add: Dictionary = ch2.add_ability_copy("cleave", false)
 	ck(bool(add.get("ok", false)) and String(add.get("instance", "")) == "cleave#2" and int(ch2.combat_deck_collection["cleave#2"]) == 1,
 		"'+' restores the benched copy for free rather than minting a third")
-	var add2 := ch2.add_ability_copy("cleave", false)
+	var add2: Dictionary = ch2.add_ability_copy("cleave", false)
 	ck(not bool(add2.get("ok", true)), "a free '+' cannot mint a copy when none is benched")
-	var g := ch2.grant_card_copy("cleave")
+	var g: String = ch2.grant_card_copy("cleave")
 	ck(g == "cleave#3" and ch2.card_copies_owned("cleave") == 3, "a reward mints the lowest free copy number")
 	ck(ch2.grant_card_copy("cleave") == "", "...and refuses past MAX_ABILITY_COPIES")
-	var sell := ch2.least_invested_instance("cleave", false, true)
+	var sell: String = ch2.least_invested_instance("cleave", false, true)
 	ck(sell == "cleave#3" or sell == "cleave#2", "selling a bare 'cleave' picks a copy with nothing on it, never the upgraded one")
 	ch2.ability_uses["cleave#3"] = 12
-	var carried := ch2.remove_card_instance("cleave#3")
+	var carried: Dictionary = ch2.remove_card_instance("cleave#3")
 	ck(int(carried.get("uses", 0)) == 12 and not ch2.combat_deck_collection.has("cleave#3") and not ch2.ability_uses.has("cleave#3"),
 		"a sold copy leaves with its progress and is forgotten here")
 	var ch3 = sim.make_char(30, "average", "Wizard", "Human")
 	ch3.initialize_deck_collection_if_needed()
-	var got := ch3.grant_card_copy(vf, {"uses": 12, "picks": ["executioner"], "effect_rank": 1})
+	var got: String = ch3.grant_card_copy(vf, {"uses": 12, "picks": ["executioner"], "effect_rank": 1})
 	ck(got == vf and int(ch3.ability_uses.get(vf, 0)) == 12 and ch3.ability_milestone_picks.get(vf, []) == ["executioner"],
 		"a bought copy arrives carrying the seller's upgrades")
 	var counts: Dictionary = ch2.deck_counts_by_card()
@@ -155,6 +154,12 @@ func _init() -> void:
 	var cli := FileAccess.get_file_as_string("res://client/client.gd")
 	ck(cli.find("var base_cmd := Character.card_base(command)") >= 0, "the client sends the copy and decides locally by the card")
 	ck(cli.find("var deck_collection = _deck_counts_by_card()") >= 0, "the deck screen is fed per-card counts")
+	var abp := FileAccess.get_file_as_string("res://client/ability_panel.gd")
+	ck(abp.find("elif _benched > 0:") >= 0 and cli.find("ability_panel.owned_counts = _owned_counts_by_card()") >= 0,
+		"the deck screen's '+' can bring a benched copy back")
+	var pmgr := FileAccess.get_file_as_string("res://server/persistence_manager.gd")
+	ck(pmgr.find('var is_unique = supply_cat in ["equipment", "egg", "card"]') >= 0,
+		"card listings never merge, so no copy's upgrades are lost")
 	var pnl := FileAccess.get_file_as_string("res://client/combat_scene_panel.gd")
 	ck(pnl.find("var _card := Character.card_base(card_name)") >= 0, "the hand renders the card's art and the copy's facts")
 

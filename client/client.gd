@@ -25099,6 +25099,7 @@ func handle_server_message(message: Dictionary):
 				var new_count = int(message.get("new_count", 1))
 				display_game("[color=#9ACD32]Culled one copy of %s — deck now × %d.[/color]" % [cull_label, new_count])
 				if ability_panel and ability_panel.has_method("update_deck_collection"):
+					ability_panel.owned_counts = _owned_counts_by_card()
 					ability_panel.update_deck_collection(_deck_counts_by_card())
 			else:
 				var reason = str(message.get("reason", "Cull rejected"))
@@ -43360,6 +43361,7 @@ func _populate_ability_panel() -> void:
 	# Slice 6c — pass deck collection so panel shows copy counts + cull buttons.
 	# 2026-09-11 — the panel wants {card: copies in deck}; the collection is per COPY now.
 	var deck_collection = _deck_counts_by_card()
+	ability_panel.owned_counts = _owned_counts_by_card()
 	# #69 — class + race passives (from character_update) shown as Trait cards on the deck.
 	var _class_trait = character_data.get("class_trait", {})
 	var _race_trait = character_data.get("race_trait", {})

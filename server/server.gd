@@ -17984,9 +17984,12 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		# #39 — add the earned card to the buyer's deck collection (capped). Card listings
 		# are single-copy, so buy_qty is 1; clamp defensively anyway.
 		var _bcid = String(item.get("card_id", ""))
-		# The copy arrives with the upgrades and uses its seller put on it.
+		# The copy arrives with the upgrades and uses its seller put on it. A card listing is
+		# single-copy now (never merged), but a stack listed before 2026-09-11 can hold several
+		# fresh copies, so grant one per unit bought; only a listing's own progress rides on it.
 		var _prog = item.get("instance", {})
-		character.grant_card_copy(_bcid, _prog if _prog is Dictionary else {})
+		for _bi in range(maxi(1, buy_qty)):
+			character.grant_card_copy(_bcid, _prog if (_prog is Dictionary and _bi == 0) else {})
 	else:
 		# Add each item individually (tools, consumables, etc. need separate copies)
 		for _i in range(buy_qty):

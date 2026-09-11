@@ -1,12 +1,11 @@
 extends SceneTree
-## The listing ROUND TRIP: list a card, read it back, buy it, see it gone.
+## The listing ROUND TRIP: list a card, read it back, remove it.
 ##
-## The backlog records the card market as "built, compile-clean, never exercised end to end", and
-## the merge rule is the reason to be careful: cards carry `supply_category: "card"`, which is NOT
-## in the unique list, so two listings of the same card by the same seller MERGE - summing both
-## quantity AND base_valor. If the buy side priced from `base_valor` directly, a stack of two
-## would charge double for one card. (It does not: it divides by quantity for a per-unit rate.
-## This proves the merge behaves as that arithmetic assumes.)
+## 2026-09-11 — CARD LISTINGS NO LONGER MERGE. Every copy of a card is its own instance and can
+## carry its own upgrades (see tools/probe/card_instances.gd). The old rule merged two listings of
+## the same card by the same seller into one stack, summing quantity and valor, which would have
+## kept the first copy's upgrades and thrown the second copy's away. Cards now sit beside equipment
+## and eggs in the unique list: two copies listed are two rows, each with its own progress.
 func _init() -> void:
 	var PM = load("res://server/persistence_manager.gd")
 	var pm = PM.new()
@@ -20,37 +19,32 @@ func _init() -> void:
 	var valor: int = int(DT.calculate_card_valor(cid))
 	var post: String = "post_test"
 
-	var mk := func():
+	var mk := func(picks: Array):
 		return {"account_id": "acct1", "seller_name": "Seller",
-			"item": {"type": "card", "card_id": cid, "name": name, "tier": DT.card_tier(cid)},
+			"item": {"type": "card", "card_id": cid, "name": name, "tier": DT.card_tier(cid),
+				"instance": {"uses": 40, "picks": picks, "effect_rank": 0}, "upgrades": picks.size()},
 			"base_valor": valor, "supply_category": "card",
 			"listed_at": 0, "quantity": 1}
 
-	var id1: String = pm.add_market_listing(post, mk.call())
-	var after_one: Array = pm.get_market_listings(post)
-	print("[MKTRT] listed one: id=%s  rows=%d  qty=%d  base_valor=%d (card valor %d)"
-		% [id1, after_one.size(), int(after_one[0].get("quantity", 0)), int(after_one[0].get("base_valor", 0)), valor])
-
-	var id2: String = pm.add_market_listing(post, mk.call())
-	var after_two: Array = pm.get_market_listings(post)
-	var row: Dictionary = after_two[0]
-	var qty: int = int(row.get("quantity", 0))
-	var bv: int = int(row.get("base_valor", 0))
-	var per_unit: int = int(bv / maxi(qty, 1))
-	print("[MKTRT] listed a second: rows=%d  qty=%d  base_valor=%d  -> per-unit %d (want %d)"
-		% [after_two.size(), qty, bv, per_unit, valor])
 	var bad := 0
-	if after_two.size() != 1 or qty != 2:
-		print("[MKTRT] BROKEN: the second listing did not merge"); bad += 1
-	if per_unit != valor:
-		print("[MKTRT] BROKEN: per-unit price %d != card valor %d - a stack would mis-price" % [per_unit, valor]); bad += 1
-	if id1 != id2:
-		print("[MKTRT] note: merge returned a different id (%s vs %s)" % [id1, id2])
+	var id1: String = pm.add_market_listing(post, mk.call(["executioner"]))
+	var id2: String = pm.add_market_listing(post, mk.call(["swift", "power"]))
+	var rows: Array = pm.get_market_listings(post)
+	print("[MKTRT] listed two copies: rows=%d ids=%s,%s" % [rows.size(), id1, id2])
+	if rows.size() != 2 or id1 == id2:
+		print("[MKTRT] BROKEN: two card copies merged into one listing - one copy's upgrades would be lost"); bad += 1
+	var seen := []
+	for r in rows:
+		if int(r.get("quantity", 0)) != 1 or int(r.get("base_valor", 0)) != valor:
+			print("[MKTRT] BROKEN: a card listing is not a single copy at the card's own price"); bad += 1
+		seen.append((r.get("item", {}).get("instance", {}).get("picks", []) as Array).duplicate())
+	if not (["executioner"] in seen and ["swift", "power"] in seen):
+		print("[MKTRT] BROKEN: each listing must keep ITS copy's upgrades (got %s)" % str(seen)); bad += 1
 
 	var removed: Dictionary = pm.remove_market_listing(post, id1)
 	var after_rm: Array = pm.get_market_listings(post)
-	print("[MKTRT] removed: got_back=%s  rows_left=%d" % [str(not removed.is_empty()), after_rm.size()])
-	if removed.is_empty() or after_rm.size() != 0:
-		print("[MKTRT] BROKEN: remove did not clear the listing"); bad += 1
-	print("[MKTRT] %s" % ("PASS - list, merge, price and remove all behave" if bad == 0 else "FAIL - %d problem(s)" % bad))
+	print("[MKTRT] removed one: got_back=%s  rows_left=%d" % [str(not removed.is_empty()), after_rm.size()])
+	if removed.is_empty() or after_rm.size() != 1:
+		print("[MKTRT] BROKEN: remove did not take exactly that listing"); bad += 1
+	print("[MKTRT] %s" % ("PASS - card copies list separately, keep their upgrades, remove cleanly" if bad == 0 else "FAIL - %d problem(s)" % bad))
 	quit(0 if bad == 0 else 1)
