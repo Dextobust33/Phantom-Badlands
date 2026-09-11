@@ -990,6 +990,17 @@ var current_enemy_is_boss: bool = false  # Track boss fights for pulsing border
 
 # Low HP vignette overlay
 var vignette_overlay: ColorRect = null
+
+## Dungeon lighting. A black overlay over the dungeon canvas whose alpha is highest where the
+## light is weakest - see `client/shaders/dungeon_light.gdshader`. Parented to the canvas itself
+## rather than a CanvasLayer so it moves and resizes with it for free.
+var _dungeon_light_overlay: ColorRect = null
+var _dungeon_light_material: ShaderMaterial = null
+## How bright unlit floor stays. 0.62 chosen from rendered samples, not from a number: the owner
+## compared 75 / 62 / 50 / 22 percent on one floor. A dungeon will eventually carry its own level
+## as a property - "darkness is a dungeon TRAIT" - and a dark one simply drops this.
+const DUNGEON_AMBIENT_DEFAULT := 0.62
+const DUNGEON_LIGHT_MAX := 24
 var vignette_material: ShaderMaterial = null
 
 # Lingering toast overlay — top-right of game_output area. For ephemeral
@@ -44381,6 +44392,10 @@ const _DungeonSprites = preload("res://client/dungeon_sprites.gd")
 # `client/dungeon_composite.gd` for why a BBCode grid can do that at all.
 const _DungeonComposite = preload("res://client/dungeon_composite.gd")
 
+## Landmark tiles that EMIT light. Braziers and lava are fire; a chest is not. Kept beside the
+## landmark art table so the two are read together rather than drifting apart.
+const _DUNGEON_GLOWING_TILES := [17, 24, 47, 50]   # LAVA_POOL, BRIMSTONE, INFERNAL_BRAZIER, MOLTEN_SLAG
+
 ## Which TileType values have landmark art. Keyed by the enum's integer value, taken from
 ## `DungeonDatabase.TileType` - treasure and the final chest ANIMATE (a 4-frame chest), the
 ## brazier and campfire flicker, the rest are single tiles.
@@ -44466,6 +44481,11 @@ func _set_dungeon_side_boxes_visible(vis: bool) -> void:
 	# the side panel, which is the space the dungeon's own run log needs.
 	if minimap_display != null and is_instance_valid(minimap_display) and not vis:
 		minimap_display.visible = false
+	# The lighting overlay stands down on the surface with everything else. It is parented to the
+	# canvas, which the overworld also uses, so leaving it on would dim the map and every menu
+	# drawn there - the same class of bug as the overworld minimap that kept drawing underground.
+	if vis and _dungeon_light_overlay != null and is_instance_valid(_dungeon_light_overlay):
+		_dungeon_light_overlay.visible = false
 	# Re-render the status block: it drops the Tools section underground and gives its reserved
 	# height back, and nothing else would prompt it to notice the mode change.
 	update_tool_status_overlay()
@@ -44894,6 +44914,81 @@ func _dungeon_idle_tick(delta: float) -> void:
 	display_dungeon_floor()
 
 
+func _ensure_dungeon_light() -> void:
+	"""Create the lighting overlay once, on first use underground.
+
+	Built in code rather than in the scene for the same reason the HP vignette is: it is one
+	ColorRect and a material, and putting it in the .tscn means it exists (and is one more thing
+	to keep in sync) for every player who never enters a dungeon."""
+	if _dungeon_light_overlay != null and is_instance_valid(_dungeon_light_overlay):
+		return
+	if game_output == null or not is_instance_valid(game_output):
+		return
+	var sh = load("res://client/shaders/dungeon_light.gdshader")
+	if sh == null:
+		return
+	_dungeon_light_material = ShaderMaterial.new()
+	_dungeon_light_material.shader = sh
+	_dungeon_light_overlay = ColorRect.new()
+	_dungeon_light_overlay.name = "DungeonLight"
+	_dungeon_light_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# MUST not eat input: the dungeon grid underneath is hoverable (monsters, loot, theme tiles)
+	# and a greedy overlay would silently kill every tooltip added this week.
+	_dungeon_light_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dungeon_light_overlay.color = Color(1, 1, 1, 1)
+	_dungeon_light_overlay.material = _dungeon_light_material
+	_dungeon_light_overlay.visible = false
+	game_output.add_child(_dungeon_light_overlay)
+
+
+func _update_dungeon_light(view_x1: int, view_y1: int, view_w: int, view_h: int,
+		player_x: int, player_y: int, lights: Array) -> void:
+	"""Point the torch at the player and place the lamps, in canvas UV.
+
+	The player is NOT assumed to be at the centre. The viewport clamps at floor edges
+	(`view_x1 = clampi(...)`), so whenever the floor runs out the player sits off-centre and a
+	fixed centre would light the wrong place - which is the trap recorded before this was built.
+
+	Everything is converted to UV of the whole canvas here rather than in the shader, because only
+	this side knows where the grid sits: it is centred horizontally and drawn from the top, so the
+	grid rect is not the canvas rect."""
+	_ensure_dungeon_light()
+	if _dungeon_light_material == null or _dungeon_light_overlay == null:
+		return
+	var canvas: Vector2 = game_output.size
+	if canvas.x < 1.0 or canvas.y < 1.0:
+		return
+	var tile: float = float(_DungeonTiles.TILE_PX)
+	var grid_w: float = float(view_w) * tile
+	var grid_h: float = float(view_h) * tile
+	var left: float = maxf(0.0, (canvas.x - grid_w) * 0.5)
+	var top := 0.0
+
+	var to_uv := func(cx: int, cy: int) -> Vector2:
+		var px: float = left + (float(cx - view_x1) + 0.5) * tile
+		var py: float = top + (float(cy - view_y1) + 0.5) * tile
+		return Vector2(px / canvas.x, py / canvas.y)
+
+	_dungeon_light_material.set_shader_parameter("player_uv", to_uv.call(player_x, player_y))
+	_dungeon_light_material.set_shader_parameter("aspect", canvas.x / canvas.y)
+	_dungeon_light_material.set_shader_parameter("ambient", DUNGEON_AMBIENT_DEFAULT)
+	# radii in fractions of canvas WIDTH, so they stay the same number of TILES at any resolution
+	_dungeon_light_material.set_shader_parameter("torch_radius", (6.0 * tile) / canvas.x)
+	_dungeon_light_material.set_shader_parameter("lamp_radius", (3.0 * tile) / canvas.x)
+	var uvs: Array = []
+	for l in lights:
+		if uvs.size() >= DUNGEON_LIGHT_MAX:
+			break
+		uvs.append(to_uv.call(int(l.x), int(l.y)))
+	# The uniform array is a fixed size; pad it so stale positions from a previous floor cannot
+	# leave a lamp burning where there is none.
+	while uvs.size() < DUNGEON_LIGHT_MAX:
+		uvs.append(Vector2(-9.0, -9.0))
+	_dungeon_light_material.set_shader_parameter("lights", PackedVector2Array(uvs))
+	_dungeon_light_material.set_shader_parameter("light_count", mini(lights.size(), DUNGEON_LIGHT_MAX))
+	_dungeon_light_overlay.visible = true
+
+
 func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
 	"""Choose the largest crisp tile size that fits the whole viewport in the canvas.
 
@@ -45256,6 +45351,9 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	var view_y2 = mini(view_y1 + view_h, grid_height)
 
 	var lines = []
+	# Light sources, gathered WHILE the grid is built rather than in a second pass: the
+	# renderer already visits every visible cell and already knows which carry a lamp or a fire.
+	var _lights: Array = []
 	var render_width = view_x2 - view_x1
 
 	# Build monster position lookup from dungeon_monsters_data
@@ -45404,9 +45502,16 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 							String(fi.get("color", "#FFFFFF")), "loot:%d,%d" % [x, y], _prop)
 				else:
 					line += _dungeon_tile_cell(grid, x, y, _tv)
+					# a two-cell prop's BASE is the lamp itself; fire tiles glow on their own
+					if _DungeonTiles.tall_prop_for(grid, x, y) != "":
+						_lights.append(Vector2i(x, y))
+					elif _tv in _DUNGEON_GLOWING_TILES:
+						_lights.append(Vector2i(x, y))
 		lines.append(line)
 
 
+	_update_dungeon_light(view_x1, view_y1, render_width, view_y2 - view_y1,
+		player_x, player_y, _lights)
 	return "\n".join(lines)
 
 func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
