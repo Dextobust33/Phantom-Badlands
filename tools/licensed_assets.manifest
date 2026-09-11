@@ -4,7 +4,7 @@
 
 client/sprites/darkcave	2	darkcave - "cannot redistribute ... in any form"
 client/sprites/darkcave_tiles	2	derived from darkcave
-client/sprites/tilemap_pack	2	unidentified licence
+client/sprites/tilemap_pack	2	Henry Software Pixel Level (CC0) - identified 2026-09-11, left untracked with the bakes
 client/sprites/pet-egg-pack	648	Hope2D v1.0 - no standalone redistribution
 client/sprites/prop_floor32	11	bake - traced 100% to darkcave
 client/sprites/free_floor32	5	bake - traced 81% to tilemap_pack

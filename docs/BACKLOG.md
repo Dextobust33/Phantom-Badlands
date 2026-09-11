@@ -291,10 +291,24 @@ every "before" below is a case where doing it the other way means redoing the fi
    sitting unplayed. That is now released, so they can accumulate real data. **Start the next
    session at 0b.**
 
-**0b. BATCH THE THREE OWNER DECISIONS** so none of them stalls a later arc:
-   returning a checked-out companion · the two asset-licence questions · whether to reconcile the
-   monster and dungeon tier LEVEL tables (they diverge below tier 6 and that is a trap for
-   whoever tunes them next).
+**0b. BATCH THE THREE OWNER DECISIONS — DONE 2026-09-11, all four answered in one batch:**
+   * **Companion return -> RECALL on the Sanctuary companions page.** Built the same day (see the
+     ticked entry in Phase 3.0).
+   * **Licences -> keep everything untracked, send no emails** (*"this isn't a complete enough
+     project that I'm ready to send emails"*). Both unidentified packs were identified and
+     credited the same day. DONE.
+   * **Tier LEVEL bands -> one shared table, dungeon overlap kept as a documented per-tier
+     REACH.** No difficulty change. Open item below.
+   * **Card instances -> proceed now**, as step 1.
+
+- [ ] **Tier LEVEL bands: one source (owner's choice 2026-09-11).** Three copies exist today:
+      `monster_database._get_tier_info` (hard-coded thresholds), `quest_database.TIER_LEVEL_RANGES`
+      (the same bands as a table) and `dungeon_database.TIER_LEVEL_RANGES` (wider below tier 6:
+      1-12 / 6-22 / 16-40 / 31-60 / 51-120 against 1-5 / 6-15 / 16-30 / 31-50 / 51-100). Move
+      the canonical bands into `shared/power_rank.gd` beside the ladder, make the two monster/quest
+      copies read it, and express the dungeon table as base band + a named `reach` per tier so
+      the numbers a dungeon uses today do not move. A probe asserts all three agree with the one
+      source and that every dungeon band is identical to before.
 
 **1. CARD INSTANCES (3 items) — the biggest recreate-work risk on the board.** This arc's own
    note already says it: *"this decision comes BEFORE authoring 53 dungeon cards, because the
@@ -924,7 +938,11 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       Everything needed to write them is in `client/dungeon_tiles.gd` (sheet paths, cell
       coordinates, `FLOOR_COLOR`) and `client/dungeon_sprites.gd` (the glyph and tile tables).
 
-- [ ] **Asset licences: two open items** (raised 2026-09-10 by the owner asking whether the Raven
+- [x] **DONE 2026-09-11 — decided AND both packs identified.** Owner: keep untracked, no emails
+      yet. `darkcave/` is PixelHouse's *Retro fantasy RPG dark cave tiles* (found through its own
+      licence wording); `tilemap_pack/` is Henry Software's *Pixel Level (free)*, **CC0**, proven
+      by MD5 against the RageTileMap repo beside it. Both credited; `docs/ASSET_LICENCES.md`
+      updated. Asset licences: two open items (raised 2026-09-10 by the owner asking whether the Raven
       packs are legal to have in the repo — see `docs/ASSET_LICENCES.md` for the full record).
       Raven Fantasy is settled: commercial use unlimited, attribution welcome not required, but
       *"cannot be distributed or sold as a separate product"* — so `client/sprites/raven/` is
@@ -1441,7 +1459,19 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       IGNORE sweep it already did, plus an explicit check on the labels known to emit `[url=]`,
       since "does this label ever receive markup" cannot be answered statically.
       Probe: `kennel_inspect.gd`. Re-injection (a private copy + both listeners removed) fails 4.
-- [ ] **Returning a checked-out companion — owner's call.** Owner: *"should we make a way for
+- [x] **DONE 2026-09-11 — RECALL.** Owner chose *"Add Recall on the Sanctuary screen"* once the
+      flow was spelled out: at character select, a registered slot reading "In use by A" can be
+      recalled, which returns the companion's LIVE state to the slot and leaves A with no active
+      companion on its next login. The Stable deposit keeps working. Refused while A is logged in
+      or saved mid-fight, because the running copy would keep fighting with a companion the
+      house already lists as home. If A no longer exists the slot is freed from the house's own
+      copy — the orphan shape reported 2026-09-04, now self-healing from the screen.
+      One strip helper (`_recall_companion_from_character`) clears the same three fields the
+      Stable deposit clears, plus the roster mirror, matched by `house_slot` or by id for legacy
+      saves. Probe `companion_recall.gd`: 19 checks on the real helper and the wiring;
+      re-injection (active companion not cleared) fails 1. **Unplayed** — needs a look at the
+      companions page with a checked-out slot before it ships.
+      Original ask: *"should we make a way for
       players to be able to send a checked out companion back to the sanctuary? Or maybe players
       should only be able to checkout companions on character creation?"*
       For the record, depositing already EXISTS in game: `handle_companion_stable_checkout`

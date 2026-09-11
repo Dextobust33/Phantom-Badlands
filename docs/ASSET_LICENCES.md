@@ -26,8 +26,8 @@ including from history after a deletion.
 | `items_pack/` | 2534 | **CC0** — verified: all 1267 PNGs are byte-identical to `godot-pixel-items-source`, which ships `LICENSE CC0.txt` | Yes — fine |
 | `mobs_pack/` | 732 | **CC0** — verified: all 366 PNGs byte-identical to `godot-pixel-mobs-source` | Yes — fine |
 | `pet-egg-pack/` | **0 — untracked 2026-09-10** | Hope2D v1.0 — *"not redistributed in a standalone or reusable asset form"* | **No** |
-| `darkcave/` | **0 — untracked 2026-09-10** | *"You cannot redistribute this software package or its files in any form"*; commercial use and editing permitted; no AI training; credit optional | **No** |
-| `tilemap_pack/` | **0 — untracked** | still unidentified — untracked until it is | **No** |
+| `darkcave/` (PixelHouse, *Retro fantasy RPG dark cave tiles*) | **0 — untracked 2026-09-10** | *"You cannot redistribute this software package or its files in any form"*; commercial use and editing permitted; no AI training; credit optional | **No** |
+| `tilemap_pack/` (Henry Software, *Pixel Level free*) | **0 — untracked** | **CC0** — identified 2026-09-11; could be re-tracked, left untracked with the rest for now | No, by choice |
 | `prop_floor32/`, `tile_floor32/`, `free_floor32/`, `egg_floor32/` | **0 — untracked** | derivatives that CARRY restricted art | **No** |
 | `monster_floor32/`, `loot_floor32/`, `overworld_floor32/`, `battler_floor32/`, `glyph_floor32/` | tracked | CC0 / OGA-BY art over the flat floor COLOUR only | Yes — see "the flat-colour line" |
 
@@ -63,16 +63,26 @@ Hope2D's licence permits commercial use and distribution *of finished projects*,
 assets must not be **"redistributed in a standalone or reusable asset form."** 1,298 raw PNGs
 sitting in a public repo is arguably that, on the same reading applied to Raven Fantasy above.
 
-This is not new and nothing has gone wrong — but it should be a deliberate decision rather than
-an oversight. Three options, in increasing effort: gitignore it the way `raven/` is now; ask
-Hope2D for permission; or accept the reading that a game repo is not "standalone asset form".
+**DECIDED 2026-09-11 (owner): keep it untracked, send no emails.** *"We attempted to ensure the
+raw assets aren't being distributed in a standalone form currently while also ensuring our
+launcher could continue working in its current form... this isn't a complete enough project that
+I'm ready to send emails regarding how they are being used."* So the art ships inside the `.pck`
+only, the private backup repo holds the source, and the permission emails wait until the project
+is further along. Same answer for Raven Fantasy.
 
-## Also open: two unidentified packs
+## Resolved 2026-09-11: the two unidentified packs
 
-`darkcave/` (the dungeon floor, wall and prop sheets this whole tile pass is built on) and
-`tilemap_pack/free_tiles_16x16.png` have no licence file and no `CREDITS.md` entry. They are
-small and probably free itch/OpenGameArt packs, but "probably" is not a record. Worth tracking
-down and adding to `CREDITS.md` — attribution that cannot be produced is the same as none.
+- `darkcave/` is **Retro fantasy RPG dark cave tiles** by **PixelHouse**
+  (<https://pixelhouse.itch.io/retro-fantasy-rpg-dark-cave-tiles>). Found by searching the pack
+  page's own licence wording, which is distinctive; the files carry no author. The terms recorded
+  above are the page's, verbatim. Untracked stays correct.
+- `tilemap_pack/free_tiles_16x16.png` is **Pixel Level (free)** by **Henry Software**
+  (<https://henrysoftware.itch.io/pixel-level-free>), **CC0**. Proven rather than guessed: the file
+  is byte-identical (MD5 `a1c5a14f...`) to `Free.png` in the RageTileMap repo sitting beside it.
+  CC0 means it COULD be tracked again; it is left untracked with the rest of the bakes because
+  re-tracking touches four guards (`.gitignore`, the manifest, `check_no_restricted_refs.sh`, the
+  purge record) for one 16px sheet, and nothing needs it in the public repo today.
+Both are now in `CREDITS.md`.
 
 ## Rule going forward
 

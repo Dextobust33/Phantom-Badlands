@@ -1274,16 +1274,22 @@ same as no credit at all.
     required; **the asset files themselves may not be redistributed**, which is why they are not
     in this repository.
 
-- **Dark Cave tileset** (the dungeon floor, walls, props and landmark art) — **author not yet
-  identified**
+- **Retro fantasy RPG dark cave tiles** (the dungeon floor, walls, props and landmark art) — by
+  **PixelHouse** (Wabby Wabbo)
+  - Source: <https://pixelhouse.itch.io/retro-fantasy-rpg-dark-cave-tiles> (identified 2026-09-11
+    by matching the pack page's licence wording; the files themselves name no author)
   - License, verbatim from the pack page: use permitted in business and personal projects;
     editing permitted; *"You cannot redistribute this software package or its files in any form"*;
     no use for AI training; *"Credit is not mandatory, but commendable."*
-  - **TODO:** record the author and store URL. The pack ships no licence file and its bundled
-    PDF uses subset-encoded fonts, so the name could not be recovered from the files themselves.
+  - Used as: `client/sprites/darkcave/`, and the bakes in `prop_floor32/`, `tile_floor32/`
 
-- **`tilemap_pack/free_tiles_16x16.png`** (interior tiles, stairs, doors) — **origin unidentified**
-  - **TODO:** identify and record, or replace. Untracked in the meantime.
+- **Pixel Level (free)** (`tilemap_pack/free_tiles_16x16.png`: interior tiles, stairs, doors) — by
+  **rakkarage / Henry Software**
+  - Source: <https://henrysoftware.itch.io/pixel-level-free> · <https://github.com/rakkarage/RageTileMap>
+    (identified 2026-09-11: the file is byte-identical to `Assets/PixelLevels/Visual/Sprite/Free.png`
+    in that repo, and the tile-index enums we curated come from the same project)
+  - License: **CC0 1.0 Universal**
+  - Used as: `client/sprites/tilemap_pack/`, and the floor-backed bakes in `free_floor32/`
 
 ### Raven Fantasy — Clockwork Raven Studios
 
