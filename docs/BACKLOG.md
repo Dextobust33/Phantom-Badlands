@@ -10,11 +10,54 @@ common way to lose a session.
 
 ---
 
-## Where the game is (2026-09-09)
+## ▶ NEXT SESSION — START HERE (written 2026-09-11, end of session)
 
-Live: **v0.9.766** (client only), released 2026-09-10. **UNSHIPPED in master: the
-arrow-key diagonal movement** — held back deliberately, awaiting the owner's playtest of the 70ms
-chord window. Do not let it ride along in the next release until that has happened.
+**Nothing is half-finished. The tree is clean, master is pushed at `f2ab4d81`, and v0.9.772 is
+live with all seven assets.** No build, deploy or upload is mid-flight. Pick up cold.
+
+**Do this first, in this order:**
+
+1. **Read `## ⚑ THE ORDER` below.** Step 0 (cut the release) is DONE — that gate is cleared and
+   the five data-blocked items can now accumulate real play data. **Start at step 0b.**
+2. **0b — put the three owner decisions to the owner in ONE batch**, before touching code, because
+   each one stalls a different later arc:
+     * returning a checked-out companion (what happens to a companion left checked out);
+     * the two asset-licence questions;
+     * whether to reconcile the monster and dungeon tier LEVEL tables — **they diverge below
+       tier 6**, which is a trap for whoever tunes them next. The two tier LADDERS are already
+       unified (`shared/power_rank.gd`); it is only the level bands that disagree.
+3. **Then step 1 — CARD INSTANCES.** This is the single biggest recreate-work risk on the board
+   and it must land **before** the 53 dungeon cards are authored, because the cards are the thing
+   that will exist in multiples. It reaches the save format, the deck UI, the combat hand, the
+   milestone system and the market.
+
+**Five items are waiting on live play data now that v0.9.772 shipped** — the five characters at
+L25+, the rest-change feel check, the "party play isn't working" repro, the dungeon-level mismatch
+second example, and the dungeon-depth confirmation. Ask the owner whether any produced data before
+re-deriving them.
+
+**Standing rules that cost time this session when forgotten** (all now enforced by tooling, but
+know why they exist):
+- **Never write a player-facing stat or formula description from intuition.** Owner: *"When
+  putting in stat descriptions that are meant to be our bible it's not acceptable to run off
+  intuition... Making guesses is costing us time and leading to bad info (aka low quality slop)."*
+  `tools/probe/stat_claims.gd` checks the claims against the code. Run it after touching any.
+- **An audit written around the wrong UNIT is as wrong as a guess and far more convincing.** This
+  fired three times in one session (card ids vs display names; format strings vs surfaces;
+  a gate's definition vs its callers). When sweeping, enumerate the SURFACES the player sees, not
+  the strings you expect them to contain.
+- **Prove every fix by re-injecting the fault** and watching the probe fail. A detector that never
+  fires looks exactly like one that finds nothing.
+
+---
+
+## Where the game is (2026-09-11)
+
+Live: **v0.9.772** (client + launcher; no server change since v0.9.771), released 2026-09-11.
+**UNSHIPPED in master: FOUR things held back deliberately, awaiting the owner at a PC** — arrow-key
+diagonal movement (the 70ms chord window), cycle values, reveal upgrades, and the dungeon panel
+confirmations. `docs/PLAYTEST_QUEUE.md` holds a one-command setup and a checklist for each. Do not
+let any of them ride along in a release before it has been checked.
 
 - **The dungeon reports beside the map, never over it.** Owner 2026-09-09: *"It's kind of jarring
   to take over the whole dungeon art screen with it"*, then *"Can we not do the rest and food in
@@ -241,12 +284,12 @@ recreating work."* Counted after ticking 11 items that were resolved but never c
 **54 open across 15 arcs, 72 done.** The order below is dependency-driven, not preference —
 every "before" below is a case where doing it the other way means redoing the first piece.
 
-**0. CUT THE RELEASE.** Not an item, a gate. **Five open items cannot progress without live
-   data** — watch the five characters at L25+, feel-check the rest change, the "party play isn't
+**0. CUT THE RELEASE. — ✅ DONE 2026-09-11, shipped as v0.9.771 then v0.9.772.** Was a gate, not
+   an item. **Five open items could not progress without live data** — watch the five characters at L25+, feel-check the rest change, the "party play isn't
    working" repro, the dungeon-level mismatch second example, and the dungeon-depth confirmation.
-   All five are waiting on a build in players' hands, and ~60 commits of player-facing work is
-   sitting unplayed. Every extra day also means new reports land against an older build, which is
-   what made this session's six reports harder to place.
+   All five were waiting on a build in players' hands, and ~60 commits of player-facing work was
+   sitting unplayed. That is now released, so they can accumulate real data. **Start the next
+   session at 0b.**
 
 **0b. BATCH THE THREE OWNER DECISIONS** so none of them stalls a later arc:
    returning a checked-out companion · the two asset-licence questions · whether to reconcile the
