@@ -401,6 +401,65 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       STILL UNVERIFIED and shipped on code review: party equipment rewards (2 clients) and
       leader logout/permadeath (3 clients) - `party3` and `party3_leader_dies` set both up.
 
+## Phase 2.95 — SPRITE THE OVERWORLD (owner direction 2026-09-11)
+
+Owner: *"the more I think about it the more I wonder if we can just do sprites for the entire
+overworld? ... How will it effect server and client performance? How will it impact the number
+of supported players on the server at once?"*
+
+**Measured first, and the answer inverts the worry.** All figures from
+`tools/probe/overworld_sprite_cost.gd` and a standalone timing of `generate_map_display`.
+
+|                          | overworld today (ASCII) | dungeon today (sprites) |
+|--------------------------|------------------------:|------------------------:|
+| tiles drawn              | 529 (23x23, radius 11)  | 171 (19x9)              |
+| rendered WHERE           | **server**              | **client**              |
+| server CPU per redraw    | **17.2 ms**             | ~0                      |
+| wire per update          | **13,333 bytes**        | 2,287 bytes             |
+| client CPU               | ~0                      | 5.0 ms                  |
+
+The overworld already costs ~6x a dungeon step in bandwidth and 17 ms of SERVER CPU per player
+per move — while being plain text. `send_location_update` builds it, and 40 call sites reach
+that function. At 100 players moving once a second it is 1.33 MB/s outbound and ~1.7s of CPU per
+second on a 2-vCPU CPX11. **That is the current player ceiling, and no sprite has been drawn
+yet.**
+
+So the cost is not "sprites". It is "rendered on the server".
+
+- [ ] **PHASE 1 — move overworld rendering to the CLIENT. No art, no visual change.**
+      Send tile DATA and let the client draw, exactly as the dungeon already does. Purely
+      architectural, independently valuable, and measurable on its own:
+      server render CPU -> ~0, wire 13,333 bytes -> ~529 bytes + entities (roughly 10-25x less).
+      **Player capacity goes UP**, because this removes the most expensive per-player operation
+      the server performs.
+      Do this FIRST and alone. Coupling it with the art would make a performance regression and
+      an art regression indistinguishable — the exact trap that hid the boss ring and the
+      missing post-stamping.
+
+- [ ] **PHASE 2 — sprite it, as a client-only concern.**
+      Measured on the real viewport rather than extrapolated from the dungeon:
+      **529 inline images = 10.40 ms** per redraw; making every tile hoverable costs
+      **+0.10 ms**, i.e. free. That is **1.1% of one client core** at one move/second, 4.2% at
+      four. Comfortable.
+      The dungeon's compositing + `take_over_path` cache carries over unchanged.
+
+      **What still needs designing** (do not just copy the dungeon):
+      * the overworld carries far more per-cell state — biome, weather, fog of war
+        (`explored_tiles` is per-player), roads, posts, dungeons, corpses, bounties, other
+        players, PvP sacks. The sprite POOL and its cache need a plan; the dungeon's ~11 props
+        do not generalise.
+      * the map header and legend stay text.
+      * `radius 11` is the default but weather and blindness shrink it — the renderer must not
+        assume 23x23.
+
+      **Do NOT sprite it server-side.** Measured: the same grid as server-built BBCode is
+      **35,665 bytes** against today's 13,333 — a 2.7x wire increase on top of unchanged CPU.
+      That would cut the player ceiling rather than raise it.
+
+      CAVEAT on the 17.2 ms: measured standalone, without a live `chunk_manager` wired, so the
+      production path may differ. Confirm against the real server before committing to Phase 1's
+      payoff figure — the DIRECTION is not in doubt, the magnitude is worth re-checking.
+
 ## Phase 2.9 — v0.9.769 SHIPPED + MAP RESET EXECUTED (2026-09-11)
 
 v0.9.769 is live (7 assets, gate passed, running server hash verified against the local build).
