@@ -4,6 +4,11 @@ class_name CombatManager
 extends Node
 
 # Combat actions
+## HP-bar diagnostic (2026-09-11). Prints one line per damaging log line: what the line claims
+## and what the monster's pool actually reads afterwards. Left ON while the owner's
+## "monster health does not match the log" report is open; flip to false once it is closed.
+const HP_TRACE_ENABLED := true
+
 enum CombatAction {
 	ATTACK,
 	FLEE,
@@ -1392,6 +1397,20 @@ func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffi
 	if combat.get("monster", null) is Dictionary:
 		_mhp = int(combat["monster"].get("current_hp", -1))
 	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount, "mhp": _mhp})
+	# 2026-09-11 - HP-BAR DIAGNOSTIC. Owner: "something isn't right with the health on this
+	# monster or am I missing something in the log?" A log showing 284 + 328 + companion hits
+	# against a bar that had moved 84 - exactly the companion's share.
+	#
+	# Two theories have already been wrong. Isolated runs of this exact path apply and report the
+	# SAME number (662->555 for 107; empowered 862->802 for 60), and the player provably knows the
+	# species, so the bar is server-authoritative rather than the estimate. Those facts cannot
+	# both hold alongside the screenshot, so the next occurrence records itself instead of being
+	# reasoned about again: what the line CLAIMS, and what the monster's pool actually did.
+	if HP_TRACE_ENABLED and combat.get("monster", null) is Dictionary:
+		var _tn := String(combat["monster"].get("name", "?"))
+		var _tmax := int(combat["monster"].get("max_hp", 0))
+		print("[HPTRACE] %s claims %d dmg -> hp now %d/%d (lost %d total)" % [
+			_tn, amount, _mhp, _tmax, _tmax - _mhp])
 	# EVERY damage number is hoverable, even one with nothing special behind it.
 	#
 	# Owner 2026-09-10: *"it's not usually clear which numbers are hoverable as many of them don't
