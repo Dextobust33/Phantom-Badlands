@@ -33992,6 +33992,35 @@ func _complete_dungeon(peer_id: int):
 		if update.completed:
 			_cleanup_player_dungeon(peer_id, update.quest_id)
 
+	# STAMP THE INSTANCE AS DONE, unconditionally, before any of the bookkeeping below.
+	#
+	# 2026-09-10, from the live server log. The owner reported a Goblin Caves whose chest "was
+	# just sitting there on the last floor", with no boss ("I didn't fight a boss as there wasn't
+	# one"), which they could then re-enter and complete AGAIN, and whose 'D' never left the
+	# overworld. The log showed one line and no "Created dungeon instance" beside it:
+	#     Player Dexto entered dungeon Goblin Caves (instance player_dungeon_1_2544)
+	#     [DUNGEON PERSIST] Reloaded 14 dungeon instance(s), dropped 0 completed
+	# They re-entered an instance that had ALREADY BEEN COMPLETED in an earlier session.
+	#
+	# It survived because the only thing that retired a finished instance was the `_free_run_`
+	# key below, which lives in `player_dungeon_instances` - an in-memory table keyed by PEER ID.
+	# A restart or a reconnect gives the player a new peer id, so the key is gone while the
+	# instance itself is restored from disk; the reload prunes only instances with `completed_at`
+	# set, and nothing ever set it. The saved grid still holds the FINAL_CHEST tile written at
+	# completion and the saved monsters still hold the boss marked dead - so the next visit is a
+	# bossless floor with a free chest on it, repeatable.
+	#
+	# Recording completion ON the instance is the fix, because that is where the fact belongs.
+	# It makes the reload prune it, the despawn sweep remove it, and `_get_dungeon_at_location`
+	# skip it - all three of which already key off `completed_at` and were simply never told.
+	#
+	# This also retires four other symptoms that shared this cause: re-entering skips the whole
+	# `if instance_id == "":` branch, and that branch is where the re-farm guard, the world-tile
+	# despawn timer (hence the 'D' that never left), the sub-tier inherit (hence a "T1-2" tile
+	# opening a T1-7) and the origin stamping all live.
+	if active_dungeons.has(instance_id):
+		active_dungeons[instance_id]["completed_at"] = int(Time.get_unix_time_from_system())
+
 	# Also clean up if this was a free run (non-quest) dungeon
 	if player_dungeon_instances.has(peer_id):
 		var free_run_key = "_free_run_" + instance_id
