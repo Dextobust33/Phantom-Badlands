@@ -13482,7 +13482,19 @@ func _finisher_value(character, combat: Dictionary) -> int:
 		"Grifter":
 			return int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n)))
 		"Ranger":
-			return int(_ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n)))
+			# The docstring above claimed "one computation, two readers" and was not true. The
+			# actual strike runs through `apply_ability_damage_modifiers`, which applies the
+			# Ranger's STEADY AIM ramp - +11% per Aim held, on top of the discharge that already
+			# scales with Aim. So the card was scaled by Aim ONCE and the hit by Aim TWICE, and
+			# the gap grew with the meter: 11% understated at 1 Aim, 88% at 8. Owner: "Killing
+			# shot on the ranger seems like it may not be estimating damage properly. Possibly
+			# just on higher Aim meters." Exactly that - the error IS the meter.
+			#
+			# Monster-side mitigation (defense, level penalty) is deliberately NOT included: no
+			# other card's face subtracts the target's armour, and adding it here would make this
+			# card the odd one out in the other direction.
+			var _rs: float = _ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))
+			return int(_rs * (1.0 + float(n) * RANGER_AIM_DMG_PER))
 		"Ninja":
 			var mon = combat.get("monster", null)
 			return assassinate_chance(character, mon, combat) if mon is Dictionary else 0

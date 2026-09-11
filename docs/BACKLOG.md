@@ -797,6 +797,40 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 
+- [ ] **EVERY Ranger and Barbarian card understates its damage, by up to 88%.** Found 2026-09-10
+      while chasing the owner's report on Killing Shot; the finisher was the symptom, not the bug.
+      **The cause.** `Steady Aim` (+11% per Aim held) and `Rage` (the Barbarian twin) are applied
+      inside `apply_ability_damage_modifiers`, the shared funnel every damaging card passes
+      through. The CLIENT card estimate has no knowledge of either — searched, there is no mention
+      of Steady Aim in `client.gd` at all. So the face is right at 0 stacks and wrong by
+      `stacks x 11%` at every other value: 11% low at 1, 44% at 4, 88% at a full bar.
+      The finisher was fixed at the point of report because its value is computed SERVER-side in
+      one place (`_finisher_value`). Every other card is still wrong.
+      **The fix, and why not a second copy.** Do NOT add the ramp to the client estimate as a
+      literal — a client-side copy of a server constant is the shape that caused this whole class
+      of bug (see `feedback_one_value_two_places`). Send the ramp as a combat-state value, the way
+      `finisher_value` and `assassinate_chance` already are, and have the client multiply every
+      damage estimate by it. One computation, one reader.
+      **Display-only**: this changes no damage, so it does not invalidate the monster curve and
+      does not need a calibration run. It can ship on its own.
+
+- [ ] **A Ranger cannot crit with abilities, so every crit buff is dead weight for them.** Raised
+      by the owner: *"does hunter's instinct increase crit chance for abilities on the ranger?"*
+      Answer: no, and not because of a bug. The Ranger passive `Steady Hand` sets `no_glance`, and
+      the ability crit path reads `if _passive_has_no_glance(character): cc = 0` — the companion's
+      crit bonus IS summed into `player_crit_chance` and then discarded. Basic attacks are not
+      zeroed, so it still works there.
+      That is a deliberate trade (no glances, no crits) and the reliability identity the class was
+      given. **The problem is that nothing tells the player.** This game is deck-driven — an
+      earlier note in the combat code puts basic attacks at *"~1% of what players do"* — so a Wolf
+      companion card advertising *"greatly increased crit chance"* is, for a Ranger, almost
+      entirely inert, and there is no way to find that out except by measuring.
+      Options, owner's call: say it on the passive's own text and on any crit-granting card when
+      the reader is a Ranger; or give `Steady Hand` something to do with crit buffs (convert them
+      to flat damage, say) so the stat is not simply voided. The first is honest; the second is
+      kinder to a player who already spent the card slot.
+
+
 - [ ] **Combat card hotkeys read R, 1, 2 instead of 1, 2, 3** (owner, 2026-09-06, never captured):
       *"now that outsmart has been removed our card numbers shifted to R, 1, and 2. This is odd.
       It should be 1, 2, 3 still."* No fix commit found in a search of the log since that date, so
