@@ -667,14 +667,37 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       the monster's name string, so they need the name split before they can be wrapped, which
       is the fiddlier half.
 
-- [ ] **Does the health bar lag on multi-hits / monster abilities?** Owner asked, and hedged:
-      *"I may have been moving too fast though."* Two things ruled OUT: the bar's tween is 0.3s
-      (`animate_hp_bar_change`), and the bar reads `character_data.current_hp` directly, so it is
-      not a slow animation and not a stale field.
-      What is NOT ruled out is message timing — combat playback is PACED (`_drain_combat_queue`)
-      while `character_update` is not, so the bar and the log are driven by different clocks.
-      Needs a measurement, not an opinion: log the arrival time of `character_update` against the
-      queue drain for a multi-hit round.
+- [~] **MEASURED 2026-09-11 — the bar is right; the WINDOW is real and unguarded. Owner's call.**
+      Owner asked, and hedged: *"I may have been moving too fast though."* They were not.
+      The bar was never the fault. Its tween is 0.3s, it reads `current_hp` directly, and it is
+      held back on purpose: since 2026-09-02 `update_player_hp_bar` waits on
+      `_coop_playback_pending()` (solo included) so HP cannot drop before the line that explains
+      the hit. That is correct and should stay.
+      What was never measured is how LONG that hold lasts. Priced at the client's own pacing
+      constants, against real rounds driven through the real combat manager
+      (`tools/probe/hp_bar_timing.gd`):
+
+      | monster | worst round | playback |
+      |---|---|---|
+      | Giant Spider | 10 messages | **4.55s** |
+      | Wolf | 10 messages | **4.55s** |
+      | Skeleton | 8 messages | 3.65s |
+      | Goblin | 4 messages | 1.85s |
+
+      And in SOLO nothing gates the press: `send_combat_command` checks `connected`, `in_combat`
+      and the party turn, and no playback state at all. So for up to **4.6 seconds** the cards
+      are live while the bar still reads the PREVIOUS round. Under permadeath that is exactly the
+      decision that kills you — picking a card without knowing your own HP.
+      **Three materially different answers, so ASK rather than pick:**
+      (a) gate the cards until the round has played, with Space to fast-forward (the escape hatch
+      already exists — `acknowledge_continue` sets `_combat_fastforward`). Nobody waits more than
+      one keypress, nobody decides blind. Note input-blocking was rejected 2026-09-01, but for
+      CO-OP specifically, because one slow client would hold up the party. Solo has no party.
+      (b) fast-forward on the press: the press both catches the round up and plays the card.
+      Never swallows input — but the decision was still made blind, and the existing
+      `_combat_queue_pending_rounds() >= 1` catch-up already snaps the bar a round-trip later, so
+      this buys only ~150ms.
+      (c) leave it, and accept that a fast player acts a round behind their own health.
 
 - [~] **LIKELY SOLVED 2026-09-11, awaiting one confirmation.** Almost certainly the same cause as
       the bossless dungeon and the re-farm: the owner was re-entering a personal instance that had
