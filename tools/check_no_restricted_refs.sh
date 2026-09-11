@@ -12,7 +12,11 @@
 # So the instrument is the REMOTE ref list, never the local one.
 set -u
 REPO_URL="${1:-origin}"
-RESTRICTED='sprites/(darkcave|darkcave_tiles|tilemap_pack|pet-egg-pack|prop_floor32|free_floor32|tile_floor32|egg_floor32|raven)/'
+# 2026-09-11 — READ FROM THE MANIFEST, not typed here. The hand-kept list had drifted: it missed
+# room_floor32/, decor32/ and tall32/, all restricted and all in tools/licensed_assets.manifest,
+# so an accidental commit of any of them would have passed this check.
+HERE_DIR="$(cd "$(dirname "$0")" && pwd)"
+RESTRICTED="^($(grep -vE '^\s*(#|$)' "$HERE_DIR/licensed_assets.manifest" | cut -f1 | paste -sd'|' -))/"
 fail=0
 
 tmp="$(mktemp)"; git ls-remote "$REPO_URL" > "$tmp" 2>/dev/null

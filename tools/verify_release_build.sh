@@ -109,6 +109,8 @@ check "version"              "$WANT_VERSION" "$(field version)"
 check "themed_loot_hook"     "true"          "$(field themed_loot_hook)"
 check "outsmart_button_gone" "true"          "$(field outsmart_button_gone)"
 check "passive_single_source" "true"         "$(field passive_single_source)"
+# The sprite Sanctuary's art is loaded by path and untracked; prove the packaged build has it.
+check "sanctuary_sprites"    "true"          "$(field sanctuary_sprites)"
 
 # --- is the licence-restricted art even PRESENT? It is not in git (docs/ASSET_LICENCES.md),
 # --- so a fresh clone builds a dungeon with letters where the tiles should be and nothing says

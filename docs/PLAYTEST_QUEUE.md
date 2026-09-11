@@ -248,6 +248,16 @@ Any character. Use **Admin > Items > Grant Test Cards (dungeon + companion, trad
 - [ ] At a trading post, list a Venom Fang. It sells the copy **without** the upgrade, and a
       second listing appears as its **own row** rather than merging into a stack.
 
+## 10. Sprite Sanctuary  *(one client, 2026-09-11, UNRELEASED)*
+
+Log in: the Sanctuary is now a sprite room on the main canvas, text on the right.
+
+- [ ] Walk around: the camera and your sprite follow, rows sit flush, nothing flickers.
+- [ ] Step onto the chest, statue, a cushion, the Stable and the door: the right panel names each
+      and Space opens it. Storage / Upgrades / Stable screens still work and come back to the room.
+- [ ] Log in with a fresh account: the welcome says "the little figure in the room is you".
+- [ ] Look and feel: floor, walls, windows, furniture placement - what would you change?
+
 ## Order I would go in
 
 1. **Arrow movement** — highest risk, and independent of everything else.

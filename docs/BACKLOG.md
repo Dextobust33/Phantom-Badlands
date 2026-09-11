@@ -1603,7 +1603,22 @@ are now bought, unzipped and licence-cleared, so the blocker is design rather th
       in `server.gd` or `shared/`), so none of this touches concurrent player capacity. The two
       things that WOULD cost: a second draw layer per cell (doubles the inline images), and pck
       size — 6.6MB unzipped, negligible.
-- [ ] **Slice it the way the dungeon was sliced**, which worked: one interior end-to-end
+- [~] **FIRST SLICE DONE 2026-09-11 (local, unplayed) — the SANCTUARY is sprites.** The room takes
+      the main canvas (29x19 cells at 32px, it fits whole at 1080p) and the Sanctuary text moves to
+      the side panel, the dungeon's split. `client/sanctuary_room.gd` composes the room ONCE per
+      layout into one image - seamless plank floor, brick walls with windows, and furniture at
+      its own pixel size (gold chest = Storage, statue on a blue rug = Upgrades, cushions =
+      companion slots, teal cushion on a green rug = Stable, open door = exit, plus a shelf,
+      lamps, fire pit, barrel, crate) - and hands each 32px region to the text grid via
+      `take_over_path`, so multi-cell objects need no row-split logic. Pieces baked by
+      `tools/bake_sanctuary.py` (Raven interiors + cozy_home; untracked, in the manifest).
+      Floor chosen by MEASUREMENT after two screenshots failed (stripes, then a framed-panel
+      grid): only the centre plank cell (14,1) tiles with no seam. Verified in-game walking onto
+      the chest and opening storage. Probe `sanctuary_room.gd` (27 checks; a missing piece fails
+      2); `--buildverify` + release gate assert the art ships. ASCII map is the fallback.
+      **Next:** the owner's look; then show a registered companion's sprite on its cushion; then
+      NPC post interiors (which also covers "Zoom the map inside NPC posts").
+      Original: Slice it the way the dungeon was sliced, which worked: one interior end-to-end
       (the sanctuary, since `_render_house_map()` exists), screenshot, iterate — then posts. The
       DUNGEON ROOMS are a separate problem with its own entry below; do not bundle them in.
 

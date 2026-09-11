@@ -2391,6 +2391,9 @@ func _ready():
 		print("[BUILDVERIFY] passive_single_source=", not CharacterScript.class_passive_for("Ninja").is_empty())
 		print("[BUILDVERIFY] ninja_passive=", CharacterScript.class_passive_for("Ninja").get("name", "?"))
 		print("[BUILDVERIFY] read_meter_label=", "Assassinate" if CombatManagerScript.READ_HEIST_PER > 0 else "?")
+		# The sprite Sanctuary (2026-09-11) is licence-restricted art loaded BY PATH, so a build
+		# made on a machine without the bake shows the ASCII room with nothing to say why.
+		print("[BUILDVERIFY] sanctuary_sprites=", _SanctuaryRoom.available())
 		# Perf guards for the 4K-laptop thermal-throttling report (v0.9.735). These live in
 		# project.godot, which is baked into the pck — so the only way to know a shipped build
 		# still has them is to ask the running engine.
@@ -6108,6 +6111,28 @@ func _dev_run_shots() -> void:
 				execute_local_action("dungeon_rest")
 				await get_tree().create_timer(1.0).timeout
 				await _dev_shot_capture("dungeonrest")
+			"sanctuary":
+				# The Sanctuary, for the sprite-interiors arc (Phase 3.45). It is shown before a
+				# character is chosen, so log back out to reach it. Run it LAST: the capture ends
+				# the session's in-world state.
+				logout_character()
+				await get_tree().create_timer(3.0).timeout
+				await _dev_shot_capture("sanctuary")
+				# Walk onto the storage chest the way a player does, one step at a time, so the
+				# capture proves movement, the redraw and the "standing on" line together.
+				for _i in range(40):
+					var _dx: int = signi(4 - house_player_x)
+					var _dy: int = signi(12 - house_player_y)
+					if _dx == 0 and _dy == 0:
+						break
+					if _move_house_player(_dx, _dy):
+						_update_house_map()
+					await get_tree().create_timer(0.05).timeout
+				update_action_bar()
+				await _dev_shot_capture("sanctuary_on_chest")
+				# ...and the sub-screen it opens must get the canvas back as TEXT.
+				display_house_storage()
+				await _dev_shot_capture("sanctuary_storage")
 
 			_:
 				pass
@@ -34543,10 +34568,10 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
   • Registered companions return home when your character dies
   • Checkout registered companions on new characters
   • Recall a companion a character is holding back to its slot (that character must be logged out)
-[color=#FF8800]Companion Kennel (K tile):[/color] Bulk companion storage for fusion!
-  • Store companions for later fusion at the Fusion Station
+[color=#FF8800]Companion Stable (the cushion on the green rug):[/color] Bulk companion storage, and where fusion happens
+  • Store companions for later fusion
   • Base capacity: 30 slots, upgradeable up to 500
-[color=#DA70D6]Fusion Station (F tile):[/color] Combine companions into stronger versions!
+[color=#DA70D6]Fusion (at the Stable):[/color] Combine companions into stronger versions!
   • [color=#00FF00]Same-Type:[/color] 3 same monster + rank → 1 with rank+1 (rank 9 is the cap)
   • [color=#FF00FF]Mixed A9:[/color] 8 A8 companions → 1 random A9 companion
   • Fused companions start at Lv1 with a new random variant
@@ -35116,6 +35141,11 @@ func display_game(text: String):
 	# in the side panel (see `_dungeon_log_add`). The canvas never accumulates, and the message
 	# is still readable — which matters because the Player-Visible Output Rule means these
 	# messages cannot simply be dropped.
+	# The sprite Sanctuary: the canvas IS the room, so its text belongs in the side panel.
+	if _house_room_active() and not _house_room_rendering:
+		_house_side_lines.append(text)
+		_house_side_refresh()
+		return
 	if dungeon_mode and not _dungeon_rendering and not _dungeon_menu_open():
 		# A panel MENU is being built (rest / food / gather): its lines are the menu, not news,
 		# so they go to the menu block rather than into the run log, which they would otherwise
@@ -49562,8 +49592,103 @@ func _move_house_player(dx: int, dy: int) -> bool:
 		house_player_x = new_x
 		house_player_y = new_y
 		house_interactable_at = tile if tile in ["C", "S", "U", "D", "K", "F"] else ""
+		# The sprite Sanctuary draws you facing the way you walked, as the overworld does. Shared
+		# variable on purpose: the overworld sets it again on its first move.
+		if dx < 0:
+			_local_map_facing = "left"
+		elif dx > 0:
+			_local_map_facing = "right"
+		elif dy < 0:
+			_local_map_facing = "up"
+		elif dy > 0:
+			_local_map_facing = "down"
 		return true
 	return false
+
+# ===== The sprite Sanctuary (Phase 3.45, first slice) =====
+const _SanctuaryRoom = preload("res://client/sanctuary_room.gd")
+var _house_room_rendering: bool = false
+## The Sanctuary's text while the room owns the canvas - stats, server replies, notices. Drawn in
+## the side panel by `_house_side_refresh`; cleared with the canvas in `display_house_main`.
+var _house_side_lines: Array[String] = []
+
+
+func _house_room_active() -> bool:
+	return game_state == GameState.HOUSE_SCREEN and house_mode == "main" and _SanctuaryRoom.available()
+
+
+func _house_player_sprite32() -> String:
+	"""Your 32px floor-backed sprite, or "" - the compositor keys that floor out, so only these
+	two baked folders qualify. With no character chosen yet the Sanctuary shows a stand-in."""
+	var bid := BattlerSprite.id_from_data(character_data) if not character_data.is_empty() else ""
+	if bid == "":
+		bid = "1_1"
+	var ow := "res://client/sprites/overworld_floor32/%s/%s_stand.png" % [bid, _local_map_facing]
+	if ResourceLoader.exists(ow):
+		return ow
+	var _suffix := "_flip" if _local_map_facing == "right" else ""
+	var bf := "res://client/sprites/battler_floor32/%s%s.png" % [bid, _suffix]
+	return bf if ResourceLoader.exists(bf) else ""
+
+
+func _render_house_room() -> void:
+	"""Draw the room on the main canvas: one [img] per cell, camera on the player."""
+	var layout := _get_current_house_layout()
+	if layout.is_empty() or game_output == null:
+		return
+	_SanctuaryRoom.build(layout)
+	var cell := _SanctuaryRoom.CELL
+	var map_h := layout.size()
+	var map_w := String(layout[0]).length()
+	var vp_w := map_w
+	var vp_h := map_h
+	if game_output.size.x > 0 and game_output.size.y > 0:
+		vp_w = mini(map_w, maxi(9, int(game_output.size.x / cell) - 1))
+		vp_h = mini(map_h, maxi(7, int(game_output.size.y / cell) - 1))
+	var vp_x := clampi(house_player_x - vp_w / 2, 0, maxi(0, map_w - vp_w))
+	var vp_y := clampi(house_player_y - vp_h / 2, 0, maxi(0, map_h - vp_h))
+	var me := _house_player_sprite32()
+	var rows := PackedStringArray()
+	for y in range(vp_y, vp_y + vp_h):
+		var row := ""
+		for x in range(vp_x, vp_x + vp_w):
+			var path := _SanctuaryRoom.cell_path(x, y)
+			if x == house_player_x and y == house_player_y:
+				if me != "":
+					path = _DungeonComposite.over_prop(me, path)
+				else:
+					row += "[color=#00FF00]@[/color]"
+					continue
+			row += "[img=%dx%d]%s[/img]" % [cell, cell, path]
+		rows.append(row)
+	game_output.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_house_room_rendering = true
+	game_output.clear()
+	# A tiny font so the TEXT line is shorter than a 32px image: rows are then exactly one tile tall.
+	display_game("[center][font_size=6]%s[/font_size][/center]" % "\n".join(rows))
+	_house_room_rendering = false
+
+
+func _house_side_refresh() -> void:
+	"""The side panel beside the room: what you are standing on, the stations, then the text."""
+	if map_display == null:
+		return
+	var out := PackedStringArray()
+	var _k := get_action_key_name(0)
+	match house_interactable_at:
+		"C": out.append("[color=#A335EE]Companion Slot[/color] - press %s" % _k)
+		"S": out.append("[color=#FFD700]Storage Chest[/color] - press %s" % _k)
+		"U": out.append("[color=#00FFFF]Upgrades[/color] - press %s" % _k)
+		"D": out.append("[color=#FF6600]Door[/color] - press %s to Play" % _k)
+		"K", "F": out.append("[color=#FF8800]Companion Stable[/color] - press %s" % _k)
+		_: out.append("[color=#808080]Walk onto the chest, statue, cushions, Stable or door.[/color]")
+	out.append("")
+	for l in _house_side_lines:
+		out.append(l)
+	map_display.clear()
+	map_display.append_text("\n".join(out))
+	map_display.scroll_to_line(0)
+
 
 func _render_house_map() -> String:
 	"""Render the ASCII house map with viewport camera following the player.
@@ -49656,6 +49781,13 @@ func _render_house_map() -> String:
 
 func _update_house_map():
 	"""Update the map display with the house layout"""
+	# Phase 3.45 — the sprite Sanctuary: the room takes the main canvas and the text moves to the
+	# side panel, the same split the dungeon uses. Falls back to the ASCII map when the baked
+	# pieces are absent (a fresh clone without the licensed art).
+	if _house_room_active():
+		_render_house_room()
+		_house_side_refresh()
+		return
 	if map_display:
 		map_display.clear()
 		if house_mode == "main":
@@ -49695,6 +49827,7 @@ func _render_breadcrumb(parts: Array) -> void:
 func display_house_main():
 	"""Display the main house/sanctuary view"""
 	game_output.clear()
+	_house_side_lines.clear()
 	house_mode = "main"
 	pending_house_action = ""
 	# Only initialize position if not already set (first load)
@@ -49714,9 +49847,14 @@ func display_house_main():
 	# prominent callout; the persistent "Create Character" action-bar button
 	# provides the one-click path. Hidden automatically once they have a hero.
 	if character_list.is_empty():
-		display_game("[color=#00FF88]★ Welcome! The green [b]@[/b] on the map is you.[/color]")
-		display_game("[color=#FFD700]   Press [b]Create Character[/b] on the bar below to make your first hero[/color]")
-		display_game("[color=#FFD700]   — or walk your @ to the Door [b]D[/b] and press Play.[/color]")
+		if _house_room_active():
+			display_game("[color=#00FF88]★ Welcome! The little figure in the room is you.[/color]")
+			display_game("[color=#FFD700]   Press [b]Create Character[/b] on the bar below to make your first hero[/color]")
+			display_game("[color=#FFD700]   — or walk to the open [b]door[/b] at the bottom and press Play.[/color]")
+		else:
+			display_game("[color=#00FF88]★ Welcome! The green [b]@[/b] on the map is you.[/color]")
+			display_game("[color=#FFD700]   Press [b]Create Character[/b] on the bar below to make your first hero[/color]")
+			display_game("[color=#FFD700]   — or walk your @ to the Door [b]D[/b] and press Play.[/color]")
 		display_game("")
 
 	# Progressive disclosure: a brand-new account's legacy stats, storage,
