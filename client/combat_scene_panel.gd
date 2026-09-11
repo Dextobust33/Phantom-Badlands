@@ -224,6 +224,8 @@ var _monster_total: int = 0
 var _status_strip: HBoxContainer
 var _player_status_label: RichTextLabel
 var _lufia_monster_status: RichTextLabel   # monster chips, under the monster (Lufia layout)
+var _monster_status: Dictionary = {}   ## last statuses the monster carried (trigger input)
+var _casts_this_fight: Dictionary = {} ## per-card casts, from the server (trigger input)
 var _monster_status_label: RichTextLabel
 
 # In-panel picker — overlays the log section during combat_item_mode (and
@@ -3216,6 +3218,9 @@ func update_combat_status(player_status: Dictionary, monster_status: Dictionary)
 	doesn't jump."""
 	if _player_status_label == null or not is_instance_valid(_player_status_label):
 		return
+	# Kept, not just rendered: "foe stunned" is the trigger for two upgrades, and the hand needs
+	# to answer that question when it draws a card face.
+	_monster_status = monster_status.duplicate()
 	_player_status_label.text = _build_player_status_bbcode(player_status)
 	var mon_bb := _build_monster_status_bbcode(monster_status)
 	if _lufia_monster_status != null and is_instance_valid(_lufia_monster_status):
@@ -3951,6 +3956,23 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	pips_row.add_child(pips_label)
 	vbox.add_child(pips_row)
 
+	# 2026-09-11 - the upgrades THIS card carries, and which one is live right now.
+	# A RichTextLabel because the live pick is coloured and the idle ones are not; a plain Label
+	# would have to pick one colour for both, which is the distinction the strip exists to make.
+	var upg_row := CenterContainer.new()
+	upg_row.name = "UpgradeRow"
+	upg_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var upg_label := RichTextLabel.new()
+	upg_label.name = "Upgrades"
+	upg_label.bbcode_enabled = true
+	upg_label.fit_content = true
+	upg_label.scroll_active = false
+	upg_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	upg_label.add_theme_font_size_override("normal_font_size", 10)
+	upg_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	upg_row.add_child(upg_label)
+	vbox.add_child(upg_row)
+
 	# --- Info row: rank pips (left) + cost pip (right) ---
 	var info_row := MarginContainer.new()
 	info_row.name = "InfoRow"
@@ -4514,6 +4536,85 @@ func _class_emblem_text() -> String:
 	return _player_class.substr(0, 1) if _player_class != "" else "◆"
 
 
+func set_cast_counts(counts: Dictionary) -> void:
+	"""Per-card casts this fight, from the server. Drives the first-use and every-Nth-cast
+	upgrade triggers; without it those two simply never light, which is the honest failure."""
+	_casts_this_fight = counts.duplicate()
+	if is_inside_tree():
+		_refresh_hand()
+
+
+func _upgrade_state_for(card_name: String) -> Dictionary:
+	"""The combat facts an upgrade trigger is allowed to ask about.
+
+	Only keys this panel actually KNOWS are set. `CardUpgrades.trigger_live` treats a missing key
+	as "cannot tell" and reads it as not-live, so an unknown fact under-lights rather than
+	claiming something that is not true - which is the only safe direction for an indicator a
+	player is about to make a decision on."""
+	var s := {}
+	if _monster_hp_known and _monster_max_hp > 0:
+		s["foe_hp_pct"] = clampf(float(_monster_hp) / float(_monster_max_hp), 0.0, 1.0)
+	if _player_max_hp > 0:
+		s["self_hp_pct"] = clampf(float(_player_hp) / float(_player_max_hp), 0.0, 1.0)
+	if client_ref != null and client_ref.has_method("_get_player_active_path"):
+		var path: String = client_ref._get_player_active_path()
+		var key: String = "mana" if path == "mage" else ("stamina" if path == "warrior" else "energy")
+		var cur: float = float(client_ref.character_data.get("current_" + key, -1))
+		var mx: float = float(client_ref.character_data.get("total_max_" + key,
+			client_ref.character_data.get("max_" + key, 0)))
+		if cur >= 0.0 and mx > 0.0:
+			s["resource_pct"] = clampf(cur / mx, 0.0, 1.0)
+	if not _monster_status.is_empty():
+		s["foe_stunned"] = int(_monster_status.get("stun", 0)) > 0
+	if _casts_this_fight.has(card_name):
+		s["card_casts"] = int(_casts_this_fight[card_name])
+	elif not _casts_this_fight.is_empty():
+		s["card_casts"] = 0   # the dict arrived and this card is not in it, so it is unplayed
+	return s
+
+
+func _card_upgrade_strip(card_name: String) -> String:
+	"""The upgrades THIS card carries, and which of them is live right now.
+
+	2026-09-11, owner: *"Situational can be good but only if there is a clear answer to how to
+	use them properly and make it easily apparent in combat when it's worth using. If not it all
+	becomes micro-management and feels like dead options."*
+
+	Audited first: only 15 of 51 upgrades are conditional, and NINE of those already key off
+	something on screen. The triggers were never the hidden part - the UPGRADES were. A card in
+	hand showed nothing about what it carried, so a player picked Executioner and then had to
+	remember which of five cards had it while the foe's health bar sat in plain view.
+
+	Live picks are named in full and lit; the rest are dots. A card with no upgrades renders
+	nothing at all, so the strip only appears once a player has something to track."""
+	if client_ref == null:
+		return ""
+	var mp = client_ref.character_data.get("ability_milestone_picks", {})
+	if not (mp is Dictionary) or not (mp.get(card_name, null) is Array):
+		return ""
+	var picks: Array = mp[card_name]
+	if picks.is_empty():
+		return ""
+	var st := _upgrade_state_for(card_name)
+	var live: Array[String] = []
+	var idle := 0
+	for pid in picks:
+		var u: Dictionary = CardUpgrades.upgrade_by_id(String(pid))
+		if u.is_empty():
+			continue
+		if CardUpgrades.trigger_live(u, st):
+			live.append(String(u.get("name", "")))
+		else:
+			idle += 1
+	var out := ""
+	if not live.is_empty():
+		# Named, not a dot: the whole point is knowing WHICH one is worth using right now.
+		out += "[color=#7CFF9B]● %s[/color]" % " · ".join(live)
+	if idle > 0:
+		out += ("  " if out != "" else "") + "[color=#5A5A66]%s[/color]" % "○".repeat(idle)
+	return out
+
+
 func _refresh_hand() -> void:
 	if _hand_cells.is_empty():
 		return
@@ -4559,6 +4660,10 @@ func _refresh_hand() -> void:
 				value_pip.visible = false
 			if pips_lbl:
 				pips_lbl.text = ""
+			var _ue: RichTextLabel = cell.find_child("Upgrades", true, false)
+			if _ue:
+				_ue.text = ""
+				_ue.get_parent().visible = false
 			if effect_lbl:
 				effect_lbl.text = ""
 			if glyph_lbl:
@@ -4792,6 +4897,13 @@ func _refresh_hand() -> void:
 				effect_lbl.text = "Ramp Focus first"
 				effect_lbl.add_theme_color_override("font_color", Color("#6E7E8A"))
 
+		var upg_lbl: RichTextLabel = cell.find_child("Upgrades", true, false)
+		if upg_lbl:
+			var strip: String = _card_upgrade_strip(card_name)
+			upg_lbl.text = strip
+			# Zero footprint on a card with no upgrades, so the strip appears only once a player has
+			# something to track and never costs height before then.
+			upg_lbl.get_parent().visible = strip != ""
 		_set_cell_dim(cell, false, castable)
 		# v0.9.715 — class payoff cards get a meter-scaled glow: Devastate
 		# (Momentum, hard-locked at 0) and Meteor (Focus, soft-dim at 0).

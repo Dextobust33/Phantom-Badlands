@@ -376,16 +376,45 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       *remember* which of five cards carries it. That is the micro-management the owner means,
       and it is not caused by the triggers being obscure.
 
-      **The fix, in the order that makes each step worth doing:**
-      1. **Add a structured `trigger` to each upgrade** (foe_hp_below, self_hp_below, first_use,
-         resource_full, resource_empty, foe_stunned, on_kill, cast_cadence, on_cycle, none).
-         One field; nothing else can be built without it.
-      2. **Show a card's upgrades on its face in the hand**, and mark one **LIVE** when its
-         trigger is satisfied right now. This is the whole ask — "easily apparent in combat when
-         it's worth using" — and it makes the 9 already-visible triggers pay off immediately.
-      3. **Then author upward**, using the channel table above rather than adding a fourteenth
-         damage multiplier. The thin channels ARE the variety.
-      Sequencing matters: authoring more content before 2 lands just adds more invisible picks.
+      **STEPS 1 AND 2 DONE 2026-09-11** (owner: *"Order looks good, proceed."*).
+      **1. The condition is DATA.** 24 of 51 upgrades carry a structured `trigger`
+      (`foe_hp_below` / `self_hp_below` / `first_use` / `resource_full` / `resource_low` /
+      `foe_stunned` / `on_kill` / `cast_cadence` / `on_cycle` / `chance`), with thresholds read
+      from what the server actually rolls against — 30% for Executioner, 50% Bulwark, 34%
+      Desperation, all asserted against `combat_manager`. `trigger_live(u, state)` answers "is
+      this live right now" and `trigger_hint(u)` gives the plain-language note. Both live in
+      `card_upgrades.gd`, not the client, because the server rolls the real effect against the
+      same facts and a client-side copy of "below 30%" is the shape that drifts.
+      **Two rules the evaluator enforces:** a MISSING fact reads as not-live, so a caller that
+      knows less under-lights rather than claiming something untrue about a turn the player is
+      about to spend; and always-on and pure-chance upgrades NEVER light — if everything glows,
+      nothing does.
+      **2. The hand shows it.** A card renders the upgrades it carries, live ones named and lit,
+      the rest as dots, nothing at all when it has none:
+      ```
+        foe at 80%, 1 cast in      ○○○
+        foe at 22%, 1 cast in      ● Executioner  ○○
+        foe at 22%, 2 casts in     ● Executioner · Relentless  ○
+      ```
+      The rank-up card also tags the condition (`▸ foe under 30%`, `▸ every 3 casts`) so nine
+      offers can be SCANNED for which ones only pay in a moment — prose cannot be scanned.
+      **A counter had to exist for it.** First-use and every-Nth-cast could never light without
+      per-card cast counts, and the two trackers that existed (`opener_used_<id>`, a bool, and
+      `_relentless_<id>`, a counter) are each maintained only when the player happens to OWN that
+      upgrade — a third of that shape would have been the mistake CLAUDE.md warns about. One
+      generic uncapped `casts_this_fight` now counts at the single successful-cast site and is
+      sent by BOTH combat-state builders. The two existing effect paths are deliberately left
+      alone: folding them in is an off-by-one risk on live behaviour for no visible gain, and is
+      worth doing on its own.
+      Probe: `tools/probe/upgrade_triggers.gd`. Re-injection of four faults — a threshold that
+      disagrees with the server, an unknown fact claiming live, one state builder dropping the
+      counts, the hand not consulting the shared evaluator — fails 5 checks.
+
+- [ ] **3. THEN author upward.** Use the channel table above rather than adding a fourteenth
+      damage multiplier — the thin channels (extra turn, mitigation, crit, chip-from-discard, one
+      entry each) ARE the variety, and the thin RARITY cells are buff-uncommon (4) and epic for
+      buff and control (2 each). Now unblocked: a new upgrade can declare a trigger, so a
+      conditional one arrives already legible instead of adding another invisible pick.
 
 - [ ] **WIDEN the pool with genuinely distinctive upgrades — owner, 2026-09-11.** *"I don't think
       our upgrade pool currently offers enough distinctive and interesting options as of yet but

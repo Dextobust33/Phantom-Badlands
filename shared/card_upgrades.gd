@@ -61,15 +61,15 @@ const UPGRADES := [
 	 "desc": "+12% effect."},
 	{"id": "efficiency", "wired": true, "name": "Efficiency", "kind": KIND_ANY, "stacks": true, "tradeoff": false,
 	 "desc": "-10% cost."},
-	{"id": "rider", "wired": true, "name": "Rider", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
+	{"id": "rider", "trigger": "chance", "wired": true, "name": "Rider", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
 	 "desc": "Adds a bleed, then armour-break, then a chance to stun."},
 	{"id": "duration", "wired": true, "name": "Duration", "kind": KIND_BUFF, "stacks": true, "tradeoff": false,
 	 "desc": "+2 rounds."},
 
 	# ---------------------------------------------------------------- damage, upside --------
-	{"id": "executioner", "rarity": "uncommon", "wired": true, "name": "Executioner", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "executioner", "trigger": "foe_hp_below", "at": 0.30, "rarity": "uncommon", "wired": true, "name": "Executioner", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "+40% damage against a foe below 30% health."},
-	{"id": "opener", "rarity": "uncommon", "wired": true, "name": "Opener", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "opener", "trigger": "first_use", "rarity": "uncommon", "wired": true, "name": "Opener", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "+50% damage on your FIRST use each fight."},
 	# "Overkill" (excess damage carries to the next flock member) was designed and then CUT
 	# before it shipped: every ability body clamps the monster's HP at zero, so by the time any
@@ -77,7 +77,7 @@ const UPGRADES := [
 	# mean touching ten ability bodies. Offering a choice that silently does nothing is exactly
 	# the defect this redesign exists to fix, so it is not in the pool. Revisit if the damage
 	# path ever reports pre-clamp damage.
-	{"id": "keen", "wired": true, "name": "Keen Edge", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
+	{"id": "keen", "trigger": "chance", "wired": true, "name": "Keen Edge", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
 	 "desc": "+8% critical chance with this card."},
 	{"id": "leeching", "wired": true, "name": "Leeching", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Heals you for 10% of the damage dealt."},
@@ -93,11 +93,11 @@ const UPGRADES := [
 	# KIND_ANY because EVERY card can be discarded unplayed; there is no card shape this cannot
 	# apply to. That also makes them the first upgrades whose effect fires when the card is NOT
 	# used, which is why the wiring lives in `_cycle_unplayed` rather than in a cast path.
-	{"id": "reveal_engine", "rarity": "rare", "wired": true, "name": "Foretold", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_engine", "trigger": "on_cycle", "rarity": "rare", "wired": true, "name": "Foretold", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it feeds 1 point of your class engine as it cycles."},
-	{"id": "reveal_ward", "rarity": "rare", "wired": true, "name": "Held in Reserve", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_ward", "trigger": "on_cycle", "rarity": "rare", "wired": true, "name": "Held in Reserve", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it leaves a small ward (3% of your max health) as it cycles."},
-	{"id": "reveal_spark", "rarity": "rare", "wired": true, "name": "Smouldering", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_spark", "trigger": "on_cycle", "rarity": "rare", "wired": true, "name": "Smouldering", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it still stings the enemy for a little damage as it cycles."},
 
 	# ---------------------------------------------------------------- buff, upside ----------
@@ -120,9 +120,9 @@ const UPGRADES := [
 	# them. Revisit if debuffs ever gain real durations.
 
 	# ---------------------------------------------------------------- any, upside -----------
-	{"id": "refund", "rarity": "uncommon", "wired": true, "name": "Closing Cost", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "refund", "trigger": "on_kill", "rarity": "uncommon", "wired": true, "name": "Closing Cost", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Refunds its cost when it lands the killing blow."},
-	{"id": "swift", "rarity": "epic", "wired": true, "name": "Swift", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "swift", "trigger": "chance", "rarity": "epic", "wired": true, "name": "Swift", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "12% chance the enemy loses its turn, so you act again. Damaging cards only."},
 
 	# ---------------------------------------------------------------- TRADE-OFFS ------------
@@ -147,27 +147,27 @@ const UPGRADES := [
 	 "desc": "Heals you for 4% of your health each time you play this."},
 	{"id": "second_wind", "wired": true, "name": "Second Wind", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Gives back 8% of your mana / stamina / energy on cast."},
-	{"id": "bulwark", "wired": true, "name": "Bulwark", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "bulwark", "trigger": "self_hp_below", "at": 0.50, "wired": true, "name": "Bulwark", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Shields you for 9% of your health — but only while you are below half."},
 	{"id": "steadfast", "wired": true, "name": "Steadfast", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Take 10% less damage for 2 rounds after playing this."},
-	{"id": "kindling", "rarity": "uncommon", "wired": true, "name": "Kindling", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "kindling", "trigger": "resource_full", "rarity": "uncommon", "wired": true, "name": "Kindling", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Cast it on a FULL resource bar and it grants a point of your class engine (Momentum, Rage, Conviction, Focus or Read) instead of wasting the cast."},
-	{"id": "desperate", "rarity": "uncommon", "wired": true, "name": "Desperation", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "desperate", "trigger": "self_hp_below", "at": 0.34, "rarity": "uncommon", "wired": true, "name": "Desperation", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Grants TWO points of your class engine (Momentum, Rage, Conviction, Focus or Read) while you are below a third health."},
-	{"id": "opening_act", "rarity": "epic", "wired": true, "name": "Opening Act", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "opening_act", "trigger": "first_use", "rarity": "epic", "wired": true, "name": "Opening Act", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "The FIRST time you play this in a fight, it costs nothing."},
-	{"id": "relentless", "rarity": "uncommon", "wired": true, "name": "Relentless", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "relentless", "trigger": "cast_cadence", "every": 3, "rarity": "uncommon", "wired": true, "name": "Relentless", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Every third cast of this card gives back a third of your mana / stamina / energy."},
-	{"id": "vindication", "rarity": "uncommon", "wired": true, "name": "Vindication", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "vindication", "trigger": "on_kill", "rarity": "uncommon", "wired": true, "name": "Vindication", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Heals you for 6% of your health when this lands a killing blow."},
-	{"id": "disorienting", "wired": true, "name": "Disorienting", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	{"id": "disorienting", "trigger": "chance", "wired": true, "name": "Disorienting", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "One cast in four leaves the enemy swinging wide."},
-	{"id": "pinning", "wired": true, "name": "Pinning", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	{"id": "pinning", "trigger": "chance", "wired": true, "name": "Pinning", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "12% chance to stun the enemy outright."},
-	{"id": "harrying", "rarity": "uncommon", "wired": true, "name": "Harrying", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	{"id": "harrying", "trigger": "foe_stunned", "rarity": "uncommon", "wired": true, "name": "Harrying", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "Grants a point of your class engine (Momentum, Rage, Conviction, Focus or Read) whenever the enemy is stunned or distracted."},
-	{"id": "demoralising", "rarity": "uncommon", "wired": true, "name": "Demoralising", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	{"id": "demoralising", "trigger": "foe_stunned", "rarity": "uncommon", "wired": true, "name": "Demoralising", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "Shields you for 5% of your health while the enemy is stunned or rattled."},
 	{"id": "entrenched", "wired": true, "name": "Entrenched", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "Also shields you for 7% of your health when the buff goes up."},
@@ -184,19 +184,19 @@ const UPGRADES := [
 	 "desc": "Double strength, half the duration."},
 	{"id": "reckless_guard", "wired": true, "name": "Open Guard", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "+50% to the buff, but -15% defence while it lasts."},
-	{"id": "hair_trigger", "rarity": "uncommon", "wired": true, "name": "Hair Trigger", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "hair_trigger", "trigger": "chance", "rarity": "uncommon", "wired": true, "name": "Hair Trigger", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Costs 40% less, but its effect varies wildly (50%-150%)."},
 	# The trade-off sub-pool needs to be as deep as the main one, or the LATE milestones - the
 	# ones that are supposed to be the interesting decisions - start repeating exactly where the
 	# stakes are highest. Owner: "trade-offs should likely be a large enough pool that repeats
 	# are rare as well."
-	{"id": "wild_swing", "rarity": "uncommon", "wired": true, "name": "Wild Swing", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "wild_swing", "trigger": "chance", "rarity": "uncommon", "wired": true, "name": "Wild Swing", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+45% damage, but a real chance to miss outright."},
 	{"id": "bloodprice", "rarity": "rare", "wired": true, "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Paid in health instead of your resource."},
 	{"id": "brittle", "wired": true, "name": "Brittle Strike", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+30% damage, but your guard is down until your next turn."},
-	{"id": "all_in", "rarity": "epic", "wired": true, "name": "All In", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "all_in", "trigger": "resource_low", "rarity": "epic", "wired": true, "name": "All In", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Hits far harder the EMPTIER your resource bar is, and weakly when it is full."},
 	{"id": "greedy", "wired": true, "name": "Heavy Draw", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+25% damage, but the card is slower to come back around."},
@@ -208,9 +208,9 @@ const UPGRADES := [
 	 "desc": "Lasts twice as long, but drains resource every round it holds."},
 	{"id": "provoking", "rarity": "epic", "wired": true, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, and the foe turns off your companion and onto YOU."},
-	{"id": "unstable_hex", "rarity": "rare", "wired": true, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "unstable_hex", "trigger": "chance", "rarity": "rare", "wired": true, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, with a small chance it lands on you instead."},
-	{"id": "gamblers_cut", "rarity": "rare", "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "gamblers_cut", "trigger": "chance", "rarity": "rare", "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Half cost, but a quarter of the time it does nothing at all."},
 	{"id": "sacrificial", "rarity": "epic", "wired": true, "name": "Sacrificial", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Far stronger, but the card is spent for the rest of the fight."},
@@ -309,6 +309,103 @@ const RARITY_WEIGHTS := {
 	RARITY_RARE: 0.8,
 	RARITY_EPIC: 0.30,
 }
+
+
+# === WHEN IS AN UPGRADE ACTUALLY LIVE? (2026-09-11) ===
+#
+# Owner: *"Situational can be good but only if there is a clear answer to how to use them
+# properly and make it easily apparent in combat when it's worth using. If not it all becomes
+# micro-management and feels like dead options."*
+#
+# Audited first (`tools/probe/upgrade_variety.gd`), and the finding was not what it looked like:
+# only 15 of 51 upgrades are genuinely conditional, and NINE OF THOSE FIFTEEN already key off
+# something the combat screen shows - foe HP, your HP, the resource bar, the monster's status
+# chips. The triggers were never the hidden part.
+#
+# What was missing is any LINK between that visible state and the card. The condition existed
+# only in the English `desc`, so nothing downstream could know when an upgrade was live; and a
+# card in hand did not show which upgrades it carried at all. A player picked Executioner and it
+# vanished into the card's invisible state - the foe would drop to 25%, the most visible number
+# on screen, and they still had to remember which of five cards had it.
+#
+# So: the trigger becomes DATA, and one function answers "is it live right now". Both halves live
+# here rather than in the client, because the server rolls the real effect against the same
+# facts - a client-side copy of "below 30%" is the shape that drifts.
+const TRIGGER_NONE := "none"          ## fires on every cast
+const TRIGGER_CHANCE := "chance"      ## fires on a dice roll - no decision to time
+const TRIGGER_FOE_HP := "foe_hp_below"
+const TRIGGER_SELF_HP := "self_hp_below"
+const TRIGGER_FIRST_USE := "first_use"
+const TRIGGER_RESOURCE_FULL := "resource_full"
+const TRIGGER_RESOURCE_LOW := "resource_low"
+const TRIGGER_FOE_STUNNED := "foe_stunned"
+const TRIGGER_ON_KILL := "on_kill"
+const TRIGGER_CADENCE := "cast_cadence"
+const TRIGGER_ON_CYCLE := "on_cycle"
+
+
+static func trigger_of(u: Dictionary) -> String:
+	"""An upgrade with no `trigger` is always-on. Omission is the default because 27 of the 51
+	are, and tagging them all to say 'no condition' would be noise that drifts."""
+	return String(u.get("trigger", TRIGGER_NONE))
+
+
+static func trigger_live(u: Dictionary, s: Dictionary) -> bool:
+	"""Is this upgrade's condition satisfied RIGHT NOW, given the combat state `s`?
+
+	`s` keys, all optional - a missing key means "cannot tell", which reads as NOT live, so a
+	caller that knows less simply lights up less. It must never claim live on a guess.
+	  foe_hp_pct / self_hp_pct / resource_pct : 0.0-1.0
+	  foe_stunned : bool
+	  card_casts  : times THIS card has been cast this fight
+
+	ALWAYS-ON and CHANCE both return false on purpose. Neither is a thing a player times, and
+	lighting up an upgrade that is always on would make the indicator meaningless - if everything
+	glows, nothing does."""
+	match trigger_of(u):
+		TRIGGER_FOE_HP:
+			return s.has("foe_hp_pct") and float(s["foe_hp_pct"]) < float(u.get("at", 0.30))
+		TRIGGER_SELF_HP:
+			return s.has("self_hp_pct") and float(s["self_hp_pct"]) < float(u.get("at", 0.50))
+		TRIGGER_RESOURCE_FULL:
+			return s.has("resource_pct") and float(s["resource_pct"]) >= 0.999
+		TRIGGER_RESOURCE_LOW:
+			# All In scales continuously, so there is no true/false moment - call it live once
+			# it is beating an average cast, which is the point a player should notice it.
+			return s.has("resource_pct") and float(s["resource_pct"]) <= 0.50
+		TRIGGER_FOE_STUNNED:
+			return bool(s.get("foe_stunned", false))
+		TRIGGER_FIRST_USE:
+			return s.has("card_casts") and int(s["card_casts"]) == 0
+		TRIGGER_CADENCE:
+			var every: int = maxi(2, int(u.get("every", 3)))
+			# Live on the cast that WILL complete the cycle, not the one after it.
+			return s.has("card_casts") and (int(s["card_casts"]) + 1) % every == 0
+		TRIGGER_ON_KILL:
+			# Cannot be known before the hit lands. Treated as a HINT rather than a live state:
+			# see trigger_hint(). Claiming it live would be a guess about damage.
+			return false
+		TRIGGER_ON_CYCLE:
+			# Pays off only if you DON'T play this card, so "live" would be backwards.
+			return false
+	return false
+
+
+static func trigger_hint(u: Dictionary) -> String:
+	"""A SHORT plain-language note of when this upgrade pays, for the card face. Empty for
+	always-on, because a note on every card is noise a player learns to ignore."""
+	match trigger_of(u):
+		TRIGGER_FOE_HP:    return "foe under %d%%" % int(round(float(u.get("at", 0.30)) * 100.0))
+		TRIGGER_SELF_HP:   return "you under %d%%" % int(round(float(u.get("at", 0.50)) * 100.0))
+		TRIGGER_RESOURCE_FULL: return "full bar"
+		TRIGGER_RESOURCE_LOW:  return "low bar"
+		TRIGGER_FOE_STUNNED:   return "foe stunned"
+		TRIGGER_FIRST_USE:     return "first use"
+		TRIGGER_CADENCE:       return "every %d casts" % int(u.get("every", 3))
+		TRIGGER_ON_KILL:       return "on a kill"
+		TRIGGER_ON_CYCLE:      return "if NOT played"
+		TRIGGER_CHANCE:        return "by chance"
+	return ""
 
 
 static func rarity_of(u: Dictionary) -> String:

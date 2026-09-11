@@ -21227,6 +21227,13 @@ func _make_milestone_tile(slot: int, up: Dictionary, face_up: bool) -> Control:
 		if _rank > 0:
 			tail += "\n[color=%s]%s %s[/color]" % [_upgrade_rarity_color(up).to_html(false),
 				_upgrade_rarity_gauge(_rank), _r.capitalize()]
+		# The CONDITION as a scannable tag. The description already says it in prose, but nine
+		# cards of prose cannot be scanned - a player choosing between them wants to see at a
+		# glance which picks only pay in a particular moment. Empty for always-on, so the tag
+		# means something when it is there.
+		var _hint: String = CardUpgrades.trigger_hint(up)
+		if _hint != "":
+			tail += "\n[color=#8FB8D8]▸ %s[/color]" % _hint
 		if tradeoff:
 			tail += "\n[color=#E0902A]— asks something back —[/color]"
 		body.text = "[color=#BFBFBF]%s[/color]%s" % [String(up.get("desc", "")), tail]
@@ -25130,6 +25137,11 @@ func handle_server_message(message: Dictionary):
 						_server_turn_regen = int(state.get("turn_regen", 0))
 					combat_deck_count = int(state.get("combat_deck_count", 0))
 					combat_discard_count = int(state.get("combat_discard_count", 0))
+					# Per-card casts this fight, so the hand can mark a first-use or every-Nth-cast upgrade
+					# LIVE. Pushed BEFORE update_hand so the very first draw already has it - otherwise the
+					# strip would only be right from round two, which is the round a player stops looking.
+					if combat_scene_panel and combat_scene_panel.has_method("set_cast_counts"):
+						combat_scene_panel.set_cast_counts(state.get("casts_this_fight", {}))
 					if combat_scene_panel and combat_scene_panel.has_method("update_hand"):
 						combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
 					_sync_momentum_meter(state)

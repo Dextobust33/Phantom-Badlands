@@ -4835,6 +4835,21 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# uses per fight; until then this prevents grind-spam (e.g., casting
 	# Magic Bolt at 5 mana over and over).
 	if result.get("success", true) != false:
+		# 2026-09-11 - an UNCAPPED per-card cast count for THIS fight, separate from the mastery
+		# counter directly below, which stops at MASTERY_USES_PER_COMBAT_CAP (5) and so cannot
+		# answer "how many times have I cast this".
+		#
+		# It exists so the combat hand can light an upgrade up when its condition is satisfied.
+		# Two ad-hoc per-card trackers already existed for exactly this question and each is only
+		# maintained when the player happens to OWN that upgrade - `opener_used_<id>` (a bool) and
+		# `_relentless_<id>` (a counter). A third of the same shape would have been the mistake
+		# CLAUDE.md warns about, so this one is generic and always maintained. The two existing
+		# effect paths are deliberately left alone for now: folding them in is an off-by-one risk
+		# on live behaviour for no player-visible gain, and is worth doing on its own.
+		var _casts: Dictionary = combat.get("casts_this_fight", {})
+		_casts[ability_name] = int(_casts.get(ability_name, 0)) + 1
+		combat["casts_this_fight"] = _casts
+
 		var combat_uses_so_far: Dictionary = combat.get("mastery_uses_this_fight", {})
 		var current_combat_uses = int(combat_uses_so_far.get(ability_name, 0))
 		if current_combat_uses < MASTERY_USES_PER_COMBAT_CAP:
@@ -11083,6 +11098,10 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# in the combat scene; deck/discard counts ride along for the
 		# "Deck N · Discard M" status indicator.
 		"combat_hand": combat.get("combat_hand", []).duplicate(),
+		# Per-card casts THIS fight, so the hand can mark an upgrade LIVE when its condition is
+		# met (first use, every-Nth-cast). Sent as state rather than counted client-side: the
+		# client cannot see a cast the server rejected, and a second counter would drift.
+		"casts_this_fight": (combat.get("casts_this_fight", {}) as Dictionary).duplicate(),
 		# #6c (2026-09-02) — AUTHORITATIVE ability costs and per-turn regen, computed here and
 		# sent to the client. The client used to derive these itself from a hand-maintained copy
 		# of the cost table, which was wrong five separate ways and could never be right in
@@ -12137,6 +12156,10 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 		"combat_hand_size": int(combat.get("combat_hand_size", COMBAT_HAND_SIZE)),
 		"combat_deck": combat.get("combat_deck", []).duplicate(),
 		"combat_hand": combat.get("combat_hand", []).duplicate(),
+		# Per-card casts THIS fight, so the hand can mark an upgrade LIVE when its condition is
+		# met (first use, every-Nth-cast). Sent as state rather than counted client-side: the
+		# client cannot see a cast the server rejected, and a second counter would drift.
+		"casts_this_fight": (combat.get("casts_this_fight", {}) as Dictionary).duplicate(),
 		"combat_discard": combat.get("combat_discard", []).duplicate()
 	}
 
