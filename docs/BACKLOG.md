@@ -401,6 +401,45 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       STILL UNVERIFIED and shipped on code review: party equipment rewards (2 clients) and
       leader logout/permadeath (3 clients) - `party3` and `party3_leader_dies` set both up.
 
+## Phase 2.7 — EQUIPMENT COMPARISON HIDES THREE ATTRIBUTES (owner 2026-09-11)
+
+Owner: *"equipment comparisons may be missing some stats like Dex"*. Correct, and it is wider
+than DEX. Checked `_get_item_comparison_parts` (client.gd ~17812) against the six attributes gear
+can actually roll:
+
+| attribute    | shown as                        | visible? |
+|--------------|---------------------------------|----------|
+| strength     | folded into **ATK**             | yes      |
+| constitution | folded into **DEF** and **HP**  | yes      |
+| wits         | its own **WIT** line            | yes      |
+| **dexterity**    | energy pool only                | **NO**   |
+| **intelligence** | mana pool only                  | **NO**   |
+| **wisdom**       | mana pool only                  | **NO**   |
+
+- [ ] **Three attributes produce no comparison line of their own.** DEX, INT and WIS are read
+      ONLY to compute the resource pool (`RES`), so a ring with +6 DEX and no max_energy shows
+      nothing at all — while the same ring with +6 WITS would show `+6WIT`. DEX drives hit
+      chance, dodge, initiative, flee and (for most classes) crit; INT is a mage's entire
+      ability damage; WIS gates poison resistance. None of that reaches the comparison.
+      The generic loop right beside it (`class_bonuses_to_compare`) only covers regen/utility
+      stats, so there is no table to add them to — they need their own diffs, folded the way
+      STR and CON are where a derived number is more honest, or shown raw where it is not.
+      **Watch for the same gap in the other comparison surface**: `_get_tool_comparison_parts`
+      and `display_equip_comparison` are separate code paths.
+
+## Phase 2.75 — RANGER CRIT: DECIDED, no conversion (owner 2026-09-11)
+
+Owner: *"No flat damage on crit for the ranger. That's the price he pays for no glancing
+blows."*
+
+**Closed.** Crit stays dead for a Ranger's cards and is NOT converted into anything. The
+visibility work shipped 2026-09-11 (stat screen, buff strip, card faces) is the whole answer —
+the trade is deliberate and the player is now told about it in all three places.
+
+Do not reopen this as a balance change without the owner asking: it was considered and declined.
+The three pure-crit companion cards (Hunter's Instinct / Sky Talon / Godsbane) remain worthless
+to a Ranger BY DESIGN, and now say so on their face.
+
 ## Phase 2.8 — DAMAGE ATTRIBUTION IS LOSSY (found 2026-09-11, REPRODUCED, not yet fixed)
 
 - [ ] **36% of player actions report less damage to the client than the monster actually loses.**
