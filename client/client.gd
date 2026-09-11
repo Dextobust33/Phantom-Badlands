@@ -1406,6 +1406,17 @@ var party_combat_spectating: bool = false  # Dead/fled in party combat, watching
 var party_waiting_for_turn: bool = false   # Not our turn in party combat
 var party_combat_active: bool = false      # We are in party combat (our turn)
 var party_round_submitted: bool = false    # #76 — locked in this round; block re-submit/mash until round resolves
+# 2026-09-11 — CONFIRM BEFORE LOCKING IN (party only). A party submit is a one-way door: the
+# server refuses a second action once `submitted_this_round` is set, so a misclick meant
+# sitting out the round. Solo shows the result at once and the card face carries the reveal,
+# so a confirm there would tax every turn for information already on screen; party makes you
+# commit and WAIT, which is where the step earns its click.
+var party_confirm_pending: bool = false    # a card is chosen and shown, not yet sent
+var party_confirm_command: String = ""
+var party_confirm_target: String = ""
+var party_confirm_slot: int = -1           # bar slot the card came from (4-9); -1 for a mouse click
+var _party_confirm_origin_index: int = -1  # captured at trigger time, before the picker can run
+var _party_confirm_armed: bool = false     # set by Confirm so send_combat_command passes the gate ONCE
 var party_combat_turn_name: String = ""    # Name of player whose turn it is
 
 # Bless stat selection
@@ -9604,6 +9615,22 @@ func update_action_bar():
 			# Add all ability slots
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
+	elif party_confirm_pending:
+		# 2026-09-11 — "lock in X?" Space confirms, Q goes back to the hand. The card's OWN key
+		# also confirms (same idiom as the buff picker: press the key twice to commit), so the
+		# fast path is two taps of one key and nobody has to find Space.
+		var _confirm := {"label": "Confirm", "action_type": "local", "action_data": "party_confirm_yes", "enabled": true}
+		current_actions = [
+			_confirm,
+			{"label": "Pick again", "action_type": "local", "action_data": "party_confirm_no", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+		for _ci in range(4, 10):
+			if _ci == party_confirm_slot:
+				current_actions.append(_confirm)
+			else:
+				current_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
 	elif party_combat_active:
 		# Party combat: our turn — same layout as solo combat.
 		# v0.9.739 — items ARE available in co-op now (they used to be a dead "---" slot).
@@ -11078,6 +11105,7 @@ func trigger_action(index: int):
 			# to keep it. `index` is the action-bar slot; hand cards occupy slots 5-9, which map
 			# to the number keys 1-5.
 			_target_select_origin_slot = (index - 4) if index >= 5 and index <= 9 else 0
+			_party_confirm_origin_index = index
 			# v0.9.739 — check BEFORE the variable-cost prompt. Previously the mana dialog
 			# opened for a player who had already locked in, and only the send was rejected.
 			if _party_action_blocked():
@@ -11128,6 +11156,11 @@ func send_combat_command(command: String, target: String = ""):
 		# `target` being set means we are coming BACK from the picker, so no loop.
 		if target == "" and _party_buff_can_target_ally(command):
 			_start_buff_target_select(command)
+			return
+		# 2026-09-11 — and then asks "lock this in?" before the one-way submit. Armed only by
+		# the Confirm button, for exactly one call, so nothing else can slip past the gate.
+		if not party_combat_spectating and not _party_confirm_armed:
+			_party_confirm_start(command, target)
 			return
 
 	# #76 v0.9.739 — in CO-OP a card play is only a SUBMIT: nothing resolves until every
@@ -13169,6 +13202,7 @@ func _on_combat_card_played(card_name: String) -> void:
 	# Mouse click: no originating hotkey, so the picker keeps "Yourself" first.
 	_target_select_origin_slot = 0
 	_target_select_self_key = 1
+	_party_confirm_origin_index = -1
 	"""Audit #1 Slice 6a — mouse path for the combat scene's card row.
 	Mirrors the action bar's 'combat' action_type handling so a click and
 	a hotkey press behave identically (variable-cost prompts included)."""
@@ -15526,6 +15560,10 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"target_select_cancel":
 			_cancel_target_select()
+		"party_confirm_yes":
+			_party_confirm_yes()
+		"party_confirm_no":
+			_party_confirm_no()
 
 		"target_select_self":
 			# The quick self-cast: always available as one click while the picker is open.
@@ -30124,6 +30162,7 @@ func _handle_party_combat_start(message: Dictionary):
 
 	# Set party combat mode
 	party_round_submitted = false  # #76 — fresh fight, nothing locked in yet
+	_party_confirm_clear()
 	if is_my_turn:
 		party_combat_active = true
 		party_waiting_for_turn = false
@@ -30269,6 +30308,7 @@ func _handle_party_combat_update(message: Dictionary):
 		party_waiting_for_turn = false
 		party_combat_spectating = true
 		party_round_submitted = false
+		_party_confirm_clear()
 		# v0.9.739 — a fallen member kept a full, clickable card hand on screen; the only
 		# feedback was an error after pressing one. Take the cards away instead — the action
 		# bar already blanks to "Spectating", the hand strip just never followed.
@@ -30427,6 +30467,7 @@ func _handle_party_combat_end(message: Dictionary):
 	party_combat_spectating = false
 	party_combat_turn_name = ""
 	party_round_submitted = false
+	_party_confirm_clear()
 	stop_low_hp_pulse()
 
 	if victory and not your_death:
@@ -34258,6 +34299,8 @@ func show_help():
 [b][color=#FFD700]══ PARTY COMBAT ══[/color][/b]
 Party up and hit a monster together and you all fight [b]ONE shared enemy[/b]. Everyone locks in a
 card at the same time, then the round plays out actor by actor in speed order.
+[color=#00FFFF]Locking in:[/color] a card you pick is shown first — [b]Space[/b] (or the card's own key again) locks it
+in, [b]Q[/b] goes back to your hand. Once locked in you cannot change it until the round resolves.
 [color=#00FFFF]The monster acts against EVERY member each round[/color] (you or your companion) — a party is not
 a way to take less heat. It lands at most one hit per member per round.
 [color=#00FFFF]Items:[/color] your FIRST item each round is free and you can still play a card. A SECOND item
@@ -38548,6 +38591,66 @@ func _replay_post_death_messages() -> void:
 	_pending_post_death.clear()
 	for m in queued:
 		handle_server_message(m)
+
+
+func _party_confirm_start(command: String, target: String) -> void:
+	"""Hold a party action for confirmation instead of sending it. The hand stays where it is;
+	the action bar becomes Confirm / Pick again, and the card's own key confirms."""
+	party_confirm_pending = true
+	party_confirm_command = command
+	party_confirm_target = target
+	party_confirm_slot = _party_confirm_origin_index if _party_confirm_origin_index >= 4 and _party_confirm_origin_index <= 9 else -1
+	if combat_scene_panel and combat_scene_panel.has_method("append_log"):
+		combat_scene_panel.append_log("[color=#66D0C0]Lock in %s?  Space confirms, Q picks again.[/color]" % _party_confirm_label())
+	update_action_bar()
+
+
+func _party_confirm_label() -> String:
+	"""'Forcefield on Bob', 'Attack', 'Flee' - what the player is about to commit to."""
+	var head := party_confirm_command.split(" ")[0].to_lower()
+	var name := ""
+	match head:
+		"attack", "a":
+			name = "Attack"
+		"flee", "f", "run":
+			name = "Flee"
+		_:
+			name = _ability_display_name(_canonical_ability(head))
+			if name == "":
+				name = party_confirm_command
+	if party_confirm_target != "" and party_confirm_target != "self":
+		for m in _party_combat_members:
+			if m is Dictionary and party_confirm_target == "pid:%d" % int(m.get("peer_id", -1)):
+				return "%s on %s" % [name, String(m.get("name", "a teammate"))]
+		return "%s on a teammate" % name
+	return name
+
+
+func _party_confirm_yes() -> void:
+	if not party_confirm_pending:
+		return
+	var cmd := party_confirm_command
+	var tgt := party_confirm_target
+	_party_confirm_clear()
+	_party_confirm_armed = true
+	send_combat_command(cmd, tgt)
+	_party_confirm_armed = false
+
+
+func _party_confirm_no() -> void:
+	if not party_confirm_pending:
+		return
+	_party_confirm_clear()
+	if combat_scene_panel and combat_scene_panel.has_method("append_log"):
+		combat_scene_panel.append_log("[color=#808080]Pick a card.[/color]")
+	update_action_bar()
+
+
+func _party_confirm_clear() -> void:
+	party_confirm_pending = false
+	party_confirm_command = ""
+	party_confirm_target = ""
+	party_confirm_slot = -1
 
 
 func _party_action_blocked() -> bool:

@@ -202,6 +202,37 @@ python tools/test_setup/run.py in_dungeon
 
 ---
 
+## 7. Party CONFIRM step  *(two clients, 2026-09-11, UNRELEASED)*
+
+A party action now shows *"Lock in X? Space confirms, Q picks again"* before it is sent, because a
+party submit is a one-way door (the server refuses a second action once locked in).
+
+```bash
+python tools/test_setup/run.py healthy
+```
+
+- [ ] Start a fight. Press a card's key → the log line appears and the bar reads **Confirm / Pick
+      again**, with the hand still visible.
+- [ ] Press the **same card key again** → it locks in (`⏳ Locked in — waiting for your party`).
+- [ ] Next round: pick a card, press **Q** → back to the hand; pick a different card, press
+      **Space** → that one locks in.
+- [ ] Play a buff (Forcefield etc.): the **who** picker comes first, then the confirm names the
+      target (*"Forcefield on test002"*).
+- [ ] Solo fight on the same character: **no confirm step**, cards play immediately.
+
+## 8. Sanctuary RECALL  *(one client, 2026-09-11, UNRELEASED)*
+
+At character select, the Sanctuary companions page can pull a companion back from the character
+holding it. No scenario yet; the setup is three clicks.
+
+- [ ] Sanctuary → Companions: mark a registered companion for **Checkout**, pick character A, log
+      in, log out to character select.
+- [ ] The slot reads *(In use by A)* and the bar has **Recall**. Press it, pick the slot, Confirm
+      → the slot reads *(Available)* and the log says it was recalled from A.
+- [ ] Log in as A: no active companion.
+- [ ] Log in as A WITH the companion, stay logged in from a second client, and try Recall from
+      the first → refused with *"A is logged in right now"*.
+
 ## Order I would go in
 
 1. **Arrow movement** — highest risk, and independent of everything else.

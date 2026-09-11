@@ -1529,7 +1529,7 @@ share of a pool plus a per-class engine, so its cost curve does not transfer. Ow
       upgrades hit the players cards. If you get one with a good cycle ability you will likely
       want to keep it in."* So the pull is real but CONTINGENT on the upgrade you draw — which is
       precisely why the rarity finding above is the gate on this arc rather than more cards.
-- [ ] **PARTY has no un-submit, and that is where a confirmation step is actually needed.**
+- [x] **DONE 2026-09-11 (local, unplayed) — party CONFIRM step.** A party action is shown first (*'Lock in Forcefield on Bob? Space confirms, Q picks again'*); Space, the card's own key pressed again (the buff-picker idiom), or the Confirm button sends it; Q returns to the hand. Sits AFTER the buff target picker so the confirm can name the target. Solo untouched — the gate is one line inside the party block. Probe `party_confirm.gd` (18 checks; re-injection of a missing reset fails 1). Playtest queue item 7. PARTY has no un-submit, and that is where a confirmation step is actually needed.
       `_party_submit_action` returns early if `submitted_this_round` — a one-way door, so a
       misclick is unrecoverable and you wait out the round. Owner asked for a confirmation step in
       solo AND party; recommending it only for party, because solo already shows the result
