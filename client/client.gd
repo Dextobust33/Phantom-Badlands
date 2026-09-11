@@ -45069,7 +45069,17 @@ func _dungeon_tile_cell(grid: Array, x: int, y: int, tile: int) -> String:
 				# already the finished cell (room floor, or a prop composited onto it)
 				return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, ground]
 			return _DungeonTiles.floor_img()
-		1:                                     # WALL
+		1:                                     # WALL - void, or the rock rim that holds up floor
+			# A two-cell prop standing on the floor BELOW reaches up into this cell. Drawn over
+			# whatever this cell would otherwise be, so a lamp at the edge of a space rises into
+			# the dark instead of being clipped at the boundary.
+			var _wt: String = _DungeonTiles.tall_prop_for(grid, x, y + 1)
+			if _wt != "":
+				var _wh: String = _DungeonTiles.tall_half(_wt, "top")
+				var _wb: String = _DungeonTiles.rock_path() if _dungeon_supports_floor(grid, x, y) \
+					else _DungeonTiles.void_path()
+				if _wh != "" and _wb != "":
+					return _dungeon_backed_cell(_DungeonComposite.overlay(_wb, _wh), "")
 			if _dungeon_supports_floor(grid, x, y):
 				return _DungeonTiles.rock_img()
 			return _DungeonTiles.blank_img()

@@ -34,9 +34,11 @@ func _init() -> void:
 					if b == "":
 						continue
 					bases += 1
-					# the cell above must be walkable, or the top half is drawn into
-					# non-traversable space - which renders as black VOID, so the lamp head
-					# would float with no post beneath it
+					# A top half rising into the void is FINE - owner: "A lamppost that is
+					# standing on a valid tile but expands up into the void isn't actually a
+					# problem as its base is touching the ground." What is counted here is only
+					# how often it happens, because it should be common at the edge of a space
+					# and a count of zero would mean the rule never got relaxed.
 					if y - 1 < 0 or int(g[y - 1][x]) == 1:
 						in_wall += 1
 					# and the base cell itself must be walkable
@@ -44,8 +46,28 @@ func _init() -> void:
 						dangling += 1
 	print("      %d bases placed across 6 floors" % bases)
 	ck(bases > 0, "tall props are actually placed (density is not zero)")
-	ck(in_wall == 0, "no base puts its top half into the void (%d)" % in_wall)
+	print("      %d of them reach up into the void, which is allowed and expected" % in_wall)
 	ck(dangling == 0, "no base stands in non-traversable space itself (%d)" % dangling)
+
+	print("--- 2b. every prop's FOOTING is in the LOWER cell ---")
+	# The owner's caveat: a top half in the void is fine BECAUSE the base is on the ground. That
+	# only holds while the visible footing really is in the lower cell - an object whose foot sat
+	# in the upper half would hover. Measured from the art, not assumed.
+	for n2 in _T.TALL_NAMES:
+		var bot: String = _T.tall_half(n2, "bot")
+		if bot == "":
+			continue
+		var bi: Image = (load(bot) as Texture2D).get_image()
+		bi.convert(Image.FORMAT_RGBA8)
+		var lowest := -1
+		for yy in range(bi.get_height()):
+			for xx in range(bi.get_width()):
+				if bi.get_pixel(xx, yy).a > 0.12:
+					lowest = yy
+					break
+		ck(lowest > bi.get_height() / 2,
+			"%s has ink in the lower part of its base cell (lowest row %d of %d)"
+			% [n2, lowest, bi.get_height()])
 
 	print("--- 3. rarer than scatter, or a corridor becomes a street ---")
 	# props are 1 in 7; these must be far rarer

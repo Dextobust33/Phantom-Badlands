@@ -159,6 +159,14 @@ def main():
     corr_img.resize((32, 32), Image.NEAREST).save(os.path.join(OUT, 'corridor_00.png'))
     print('  %-18s the corridor floor, for compositing' % 'corridor')
 
+    # The wall RIM and the VOID, for the same reason: both are sheet regions (or a fill) and the
+    # compositor needs files. A two-cell prop standing at the edge of a space reaches its top half
+    # into one of these. Prefixed `_` so `room_variants`, which scans `<pack>_NN.png`, can never
+    # match them - they are not room floors and no room may pick one.
+    _reference_image('SHEET_CAVE32', 'CAVE_ROCK', 32).save(os.path.join(OUT, '_rim.png'))
+    Image.new('RGBA', (32, 32), (0, 0, 0, 255)).save(os.path.join(OUT, '_void.png'))
+    print('  %-18s wall rim + void, for compositing' % 'rim/void')
+
     total = 0
     for pack, cells in sorted(FLOORS.items()):
         im = Image.open(sheet_for(pack)).convert('RGBA')

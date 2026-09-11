@@ -344,10 +344,19 @@ static func tall_prop_for(grid: Array, x: int, y: int) -> String:
 
 	Position-hashed like `prop_for`, on a different salt so the two do not correlate.
 
-	The placement rule is the whole point: a base is only allowed where the cell ABOVE is also
-	walkable floor. Without it the top half would be drawn into NON-TRAVERSABLE space - which the
-	dungeon renders as black void, not as a wall - and a lamp head floating in blackness with no
-	post under it is precisely the half-object problem this exists to fix, moved up one cell."""
+	The placement rule is only about the BASE. Owner, on the first version: *"A lamppost that is
+	standing on a valid tile but expands up into the void isn't actually a problem as its base is
+	touching the ground."* Right, and the first rule was stricter than the problem: it also
+	required the cell ABOVE to be walkable, which refused most of the good spots, since 94% of
+	non-floor renders as void and lamps naturally stand at the edge of a space.
+
+	A top half rising into darkness reads correctly. What would NOT is an object whose visible
+	FOOTING is in the upper cell, which would leave it hovering - so that is checked at bake time
+	rather than assumed (`tools/bake_tall_props.py`), and measured rather than eyeballed: the
+	lanterns foot at row 17 of 32 with ground margin beneath, which is ordinary sprite art, and
+	the shrub reaches its bottom edge. All three stand on the lower cell.
+
+	So: the base cell must be walkable floor, and nothing is asked of the cell above."""
 	if y <= 0 or y >= grid.size():
 		return ""
 	var row = grid[y]
@@ -355,13 +364,20 @@ static func tall_prop_for(grid: Array, x: int, y: int) -> String:
 		return ""
 	if int(row[x]) == 1:
 		return ""
-	var above = grid[y - 1]
-	if x >= above.size() or int(above[x]) == 1:
-		return ""      # nowhere for the top half to go
 	var h: int = abs(hash(Vector2i(x * 31 + 5, y * 17)))
 	if h % TALL_CHANCE_IN != 0:
 		return ""
 	return TALL_NAMES[(h / TALL_CHANCE_IN) % TALL_NAMES.size()]
+
+
+## Paths for the two non-floor backgrounds a tall prop can stand against. Everywhere else
+## these are drawn from a sheet region or a fill; the compositor needs files.
+static func rock_path() -> String:
+	return ROOM_FLOOR_DIR + "_rim.png"
+
+
+static func void_path() -> String:
+	return ROOM_FLOOR_DIR + "_void.png"
 
 
 static func tall_half(name: String, half: String) -> String:

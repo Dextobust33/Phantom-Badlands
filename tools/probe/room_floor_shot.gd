@@ -95,7 +95,15 @@ func _init() -> void:
 					tile = int(grid[y][x])
 				var cell: Image = null
 				if tile == 1:
-					cell = rock if _touches_floor(grid, x, y) else void_im
+					# a tall prop standing below reaches its top half up into this cell
+					var wt: String = _T.tall_prop_for(grid, x, y + 1)
+					if mode == "after" and wt != "":
+						var wb: Image = rock if _touches_floor(grid, x, y) else void_im
+						var wp := "res://client/sprites/room_floor32/%s.png" % ("_rim" if _touches_floor(grid, x, y) else "_void")
+						var wh: String = _T.tall_half(wt, "top")
+						cell = _img(_C.overlay(wp, wh)) if wh != "" else wb
+					else:
+						cell = rock if _touches_floor(grid, x, y) else void_im
 				elif mode == "after" and (_T.tall_prop_for(grid, x, y) != "" or _T.tall_prop_for(grid, x, y + 1) != ""):
 					# a TWO-CELL prop claims this cell; mirrors client.gd `_dungeon_ground_at`
 					var tb: String = _T.tall_prop_for(grid, x, y)
