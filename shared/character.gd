@@ -733,6 +733,31 @@ func get_class_passive() -> Dictionary:
 	"""Get the unique passive ability for this character's class"""
 	return class_passive_for(class_type)
 
+
+static func class_crit_affects_abilities(klass: String) -> bool:
+	"""The static form, for the stat screen and anything else without an instance to hand."""
+	var cp: Dictionary = class_passive_for(klass)
+	var cfx: Dictionary = cp.get("effects", {}) if cp is Dictionary else {}
+	return not bool(cfx.get("no_glance", false))
+
+
+func crit_affects_abilities() -> bool:
+	"""Can this character CRIT with a card? For most classes yes; for a Ranger, never.
+
+	`Steady Hand` sets `no_glance`, and the ability path zeroes crit chance outright alongside
+	it - the trade is "never glances, never crits", a deliberate reliability identity. Basic
+	attacks are untouched, but this game is deck-driven, so in practice a Ranger's crit chance
+	is summed from every source and then thrown away.
+
+	Owner 2026-09-10, having asked whether a Wolf companion card raises a Ranger's ability crit:
+	*"We may need to put something in the players buff panel or avoid crit from being able to go
+	there if the ranger can't crit though."* The rule lives HERE, as one predicate, because four
+	surfaces need to agree about it - the stat screen, the buff panel, the card text and combat
+	itself - and four copies of "is this class a Ranger" is how they drift apart."""
+	var p: Dictionary = get_class_passive()
+	var fx: Dictionary = p.get("effects", {}) if p is Dictionary else {}
+	return not bool(fx.get("no_glance", false))
+
 # 2026-09-06 — the name a class is SHOWN under, where it differs from the id it is STORED under.
 #
 # "Sage" reads as wisdom-and-sustain, which was precisely the passive being retired (Mana Mastery).
@@ -799,6 +824,10 @@ static func stat_description_for(stat: String, class_type: String) -> String:
 			var dex_pool := " Energy pool." if pool == "energy" else ""
 			if class_type == "Ninja":
 				return "Dodge (your main defence), crit, hit chance, flee." + dex_pool
+			# A Ranger's cards CANNOT crit - `Steady Hand` zeroes it - so listing crit here was
+			# selling a stat the class cannot spend. Say what DEX actually buys them instead.
+			if not class_crit_affects_abilities(class_type):
+				return "Hit chance, dodge, initiative, flee. Crit only on basic attacks — your cards never crit." + dex_pool
 			return "Hit chance, crit, dodge, initiative, flee." + dex_pool
 		"intelligence":
 			if path == "mage":

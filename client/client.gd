@@ -2943,6 +2943,14 @@ func _ready():
 			if not map_display.meta_hover_started.is_connected(_on_log_meta_hover):
 				map_display.meta_hover_started.connect(_on_log_meta_hover)
 				map_display.meta_hover_ended.connect(_on_log_meta_unhover)
+		# ...and the buff strip, which now marks a buff that does nothing for your class and
+		# needs somewhere to say why. Third label, same connection: a link is only as good as
+		# the label it is on.
+		if buff_display_label != null and buff_display_label is RichTextLabel:
+			buff_display_label.mouse_filter = Control.MOUSE_FILTER_PASS
+			if not buff_display_label.meta_hover_started.is_connected(_on_log_meta_hover):
+				buff_display_label.meta_hover_started.connect(_on_log_meta_hover)
+				buff_display_label.meta_hover_ended.connect(_on_log_meta_unhover)
 		if _ss_parent:
 			var ss_btn := Button.new()
 			ss_btn.name = "ScreenshotButton"
@@ -20033,6 +20041,12 @@ func _get_ability_description_text(ability_name: String) -> String:
 		var _dt = preload("res://shared/drop_tables.gd")
 		var _cd = _dt.get_companion_card_data_by_id(ability_name)
 		var _base = String(_cd.get("desc", "A companion's gift.")) if not _cd.is_empty() else "A companion's gift."
+		# A pure-CRIT card is worth nothing to a class whose cards cannot crit. Three of them
+		# exist (Wolf / Gryphon / God Slayer, all `kind: focus`), and a Ranger holding one gets
+		# no benefit at all - the chance is summed and then zeroed. Say so on the card face
+		# rather than letting them find out by measuring, which is what the owner had to do.
+		if String(_cd.get("kind", "")) == "focus" 				and not Character.class_crit_affects_abilities(String(character_data.get("class_type", ""))):
+			_base += " [color=#FF6666]Does nothing for you: Steady Hand means your cards never crit (it still helps your basic attacks).[/color]"
 		if int(character_data.get("combat_deck_collection", {}).get(ability_name, 0)) >= 1:
 			return _base + " [color=#7AE07A]Permanent card (earned).[/color]"
 		var _mt = ability_name.trim_prefix("companion_card_").capitalize()
@@ -22349,6 +22363,36 @@ func update_player_hp_bar(from_beat: bool = false):
 	update_tool_status_overlay()
 	update_status_hud()
 
+func _buff_is_inert(buff_type: String) -> bool:
+	"""Is this buff doing NOTHING for this character?
+
+	Owner 2026-09-10, on a Ranger and a crit-granting companion card: *"We may need to put
+	something in the players buff panel or avoid crit from being able to go there if the ranger
+	can't crit though."*
+
+	A Ranger's `Steady Hand` trades glances for crits - it never does either. Crit chance is
+	still summed from every source (DEX, gear affixes, companion bonuses, the Wolf / Gryphon /
+	God Slayer focus cards) and then zeroed before the roll, so a crit buff on a Ranger is a
+	number that will never be used. Showing it identically to a working buff is the game telling
+	the player something untrue.
+
+	Reads `Character.class_crit_affects_abilities`, the same predicate combat and the stat screen
+	use, rather than testing for "Ranger" here - four copies of that test is how they drift."""
+	if buff_type != "crit_chance":
+		return false
+	var klass := String(character_data.get("class_type", ""))
+	if klass == "":
+		return false
+	return not Character.class_crit_affects_abilities(klass)
+
+
+func _inert_buff_reason(buff_type: String) -> String:
+	"""Hover text saying WHY a struck-through buff is doing nothing."""
+	if buff_type == "crit_chance":
+		return "Crit chance does nothing for your cards — Steady Hand means they never crit (and never glance). It still applies to basic attacks."
+	return "This buff has no effect for your class."
+
+
 func update_buff_display():
 	"""Update the buff/debuff display panel in the bottom right of GameOutput"""
 	if not buff_display_label:
@@ -22383,7 +22427,11 @@ func update_buff_display():
 		var buff_dur = buff.get("duration", 0)
 		var color = _get_buff_color(buff_type)
 		var letter = _get_buff_letter(buff_type)
-		parts.append("[color=%s][%s+%d:%d][/color]" % [color, letter, buff_value, buff_dur])
+		if _buff_is_inert(buff_type):
+			parts.append("[url=%s][color=#6A6A6A][s][%s+%d:%d][/s][/color][/url]" % [
+				_inert_buff_reason(buff_type), letter, buff_value, buff_dur])
+		else:
+			parts.append("[color=%s][%s+%d:%d][/color]" % [color, letter, buff_value, buff_dur])
 
 	# Persistent buffs (battle-based)
 	var persistent_buffs = character_data.get("persistent_buffs", [])

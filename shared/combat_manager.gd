@@ -728,9 +728,9 @@ func _passive_has_no_glance(character) -> bool:
 	damage, it removes the downside roll, which is worth more the more casts a fight takes."""
 	if character == null:
 		return false
-	var p: Dictionary = character.get_class_passive()
-	var fx: Dictionary = p.get("effects", {}) if p is Dictionary else {}
-	return bool(fx.get("no_glance", false))
+	# The same predicate the stat screen, the buff panel and the card text use - inverted,
+	# because this asks "does it glance" where they ask "does it crit". One rule, four readers.
+	return not character.crit_affects_abilities()
 
 
 func _note_crit_escalation(character, combat: Dictionary) -> void:
