@@ -533,7 +533,7 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       trade-off first.
       Re-injection: flattening the weights and stripping `rarity` from the wire fails 2 checks.
 
-- [ ] **MEASURED 2026-09-11: the pool is same-y, and the upgrades are INVISIBLE after you pick
+- [x] **DONE 2026-09-11 (steps 1-3). The pool was same-y and the upgrades were INVISIBLE after you picked
       them.** Owner: *"How different are each of the cards though truly? Many of them feel like a
       bit of the same and many of them are fairly situational. Situational can be good but only
       if there is a clear answer to how to use them properly and make it easily apparent in
@@ -655,7 +655,7 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       **One shared-state bug caught while wiring:** the crit announcement was hard-coded to
       "Keen Edge", so Sure Strike would have announced an upgrade the card does not carry. The
       line now names its real source via `combat["_crit_label"]`.
-- [ ] **WIDEN the pool with genuinely distinctive upgrades — owner, 2026-09-11.** *"I don't think
+- [x] **DONE 2026-09-11 — five upgrades authored against the channel table.** *"I don't think
       our upgrade pool currently offers enough distinctive and interesting options as of yet but
       this is a start at least."* Agreed, and the rarity work makes the gap measurable rather
       than a feeling. Eligible counts per kind now:
@@ -993,26 +993,35 @@ stood on them; the dungeon repainting over the death screen and the [L] log; the
 checkout failing silently and losing the player's selection to a refresh; Shrine / Elite Den /
 Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
 
-- [ ] **The cycled SHIELD absorbs nothing.** Owner: *"Cleave cycling says it gave 6 shield.
-      Combat log says Kobold attack and deals 16 damage to which my healthbar is now missing 16.
-      If the shield did something we should specify since it looks like it never existed."*
-      Screenshot confirms it: `Cleave cycles — 6 shield.` then `The Kobold attacks and deals 16
-      damage!`, HP 200 -> 184, and the damage HOVER lists only `Mitigation -10% taken
-      (Constitution 10%)`. That hover is built by `_note_mitigation`, which
-      `_damage_player_with_shield` calls whenever it absorbs — so the absorb did not run, i.e.
-      `combat["forcefield_shield"]` was 0 at the moment the hit resolved.
-      **Established.** `_cycle_unplayed` (combat_manager.gd:13656) adds to `forcefield_shield` on
-      the LIVE `combat_state`, not a copy, and the player had missed, so the path was
-      `_cycle_hand_after_attack`. Both write the real dict. The shield is therefore granted
-      correctly and read correctly — which leaves ORDER.
-      **The likely cause, not yet confirmed:** log order is not resolution order. Messages are
-      appended to `msgs` arrays that are assembled for display, so the monster's attack probably
-      resolves BEFORE the hand cycles, and the log simply prints them the other way round. If so
-      the fix is the sequencing, not the shield.
-      **Do not guess a third time** — this is a combat-ordering change and the round structure
-      has to be read first. Confirm by logging the value of `forcefield_shield` immediately
-      before the monster's damage is applied.
-
+- [x] **SOLVED 2026-09-11 — the shield WORKS. What failed was that nothing said so.** Owner:
+      *"Cleave cycling says it gave 6 shield. Combat log says Kobold attack and deals 16 damage to
+      which my healthbar is now missing 16. If the shield did something we should specify since it
+      looks like it never existed."*
+      **Measured before changing anything**, as this entry demanded ("do not guess a third time").
+      Driving real rounds through the real combat manager:
+      * a cycled ward of 60 against an 11-point swing → absorbed in full, 0 HP lost, and the line
+        already said so;
+      * a ward of **6** against a 20-point swing → **absorbed 6, 14 landed, ward spent to 0**.
+      The owner's numbers were correct and consistent the whole time: the "16 damage" in their log
+      is the figure AFTER absorption, and their health fell by exactly that. The live
+      `[FFANOMALY]` detector — added last session for precisely this — has **never fired**.
+      **So the mechanic was never broken, and all three earlier theories were wrong**: it was not
+      a copied dict, not resolution order (both paths cycle BEFORE the monster turn — 4968 < 5081
+      on the ability path, 2490 < 2508 on the attack path), and not a lost grant.
+      **The real fault was presentation, and it was half-fixed already.** A FULLY absorbed hit
+      names its absorber in the line ("attacks — Forcefield absorbs 46 — no damage taken!") because
+      of a 2026-09-10 fix whose own docstring reasons that a hover "keeps the log to one line per
+      action... but at ZERO it fails... nobody hovers a zero to find out." A PARTIAL absorb fails
+      for exactly the same reason and was left on the hover: "deals 16 damage" beside a 16-point
+      health drop is indistinguishable from having no shield at all, and **nobody hovers a number
+      that looks ordinary.** It now reads *"The Kobold attacks — shield eats 6 — and deals 16
+      damage!"*, still one line.
+      Probe: `cycled_shield.gd`. Re-injection (back to hover-only) fails it.
+      **An instrument defect of my own, worth recording:** the probe first read
+      `process_monster_turn`'s output from `messages` and got an empty list, which read as "the
+      shield said nothing" — a false positive against the game. That function returns its text
+      under `message`, singular. CLAUDE.md Pitfall #9, hit while investigating a report that was
+      itself about a missing message.
 - [x] **SOLVED 2026-09-11 — same cause as the re-farm and the lingering "D".** Read off the
       live server log, not reasoned about: the owner re-entered a personal instance that had
       ALREADY been completed in an earlier session, so its saved grid still held the FINAL_CHEST

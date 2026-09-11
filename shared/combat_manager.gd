@@ -1398,11 +1398,32 @@ func _monster_attack_line(combat: Dictionary, monster_name: String, amount: int)
 	unchanged. `_take_mitigations` DRAINS its buffer, so it is read exactly once here - which is
 	also why all three call sites route through this rather than each calling it themselves."""
 	var detail := _take_mitigations(combat)
+	# 2026-09-11 - a PARTIAL absorb has to show in the LINE too, not only in the hover.
+	#
+	# Owner: *"Cleave cycling says it gave 6 shield. Combat log says Kobold attack and deals 16
+	# damage to which my healthbar is now missing 16. If the shield did something we should
+	# specify since it looks like it never existed."*
+	#
+	# Measured before changing anything: the shield WORKS. A 6-point ward against a 22-point
+	# swing absorbs 6, leaves 16, and is spent - their numbers were correct and consistent the
+	# whole time. The live `[FFANOMALY]` detector has never fired. What failed was entirely the
+	# presentation: the absorb rode on the number as a hover, and "deals 16 damage" beside a
+	# 16-point health drop is indistinguishable from having no shield at all. Nobody hovers a
+	# number that looks ordinary.
+	#
+	# This is the same reasoning the docstring above already gives for the ZERO case, which was
+	# fixed on 2026-09-10 and stopped one step short: at zero the line names the absorber. A
+	# partial absorb needs it for exactly the same reason, so it gets the same treatment - still
+	# one line per action.
+	var _ff_ate: int = int(combat.get("_ff_absorbed_this_hit", 0))
+	combat["_ff_absorbed_this_hit"] = 0
 	if amount > 0:
 		# Uniformly hoverable, same rule as the player's own damage - see `_damage_with_detail`.
 		if detail == "":
 			detail = "%d damage, nothing reduced this hit." % amount
 		var num := "[url=%s][color=#FF8800]%d[/color][/url]" % [detail, amount]
+		if _ff_ate > 0:
+			return "[color=#FF4444]The %s attacks — [/color][color=#7AA8FF]shield eats %d[/color][color=#FF4444] — and deals %s damage![/color]" % [monster_name, _ff_ate, num]
 		return "[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster_name, num]
 	if detail != "":
 		return "[color=#FF4444]The %s attacks — [/color][color=#7AA8FF]%s[/color][color=#FF4444] — no damage taken![/color]" % [monster_name, detail]
@@ -9270,12 +9291,15 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 				# deals 0 damage!", then whatever followed. Owner: "the forcefield line absorbing
 				# damage seems like it goes multiple lines still (when the monster attacks)."
 				_note_mitigation(combat, "Forcefield absorbs %d (%d shield left)" % [total_damage, _ff_left])
+				combat["_ff_absorbed_this_hit"] = total_damage
 				total_damage = 0
 			else:
 				total_damage -= forcefield_shield
 				combat.erase("forcefield_shield")
 				combat["_ff_spent"] = true
 				_note_mitigation(combat, "Forcefield absorbs %d, then breaks" % forcefield_shield)
+				# Flagged so the LINE can say so, not only the hover - see _monster_attack_line.
+				combat["_ff_absorbed_this_hit"] = forcefield_shield
 
 		# GM godmode: negate all damage
 		if character.get_meta("gm_godmode", false):
