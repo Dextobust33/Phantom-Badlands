@@ -334,6 +334,18 @@ func _build_layout() -> void:
 			_inspect_text.add_theme_font_override("bold_font", mono_font)
 			_inspect_text.add_theme_font_override("italics_font", mono_font)
 			_inspect_text.add_theme_font_override("mono_font", mono_font)
+	# 2026-09-11 - the inspect text carries HOVERABLE stat labels (Health / Damage / Aggro /
+	# Speed / Power, and the tier ladder), and this label had NO meta listener at all - so every
+	# one of them rendered as a link and did nothing. Exactly the shape of the "Frenzied in its
+	# name is Red and underlined but hovering it does nothing" report, reached from the other
+	# side: there the listener existed and the mouse was ignored; here the mouse was fine and
+	# there was no listener.
+	#
+	# Routed into this panel's OWN tooltip rather than the combat popup, because that is what the
+	# rest of this screen already uses and two tooltip styles on one panel would look broken.
+	_inspect_text.mouse_filter = Control.MOUSE_FILTER_PASS
+	_inspect_text.meta_hover_started.connect(func(meta): _show_tooltip_with(str(meta), _inspect_text))
+	_inspect_text.meta_hover_ended.connect(func(_meta): _hide_tooltip())
 	inspect_scroll.add_child(_inspect_text)
 
 	var inspect_action_row := HBoxContainer.new()

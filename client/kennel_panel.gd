@@ -30,10 +30,18 @@ var _grid_scroll: ScrollContainer
 var _grid: HFlowContainer
 var _empty_label: Label
 
+# Inspect overlay. Renders the SAME text the Companions screen shows - one builder, two hosts.
+var _inspect_root: VBoxContainer
+var _inspect_text: RichTextLabel
+var _inspect_index: int = -1
+var _tooltip: PanelContainer
+var _tooltip_label: RichTextLabel
+
 var _ctx_menu: PopupMenu
 var _ctx_index: int = -1
 const CTX_RELEASE := 1
 const CTX_REGISTER := 2
+const CTX_INSPECT := 3
 
 var _confirm_dialog: ConfirmationDialog
 var _pending_release_index: int = -1
@@ -156,6 +164,73 @@ func _build_layout() -> void:
 	_empty_label.visible = false
 	_grid.add_child(_empty_label)
 
+	# --- Inspect overlay (hidden until a card is inspected) --------------------------------
+	# Deliberately the SAME text the Companions screen renders: `client_ref
+	# ._build_companion_inspect_bbcode`. A second copy of that screen is how the two would drift,
+	# and the companion multiplier being wrong for 93% of variants started exactly that way.
+	_inspect_root = VBoxContainer.new()
+	_inspect_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_inspect_root.add_theme_constant_override("separation", 6)
+	_inspect_root.visible = false
+	root_vbox.add_child(_inspect_root)
+
+	var inspect_panel := _make_subpanel()
+	inspect_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inspect_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_inspect_root.add_child(inspect_panel)
+
+	var inspect_scroll := ScrollContainer.new()
+	inspect_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inspect_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	inspect_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	inspect_panel.add_child(inspect_scroll)
+
+	_inspect_text = RichTextLabel.new()
+	_inspect_text.bbcode_enabled = true
+	_inspect_text.fit_content = true
+	_inspect_text.scroll_active = false
+	_inspect_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_inspect_text.add_theme_font_size_override("normal_font_size", 14)
+	# MONOSPACED, or the ASCII art in the right-hand column of that view skews row by row.
+	var _mono := "res://font/Consolas/consolas.ttf"
+	if ResourceLoader.exists(_mono):
+		var _mf: FontFile = load(_mono)
+		if _mf:
+			for slot in ["normal_font", "bold_font", "italics_font", "mono_font"]:
+				_inspect_text.add_theme_font_override(slot, _mf)
+	# The stat labels in that text are hoverable. PASS + a listener, or they render as links and
+	# do nothing - the exact fault the companions panel had until today.
+	_inspect_text.mouse_filter = Control.MOUSE_FILTER_PASS
+	_inspect_text.meta_hover_started.connect(func(meta): _show_inspect_tip(str(meta)))
+	_inspect_text.meta_hover_ended.connect(func(_m): _hide_inspect_tip())
+	inspect_scroll.add_child(_inspect_text)
+
+	var inspect_actions := HBoxContainer.new()
+	inspect_actions.add_theme_constant_override("separation", 8)
+	_inspect_root.add_child(inspect_actions)
+	var back_btn := Button.new()
+	back_btn.text = "◀ Back"
+	back_btn.focus_mode = Control.FOCUS_NONE
+	back_btn.add_theme_font_size_override("font_size", 12)
+	back_btn.custom_minimum_size = Vector2(0, 30)
+	back_btn.pressed.connect(_on_inspect_back)
+	inspect_actions.add_child(back_btn)
+
+	# Tooltip surface for the hoverable stats.
+	_tooltip = PanelContainer.new()
+	_tooltip.visible = false
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.z_index = 100
+	_tooltip.custom_minimum_size = Vector2(280, 0)
+	add_child(_tooltip)
+	_tooltip_label = RichTextLabel.new()
+	_tooltip_label.bbcode_enabled = true
+	_tooltip_label.fit_content = true
+	_tooltip_label.scroll_active = false
+	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip_label.add_theme_font_size_override("normal_font_size", 12)
+	_tooltip.add_child(_tooltip_label)
+
 	# Bottom action row
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 8)
@@ -215,6 +290,14 @@ func populate(companions: Array, capacity: int, can_register: bool, sort_option:
 	_sort_option = sort_option if sort_option in SORT_OPTIONS else "level"
 	_sort_ascending = sort_ascending
 	_update_capacity()
+	# A refresh while the inspect overlay is open must not strand the player looking at a
+	# companion that just moved or was released. Re-render if the index still resolves; drop
+	# back to the grid if it does not.
+	if _inspect_root != null and _inspect_root.visible:
+		if _inspect_index >= 0 and _inspect_index < _companions.size():
+			_show_inspect(_inspect_index)
+		else:
+			_on_inspect_back()
 	_update_sort_button_text()
 	_update_asc_button_text()
 	_rebuild_grid()
@@ -350,6 +433,56 @@ func _make_card(c: Dictionary, original_index: int) -> PanelContainer:
 	return card
 
 
+func _show_inspect_tip(bbcode: String) -> void:
+	"""What a hovered stat label means. Same contract as the Companions screen's tooltip."""
+	if bbcode == "" or _tooltip == null or _tooltip_label == null:
+		return
+	_tooltip_label.text = bbcode
+	_tooltip.size = Vector2.ZERO
+	_tooltip.visible = true
+	await get_tree().process_frame
+	if not is_instance_valid(_tooltip) or not _tooltip.visible:
+		return
+	_tooltip.reset_size()
+	# Follow the pointer, clamped inside the viewport so a long line is never cut off.
+	var vp: Vector2 = get_viewport_rect().size
+	var pos: Vector2 = get_global_mouse_position() + Vector2(16, 16)
+	pos.x = clampf(pos.x, 0.0, maxf(0.0, vp.x - _tooltip.size.x))
+	pos.y = clampf(pos.y, 0.0, maxf(0.0, vp.y - _tooltip.size.y))
+	_tooltip.global_position = pos
+
+
+func _hide_inspect_tip() -> void:
+	if _tooltip:
+		_tooltip.visible = false
+
+
+func _show_inspect(index: int) -> void:
+	"""Render the SAME inspect text the Companions screen uses. One builder, two hosts.
+
+	Owner: *"it doesn't list its current subtier in that screen or let you inspect them"*. The
+	rank landed earlier today; this is the other half."""
+	if index < 0 or index >= _companions.size():
+		return
+	_inspect_index = index
+	var c: Dictionary = _companions[index]
+	var txt := ""
+	if client_ref and client_ref.has_method("_build_companion_inspect_bbcode"):
+		txt = str(client_ref._build_companion_inspect_bbcode(c))
+	if txt == "":
+		txt = "[color=#FF6666]Could not read this companion.[/color]"
+	_inspect_text.text = txt
+	_inspect_root.visible = true
+	_grid_scroll.visible = false
+
+
+func _on_inspect_back() -> void:
+	_hide_inspect_tip()
+	_inspect_index = -1
+	_inspect_root.visible = false
+	_grid_scroll.visible = true
+
+
 func _on_card_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT:
@@ -368,6 +501,8 @@ func _open_ctx_menu(index: int, screen_pos: Vector2) -> void:
 		_ctx_menu.add_item("Register (slots full)", CTX_REGISTER)
 		_ctx_menu.set_item_disabled(idx, true)
 	_ctx_menu.add_separator()
+	_ctx_menu.add_item("Inspect", CTX_INSPECT)
+	_ctx_menu.add_separator()
 	_ctx_menu.add_item("Release...", CTX_RELEASE)
 	_ctx_menu.position = Vector2i(screen_pos)
 	_ctx_menu.popup()
@@ -379,6 +514,8 @@ func _on_ctx_menu_id_pressed(id: int) -> void:
 	match id:
 		CTX_REGISTER:
 			emit_signal("register_requested", _ctx_index)
+		CTX_INSPECT:
+			_show_inspect(_ctx_index)
 		CTX_RELEASE:
 			_pending_release_index = _ctx_index
 			_confirm_dialog.popup_centered()

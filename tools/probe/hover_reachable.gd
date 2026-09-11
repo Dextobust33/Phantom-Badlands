@@ -51,6 +51,26 @@ func _init() -> void:
 	ck(broken.is_empty(), "none of them is on an IGNORE control%s" % (
 		"" if broken.is_empty() else " - dead: " + ", ".join(broken)))
 
+	print("")
+	print("--- ...and the OTHER half of the same class: a url with no listener at all ---")
+	# The nameplate had a listener on an IGNORE control. The companion INSPECT text had the
+	# opposite - the control was fine and there was NO listener - so every hoverable stat label
+	# rendered as a link and did nothing. This check only fires on labels we KNOW emit `[url=]`,
+	# because "does this label ever receive markup" is not answerable statically.
+	var emitters := {
+		"res://client/companions_panel.gd": "_inspect_text",
+		"res://client/kennel_panel.gd": "_inspect_text",
+	}
+	for f in emitters:
+		var src := FileAccess.get_file_as_string(f)
+		if src == "":
+			continue
+		var node: String = String(emitters[f])
+		ck(src.contains(node + ".meta_hover_started.connect"),
+			"%s: %s renders hoverable stats and HAS a listener" % [f.get_file(), node])
+		ck(src.contains(node + ".mouse_filter = Control.MOUSE_FILTER_PASS"),
+			"...%s: and it can receive the mouse" % f.get_file())
+
 	print("\n--- and the prefix the owner hovered resolves to real text ---")
 	var CM = load("res://shared/combat_manager.gd")
 	for mod in ["frenzied", "juggernaut", "broodcalling", "vampiric", "swift", "thorned",

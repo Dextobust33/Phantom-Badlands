@@ -1255,11 +1255,27 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       **Still open: the entry-path half.** Read the DUNGEON-ENTER diagnostic from a fresh run
       before theorising again.
 
-- [ ] **The kennel screen does not show a companion's sub-tier, and cannot inspect one.** Owner,
-      in passing: *"it doesn't list its current subtier in that screen or let you inspect them"*.
-      The data is already on the wire — `_build_companion_stable_payload` sends `sub_tier` per
-      companion. This is a display gap, not a plumbing one.
-
+- [x] **DONE 2026-09-11 — the kennel shows the rank AND can inspect.** Owner, in passing:
+      *"it doesn't list its current subtier in that screen or let you inspect them"*. Both halves
+      are done: the rank landed with the ladder work (tag + pip bar on every card), and the kennel
+      now has a full Inspect overlay on its right-click menu.
+      **It reuses the ONE builder.** The overlay renders
+      `client_ref._build_companion_inspect_bbcode(c)` — the same text the Companions screen shows,
+      with the stats, the combat card and the Power figure — rather than growing a second copy of
+      that screen. A private copy is exactly how the two would drift, and the variant multiplier
+      being wrong for 93% of variants began as precisely that kind of copy. The probe asserts the
+      kennel restates none of the content itself.
+      A refresh while the overlay is open re-renders it if the index still resolves and drops back
+      to the grid if it does not, so a release cannot strand the player looking at a companion
+      that is gone.
+      **Found while doing it — the OTHER half of the dead-hover class.** The Companions screen's
+      `_inspect_text` had **no `meta_hover_started` listener at all**, so every hoverable stat
+      label added to that screen earlier today rendered as a link and did nothing. The "Frenzied"
+      report was the mirror image: a listener present on a control set to `MOUSE_FILTER_IGNORE`.
+      Both panels are wired now, and `hover_reachable.gd` covers both shapes — the listener-on-
+      IGNORE sweep it already did, plus an explicit check on the labels known to emit `[url=]`,
+      since "does this label ever receive markup" cannot be answered statically.
+      Probe: `kennel_inspect.gd`. Re-injection (a private copy + both listeners removed) fails 4.
 - [ ] **Returning a checked-out companion — owner's call.** Owner: *"should we make a way for
       players to be able to send a checked out companion back to the sanctuary? Or maybe players
       should only be able to checkout companions on character creation?"*
