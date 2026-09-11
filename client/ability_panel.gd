@@ -38,6 +38,9 @@ var _player_path: String = "warrior"  # Slice 4: warrior/mage/trickster — driv
 var _choose_for_slot: int = -1     # -1 idle; 0-5 panel is in "pick ability for slot N" state
 var _ability_uses: Dictionary = {} # Mastery Slice 1: ability_name → use count, drives rank display
 var _deck_collection: Dictionary = {} # Slice 6c: ability_name → deck copy count
+# 2026-09-11 — card instances: copies OWNED per card, in the deck or benched. A thinned copy is
+# benched rather than destroyed, so `+` has to know one is waiting to come back.
+var owned_counts: Dictionary = {}
 
 # Mastery rank thresholds + display (mirrors character.gd's MASTERY_RANK_*).
 # v0.9.567 — extended to R6 (Legend, Mythic) + softened early thresholds.
@@ -864,8 +867,12 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 			plus.text = "+"
 			plus.custom_minimum_size = Vector2(30, 22)
 			plus.focus_mode = Control.FOCUS_NONE
+			var _benched: int = int(owned_counts.get(ab_name, deck_count)) - deck_count
 			if deck_count == 0:
 				plus.tooltip_text = "Add this card to your deck."
+				plus.pressed.connect(_on_add_pressed.bind(ab_name))
+			elif _benched > 0:
+				plus.tooltip_text = "Put a benched copy back in your deck (it keeps its own upgrades)."
 				plus.pressed.connect(_on_add_pressed.bind(ab_name))
 			else:
 				plus.tooltip_text = "Extra copies come from dungeon rewards & companion cards."

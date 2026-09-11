@@ -123,6 +123,17 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
+	# 2026-09-11 — LOADED AS A LIBRARY, do nothing more. Probes `load(...).new()` this script for
+	# make_char / make_monster / combat_mgr. It used to go straight on to run the DEFAULT audit
+	# suite and call quit(): minutes of unrelated output, and on some probes the process exited
+	# before the probe printed its own verdict, so an exit code of 0 with no PASS line was being
+	# read as a pass. Only the script Godot was launched with runs audits.
+	# The main-loop check does not work here: a probe calls .new() from its OWN _init, before any
+	# main loop is registered. What does work is asking which script Godot was launched with.
+	var _cl: PackedStringArray = OS.get_cmdline_args()
+	var _si: int = _cl.find("--script")
+	if _si >= 0 and _si + 1 < _cl.size() and not String(_cl[_si + 1]).ends_with("real_combat_sim.gd"):
+		return
 	# Arm the watchdog before any audit runs, honouring an explicit --budget=N override.
 	var budget: int = DEFAULT_BUDGET_SECONDS
 	for arg in OS.get_cmdline_user_args():

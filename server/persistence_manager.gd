@@ -2439,7 +2439,9 @@ func add_market_listing(post_id: String, listing: Dictionary) -> String:
 	var seller = listing.get("seller_name", "")
 	var item_name = listing.get("item", {}).get("name", "")
 	var supply_cat = listing.get("supply_category", "")
-	var is_unique = supply_cat in ["equipment", "egg"]
+	# 2026-09-11 — CARDS are unique too. Every copy is its own instance and may carry its own
+	# upgrades; merging two listings would keep one copy's upgrades and silently drop the other's.
+	var is_unique = supply_cat in ["equipment", "egg", "card"]
 
 	if not is_unique and seller != "" and item_name != "":
 		for existing in market_data.listings[post_id]:

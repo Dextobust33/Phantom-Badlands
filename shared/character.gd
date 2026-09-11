@@ -3465,15 +3465,18 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": _cid, "level": 1, "display": _dt_cards.companion_card_display_name(_cid), "companion_card": true})
 			seen_companion[_cid] = true
 	for _k in combat_deck_collection.keys():
-		var _ks = String(_k)
+		var _ks = card_base(String(_k))
 		if _ks.begins_with("companion_card_") and not seen_companion.has(_ks):
 			abilities.append({"name": _ks, "level": 1, "display": _dt_cards.companion_card_display_name(_ks), "companion_card": true})
 			seen_companion[_ks] = true
 
 	# #38 — dungeon-exclusive cards you've earned (permanent on clear) always appear.
+	# Once per CARD, however many copies are owned; a benched-only card still lists (0 in deck).
+	var _seen_dungeon := {}
 	for _k2 in combat_deck_collection.keys():
-		var _ks2 = String(_k2)
-		if _ks2.begins_with("dungeon_card_") and int(combat_deck_collection.get(_ks2, 0)) > 0:
+		var _ks2 = card_base(String(_k2))
+		if _ks2.begins_with("dungeon_card_") and not _seen_dungeon.has(_ks2) and card_copies_owned(_ks2) > 0:
+			_seen_dungeon[_ks2] = true
 			abilities.append({"name": _ks2, "level": 1, "display": _dt_cards.card_display_name(_ks2), "dungeon_card": true})
 
 	return abilities
@@ -3497,7 +3500,7 @@ func get_ability_rank(ability_name: String) -> int:
 	"""Mastery rank 0-4 derived from ability_uses[ability_name]. Returns 0
 	for unused abilities. Each rank threshold (10/50/200/1000 uses) advances
 	the rank by 1; rank 4 caps at 1000+ uses."""
-	var uses = int(ability_uses.get(ability_name, 0))
+	var uses = int(ability_uses.get(_prog_key(ability_name), 0))
 	var rank = 0
 	for threshold in MASTERY_RANK_THRESHOLDS:
 		if uses >= int(threshold):
@@ -3510,7 +3513,7 @@ func get_ability_effect_rank(ability_name: String) -> int:
 	"""Slice 6b — damage rank decoupled from use-rank. Bumped only when the
 	player picks the 'Stronger Effect' branch at a rank-up. Capped at the
 	use-based rank ceiling so it can never out-pace mastery. Returns 0-4."""
-	var stored = int(ability_effect_ranks.get(ability_name, 0))
+	var stored = int(ability_effect_ranks.get(_prog_key(ability_name), 0))
 	var use_rank = get_ability_rank(ability_name)
 	return min(stored, use_rank)
 
@@ -3565,6 +3568,7 @@ func get_ability_rank_bonus(ability_name: String) -> int:
 		  list (_WARRIOR_DAMAGE_ABILITIES / _MAGE_DAMAGE_ABILITIES /
 		  _TRICKSTER_DAMAGE_ABILITIES). Non-damage abilities return 0 —
 		  Phase B will extend the system to cover them."""
+	ability_name = card_base(ability_name)   # gear affixes name the CARD, not a copy of it
 	var specific_key: String = "ability_rank_%s" % ability_name
 	var archetype_key: String = ""
 	if ability_name in _WARRIOR_DAMAGE_ABILITIES:
@@ -3716,7 +3720,7 @@ func get_off_affinity_damage_mult(ability_name: String) -> float:
 func get_ability_uses_to_next_rank(ability_name: String) -> Dictionary:
 	"""Returns {current_uses, next_threshold, at_max_rank} so the UI can
 	render progress bars. next_threshold is -1 when already at max rank."""
-	var uses = int(ability_uses.get(ability_name, 0))
+	var uses = int(ability_uses.get(_prog_key(ability_name), 0))
 	var rank = get_ability_rank(ability_name)
 	if rank >= MASTERY_RANK_THRESHOLDS.size():
 		return {"current_uses": uses, "next_threshold": -1, "at_max_rank": true}
@@ -3732,8 +3736,9 @@ func record_mastery_use(ability_name: String) -> Dictionary:
 	if ability_name == "":
 		return {"previous_rank": 0, "new_rank": 0, "ranked_up": false}
 	var previous_rank = get_ability_rank(ability_name)
-	var current = int(ability_uses.get(ability_name, 0))
-	ability_uses[ability_name] = current + 1
+	var _key := _prog_key(ability_name)
+	var current = int(ability_uses.get(_key, 0))
+	ability_uses[_key] = current + 1
 	var new_rank = get_ability_rank(ability_name)
 	return {"previous_rank": previous_rank, "new_rank": new_rank, "ranked_up": new_rank > previous_rank}
 
@@ -3944,7 +3949,7 @@ func repair_deck_once() -> bool:
 	# silently wasted on something undrawable.
 	for i in range(equipped_abilities.size()):
 		var eq := String(equipped_abilities[i]) if equipped_abilities[i] != null else ""
-		if eq != "" and not combat_deck_collection.has(eq):
+		if eq != "" and not owns_card(eq):
 			equipped_abilities[i] = ""
 	return before != combat_deck_collection.size() or true
 
@@ -3958,6 +3963,9 @@ func initialize_deck_collection_if_needed() -> bool:
 	characters' decks on next combat without a separate migration step.
 	Returns true if anything was added/changed (caller should persist)."""
 	var changed = false
+	# 2026-09-11 — legacy counts become instances before anything reads them.
+	if migrate_card_counts_to_instances():
+		changed = true
 	var available = get_all_available_abilities()
 	# v0.9.423 — migrate out non_combat abilities (Cloak, Teleport) from
 	# existing characters' deck collections. They were added by earlier
@@ -3969,13 +3977,11 @@ func initialize_deck_collection_if_needed() -> bool:
 		var nc_name = String(entry_nc.get("name", ""))
 		if nc_name == "":
 			continue
-		if bool(entry_nc.get("non_combat", false)) and combat_deck_collection.has(nc_name):
-			combat_deck_collection.erase(nc_name)
+		if bool(entry_nc.get("non_combat", false)) and _erase_card_all_instances(nc_name):
 			changed = true
 	# v0.9.423 — also migrate out the retired "all_or_nothing" ability so
 	# existing characters drop it from their deck collections.
-	if combat_deck_collection.has("all_or_nothing"):
-		combat_deck_collection.erase("all_or_nothing")
+	if _erase_card_all_instances("all_or_nothing"):
 		changed = true
 	# 2026-09-07 — OVERLOAD RETIRED, owner approved. It was the only card that cost HEALTH, in a
 	# game where health is the resource you die from, spent against a 30% retreat threshold. So
@@ -3983,8 +3989,7 @@ func initialize_deck_collection_if_needed() -> bool:
 	# Measured twice: at 20% of max HP it cost the Sorcerer 81/53/65 -> 96/65/71; re-priced to 12%
 	# it STILL gave 2/40 survivors against 12/40 for the card it replaced. Damage does not save
 	# you; hit points do. Removed rather than shaved a third time.
-	if combat_deck_collection.has("overload"):
-		combat_deck_collection.erase("overload")
+	if _erase_card_all_instances("overload"):
 		changed = true
 	# v0.9.423 — also unequip non_combat abilities (and retired all_or_nothing)
 	# from combat slots so a slot isn't silently wasted after the migration.
@@ -4015,7 +4020,7 @@ func initialize_deck_collection_if_needed() -> bool:
 			# Fallback for any class without a curated list: seed all accessible.
 			for entry in available:
 				var nm = String(entry.get("name", ""))
-				if nm != "" and not bool(entry.get("non_combat", false)) and not combat_deck_collection.has(nm):
+				if nm != "" and not bool(entry.get("non_combat", false)) and not owns_card(nm):
 					combat_deck_collection[nm] = 1
 					changed = true
 	if deck_collection_initialized:
@@ -4048,10 +4053,10 @@ static func tier_for_uses(uses: int) -> int:
 	return tier
 
 func get_ability_tier(ability_name: String) -> int:
-	return tier_for_uses(int(ability_uses.get(ability_name, 0)))
+	return tier_for_uses(int(ability_uses.get(_prog_key(ability_name), 0)))
 
 func get_milestone_picks(ability_name: String) -> Array:
-	var picks = ability_milestone_picks.get(ability_name, [])
+	var picks = ability_milestone_picks.get(_prog_key(ability_name), [])
 	return picks.duplicate() if picks is Array else []
 
 func count_milestone_pick(ability_name: String, kind: String) -> int:
@@ -4118,21 +4123,24 @@ func apply_milestone_pick(ability_name: String, kind: String) -> Dictionary:
 	if not (kind in ["power", "rider", "efficiency", "duration"] or _is_upgrade):
 		return result
 	var accessible := false
+	var _base := card_base(ability_name)
 	for entry in get_all_available_abilities():
-		if entry.get("name", "") == ability_name:
+		if entry.get("name", "") == _base:
 			accessible = true
 			break
 	if not accessible:
 		return result
-	if not (ability_milestone_picks.get(ability_name, null) is Array):
-		ability_milestone_picks[ability_name] = []
+	# The pick lands on THIS copy. A bare name is the first copy (or the one being resolved).
+	var _key := _prog_key(ability_name)
+	if not (ability_milestone_picks.get(_key, null) is Array):
+		ability_milestone_picks[_key] = []
 	# Respect the upgrade's own `stacks` flag — a non-stacking upgrade taken twice would
 	# otherwise fire its rider twice per cast.
 	if _is_upgrade and not bool(CardUpgradesScript.upgrade_by_id(kind).get("stacks", false)):
-		if kind in ability_milestone_picks[ability_name]:
+		if kind in ability_milestone_picks[_key]:
 			result["already_taken"] = true
 			return result
-	ability_milestone_picks[ability_name].append(kind)
+	ability_milestone_picks[_key].append(kind)
 	result["ok"] = true
 	result["tier"] = get_ability_tier(ability_name)
 	result["effect_mult"] = get_tier_effect_mult(ability_name)
@@ -4152,24 +4160,25 @@ func apply_rank_choice(ability_name: String, choice: String) -> Dictionary:
 	# Verify the ability is accessible (don't let stale queued choices grant power for off-class abilities)
 	var available = get_all_available_abilities()
 	var is_accessible := false
+	var _base := card_base(ability_name)
 	for entry in available:
-		if entry.get("name", "") == ability_name:
+		if entry.get("name", "") == _base:
 			is_accessible = true
 			break
 	if not is_accessible:
 		return result
 	if choice == "copy":
-		var current_copies = int(combat_deck_collection.get(ability_name, 1))
-		combat_deck_collection[ability_name] = current_copies + 1
-		result["new_copy_count"] = combat_deck_collection[ability_name]
-		result["new_effect_rank"] = int(ability_effect_ranks.get(ability_name, 0))
-		result["ok"] = true
+		var _new := grant_card_copy(_base)
+		result["new_copy_count"] = card_copies_owned(_base)
+		result["new_effect_rank"] = int(ability_effect_ranks.get(_prog_key(ability_name), 0))
+		result["ok"] = _new != ""
 	elif choice == "effect":
-		var current_effect = int(ability_effect_ranks.get(ability_name, 0))
+		var _key := _prog_key(ability_name)
+		var current_effect = int(ability_effect_ranks.get(_key, 0))
 		var cap = MASTERY_RANK_DAMAGE_MULT.size() - 1
 		var new_effect = min(current_effect + 1, cap)
-		ability_effect_ranks[ability_name] = new_effect
-		result["new_copy_count"] = int(combat_deck_collection.get(ability_name, 1))
+		ability_effect_ranks[_key] = new_effect
+		result["new_copy_count"] = card_copies_owned(_base)
 		result["new_effect_rank"] = new_effect
 		result["ok"] = true
 	return result
@@ -4199,6 +4208,199 @@ func set_variant_imprints(imprints: Dictionary) -> void:
 const MIN_DECK_SIZE: int = 5   # v0.9.678 — deck must keep at least this many cards
 const MAX_ABILITY_COPIES: int = 3  # v0.9.678 — cap per ability
 
+## ===== CARD INSTANCES (owner direction 2026-09-10, built 2026-09-11) =====
+##
+## *"Put it in the deck and LEVEL IT UP, hoping for good milestones to stack on it. If the rolls
+## disappoint, sell it on the market and try again with a fresh one."* That loop needs every COPY
+## of a card to be its own thing. Until now `combat_deck_collection` was `{card_id: count}` and
+## uses / milestone picks / effect ranks were keyed by card id, so two Venom Fangs were one Venom
+## Fang twice: the same upgrades, the same rank, and "sell THIS one" had nothing to name.
+##
+## Now every copy is an INSTANCE. The first copy keeps the bare id; extra copies are
+## "<card_id>#2" / "<card_id>#3". `combat_deck_collection` is keyed by instance id with value 1
+## (in the deck) or 0 (owned, benched), and the three progression dicts are keyed by instance id
+## too. The first copy's key is unchanged on purpose: a single-copy deck - the common case - reads
+## exactly as it always did on disk, on the wire and in every probe, and a legacy save migrates
+## by SPLITTING any count above 1 (see migrate_card_counts_to_instances).
+##
+## In combat the deck and hand carry instance ids, so the card you play is the copy you play.
+## Most of the engine asks about a card by its BARE name (`get_milestone_picks("cleave")`),
+## through twenty-odd call sites that have no reason to know about copies; rather than thread an
+## id through all of them, the character remembers WHICH instance is being resolved
+## (`set_active_card_instance`) and a bare name resolves to it. A name that already carries "#n"
+## is always taken literally.
+const CARD_COPY_SEP := "#"
+var _active_card_iid: String = ""
+
+static func card_base(iid: String) -> String:
+	"""'cleave#2' -> 'cleave'. A bare id comes back unchanged."""
+	var i := iid.find(CARD_COPY_SEP)
+	return iid if i < 0 else iid.substr(0, i)
+
+static func card_copy_n(iid: String) -> int:
+	"""'cleave#2' -> 2. A bare id is copy 1."""
+	var i := iid.find(CARD_COPY_SEP)
+	return 1 if i < 0 else maxi(1, int(iid.substr(i + 1)))
+
+static func card_iid(card_id: String, n: int) -> String:
+	"""(card, 1) -> 'card'; (card, 2) -> 'card#2'."""
+	return card_id if n <= 1 else "%s%s%d" % [card_id, CARD_COPY_SEP, n]
+
+static func is_card_instance(iid: String) -> bool:
+	"""True for an EXTRA copy ('#n'); the first copy's bare id is not marked."""
+	return iid.find(CARD_COPY_SEP) >= 0
+
+func set_active_card_instance(iid: String) -> void:
+	_active_card_iid = iid
+
+func clear_active_card_instance() -> void:
+	_active_card_iid = ""
+
+func _prog_key(name: String) -> String:
+	"""The progression key a bare-or-instance name resolves to: an instance id as given; a bare
+	name to the instance being resolved right now if it is a copy of that card; else itself."""
+	if name.find(CARD_COPY_SEP) >= 0:
+		return name
+	if _active_card_iid != "" and card_base(_active_card_iid) == name:
+		return _active_card_iid
+	return name
+
+func card_instances(card_id: String) -> Array:
+	"""Every owned instance of a card (in the deck or benched), lowest copy number first."""
+	var out: Array = []
+	for k in combat_deck_collection.keys():
+		if card_base(String(k)) == card_id:
+			out.append(String(k))
+	out.sort_custom(func(a, b): return card_copy_n(a) < card_copy_n(b))
+	return out
+
+func owns_card(card_id: String) -> bool:
+	return not card_instances(card_id).is_empty()
+
+func card_copies_owned(card_id: String) -> int:
+	return card_instances(card_id).size()
+
+func card_copies_in_deck(card_id: String) -> int:
+	var n := 0
+	for iid in card_instances(card_id):
+		if int(combat_deck_collection.get(iid, 0)) > 0:
+			n += 1
+	return n
+
+func deck_counts_by_card() -> Dictionary:
+	"""{card_id: copies IN THE DECK}, with a key for every owned card even at 0 - the shape the
+	deck screen and the market bulk counter always read. Derived on demand, never stored."""
+	var out := {}
+	for k in combat_deck_collection.keys():
+		var b := card_base(String(k))
+		out[b] = int(out.get(b, 0)) + (1 if int(combat_deck_collection[k]) > 0 else 0)
+	return out
+
+func card_instance_progress(iid: String) -> Dictionary:
+	"""What this copy has earned: {uses, picks, effect_rank}. Travels with the card when sold."""
+	return {
+		"uses": int(ability_uses.get(iid, 0)),
+		"picks": (ability_milestone_picks.get(iid, []) as Array).duplicate() if ability_milestone_picks.get(iid, null) is Array else [],
+		"effect_rank": int(ability_effect_ranks.get(iid, 0)),
+	}
+
+func grant_card_copy(card_id: String, progress: Dictionary = {}) -> String:
+	"""Own one more copy, in the deck. Returns the new instance id, or "" at the cap.
+	`progress` (from a market listing) lands on the new copy, so a sold card keeps its upgrades."""
+	var have := card_instances(card_id)
+	if have.size() >= MAX_ABILITY_COPIES:
+		return ""
+	var taken := {}
+	for iid in have:
+		taken[card_copy_n(iid)] = true
+	var n := 1
+	while taken.has(n):
+		n += 1
+	var new_iid := card_iid(card_id, n)
+	combat_deck_collection[new_iid] = 1
+	if not progress.is_empty():
+		if int(progress.get("uses", 0)) > 0:
+			ability_uses[new_iid] = int(progress.get("uses", 0))
+		if progress.get("picks", null) is Array and not (progress["picks"] as Array).is_empty():
+			ability_milestone_picks[new_iid] = (progress["picks"] as Array).duplicate()
+		if int(progress.get("effect_rank", 0)) > 0:
+			ability_effect_ranks[new_iid] = int(progress.get("effect_rank", 0))
+	return new_iid
+
+func remove_card_instance(iid: String) -> Dictionary:
+	"""Give a copy up entirely (sold). Returns the progress it carried and forgets it here, so the
+	next copy of that card starts fresh rather than inheriting a stranger's rank."""
+	var carried := card_instance_progress(iid)
+	combat_deck_collection.erase(iid)
+	ability_uses.erase(iid)
+	ability_milestone_picks.erase(iid)
+	ability_effect_ranks.erase(iid)
+	return carried
+
+func _instance_investment(iid: String) -> int:
+	"""How much a copy has to lose: milestone picks weigh far more than raw uses."""
+	var picks = ability_milestone_picks.get(iid, [])
+	return (picks.size() if picks is Array else 0) * 100000 + int(ability_uses.get(iid, 0))
+
+func least_invested_instance(card_id: String, in_deck_only: bool, prefer_benched: bool = false) -> String:
+	"""The copy a player would give up first: fewest picks, then fewest uses. `in_deck_only`
+	restricts to copies currently in the deck (for THINNING); `prefer_benched` tries the benched
+	copies first (for SELLING, where the deck should be disturbed as little as possible)."""
+	var best := ""
+	var best_score := 0
+	var pool := card_instances(card_id)
+	if prefer_benched:
+		var benched: Array = []
+		for iid in pool:
+			if int(combat_deck_collection.get(iid, 0)) <= 0:
+				benched.append(iid)
+		if not benched.is_empty():
+			pool = benched
+	for iid in pool:
+		if in_deck_only and int(combat_deck_collection.get(iid, 0)) <= 0:
+			continue
+		var sc := _instance_investment(iid)
+		if best == "" or sc < best_score:
+			best = iid
+			best_score = sc
+	return best
+
+func _erase_card_all_instances(card_id: String) -> bool:
+	var any := false
+	for iid in card_instances(card_id):
+		combat_deck_collection.erase(iid)
+		any = true
+	return any
+
+func migrate_card_counts_to_instances() -> bool:
+	"""Legacy `{card: count}` -> instances. A count above 1 becomes copies #2..#n, each carrying
+	the progress the shared key had (the copies WERE that progress until now, so every one
+	inherits it rather than any being reset). Idempotent: values are only ever 0 or 1 afterwards."""
+	var changed := false
+	for k in combat_deck_collection.keys():
+		var iid := String(k)
+		var v := int(combat_deck_collection[k])
+		if v <= 1:
+			continue
+		if is_card_instance(iid):
+			combat_deck_collection[iid] = 1   # an instance is one copy by definition
+			changed = true
+			continue
+		combat_deck_collection[iid] = 1
+		for n in range(2, mini(v, MAX_ABILITY_COPIES) + 1):
+			var extra := card_iid(iid, n)
+			if combat_deck_collection.has(extra):
+				continue
+			combat_deck_collection[extra] = 1
+			if ability_uses.has(iid):
+				ability_uses[extra] = int(ability_uses[iid])
+			if ability_milestone_picks.get(iid, null) is Array:
+				ability_milestone_picks[extra] = (ability_milestone_picks[iid] as Array).duplicate()
+			if ability_effect_ranks.has(iid):
+				ability_effect_ranks[extra] = int(ability_effect_ranks[iid])
+		changed = true
+	return changed
+
 func total_deck_copies() -> int:
 	var n := 0
 	for k in combat_deck_collection.keys():
@@ -4213,22 +4415,29 @@ func cull_ability_card(ability_name: String) -> Dictionary:
 	if ability_name == "":
 		result["reason"] = "Empty ability name"
 		return result
-	if not combat_deck_collection.has(ability_name):
+	# Either a specific copy ("cleave#2") or a card ("cleave"), in which case the copy with the
+	# least to lose - fewest picks, then fewest uses - is the one thinned.
+	var _base := card_base(ability_name)
+	if not owns_card(_base):
 		result["reason"] = "Ability not in deck collection"
 		return result
-	var current = int(combat_deck_collection.get(ability_name, 0))
-	if current <= 0:
+	var iid := ""
+	if is_card_instance(ability_name) and combat_deck_collection.has(ability_name):
+		iid = ability_name if int(combat_deck_collection[ability_name]) > 0 else ""
+	else:
+		iid = least_invested_instance(_base, true)
+	if iid == "":
 		result["new_count"] = 0
 		result["reason"] = "Already out of your deck."
 		return result
 	if total_deck_copies() - 1 < MIN_DECK_SIZE:
-		result["new_count"] = current
+		result["new_count"] = card_copies_in_deck(_base)
 		result["reason"] = "Deck can't drop below %d cards." % MIN_DECK_SIZE
 		return result
-	var new_count = current - 1
-	combat_deck_collection[ability_name] = new_count
+	combat_deck_collection[iid] = 0
 	result["ok"] = true
-	result["new_count"] = new_count
+	result["instance"] = iid
+	result["new_count"] = card_copies_in_deck(_base)
 	return result
 
 func _accessible_combat_cards() -> Dictionary:
@@ -4249,7 +4458,7 @@ func _active_companion_loaner_id() -> String:
 	if mt == "":
 		return ""
 	var ccid = "companion_card_" + mt.to_lower().replace(" ", "_")
-	if combat_deck_collection.has(ccid):
+	if owns_card(ccid):
 		return ""  # already permanent — counted in the collection, not a loaner
 	return ccid
 
@@ -4260,8 +4469,8 @@ func effective_deck_size() -> int:
 	var accessible := _accessible_combat_cards()
 	var n := 0
 	for k in combat_deck_collection.keys():
-		if accessible.has(k):
-			n += clampi(int(combat_deck_collection[k]), 0, MAX_ABILITY_COPIES)
+		if accessible.has(card_base(String(k))):
+			n += clampi(int(combat_deck_collection[k]), 0, 1)   # one instance, one card
 	var loaner := _active_companion_loaner_id()
 	if loaner != "":
 		n += 1
@@ -4286,16 +4495,21 @@ func ensure_min_deck_size() -> Array:
 		for nm in accessible.keys():
 			if String(nm).begins_with("companion_card_"):
 				continue  # earned by use, never auto-granted
-			var copies = int(combat_deck_collection.get(nm, 0))
+			var copies = card_copies_in_deck(nm)
 			if copies <= 0:
 				zero_copy.append(nm)
-			elif copies < MAX_ABILITY_COPIES:
+			elif card_copies_owned(nm) < MAX_ABILITY_COPIES:
 				has_room.append(nm)
 		var pool: Array = zero_copy if not zero_copy.is_empty() else has_room
 		if pool.is_empty():
 			break  # nothing left that can be added
 		var pick = String(pool[randi() % pool.size()])
-		combat_deck_collection[pick] = int(combat_deck_collection.get(pick, 0)) + 1
+		# A benched copy comes back before a new one is minted.
+		var _benched := least_invested_instance(pick, false, true)
+		if _benched != "" and int(combat_deck_collection.get(_benched, 0)) <= 0:
+			combat_deck_collection[_benched] = 1
+		elif grant_card_copy(pick) == "":
+			break
 		added.append(pick)
 	return added
 
@@ -4321,22 +4535,32 @@ func add_ability_copy(ability_name: String, from_reward: bool = false) -> Dictio
 	# can be restored like any card. A never-earned loaner (key ABSENT) can't be
 	# manually added — it must be earned first by using it in combat. (Fixes the
 	# stuck-OUT state: you could thin a permanent companion card but not restore it.)
-	if ability_name.begins_with("companion_card_") and not from_reward and not combat_deck_collection.has(ability_name):
+	if ability_name.begins_with("companion_card_") and not from_reward and not owns_card(ability_name):
 		result["new_count"] = 0
 		result["reason"] = "This companion card becomes permanent by using it in combat first."
 		return result
-	var current = int(combat_deck_collection.get(ability_name, 0))
+	# A benched copy is restored first (free, it is already owned); only then is a new copy
+	# minted, and that needs a reward source.
+	var _benched := least_invested_instance(ability_name, false, true)
+	if _benched != "" and int(combat_deck_collection.get(_benched, 0)) <= 0:
+		combat_deck_collection[_benched] = 1
+		result["ok"] = true
+		result["instance"] = _benched
+		result["new_count"] = card_copies_in_deck(ability_name)
+		return result
+	var current = card_copies_owned(ability_name)
 	if current >= MAX_ABILITY_COPIES:
-		result["new_count"] = current
+		result["new_count"] = card_copies_in_deck(ability_name)
 		result["reason"] = "Already at max (%d copies)." % MAX_ABILITY_COPIES
 		return result
 	if current >= 1 and not from_reward:
-		result["new_count"] = current
+		result["new_count"] = card_copies_in_deck(ability_name)
 		result["reason"] = "Extra copies come from dungeon rewards & companion cards."
 		return result
-	combat_deck_collection[ability_name] = current + 1
-	result["ok"] = true
-	result["new_count"] = current + 1
+	var _new := grant_card_copy(ability_name)
+	result["ok"] = _new != ""
+	result["instance"] = _new
+	result["new_count"] = card_copies_in_deck(ability_name)
 	return result
 
 func apply_headstart_ranks(headstarts: Dictionary) -> Array:

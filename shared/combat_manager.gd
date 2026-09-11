@@ -2464,7 +2464,9 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 			# Check if it's an ability command
 			# v0.9.681 — companion cards ("companion_card_<type>") are dynamic ids,
 			# not in the static *_ABILITY_COMMANDS lists, so allow them by prefix.
-			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS or cmd in UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
+			# 2026-09-11 — a copy plays as "cleave#2": recognise the CARD, keep the COPY.
+			var cmd_card := Character.card_base(cmd)
+			if cmd_card in MAGE_ABILITY_COMMANDS or cmd_card in WARRIOR_ABILITY_COMMANDS or cmd_card in TRICKSTER_ABILITY_COMMANDS or cmd_card in UNIVERSAL_ABILITY_COMMANDS or cmd_card.begins_with("companion_card_") or cmd_card.begins_with("dungeon_card_"):
 				return process_ability_command(peer_id, cmd, arg)
 			return {"success": false, "message": "Unknown combat command! Use: attack, flee, or abilities"}
 
@@ -3446,8 +3448,8 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			if drop_tables and 10 in companion_result.abilities_unlocked:
 				var monster_type = companion.get("monster_type", companion.get("name", ""))
 				var gift_ability = drop_tables.get_companion_gift_ability(monster_type)
-				if gift_ability != "" and not character.combat_deck_collection.has(gift_ability):
-					character.combat_deck_collection[gift_ability] = 1
+				if gift_ability != "" and not character.owns_card(gift_ability):
+					character.grant_card_copy(gift_ability)
 					var ability_display = gift_ability.capitalize().replace("_", " ")
 					messages.append("[color=#FFD700]* %s teaches you %s! +1 deck card. *[/color]" % [companion.get("name", "Companion"), ability_display])
 
@@ -4449,9 +4451,11 @@ func _build_ability_cost_info(combat: Dictionary) -> Dictionary:
 	if character == null:
 		return out
 	for card in combat.get("combat_hand", []):
-		var name := String(card)
+		var iid := String(card)
+		var name := Character.card_base(iid)
 		if not VARIABLE_COST_TABLE.has(name):
 			continue
+		character.set_active_card_instance(iid)   # this copy's efficiency picks, not its sibling's
 		var entry: Dictionary = VARIABLE_COST_TABLE[name]
 		var res := String(entry.get("resource", "stamina"))
 		var flat_ceiling: int = int(entry.get("ceiling", 0))
@@ -4475,7 +4479,8 @@ func _build_ability_cost_info(combat: Dictionary) -> Dictionary:
 		# Same modifier chain apply_variable_cost runs, so the number shown is the number charged.
 		var adj_ceiling: int = apply_skill_cost_reduction(character, name, ceiling)
 		var adj_floor: int = apply_skill_cost_reduction(character, name, maxi(1, int(float(ceiling) * float(entry.get("floor_ratio", 0.3)))))
-		out[name] = {"floor": adj_floor, "ceiling": adj_ceiling, "resource": res}
+		out[iid] = {"floor": adj_floor, "ceiling": adj_ceiling, "resource": res}
+	character.clear_active_card_instance()
 	return out
 
 # === AUTHORITATIVE CARD EFFECT PREVIEW (2026-09-03) ===
@@ -4702,7 +4707,9 @@ func _build_ability_effect_info(combat: Dictionary) -> Dictionary:
 	if character == null:
 		return out
 	for card in combat.get("combat_hand", []):
-		var name := String(card)
+		var iid := String(card)
+		var name := Character.card_base(iid)
+		character.set_active_card_instance(iid)   # this copy's upgrades shape its preview
 		var eff: Dictionary = preview_ability_effect(character, combat, name)
 		var _rb: Dictionary = preview_engine_breakdown(character, combat, name)
 		var _rg: int = int(_rb.get("sure", 0)) + int(_rb.get("maybe", 0))
@@ -4725,7 +4732,8 @@ func _build_ability_effect_info(combat: Dictionary) -> Dictionary:
 				eff = {"kind": "read_only"}
 			eff["reveal"] = rv
 		if not eff.is_empty() and String(eff.get("kind", "")) != "":
-			out[name] = eff
+			out[iid] = eff
+	character.clear_active_card_instance()
 	return out
 
 
@@ -4776,6 +4784,14 @@ func _cycle_preview_text(character, card_id: String) -> String:
 	return ""
 
 func process_ability_command(peer_id: int, ability_name: String, arg: String) -> Dictionary:
+	var _r := _process_ability_command_inner(peer_id, ability_name, arg)
+	# Whatever path resolved (or refused) the cast, the copy being resolved is forgotten here
+	# rather than at each of the early returns.
+	if active_combats.has(peer_id) and active_combats[peer_id].get("character", null) != null:
+		active_combats[peer_id].character.clear_active_card_instance()
+	return _r
+
+func _process_ability_command_inner(peer_id: int, ability_name: String, arg: String) -> Dictionary:
 	"""Process an ability command from player"""
 	if not active_combats.has(peer_id):
 		return {"success": false, "message": "You are not in combat!"}
@@ -4806,8 +4822,13 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	var monster_hp_before = combat.monster.current_hp
 	var player_hp_before = combat.character.current_hp
 
-	# Normalize ability names
-	ability_name = canonical_ability(ability_name)
+	# 2026-09-11 — WHICH COPY. The client plays the hand entry as-is, so a second copy arrives
+	# as "cleave#2". The card name drives every table lookup below; the copy number rides on
+	# `hand_key`, which is what the hand holds, what is consumed, and where uses and milestone
+	# picks land. `set_active_card_instance` is how the twenty-odd bare-name reads in the
+	# resolvers find this copy's upgrades without each being taught about copies.
+	var _copy_n := Character.card_copy_n(ability_name)
+	ability_name = canonical_ability(Character.card_base(ability_name))
 
 	# Audit #1 Slice 6a — hand gate. Only abilities currently in hand may
 	# be cast. Standard actions (attack/item/flee/outsmart) bypass this and
@@ -4817,10 +4838,12 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# (plural), so we surface the error there as well as in `message` for
 	# any consumer that reads the singular field.
 	var card_name = _ability_alias_to_card(ability_name)
+	var hand_key := Character.card_iid(card_name, _copy_n)
 	var hand: Array = combat.get("combat_hand", [])
-	if not hand.is_empty() and card_name not in hand:
+	if not hand.is_empty() and hand_key not in hand:
 		var hand_msg = "[color=#FFA500]%s is not in your hand.[/color]" % card_name.replace("_", " ").capitalize()
 		return {"success": false, "message": hand_msg, "messages": [hand_msg]}
+	character.set_active_card_instance(hand_key)
 
 	# Universal abilities (available to all classes, use class resource)
 	if ability_name in ["cloak", "forethought", "tactical_retreat"]:
@@ -4839,6 +4862,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	elif ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
 		result = _process_companion_ability(combat, ability_name)
 	else:
+		character.clear_active_card_instance()
 		return {"success": false, "message": "Unknown ability!"}
 
 	# 2026-09-05 — POISON AND BLIND TICK ON THE ABILITY PATH TOO.
@@ -4888,24 +4912,24 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# effect paths are deliberately left alone for now: folding them in is an off-by-one risk
 		# on live behaviour for no player-visible gain, and is worth doing on its own.
 		var _casts: Dictionary = combat.get("casts_this_fight", {})
-		_casts[ability_name] = int(_casts.get(ability_name, 0)) + 1
+		_casts[hand_key] = int(_casts.get(hand_key, 0)) + 1
 		combat["casts_this_fight"] = _casts
 
 		var combat_uses_so_far: Dictionary = combat.get("mastery_uses_this_fight", {})
-		var current_combat_uses = int(combat_uses_so_far.get(ability_name, 0))
+		var current_combat_uses = int(combat_uses_so_far.get(hand_key, 0))
 		if current_combat_uses < MASTERY_USES_PER_COMBAT_CAP:
-			combat_uses_so_far[ability_name] = current_combat_uses + 1
+			combat_uses_so_far[hand_key] = current_combat_uses + 1
 			combat["mastery_uses_this_fight"] = combat_uses_so_far
-			var rank_result = combat.character.record_mastery_use(ability_name)
+			var rank_result = combat.character.record_mastery_use(hand_key)
 			# v0.9.691 — tier-scaled companion card permanence: a loaner card
 			# becomes PERMANENT once cast enough (T1 ~40 → T9 ~216), so higher-tier
 			# companions grant stronger cards that take longer to earn. Checked
 			# every use (thresholds don't align with rank-up milestones).
-			if ability_name.begins_with("companion_card_") and int(combat.character.combat_deck_collection.get(ability_name, 0)) <= 0:
+			if ability_name.begins_with("companion_card_") and not combat.character.owns_card(ability_name):
 				var _cmt: String = Character.companion_card_type_from_id(ability_name)
 				var _need: int = DropTablesScript.companion_card_permanence_uses(_cmt)
-				if int(combat.character.ability_uses.get(ability_name, 0)) >= _need:
-					combat.character.combat_deck_collection[ability_name] = 1
+				if int(combat.character.ability_uses.get(hand_key, 0)) >= _need:
+					combat.character.grant_card_copy(ability_name)
 					if not result.has("messages"):
 						result["messages"] = []
 					result.messages.append("[color=#FF99FF]★ %s is now a PERMANENT card in your collection![/color]" % DropTablesScript.companion_card_display_name(ability_name))
@@ -4915,7 +4939,8 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				# Slice 6b — rank-up no longer auto-grants the damage bonus.
 				# Player picks between "+1 Copy in Deck" and "+10% Damage" via popup.
 				# Queue persists across disconnect; client pops popup on next event.
-				var queued_choice := {"ability": ability_name, "new_rank": new_rank, "queued_at": Time.get_unix_time_from_system()}
+				# The milestone belongs to THIS copy: the pick is keyed by hand_key when it is applied.
+				var queued_choice := {"ability": hand_key, "new_rank": new_rank, "queued_at": Time.get_unix_time_from_system()}
 				# Slice 6e/6f (v0.9.549) — Variant Imprint offer. When the
 				# player has an active companion AND that companion type maps
 				# to a trait AND the ability's imprint stack isn't full, queue
@@ -4927,7 +4952,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				# choice. Drawing it when the client asks would let a player re-roll the menu by
 				# reconnecting, and re-drawing on replay would show them a different set than
 				# the one they were looking at.
-				queued_choice["upgrade_offer"] = _build_upgrade_offer(combat.character, ability_name, new_rank)
+				queued_choice["upgrade_offer"] = _build_upgrade_offer(combat.character, hand_key, new_rank)
 				if not (combat.character.pending_rank_choices is Array):
 					combat.character.pending_rank_choices = []
 				combat.character.pending_rank_choices.append(queued_choice)
@@ -4986,7 +5011,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# Audit #1 Slice 6a — successful ability use moves the card from
 		# hand to discard and refills the hand. Done after mastery tracking
 		# so a rank-up notification still ties to the card just played.
-		_consume_card_from_hand(combat, _ability_alias_to_card(ability_name), result.messages)
+		_consume_card_from_hand(combat, hand_key, result.messages)
 
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
@@ -8006,16 +8031,19 @@ func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Ar
 	in card_upgrades.gd, because such a list drifts the moment a card is re-roled — which is
 	exactly how War Cry sat in the damage-buff slot for months after it became a tempo card."""
 	var CU = load("res://shared/card_upgrades.gd")
-	var is_damage: bool = ability_name in ABILITY_WEIGHTS 		or ability_name in ["shield_bash", "devastate", "ambush", "gambit", "exploit", "frost_nova"]
-	var is_buff: bool = ability_name in ["forcefield", "shield", "haste", "iron_skin", "fortify",
+	# `ability_name` may be a COPY ("cleave#2"): the kind and exclusions are the card's, the
+	# picks already taken are that copy's.
+	var _card := Character.card_base(ability_name)
+	var is_damage: bool = _card in ABILITY_WEIGHTS 		or _card in ["shield_bash", "devastate", "ambush", "gambit", "exploit", "frost_nova"]
+	var is_buff: bool = _card in ["forcefield", "shield", "haste", "iron_skin", "fortify",
 		"rally", "berserk", "war_cry", "vanish"]
-	var is_control: bool = ability_name in ["paralyze", "banish", "sabotage", "distract", "analyze", "shadowstep"]
-	var kind: String = CU.card_kind(ability_name, is_damage, is_buff, is_control)
+	var is_control: bool = _card in ["paralyze", "banish", "sabotage", "distract", "analyze", "shadowstep"]
+	var kind: String = CU.card_kind(_card, is_damage, is_buff, is_control)
 	var taken: Array = character.get_milestone_picks(ability_name) if character != null else []
 	# Some "buff" cards have no DURATION to extend — Forcefield grants a shield with a capacity
 	# that lasts until it is spent, and Phantom Strike arms a single auto-crit. Offering them the
 	# Duration upgrade is offering a pick that does nothing at all.
-	var _exclude: Array = upgrade_exclusions_for(ability_name)
+	var _exclude: Array = upgrade_exclusions_for(_card)
 	var drawn: Array = CU.draw_choices(kind, milestone, taken, CU.OFFER_SIZE, _exclude)
 	var out: Array = []
 	for u in drawn:
@@ -11796,16 +11824,16 @@ func _initialize_combat_deck(combat_state: Dictionary) -> void:
 			accessible[name] = true
 	# Pull each ability the player owns in their collection (1+ copies),
 	# clamped to a sane max so a corrupted collection can't generate a 10k deck.
-	for ability_name in collection.keys():
+	# 2026-09-11 — the collection is keyed by INSTANCE ("cleave", "cleave#2"), one entry per copy,
+	# value 1 in the deck / 0 benched. The deck carries the instance ids, so the card drawn is
+	# the copy drawn, with its own uses and upgrades.
+	for iid in collection.keys():
+		var ability_name := Character.card_base(String(iid))
 		if not accessible.has(ability_name):
 			continue
-		# v0.9.678 — 0 copies = thinned OUT of the deck (skip); otherwise cap at 3.
-		var copies = int(collection.get(ability_name, 1))
-		if copies <= 0:
+		if int(collection.get(iid, 1)) <= 0:
 			continue
-		copies = clamp(copies, 1, 3)
-		for i in range(copies):
-			deck.append(ability_name)
+		deck.append(String(iid))
 	# Backstop: if the collection is somehow empty (e.g., a non-player edge case),
 	# fall back to 1-of-each accessible so combat is never card-starved.
 	if deck.is_empty():
@@ -11821,7 +11849,7 @@ func _initialize_combat_deck(combat_state: Dictionary) -> void:
 			# v0.9.693 — inject the loaner ONLY if the card was never earned (key
 			# absent). If owned (key present) it's built from the collection above;
 			# a thinned-to-0 permanent card stays OUT, not silently re-injected.
-			if not character.combat_deck_collection.has(_ccid):
+			if not character.owns_card(_ccid):
 				deck.append(_ccid)
 	deck.shuffle()
 	combat_state["combat_deck"] = deck
@@ -12133,6 +12161,7 @@ func _ability_display_name(_character, ability_name: String) -> String:
 	this, the rank-up notification used the raw internal id ('Tactical retreat')
 	while the card in the player's hand showed 'Recharge' — players couldn't
 	connect the two and reported phantom ranks-ups on abilities they 'don't have'."""
+	ability_name = Character.card_base(ability_name)   # a copy is named for its card
 	# v0.9.680 — companion cards: "<Type>'s Gift" from the id.
 	# #38 — dungeon cards resolve to their proper name via the shared table.
 	if ability_name.begins_with("dungeon_card_"):
@@ -14033,7 +14062,8 @@ func _cycle_unplayed(combat: Dictionary, cards: Array, msgs: Array) -> void:
 	if character == null:
 		return
 	for c in cards:
-		var card_id := String(c)
+		var iid := String(c)
+		var card_id := Character.card_base(iid)
 		# TWO SOURCES, one payout. A companion/dungeon card can carry a `cycle` block in its own
 		# data, and ANY card - class cards included - can gain one from a REVEAL upgrade the
 		# player spent a milestone on. The upgrade wins if a card somehow has both, because the
@@ -14046,7 +14076,7 @@ func _cycle_unplayed(combat: Dictionary, cards: Array, msgs: Array) -> void:
 			var d = data.get("cycle", {})
 			if d is Dictionary and not d.is_empty():
 				cyc = d
-		var picks: Array = character.get_milestone_picks(card_id)
+		var picks: Array = character.get_milestone_picks(iid)
 		if not picks.is_empty():
 			if "reveal_engine" in picks:
 				cyc = {"type": "engine", "amount": 1}
