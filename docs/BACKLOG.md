@@ -242,22 +242,34 @@ They need their own release.**
       explaining hover) and `pips()` (the filled bar) both exist and are unused there -- colour
       alone is exactly what the owner said was not enough when the ladder was designed.
 
-- [ ] **5. "Safe Zone" on an empty road with no post.** Owner: *"I'm at coords -44, -34 and it is
-      saying It's a Safe Zone in the top right of my screen but there is no post. I'm just
-      standing on a road surrounded by a bunch of water."*
-      **Traced, not solved.** The HUD flag is NOT `is_safe_zone()` despite the wording -- it is
-      `"area_is_safe": area_level_hud <= 0`, i.e. the area's MONSTER LEVEL is zero. Confirmed from
-      live chunk data: `chunk_61_61.json` holds `-44,-34 = {"type": "path"}` and all 45 modified
-      tiles in that chunk are paths, so there is genuinely no post and the owner is right.
-      Ruled out: `path` is not in the safe tile-type list; WATER is `safe: false`;
-      `_distance_to_level` floors at **1** and can never return 0 (distance there is ~55.6).
-      **So the zero comes from `get_post_anchored_level`** -- a settler bubble or the pull-down
-      blend. `_bubble_influence_at` reads `effective_tier` through `level_for_tier()`, so the next
-      steps are: does `level_for_tier(1)` return 0, and did a player-post bubble record survive
-      the world reset without its tiles? The latter would be the SAME logical-record-versus-
-      physical-tiles split as "a reset post existed on the minimap and nowhere else".
-      **Read the live post records; do not theorise a third time.**
-
+- [x] **5. SOLVED 2026-09-11 (local) — 58 GHOST TRADING POSTS were projecting invisible safe
+      zones.** Owner: *"I'm at coords -44, -34 and it is saying It's a Safe Zone in the top right
+      of my screen but there is no post. I'm just standing on a road surrounded by a bunch of
+      water."*
+      They were right, and it was not their tile. `trading_post_database.gd` still defines **58
+      LEGACY fixed posts** from the old world model. They are never stamped into any chunk —
+      verified against live server data, where the chunk covering that tile holds 45 modified
+      tiles and every one is a `path`. But `world_system._tile_to_terrain` still asked that table
+      "is there a post here", got YES for a post named **Southwest Grove**, and returned
+      `Terrain.TRADING_POST`, which is `safe: true`, which makes `get_monster_level_range` return
+      base_level **0**, which the HUD prints as "Safe Zone".
+      **Measured: 194 tiles claimed within ±120 of origin alone** (214 within ±140). Each is an
+      invisible safe pocket — and the consequence is worse than a wrong label, because
+      `check_encounter` returns false in a safe zone, so **no monster could spawn on any of
+      them**. All 58 survived the world reset, being a hardcoded table rather than world data.
+      **Fixed at the ONE place the geometry is built** (`_build_tile_cache`, behind
+      `LEGACY_POSTS_CLAIM_TILES = false`) rather than at the twelve call sites — a fix applied to
+      some of twelve is exactly the shape that produced the incomplete tier sweep the same day.
+      The table itself is kept: `resolve_post_category` and the NPC stock helpers are keyed by
+      post id/dict, not by tile, and still serve LIVE posts through that same code.
+      Probe: `ghost_safe_zones.gd`, which sweeps ±140 rather than checking the one reported tile —
+      the report was a sample of a pattern. Re-injection fails 4 checks.
+      **Four wrong theories before the measurement, worth recording:** an unstamped NPC post (no —
+      no post record covers the tile), a settler bubble (no — `player_tiles.json` is empty, so no
+      bubbles exist), the distance curve returning 0 (no — it floors at 1), and the pull-down
+      blend (no — running the real function against the live post file returned level **11**).
+      Only stubbing the legacy table into the repro found it, because that was the one input I
+      had not reproduced.
 - [ ] **6. Decide whether a road should read as "Safe Zone" at all.** Falls out of 5: the owner was
       on open road, and roads now cross water since the post/water gate was removed. Whatever the
       level math says, "Safe Zone" far from any post is wrong to a player -- the flag means "no

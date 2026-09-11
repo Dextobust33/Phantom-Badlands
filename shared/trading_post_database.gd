@@ -566,6 +566,11 @@ const TRADING_POSTS = {
 }
 
 # Cache for fast tile lookups (built on initialization)
+## FALSE since 2026-09-11. The 58 legacy fixed posts are not stamped into the live world, so
+## they must not answer "is there a post at this tile" - see _build_tile_cache for the full
+## reasoning and the measurement. Flip to true only if the legacy posts are ever stamped again.
+const LEGACY_POSTS_CLAIM_TILES := false
+
 var _tile_cache: Dictionary = {}
 var _initialized: bool = false
 
@@ -575,6 +580,31 @@ func _ready():
 func _build_tile_cache():
 	"""Build a dictionary mapping tile coordinates to trading post IDs for fast lookup"""
 	_tile_cache.clear()
+	# 2026-09-11 - THE LEGACY POSTS NO LONGER EXIST IN THE WORLD, so they must not claim tiles.
+	#
+	# Owner: *"I'm at coords -44, -34 and it is saying It's a Safe Zone in the top right of my
+	# screen but there is no post. I'm just standing on a road surrounded by a bunch of water."*
+	#
+	# They were right, and it was not their tile. These 58 fixed posts are the OLD world model.
+	# The live world is generated from `chunk_manager.npc_posts` and they are never stamped into
+	# any chunk - verified on the live server, where the chunk covering that tile holds 45
+	# modified tiles and every one of them is a path. But `world_system._tile_to_terrain` still
+	# asked this table "is there a post here", got YES for a post named Southwest Grove, and
+	# returned Terrain.TRADING_POST - which is `safe: true`, which makes
+	# `get_monster_level_range` return base_level 0, which is what the HUD prints as "Safe Zone".
+	#
+	# Measured: 58 ghost posts claiming 194 tiles within +/-120 of origin ALONE. Each is an
+	# invisible safe pocket where no monster can spawn (`check_encounter` returns false in a safe
+	# zone) and the HUD lies about the danger. Every one of them survived the world reset, because
+	# they are a hardcoded table rather than world data.
+	#
+	# Gated HERE, at the one place the geometry is built, rather than at the twelve call sites -
+	# a fix applied to some of twelve is the shape that produced the incomplete tier sweep earlier
+	# today. The table itself is kept: `resolve_post_category` and the NPC stock helpers are keyed
+	# by post id/dict rather than by tile and still serve live posts through the same code.
+	if not LEGACY_POSTS_CLAIM_TILES:
+		_initialized = true
+		return
 
 	for post_id in TRADING_POSTS:
 		var post = TRADING_POSTS[post_id]
