@@ -13,6 +13,8 @@ common way to lose a session.
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-11, third session of the day)
 
 **Master is clean and pushed. Nothing is parked.** Card instances (step 1 of THE ORDER) is merged.
+**Next in THE ORDER is step 2, sprite interiors** (sanctuary first, one interior end to end). It
+needs the owner's eyes on screenshots, so start it with them available.
 
 **Unreleased on master, all probed** — none of it has been played yet:
 - **Card instances.** Every copy of a card is its own card (`cleave`, `cleave#2`): its own uses,
@@ -24,6 +26,10 @@ common way to lose a session.
 - Party combat CONFIRM step, party only — `party_confirm.gd`.
 - Tier level bands in one table — `tier_bands.gd`.
 - Licences recorded; restricted art stays untracked.
+- Help screen: 26 audited fixes, the main help page formats again (keys had shown as `[%s]`),
+  gathering described as it really works — `help_topics.gd`.
+- Ranger and Barbarian card faces include their engine ramp — `preview_drift.gd`.
+- First-gather tutorial is sent again, rewritten for the scratch-off grid.
 `docs/PLAYTEST_QUEUE.md` items 7-8 cover Recall and the confirm step. **Card instances needs a
 playtest line too before release:** a character with two copies of one card, thin one, restore it,
 rank one copy up and confirm only that copy shows the upgrade, list a spare at a trading post.
