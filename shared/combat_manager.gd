@@ -10959,6 +10959,31 @@ func generate_combat_start_message(character: Character, monster: Dictionary) ->
 	"""Generate the initial combat message (text only - art is rendered client-side)"""
 	return generate_encounter_text(monster)
 
+## The traits a Scroll of Finding can graft on, as ONE table.
+##
+## Three surfaces need these words: the scroll's picker, the name a marked monster wears, and
+## the trait line on the encounter. They were being written out by hand in each place, which is
+## the two-copies-of-one-value shape this codebase keeps producing - and it had already bitten
+## here once, with three of the six traits present in the picker and missing from the encounter
+## text entirely. `options` is derived from these keys, so a seventh trait cannot be offered
+## without also being named and described.
+const SCROLL_TRAITS := {
+	"weapon_master":   {"name": "Weapon Master",  "reward": "a weapon"},
+	"shield_bearer":   {"name": "Shield Guardian", "reward": "a shield"},
+	"gem_bearer":      {"name": "Gem Bearer",     "reward": "gems"},
+	"arcane_hoarder":  {"name": "Arcane Hoarder", "reward": "MAGE gear"},
+	"cunning_prey":    {"name": "Cunning Prey",   "reward": "TRICKSTER gear"},
+	"warrior_hoarder": {"name": "Warrior Hoarder", "reward": "WARRIOR gear"},
+}
+
+
+static func scroll_trait_name(ability: String) -> String:
+	"""The player-facing name of a scroll trait, or "" if it is not one."""
+	if not SCROLL_TRAITS.has(ability):
+		return ""
+	return String(SCROLL_TRAITS[ability].get("name", ""))
+
+
 func _hoarder_drop_chance(monster: Dictionary) -> float:
 	"""How likely a class-gear hoarder is to actually drop its gear.
 

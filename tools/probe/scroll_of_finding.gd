@@ -51,5 +51,26 @@ func _init() -> void:
 		"the apex drop no longer says 'choose your next quarry' (that is the Scroll of Summoning)")
 	ck(srv.contains("guaranteed"), "the picker states the payout is guaranteed")
 
+	print("")
+	print("--- the marked monster WEARS the trait in its name ---")
+	ck(CM.SCROLL_TRAITS.size() == offered.size(),
+		"SCROLL_TRAITS holds exactly the %d offered traits" % offered.size())
+	for o in offered:
+		ck(CM.SCROLL_TRAITS.has(o), "'%s' is in the canonical table" % o)
+		ck(cm.scroll_trait_name(o) != "", "'%s' has a player-facing name" % o)
+	ck(cm.scroll_trait_name("regeneration") == "",
+		"a NATURAL trait is not a scroll trait, so it never renames anything")
+	print("      e.g. weapon_master -> '%s Wolf'" % cm.scroll_trait_name("weapon_master"))
+
+	# The prefix must not break art lookup: the resolver drops leading words to find a species.
+	var MA = load("res://client/monster_art.gd")
+	for o in offered:
+		var prefixed: String = "%s Wolf" % cm.scroll_trait_name(o)
+		ck(MA.resolve_art_key(prefixed) == MA.resolve_art_key("Wolf"),
+			"'%s' still resolves to the Wolf art" % prefixed)
+
+	ck(srv.contains("CombatManager.SCROLL_TRAITS.keys()"),
+		"the scroll picker is DERIVED from the table, not a second copy of the list")
+
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails > 0 else 0)

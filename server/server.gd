@@ -9000,6 +9000,21 @@ func trigger_encounter(peer_id: int):
 		# 100% when a scroll put them there - see `_hoarder_drop_chance`. Without this flag the two
 		# cases are indistinguishable and raising the rate would have moved the monster curve.
 		monster["scroll_trait_guaranteed"] = true
+		# ...and wear it in the NAME. Owner 2026-09-10: "So now it will add the monster type to the
+		# monsters name in the next encounters right? Like Weapon Master Wolf?" - which is the
+		# better answer than a trait line, because the name persists through every combat log line
+		# while a line at the start of the fight scrolls away. That scrolling-away is exactly how
+		# the original report happened.
+		#
+		# ONLY the scroll-granted trait is promoted. A monster's natural traits stay on the trait
+		# line, so names cannot stack into "Venomous Weapon Master Dire Wolf".
+		#
+		# Safe to prefix: `MonsterArt.resolve_art_key` drops leading words until it matches a
+		# species ("Weapon Master Wolf" -> "Wolf"), and the dungeon sprite path keys off `type`,
+		# not `name`. Both were checked rather than assumed.
+		var _tname: String = CombatManager.scroll_trait_name(target_ability)
+		if _tname != "" and not String(monster.get("name", "")).begins_with(_tname):
+			monster["name"] = "%s %s" % [_tname, String(monster.get("name", ""))]
 
 		character.target_farm_remaining -= 1
 		if character.target_farm_remaining <= 0:
@@ -11303,18 +11318,15 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		restore_item["quantity"] = 1
 		pending_scroll_use[peer_id] = {"item": restore_item, "time": Time.get_ticks_msec()}
 		var encounters = effect.get("encounters", 5)
-		var options = ["weapon_master", "shield_bearer", "gem_bearer", "arcane_hoarder", "cunning_prey", "warrior_hoarder"]
-		var option_names = {
-			# Every one of these is a GUARANTEED drop when the scroll grants it - the class-gear
-			# three used to be a hidden 35%, which made them the worse pick while sounding like the
-			# better one. Named so the player can see that, rather than having to measure it.
-			"weapon_master": "Weapon Master - a weapon, guaranteed",
-			"shield_bearer": "Shield Guardian - a shield, guaranteed",
-			"gem_bearer": "Gem Bearer - gems, guaranteed",
-			"arcane_hoarder": "Arcane Hoarder - MAGE gear, guaranteed",
-			"cunning_prey": "Cunning Prey - TRICKSTER gear, guaranteed",
-			"warrior_hoarder": "Warrior Hoarder - WARRIOR gear, guaranteed"
-		}
+		# Derived from the ONE table in combat_manager, so the picker, the marked monster's name
+		# and the encounter's trait line cannot drift apart again. Every one of these is a
+		# GUARANTEED drop when the scroll grants it - the class-gear three used to be a hidden 35%,
+		# which made them the worse pick while sounding like the better one.
+		var options: Array = CombatManager.SCROLL_TRAITS.keys()
+		var option_names: Dictionary = {}
+		for _a in options:
+			var _t: Dictionary = CombatManager.SCROLL_TRAITS[_a]
+			option_names[_a] = "%s - %s, guaranteed" % [_t.get("name", _a), _t.get("reward", "loot")]
 		send_to_peer(peer_id, {
 			"type": "target_farm_select",
 			"options": options,
