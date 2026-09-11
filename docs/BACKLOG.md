@@ -205,19 +205,31 @@ checks the class descriptions name only stats that really contribute. It deliber
 NUMBERS rather than prose, because every drift found here was a number. A tuning change now breaks
 the CHECK instead of quietly making the help page lie.
 
-- [ ] **Wire `gold_find`, or remove it from the tables.** Owner's call: it is authored on companion
-      passives (Kobold "Treasure Sense") and displayed to players, and nothing applies it.
-
-## LIVE REPORTS, 2026-09-11 post-v0.9.770 (owner, one session) -- NOTHING HERE IS SHIPPED
-
-Owner: *"Please make sure you're documenting my messages and adding them to the to do or ensuring
-they don't get lost. Historically when you send multiple things in a short span you tend to forget
-about things and not document them and move onto something else."* Fair, and it had already
-started happening in this batch. Every report below is written down BEFORE any more code.
-
-**All six arrived while the owner was playing v0.9.770, which shipped before any of these fixes.
-They need their own release.**
-
+- [x] **DONE 2026-09-11 — `gold_find` wired, and it was dead in TWO ways, not one.** Owner chose
+      the faucet rather than let one be invented: *"It could offer a better chance to get the
+      combat loot minigame which does give valor."*
+      **Why the obvious wiring was impossible.** Its own description promised "extra gold from
+      kills". `gold` is DEPRECATED (`character.gd`: *"kept for migration only"*) and an ordinary
+      monster kill pays **no valor at all** — valor comes from market listings, bounties, quests,
+      gambling and the Tribute card. There was nothing to scale, which is presumably why it was
+      never finished. Wiring it literally would have meant inventing a new currency faucet
+      scaled by kill rate, which is a balance decision and not one to make silently.
+      **The two silent failures, both of which would have shipped a no-op that compiles:**
+      1. `get_companion_bonus()` reads ONLY `active_companion.bonuses`, and **no companion carries
+         `gold_find` there.** My first wiring read exactly that field and would have been
+         permanently zero.
+      2. The stat lives on the Kobold as a PASSIVE, and `_apply_companion_passive_effect` had **no
+         branch for it** — the `match` fell through and dropped the effect. A match that falls
+         through without a branch is the quietest way there is to lose a feature.
+      Fixed at both: the applier gained a `gold_find` branch, the value rides out on the
+      combat-end result, and the loot roll adds it to any `bonuses` value so **both** sources
+      count. `gathering_hint` fell through the identical match and is fixed alongside.
+      **Applied as a RELATIVE lift** (+20% companion takes a 7% base roll to 8.4%) rather than
+      flat percentage points, which would have swamped the base and made the minigame the common
+      case — the opposite of what the C3 dungeon tuning deliberately set up. Still bounded by
+      `COMBAT_SCRATCH_MAX_CHANCE`, so no companion can guarantee it.
+      Probe: `gold_find_wired.gd` tests REACHABILITY, not compilation — its first version checked
+      only `bonuses`, failed, and is what exposed fault 1. Re-injection fails 2 checks.
 - [x] **1. "Frenzied" in a monster's name is red and underlined but hovering does nothing.**
       FIXED (local). `_monster_name_label` had `meta_hover_started` connected on one line and
       `MOUSE_FILTER_IGNORE` on the next -- IGNORE means the control receives no mouse events, so

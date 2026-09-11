@@ -6631,6 +6631,30 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# near-guaranteed reveal (COMBAT_SCRATCH_FLOCK_STEP per kill, capped).
 				var _scratch_chance: float = COMBAT_SCRATCH_EMPOWERED_CHANCE if _empowered_reveals > 0 else COMBAT_SCRATCH_BASE_CHANCE
 				_scratch_chance += float(max(0, _final_flock_kills - 1)) * COMBAT_SCRATCH_FLOCK_STEP
+				# COMPANION `gold_find` - WIRED 2026-09-11, and this is the faucet it belongs to.
+				#
+				# The stat was authored on companion passives (the Kobold's "Treasure Sense"), displayed to
+				# players as "+N% Valor Find", and consumed by NOTHING: it appeared only in client display
+				# code. Its own description said "extra gold from kills", which could never work, because
+				# `gold` is deprecated and an ordinary monster kill pays no valor at all - valor comes from
+				# market listings, bounties, quests, gambling and the Tribute card.
+				#
+				# Owner supplied the answer rather than have a new faucet invented: *"It could offer a better
+				# chance to get the combat loot minigame which does give valor."* So it raises the odds of
+				# THIS roll. That adds no new currency source - it makes an existing payout more frequent,
+				# which is what a "find" stat should do.
+				#
+				# Applied as a RELATIVE lift (a +20% companion gives 0.07 -> 0.084) rather than flat
+				# percentage points: a flat +20 would have swamped the 7% base and made the minigame the
+				# common case, which the C3 tuning above deliberately moved away from. Still bounded by
+				# COMBAT_SCRATCH_MAX_CHANCE below, so no companion can guarantee it.
+				# BOTH sources, because the stat lives in two places and reading one is how it
+				# stayed dead: companions can carry it in `bonuses` (nothing does today) and the
+				# Kobold carries it as a PASSIVE, accumulated into the combat and returned here.
+				var _gf: int = int(characters[peer_id].get_companion_bonus("gold_find"))
+				_gf += int(result.get("companion_gold_find", 0))
+				if _gf > 0:
+					_scratch_chance *= 1.0 + float(_gf) / 100.0
 				_scratch_chance = minf(_scratch_chance, COMBAT_SCRATCH_MAX_CHANCE)
 				# C3 (user 2026-08-25) — dungeons have far MORE fights now (bigger floors +
 				# wandering escalation), so the loot-reveal minigame fired too often. Cut

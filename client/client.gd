@@ -43753,7 +43753,7 @@ const COMPANION_STAT_HELP := {
 	"crit_damage": "Extra damage your criticals deal.",
 	"lifesteal": "Percent of the damage you deal that returns to you as health.",
 	"flee_bonus": "Improves your chance to escape a fight you choose to leave.",
-	"gold_find": "Intended to add Valor from kills. NOT CURRENTLY APPLIED - the bonus is displayed but no code consumes it (found 2026-09-11).",
+	"gold_find": "Raises the chance a kill opens the loot minigame, which is where Valor comes from. A +20% companion lifts a 7% base roll to about 8.4%.",
 	"gathering_yield": "Extra materials from fishing, mining and logging.",
 	"gathering_hint": "Improves the odds of spotting a rare gathering node.",
 	"wisdom_bonus": "Raises your Wisdom, which resists poison and other lingering effects.",

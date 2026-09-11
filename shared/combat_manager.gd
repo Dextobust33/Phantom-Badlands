@@ -1254,6 +1254,15 @@ func _apply_companion_passive_effect(combat_state: Dictionary, character: Charac
 			combat_state["companion_flee_bonus"] = combat_state.get("companion_flee_bonus", 0) + value
 		"crit_damage":
 			combat_state["companion_crit_damage"] = combat_state.get("companion_crit_damage", 0) + value
+		# 2026-09-11 - `gold_find` had NO branch here, so the Kobold's "Treasure Sense" passive was
+		# silently dropped by this match. That is half of why the stat did nothing: the other half
+		# is that no companion carries it in `bonuses`, so `get_companion_bonus` also returned 0.
+		# A match that falls through without a branch is the quietest way to lose a feature.
+		"gold_find":
+			combat_state["companion_gold_find"] = combat_state.get("companion_gold_find", 0) + value
+		"gathering_hint":
+			# Same shape, same silence. Consumed by the server's node-spotting roll.
+			combat_state["companion_gathering_hint"] = combat_state.get("companion_gathering_hint", 0) + value
 		"wisdom_bonus":
 			combat_state["companion_wisdom_bonus"] = combat_state.get("companion_wisdom_bonus", 0) + value
 
@@ -3704,6 +3713,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"dropped_items": all_drops,
 		"gems_earned": gems_earned,
 		"card_bonus_valor": int(combat.get("card_bonus_valor", 0)),  # v0.9.682 — Tribute companion card
+		# The companion's gold_find, accumulated from its passive during the fight. The server's
+		# combat-loot roll needs it and has no access to the combat dict by then.
+		"companion_gold_find": int(combat.get("companion_gold_find", 0)),
 		"summon_next_fight": combat.get("summon_next_fight", ""),
 		"summon_next_level": combat.get("summon_next_level", 0),
 		"is_rare_variant": monster.get("is_rare_variant", false),
