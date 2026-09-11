@@ -4615,6 +4615,13 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 			var out_dmg: int = apply_skill_damage_bonus(character, name, int(dmg * preview_buff_mult), combat)
 			if is_spell:
 				out_dmg = int(float(out_dmg) * _caster_passive_damage_mult(character))
+			# 2026-09-11 — the ENGINE RAMP (Steady Aim / Rage), applied here because every anchored
+			# card passes through `apply_ability_damage_modifiers`, where the real hit gets it. The
+			# earlier fix sent the ramp as combat state and multiplied it in on the client - but
+			# only in the client's FALLBACK estimate. In combat the card shows this server value
+			# directly, so a Ranger's and a Barbarian's cards still understated by the ramp
+			# (measured: 3 Aim, preview 127 vs 179 dealt). Same helper as the hit, so one number.
+			out_dmg = int(float(out_dmg) * engine_damage_ramp(character, combat))
 			return {"kind": "damage", "value": out_dmg, "scales": note}
 
 	# --- Not yet anchored. Every branch below is TEMPORARY: it disappears as its ability is --

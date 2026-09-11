@@ -290,7 +290,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 47 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 46 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -2102,12 +2102,21 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Not done, available if wanted: **peek tokens** (the loot panel's other aid — a rare, limited
       re-show of one face-down card), and staggering the flights if nine at once ever reads busy.
       `tools/test_setup/run.py --ranks=N` hands back exactly N rank-ups for looking at this.
-- [ ] **Ambush and Gambit cards under-promise by ~45%** (found 2026-09-11, identical on master).
-      `tools/probe/preview_drift.gd` shows both at 1.40-1.47x actual vs the card face at L5 and
-      L60. Likely the crit bonus (Ambush +25% crit) and Gambit's success roll are left out of
-      `preview_ability_effect`. The card is lying in the player's favour, but it is still lying.
-      Also: the probe is unseeded, so Magic Bolt at L60 flickers across its 0.80 line run to run.
-- [ ] **`card_upgrade_effects.gd` reports 23 upgrades "not yet wired" from a HAND-TYPED list.**
+- [x] **FIXED 2026-09-11 — Ranger and Barbarian card faces understated by their engine ramp.**
+      Reported by `preview_drift.gd` as "Ambush and Gambit 1.4x"; the cause was wider. The 11am fix
+      sent `engine_damage_ramp` as combat state and multiplied it in on the client, but only in the
+      client's FALLBACK estimate. In combat the card shows the server's `preview_ability_effect`
+      value directly, and that never had the ramp, so every funnel card of a Ranger (Steady Aim)
+      and Barbarian (Rage) read low by stacks x 11% / 16%. Measured at 3 stacks: preview 127, dealt
+      179. The ramp is now applied in the preview's anchored branch with the same helper the hit
+      uses. `preview_drift.gd` gained a Barbarian case and a seed (it flickered run to run);
+      26 rows, 0 drift; removing the fix makes 8 rows drift.
+      Residual, minor: Magic Bolt at L60 reads 0.83x (card ~17% high), inside tolerance and
+      identical on master.
+- [ ] **Two stale instruments.** (1) `card_vs_server.gd` reproduces the client's pre-server
+      fallback formulas "verbatim", so it prints "LIES" for a path the combat card no longer uses;
+      retire it or point it at `_estimate_ability_card_effect`'s server branch. (2)
+      `card_upgrade_effects.gd` reports 23 upgrades "not yet wired" from a HAND-TYPED list.
       Several of those (the Reveals, Bulwark, Executioner-family triggers) are wired and proven by
       `upgrade_new_wired.gd` / `upgrade_triggers.gd`. Derive the list from what actually fires,
       or delete the section — a stale list reads as a real finding.

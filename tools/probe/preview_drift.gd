@@ -20,6 +20,9 @@ const SAMPLES := 40
 const TOLERANCE := 0.18   # means should land within 18%; variance alone is well inside this
 
 func _init():
+	# Seeded 2026-09-11: unseeded, Magic Bolt at L60 flickered across the tolerance line run to run
+	# (0.77-0.86x), so the same code passed and failed on alternate runs.
+	seed(20260911)
 	var CharacterScript = load("res://shared/character.gd")
 	var cm = CombatManager.new()
 	var md = MonsterDatabase.new()
@@ -31,6 +34,8 @@ func _init():
 		["Fighter", "strength", ["power_strike", "cleave", "shield_bash", "devastate"]],
 		["Wizard", "intelligence", ["magic_bolt", "blast", "meteor", "forcefield"]],
 		["Ranger", "wits", ["ambush", "gambit", "exploit"]],
+		# Rage is the other engine ramp; "momentum": 3 in _make_combat is 3 Rage for a Barbarian.
+		["Barbarian", "strength", ["power_strike", "cleave"]],
 	]
 
 	var failures := 0
@@ -69,6 +74,10 @@ func _init():
 						var pv: Dictionary = cm.preview_ability_effect(ch, combat, name)
 						if pv.is_empty():
 							break
+						# The preview IS what the card shows (the client renders the server value).
+						# 2026-09-11 — Ambush and Gambit read 1.41-1.47x here for weeks. It was real:
+						# the preview left out the Ranger's Steady Aim ramp (this probe's own
+						# mid-build state carries 3 Aim, x1.33), and the card showed that number.
 						preview = int(pv.get("value", 0))
 
 					var before_hp: int = int(mon["current_hp"])
@@ -128,7 +137,7 @@ func _resolve(cm, combat: Dictionary, cls: String, ability: String) -> void:
 			if ability == "magic_bolt":
 				arg = str(int(float(ch.max_mana) * cm.MAGIC_BOLT_FULL_SPEND_PCT))
 			cm._process_mage_ability(combat, ability, arg)
-		"Fighter":
+		"Fighter", "Barbarian":
 			cm._process_warrior_ability(combat, ability)
 		_:
 			cm._process_trickster_ability(combat, ability)
