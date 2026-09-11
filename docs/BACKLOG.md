@@ -1123,7 +1123,13 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       kinder to a player who already spent the card slot.
 
 
-- [ ] **Combat card hotkeys read R, 1, 2 instead of 1, 2, 3** (owner, 2026-09-06, never captured):
+- [x] **NOT LIVE — disproved 2026-09-11.** Reproduced the other way: `_get_combat_hand_actions`
+      puts an empty slot on R and the hand on 1/2/3 (`R=—, 1=Power Strike, 2=Cleave,
+      3=Bull Rush`), for a full hand, a one-card hand and an empty one. The owner's own combat
+      screenshots show the same. Fixed at some point without a traceable commit;
+      `tools/probe/combat_card_hotkeys.gd` now guards it so it cannot drift back.
+
+- [ ] ~~Combat card hotkeys read R, 1, 2 instead of 1, 2, 3~~ (owner, 2026-09-06):
       *"now that outsmart has been removed our card numbers shifted to R, 1, and 2. This is odd.
       It should be 1, 2, 3 still."* No fix commit found in a search of the log since that date, so
       treat it as still live until reproduced. Retiring a card should not renumber the hand — the
@@ -1133,7 +1139,22 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       that repeats itself is a dead button after the first cast. Needs a design answer (rotate
       what it reveals? escalate with rank? reveal something the player cannot otherwise see?) —
       ASK before implementing, since "fresh" is the owner's word and not yet a spec.
-- [ ] **Ranger and Ninja STARTER decks** (owner, 2026-09-06): *"They should start with cards from
+- [~] **PARTLY DONE — verified 2026-09-11, but thinner than it looks.** The 2026-09-07 theming
+      pass DID absorb the ask, with per-class reasoning and A/B data recorded in
+      `CURATED_STARTER_DECKS_BY_CLASS`. Current tricksters:
+      ```
+      Ranger   analyze, sabotage, exploit, ambush, perfect_heist
+      Ninja    analyze, sabotage, ambush,  vanish, perfect_heist
+      Grifter  analyze, distract, sabotage, ambush, perfect_heist
+      ```
+      **But every pair shares 4 of 5 cards.** The differentiation is exactly one slot
+      (exploit / vanish / distract), which is close to the "identical cards plus a different
+      passive is not a different class" fault the comment itself names. `sabotage` stays in all
+      three because it won four straight A/Bs — so widening this means displacing a card that is
+      measurably the best one, i.e. a BALANCE change needing the calibration chain, not a swap.
+      **OWNER'S CALL** whether one differing card in five is enough.
+
+- [ ] ~~Ranger and Ninja STARTER decks~~ (owner, 2026-09-06): *"They should start with cards from
       their deck that make sense for their intended play styles. Likely just need to swap a few of
       their enabler starter cards with a few they aren't using."* The 2026-09-07 theming pass
       renamed and re-roled cards across all nine kits, which may have absorbed this — but the ask
