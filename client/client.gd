@@ -44833,22 +44833,69 @@ func _dungeon_companion_at(x: int, y: int) -> bool:
 		return false
 	if _dungeon_prev_pos == _dungeon_last_pos:
 		return false                      # not moved yet; do not stack it under the player
+	if _dungeon_companion_sprite() == "":
+		return false
+	if _dungeon_companion_ko():
+		return false
 	return _dungeon_prev_pos == Vector2i(x, y)
+
+
+func _dungeon_companion_sprite() -> String:
+	"""The companion's sprite for this frame, or "" when there is nothing to draw.
+
+	ONE resolution, asked by both the occupancy test and the drawing function, so "is it here"
+	and "what does it look like" can never disagree.
+
+	The empty answer matters as much as the full one. This used to fail soft: with no companion,
+	no `monster_type` or no baked sprite, `_dungeon_companion_img` returned a bare `floor_img()`
+	that ignored the ground it had been handed - so a companionless player trailed a square of
+	CORRIDOR floor through every room, the same brown-square artefact already traced to four
+	other causes. Returning "" instead makes the cell UNOCCUPIED, and the renderer falls through
+	to `_dungeon_tile_cell`, which knows the real ground. Found by the probe, not in play."""
+	var comp: Dictionary = character_data.get("active_companion", {}) if character_data else {}
+	if comp == null or not (comp is Dictionary) or comp.is_empty():
+		return ""
+	var mt := String(comp.get("monster_type", ""))
+	if mt == "":
+		return ""
+	# idle-animate too, offset so the pair do not step in perfect unison
+	var spr: String = _DungeonSprites.monster_path(mt, _dungeon_anim_tick + 1)
+	if spr == "" or not ResourceLoader.exists(spr):
+		return ""
+	return spr
+
+
+func _dungeon_companion_ko() -> bool:
+	"""Is the companion knocked out? A KO'd companion is not on the floor with you.
+
+	Owner: "when your companion is knocked out in the dungeon it still follows you on the map
+	instead of being removed from the map." It kept walking because the follower test asked only
+	where the player had been, never whether there was anyone to stand there.
+
+	Asked HERE, in the occupancy test, rather than in the drawing function: a KO'd companion does
+	not occupy the cell at all, so whatever is really there - a monster, loot, the floor - gets
+	drawn instead of being hidden behind an empty tile.
+
+	The rule matches the server's `Character.is_companion_ko()` (combat HP at zero), and reads the
+	value the server SENDS rather than re-deriving it: `get_active_companion` stamps `combat_hp`
+	onto every copy that leaves the server, so there is no second definition of knocked-out to
+	drift out of step with the first."""
+	var comp: Dictionary = character_data.get("active_companion", {}) if character_data else {}
+	if comp == null or comp.is_empty():
+		return false
+	if not comp.has("combat_hp"):
+		return false          # never fought; the server lazy-initialises this at full HP
+	return int(comp.get("combat_hp", 1)) <= 0
 
 
 func _dungeon_companion_img(prop: String = "") -> String:
 	"""The active companion, drawn on the floor behind the player. Reuses the same floor-backed
 	monster sprites the dungeon already uses, matched on the companion's `monster_type`."""
-	var comp: Dictionary = character_data.get("active_companion", {}) if character_data else {}
-	if comp == null or comp.is_empty():
-		return _DungeonTiles.floor_img()
-	var mt := String(comp.get("monster_type", ""))
-	if mt == "":
-		return _DungeonTiles.floor_img()
-	# idle-animate too, offset so the pair do not step in perfect unison
-	var spr: String = _DungeonSprites.monster_path(mt, _dungeon_anim_tick + 1)
-	if spr == "" or not ResourceLoader.exists(spr):
-		return _DungeonTiles.floor_img()
+	# Guaranteed non-empty: this is only reached through `_dungeon_companion_at`, which is
+	# false whenever the sprite does not resolve.
+	var spr: String = _dungeon_companion_sprite()
+	if spr == "":
+		return ""
 	# NO TINT. Owner: "the companion has a color offset under it or something, floor is a
 	# different color on its space." Exactly right, and it is the same fault removed from the
 	# player one commit earlier: `color=` multiplies the WHOLE image, and these sprites have the
@@ -45392,10 +45439,17 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 			# composited onto it), so anything standing here lands on the right material instead
 			# of carrying a patch of corridor floor into the middle of a chamber.
 			var _prop: String = _dungeon_ground_at(grid, x, y, _tv)
+			# Light is gathered for EVERY cell, BEFORE anything is drawn on top of it. A lamp
+			# does not stop burning because someone is standing in front of it, but the light set
+			# was built inside the "nothing is here" branch - so stepping onto a lamp put it out,
+			# and so did a monster or a dropped item landing on one. Both tests read only the
+			# grid, so the cell's position is all they need and occupancy is irrelevant.
+			if _DungeonTiles.tall_prop_for(grid, x, y) != "":
+				_lights.append(Vector2i(x, y))
+			elif _tv in _DUNGEON_GLOWING_TILES:
+				_lights.append(Vector2i(x, y))
 			if x == player_x and y == player_y:
 				line += _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, _prop)
-			elif _dungeon_companion_at(x, y):
-				line += _dungeon_companion_img(_prop)
 			else:
 				var mkey = "%d,%d" % [x, y]
 				if npc_map.has(mkey):
@@ -45495,13 +45549,16 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					else:
 						line += _dungeon_glyph_cell(String(fi.get("char", "?")),
 							String(fi.get("color", "#FFFFFF")), "loot:%d,%d" % [x, y], _prop)
+				elif _dungeon_companion_at(x, y):
+					# LAST, and deliberately. The companion is the ONLY thing in this grid with no
+					# server-authoritative position - it is inferred client-side from the cell the
+					# player just left. Drawn second, as it was, it painted over whatever the server
+					# had really put there, and a monster standing in your footsteps simply vanished.
+					# Owner: "enemies in dungeons can hide behind your companions sprite." The rule
+					# that fixes the whole class: anything the server placed wins, the phantom yields.
+					line += _dungeon_companion_img(_prop)
 				else:
 					line += _dungeon_tile_cell(grid, x, y, _tv)
-					# a two-cell prop's BASE is the lamp itself; fire tiles glow on their own
-					if _DungeonTiles.tall_prop_for(grid, x, y) != "":
-						_lights.append(Vector2i(x, y))
-					elif _tv in _DUNGEON_GLOWING_TILES:
-						_lights.append(Vector2i(x, y))
 		lines.append(line)
 
 
