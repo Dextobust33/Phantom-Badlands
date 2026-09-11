@@ -194,12 +194,11 @@ func _build_kennel_row(idx: int) -> Control:
 	if partner != "":
 		hybrid_marker = "  [color=#FF80FF][HYBRID×%s][/color]" % partner
 	info.append_text(
-		"[b]%s[/b]%s\n[color=#888888]%s T%d.%d  Lv %d[/color]" % [
+		"[b]%s[/b]%s\n[color=#888888]%s %s  Lv %d[/color]" % [
 			c.get("name", "Unknown"),
 			hybrid_marker,
 			variant_bbcode + str(c.get("monster_type", "")),
-			int(c.get("tier", 1)),
-			int(c.get("sub_tier", 1)),
+			PowerRank.tag(int(c.get("tier", 1)), int(c.get("sub_tier", 1))),
 			int(c.get("level", 1)),
 		]
 	)
@@ -347,11 +346,10 @@ func _build_fuse_candidate_row(cand: Dictionary) -> Control:
 	if variant_str != "" and variant_str != "Normal":
 		variant_bbcode = "[color=%s]%s[/color] " % [rarity_color.to_html(false), variant_str]
 	info.append_text(
-		"[b]%s[/b]\n[color=#888888]%s T%d.%d  Lv %d[/color]" % [
+		"[b]%s[/b]\n[color=#888888]%s %s  Lv %d[/color]" % [
 			c.get("name", "Unknown"),
 			variant_bbcode + str(c.get("monster_type", "")),
-			int(c.get("tier", 1)),
-			int(c.get("sub_tier", 1)),
+			PowerRank.tag(int(c.get("tier", 1)), int(c.get("sub_tier", 1))),
 			int(c.get("level", 1)),
 		]
 	)
@@ -419,10 +417,9 @@ func _refresh_fuse_selection_state() -> void:
 				else:
 					fuse_ready = true
 					var new_st = mini(int(first.get("sub_tier", 1)) + 1, 9)
-					preview = "[color=#88FF88]→ %s T%d.%d will be added to kennel.[/color]" % [
+					preview = "[color=#88FF88]→ %s %s will be added to kennel.[/color]" % [
 						str(first.get("monster_type", "?")),
-						int(first.get("tier", 1)),
-						new_st,
+						PowerRank.tag(int(first.get("tier", 1)), new_st),
 					]
 			elif count > 0:
 				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
@@ -437,7 +434,7 @@ func _refresh_fuse_selection_state() -> void:
 					preview = "[color=#FF6644]All 8 must be A8 (tier A, rank 8).[/color]"
 				else:
 					fuse_ready = true
-					preview = "[color=#88FF88]→ Random T9 companion will be added to kennel.[/color]"
+					preview = "[color=#88FF88]→ Random rank-9 companion will be added to kennel.[/color]"
 			elif count > 0:
 				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
 	if preview != "":

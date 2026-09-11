@@ -236,14 +236,13 @@ func _build_manage_registered_card(c: Dictionary, blocked_by_active: bool) -> Co
 	if variant_str != "" and variant_str != "Normal":
 		variant_bbcode = "[color=%s]%s[/color] " % [rarity_color.to_html(false), variant_str]
 	info.append_text(
-		"[b]%s[/b]%s%s\n[color=#888888]Slot %d  %s T%d.%d  Lv %d[/color]" % [
+		"[b]%s[/b]%s%s\n[color=#888888]Slot %d  %s %s  Lv %d[/color]" % [
 			c.get("name", "Unknown"),
 			hybrid_marker,
 			active_marker,
 			slot_idx + 1,
 			variant_bbcode + str(c.get("monster_type", "")),
-			int(c.get("tier", 1)),
-			int(c.get("sub_tier", 1)),
+			PowerRank.tag(int(c.get("tier", 1)), int(c.get("sub_tier", 1))),
 			int(c.get("level", 1)),
 		]
 	)
@@ -324,13 +323,12 @@ func _build_manage_row(c: Dictionary, is_collected: bool) -> Control:
 	if variant_str != "" and variant_str != "Normal":
 		variant_bbcode = "[color=%s]%s[/color] " % [rarity_color.to_html(false), variant_str]
 	info.append_text(
-		"[b]%s[/b]%s%s\n[color=#888888]%s T%d.%d  Lv %d[/color]" % [
+		"[b]%s[/b]%s%s\n[color=#888888]%s %s  Lv %d[/color]" % [
 			c.get("name", "Unknown"),
 			hybrid_marker,
 			active_marker,
 			variant_bbcode + str(c.get("monster_type", "")),
-			int(c.get("tier", 1)),
-			int(c.get("sub_tier", 1)),
+			PowerRank.tag(int(c.get("tier", 1)), int(c.get("sub_tier", 1))),
 			int(c.get("level", 1)),
 		]
 	)
@@ -527,13 +525,12 @@ func _build_fuse_candidate_row(cand: Dictionary) -> Control:
 	if variant_str != "" and variant_str != "Normal":
 		variant_bbcode = "[color=%s]%s[/color] " % [rarity_color.to_html(false), variant_str]
 	info.append_text(
-		"[b]%s[/b]%s%s\n[color=#888888]%s T%d.%d  Lv %d[/color]" % [
+		"[b]%s[/b]%s%s\n[color=#888888]%s %s  Lv %d[/color]" % [
 			c.get("name", "Unknown"),
 			source_tag,
 			hybrid_marker,
 			variant_bbcode + str(c.get("monster_type", "")),
-			int(c.get("tier", 1)),
-			int(c.get("sub_tier", 1)),
+			PowerRank.tag(int(c.get("tier", 1)), int(c.get("sub_tier", 1))),
 			int(c.get("level", 1)),
 		]
 	)
@@ -609,10 +606,9 @@ func _refresh_fuse_selection_state() -> void:
 				else:
 					fuse_ready = true
 					var new_st = mini(int(first.get("sub_tier", 1)) + 1, 9)
-					preview = "[color=#88FF88]→ %s T%d.%d will be added to %s.[/color]" % [
+					preview = "[color=#88FF88]→ %s %s will be added to %s.[/color]" % [
 						str(first.get("monster_type", "?")),
-						int(first.get("tier", 1)),
-						new_st,
+						PowerRank.tag(int(first.get("tier", 1)), new_st),
 						dest_str,
 					]
 			elif count > 0:
@@ -628,7 +624,7 @@ func _refresh_fuse_selection_state() -> void:
 					preview = "[color=#FF6644]All 8 must be A8 (tier A, rank 8).[/color]"
 				else:
 					fuse_ready = true
-					preview = "[color=#88FF88]→ Random T9 companion will be added to %s.[/color]" % dest_str
+					preview = "[color=#88FF88]→ Random rank-9 companion will be added to %s.[/color]" % dest_str
 			elif count > 0:
 				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
 		FUSE_HYBRID:

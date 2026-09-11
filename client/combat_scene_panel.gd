@@ -2964,7 +2964,17 @@ func _build_monster_column() -> VBoxContainer:
 	# The name can carry a hoverable empowered prefix ("Juggernaut Giant Spider"). Same popup
 	# every other chip in this panel uses, rather than a second tooltip style to maintain.
 	_monster_name_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
-	_monster_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# PASS, not IGNORE. Owner 2026-09-11: *"I just ran into a Frenzied Giant Rat. Frenzied in its
+	# name is Red and underlined but hovering it does nothing."*
+	#
+	# The listener on the line above was connected correctly and could never fire: IGNORE means
+	# the label receives no mouse events at all, so `meta_hover_started` was unreachable. The
+	# link still RENDERED - red and underlined - which is the worst version of the bug, because
+	# it advertises an explanation that cannot be reached, and reading the code shows a hover
+	# handler wired one line earlier.
+	# Every hoverable label in this panel that works uses PASS (`_log_label`,
+	# `_battle_log_band`, both status strips). This one was the only IGNORE.
+	_monster_name_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	col.add_child(_monster_name_label)
 
 	# Monster ASCII art — let it expand to fill the right column, but clip

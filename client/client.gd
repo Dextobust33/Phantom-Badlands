@@ -32038,7 +32038,7 @@ func display_companions():
 			var st_mult = _get_sub_tier_multiplier(comp_sub_tier)
 			sub_tier_text = " [color=#00BFFF](x%.1f)[/color]" % st_mult
 		display_game("  [color=%s][%s][/color] [color=%s]%s %s[/color]%s" % [rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, variant_bonus_text])
-		display_game("  [color=#AAAAAA]Level %d | Tier %d-%d[/color]%s" % [comp_level, comp_tier, comp_sub_tier, sub_tier_text])
+		display_game("  [color=#AAAAAA]Level %d |[/color] %s%s" % [comp_level, PowerRank.rich_label(comp_tier, comp_sub_tier), sub_tier_text])
 
 		# XP bar
 		if comp_level < 10000:
@@ -33305,7 +33305,7 @@ func display_companion_inspection(companion: Dictionary):
 
 	var info_lines = []
 	info_lines.append("[color=%s][%s][/color] [color=%s]%s %s[/color]%s" % [rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, variant_bonus_text])
-	info_lines.append("[color=#AAAAAA]Level %d | Tier %d-%d[/color]%s" % [comp_level, comp_tier, comp_sub_tier, sub_tier_text])
+	info_lines.append("[color=#AAAAAA]Level %d |[/color] %s%s" % [comp_level, PowerRank.rich_label(comp_tier, comp_sub_tier), sub_tier_text])
 	info_lines.append("")
 
 	# XP Progress
@@ -43449,7 +43449,7 @@ func format_companion_tooltip_bbcode(companion: Dictionary) -> String:
 		stat_suffix += " +%d%%" % int((variant_mult - 1.0) * 100)
 	if sub_tier_mult > 1.0:
 		stat_suffix += " x%.1f" % sub_tier_mult
-	lines.append("[color=#888]Lv %d • Tier %d-%d%s[/color]" % [level, tier, sub_tier, stat_suffix])
+	lines.append("[color=#888]Lv %d •[/color] %s [color=#888]%s[/color]" % [level, PowerRank.tag(tier, sub_tier), stat_suffix])
 
 	# XP bar
 	if level < 10000:
@@ -43577,7 +43577,7 @@ func format_egg_tooltip_bbcode(egg: Dictionary) -> String:
 		stat_suffix += " +%d%% stats" % int((variant_mult - 1.0) * 100)
 	if sub_tier_mult > 1.0:
 		stat_suffix += " x%.1f" % sub_tier_mult
-	lines.append("[color=#888]Tier %d-%d%s[/color]" % [tier, sub_tier, stat_suffix])
+	lines.append("%s [color=#888]%s[/color]" % [PowerRank.tag(tier, sub_tier), stat_suffix])
 
 	# Progress bar (steps_required / steps_taken or hatch_steps / steps_remaining)
 	var required: int = int(egg.get("steps_required", egg.get("hatch_steps", 1000)))
@@ -44069,7 +44069,7 @@ func handle_dungeon_list(message: Dictionary):
 		display_game("[%d] [color=%s]%s[/color] %s" % [idx, color, dname, status])
 		# sub_tier -1 = not decided yet (no instance). Do not print a guessed "-1" band.
 		if int(sub_tier) > 0:
-			display_game("    Tier %d-%d | Levels %d-%d | Distance: %d tiles" % [tier, sub_tier, min_level, max_level, distance])
+			display_game("    %s | Levels %d-%d | Distance: %d tiles" % [PowerRank.rich_label(tier, sub_tier), min_level, max_level, distance])
 		else:
 			display_game("    Tier %d | Levels %d-%d | Distance: %d tiles" % [tier, min_level, max_level, distance])
 		display_game("")
@@ -46124,7 +46124,7 @@ func _display_dungeon_entrance_info():
 	# the rank is not decided until you enter. Printing "Tier 1-1" there was a guess shown as
 	# a fact, and it always guessed the easiest band. Say what is actually known instead.
 	if int(sub_tier) > 0:
-		display_game("Tier %d-%d Dungeon | Levels %d-%d" % [tier, sub_tier, min_level, max_level])
+		display_game("%s Dungeon | Levels %d-%d" % [PowerRank.rich_label(tier, sub_tier), min_level, max_level])
 	else:
 		display_game("Tier %d Dungeon | Levels %d-%d [color=#808080](exact depth is set when you enter)[/color]" % [tier, min_level, max_level])
 
@@ -46156,7 +46156,7 @@ func enter_dungeon_at_location():
 	display_game("")
 	var entry_sub_tier = dungeon_entrance_info.get("sub_tier", 1)
 	if int(entry_sub_tier) > 0:
-		display_game("Tier %d-%d Dungeon" % [dungeon_entrance_info.get("tier", 1), entry_sub_tier])
+		display_game("%s Dungeon" % PowerRank.rich_label(int(dungeon_entrance_info.get("tier", 1)), entry_sub_tier))
 	else:
 		display_game("Tier %d Dungeon" % dungeon_entrance_info.get("tier", 1))
 	display_game("Level Range: %d - %d" % [min_level, dungeon_entrance_info.get("max_level", 100)])

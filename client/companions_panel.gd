@@ -652,13 +652,12 @@ func _make_registered_card(rc: Dictionary) -> Control:
 	if partner != "":
 		hybrid_marker = "  [color=#FF80FF][HYBRID×%s][/color]" % partner
 	lbl.append_text(
-		"[b]%s[/b]%s%s\n[color=#888888]%s T%d.%d  Lv %d[/color]" % [
+		"[b]%s[/b]%s%s\n[color=#888888]%s %s  Lv %d[/color]" % [
 			name,
 			checkout_marker,
 			hybrid_marker,
 			variant_bb + monster_type,
-			tier,
-			sub_tier,
+			PowerRank.tag(tier, sub_tier),
 			level,
 		]
 	)
