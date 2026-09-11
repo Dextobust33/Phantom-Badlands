@@ -346,7 +346,14 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       Risks accepted knowingly and written down in `docs/ASSET_LICENCES.md`: a private repo is
       one click from public, and it stores plaintext on a third party.
 
-- [ ] **Write the BAKE GENERATORS as committed tools.** The real fix behind the backup above.
+- [~] **PARTLY DONE 2026-09-11.** Written and committed: `bake_landmark_tiles.py`
+      (tile_floor32, with a fragment test that refuses half an object), `bake_glyph_tiles.py`
+      (the glyph tiles, with a font-coverage assertion that refuses to bake a missing-glyph box)
+      and `bake_egg_variants.py` (the variant->egg table, as a collision-free assignment).
+      STILL MISSING: `prop_floor32` (11), `free_floor32` (5) and `egg_floor32` (100). Those three
+      remain irreplaceable data.
+
+- [ ] ~~Write the BAKE GENERATORS as committed tools. The real fix behind the backup above.
       `prop_floor32` (11), `tile_floor32` (18), `free_floor32` (5) and `egg_floor32` (100) are
       134 baked PNGs whose generator scripts **do not exist** - checked, no commit ever added
       one. They were ad-hoc and are gone, so those files are currently irreplaceable data rather
@@ -612,7 +619,14 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       has to be read first. Confirm by logging the value of `forcefield_shield` immediately
       before the monster's damage is applied.
 
-- [ ] **A dungeon completed with no boss in it.** Owner: *"I just did a T1-1 Goblin Dungeon and
+- [x] **SOLVED 2026-09-11 — same cause as the re-farm and the lingering "D".** Read off the
+      live server log, not reasoned about: the owner re-entered a personal instance that had
+      ALREADY been completed in an earlier session, so its saved grid still held the FINAL_CHEST
+      and its saved monsters still held the boss marked dead. Completion is now recorded on the
+      instance itself (`completed_at`), which the reload prune, the despawn sweep and the
+      entrance lookup all already keyed off and were never told.
+
+- [ ] ~~A dungeon completed with no boss in it. Owner: *"I just did a T1-1 Goblin Dungeon and
       the chest was just sitting there on the last floor I didn't have to fight a boss to get it
       to appear"*, then, correcting my first theory, *"I didn't fight a boss as there wasn't
       one."* It happened TWICE, so it is systematic, not a rare roll.
@@ -631,7 +645,13 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       many, and whether any boss is still alive, flagging "completed WITHOUT killing the boss".
       Read those two lines from the next run before touching anything.
 
-- [ ] **Make variant names and traits HOVERABLE.** Owner 2026-09-10: *"We should also consider
+- [x] **DONE 2026-09-11.** All 20 monster traits moved into one table (`MONSTER_TRAITS`) with
+      a description each, wrapped in `[url=]` so they explain themselves; the Champion/elite got
+      a banner with live `role_multipliers` numbers; and every empowered prefix in a monster's
+      NAME is hoverable on both the combat log and the nameplate (which had no hover listener at
+      all). Probes: `monster_traits.gd`, `empowered_hover.gd`.
+
+- [ ] ~~Make variant names and traits HOVERABLE. Owner 2026-09-10: *"We should also consider
       making variant names hoverable so players can see what they do (swift, weapon master,
       champion, venemous, etc.)"* Two different things are being named there and both want it:
       the monster VARIANT baked into the name ("Venomous Orc", "Skeleton Champion") and the
@@ -656,7 +676,15 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       Needs a measurement, not an opinion: log the arrival time of `character_update` against the
       queue drain for a multi-hit round.
 
-- [ ] **A dungeon still opens at a different depth than the tile advertised.** Owner: *"On the
+- [~] **LIKELY SOLVED 2026-09-11, awaiting one confirmation.** Almost certainly the same cause as
+      the bossless dungeon and the re-farm: the owner was re-entering a personal instance that had
+      already been completed, which KEEPS its original sub-tier and skips the whole
+      `if instance_id == "":` branch — and that branch is where the sub-tier inherit lives. So the
+      tile advertised its own depth while the instance kept the one it was born with. Completion
+      is now stamped on the instance, so a finished run can no longer be re-entered.
+      The entry diagnostic is still in place; confirm on the next fresh dungeon and close it.
+
+- [ ] ~~A dungeon still opens at a different depth than the tile advertised.~~ Owner: *"On the
       overworld this said it was a T1-2 Forgotten Crypt. I entered and it is a T1-7."* This is the
       SECOND report; the 2026-09-08 inherit was supposed to end it and reads correctly on the
       page. A diagnostic now logs, at entry, what the tile resolved to and what the instance got,
@@ -922,7 +950,10 @@ does not exist in the interiors case at all.
       monsters are drawn as floor sprites here too. See the food-source item below, which is a
       better use for them than scenery.
 
-- [ ] **Floor loot should be HOVERABLE** (owner, 2026-09-10): *"I wonder if it makes sense to make
+- [x] **DONE.** Floor loot emits `[url=loot:<x>,<y>]` and resolves through the same
+      `meta_hover_started` popup as monsters and theme tiles. Verified present in client.gd.
+
+- [ ] ~~Floor loot should be HOVERABLE (owner, 2026-09-10): *"I wonder if it makes sense to make
       loot mouse hoverable to see what it is now?"* Yes, and it is nearly free: the dungeon
       already hovers monsters and theme tiles through one idiom (`[url=...]` +
       `meta_hover_started` -> popup), floor loot already carries its full `item_data` on the wire,
@@ -1139,20 +1170,22 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       that repeats itself is a dead button after the first cast. Needs a design answer (rotate
       what it reveals? escalate with rank? reveal something the player cannot otherwise see?) —
       ASK before implementing, since "fresh" is the owner's word and not yet a spec.
-- [~] **PARTLY DONE — verified 2026-09-11, but thinner than it looks.** The 2026-09-07 theming
-      pass DID absorb the ask, with per-class reasoning and A/B data recorded in
-      `CURATED_STARTER_DECKS_BY_CLASS`. Current tricksters:
+- [x] **DONE — and my first verification of it was WRONG (2026-09-11).** I reported "every pair
+      shares 4 of 5 cards, differentiation is one slot" and filed it as a design concern. Owner:
+      *"Ranger, Ninja, and Grifter all have different starter decks and build different engines.
+      There are multiple names for some of these cards that I believe is leading to some of this
+      confusion."* Correct. I compared internal IDs; one id shows a DIFFERENT NAME per class via
+      `ABILITY_NAME_OVERRIDES` (sabotage -> Ninja "Hamstring", Ranger "Snare"). Measured by what
+      the player actually sees:
       ```
-      Ranger   analyze, sabotage, exploit, ambush, perfect_heist
-      Ninja    analyze, sabotage, ambush,  vanish, perfect_heist
-      Grifter  analyze, distract, sabotage, ambush, perfect_heist
+      Ranger   engine Aim       Track, Snare, Weak Point, Ambush, Killing Shot
+      Ninja    engine Read      Mark, Hamstring, Ambush, Phantom Strike, Assassinate
+      Grifter  engine Leverage  Size Them Up, Distract, Sabotage, Sucker Punch, Double Cross
       ```
-      **But every pair shares 4 of 5 cards.** The differentiation is exactly one slot
-      (exploit / vanish / distract), which is close to the "identical cards plus a different
-      passive is not a different class" fault the comment itself names. `sabotage` stays in all
-      three because it won four straight A/Bs — so widening this means displacing a card that is
-      measurably the best one, i.e. a BALANCE change needing the calibration chain, not a swap.
-      **OWNER'S CALL** whether one differing card in five is enough.
+      Ranger vs Grifter 0/5 shared, Ninja vs Grifter 0/5, Ranger vs Ninja 1/5, three separate
+      engines. Thoroughly differentiated. Nothing to do.
+      Recorded as [[reference-card-ids-vs-display-names]] — resolve through
+      `_ability_display_name` before counting anything player-facing.
 
 - [ ] ~~Ranger and Ninja STARTER decks~~ (owner, 2026-09-06): *"They should start with cards from
       their deck that make sense for their intended play styles. Likely just need to swap a few of
