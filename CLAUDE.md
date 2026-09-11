@@ -141,6 +141,12 @@ produced nine instrument defects and two genuine game bugs. The recurring shapes
   used as a design target, and wrong by 4x. If you did not measure it, say so in the same sentence.
 - **A silent no-op.** An audit exited cleanly having printed only a header. A detector that never
   fires looks exactly like one that finds nothing — prove it fires by injecting the fault.
+  **Exit code 0 is not a pass: look for the probe's own PASS line.** Until 2026-09-11 any probe
+  that `load(...).new()`-ed `real_combat_sim.gd` also ran the sim's default audit suite and its
+  `quit()`, so several probes returned 0 without ever printing a verdict. The sim now returns
+  early unless it is the `--script` Godot was launched with.
+- **Run probes ONE AT A TIME.** Each headless Godot loads the whole project; parallel batches of
+  them hit the 10-minute tool cap and stalled a session on 2026-09-11.
 
 **And the counterpart: check the CARD and the POLICY before blaming the class.** Twice in one day
 the class was fine — `overload` in the Sorcerer's deck (20% max HP a cast) was halving its survival,

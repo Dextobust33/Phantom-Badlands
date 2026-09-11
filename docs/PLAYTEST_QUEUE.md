@@ -233,6 +233,21 @@ holding it. No scenario yet; the setup is three clicks.
 - [ ] Log in as A WITH the companion, stay logged in from a second client, and try Recall from
       the first → refused with *"A is logged in right now"*.
 
+## 9. Card instances  *(one client, 2026-09-11, UNRELEASED)*
+
+Every copy of a card is now its own card. A save made before this splits `{card: 2}` into two
+copies, each carrying the progress the card had.
+
+Any character. Use **Admin > Items > Grant Test Cards (dungeon + companion, tradeable)**.
+
+- [ ] Press it **twice** so you hold two Venom Fangs. The deck screen shows ×2.
+- [ ] Press **−** on Venom Fang → ×1. Press **+** → back to ×2 (the benched copy returns; before,
+      a thinned second copy was gone for good).
+- [ ] Fight until one Venom Fang reaches a milestone and pick an upgrade. Hover the two copies
+      when they come up in hand: **only one** shows the upgrade.
+- [ ] At a trading post, list a Venom Fang. It sells the copy **without** the upgrade, and a
+      second listing appears as its **own row** rather than merging into a stack.
+
 ## Order I would go in
 
 1. **Arrow movement** — highest risk, and independent of everything else.

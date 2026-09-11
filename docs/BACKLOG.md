@@ -10,43 +10,33 @@ common way to lose a session.
 
 ---
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-11, second session of the day)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-11, third session of the day)
 
-**Master is clean and pushed. ONE thing is half-finished and PARKED on a branch:**
-`wip/card-instances` (commit `cc5318c0`). It is NOT on master. Read this before touching cards.
+**Master is clean and pushed. Nothing is parked.** Card instances (step 1 of THE ORDER) is merged.
 
-**Shipped to master this session (unreleased, all probed):**
-- Recall on the Sanctuary companions page (owner's call) — probe `companion_recall.gd`.
-- Party combat CONFIRM step, party only — probe `party_confirm.gd`. Both are in
-  `docs/PLAYTEST_QUEUE.md` items 7-8.
-- Tier level bands: ONE table in `PowerRank` (eight copies retired, dungeon reach named) —
-  probe `tier_bands.gd`.
-- Licences: darkcave = PixelHouse, tilemap_pack = Henry Software CC0, both credited; owner chose
-  to keep restricted art untracked and send no emails yet.
-- Backlog recount (47 → 44 open after the above).
+**Unreleased on master, all probed** — none of it has been played yet:
+- **Card instances.** Every copy of a card is its own card (`cleave`, `cleave#2`): its own uses,
+  milestone picks and effect rank; legacy `{card: count}` saves split on load with each copy
+  inheriting the shared progress; the hand and deck carry copies; a sold copy takes its upgrades
+  to the buyer; card listings never merge; thinning benches a copy and `+` brings it back.
+  Probe `card_instances.gd` (47 checks), `card_market_roundtrip.gd` rewritten.
+- Recall on the Sanctuary companions page — `companion_recall.gd`.
+- Party combat CONFIRM step, party only — `party_confirm.gd`.
+- Tier level bands in one table — `tier_bands.gd`.
+- Licences recorded; restricted art stays untracked.
+`docs/PLAYTEST_QUEUE.md` items 7-8 cover Recall and the confirm step. **Card instances needs a
+playtest line too before release:** a character with two copies of one card, thin one, restore it,
+rank one copy up and confirm only that copy shows the upgrade, list a spare at a trading post.
 
-**The parked branch — card instances (step 1 of THE ORDER):**
-Owner said *"Proceed now"*. The model is written and COMPILES on all five files (character,
-combat_manager, server, client, combat_scene_panel): every copy of a card is an instance
-(`cleave`, `cleave#2`), `combat_deck_collection` is keyed per copy with 1 = in deck / 0 = benched,
-uses / milestone picks / effect ranks are keyed per copy, legacy counts split on load, the hand
-carries copies, a bare name resolves to the copy being played (`set_active_card_instance`), the
-market sells ONE copy and its progress travels to the buyer. The commit message on the branch
-lists what is done and what is not. To resume:
-  1. `git checkout wip/card-instances`, then `git rebase master` (master moved by docs only).
-  2. Fix `tools/probe/card_instances.gd`: nine `:=` on untyped returns — declare them
-     (`var r: Dictionary = ...`, `var g: String = ...`). Run it.
-  3. Run the probes NOT yet run: `preview_drift`, `card_market`, `card_market_roundtrip`,
-     `mimic_hp`, `analyze_readout`, `tools/deck_seed_test.gd`, and the sim `-- preflight`.
-     **ONE AT A TIME** — four parallel Godot batches is what stalled the session.
-  4. Ten probes already pass against it: cycle_value, reveal_upgrade, card_damage_hover,
-     compcard_scaling, cycled_shield, card_upgrade_effects, rankup_offer_test,
-     upgrade_new_wired, combat_card_hotkeys, upgrade_triggers.
-  5. Known gap for a SECOND slice, not this one: the deck screen still shows one tile per CARD
-     (`+` is disabled when 1 copy is in the deck even if another copy is benched); per-instance
-     tiles and a per-copy market picker come next. `client/ability_panel.gd:862`.
-  6. Then merge, and it invalidates the monster curve (Track B) — do not run the chain until
-     the rest of Track B is batched.
+**Card instances, second slice (not started):** the deck screen still shows ONE tile per card
+with a copy count, and the market picker lists by card and sells the least-invested copy. To
+let a player choose WHICH copy to thin or sell, both need per-copy rows showing each copy's
+upgrades. The server already accepts a specific copy id (`cull_ability_card`,
+`market_list_card`), so this is client UI only.
+
+**Track B note:** card instances changes player power only for decks holding extra copies (a
+second copy now levels on its own instead of sharing the first's rank). Batch it with the rest of
+Track B for the single chain run; do not run the chain for it alone.
 
 **Help-screen accuracy audit is DONE (not fixed):** `docs/design/help_audit_2026-09-11.md`
 — 26 wrong entries with the code line for each (title costs ~100x high, fishing describes a dead
@@ -301,7 +291,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 47 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 46 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -334,7 +324,7 @@ every "before" below is a case where doing it the other way means redoing the fi
       the numbers a dungeon uses today do not move. A probe asserts all three agree with the one
       source and that every dungeon band is identical to before.
 
-**1. CARD INSTANCES (3 items) — PARKED on branch `wip/card-instances` (2026-09-11), see NEXT SESSION.** This arc's own
+**1. CARD INSTANCES — ✅ FIRST SLICE MERGED 2026-09-11** (per-copy UI is the second slice, see NEXT SESSION). This arc's own
    note already says it: *"this decision comes BEFORE authoring 53 dungeon cards, because the
    cards are the thing that will exist in multiples."* It is an identity change reaching the save
    format, the deck UI, the combat hand, the milestone system and the market. Authoring the cards
@@ -2113,6 +2103,15 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Not done, available if wanted: **peek tokens** (the loot panel's other aid — a rare, limited
       re-show of one face-down card), and staggering the flights if nine at once ever reads busy.
       `tools/test_setup/run.py --ranks=N` hands back exactly N rank-ups for looking at this.
+- [ ] **Ambush and Gambit cards under-promise by ~45%** (found 2026-09-11, identical on master).
+      `tools/probe/preview_drift.gd` shows both at 1.40-1.47x actual vs the card face at L5 and
+      L60. Likely the crit bonus (Ambush +25% crit) and Gambit's success roll are left out of
+      `preview_ability_effect`. The card is lying in the player's favour, but it is still lying.
+      Also: the probe is unseeded, so Magic Bolt at L60 flickers across its 0.80 line run to run.
+- [ ] **`card_upgrade_effects.gd` reports 23 upgrades "not yet wired" from a HAND-TYPED list.**
+      Several of those (the Reveals, Bulwark, Executioner-family triggers) are wired and proven by
+      `upgrade_new_wired.gd` / `upgrade_triggers.gd`. Derive the list from what actually fires,
+      or delete the section — a stale list reads as a real finding.
 - [ ] **Buff panel, party half.** Same strip for each party member, plus a STACKING indicator.
 - [x] **Card upgrade preview — DONE 2026-09-07.** The estimate counted `power` picks alone while
       the combat manager applied nine more multipliers from hard-coded literals, so five upgrades
