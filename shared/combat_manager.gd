@@ -10984,6 +10984,40 @@ static func scroll_trait_name(ability: String) -> String:
 	return String(SCROLL_TRAITS[ability].get("name", ""))
 
 
+## Every monster trait the encounter line can announce: what it is CALLED, what colour it reads
+## in, and what it actually DOES.
+##
+## One table, because there were twenty separate hand-written `if ... append` lines and three of
+## the traits the Scroll of Finding can grant were simply absent from them — which is what the
+## 2026-09-10 report ("picked the Warrior Item drop ... my next encounter was a normal wolf")
+## turned out to be. A list you have to remember to add to is a list that will be incomplete.
+##
+## Every `desc` is taken from the behaviour in code, not written from memory: the percentages
+## below are the ones the combat path actually rolls.
+const MONSTER_TRAITS := {
+	"glass_cannon":   {"label": "Glass Cannon",   "color": "#FF4444", "desc": "Hits three times as hard, but has half the HP."},
+	"regeneration":   {"label": "Regenerates",    "color": "#00FF00", "desc": "Heals 10% of its own maximum HP every turn."},
+	"poison":         {"label": "Venomous",       "color": "#FF00FF", "desc": "40% chance to poison you on hit. Wisdom reduces it, up to 50% resistance."},
+	"life_steal":     {"label": "Life Stealer",   "color": "#FF4444", "desc": "Heals itself for half the damage it deals you."},
+	"gem_bearer":     {"label": "Gem Bearer",     "color": "#00FFFF", "desc": "Drops Monster Gems, more of them the higher its level."},
+	"wish_granter":   {"label": "Wish Granter",   "color": "#FFD700", "desc": "10% chance to offer you a wish when you kill it."},
+	"weapon_master":  {"label": "* WEAPON MASTER *", "color": "#FF8000", "desc": "Drops a weapon. Guaranteed."},
+	"shield_bearer":  {"label": "* SHIELD GUARDIAN *", "color": "#00FFFF", "desc": "Drops a shield. Guaranteed."},
+	"warrior_hoarder": {"label": "* WARRIOR HOARDER *", "color": "#FF6600", "desc": "Drops WARRIOR gear — 35%, or guaranteed if a Scroll of Finding marked it."},
+	"arcane_hoarder": {"label": "* ARCANE HOARDER *", "color": "#9F70FF", "desc": "Drops MAGE gear — 35%, or guaranteed if a Scroll of Finding marked it."},
+	"cunning_prey":   {"label": "* CUNNING PREY *", "color": "#1EFF00", "desc": "Drops TRICKSTER gear — 35%, or guaranteed if a Scroll of Finding marked it."},
+	"corrosive":      {"label": "! CORROSIVE !",  "color": "#FFFF00", "desc": "Can damage your equipment when it hits you."},
+	"sunder":         {"label": "! SUNDERING !",  "color": "#FF4444", "desc": "Damages your weapon or shield specifically."},
+	"charm":          {"label": "Enchanting",     "color": "#FF00FF", "desc": "Can turn you on yourself — you attack yourself for a turn."},
+	"buff_destroy":   {"label": "Dispeller",      "color": "#808080", "desc": "Strips one of your active buffs at random."},
+	"shield_shatter": {"label": "Shield Breaker", "color": "#FF4444", "desc": "Destroys forcefield and shield buffs outright."},
+	"xp_steal":       {"label": "! XP DRAINER !", "color": "#FF00FF", "desc": "Steals 1-3% of your experience when it hits you."},
+	"item_steal":     {"label": "! PICKPOCKET !", "color": "#FF0000", "desc": "5% chance to steal a random EQUIPPED item."},
+	"disguise":       {"label": "Deceptive",      "color": "#808080", "desc": "Looks like a weaker monster. Shows its true form after 2 rounds."},
+	"flee_attack":    {"label": "Skirmisher",     "color": "#FFA500", "desc": "Strikes once and runs. No loot if it escapes."},
+}
+
+
 func _hoarder_drop_chance(monster: Dictionary) -> float:
 	"""How likely a class-gear hoarder is to actually drop its gear.
 
@@ -11029,53 +11063,45 @@ func generate_encounter_text(monster: Dictionary) -> String:
 		if mod_lines.size() > 0:
 			msg += "\n[color=%s]⚡ EMPOWERED FOE ⚡[/color]\n%s" % [name_color, "\n".join(mod_lines)]
 
+	# A CHAMPION explains itself. Owner 2026-09-10: "lets go ahead and make those name traits
+	# hoverable as well as venemous, champion, etc. so players can know what they mean or do to
+	# the monster."
+	#
+	# The empowered modifiers already say what they do inline ("SWIFT - strikes 2-3 times per
+	# turn"), and four of the five rare variants map to abilities the trait line announces. The
+	# elite was the one with a name and no explanation anywhere: "★ Skeleton Champion" and
+	# nothing else.
+	#
+	# The numbers are READ from the database rather than restated here, because they are
+	# calibrated - `rolecal` rewrites them - and a copy would go stale the first time it runs.
+	# Worth showing, because they are counter-intuitive: a Champion is a LONGER fight, not a
+	# harder-hitting one (measured 2026-09-10 at HP x1.8, STR x0.9).
+	if String(monster.get("variant_type", "")) == "elite":
+		var _em: Dictionary = MonsterDatabase.role_multipliers("elite", int(monster.get("level", 1)))
+		var _ehp: float = float(_em.get("hp_mult", 1.0))
+		var _estr: float = float(_em.get("str_mult", 1.0))
+		var _edesc: String = "CHAMPION — %.0f%% of a normal one's HP and %.0f%% of its damage. A long fight, worth 1.5x XP and better loot." % [_ehp * 100.0, _estr * 100.0]
+		msg += "
+[url=%s][color=#FFD700]★ CHAMPION ★[/color][/url]" % _edesc
+
 	# Show notable abilities
 	var abilities = monster.get("abilities", [])
 	var notable_abilities = []
-	if ABILITY_GLASS_CANNON in abilities:
-		notable_abilities.append("[color=#FF4444]Glass Cannon[/color]")
-	if ABILITY_REGENERATION in abilities:
-		notable_abilities.append("[color=#00FF00]Regenerates[/color]")
-	if ABILITY_POISON in abilities:
-		notable_abilities.append("[color=#FF00FF]Venomous[/color]")
-	if ABILITY_LIFE_STEAL in abilities:
-		notable_abilities.append("[color=#FF4444]Life Stealer[/color]")
-	if ABILITY_GEM_BEARER in abilities:
-		notable_abilities.append("[color=#00FFFF]Gem Bearer[/color]")
-	if ABILITY_WISH_GRANTER in abilities:
-		notable_abilities.append("[color=#FFD700]Wish Granter[/color]")
-	if ABILITY_WEAPON_MASTER in abilities:
-		notable_abilities.append("[color=#FF8000]* WEAPON MASTER *[/color]")
-	if ABILITY_SHIELD_BEARER in abilities:
-		notable_abilities.append("[color=#00FFFF]* SHIELD GUARDIAN *[/color]")
-	# 2026-09-10 - the three CLASS-GEAR hoarders were never announced, while the three that drop
-	# generic gear were. Owner used a Scroll of Finding on "Warrior Item drop", met "a normal
-	# wolf", and had no way to tell the trait had landed - because for those three it genuinely
-	# never appeared anywhere. Six options on the scroll, three of them invisible.
-	if ABILITY_WARRIOR_HOARDER in abilities:
-		notable_abilities.append("[color=#FF6600]* WARRIOR HOARDER *[/color]")
-	if ABILITY_ARCANE_HOARDER in abilities:
-		notable_abilities.append("[color=#9F70FF]* ARCANE HOARDER *[/color]")
-	if ABILITY_CUNNING_PREY in abilities:
-		notable_abilities.append("[color=#1EFF00]* CUNNING PREY *[/color]")
-	if ABILITY_CORROSIVE in abilities:
-		notable_abilities.append("[color=#FFFF00]! CORROSIVE ![/color]")
-	if ABILITY_SUNDER in abilities:
-		notable_abilities.append("[color=#FF4444]! SUNDERING ![/color]")
-	if ABILITY_CHARM in abilities:
-		notable_abilities.append("[color=#FF00FF]Enchanting[/color]")
-	if ABILITY_BUFF_DESTROY in abilities:
-		notable_abilities.append("[color=#808080]Dispeller[/color]")
-	if ABILITY_SHIELD_SHATTER in abilities:
-		notable_abilities.append("[color=#FF4444]Shield Breaker[/color]")
-	if ABILITY_XP_STEAL in abilities:
-		notable_abilities.append("[color=#FF00FF]! XP DRAINER ![/color]")
-	if ABILITY_ITEM_STEAL in abilities:
-		notable_abilities.append("[color=#FF0000]! PICKPOCKET ![/color]")
-	if ABILITY_DISGUISE in abilities:
-		notable_abilities.append("[color=#808080]Deceptive[/color]")
-	if ABILITY_FLEE_ATTACK in abilities:
-		notable_abilities.append("[color=#FFA500]Skirmisher[/color]")
+	# ONE table, iterated — see MONSTER_TRAITS. This was twenty hand-written if/append pairs,
+	# which is precisely how three of them came to be missing entirely (the class-gear hoarders,
+	# reported 2026-09-10 as a Scroll of Finding that appeared to do nothing).
+	#
+	# Each is wrapped in `[url=]` carrying its own description, so hovering the trait says what
+	# it does. Owner: "lets go ahead and make those name traits hoverable as well as venemous,
+	# champion, etc. so players can know what they mean or do to the monster." The text rides in
+	# the URL rather than being looked up client-side, because a second copy of these twenty
+	# descriptions on the client is the drift this table exists to end.
+	for _tk in MONSTER_TRAITS:
+		if _tk in abilities:
+			var _tr: Dictionary = MONSTER_TRAITS[_tk]
+			notable_abilities.append("[url=%s — %s][color=%s]%s[/color][/url]" % [
+				_tr.get("label", _tk), _tr.get("desc", ""),
+				_tr.get("color", "#FFFFFF"), _tr.get("label", _tk)])
 
 	if notable_abilities.size() > 0:
 		msg += "\n[color=#808080]Traits: %s[/color]" % ", ".join(notable_abilities)
