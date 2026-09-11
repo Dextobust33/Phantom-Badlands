@@ -18,7 +18,7 @@ extends Control
 const GITHUB_OWNER = "Dextobust33"
 const GITHUB_REPO = "Phantom-Badlands"
 const MAX_DOWNLOAD_RETRIES = 3
-const LAUNCHER_VERSION = "2.3"  # bump when launcher.gd changes; manifest launcher_version drives self-update
+const LAUNCHER_VERSION = "2.4"  # bump when launcher.gd changes; manifest launcher_version drives self-update
 
 func _is_linux() -> bool:
 	return OS.get_name() == "Linux"

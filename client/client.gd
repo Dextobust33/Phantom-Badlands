@@ -30758,7 +30758,12 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.771[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.772[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ LINUX: THE ICONS THAT WERE EMPTY BOXES NOW DRAW.[/color] The bug-report, suggest-idea and screenshot buttons, [b]Review Damage[/b] in combat, the gathering labels, and [b]every button in the launcher[/b] were drawn with emoji — which Linux has no font for, so they came out as boxes. All replaced with symbols that render everywhere.")
+	display_game("  [color=#FF8000]★ YOUR LAUNCHER UPDATES ITSELF AGAIN.[/color] The launcher has been able to replace itself for a while, and the game can replace it too — but both read a version field that our release file was missing, so neither ever fired. It is there now: [b]you should not need to reinstall the launcher from the website again[/b].")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.771[/color]")
 	display_game("  [color=#FF8000]★ 58 PHANTOM SAFE ZONES EXISTED WHERE NOTHING DOES.[/color] Fifty-eight trading posts from an older version of the world were still claiming ground — [b]194 tiles within 120 of the Crossroads alone[/b]. You could stand on open road and be told you were safe, with no post in sight, and [b]no monster could spawn there[/b]. They are gone.")
 	display_game("  [color=#FF8000]★ THE COMPANION SCREENS WERE LYING ABOUT YOUR STATS.[/color] The variant bonus shown on a companion was [b]wrong for 111 of 119 variants[/b] — most read as 'no bonus at all' when they had one. Now read from the real source.")
 	display_game("  [color=#FF8000]★ INSPECT A COMPANION AND ACTUALLY LEARN SOMETHING.[/color] It now lists [color=#FFFFFF]Health[/color], [color=#FFFFFF]Damage[/color], [color=#FFFFFF]Aggro[/color] and [color=#FFFFFF]Speed[/color] — [b]hover any of them[/b] to read what it does — plus [b]the combat card that companion gives you[/b] and how close it is to being yours permanently. And the kennel can inspect now too.")
