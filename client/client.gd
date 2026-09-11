@@ -818,6 +818,7 @@ var house_pending_withdraw_indices: Array = []  # Storage item indices to withdr
 var house_storage_discard_index: int = -1  # Item index selected for discard
 var house_storage_register_index: int = -1  # Stored companion index selected to register to kennel
 var house_unregister_companion_slot: int = -1  # Companion slot to unregister (move to kennel)
+var house_recall_companion_slot: int = -1  # Registered slot to RECALL from the character holding it
 
 # Kennel and Fusion state
 var house_kennel_page: int = 0
@@ -4729,6 +4730,16 @@ func _process(delta):
 						_select_storage_register_companion(i)
 				else:
 					set_meta("houseregister_%d_pressed" % i, false)
+		elif house_mode == "companions" and pending_house_action == "recall_select":
+			# Keys 1-5 to pick the checked-out companion to recall
+			for i in range(5):
+				if is_item_select_key_pressed(i):
+					if not get_meta("houserecall_%d_pressed" % i, false):
+						set_meta("houserecall_%d_pressed" % i, true)
+						_consume_item_select_key(i)
+						_select_companion_recall(i)
+				else:
+					set_meta("houserecall_%d_pressed" % i, false)
 		elif house_mode == "companions" and pending_house_action == "unregister_select":
 			# Keys 1-5 to select companion for unregister
 			for i in range(5):
@@ -8451,12 +8462,27 @@ func update_action_bar():
 		elif house_mode == "companions":
 			var companions = house_data.get("registered_companions", {}).get("companions", [])
 			var has_available = false
+			var has_checked_out = false
 			for comp in companions:
 				if comp.get("checked_out_by") == null:
 					has_available = true
-					break
+				else:
+					has_checked_out = true
 
-			if pending_house_action == "checkout_select":
+			if pending_house_action == "recall_select":
+				current_actions = [
+					{"label": "Back", "action_type": "local", "action_data": "house_companions_back", "enabled": true},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Confirm", "action_type": "local", "action_data": "house_recall_confirm", "enabled": house_recall_companion_slot >= 0},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "1-5=Pick", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				]
+			elif pending_house_action == "checkout_select":
 				current_actions = [
 					{"label": "Back", "action_type": "local", "action_data": "house_companions_back", "enabled": true},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -8491,7 +8517,7 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "Checkout", "action_type": "local", "action_data": "house_checkout_start", "enabled": has_available},
 					{"label": "Unregist", "action_type": "local", "action_data": "house_unregister_start", "enabled": has_available},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Recall", "action_type": "local", "action_data": "house_recall_start", "enabled": has_checked_out},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -16117,8 +16143,21 @@ func execute_local_action(action: String):
 		"house_companions_back":
 			pending_house_action = ""
 			house_unregister_companion_slot = -1
+			house_recall_companion_slot = -1
 			display_house_companions()
 			update_action_bar()
+		"house_recall_start":
+			_pre_mark_held_selection_keys("houserecall_")
+			pending_house_action = "recall_select"
+			house_recall_companion_slot = -1
+			display_house_companions()
+			update_action_bar()
+		"house_recall_confirm":
+			if house_recall_companion_slot >= 0:
+				send_to_server({"type": "house_recall_companion", "slot": house_recall_companion_slot})
+			pending_house_action = ""
+			house_recall_companion_slot = -1
+			# Server answers with a text line and a fresh house_update
 		"house_checkout_start":
 			_pre_mark_held_selection_keys("housecompanion_")
 			pending_house_action = "checkout_select"
@@ -34339,6 +34378,7 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
   • Use [color=#00FFFF]Home Stone (Companion)[/color] to register or kennel your active companion
   • Registered companions return home when your character dies
   • Checkout registered companions on new characters
+  • Recall a companion a character is holding back to its slot (that character must be logged out)
 [color=#FF8800]Companion Kennel (K tile):[/color] Bulk companion storage for fusion!
   • Store companions for later fusion at the Fusion Station
   • Base capacity: 30 slots, upgradeable up to 500
@@ -49661,6 +49701,8 @@ func display_house_companions():
 				action_marker = " [color=#00FFFF][CHECKOUT][/color]"
 			elif i == house_unregister_companion_slot:
 				action_marker = " [color=#FF8800][UNREGISTER][/color]"
+			elif i == house_recall_companion_slot:
+				action_marker = " [color=#A335EE][RECALL][/color]"
 
 			var rarity_info = _get_variant_rarity_info(variant)
 			display_game("[%d] [color=%s][%s][/color] [color=%s]%s %s[/color] Lv.%d%s%s" % [
@@ -49674,6 +49716,7 @@ func display_house_companions():
 	display_game("")
 	display_game("[color=#808080]Registered companions survive permadeath![/color]")
 	display_game("[color=#808080]Check out a companion when creating a new character.[/color]")
+	display_game("[color=#808080]Recall pulls a companion back from the character holding it (they must be logged out).[/color]")
 	display_game("[color=#808080]You can also register companions from Storage using the Register button.[/color]")
 	display_game("")
 	display_game("[color=#A335EE]════════════════════════════════════[/color]")
@@ -50415,6 +50458,22 @@ func _select_companion_unregister(display_index: int):
 	else:
 		house_unregister_companion_slot = display_index
 
+	display_house_companions()
+	update_action_bar()
+
+func _select_companion_recall(display_index: int):
+	"""Pick the checked-out companion to pull back to its slot (only one at a time)."""
+	var companions = house_data.get("registered_companions", {}).get("companions", [])
+	if display_index < 0 or display_index >= companions.size():
+		return
+	var companion = companions[display_index]
+	if companion.get("checked_out_by") == null:
+		display_game("[color=#FF0000]%s is already in the Sanctuary - nothing to recall.[/color]" % companion.get("name", "That companion"))
+		return
+	if house_recall_companion_slot == display_index:
+		house_recall_companion_slot = -1
+	else:
+		house_recall_companion_slot = display_index
 	display_house_companions()
 	update_action_bar()
 

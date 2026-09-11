@@ -1766,6 +1766,11 @@ Account-level persistent home that survives character permadeath. Players see th
 - Use Home Stone (Companion) to register active companion
 - `character.using_registered_companion` and `character.registered_companion_slot` track checkout
 - On death, `_award_baddie_points_on_death()` calls `persistence.return_companion_to_house()`
+- **Recall** (2026-09-11): the Sanctuary companions page at character select can pull a checked-out
+  companion back to its slot (`house_recall_companion` -> `handle_house_recall_companion`). It strips
+  the companion off the SAVED holder via `_recall_companion_from_character` (same three fields the
+  Stable deposit clears) and writes the live state back; refused while the holder is logged in or
+  saved mid-fight. Probe: `tools/probe/companion_recall.gd`.
 
 **Home Stone Items:** Found in tier 5–7 loot:
 - `home_stone_egg` — Send one incubating egg to house storage

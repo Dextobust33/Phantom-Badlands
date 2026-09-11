@@ -2228,6 +2228,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_house_discard_item(peer_id, message)
 		"house_unregister_companion":
 			handle_house_unregister_companion(peer_id, message)
+		"house_recall_companion":
+			handle_house_recall_companion(peer_id, message)
 		"house_register_from_storage":
 			handle_house_register_companion_from_storage(peer_id, message)
 		"home_stone_companion_response":
@@ -15391,6 +15393,107 @@ func handle_house_unregister_companion(peer_id: int, message: Dictionary):
 
 	# Send updated house data
 	_send_house_update(peer_id)
+
+func handle_house_recall_companion(peer_id: int, message: Dictionary) -> void:
+	"""Pull a checked-out Sanctuary companion back to its registered slot from CHARACTER SELECT.
+
+	Owner 2026-09-11: *"should we make a way for players to be able to send a checked out
+	companion back to the sanctuary?"* Until now the only way back was to log in as the holder,
+	walk to a Companion Stable and deposit - and the Sanctuary screen, where the owner actually
+	was, showed "In use by X" with nothing to press. This is that button.
+
+	It is the Stable deposit's registered path (handle_companion_stable_deposit, path 1) run
+	against a SAVED character instead of a live one: the slot receives the companion's LIVE state
+	(level, XP, battles), and the holder is stripped of it so the next login starts without one.
+	Refused while the holder is logged in or mid-fight, because the running copy would keep
+	acting with a companion the Sanctuary already thinks it has back."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var account_id: String = String(peers[peer_id].account_id)
+	var slot := int(message.get("slot", -1))
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No house found."})
+		return
+	var regs: Array = house.get("registered_companions", {}).get("companions", [])
+	if slot < 0 or slot >= regs.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid companion slot."})
+		return
+	var comp_name := String(regs[slot].get("name", "Companion"))
+	var holder = regs[slot].get("checked_out_by", null)
+	if holder == null:
+		send_to_peer(peer_id, {"type": "error", "message": "%s is already in the Sanctuary." % comp_name})
+		return
+	var holder_name := String(holder)
+	# A live holder keeps its companion: recalling underneath a character in play would leave the
+	# running copy fighting with a companion the house already believes is home.
+	for other_peer_id in characters.keys():
+		var oc = characters[other_peer_id]
+		if oc.name.to_lower() == holder_name.to_lower() 				and String(peers.get(other_peer_id, {}).get("account_id", "")) == account_id:
+			send_to_peer(peer_id, {"type": "error", "message":
+				"%s is logged in right now. Deposit at a Companion Stable, or log them out first." % holder_name})
+			return
+	var character = persistence.load_character_as_object(account_id, holder_name)
+	var state := {}
+	if character != null:
+		if not character.saved_combat_state.is_empty():
+			send_to_peer(peer_id, {"type": "error", "message":
+				"%s is in the middle of a fight. Finish it before recalling %s." % [holder_name, comp_name]})
+			return
+		state = _recall_companion_from_character(character, slot)
+		persistence.save_character(account_id, character)
+	if state.is_empty():
+		# The holder is gone, or never really carried it. Free the slot from the house's own copy
+		# rather than leave it reading "In use by" forever - the orphan shape reported 2026-09-04.
+		state = regs[slot].duplicate(true)
+		for k in ["checked_out_by", "checkout_time", "house_slot"]:
+			state.erase(k)
+	if not persistence.return_companion_to_house(account_id, slot, state):
+		send_to_peer(peer_id, {"type": "error", "message": "Could not return %s to its registered slot." % comp_name})
+		return
+	log_message("Recall: '%s' returned to slot %d of %s from character '%s'%s" % [
+		comp_name, slot, account_id, holder_name, "" if character != null else " (character no longer exists)"])
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#A335EE]%s recalled from %s to registered slot %d. Still registered.[/color]" % [comp_name, holder_name, slot + 1],
+	})
+	_send_house_update(peer_id)
+
+func _recall_companion_from_character(character: Character, slot: int) -> Dictionary:
+	"""Strip the Sanctuary companion held in registered `slot` off `character`, and return its LIVE
+	state so the slot gets the companion as it is now, not the copy taken at checkout.
+
+	Clears the same three fields the Stable deposit clears (active_companion,
+	using_registered_companion, registered_companion_slot) and removes the roster mirror that
+	checkout writes into collected_companions. Legacy characters carry no `house_slot` on the
+	roster entry, so the active companion's id is matched as well. Returns {} when the character
+	holds nothing from that slot."""
+	var state := {}
+	var active: Dictionary = character.active_companion
+	var is_active: bool = not active.is_empty() and (
+		int(active.get("house_slot", -1)) == slot
+		or (character.using_registered_companion and int(character.registered_companion_slot) == slot))
+	var active_id := String(active.get("id", "")) if is_active else ""
+	if is_active:
+		state = active.duplicate(true)
+	var i := character.collected_companions.size() - 1
+	while i >= 0:
+		var comp = character.collected_companions[i]
+		if comp is Dictionary and (int(comp.get("house_slot", -1)) == slot
+				or (active_id != "" and String(comp.get("id", "")) == active_id)):
+			if state.is_empty():
+				state = comp.duplicate(true)
+			character.collected_companions.remove_at(i)
+		i -= 1
+	if is_active:
+		character.active_companion = {}
+	if character.using_registered_companion and int(character.registered_companion_slot) == slot:
+		character.using_registered_companion = false
+		character.registered_companion_slot = -1
+	for k in ["checked_out_by", "checkout_time", "house_slot"]:
+		state.erase(k)
+	return state
 
 func handle_house_register_companion_from_storage(peer_id: int, message: Dictionary):
 	"""Handle registering a companion from storage to registered companions"""
