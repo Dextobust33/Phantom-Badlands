@@ -44411,7 +44411,14 @@ const _DUNGEON_LANDMARK_TILE := {
 	48: "stone_stairs",      # STONE_STAIRS
 	49: "gold_hoard",        # GOLD_HOARD
 	50: "molten_slag",       # MOLTEN_SLAG
+	# The four SPECIAL ROOMS are a set and only Rest had art. Owner 2026-09-10: "Shrines don't
+	# have a sprite and need one", and - reading the Elite Den's marker, reasonably, as a monster
+	# - "Elite monsters don't have a sprite". The Den's marker was worse than missing: its
+	# character is one the bake font cannot draw, so the baked tile was the font's MISSING-GLYPH
+	# box. Gamble Cache still shows its "?", which at least is a character the font has.
+	63: "shrine",            # SHRINE
 	64: "rest_room",         # REST_ROOM
+	65: "elite_den",         # ELITE_DEN
 }
 
 # 2026-09-08 (tile pass). The dungeon cell is 32px: a clean 2x of a 16px tile, 1:1 for the 32px

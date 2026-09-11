@@ -175,6 +175,49 @@ func _init() -> void:
 					% [i + 1, line.strip_edges()])
 				break
 
+	# --- BAKED GLYPHS MUST NOT BE THE FONT'S MISSING-GLYPH BOX -----------------------------
+	# 2026-09-10. The owner reported "Elite monsters don't have a sprite", and the marker turned
+	# out to be a magenta [?] box - the font's .notdef glyph, rendered by the OFFLINE baker for a
+	# character the font cannot draw, and then baked onto the floor tile as if it were art. Six
+	# characters were affected: the Elite Den and Rest Room markers plus four loot kinds.
+	#
+	# The test needs no reference image and no font: tofu makes every unsupported character draw
+	# the SAME shape, so two different characters sharing one ink silhouette is the fault itself.
+	# A real glyph collision is not possible - these are distinct letters and symbols.
+	var shape_owner := {}
+	var gdir := DirAccess.open("res://client/sprites/glyph_floor32")
+	if gdir != null:
+		var seen_char := {}
+		gdir.list_dir_begin()
+		var fn := gdir.get_next()
+		while fn != "":
+			if fn.ends_with(".png") and fn.begins_with("u"):
+				var cp := fn.substr(1, fn.find("_") - 1)
+				if not seen_char.has(cp):          # one tile per character is enough
+					seen_char[cp] = true
+					var tex: Texture2D = load("res://client/sprites/glyph_floor32/" + fn)
+					if tex != null:
+						var img := tex.get_image()
+						if img != null:
+							if img.is_compressed():
+								img.decompress()
+							# the INK mask: which pixels differ from the flat floor, as a string
+							var base := img.get_pixel(0, 0)
+							var mask := ""
+							for y in range(img.get_height()):
+								for x in range(img.get_width()):
+									var _c := img.get_pixel(x, y)
+									var _d: float = absf(_c.r - base.r) + absf(_c.g - base.g) + absf(_c.b - base.b)
+									mask += "1" if _d > 0.05 else "0"
+							checked += 1
+							if shape_owner.has(mask):
+								bad.append("baked glyph U+%s is pixel-identical to U+%s - both are the font's missing-glyph box, not art (re-bake with a font that has them)"
+									% [cp.to_upper(), String(shape_owner[mask]).to_upper()])
+							else:
+								shape_owner[mask] = cp
+			fn = gdir.get_next()
+		gdir.list_dir_end()
+
 	print("[DUNGEONART] checked=%d broken=%d warnings=%d" % [checked, bad.size(), warn.size()])
 	for b in bad:
 		print("[DUNGEONART] BROKEN ", b)

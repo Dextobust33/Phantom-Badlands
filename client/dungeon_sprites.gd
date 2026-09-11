@@ -29,10 +29,13 @@ const LOOT_DIR := "res://client/sprites/loot_floor32/"
 const TILE_DIR := "res://client/sprites/tile_floor32/"
 
 ## Landmark tiles that have real art, and how many frames each has. Generated from what is
-## actually on disk, so a tile can never claim a frame it does not have. The other ~46 theme
+## actually on disk, so a tile can never claim a frame it does not have. Re-bake with
+## `python tools/bake_landmark_tiles.py` - which exists as of 2026-09-10, because this folder
+## had no generator and adding one tile meant there was no script to add it with. The other ~46 theme
 ## tiles stay as coloured glyphs on the floor: they are per-dungeon flavour, they read fine, and
 ## bespoke art for each would be 46 decisions for very little gain.
 const TILE_FRAMES := {
+	"elite_den": 1,
 	"final_chest": 4,
 	"gold_hoard": 1,
 	"infernal_brazier": 3,
@@ -40,6 +43,7 @@ const TILE_FRAMES := {
 	"molten_slag": 1,
 	"resource": 1,
 	"rest_room": 2,
+	"shrine": 3,
 	"stone_stairs": 1,
 	"treasure": 4,
 }
