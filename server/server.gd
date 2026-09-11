@@ -2566,9 +2566,25 @@ func handle_select_character(peer_id: int, message: Dictionary):
 
 	# Checkout companion from house kennel if requested (and character doesn't already have one)
 	var checkout_slot = message.get("checkout_companion_slot", -1)
-	if checkout_slot >= 0 and not character.using_registered_companion and character.active_companion.is_empty():
-		_checkout_companion_for_character(account_id, character, checkout_slot, char_name)
-		persistence.save_character(account_id, character)
+	if checkout_slot >= 0:
+		# Each refusal is now NAMED. The two guards below are real - a character already holding a
+		# companion must not silently lose it - but they used to make the request vanish without
+		# a word, which is indistinguishable from the checkout itself failing.
+		var _why := ""
+		if character.using_registered_companion:
+			_why = "%s is already carrying a Sanctuary companion. Deposit it at a Companion Stable first." % char_name
+		elif not character.active_companion.is_empty():
+			_why = "%s already has an active companion. Deposit it at a Companion Stable first." % char_name
+		else:
+			_why = _checkout_companion_for_character(account_id, character, checkout_slot, char_name)
+			if _why == "":
+				persistence.save_character(account_id, character)
+				var _cn := String(character.active_companion.get("name", "Your companion"))
+				call_deferred("_notify_checkout", peer_id,
+					"[color=#A335EE]%s joins you from the Sanctuary.[/color]" % _cn)
+		if _why != "":
+			call_deferred("_notify_checkout", peer_id,
+				"[color=#FF6666]Sanctuary checkout failed: %s[/color]" % _why)
 
 	# Withdraw items from house storage if requested
 	var withdraw_indices = message.get("withdraw_indices", [])
@@ -3079,7 +3095,10 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# Checkout companion from house kennel if requested
 	var checkout_slot = message.get("checkout_companion_slot", -1)
 	if checkout_slot >= 0:
-		_checkout_companion_for_character(account_id, character, checkout_slot, char_name)
+		var _cwhy := _checkout_companion_for_character(account_id, character, checkout_slot, char_name)
+		if _cwhy != "":
+			call_deferred("_notify_checkout", peer_id,
+				"[color=#FF6666]Sanctuary checkout failed: %s[/color]" % _cwhy)
 
 	# Check if this is the account's very first character (for tutorial)
 	var is_first_character = persistence.is_first_character_ever(account_id)
@@ -9915,6 +9934,15 @@ func _companion_referenced_by(active, collected, slot: int, comp_id: String) -> 
 				return true
 	return false
 
+func _notify_checkout(peer_id: int, msg: String) -> void:
+	"""Tell the player what the Sanctuary checkout did. Deferred, because on the login path it is
+	called while the character is still being assembled and the client has nowhere to put text
+	yet - the same reason the gold-migration message next to it is deferred."""
+	if not peers.has(peer_id):
+		return
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+
+
 func _heal_orphaned_companion_checkouts(account_id: String) -> int:
 	"""Free registered slots still checked out by a character that no longer exists.
 
@@ -10113,7 +10141,10 @@ func handle_companion_stable_checkout(peer_id: int, message: Dictionary) -> void
 		send_to_peer(peer_id, {"type": "error", "message": "That companion is already checked out."})
 		return
 	# Hand off to the existing helper which also mirrors into collected_companions.
-	_checkout_companion_for_character(account_id, character, slot_index, character.name)
+	var _swhy := _checkout_companion_for_character(account_id, character, slot_index, character.name)
+	if _swhy != "":
+		send_to_peer(peer_id, {"type": "error", "message": _swhy})
+		return
 	save_character(peer_id)
 	var name = String(character.active_companion.get("name", "Companion"))
 	send_to_peer(peer_id, {
@@ -16052,12 +16083,31 @@ func _return_registered_companions(account_id: String, character: Character) -> 
 	if returned_slots.is_empty() and character.using_registered_companion and character.registered_companion_slot >= 0:
 		persistence.return_companion_to_house(account_id, character.registered_companion_slot, character.active_companion)
 
-func _checkout_companion_for_character(account_id: String, character: Character, slot: int, char_name: String):
-	"""Checkout a registered companion from house kennel and assign to character"""
+func _checkout_companion_for_character(account_id: String, character: Character, slot: int, char_name: String) -> String:
+	"""Checkout a registered companion from house kennel and assign to character.
+
+	Returns "" on success, or a PLAYER-READABLE reason it did not happen.
+
+	Owner 2026-09-10: "I ... Selected Checkout on my Glowing Wolf Pup (in slot 2) ... but it's
+	not actually giving me the Glowing Wolf Pup." It could fail four different ways here and
+	every one of them was silent - a `log_message` on the server and nothing at all on the
+	client, so the only symptom available to the player was an absent companion. A failure the
+	player cannot see is a failure nobody can report accurately, which is why this one arrived as
+	a guess about character names."""
+	var house = persistence.get_house(account_id)
+	var _regs: Array = house.get("registered_companions", {}).get("companions", []) if house != null else []
+	if slot < 0 or slot >= _regs.size():
+		log_message("Checkout slot %d out of range (%d registered) for %s" % [slot, _regs.size(), char_name])
+		return "That Sanctuary slot no longer exists."
+	var _holder = _regs[slot].get("checked_out_by", null)
+	if _holder != null and String(_holder) != char_name:
+		log_message("Checkout slot %d already held by '%s', refused for %s" % [slot, String(_holder), char_name])
+		return "%s is still checked out by %s." % [
+			String(_regs[slot].get("name", "That companion")), String(_holder)]
 	var companion_data = persistence.checkout_companion_from_house(account_id, slot, char_name)
 	if companion_data.is_empty():
 		log_message("Failed to checkout companion slot %d for %s" % [slot, char_name])
-		return
+		return "The Sanctuary could not release that companion."
 
 	# Build active companion dict (strip registration metadata)
 	var companion = companion_data.duplicate()
@@ -16081,6 +16131,7 @@ func _checkout_companion_for_character(account_id: String, character: Character,
 	character.using_registered_companion = true
 	character.registered_companion_slot = slot
 	log_message("Companion '%s' checked out from kennel slot %d for %s" % [companion.get("name", "Unknown"), slot, char_name])
+	return ""
 
 func _get_house_bonuses_for_character(account_id: String) -> Dictionary:
 	"""Get house upgrade bonuses to apply to a new character"""

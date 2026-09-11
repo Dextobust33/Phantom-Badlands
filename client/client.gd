@@ -23353,7 +23353,15 @@ func handle_server_message(message: Dictionary):
 			house_storage_page = 0
 			house_storage_withdraw_items = []
 			house_pending_withdraw_indices = []
-			house_checkout_companion_slot = -1
+			# The pending checkout is the player's INTENT, not a view of the data, so a routine
+			# refresh must not throw it away. It used to be reset here with everything else, and
+			# `house_data` arrives on every trip back to the Sanctuary - so a checkout chosen in the
+			# kennel could be silently gone by the time the player picked their character, with the
+			# UI showing nothing wrong. Owner: "I ... Selected Checkout on my Glowing Wolf Pup ...
+			# but it's not actually giving me the Glowing Wolf Pup."
+			# Re-VALIDATED against the data that just arrived rather than blindly kept: a slot that
+			# no longer exists, or that someone else now holds, is dropped.
+			_revalidate_pending_checkout()
 			house_storage_discard_index = -1
 			house_storage_register_index = -1
 			house_unregister_companion_slot = -1
@@ -49816,6 +49824,22 @@ func _toggle_storage_withdraw_item(display_index: int):
 
 	display_house_storage()
 	update_action_bar()
+
+func _revalidate_pending_checkout() -> void:
+	"""Keep a pending kennel checkout across a `house_data` refresh, if it is still possible.
+
+	Dropped silently when the slot has gone or another character holds it - staying selected
+	would promise something the server will refuse."""
+	if house_checkout_companion_slot < 0:
+		return
+	var comps: Array = house_data.get("registered_companions", {}).get("companions", [])
+	if house_checkout_companion_slot >= comps.size():
+		house_checkout_companion_slot = -1
+		return
+	var c = comps[house_checkout_companion_slot]
+	if not (c is Dictionary) or c.get("checked_out_by", null) != null:
+		house_checkout_companion_slot = -1
+
 
 func _toggle_companion_checkout(display_index: int):
 	"""Toggle a companion for checkout from house"""
