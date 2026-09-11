@@ -20,6 +20,10 @@ func _init() -> void:
 	var cm = ChunkManagerScript.new()
 	get_root().add_child(cm)
 	cm.load_world_seed()
+	# The server loads these at boot. Without them the world has NO NPC posts, the minimap's
+	# post scan costs nothing, and every minimap figure this probe prints is a figure from a
+	# world no player has ever been in. That is exactly what happened to the first measurement.
+	cm.load_npc_posts()
 	var ws = WorldSystemScript.new()
 	get_root().add_child(ws)
 	ws.chunk_manager = cm

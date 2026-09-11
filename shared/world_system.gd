@@ -3497,6 +3497,56 @@ func find_hotzones_within_distance(x: int, y: int, max_distance: float) -> Array
 
 	return hotzones
 
+## How close a minimap cell must be to a post point before it is worth a real tile check.
+const POST_NEAR := 10
+## The bucket grid the post points are filed into. Wider than the box (2 * POST_NEAR + 1) is what
+## keeps a lookup down to four buckets; the lookup stays CORRECT at any size because it derives
+## its bucket range from the box rather than assuming one bucket is enough.
+const POST_BUCKET := 32
+
+
+func _bucket_post_points(posts: Array) -> Dictionary:
+	"""Every NPC post point in the world, filed by coarse bucket. Built once per minimap."""
+	var buckets: Dictionary = {}
+	for p in posts:
+		_file_post_point(buckets, int(p.get("x", 0)), int(p.get("y", 0)))
+		# Wing room centres count as post points too
+		for wing in p.get("wing_rooms", []):
+			_file_post_point(buckets,
+				(int(wing.get("x0", 0)) + int(wing.get("x1", 0))) / 2,
+				(int(wing.get("y0", 0)) + int(wing.get("y1", 0))) / 2)
+	return buckets
+
+
+func _file_post_point(buckets: Dictionary, x: int, y: int) -> void:
+	var key := "%d,%d" % [floori(float(x) / float(POST_BUCKET)), floori(float(y) / float(POST_BUCKET))]
+	if not buckets.has(key):
+		buckets[key] = []
+	buckets[key].append(Vector2i(x, y))
+
+
+func _near_npc_post(buckets: Dictionary, wx: int, wy: int) -> bool:
+	"""Is this minimap cell a post tile with a post point beside it?
+
+	2026-09-11: this used to walk EVERY post point in the world (60 posts plus their wing rooms,
+	~240 points) for each of the minimap's 861 cells - ~200,000 box tests for every step a player
+	takes, 5.7 ms of a 15.4 ms location update. The test is a fixed +/-POST_NEAR box, so only the
+	buckets that box overlaps can hold a point that matters: four lookups, same answer.
+
+	The answer is still decided by `is_npc_post_tile` - the bucket only decides whether it is
+	worth asking."""
+	var bx0 := floori(float(wx - POST_NEAR) / float(POST_BUCKET))
+	var bx1 := floori(float(wx + POST_NEAR) / float(POST_BUCKET))
+	var by0 := floori(float(wy - POST_NEAR) / float(POST_BUCKET))
+	var by1 := floori(float(wy + POST_NEAR) / float(POST_BUCKET))
+	for bx in range(bx0, bx1 + 1):
+		for by in range(by0, by1 + 1):
+			for pp in buckets.get("%d,%d" % [bx, by], []):
+				if absi(pp.x - wx) <= POST_NEAR and absi(pp.y - wy) <= POST_NEAR:
+					return chunk_manager != null and chunk_manager.is_npc_post_tile(wx, wy)
+	return false
+
+
 func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = []) -> String:
 	"""Generate a compact zoomed-out minimap centered on the player.
 	Samples every 2 world tiles → each minimap character covers a 2×2 tile area.
@@ -3515,18 +3565,8 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 	for d in dungeon_locations:
 		dungeon_set["%d,%d" % [int(d.x), int(d.y)]] = true
 
-	# Pre-build NPC post bounding boxes for fast lookup
-	# (avoid calling is_npc_post_tile for every tile — that iterates all posts)
-	var posts = chunk_manager.get_npc_posts()
-	# We'll check against post centroids with a generous match radius
-	var post_points: Array = []
-	for p in posts:
-		post_points.append({"x": int(p.get("x", 0)), "y": int(p.get("y", 0))})
-		# Also add wing room centers if present
-		for wing in p.get("wing_rooms", []):
-			var wx = (int(wing.get("x0", 0)) + int(wing.get("x1", 0))) / 2
-			var wy = (int(wing.get("y0", 0)) + int(wing.get("y1", 0))) / 2
-			post_points.append({"x": wx, "y": wy})
+	# NPC posts, in a coarse spatial bucket rather than a list to scan — see `_near_npc_post`.
+	var post_buckets: Dictionary = _bucket_post_points(chunk_manager.get_npc_posts())
 
 	var output = "[right][font_size=9]"
 	for miny in range(MAP_HALF_H, -MAP_HALF_H - 1, -1):
@@ -3553,15 +3593,8 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 				line += "[color=#FF4444]D[/color]"
 				continue
 
-			# NPC post — check if close to any post centroid
-			var near_post = false
-			for pp in post_points:
-				if abs(pp.x - wx) <= STEP + 8 and abs(pp.y - wy) <= STEP + 8:
-					# Confirm with actual tile check (on the sampled tile only)
-					if chunk_manager.is_npc_post_tile(wx, wy):
-						near_post = true
-						break
-			if near_post:
+			# NPC post
+			if _near_npc_post(post_buckets, wx, wy):
 				line += "[color=#FFD700]P[/color]"
 				continue
 

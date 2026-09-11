@@ -25,9 +25,13 @@ ceiling, since it removes the most expensive per-player work the server does.
   inheriting the shared progress; the hand and deck carry copies; a sold copy takes its upgrades
   to the buyer; card listings never merge; thinning benches a copy and `+` brings it back.
   Probe `card_instances.gd` (47 checks), `card_market_roundtrip.gd` rewritten.
-- **SERVER: the overworld tile cache.** A location update costs 15.4 ms instead of 46.7 ms and
-  ~1,390 disk stats per move are gone. **Needs a DEPLOY**; no client change, nothing visual —
-  `tile_cache.gd`.
+- **SERVER: two overworld costs, both invisible.** The tile cache (~1,390 disk stats per move
+  gone) and the minimap's post bucket. Together a location update costs **15.6 ms instead of
+  31.1 ms** in the real world, and the server no longer re-generates a tile it just made.
+  **Needs a DEPLOY**; no client change, nothing visual — `tile_cache.gd`, `minimap_posts.gd`.
+- **Cosmetic VARIANTS on sprites.** A lime wolf is lime in the dungeon and on its Sanctuary
+  cushion, not only in its ASCII art; eleven patterns, and the baked floor under the sprite is
+  left alone — `monster_tint.gd`. Client-side, nothing to deploy.
 - **The sprite SANCTUARY**, with companions on cushions, animation, the 2x player, station
   highlights and the MIRROR (account look). The mirror needs the server deploy too —
   `sanctuary_room.gd`.
@@ -305,7 +309,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 48 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 47 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -1125,26 +1129,35 @@ of supported players on the server at once?"*
 no chunk manager wired (the caveat at the end of this section said so); they were wrong about
 both the size and the CAUSE.
 
-| per location update, at (40,40) | BEFORE | AFTER the tile-cache fix |
-|---|---:|---:|
-| whole call | **46.7 ms** | **15.4 ms** |
-| ...minimap | 21.1 ms | 5.7 ms |
-| ...map grid: tile fetch | 11.2 ms | 0.8 ms |
-| ...map grid: line of sight | 1.6 ms | 1.6 ms |
-| ...map grid: **building the text** | **1.4 ms** | 1.4 ms |
-| bytes on the wire | 25,590 | 25,590 |
+**And the harness was wrong once more, which changes the numbers again (2026-09-11, later).**
+The cost probe built a chunk manager but never called `load_npc_posts` - the same call the
+server makes at boot. So it measured a world with ZERO NPC posts, the minimap's post scan cost
+nothing, and every minimap figure below the first two columns was a figure from a world no
+player has ever stood in. The probe now loads them, and the real cost was twice what was
+reported. (Sixth instance of the same shape: *check what would make the harness produce this
+number* - the first row of every table here has now been wrong twice for harness reasons.)
 
-**So "move rendering to the client" was aimed at 1.4 ms of a 46.7 ms cost - 3%.** The cost was
-never the drawing. It was `chunk_manager.get_tile`: 21us a call and ~1,390 calls per move (529
-map + 861 minimap), because every call re-generated the tile AND, for any chunk with no player
-edits, ran `FileAccess.file_exists` - ~1,390 disk stats per move per player. Fixed (see below):
-the whole update is now 3x cheaper with no visual change at all.
+| per location update, at (40,40) | ORIGINALLY | after the tile cache | after the post bucket |
+|---|---:|---:|---:|
+| whole call, posts loaded | not measured | **31.1 ms** | **15.6 ms** |
+| ...minimap | - | 14.9 ms | 7.4 ms |
+| whole call, EMPTY world (the old harness) | 46.7 ms | 15.4 ms | 15.5 ms |
+| ...map grid: tile fetch | 11.2 ms | 0.8 ms | 0.8 ms |
+| ...map grid: line of sight | 1.6 ms | 1.6 ms | 1.6 ms |
+| ...map grid: **building the text** | **1.4 ms** | 1.4 ms | 1.4 ms |
+| bytes on the wire | 25,590 | 25,590 | 25,632 |
+
+**So "move rendering to the client" was aimed at 1.4 ms of a 31 ms cost - under 5%.** The cost
+was never the drawing. It was two loops that did the same work over and over:
+`chunk_manager.get_tile` re-generating every tile and stat-ing the disk for every chunk with no
+player edits, and the minimap re-scanning every NPC post in the world for each of its 861 cells.
+Both are fixed below and the update is now HALF its cost, with no visual change at all.
 
 **What this means for the two steps.** Phase 1 is still worth doing, but for the RIGHT reasons:
 it is the **enabler for Phase 2** (the client cannot draw sprites for tiles it has never been
 sent) and it cuts the WIRE (25.6 KB a move, of which the map grid is only 4.7 KB - the rest is
-the minimap and header). It is NOT the server-CPU fix; that was the tile cache, and the next
-CPU win is the minimap's post-proximity loop, not rendering.
+the minimap and header). It is NOT the server-CPU fix; that was the tile cache and the post
+bucket, neither of which needed a single line of client code.
 
 - [x] **DONE 2026-09-11 — the tile cache, and the disk stat per tile.** `get_tile` now keeps
       generated tiles (terrain is a pure function of x, y, seed) and remembers chunks that hold
@@ -1154,12 +1167,25 @@ CPU win is the minimap's post-proximity loop, not rendering.
       compares warmed vs cold map output character for character; re-injecting "cache wins over
       modified" fails it. **Server-side only: needs a deploy, no client change, nothing visual.**
 
-- [ ] **NEXT SERVER WIN — the minimap's post-proximity loop (5.7 ms of the remaining 15.4).**
-      `_generate_minimap` walks 861 cells and, for each, loops over EVERY post point in the world
-      (60 posts plus their wing rooms, ~240 points) doing an abs() box test before it will even
-      look at the tile. That is ~200k comparisons per move. A set of post tile keys, or a coarse
-      spatial bucket, replaces the whole loop with one lookup. Same shape as the tile cache: no
-      visual change, server only.
+- [x] **DONE 2026-09-11 — the minimap's post-proximity loop. 31.1 ms -> 15.6 ms per move.**
+      `_generate_minimap` walked 861 cells and, for each, looped over EVERY post point in the
+      world (60 posts plus their wing rooms, 146 points) doing a box test before it would even
+      look at the tile - ~126,000 comparisons for every step a player takes. The test is a fixed
+      +/-10 box, so the points are now filed into a 32-wide bucket grid and a cell looks at only
+      the buckets its box can overlap: four, not 146. `is_npc_post_tile` still decides the
+      answer; the bucket only decides whether it is worth asking.
+      One function, `_near_npc_post`, holds the whole test - the probe calls the SAME function
+      the minimap calls, so the two cannot drift into one value in two places.
+      Probe `minimap_posts.gd` compares it against the full scan it replaced on all 7,749 cells
+      of nine minimaps (557 of them post tiles, so the true branch is exercised too) and demands
+      zero disagreements; making the lookup visit one bucket instead of four produces 320.
+      **Server-side only: needs a deploy, no client change, nothing visual.**
+
+- [ ] **What is LEFT in the 15.6 ms, if it ever needs attacking again.** The minimap is still
+      7.4 ms of it and is now dominated by its own 861 `get_tile` + biome-colour + BBCode string
+      work, not by anything with an obvious 10x in it. The map grid is 4.7 KB of the 25.6 KB on
+      the wire; the minimap is most of the rest. Phase 1 below is what removes that class of
+      cost, by sending data instead of text.
 
 |                          | overworld today (ASCII) | dungeon today (sprites) |
 |--------------------------|------------------------:|------------------------:|
