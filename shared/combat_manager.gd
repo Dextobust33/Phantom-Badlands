@@ -7937,6 +7937,12 @@ func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Ar
 			"name": String(u.get("name", "")),
 			"desc": String(u.get("desc", "")),
 			"tradeoff": bool(u.get("tradeoff", false)),
+			# 2026-09-11 - the offer is rebuilt as a SUBSET, so a new field on the upgrade table does
+			# not reach the client unless it is named here. `rare` was added for the chase loop and
+			# the card face would have rendered every pick as common without this line - the client
+			# change would have been a no-op that looked finished. Caught before shipping by asking
+			# what the wire actually carries rather than assuming the dict travels whole.
+			"rare": bool(u.get("rare", false)),
 		})
 	return out
 

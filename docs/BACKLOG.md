@@ -262,27 +262,45 @@ thing that will exist in multiples. Widening the upgrade pool can start earlier 
 today there are three reveal upgrades and five cycle types, which the owner's own playtest answer
 ("depends what upgrades hit your cards") already suggests is too thin to build a chase on.
 
-- [ ] **The upgrade pool cannot make ANYTHING rare — measured 2026-09-10.** The owner's goal for
-      this arc is *"wide enough that some players are telling their friends about ones they found
-      that their friends have probably never seen."* That is a statement about RARITY, and the
-      pool is currently incapable of it at any size.
-      **Why.** `draw_choices` does `pool.shuffle()` and takes the first 9. Selection is uniform, and
-      9 are shown at once. Measured against the real pool (51 upgrades, all wired):
-      | card kind | eligible at m1 | seen after m1 | after m3 | after m5 |
-      |---|---|---|---|---|
-      | damage | 22 | **41%** | 79% | 93% |
-      | buff | 19 | 47% | 86% | 96% |
-      | control | 18 | 50% | 87% | 97% |
-      A damage card shows **41% of everything it can ever be offered at its FIRST rank-up**, and
-      after five milestones the chance a given upgrade has never appeared is 7%. Adding entries
-      does not fix this: doubling the pool still shows 9 at once and still converges.
-      **So the fix is a rarity WEIGHT, not more content.** Simulated: 16 common + 6 rare (weight 1
-      against 10) leaves a player having seen 31% of the rare ones after five milestones; 30 + 12
-      leaves 15%. That is the "you found THAT?" moment, and it costs one field per upgrade plus a
-      weighted draw. Content widening still helps afterwards — CONTROL is thinnest at 18 — but
-      weighting is what makes width mean anything.
-      Do this BEFORE authoring more upgrades, or the new ones dissolve into the same uniform draw.
+- [x] **DONE 2026-09-11 — the upgrade pool can make things rare now.** Owner's goal for the arc:
+      *"wide enough that some players are telling their friends about ones they found that their
+      friends have probably never seen."*
+      **The cause was the DRAW, not the size.** `draw_choices` did `pool.shuffle()` and took the
+      first 9 — uniform, so nothing could be rare at any pool size, and adding entries would have
+      dissolved into the same draw. Replaced with a weighted draw without replacement
+      (`WEIGHT_COMMON 10` / `WEIGHT_RARE 1`), 14 of 51 upgrades marked rare.
+      **Measured on the real draw over 4 000 runs, not simulated:**
 
+      | kind | rare seen after m1 | m3 | m5 | common at m5 |
+      |---|---|---|---|---|
+      | damage | 6% | 11% | **20%** | 87% |
+      | buff | 10% | 20% | **31%** | 94% |
+      | control | 9% | 18% | **34%** | 96% |
+
+      Against ~95% of everything seen after five milestones before. Commons stay freely
+      available, which matters — the pool must still feel generous.
+      **RARE MEANS DISTINCTIVE, NOT STRONGER — a deliberate call.** Tying rarity to power would
+      make luck decide how strong a card ends up, which is a balance problem wearing a content
+      hat. The rare set is the upgrades that BREAK A RULE the player has learned: pay off from
+      the discard (the three REVEALs), act before the fight starts (Preload), reach an ally
+      (Shared), take another turn (Swift), cost health instead of resource (Blood Price), invert
+      the resource relationship (All In), pull the enemy off your companion (Provoking), land on
+      YOU (Unstable Hex), or sometimes do nothing at all (Gambler's Cut).
+      The legacy four stay common on purpose — `draw_choices` falls back to power/efficiency when
+      the pool runs dry, so a rare fallback would make the safety net itself unreliable.
+      **And the player is TOLD.** A rare pick shows a ✦ marker, gold text and *"rarely offered"*
+      on the card, plus *"most players will not have seen this one"* in the hover. A rare
+      trade-off keeps the ORANGE trade-off colour — orange is a warning and gold is decoration,
+      and decoration must not overwrite a warning.
+      **The near-miss worth recording:** `_build_upgrade_offer` rebuilds each upgrade as a
+      FOUR-FIELD SUBSET before it goes on the wire, so `rare` never reached the client. The UI
+      work was complete and would have rendered every pick as common — a no-op that looked
+      finished. Caught by asking what the wire actually carries instead of assuming the dict
+      travels whole; the probe now asserts that line specifically.
+      Probe: `tools/probe/upgrade_rarity.gd`. Re-injection (uniform draw + `rare` stripped from
+      the wire) fails 4 checks.
+      **Content widening still helps afterwards** — CONTROL is thinnest at 18 eligible — but
+      weighting is what makes width mean anything, so it landed first as planned.
 - [x] **DONE 2026-09-10 — Props are no longer erased by anything standing on them.** Owner:
       *"when a sprite steps on a space with a decorative piece on it the decorative piece seems to
       go away"*, then after living with it: *"The occlusion just makes it look janky currently.

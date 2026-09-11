@@ -21170,10 +21170,21 @@ func _make_milestone_tile(slot: int, up: Dictionary, face_up: bool) -> Control:
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_theme_font_size_override("normal_font_size", 11)
 	if face_up:
-		title.text = String(up.get("name", "?"))
-		title.add_theme_color_override("font_color", Color("#E0902A") if tradeoff else Color("#9FD0FF"))
-		body.text = "[color=#BFBFBF]%s[/color]%s" % [String(up.get("desc", "")),
-			"\n[color=#E0902A]— asks something back —[/color]" if tradeoff else ""]
+		# 2026-09-11 - SAY when a pick is rare. Rarity was added to the draw so some upgrades would
+		# be things *"players are telling their friends about"* - and a rare pick that looks exactly
+		# like a common one cannot be told about, because nobody knows they found anything.
+		# Gold plus a marker. The colour stays ORANGE on a rare trade-off: orange already means
+		# "asks something back", and that warning must not be overwritten by a decoration.
+		var rare: bool = bool(up.get("rare", false))
+		title.text = ("✦ " + String(up.get("name", "?"))) if rare else String(up.get("name", "?"))
+		var tcol: Color = Color("#E0902A") if tradeoff else (Color("#FFD24A") if rare else Color("#9FD0FF"))
+		title.add_theme_color_override("font_color", tcol)
+		var tail: String = ""
+		if rare:
+			tail += "\n[color=#FFD24A]— rarely offered —[/color]"
+		if tradeoff:
+			tail += "\n[color=#E0902A]— asks something back —[/color]"
+		body.text = "[color=#BFBFBF]%s[/color]%s" % [String(up.get("desc", "")), tail]
 	else:
 		title.text = "?"
 		title.add_theme_color_override("font_color", Color("#6A6A7A"))
@@ -21208,9 +21219,12 @@ func _on_milestone_tile_hover(slot: int) -> void:
 			"heal":   now_line = "now: [color=#77DD77]%d healing[/color]" % val
 			_:        now_line = ""
 	var tradeoff: bool = bool(up.get("tradeoff", false))
-	var head_col := "#E0902A" if tradeoff else "#9FD0FF"
-	var txt := "[color=%s][b]%s[/b][/color] — [color=#BFBFBF]%s[/color]" % [
-		head_col, String(up.get("name", "?")), String(up.get("desc", ""))]
+	var rare: bool = bool(up.get("rare", false))
+	var head_col := "#E0902A" if tradeoff else ("#FFD24A" if rare else "#9FD0FF")
+	var txt := "[color=%s][b]%s%s[/b][/color] — [color=#BFBFBF]%s[/color]" % [
+		head_col, "✦ " if rare else "", String(up.get("name", "?")), String(up.get("desc", ""))]
+	if rare:
+		txt += "\n[color=#FFD24A]Rarely offered — most players will not have seen this one.[/color]"
 	if now_line != "":
 		txt += "\n[color=#8A8A96]%s[/color]" % now_line
 		# 2026-09-07 — and what the card becomes if you take it. "+12% effect" is a fact about

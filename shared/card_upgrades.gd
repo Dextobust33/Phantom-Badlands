@@ -93,17 +93,17 @@ const UPGRADES := [
 	# KIND_ANY because EVERY card can be discarded unplayed; there is no card shape this cannot
 	# apply to. That also makes them the first upgrades whose effect fires when the card is NOT
 	# used, which is why the wiring lives in `_cycle_unplayed` rather than in a cast path.
-	{"id": "reveal_engine", "wired": true, "name": "Foretold", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_engine", "rare": true, "wired": true, "name": "Foretold", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it feeds 1 point of your class engine as it cycles."},
-	{"id": "reveal_ward", "wired": true, "name": "Held in Reserve", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_ward", "rare": true, "wired": true, "name": "Held in Reserve", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it leaves a small ward (3% of your max health) as it cycles."},
-	{"id": "reveal_spark", "wired": true, "name": "Smouldering", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "reveal_spark", "rare": true, "wired": true, "name": "Smouldering", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "REVEAL: when you do NOT play this card, it still stings the enemy for a little damage as it cycles."},
 
 	# ---------------------------------------------------------------- buff, upside ----------
-	{"id": "preload", "wired": true, "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "preload", "rare": true, "wired": true, "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "The buff is already active on the first round of your NEXT fight."},
-	{"id": "shared", "wired": true, "name": "Shared", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "shared", "rare": true, "wired": true, "name": "Shared", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "In a party, an ally also receives it at half strength."},
 	{"id": "warding", "wired": true, "name": "Warding", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "Also grants a small shield when cast."},
@@ -122,7 +122,7 @@ const UPGRADES := [
 	# ---------------------------------------------------------------- any, upside -----------
 	{"id": "refund", "wired": true, "name": "Closing Cost", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Refunds its cost when it lands the killing blow."},
-	{"id": "swift", "wired": true, "name": "Swift", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "swift", "rare": true, "wired": true, "name": "Swift", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "12% chance the enemy loses its turn, so you act again. Damaging cards only."},
 
 	# ---------------------------------------------------------------- TRADE-OFFS ------------
@@ -155,7 +155,7 @@ const UPGRADES := [
 	 "desc": "Cast it on a FULL resource bar and it grants a point of your class engine (Momentum, Rage, Conviction, Focus or Read) instead of wasting the cast."},
 	{"id": "desperate", "wired": true, "name": "Desperation", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Grants TWO points of your class engine (Momentum, Rage, Conviction, Focus or Read) while you are below a third health."},
-	{"id": "opening_act", "wired": true, "name": "Opening Act", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "opening_act", "rare": true, "wired": true, "name": "Opening Act", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "The FIRST time you play this in a fight, it costs nothing."},
 	{"id": "relentless", "wired": true, "name": "Relentless", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Every third cast of this card gives back a third of your mana / stamina / energy."},
@@ -180,7 +180,7 @@ const UPGRADES := [
 	 "desc": "+35% damage, but you take 5% of your health as recoil."},
 	{"id": "slow_burn", "wired": true, "name": "Slow Burn", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "-25% immediate damage, but leaves a burn worth far more over time."},
-	{"id": "concentrated", "wired": true, "name": "Concentrated", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
+	{"id": "concentrated", "rare": true, "wired": true, "name": "Concentrated", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "Double strength, half the duration."},
 	{"id": "reckless_guard", "wired": true, "name": "Open Guard", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "+50% to the buff, but -15% defence while it lasts."},
@@ -192,11 +192,11 @@ const UPGRADES := [
 	# are rare as well."
 	{"id": "wild_swing", "wired": true, "name": "Wild Swing", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+45% damage, but a real chance to miss outright."},
-	{"id": "bloodprice", "wired": true, "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "bloodprice", "rare": true, "wired": true, "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Paid in health instead of your resource."},
 	{"id": "brittle", "wired": true, "name": "Brittle Strike", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+30% damage, but your guard is down until your next turn."},
-	{"id": "all_in", "wired": true, "name": "All In", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "all_in", "rare": true, "wired": true, "name": "All In", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Hits far harder the EMPTIER your resource bar is, and weakly when it is full."},
 	{"id": "greedy", "wired": true, "name": "Heavy Draw", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+25% damage, but the card is slower to come back around."},
@@ -206,13 +206,13 @@ const UPGRADES := [
 	 "desc": "+50% to the buff, but the foe acts before you this round."},
 	{"id": "costly_vigil", "wired": true, "name": "Costly Vigil", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "Lasts twice as long, but drains resource every round it holds."},
-	{"id": "provoking", "wired": true, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "provoking", "rare": true, "wired": true, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, and the foe turns off your companion and onto YOU."},
-	{"id": "unstable_hex", "wired": true, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "unstable_hex", "rare": true, "wired": true, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, with a small chance it lands on you instead."},
-	{"id": "gamblers_cut", "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "gamblers_cut", "rare": true, "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Half cost, but a quarter of the time it does nothing at all."},
-	{"id": "sacrificial", "wired": true, "name": "Sacrificial", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "sacrificial", "rare": true, "wired": true, "name": "Sacrificial", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Far stronger, but the card is spent for the rest of the fight."},
 ]
 
@@ -266,6 +266,35 @@ static func eligible(kind: String, milestone: int, taken: Array) -> Array:
 # them then choose 1 out of those."* Mirrors the Prize Shuffle loot flow, so it is an idiom
 # players already know rather than a second one to learn.
 const OFFER_SIZE := 9
+
+# === RARITY (2026-09-11) ===
+#
+# Owner's goal for the chase loop: *"wide enough that some players are telling their friends about
+# ones they found that their friends have probably never seen."* That is a statement about
+# RARITY, and a uniform draw is incapable of it AT ANY POOL SIZE.
+#
+# Measured 2026-09-10: `draw_choices` shuffled and took the first OFFER_SIZE, so with 22 eligible
+# and 9 shown, a damage card revealed **41% of everything it could ever be offered at its FIRST
+# rank-up**, and after five milestones the chance a given upgrade had never appeared was 7%.
+# Doubling the pool does not help - it still shows 9 at once and still converges. So the fix is a
+# weight, not more content, and it has to land BEFORE more upgrades are authored or the new ones
+# dissolve into the same uniform draw.
+#
+# RARE MEANS DISTINCTIVE, NOT STRONGER. Tying rarity to power would make luck decide how strong a
+# card ends up; tying it to how UNUSUAL the effect is gives the "you found THAT?" moment while
+# leaving the power curve flat. The rare set is the upgrades that break a rule the player has
+# learned - pay off from the discard, act before the fight starts, reach an ally, take another
+# turn, cost health, or sometimes do nothing at all.
+const WEIGHT_COMMON := 10.0
+const WEIGHT_RARE := 1.0
+
+
+static func weight_of(u: Dictionary) -> float:
+	return WEIGHT_RARE if bool(u.get("rare", false)) else WEIGHT_COMMON
+
+
+static func is_rare(id: String) -> bool:
+	return bool(upgrade_by_id(id).get("rare", false))
 const REVEALS_ALLOWED := 3
 
 static func draw_choices(kind: String, milestone: int, taken: Array, count: int = OFFER_SIZE, exclude: Array = []) -> Array:
@@ -293,12 +322,25 @@ static func draw_choices(kind: String, milestone: int, taken: Array, count: int 
 			var u := upgrade_by_id(id)
 			if not u.is_empty():
 				pool.append(u)
-	pool.shuffle()
+	# WEIGHTED draw without replacement. The old `pool.shuffle()` + take-the-first-N was uniform,
+	# which is why nothing could be rare: see the RARITY block above for the measurement.
+	# Still without replacement, so an offer never shows the same upgrade twice.
+	var bag: Array = pool.duplicate()
 	var out: Array = []
-	for u in pool:
-		out.append(u)
-		if out.size() >= count:
-			break
+	while out.size() < count and not bag.is_empty():
+		var total: float = 0.0
+		for u in bag:
+			total += weight_of(u)
+		var roll: float = randf() * total
+		var acc: float = 0.0
+		var picked: int = bag.size() - 1
+		for i in range(bag.size()):
+			acc += weight_of(bag[i])
+			if roll < acc:
+				picked = i
+				break
+		out.append(bag[picked])
+		bag.remove_at(picked)
 	return out
 
 
