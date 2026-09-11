@@ -757,13 +757,46 @@ static func _stamp_legacy_post(post: Dictionary, chunk_manager) -> void:
 # Keep in sync with WorldSystem._is_water_tile_generated / _water_noise / _seeded_hash_float.
 
 static func _location_has_nearby_water(cx: int, cy: int, seed: int) -> bool:
-	"""Return true if any tile within POST_WATER_MARGIN of (cx,cy) is water."""
-	const POST_WATER_MARGIN = 12  # Must be >= max half-size of any post room + walls
+	"""Is (cx,cy) too wet to build a post on?
+
+	2026-09-11 - THIS REJECTED EVERY SITE IN THE WORLD. Measured: 300 of 300 candidates refused,
+	for the live seed and for every other seed tried, so `generate_posts` could only ever return
+	the starter. It was invisible because the live world's 60 posts were generated before this
+	check existed and have simply persisted in npc_posts.json ever since; nothing regenerates
+	them in normal play. A map reset regenerated them, and the world came back with one post.
+
+	The cause is the shape of the test, not the margin. It asked "is ANY of these 625 tiles
+	water" and `_is_water_static` counts a 0.3%-chance single-tile POND as water. At a typical
+	spot 1 tile in 625 is water, so the odds that a 25x25 block contains at least one are
+	essentially certain - and one isolated pond twelve tiles away is not a reason to refuse to
+	build a trading post.
+
+	So it now asks how wet, not whether wet at all. A lake or a river fills a real share of the
+	bubble; a pond does not. The threshold is a FRACTION so it stays meaningful if the margin
+	ever changes."""
+	const POST_WATER_MARGIN = 12       # >= max half-size of any post room + walls
+	const POST_MAX_WATER_FRAC = 0.02   # 2% of the bubble - a pond passes, a shoreline does not
+	var side: int = POST_WATER_MARGIN * 2 + 1
+	var budget: int = int(float(side * side) * POST_MAX_WATER_FRAC)
+	var wet := 0
 	for dx in range(-POST_WATER_MARGIN, POST_WATER_MARGIN + 1):
 		for dy in range(-POST_WATER_MARGIN, POST_WATER_MARGIN + 1):
 			if _is_water_static(cx + dx, cy + dy, seed):
-				return true
+				wet += 1
+				if wet > budget:
+					return true
 	return false
+
+
+static func _post_water_tiles(cx: int, cy: int, seed: int, margin: int) -> int:
+	"""How many tiles within `margin` of (cx,cy) are water. Exposed for the probe, which needs
+	to show that the old any-water rule and the new how-much rule genuinely differ."""
+	var n := 0
+	for dx in range(-margin, margin + 1):
+		for dy in range(-margin, margin + 1):
+			if _is_water_static(cx + dx, cy + dy, seed):
+				n += 1
+	return n
 
 static func _is_water_static(x: int, y: int, seed: int) -> bool:
 	var water_noise = _water_noise_static(x, y, seed)
