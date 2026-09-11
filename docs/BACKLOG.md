@@ -1198,6 +1198,23 @@ scope, because they are all tiles in the same grid.**
       unknown), never raw chunk data, or the client can see through walls. The dungeon already
       works this way.
 
+- [x] **DONE 2026-09-11 — cosmetic VARIANTS show on sprites, not just in ASCII art.** Owner:
+      *"all monsters have variants that change what their ASCII art looks like (like lime ones, or
+      two tone red and blue, etc.) How difficult would it be to put a tint or effect on their
+      monster sprites?"* Not difficult - the data (`appearance_color` / `_color2` / `_pattern`)
+      was already on the wire and only the ASCII art read it.
+      `DungeonComposite.tinted()` keys the baked floor out FIRST (the same border-connected key
+      `over_prop` uses), tints only the creature's pixels, and supports all ELEVEN patterns the
+      ASCII art uses, by the same names. This is the fix for the rule that used to read "never
+      tint a floor-backed sprite" - true of a `color=` tag, which stained the ground three
+      separate times; false per-pixel.
+      Live on: dungeon MONSTERS, the companion following you underground, and companions on their
+      Sanctuary cushions (one helper, `_companion_tinted_sprite`, maps a companion's
+      `variant_color/2/pattern` onto the same tint).
+      **Owner: the tint belongs "everywhere pretty much"** - the remaining surface is the
+      OVERWORLD, which has no sprites yet, so it joins in Phase 2.95 PHASE 2 (noted in its scope).
+      Probe `monster_tint.gd`: 16 checks including "not one floor pixel moved" and a rendered
+      comparison sheet; bypassing the tint fails it. A cached tint costs 1us.
 - [ ] **SPRITE SCALE across the game (owner direction 2026-09-11, while reviewing the sprite
       Sanctuary):** *"This makes me also wonder if we should increase player, companion, and
       monster sprite sizes in the overworld and dungeon as well in the future. I kind of like the
@@ -1244,7 +1261,9 @@ scope, because they are all tiles in the same grid.**
       * **ZOOM INSIDE A POST** - the owner's older ask, and now clearly a mode of this renderer:
         bigger cells while `_is_npc_post_interior` is true, so a post reads as a room.
       * **FIGURES** - the player, companions, monsters and other players, at the owner's scale
-        rule (player > companion; monsters bigger in dungeons). `sanctuary_room.gd::overlay_cells`
+        rule (player > companion; monsters bigger in dungeons), and wearing their COSMETIC
+        VARIANT via `DungeonComposite.tinted` (owner: the tint belongs "everywhere pretty much";
+        every other sprite surface already does this). `sanctuary_room.gd::overlay_cells`
         already solves a figure larger than its cell: the room is one composed image and figures
         are overlays that may span cells. Reuse it rather than writing a second one.
       * **What NOT to redo**: the Sanctuary is finished and is its own screen; it does not become

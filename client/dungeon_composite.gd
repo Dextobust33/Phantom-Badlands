@@ -136,6 +136,121 @@ const _BRACKET_ARM := 7
 const _BRACKET_INSET := 1
 
 
+## The eleven cosmetic PATTERNS, the same names the ASCII art uses
+## (`client.gd::_recolor_ascii_art_pattern`). A variant is a colour, sometimes a second colour,
+## and one of these; the art has shown them for a long time and the sprites did not.
+const TINT_PATTERNS := ["solid", "gradient_down", "gradient_up", "middle", "striped", "edges",
+	"diagonal_down", "diagonal_up", "split_v", "checker", "radial"]
+## How far a tinted pixel moves toward the variant colour. Enough to read across a room, low
+## enough that the art's own shading still shows - the sprite must stay a wolf, in green.
+const TINT_STRENGTH := 0.55
+
+
+static func _tint_mix(orig: Color, c: Color, strength: float) -> Color:
+	"""Multiply toward `c`, then lift, so dark pixels keep their shape instead of going black."""
+	var mult := Color(orig.r * c.r, orig.g * c.g, orig.b * c.b)
+	mult = Color(minf(mult.r * 1.6, 1.0), minf(mult.g * 1.6, 1.0), minf(mult.b * 1.6, 1.0), orig.a)
+	return Color(lerpf(orig.r, mult.r, strength), lerpf(orig.g, mult.g, strength),
+		lerpf(orig.b, mult.b, strength), orig.a)
+
+
+static func _pattern_t(pattern: String, x: int, y: int, box: Rect2i) -> float:
+	"""0.0 = the first colour, 1.0 = the second, for this pixel of the sprite's content box."""
+	var w := maxi(1, box.size.x)
+	var h := maxi(1, box.size.y)
+	var fx := float(x - box.position.x) / float(w)
+	var fy := float(y - box.position.y) / float(h)
+	match pattern:
+		"gradient_down":
+			return fy
+		"gradient_up":
+			return 1.0 - fy
+		"middle":
+			return 1.0 if fy > 0.33 and fy < 0.67 else 0.0
+		"striped":
+			return 1.0 if int(float(y - box.position.y) / 4.0) % 2 == 1 else 0.0
+		"edges":
+			return 1.0 if fx < 0.2 or fx > 0.8 or fy < 0.2 or fy > 0.8 else 0.0
+		"diagonal_down":
+			return clampf((fx + fy) * 0.5, 0.0, 1.0)
+		"diagonal_up":
+			return clampf((fx + (1.0 - fy)) * 0.5, 0.0, 1.0)
+		"split_v":
+			return 1.0 if fx > 0.5 else 0.0
+		"checker":
+			return 1.0 if (int(float(x) / 4.0) + int(float(y) / 4.0)) % 2 == 1 else 0.0
+		"radial":
+			return clampf(Vector2(fx - 0.5, fy - 0.5).length() * 2.0, 0.0, 1.0)
+		_:
+			return 0.0
+
+
+static func tinted(sprite_path: String, color1: String, color2: String = "", pattern: String = "solid") -> String:
+	"""A monster's COSMETIC VARIANT on its sprite: the creature tinted, the floor left alone.
+
+	Owner 2026-09-11: *"Since all monsters have variants that change what their ASCII art looks
+	like (like lime ones, or two tone red and blue, etc.) How difficult would it be to put a tint
+	or effect on their monster sprites to help reflect that?"* The data was already there
+	(`appearance_color`, `appearance_color2`, `appearance_pattern`) and only the ASCII art used it.
+
+	NOT a `color=` tag - that is the mistake this file exists to avoid, three times over: these
+	sprites carry the floor baked in, so a tag tints the GROUND under the monster. Here the
+	baked floor is found the same way `over_prop` finds it (border-connected colour key) and left
+	untouched; only the creature's pixels move toward the variant colour."""
+	if sprite_path == "" or color1 == "":
+		return sprite_path
+	if not (pattern in TINT_PATTERNS):
+		pattern = "solid"
+	var key := "t|%s|%s|%s|%s" % [sprite_path, color1, color2, pattern]
+	if _out_cache.has(key):
+		return _out_cache[key]
+	if _rejected.has(key):
+		return sprite_path
+	var img := _image_for(sprite_path)
+	if img == null:
+		_rejected[key] = true
+		return sprite_path
+	var c1 := Color(color1)
+	var c2 := Color(color2) if color2 != "" else c1
+	var w := img.get_width()
+	var h := img.get_height()
+	# The baked floor: the same border-connected key `over_prop` uses. Everything NOT in it is
+	# the creature. An unkeyable sprite tints wholesale rather than not at all - it has no floor
+	# to protect.
+	var bg := {}
+	for i in _background_mask(sprite_path, img):
+		bg[i] = true
+	var box := Rect2i(w, h, -1, -1)
+	for y in range(h):
+		for x in range(w):
+			if bg.has(y * w + x) or img.get_pixel(x, y).a < 0.5:
+				continue
+			if box.size.x < 0:
+				box = Rect2i(x, y, 1, 1)
+			else:
+				box = box.expand(Vector2i(x, y))
+	if box.size.x <= 0 or box.size.y <= 0:
+		_rejected[key] = true
+		return sprite_path
+	var out := img.duplicate() as Image
+	for y in range(h):
+		for x in range(w):
+			if bg.has(y * w + x):
+				continue
+			var px := img.get_pixel(x, y)
+			if px.a < 0.05:
+				continue
+			var t := _pattern_t(pattern, x, y, box)
+			var c := c1.lerp(c2, t)
+			out.set_pixel(x, y, _tint_mix(px, c, TINT_STRENGTH))
+	var tex := ImageTexture.create_from_image(out)
+	var dyn := _DYN_DIR + "t%d.png" % abs(hash(key))
+	tex.take_over_path(dyn)
+	_keepalive.append(tex)
+	_out_cache[key] = dyn
+	return dyn
+
+
 static func bordered(path: String, color_hex: String) -> String:
 	"""`path` with corner brackets in `color_hex`, marking it as something you can PICK UP.
 

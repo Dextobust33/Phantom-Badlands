@@ -45732,6 +45732,21 @@ func _dungeon_companion_ko() -> bool:
 	return int(comp.get("combat_hp", 1)) <= 0
 
 
+func _companion_tinted_sprite(comp: Dictionary, sprite_path: String) -> String:
+	"""`sprite_path` wearing this companion's VARIANT colours.
+
+	Owner 2026-09-11: the tint belongs "everywhere pretty much" - a Verdant Wolf should be green
+	wherever it is drawn, not only in its ASCII art. A companion stores the same three fields a
+	monster does under different names (`variant_color` / `variant_color2` / `variant_pattern`),
+	so this is the one place that maps them onto the shared tint."""
+	if sprite_path == "" or comp == null or not (comp is Dictionary):
+		return sprite_path
+	return _DungeonComposite.tinted(sprite_path,
+		String(comp.get("variant_color", "")),
+		String(comp.get("variant_color2", "")),
+		String(comp.get("variant_pattern", "solid")))
+
+
 func _dungeon_companion_img(prop: String = "") -> String:
 	"""The active companion, drawn on the floor behind the player. Reuses the same floor-backed
 	monster sprites the dungeon already uses, matched on the companion's `monster_type`."""
@@ -45740,11 +45755,13 @@ func _dungeon_companion_img(prop: String = "") -> String:
 	var spr: String = _dungeon_companion_sprite()
 	if spr == "":
 		return ""
-	# NO TINT. Owner: "the companion has a color offset under it or something, floor is a
-	# different color on its space." Exactly right, and it is the same fault removed from the
-	# player one commit earlier: `color=` multiplies the WHOLE image, and these sprites have the
-	# floor baked into them, so an identity tint stains the ground. Wanting the companion to read
-	# as YOURS is not worth a discoloured tile; position behind you already says it.
+	# 2026-09-11 - IT CAN BE TINTED NOW, and this comment used to say the opposite. Owner, then:
+	# "the companion has a color offset under it or something, floor is a different color on its
+	# space" - because `color=` multiplies the WHOLE image and these sprites carry the floor. The
+	# variant colours are applied per PIXEL now, with the baked floor keyed out first
+	# (`DungeonComposite.tinted`, proven by tools/probe/monster_tint.gd: not one floor pixel
+	# moves), so a Verdant Wolf can finally be green underground without staining the ground.
+	spr = _companion_tinted_sprite(character_data.get("active_companion", {}), spr)
 	return "[img=%dx%d]%s[/img]" % [
 		_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, _DungeonComposite.over_prop(spr, prop)]
 
@@ -46346,7 +46363,14 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 						# the same mistake reached the screen (player, then companion, then here),
 						# which is why the rule is now absolute: never `color=` a floor-backed
 						# sprite. `tools/verify_dungeon_art.gd` fails the build if one appears.
-						var _mimg: String = _DungeonComposite.over_prop(_msprite, _prop)
+						# The cosmetic VARIANT ("Azure Ogre"), on the sprite as well as the name.
+						# Tint first, then over_prop: the tint keeps the baked floor untouched, so
+						# the prop composite still finds it and the ground is never coloured.
+						var _mtinted: String = _DungeonComposite.tinted(_msprite,
+							String(mon.get("appearance_color", "")),
+							String(mon.get("appearance_color2", "")),
+							String(mon.get("appearance_pattern", "solid")))
+						var _mimg: String = _DungeonComposite.over_prop(_mtinted, _prop)
 						# A BOSS gets a ring. `mchar`/`mcolor` above have carried a red "B" for bosses
 						# since long before sprites, but ONLY the glyph fallback below ever read them -
 						# so the moment every dungeon monster had art, the boss became visually
@@ -49716,7 +49740,8 @@ func _house_residents(layout: Array) -> Array:
 		# Offset by slot so the companions do not breathe in unison.
 		var path := _DungeonSprites.monster_path(mt, _house_anim_tick + i)
 		if path != "" and ResourceLoader.exists(path):
-			out.append({"x": xx, "y": yy, "path": path})
+			# Its variant colours, the same tint the dungeon uses: a Verdant Wolf is green here too.
+			out.append({"x": xx, "y": yy, "path": _companion_tinted_sprite(comp, path)})
 	return out
 
 
