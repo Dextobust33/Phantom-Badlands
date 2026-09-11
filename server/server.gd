@@ -29517,7 +29517,12 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Check for wall
 	var tile = grid[new_y][new_x]
 	if tile == DungeonDatabaseScript.TileType.WALL:
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]A wall blocks your path.[/color]"})
+		# NOT "a wall". Dungeons stopped drawing walls as tiles long ago - non-traversable space
+		# is rendered as black VOID (94% of it; the remaining 6% shows a rock rim only where it
+		# holds up floor above). A player walking into blackness was being told about a wall they
+		# could not see. Owner spotted the same slip in my own wording: "I didn't think we had
+		# walls in dungeons anymore?"
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Solid rock blocks your path.[/color]"})
 		return
 
 	# Move player

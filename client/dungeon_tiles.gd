@@ -345,8 +345,9 @@ static func tall_prop_for(grid: Array, x: int, y: int) -> String:
 	Position-hashed like `prop_for`, on a different salt so the two do not correlate.
 
 	The placement rule is the whole point: a base is only allowed where the cell ABOVE is also
-	walkable floor. Without that the top half would be drawn into a wall or into the void, which
-	is precisely the half-object problem this exists to fix, just moved up one cell."""
+	walkable floor. Without it the top half would be drawn into NON-TRAVERSABLE space - which the
+	dungeon renders as black void, not as a wall - and a lamp head floating in blackness with no
+	post under it is precisely the half-object problem this exists to fix, moved up one cell."""
 	if y <= 0 or y >= grid.size():
 		return ""
 	var row = grid[y]

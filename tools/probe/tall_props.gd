@@ -34,7 +34,9 @@ func _init() -> void:
 					if b == "":
 						continue
 					bases += 1
-					# the cell above must be walkable, or the top half lands in rock
+					# the cell above must be walkable, or the top half is drawn into
+					# non-traversable space - which renders as black VOID, so the lamp head
+					# would float with no post beneath it
 					if y - 1 < 0 or int(g[y - 1][x]) == 1:
 						in_wall += 1
 					# and the base cell itself must be walkable
@@ -42,8 +44,8 @@ func _init() -> void:
 						dangling += 1
 	print("      %d bases placed across 6 floors" % bases)
 	ck(bases > 0, "tall props are actually placed (density is not zero)")
-	ck(in_wall == 0, "no base puts its top half into a wall (%d)" % in_wall)
-	ck(dangling == 0, "no base stands in a wall itself (%d)" % dangling)
+	ck(in_wall == 0, "no base puts its top half into the void (%d)" % in_wall)
+	ck(dangling == 0, "no base stands in non-traversable space itself (%d)" % dangling)
 
 	print("--- 3. rarer than scatter, or a corridor becomes a street ---")
 	# props are 1 in 7; these must be far rarer

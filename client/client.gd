@@ -35953,7 +35953,7 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# collapses to one row - folded all twelve into a single entry. The button proved
 			# the de-dup works and tested nothing about overflow.
 			var _flood := ["You pick up a Tarnished Ring", "Spider webs cling to your boots",
-				"You find a Wolf Pup Egg on the floor", "A wall blocks your path",
+				"You find a Wolf Pup Egg on the floor", "Solid rock blocks your path",
 				"You pick up 25 Valor", "Toxic miasma sears your lungs",
 				"You scavenge from a fresh pack-kill", "A corrosive mist engulfs you",
 				"Bone shards nick you as you pass", "You pick up a Steel Warlord Blade",
