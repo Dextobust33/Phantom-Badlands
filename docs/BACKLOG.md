@@ -401,6 +401,74 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       STILL UNVERIFIED and shipped on code review: party equipment rewards (2 clients) and
       leader logout/permadeath (3 clients) - `party3` and `party3_leader_dies` set both up.
 
+## Phase 3.0 — LIVE PLAYTEST REPORTS, 2026-09-10 (owner, one session)
+
+Eleven reports in one sitting. Six are fixed and committed; the rest are recorded here with what
+was established, so none of them restarts from zero.
+
+**Fixed this session** (see git log): monsters hidden behind the companion; a KO'd companion that
+kept following; a companionless player trailing corridor floor; lamps going out when anything
+stood on them; the dungeon repainting over the death screen and the [L] log; the Sanctuary
+checkout failing silently and losing the player's selection to a refresh; Shrine / Elite Den /
+Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
+
+- [ ] **The cycled SHIELD absorbs nothing.** Owner: *"Cleave cycling says it gave 6 shield.
+      Combat log says Kobold attack and deals 16 damage to which my healthbar is now missing 16.
+      If the shield did something we should specify since it looks like it never existed."*
+      Screenshot confirms it: `Cleave cycles — 6 shield.` then `The Kobold attacks and deals 16
+      damage!`, HP 200 -> 184, and the damage HOVER lists only `Mitigation -10% taken
+      (Constitution 10%)`. That hover is built by `_note_mitigation`, which
+      `_damage_player_with_shield` calls whenever it absorbs — so the absorb did not run, i.e.
+      `combat["forcefield_shield"]` was 0 at the moment the hit resolved.
+      **Established.** `_cycle_unplayed` (combat_manager.gd:13656) adds to `forcefield_shield` on
+      the LIVE `combat_state`, not a copy, and the player had missed, so the path was
+      `_cycle_hand_after_attack`. Both write the real dict. The shield is therefore granted
+      correctly and read correctly — which leaves ORDER.
+      **The likely cause, not yet confirmed:** log order is not resolution order. Messages are
+      appended to `msgs` arrays that are assembled for display, so the monster's attack probably
+      resolves BEFORE the hand cycles, and the log simply prints them the other way round. If so
+      the fix is the sequencing, not the shield.
+      **Do not guess a third time** — this is a combat-ordering change and the round structure
+      has to be read first. Confirm by logging the value of `forcefield_shield` immediately
+      before the monster's damage is applied.
+
+- [ ] **Does the health bar lag on multi-hits / monster abilities?** Owner asked, and hedged:
+      *"I may have been moving too fast though."* Two things ruled OUT: the bar's tween is 0.3s
+      (`animate_hp_bar_change`), and the bar reads `character_data.current_hp` directly, so it is
+      not a slow animation and not a stale field.
+      What is NOT ruled out is message timing — combat playback is PACED (`_drain_combat_queue`)
+      while `character_update` is not, so the bar and the log are driven by different clocks.
+      Needs a measurement, not an opinion: log the arrival time of `character_update` against the
+      queue drain for a multi-hit round.
+
+- [ ] **A dungeon still opens at a different depth than the tile advertised.** Owner: *"On the
+      overworld this said it was a T1-2 Forgotten Crypt. I entered and it is a T1-7."* This is the
+      SECOND report; the 2026-09-08 inherit was supposed to end it and reads correctly on the
+      page. A diagnostic now logs, at entry, what the tile resolved to and what the instance got,
+      flagging both failure shapes by name (shipped 2026-09-10, no behaviour change).
+      **Next step is to read that log, not to theorise again.** The shape to expect is
+      `tile=NONE`: `_get_dungeon_at_location` finding nothing at the player's feet even though
+      the entrance panel had just printed a sub-tier from the same call, after which the depth
+      falls back to a distance roll.
+      Separately and definitely wrong, found while reading: the dungeon LIST
+      (`server.gd` ~29136) matches an instance by dungeon_type ALONE — no location, owner or
+      completed filter — so it reports the sub-tier of whichever instance of that type comes
+      first in dictionary order, which may be a different dungeon entirely.
+
+- [ ] **The kennel screen does not show a companion's sub-tier, and cannot inspect one.** Owner,
+      in passing: *"it doesn't list its current subtier in that screen or let you inspect them"*.
+      The data is already on the wire — `_build_companion_stable_payload` sends `sub_tier` per
+      companion. This is a display gap, not a plumbing one.
+
+- [ ] **Returning a checked-out companion — owner's call.** Owner: *"should we make a way for
+      players to be able to send a checked out companion back to the sanctuary? Or maybe players
+      should only be able to checkout companions on character creation?"*
+      For the record, depositing already EXISTS in game: `handle_companion_stable_checkout`
+      refuses with *"Deposit your active companion first"*, so a Companion Stable can take one
+      back. What does not exist is a way to do it from the Sanctuary screen at character select,
+      which is where the owner was. So the question is really whether the kennel screen should
+      gain a Deposit, rather than whether returning should exist at all.
+
 ## Phase 3.4 — the CYCLE VALUE (deck-width arc, owner direction 2026-09-10)
 
 Owner: *"make cards with mechanics that make you actually want to grow your deck to a larger size
