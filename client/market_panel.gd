@@ -744,7 +744,7 @@ func populate_inspect(listing: Dictionary, valor: int) -> void:
 		var variant = str(item.get("variant", "Normal"))
 		var tier = int(item.get("tier", 1))
 		var sub = int(item.get("sub_tier", 1))
-		meta_lines.append("[color=#87CEEB]Egg:[/color] %s (T%d-%d)" % [variant, tier, sub])
+		meta_lines.append("[color=#87CEEB]Egg:[/color] %s (%s)" % [variant, PowerRank.tag(tier, sub)])
 	if item.get("type", "") == "card":
 		# #39 — earned combat card listing.
 		meta_lines.append("[color=#FFB347]Combat Card:[/color] T%d — a card you equip in your deck" % int(item.get("tier", 1)))
@@ -924,7 +924,7 @@ func _make_listing_row(listing: Dictionary, index: int, is_my_listing: bool) -> 
 	if item.get("type", "") == "egg":
 		var t = int(item.get("tier", 1))
 		var s = int(item.get("sub_tier", 1))
-		label_parts.append("T%d-%d" % [t, s])
+		label_parts.append(PowerRank.label(t, s))
 	var meta := ""
 	if label_parts.size() > 0:
 		meta = "  " + " ".join(label_parts)
@@ -1368,7 +1368,7 @@ func _build_egg_rows() -> void:
 		var tier := int(egg.get("tier", 1))
 		var sub_tier := int(egg.get("sub_tier", 1))
 		var frozen_tag := "  [FROZEN]" if bool(egg.get("frozen", false)) else ""
-		btn.text = "%s %s Egg  (T%d-%d)%s" % [variant, comp_name, tier, sub_tier, frozen_tag]
+		btn.text = "%s %s Egg  (%s)%s" % [variant, comp_name, PowerRank.label(tier, sub_tier), frozen_tag]
 		btn.add_theme_color_override("font_color", Color.from_string(variant_color, Color.WHITE))
 		var captured_idx := idx
 		btn.pressed.connect(func(): _on_picker_egg_row_pressed(captured_idx))
@@ -1423,7 +1423,7 @@ func _on_picker_egg_row_pressed(idx: int) -> void:
 	var variant := String(egg.get("variant", "Normal"))
 	var tier := int(egg.get("tier", 1))
 	var sub_tier := int(egg.get("sub_tier", 1))
-	_picker_selected_name = "%s %s Egg (T%d-%d)" % [variant, comp_name, tier, sub_tier]
+	_picker_selected_name = "%s %s Egg (%s)" % [variant, comp_name, PowerRank.label(tier, sub_tier)]
 	_picker_selected_stackable = false
 	_picker_selected_max = 1
 	_picker_selected_label.text = "[color=#FFD700]Selected:[/color] [color=#87CEEB]%s[/color]" % _picker_selected_name

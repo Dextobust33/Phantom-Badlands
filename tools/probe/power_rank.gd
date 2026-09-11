@@ -1,0 +1,111 @@
+extends SceneTree
+## A player must be able to order two labels without being told the rule.
+##
+## Owner, 2026-09-09: *"the Tier and subtier are confusing."* And on the replacement, 2026-09-11:
+## *"only if we can make it clear to the player what is better than what... they need to know and
+## understand if they have higher tier and rank monster."*
+##
+## So the checks here are not "does it print a string" — they are "does the printed thing ORDER
+## correctly, and does it carry its own explanation".
+const PR := preload("res://shared/power_rank.gd")
+const DD := preload("res://shared/dungeon_database.gd")
+
+var fails := 0
+func ck(ok: bool, msg: String) -> void:
+	if not ok:
+		fails += 1
+	print(("  PASS  " if ok else "  FAIL  ") + msg)
+
+
+func _init() -> void:
+	print("--- the ladder: nine tiers, nine letters, exactly one S ---")
+	ck(PR.LADDER.size() == 9, "nine letters for nine tiers (TIER_LEVEL_RANGES has 9)")
+	var seen := {}
+	for l in PR.LADDER:
+		seen[l] = true
+	ck(seen.size() == 9, "all nine are distinct — no letter has to be told apart from itself")
+	var s_count := 0
+	for l in PR.LADDER:
+		if String(l).begins_with("S"):
+			s_count += 1
+	ck(s_count == 1, "exactly ONE S. Owner: \"too many S's, we need an alternative on that\"")
+	ck(PR.letter(1) == "H" and PR.letter(9) == "S", "H is the floor, S the apex")
+
+	print("\n--- BOTH halves ascend: later letter wins, higher number wins ---")
+	# The whole point of the rename. If this fails the label is no better than [T1-5].
+	var strictly_increasing := true
+	var last := -1
+	for t in range(1, 10):
+		for r in range(1, PR.RANKS + 1):
+			var idx: int = PR.power_index(t, r)
+			if idx <= last:
+				strictly_increasing = false
+			last = idx
+	ck(strictly_increasing, "every one of the 81 steps is stronger than the one before it")
+	ck(PR.power_index(2, 1) > PR.power_index(1, 9),
+		"the WEAKEST of a higher tier still beats the STRONGEST of a lower one (G1 > H9)")
+	ck(PR.power_index(4, 7) > PR.power_index(4, 3), "within a tier, higher rank wins (E7 > E3)")
+
+	print("\n--- rank covers the whole domain, including the part only companions reach ---")
+	# Companions fuse up to sub_tier 9; dungeons only generate 1-8. A cap of 8 here would have
+	# collapsed the single best companion rank in the game into the second best, everywhere.
+	ck(PR.RANKS == 9, "RANKS is 9 — the domain fusion actually produces, not the dungeon's 8")
+	ck(PR.label(5, 9) == "D9" and PR.label(5, 8) == "D8",
+		"a fused rank-9 companion is distinguishable from a rank-8 one")
+	var src := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(src.contains("mini(current_sub_tier + 1, 9)"),
+		"...and that 9 is still what the server's fusion actually caps at")
+
+	print("\n--- nothing is rendered bare: the ordering is always SHOWN ---")
+	ck(PR.color(1) != PR.color(9), "the danger ramp separates floor from apex")
+	var distinct := {}
+	for t in range(1, 10):
+		distinct[PR.color(t)] = true
+	ck(distinct.size() == 9, "every tier has its own colour — no two read as the same danger")
+	ck(PR.tag(3, 4).contains("[color=") and PR.tag(3, 4).contains("F4"),
+		"tag() carries the colour for panels with no hover handler")
+	var rl := PR.rich_label(3, 4)
+	ck(rl.contains("[url=") and rl.contains("[color="),
+		"rich_label() carries BOTH the colour and the explanation")
+
+	print("\n--- and the explanation actually explains ---")
+	var h := PR.hover(4, 6)
+	ck(h.contains("H G F") and h.contains("[E]"),
+		"the hover shows the whole ladder with THIS tier marked")
+	ck(h.contains("weakest") and h.contains("strongest"), "...and which end is which")
+	ck(h.contains("Higher rank is stronger"), "...and the within-tier rule, in words")
+	ck(PR.pips(1).begins_with("▰") and PR.pips(1).count("▰") == 1
+		and PR.pips(9).count("▰") == 9,
+		"pips() answers 'how far along am I' without knowing a single letter")
+
+	print("\n--- the dungeon name uses it, and carries no markup ---")
+	var name := DD.get_dungeon_display_name("goblin_caves", 1, 5)
+	ck(name.contains("[H5]"), "a dungeon reads 'Goblin Caves [H5]' — got: %s" % name)
+	ck(not name.contains("[color=") and not name.contains("[url="),
+		"plain: this string reaches Button.text and log lines too, which cannot render BBCode")
+
+	print("\n--- the old notation is gone everywhere ---")
+	var leftovers := 0
+	for f in ["res://client/client.gd", "res://shared/dungeon_database.gd", "res://server/server.gd",
+			"res://client/companions_panel.gd", "res://client/kennel_panel.gd",
+			"res://client/fusion_panel.gd", "res://client/market_panel.gd"]:
+		leftovers += FileAccess.get_file_as_string(f).count("T%d-%d")
+	ck(leftovers == 0, "no surface still builds the old [T1-5] form — got %d" % leftovers)
+
+	print("
+--- the help page is GENERATED, not a second copy of the ladder ---")
+	# A hand-typed ladder in the help text was the first draft, and it is the worst possible
+	# place for a stale copy: the page a confused player opens would teach the wrong order.
+	var cli := FileAccess.get_file_as_string("res://client/client.gd")
+	ck(cli.contains('"content": _tier_rank_help()'),
+		"the Tier & Rank topic calls a generator rather than a written-out table")
+	var g0 := cli.find("func _tier_rank_help()")
+	var gbody := cli.substr(g0, cli.find("
+func ", g0 + 10) - g0) if g0 >= 0 else ""
+	ck(gbody.contains("PowerRank.LADDER") and gbody.contains("PowerRank.color(") and gbody.contains("TIER_LEVEL_RANGES"),
+		"...and reads the ladder, the colours and the level bands from their real sources")
+	ck(not gbody.contains("L1-12") and not gbody.contains("H G F E D C B A S"),
+		"...with no band or letter typed into it by hand")
+
+	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
+	quit(1 if fails > 0 else 0)

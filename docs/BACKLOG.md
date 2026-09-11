@@ -701,46 +701,55 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       **Correction worth keeping:** my first pass read `send_combat_command`'s body, found no
       playback check, and reported "in SOLO nothing gates the press". Wrong UNIT — the gate is
       one level up, in the two callers. The probe now checks those, and says so.
-- [ ] **RENAME Tier/sub-tier to Tier(letter) + Rank(number).** Owner, 2026-09-09, raised in the
-      same message as the companion-multiplier audit and lost under it — never answered, never
-      filed until 2026-09-11. Recovered verbatim:
-      > *"the Tier and subtier are confusing, we should probably rename them Tier and rank or
-      > something like D9 being low while D1 is the highest of the D's, C is the next Tier and
-      > again the rank goes from 9(low all the way to 1)high. S or SS would be highest tier."*
+- [x] **DONE 2026-09-11 — Tier(letter) + Rank(number), `shared/power_rank.gd`.** Owner
+      2026-09-09, raised in the same message as the companion-multiplier audit and lost under it;
+      never answered or filed until the owner asked for it again on 2026-09-11:
+      > *"the Tier and subtier are confusing, we should probably rename them Tier and rank."*
 
-      **Why it is worth doing:** `[T1-5]` is two numbers that look alike and mean opposite kinds
-      of thing, and the SECOND one runs in a direction nobody expects. It is not a cosmetic
-      complaint — the owner has twice misread a dungeon's depth from its label, and the "said
-      T1-2, entered a T1-7" report sat unexplained partly because nobody could tell at a glance
-      which number was wrong.
+      **Decided with the owner, 2026-09-11:**
+      - Ladder **H G F E D C B A S** — nine letters for nine tiers, and exactly ONE S. Owner:
+        *"too many S's, we need an alternative on that."* Extending DOWNWARD instead of stacking
+        SS/SSS gives nine distinct letters and leans on school-grade intuition (F fails, A is
+        top); H and G are the two starter bands, S the single apex.
+      - **Both halves ascend.** The owner first asked for rank 1 = best, then chose ascending when
+        it was pointed out that a letter climbing toward S beside a number falling toward 1
+        reproduces the exact "two numbers running opposite ways" problem being fixed. Rule:
+        later letter wins; same letter, higher number wins.
+      - That choice had a happy consequence: `sub_tier` is ALREADY 1-9 ascending, so **rank IS
+        sub_tier**. Nothing inverted, nothing migrated, and no build can show a mix of directions.
 
-      **The current shape, measured:** tiers **1-9** (`TIER_LEVEL_RANGES`, L1-12 up to L5001-10000),
-      sub-tiers **1-8** within each (`get_sub_tier_level_range` divides the band into 8), higher
-      sub-tier = harder (further from origin). Labels are built in `get_dungeon_display_name` as
-      `"%s [T%d-%d]"`. **335 references across 13 files** — client.gd, combat_scene_panel,
-      companions_panel, companion_stable_panel, fusion_panel, kennel_panel, market_panel,
-      sanctuary_stable_panel, character.gd, combat_manager.gd, drop_tables.gd, dungeon_database.gd,
-      server.gd. It is not only dungeons: companions carry a sub_tier too, and so does fusion.
+      **Owner's condition:** *"only if we can make it clear to the player what is better than
+      what... Maybe even a star or symbols to help might work."* A letter ladder is not
+      self-evident and was not assumed to be. Three affordances, all built:
+      - `color()` ramps every label by DANGER, reusing `POST_TIER_COLORS`' vocabulary
+        (green safe → red extreme → purple world's edge) that players already read on the map —
+        so the label inherits a meaning rather than teaching a new one.
+      - `pips()` renders position as a bar (`E` → `▰▰▰▰▱▱▱▱▱`), answering "how far along am I"
+        without knowing a single letter.
+      - `hover()` spells out the whole ladder with the current tier marked, which end is which,
+        and the within-tier rule — on every label in a surface with a meta handler.
+      - Plus a generated **TIER & RANK help topic**.
 
-      **Do it at the DISPLAY layer, not as a data migration.** Keep `tier: int` / `sub_tier: int`
-      exactly as they are on disk and on the wire; add ONE formatter that turns `(tier, sub_tier)`
-      into `"C3"` and route every label through it. Rewriting 335 sites or migrating saved
-      companions and live dungeon instances would be a large risk for a naming change, and
-      CLAUDE.md's rename rule (a rename touches SEVEN surfaces) says the half-landed version is
-      the likely outcome. One formatter cannot half-land.
-      The surfaces that must all read from it: dungeon name, dungeon list, entrance panel,
-      overworld tile hover, companion cards, kennel, stable, fusion, market listings, quest text.
-      `-- cardnames`-style sweep afterwards, or the old notation survives somewhere.
+      **Done at the display layer, data untouched** — `tier`/`sub_tier` are unchanged on disk and
+      on the wire. All 26 sites that built `T%d-%d` now route through one formatter: `label()`
+      plain for `Button.text` and log lines, `tag()` coloured for BBCode panels with no meta
+      handler, `rich_label()` hoverable for `display_game`. Server logs carry BOTH notations so
+      existing greps still work.
 
-      **The rank INVERTS the current direction** — today sub-tier 8 is the hardest, under this
-      scheme rank 1 is. That is deliberate and matches the S/A/B convention, but it means every
-      existing label flips meaning, so the two notations must never appear in the same build.
+      **Two things found while doing it, neither assumed:**
+      - **Companions reach rank 9, dungeons stop at 8.** Fusion caps at 9 (`server.gd` L15594 /
+        L15863, every stable panel's `max_sub_tier`), while `get_sub_tier_for_distance` clamps to
+        8. A `RANKS = 8` formatter would have silently collapsed the single best companion rank in
+        the game into the second best, on every surface at once. Takes the wider domain.
+      - **My first help page hand-typed the ladder, the colours and the level bands** — a second
+        copy of three constants in the one place a confused player goes. Replaced with a generator
+        that reads all three from source; the probe now fails if a band or letter is typed in.
 
-      **One question still open before this can be written** (asked 2026-09-11): there are NINE
-      tiers and the owner's example names six letters (D C B A S SS). The ladder needs deciding.
-      Sub-tiers are 1-8, so rank maps cleanly to 8(low)-1(high) without touching data — the "9"
-      in the owner's example was illustrative of direction, not of count.
+      Probe: `tools/probe/power_rank.gd` — tests ORDERING as behaviour, not string shape.
+      Re-injection of the three rejected designs (rank-1-best, the SS/SSS ladder, the 8 cap)
+      fails 9 of its 24 checks.
 
+      **Still open:** why dungeons stop at rank 8 when companions reach 9 — filed, not assumed.
 - [~] **LIKELY SOLVED 2026-09-11, awaiting one confirmation.** Almost certainly the same cause as
       the bossless dungeon and the re-farm: the owner was re-entering a personal instance that had
       already been completed, which KEEPS its original sub-tier and skips the whole

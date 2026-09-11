@@ -560,7 +560,7 @@ func _rebuild_active_section() -> void:
 	var rarity_prefix = ""
 	if rarity_tag != "":
 		rarity_prefix = "[color=%s][%s][/color] " % [rarity_color, rarity_tag]
-	lines.append("[color=#00FFFF]Active:[/color] %s[color=%s]★ %s %s[/color] [color=#AAAAAA](Lv %d, T%d-%d)[/color]" % [rarity_prefix, variant_color, variant, name, level, tier, sub_tier])
+	lines.append("[color=#00FFFF]Active:[/color] %s[color=%s]★ %s %s[/color] [color=#AAAAAA](Lv %d, %s[color=#AAAAAA])[/color]" % [rarity_prefix, variant_color, variant, name, level, PowerRank.tag(tier, sub_tier)])
 
 	# XP bar
 	if level < 10000:
@@ -752,7 +752,7 @@ func _make_companion_card(c: Dictionary, is_active: bool, index: int) -> PanelCo
 	var level = int(c.get("level", 1))
 	var tier = int(c.get("tier", 1))
 	var sub_tier = int(c.get("sub_tier", 1))
-	meta.text = "[color=#AAAAAA]Lv %d  T%d-%d[/color]  [color=%s]%s[/color]" % [level, tier, sub_tier, variant_color, variant]
+	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s  [color=%s]%s[/color]" % [level, PowerRank.tag(tier, sub_tier), variant_color, variant]
 	vbox.add_child(meta)
 
 	var bonuses := RichTextLabel.new()
@@ -975,7 +975,7 @@ func _make_egg_card(egg: Dictionary, index: int) -> PanelContainer:
 		rarity_tag = str(info.get("tier", ""))
 	var rarity_prefix := ("[color=%s][%s][/color] " % [rarity_color, rarity_tag]) if rarity_tag != "" else ""
 	var frozen_tag = "  [color=#00BFFF][FROZEN][/color]" if is_frozen else ""
-	name_lbl.text = "%s[color=%s]%s %s Egg[/color] [color=#808080](T%d-%d)[/color]%s" % [rarity_prefix, color1, variant, egg_name, tier, sub_tier, frozen_tag]
+	name_lbl.text = "%s[color=%s]%s %s Egg[/color] (%s)%s" % [rarity_prefix, color1, variant, egg_name, PowerRank.tag(tier, sub_tier), frozen_tag]
 	vbox.add_child(name_lbl)
 
 	# Progress

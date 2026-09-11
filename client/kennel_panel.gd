@@ -331,7 +331,7 @@ func _make_card(c: Dictionary, original_index: int) -> PanelContainer:
 	var level = int(c.get("level", 1))
 	var tier = int(c.get("tier", 1))
 	var sub_tier = int(c.get("sub_tier", 1))
-	meta.text = "[color=#AAAAAA]Lv %d  T%d-%d[/color]  [color=%s]%s[/color]" % [level, tier, sub_tier, variant_color, variant]
+	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s  [color=%s]%s[/color]" % [level, PowerRank.tag(tier, sub_tier), variant_color, variant]
 	vbox.add_child(meta)
 
 	var bonuses := RichTextLabel.new()

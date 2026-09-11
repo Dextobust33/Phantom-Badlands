@@ -3007,8 +3007,11 @@ static func get_dungeon_display_name(dungeon_id: String, tier: int, sub_tier: in
 	"""Get display name with tier notation, e.g. 'Goblin Caves [T1-5]'."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
-		return "Unknown Dungeon [T%d-%d]" % [tier, sub_tier]
-	return "%s [T%d-%d]" % [dungeon.name, tier, sub_tier]
+		return "Unknown Dungeon [%s]" % PowerRank.label(tier, sub_tier)
+	# Plain, deliberately: this name flows into Button.text and log lines as well as
+	# RichTextLabels, so it cannot carry colour. Callers that CAN show colour use
+	# PowerRank.tag()/rich_label() alongside it.
+	return "%s [%s]" % [dungeon.name, PowerRank.label(tier, sub_tier)]
 
 static func get_dungeon_resource_tier(dungeon_tier: int) -> int:
 	"""Map dungeon tier to resource material tier for gathering nodes."""

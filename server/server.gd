@@ -15610,7 +15610,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 		if persistence.fuse_companions(account_id, int_indices, output):
 			send_to_peer(peer_id, {
 				"type": "text",
-				"message": "[color=#FFD700]Fusion complete! Created %s (T%d-%d)![/color]" % [output.name, output.tier, new_sub_tier]
+				"message": "[color=#FFD700]Fusion complete! Created %s (%s)![/color]" % [output.name, PowerRank.tag(output.tier, new_sub_tier)]
 			})
 			_send_house_update(peer_id)
 
@@ -30471,7 +30471,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	# Generate traps for all floors
 	_generate_dungeon_traps(instance_id, dungeon_type, floor_grids)
 
-	log_message("Created dungeon instance: %s (%s) [T%d-%d]" % [instance_id, dungeon_data.name, dungeon_data.tier, sub_tier])
+	log_message("Created dungeon instance: %s (%s) [%s] (tier=%d sub=%d)" % [instance_id, dungeon_data.name, PowerRank.label(dungeon_data.tier, sub_tier), dungeon_data.tier, sub_tier])
 	return instance_id
 
 func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0, force_sub_tier: int = -1) -> String:

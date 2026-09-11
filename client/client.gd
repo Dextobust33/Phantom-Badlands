@@ -32050,7 +32050,7 @@ func display_companions():
 			var display_num = (i - start_idx) + 1  # 1-5 for current page
 			var comp_tier = companion.get("tier", 1)
 			var comp_sub_tier = int(companion.get("sub_tier", 1))
-			var st_tag = " T%d-%d" % [comp_tier, comp_sub_tier]
+			var st_tag = " " + PowerRank.tag(comp_tier, comp_sub_tier)
 			if is_active:
 				display_game("  [%d] [color=%s][%s][/color] [color=#00FFFF]★ %s Lv.%d%s[/color] [color=%s](%s)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, comp_name, comp_level, st_tag, variant_color, variant, variant_indicator])
 			else:
@@ -33608,7 +33608,7 @@ func display_eggs():
 		var egg_sub_tier = egg.get("sub_tier", 1)
 		var frozen_str = " [color=#00BFFF][FROZEN][/color]" if is_frozen else ""
 		var display_num = (i - start_idx) + 1
-		display_game("  [%d] [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](T%d-%d)[/color]%s" % [display_num, rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier, egg_sub_tier, frozen_str])
+		display_game("  [%d] [color=%s][%s][/color] [color=%s]%s %s Egg[/color] (%s)%s" % [display_num, rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, PowerRank.rich_label(tier, egg_sub_tier), frozen_str])
 
 		# Progress bar
 		var bar_length = 16
@@ -33901,6 +33901,45 @@ func _help_passive_block(classes: Array) -> String:
 			String(p.get("color", "#FFFFFF")), CharacterScript.class_display_name(String(c)),
 			String(p.get("name", "?")), String(p.get("description", ""))])
 	return "\n".join(lines)
+
+func _tier_rank_help() -> String:
+	"""The Tier/Rank ladder, built from the SAME constants the labels are built from.
+
+	Owner's condition on the whole rename (2026-09-11): *"only if we can make it clear to the
+	player what is better than what... they need to know and understand if they have higher tier
+	and rank monster."* Three affordances carry that, and this is the one they can go and read:
+	the in-game hover (PowerRank.hover), the danger colour on every label, and this page."""
+	var rows: Array[String] = []
+	for t in range(1, PowerRank.LADDER.size() + 1):
+		var band: Dictionary = DungeonDatabase.TIER_LEVEL_RANGES.get(t, {})
+		rows.append("[color=%s]%s[/color]  %s  [color=#808080]L%d-%d[/color]" % [
+			PowerRank.color(t), PowerRank.letter(t), PowerRank.pips(t),
+			int(band.get("min", 0)), int(band.get("max", 0))])
+	var top: String = PowerRank.letter(PowerRank.LADDER.size())
+	var low: String = PowerRank.letter(1)
+	return "
+".join([
+		"[color=#FFD700]Tier & Rank[/color]",
+		"",
+		"Every dungeon, companion and egg carries a power label like [color=#FFCC00]%s[/color]." % PowerRank.label(5, 5),
+		"A [color=#00FFFF]letter[/color] for the TIER, a [color=#00FFFF]number[/color] for the RANK within it.",
+		"",
+		"[color=#00FF00]Both go the same way: further along = stronger.[/color]",
+		"",
+		"
+".join(rows),
+		"",
+		"[color=#00FFFF]Rank[/color] runs 1 (weakest) to %d (strongest) inside a tier." % PowerRank.RANKS,
+		"So [color=#FFCC00]%s[/color] beats [color=#FFCC00]%s[/color] - and [color=#FFAA00]%s[/color] beats [color=#FFCC00]%s[/color]," % [
+			PowerRank.label(5, PowerRank.RANKS), PowerRank.label(5, 1),
+			PowerRank.label(6, 1), PowerRank.label(5, PowerRank.RANKS)],
+		"because a higher TIER always wins, whatever the rank.",
+		"",
+		"[color=#808080]%s is the gentlest, %s the deadliest. Colour matches the danger" % [low, top],
+		"you already read on the map: green is safe, red is extreme,",
+		"purple is the world's edge. Hover any label in game to see this again.[/color]"
+	])
+
 
 func show_help():
 	# Clear output before showing help
@@ -34559,6 +34598,16 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 			"title": "GUARDS & TOWERS",
 			"keywords": ["guard", "guards", "tower", "towers", "suppress", "encounter", "safe", "zone", "wall", "decay", "patrol", "hire", "feed", "dismiss", "construction"],
 			"content": "[color=#C0C0C0]Guards & Towers[/color]\n\n[color=#FFD700]Guard Posts:[/color] Craft with Construction Lv15 (3 stone, 2 planks, 2 iron).\nPlace anywhere with 10-tile spacing. Bump to interact.\n\n[color=#00FF00]Hiring:[/color] 50 Valor + 5 food materials (fish or herbs).\nGuards suppress random encounters in a 5-tile radius.\nYou CAN still hunt voluntarily in guard zones.\n\n[color=#FFD700]Tower Boost:[/color] Place guard post within 2 tiles of a Watch Tower.\nGuard radius increases to 15 tiles!\n\n[color=#FF8800]Maintenance:[/color] Guards start with 7 days of food.\nFeed 3 food materials to add 3 days (max 14).\nUnfed guards abandon their post.\n\n[color=#808080]Wall Decay:[/color] Walls not part of a valid enclosure will\ncrumble after 72 hours. Keep walls enclosed to protect them."
+		},
+		{
+			"title": "TIER & RANK",
+			"keywords": ["tier", "rank", "letter", "label", "power", "strong", "stronger", "weak", "weaker", "better", "ladder", "subtier", "sub-tier", "grade"],
+			# GENERATED, not written. The first draft of this page hand-typed the ladder, the
+			# colours and the level bands into the string - a second copy of three constants, in
+			# the one place a player goes when they are already confused. That is the "one value,
+			# two places" defect this repo keeps hitting, and a help page is the worst possible
+			# place for it: it would go stale silently and teach the wrong ladder.
+			"content": _tier_rank_help()
 		},
 		{
 			"title": "DUNGEONS",
@@ -46436,7 +46485,7 @@ func display_market_browse():
 				var egg_tier = item.get("tier", 1)
 				var egg_sub = item.get("sub_tier", 1)
 				var rinfo = _get_variant_rarity_info(variant)
-				display_game("  [color=#FFFF00]%d)[/color] %s[color=%s][%s][/color] [color=%s]%s[/color] [color=#808080](T%d-%d)[/color] - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, npc_tag, rinfo.color, rinfo.tier, variant_color, item_name, egg_tier, egg_sub, format_number(price), seller])
+				display_game("  [color=#FFFF00]%d)[/color] %s[color=%s][%s][/color] [color=%s]%s[/color] (%s) - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, npc_tag, rinfo.color, rinfo.tier, variant_color, item_name, PowerRank.rich_label(egg_tier, egg_sub), format_number(price), seller])
 			else:
 				var level_text = ""
 				if item.has("level"):
@@ -46686,7 +46735,7 @@ func display_market_list_eggs():
 			var is_frozen = egg.get("frozen", false)
 			var rarity_info = _get_variant_rarity_info(variant)
 			var frozen_str = " [color=#00BFFF][FROZEN][/color]" if is_frozen else ""
-			display_game("  [color=#FFFF00]%d)[/color] [color=%s][%s][/color] [color=%s]%s %s Egg[/color] [color=#808080](T%d-%d)[/color]%s" % [i - start + 1, rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, tier, sub_tier, frozen_str])
+			display_game("  [color=#FFFF00]%d)[/color] [color=%s][%s][/color] [color=%s]%s %s Egg[/color] (%s)%s" % [i - start + 1, rarity_info.color, rarity_info.tier, variant_color, variant, egg_name, PowerRank.rich_label(tier, sub_tier), frozen_str])
 		if total_pages > 1:
 			display_game("")
 			display_game("[color=#808080]Page %d/%d[/color]" % [market_egg_page + 1, total_pages])
@@ -46731,7 +46780,7 @@ func display_market_inspect():
 		display_game("[color=#00FFFF]Name:[/color] [color=%s]%s[/color]" % [variant_color, item_name])
 		display_game("[color=#00FFFF]Monster:[/color] %s" % monster_name)
 		display_game("[color=#00FFFF]Variant:[/color] [color=%s][%s] %s[/color]" % [rinfo.color, rinfo.tier, variant])
-		display_game("[color=#00FFFF]Tier:[/color] T%d-%d" % [egg_tier, egg_sub])
+		display_game("[color=#00FFFF]Rank:[/color] %s" % PowerRank.rich_label(egg_tier, egg_sub))
 		var hatch_steps = item.get("hatch_steps_remaining", 0)
 		var hatch_total = item.get("hatch_steps_needed", 0)
 		if hatch_total > 0:
@@ -46791,7 +46840,7 @@ func display_market_network_inspect():
 		display_game("[color=#00FFFF]Name:[/color] [color=%s]%s[/color]" % [variant_color, item_name])
 		display_game("[color=#00FFFF]Monster:[/color] %s" % monster_name)
 		display_game("[color=#00FFFF]Variant:[/color] [color=%s][%s] %s[/color]" % [rinfo.color, rinfo.tier, variant])
-		display_game("[color=#00FFFF]Tier:[/color] T%d-%d" % [egg_tier, egg_sub])
+		display_game("[color=#00FFFF]Rank:[/color] %s" % PowerRank.rich_label(egg_tier, egg_sub))
 	else:
 		display_item_details(item, "Network Listing")
 
@@ -46860,7 +46909,7 @@ func display_market_buy_confirm():
 		var egg_sub = item.get("sub_tier", 1)
 		var rinfo = _get_variant_rarity_info(variant)
 		display_game("  Egg: [color=%s][%s][/color] [color=%s]%s[/color]" % [rinfo.color, rinfo.tier, variant_color, item_name])
-		display_game("  Tier: T%d-%d" % [egg_tier, egg_sub])
+		display_game("  Rank: %s" % PowerRank.rich_label(egg_tier, egg_sub))
 		var eggs = character_data.get("incubating_eggs", [])
 		var egg_cap = character_data.get("egg_capacity", 3)
 		if eggs.size() >= egg_cap:
@@ -46941,7 +46990,7 @@ func display_market_my_listings():
 				var egg_tier = item.get("tier", 1)
 				var egg_sub = item.get("sub_tier", 1)
 				var rinfo = _get_variant_rarity_info(variant)
-				display_game("  [color=#FFFF00]%d)[/color] [color=%s][%s][/color] [color=%s]%s[/color] [color=#808080](T%d-%d)[/color] - [color=#00FF00]%s V[/color]%s" % [idx - start + 1, rinfo.color, rinfo.tier, variant_color, item_name, egg_tier, egg_sub, format_number(base_valor), post_text])
+				display_game("  [color=#FFFF00]%d)[/color] [color=%s][%s][/color] [color=%s]%s[/color] (%s) - [color=#00FF00]%s V[/color]%s" % [idx - start + 1, rinfo.color, rinfo.tier, variant_color, item_name, PowerRank.rich_label(egg_tier, egg_sub), format_number(base_valor), post_text])
 			else:
 				var rarity = item.get("rarity", "common")
 				var rarity_color = _get_rarity_color(rarity)
@@ -49525,7 +49574,7 @@ func display_house_fusion():
 		if groups.size() > 0:
 			display_game("[color=#00FF00]Fuseable Groups:[/color]")
 			for group in groups:
-				display_game("  %s T%d-%d: %d companions [FUSEABLE]" % [group.monster_type, group.tier, group.sub_tier, group.count])
+				display_game("  %s %s: %d companions [FUSEABLE]" % [group.monster_type, PowerRank.rich_label(group.tier, group.sub_tier), group.count])
 		else:
 			display_game("[color=#808080]No fuseable groups yet. Need 3+ of same type and sub-tier.[/color]")
 
@@ -49543,9 +49592,9 @@ func display_house_fusion():
 			if house_fusion_selected.size() == 3:
 				var first = kennel_companions[house_fusion_selected[0]]
 				var new_st = mini(int(first.get("sub_tier", 1)) + 1, 9)
-				display_game("[color=#FFD700]Fuse 3x %s T%d-%d -> 1x %s T%d-%d?[/color]" % [
-					first.get("name", "?"), first.get("tier", 1), int(first.get("sub_tier", 1)),
-					first.get("name", "?"), first.get("tier", 1), new_st
+				display_game("[color=#FFD700]Fuse 3x %s %s -> 1x %s %s?[/color]" % [
+					first.get("name", "?"), PowerRank.tag(int(first.get("tier", 1)), int(first.get("sub_tier", 1))),
+					first.get("name", "?"), PowerRank.tag(int(first.get("tier", 1)), new_st)
 				])
 				display_game("")
 				display_game("[color=#FF4444]This will DESTROY the 3 input companions![/color]")
@@ -49555,9 +49604,9 @@ func display_house_fusion():
 			display_game("")
 			for gi in range(mini(5, groups.size())):
 				var group = groups[gi]
-				display_game("[%d] %s T%d-%d (%d available) -> T%d-%d" % [
-					gi + 1, group.monster_type, group.tier, group.sub_tier, group.count,
-					group.tier, mini(int(group.sub_tier) + 1, 9)
+				display_game("[%d] %s %s (%d available) -> %s" % [
+					gi + 1, group.monster_type, PowerRank.tag(int(group.tier), int(group.sub_tier)), group.count,
+					PowerRank.tag(int(group.tier), mini(int(group.sub_tier) + 1, 9))
 				])
 
 	elif house_fusion_type == "mixed":

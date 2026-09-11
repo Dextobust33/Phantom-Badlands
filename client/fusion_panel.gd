@@ -463,14 +463,14 @@ func _make_same_group_row(group: Dictionary, _group_index: int) -> Button:
 	var next_st = mini(sub_tier + 1, 9)
 	var indices: Array = group.get("indices", [])
 
-	btn.text = "%s  T%d-%d  ×%d  →  %s T%d-%d" % [monster_type, tier, sub_tier, count, monster_type, tier, next_st]
+	btn.text = "%s  %s  ×%d  →  %s %s" % [monster_type, PowerRank.label(tier, sub_tier), count, monster_type, PowerRank.label(tier, next_st)]
 
 	# Take first 3 of the available indices.
 	var first_three: Array = []
 	for i in range(mini(3, indices.size())):
 		first_three.append(int(indices[i]))
 
-	var label = "Fuse 3× %s T%d-%d → 1× %s T%d-%d?" % [monster_type, tier, sub_tier, monster_type, tier, next_st]
+	var label = "Fuse 3× %s %s → 1× %s %s?" % [monster_type, PowerRank.label(tier, sub_tier), monster_type, PowerRank.label(tier, next_st)]
 	btn.pressed.connect(_on_same_group_pressed.bind(first_three, label))
 	return btn
 
@@ -761,7 +761,7 @@ func _make_hybrid_card(c: Dictionary, kennel_index: int) -> PanelContainer:
 	var tier = int(c.get("tier", 1))
 	var sub_tier = int(c.get("sub_tier", 1))
 	var monster_type = str(c.get("monster_type", "?"))
-	meta.text = "[color=#AAAAAA]Lv %d  T%d-%d  %s[/color]  [color=%s]%s[/color]" % [level, tier, sub_tier, monster_type, variant_color, variant]
+	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s  [color=#AAAAAA]%s[/color]  [color=%s]%s[/color]" % [level, PowerRank.tag(tier, sub_tier), monster_type, variant_color, variant]
 	vbox.add_child(meta)
 
 	var bonuses := RichTextLabel.new()
