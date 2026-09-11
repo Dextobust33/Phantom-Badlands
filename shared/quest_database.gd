@@ -2141,25 +2141,12 @@ const TIER_MONSTERS = {
 	9: ["Avatar of Chaos", "The Nameless One", "God Slayer", "Entropy"]
 }
 
-# Level ranges for each monster tier
-const TIER_LEVEL_RANGES = {
-	1: {"min": 1, "max": 5},
-	2: {"min": 6, "max": 15},
-	3: {"min": 16, "max": 30},
-	4: {"min": 31, "max": 50},
-	5: {"min": 51, "max": 100},
-	6: {"min": 101, "max": 500},
-	7: {"min": 501, "max": 2000},
-	8: {"min": 2001, "max": 5000},
-	9: {"min": 5001, "max": 10000}
-}
+# Level ranges for each monster tier - an ALIAS of the one table, not a copy (2026-09-11).
+const TIER_LEVEL_RANGES = PowerRank.TIER_LEVEL_BANDS
 
 func _get_tier_for_area_level(area_level: int) -> int:
 	"""Get the appropriate monster tier for an area level."""
-	for tier in range(9, 0, -1):
-		if area_level >= TIER_LEVEL_RANGES[tier].min:
-			return tier
-	return 1
+	return PowerRank.tier_for_level(area_level)
 
 func _get_random_monster_for_tier(tier: int) -> String:
 	"""Get a random monster name from the specified tier."""

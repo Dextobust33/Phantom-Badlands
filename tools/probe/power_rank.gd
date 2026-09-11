@@ -19,7 +19,7 @@ func ck(ok: bool, msg: String) -> void:
 
 func _init() -> void:
 	print("--- the ladder: nine tiers, nine letters, exactly one S ---")
-	ck(PR.LADDER.size() == 9, "nine letters for nine tiers (TIER_LEVEL_RANGES has 9)")
+	ck(PR.LADDER.size() == 9, "nine letters for nine tiers (TIER_LEVEL_BANDS has 9)")
 	var seen := {}
 	for l in PR.LADDER:
 		seen[l] = true
@@ -137,7 +137,7 @@ func _init() -> void:
 	var ceiling_held := true
 	var floor_held := true
 	for t in range(1, 10):
-		var band: Dictionary = DD.TIER_LEVEL_RANGES[t]
+		var band: Dictionary = PR.dungeon_band(t)
 		var top: Dictionary = DD.get_sub_tier_level_range(t, PR.RANKS)
 		var bot: Dictionary = DD.get_sub_tier_level_range(t, 1)
 		if int(top.max_level) != int(band.max):

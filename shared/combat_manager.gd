@@ -10770,25 +10770,8 @@ func _get_shrieker_summon_tier() -> int:
 		return 9
 
 func _get_tier_for_level(level: int) -> int:
-	"""Get monster/player tier based on level (matches monster_database tier ranges)"""
-	if level <= 5:
-		return 1
-	elif level <= 15:
-		return 2
-	elif level <= 30:
-		return 3
-	elif level <= 50:
-		return 4
-	elif level <= 100:
-		return 5
-	elif level <= 500:
-		return 6
-	elif level <= 2000:
-		return 7
-	elif level <= 5000:
-		return 8
-	else:
-		return 9
+	"""Get monster/player tier based on level - PowerRank.TIER_LEVEL_BANDS, the one table."""
+	return PowerRank.tier_for_level(level)
 
 func calculate_monster_damage(monster: Dictionary, character: Character, combat: Dictionary = {}) -> int:
 	"""Calculate monster damage to player (reduced by equipment defense, buffs, and class passives)"""

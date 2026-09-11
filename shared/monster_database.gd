@@ -422,25 +422,9 @@ func select_monster_type(level: int, biome: String = "") -> MonsterType:
 	return fallback[randi() % fallback.size()]
 
 func _get_tier_info(level: int) -> Dictionary:
-	"""Get the tier number and progress through that tier (0.0 to 1.0)"""
-	if level <= 5:
-		return {"tier": 1, "progress": float(level) / 5.0}
-	elif level <= 15:
-		return {"tier": 2, "progress": float(level - 5) / 10.0}
-	elif level <= 30:
-		return {"tier": 3, "progress": float(level - 15) / 15.0}
-	elif level <= 50:
-		return {"tier": 4, "progress": float(level - 30) / 20.0}
-	elif level <= 100:
-		return {"tier": 5, "progress": float(level - 50) / 50.0}
-	elif level <= 500:
-		return {"tier": 6, "progress": float(level - 100) / 400.0}
-	elif level <= 2000:
-		return {"tier": 7, "progress": float(level - 500) / 1500.0}
-	elif level <= 5000:
-		return {"tier": 8, "progress": float(level - 2000) / 3000.0}
-	else:
-		return {"tier": 9, "progress": 1.0}
+	"""Get the tier number and progress through that tier (0.0 to 1.0).
+	Reads PowerRank.TIER_LEVEL_BANDS - the one table - rather than a typed-out ladder."""
+	return {"tier": PowerRank.tier_for_level(level), "progress": PowerRank.tier_progress(level)}
 
 func get_random_monster_name_from_tier(tier: int) -> String:
 	"""Get a random monster name from a specific tier (public function for summoning)"""
@@ -2236,42 +2220,43 @@ func _calculate_monster_intelligence(level: int, monster_name: String = "") -> i
 	var base_intelligence: int
 	var variance: int
 
-	if level <= 5:
-		# Tier 1: Very dumb monsters
-		base_intelligence = 5
-		variance = 5
-	elif level <= 15:
-		# Tier 2: Simple-minded
-		base_intelligence = 10
-		variance = 5
-	elif level <= 30:
-		# Tier 3: Average intelligence
-		base_intelligence = 18
-		variance = 7
-	elif level <= 50:
-		# Tier 4: Cunning
-		base_intelligence = 25
-		variance = 5
-	elif level <= 100:
-		# Tier 5: Intelligent
-		base_intelligence = 32
-		variance = 8
-	elif level <= 500:
-		# Tier 6: Highly intelligent
-		base_intelligence = 38
-		variance = 5
-	elif level <= 2000:
-		# Tier 7: Genius-level
-		base_intelligence = 48
-		variance = 8
-	elif level <= 5000:
-		# Tier 8: Near-omniscient
-		base_intelligence = 55
-		variance = 8
-	else:
-		# Tier 9: Godlike intelligence
-		base_intelligence = 65
-		variance = 5
+	match PowerRank.tier_for_level(level):
+		1:
+			# Tier 1: Very dumb monsters
+			base_intelligence = 5
+			variance = 5
+		2:
+			# Tier 2: Simple-minded
+			base_intelligence = 10
+			variance = 5
+		3:
+			# Tier 3: Average intelligence
+			base_intelligence = 18
+			variance = 7
+		4:
+			# Tier 4: Cunning
+			base_intelligence = 25
+			variance = 5
+		5:
+			# Tier 5: Intelligent
+			base_intelligence = 32
+			variance = 8
+		6:
+			# Tier 6: Highly intelligent
+			base_intelligence = 38
+			variance = 5
+		7:
+			# Tier 7: Genius-level
+			base_intelligence = 48
+			variance = 8
+		8:
+			# Tier 8: Near-omniscient
+			base_intelligence = 55
+			variance = 8
+		_:
+			# Tier 9: Godlike intelligence
+			base_intelligence = 65
+			variance = 5
 
 	# Add some randomness to the intelligence within the tier
 	var final_intelligence = base_intelligence + (randi() % (variance + 1)) - (variance / 2)

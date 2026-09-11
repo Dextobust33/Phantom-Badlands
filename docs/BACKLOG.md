@@ -301,7 +301,7 @@ every "before" below is a case where doing it the other way means redoing the fi
      REACH.** No difficulty change. Open item below.
    * **Card instances -> proceed now**, as step 1.
 
-- [ ] **Tier LEVEL bands: one source (owner's choice 2026-09-11).** Three copies exist today:
+- [x] **DONE 2026-09-11 — Tier LEVEL bands: one source.** It was EIGHT copies, not three: the seven typed-out ladders (monster_database x2, combat_manager, quest_database, quest_manager, server x3) now all read `PowerRank.tier_for_level`, and the dungeon table is `PowerRank.dungeon_band()` = monster band + a named `DUNGEON_REACH` (7/7/10/10/20, zero from tier 6). Numbers unchanged: probe `tier_bands.gd` holds all 81 dungeon rank slices and all seven consumers to the old values at 37 levels; re-injecting a wrong reach fails 2. Was: three copies exist today:
       `monster_database._get_tier_info` (hard-coded thresholds), `quest_database.TIER_LEVEL_RANGES`
       (the same bands as a table) and `dungeon_database.TIER_LEVEL_RANGES` (wider below tier 6:
       1-12 / 6-22 / 16-40 / 31-60 / 51-120 against 1-5 / 6-15 / 16-30 / 31-50 / 51-100). Move

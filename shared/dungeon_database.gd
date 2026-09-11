@@ -236,19 +236,13 @@ const TILE_COLORS = {
 	TileType.GAMBLE_CACHE: "#5AC8FF" # cyan — gamble
 }
 
-# Rank level ranges per overarching tier (1-9)
-# Each tier spans a level range; ranks (1-8) subdivide that range
-const TIER_LEVEL_RANGES = {
-	1: {"min": 1, "max": 12},
-	2: {"min": 6, "max": 22},
-	3: {"min": 16, "max": 40},
-	4: {"min": 31, "max": 60},
-	5: {"min": 51, "max": 120},
-	6: {"min": 101, "max": 500},
-	7: {"min": 501, "max": 2000},
-	8: {"min": 2001, "max": 5000},
-	9: {"min": 5001, "max": 10000}
-}
+# Level band per dungeon tier (1-9), which the nine ranks subdivide.
+#
+# 2026-09-11 - this used to be its OWN table, wider than the monster bands below tier 6
+# (1-12 / 6-22 / 16-40 / 31-60 / 51-120), and nothing said whether that was a choice or a
+# drift. It is a choice - a dungeon's top rank reaches past the wilderness around it - so it
+# now lives in PowerRank as the monster band plus a named DUNGEON_REACH, and this file reads
+# `PowerRank.dungeon_band(tier)`. The numbers a dungeon uses are unchanged.
 
 # ===== STEP PRESSURE SYSTEM =====
 # Steps allowed per floor before collapse. Boss floors get +50%.
@@ -2984,10 +2978,10 @@ static func get_sub_tier_level_range(tier: int, sub_tier: int) -> Dictionary:
 	rank below the best companion they could own, for no reason anyone could state. Owner:
 	*"Let's do dungeons all the way up to the top rank."*
 
-	The tier's level BAND is unchanged - rank 9 still tops out at exactly TIER_LEVEL_RANGES[tier]
-	.max, because the last segment ends at min + 9*(range/9) just as it used to end at
+	The tier's level BAND is unchanged - rank 9 still tops out at exactly the tier's dungeon band
+	max, because the last segment ends at min + 9*(range/9) just as it used to end at
 	min + 8*(range/8). This adds a slice, it does not raise the ceiling."""
-	var tr = TIER_LEVEL_RANGES.get(tier, {"min": 1, "max": 12})
+	var tr: Dictionary = PowerRank.dungeon_band(tier)
 	var range_size = tr.max - tr.min
 	var segment = float(range_size) / 9.0
 	var sub_min = tr.min + int(segment * (sub_tier - 1))

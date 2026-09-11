@@ -14502,28 +14502,12 @@ func _get_upgraded_item_name(item_type: String, rarity: String, level: int) -> S
 	return base_name
 
 func _level_to_tier(level: int) -> String:
-	"""Convert level to drop table tier"""
-	if level <= 5: return "tier1"
-	if level <= 15: return "tier2"
-	if level <= 30: return "tier3"
-	if level <= 50: return "tier4"
-	if level <= 100: return "tier5"
-	if level <= 500: return "tier6"
-	if level <= 2000: return "tier7"
-	if level <= 5000: return "tier8"
-	return "tier9"
+	"""Convert level to drop table tier key ("tier1".."tier9") - PowerRank.TIER_LEVEL_BANDS."""
+	return "tier%d" % PowerRank.tier_for_level(level)
 
 func _get_monster_tier(level: int) -> int:
-	"""Convert level to tier number for egg drops"""
-	if level <= 5: return 1
-	if level <= 15: return 2
-	if level <= 30: return 3
-	if level <= 50: return 4
-	if level <= 100: return 5
-	if level <= 500: return 6
-	if level <= 2000: return 7
-	if level <= 5000: return 8
-	return 9
+	"""Convert level to tier number for egg drops - PowerRank.TIER_LEVEL_BANDS."""
+	return PowerRank.tier_for_level(level)
 
 func _get_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""
@@ -20161,16 +20145,8 @@ func _generate_rescue_merchant_gear(character) -> Array:
 	return items
 
 func _get_tier_from_player_level(level: int) -> int:
-	"""Get monster tier from player level."""
-	if level <= 5: return 1
-	elif level <= 15: return 2
-	elif level <= 30: return 3
-	elif level <= 50: return 4
-	elif level <= 100: return 5
-	elif level <= 500: return 6
-	elif level <= 2000: return 7
-	elif level <= 5000: return 8
-	else: return 9
+	"""Get monster tier from player level - PowerRank.TIER_LEVEL_BANDS."""
+	return PowerRank.tier_for_level(level)
 
 func _repair_all_equipment(peer_id: int):
 	"""Repair all equipped items for a player (free)."""

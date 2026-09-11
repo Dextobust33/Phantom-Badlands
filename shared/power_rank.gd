@@ -41,7 +41,8 @@ const LADDER: Array[String] = ["H", "G", "F", "E", "D", "C", "B", "A", "S"]
 ## NINE, not eight, and the difference is real: COMPANIONS reach sub_tier 9 through fusion
 ## (`mini(current_sub_tier + 1, 9)` at server.gd L15594/L15863, and every stable panel's
 ## `max_sub_tier`), while DUNGEONS only ever generate 1-8 (`get_sub_tier_for_distance` clamps to
-## 8, and `get_sub_tier_level_range` divides each tier's band into 8 segments).
+## 8, and `get_sub_tier_level_range` divided each tier's band into 8 segments - both since
+## raised to 9, see dungeon_database.gd).
 ##
 ## Found while converting the call sites, and worth stating plainly: a cap of 8 here would have
 ## silently collapsed the single best companion rank in the game into the second best, on every
@@ -66,6 +67,70 @@ const TIER_COLORS: Array[String] = [
 	"#FF0000",  # A - extreme
 	"#AA00FF",  # S - world's edge
 ]
+
+
+## ===== LEVEL BANDS - the ONE table =====
+##
+## 2026-09-11, owner's decision. The same 5 / 15 / 30 / 50 / 100 / 500 / 2000 / 5000 ladder was
+## typed out in SEVEN places (monster_database twice, combat_manager, quest_database,
+## quest_manager, server twice), and an EIGHTH copy in dungeon_database disagreed with all of
+## them below tier 6 (1-12 / 6-22 / 16-40 / 31-60 / 51-120). Nothing tied them together, so a
+## retune of one would have silently split monsters from quests from eggs from dungeons.
+##
+## `TIER_LEVEL_BANDS` is the canonical monster band. Dungeons deliberately reach ABOVE it: a
+## tier-1 dungeon at rank 9 runs to L12, into the overworld's tier 2, because a dungeon's top
+## rank is meant to be harder than the wilderness that surrounds it. That overlap was not a
+## drift - it was chosen, then hand-copied - so it is kept and NAMED here as `DUNGEON_REACH`
+## rather than living as a second table whose numbers happen to differ. `dungeon_band()` yields
+## exactly the numbers the old dungeon table held (asserted by tools/probe/tier_bands.gd).
+const TIER_LEVEL_BANDS := {
+	1: {"min": 1, "max": 5},
+	2: {"min": 6, "max": 15},
+	3: {"min": 16, "max": 30},
+	4: {"min": 31, "max": 50},
+	5: {"min": 51, "max": 100},
+	6: {"min": 101, "max": 500},
+	7: {"min": 501, "max": 2000},
+	8: {"min": 2001, "max": 5000},
+	9: {"min": 5001, "max": 10000},
+}
+## How far ABOVE the monster band a dungeon of that tier reaches at its top rank. Zero from
+## tier 6 up: the two ladders have always agreed there.
+const DUNGEON_REACH := {1: 7, 2: 7, 3: 10, 4: 10, 5: 20, 6: 0, 7: 0, 8: 0, 9: 0}
+
+
+static func tier_for_level(level: int) -> int:
+	"""Monster tier (1-9) for a level. Anything at or below the first band is tier 1."""
+	for t in range(LADDER.size(), 0, -1):
+		if level >= int(TIER_LEVEL_BANDS[t]["min"]):
+			return t
+	return 1
+
+
+static func band(tier: int) -> Dictionary:
+	"""{min, max} of the monster band. Clamped, like every other lookup in this file."""
+	return TIER_LEVEL_BANDS[clampi(tier, 1, LADDER.size())]
+
+
+static func tier_progress(level: int) -> float:
+	"""0.0-1.0 through the level's tier, as `MonsterDatabase._get_tier_info` always computed it:
+	(level - previous band's max) / band width. The top tier reports 1.0 - it has no ceiling to
+	measure against, and that is the value the blend code has always been handed for it."""
+	var t := tier_for_level(level)
+	if t >= LADDER.size():
+		return 1.0
+	var b: Dictionary = band(t)
+	var floor_level: int = int(b["min"]) - 1
+	return float(level - floor_level) / float(int(b["max"]) - floor_level)
+
+
+static func dungeon_band(tier: int) -> Dictionary:
+	"""{min, max} a dungeon of this tier spans across its nine ranks: the monster band plus
+	the tier's named reach. These are the numbers `DungeonDatabase.TIER_LEVEL_RANGES` used to
+	hold; the dungeon side reads them from here now."""
+	var t := clampi(tier, 1, LADDER.size())
+	var b: Dictionary = band(t)
+	return {"min": int(b["min"]), "max": int(b["max"]) + int(DUNGEON_REACH.get(t, 0))}
 
 
 static func letter(tier: int) -> String:

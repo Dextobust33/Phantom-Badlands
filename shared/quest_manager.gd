@@ -807,9 +807,5 @@ func check_gathering_progress(character: Character, gather_job: String) -> Array
 	return updates
 
 func _get_tier_from_level(level: int) -> int:
-	"""Map a monster level to its tier using TIER_LEVEL_RANGES from quest_database."""
-	for tier in range(9, 0, -1):
-		var range_data = QuestDatabaseScript.TIER_LEVEL_RANGES.get(tier, {})
-		if level >= range_data.get("min", 99999):
-			return tier
-	return 1
+	"""Map a monster level to its tier - PowerRank.TIER_LEVEL_BANDS, the one table."""
+	return PowerRank.tier_for_level(level)
