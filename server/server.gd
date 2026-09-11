@@ -67,6 +67,9 @@ var _shutdown_executing: bool = false
 var pending_update_last_announcement: int = -1  # Track which announcement was last sent
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
+## The rank ladder. Preloaded rather than leaning on the global class name, which lives in the
+## .godot cache this project has been bitten by before.
+const PowerRankScript = preload("res://shared/power_rank.gd")
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
 const QuestManagerScript = preload("res://shared/quest_manager.gd")
 const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
@@ -35165,13 +35168,37 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 				"item_data": {"name": gr_name, "quest_id": gr_qid}})
 	log_message("[FLOORLOOT] %s (%s, tier %d): blanked %d loot-tiles, placed %d items across %d floors" % [instance_id, dungeon_type, tier, _dbg_blanked, _dbg_placed, floor_count])
 
+## How far a floor egg's rank may stray from the dungeon's own. Owner 2026-09-11 asked for a
+## higher CHANCE of a higher rank, not a certainty, so a deeper dungeon shifts the whole window
+## up rather than handing out exactly one answer. Narrow it to 0 and the egg simply IS the
+## dungeon's rank; widen it and rank matters less.
+const FLOOR_EGG_RANK_SPREAD_DOWN := 2
+const FLOOR_EGG_RANK_SPREAD_UP := 1
+
+
+func _floor_egg_rank(dungeon_rank: int) -> int:
+	"""The rank of an egg found on a dungeon FLOOR.
+
+	It used to be `1 + randi() % 8`: a uniform roll that ignored the dungeon entirely, so an H1
+	and an H9 handed out identical eggs (mean rank 4.5 in both) and the only thing rank bought a
+	player was the single boss egg. Since egg rank becomes the companion's `sub_tier` - up to 2x
+	its stats and 2x the bonuses it grants - that was the whole reward for climbing ranks, absent
+	from the source that produces most of the eggs.
+
+	It also could never roll 9, because the old expression capped at 8, even though dungeons
+	generate rank 9."""
+	var r := clampi(dungeon_rank, 1, PowerRankScript.RANKS)
+	var lo := maxi(1, r - FLOOR_EGG_RANK_SPREAD_DOWN)
+	var hi := mini(PowerRankScript.RANKS, r + FLOOR_EGG_RANK_SPREAD_UP)
+	return lo + (randi() % (hi - lo + 1))
+
+
 func _roll_floor_item(dungeon_type: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool) -> Dictionary:
 	"""Roll one floor-loot item. Returns {kind, char, color, item_data} or {} on a miss."""
 	if force_egg:
 		if boss_egg_monster == "":
 			return {}
-		var egg_sub := 1 + (randi() % 8)  # random rank within the dungeon's tier
-		var egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, egg_sub)
+		var egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _floor_egg_rank(sub_tier))
 		if egg.is_empty():
 			return {}
 		return {"kind": "egg", "char": "◉", "color": "#A335EE", "item_data": egg}

@@ -2497,6 +2497,133 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
+- [ ] **AN H9 COMPANION BEATS A G1 BY ~3x, AND ASCENDING IS A DOWNGRADE. Owner asked for this
+      comparison 2026-09-11 and the answer is the bad one.** Owner: *"we may need to compare power
+      of companion tier and rank to see if an H9 is weaker or stronger than a G1."*
+
+      **Rank is the whole power axis. Tier is very nearly cosmetic.**
+        * HP (`Character.calculate_companion_max_hp`) reads the companion's LEVEL, its species
+          profile, its rank, and its variant. **It never reads tier at all.**
+        * Damage quality is `1 + 0.06*(tier-1) + 0.05*(rank-1)`. Eight ranks are worth +0.40;
+          one tier is worth +0.06. A rank is worth about eight tiers in that term, and infinitely
+          more in HP, where a tier is worth exactly nothing.
+        * The bonuses a companion grants the player scale on rank ONLY: 1.0x at rank 1 to 2.0x at
+          rank 9. Tier is not a factor.
+      Same level, same variant: a Skeleton H9 carries ~3.1x the HP of an Orc G1 and hands its
+      owner 2.0x bonuses against 1.0x.
+
+      **Tier Ascension is therefore a trap.** Three H companions plus a Catalyst produce one G1
+      with rank reset to 1, level reset to 1, and the SAME species bonuses. The player gives up
+      the rank multiplier (up to 1.4x HP and 2.0x bonuses) and every level they had earned - and
+      level is the entire base of both HP and damage - in exchange for +0.06 on one damage term.
+      **It is strictly worse in every case.** This is live.
+
+      **And the check that should have caught it tests a string.** `PowerRank.power_index(tier,
+      rank)` exists and defines the right ordering, and `tools/probe/power_rank.gd` asserts
+      *"the WEAKEST of a higher tier still beats the STRONGEST of a lower one (G1 > H9)"*. But
+      `power_index` is called by **nothing in game code** - the companion screens use PowerRank
+      only for labels and pips. So the probe asserts a property of a display formatter while the
+      stat code does the opposite. Textbook "verify the FUNCTION, not the ingredients".
+
+      **What it means for the dungeon plan.** The owner's progression - clear H1-3, then H4-6,
+      then H7-9, then move to G - only makes sense if G beats H. Today it does not, so a player
+      who climbs H to rank 9 has no reason to ever leave it. **Fix the ladder before, or with,
+      the dungeon placement work**, or the placement work ships a progression nobody should
+      follow. Options: make tier a real multiplier on HP and bonuses (not just the damage term);
+      or make ascension carry rank and level across; or route both through `power_index` so one
+      number orders the whole 81-cell ladder and the probe finally means something.
+
+- [ ] **A WORLD DUNGEON BUILDS ITS WHOLE INTERIOR AND NOBODY EVER LOOKS AT IT.** Found 2026-09-11
+      while costing the owner's *"massively increase the amount of dungeons"*. This is the reason
+      dungeons are capped, and the cap is the reason the world is empty.
+
+      `_create_world_dungeon` eagerly generates, for a map marker nobody has entered:
+      every floor's BSP grid (~7 floors, ~56x56 each) and ~70 monster entities, each paying a
+      full `generate_monster_by_name` roll. That is roughly **520 KB of grid plus ~100 KB of
+      monsters per dungeon, ~600 ms of CPU per spawn**, and at the 200-dungeon cap about
+      **100-130 MB of resident RAM**.
+
+      **None of it is ever read.** Entering a world `D` calls `_create_player_dungeon_instance`,
+      which generates its own fresh grids, and the local `instance_id` is reassigned to the
+      personal instance before any floor is touched. I checked that path directly. World dungeons
+      are also not persisted (`_save_dungeon_state` skips them) and not stamped into chunks - the
+      `D` is a pure per-request map overlay.
+
+      **It is redundant twice over.** `generate_floor_grid` seeds on `(dungeon TYPE, floor)`, not
+      on the instance, so every `goblin_caves` floor 2 in the world is byte-identical. There are
+      about **370 distinct grids in the entire game**, and the server can be holding two thousand
+      copies of them.
+
+      **Every cap and every cache in this area is a workaround for this.** The spawn queue exists
+      because bursts cost ~5 s; the check interval went 30 s to 120 s; `_threat_state_cache` and
+      `_world_threat_states` exist because scans were iterating 150-450 dungeons per move.
+
+      **The remaining real cost, which does NOT go away by itself:** a player move does roughly
+      **three linear scans of every active dungeon** (`get_visible_dungeons` for the map, and
+      `_get_threat_zone_dungeon_at` twice). 900 iterations at today's cap, and it grows with
+      whatever the cap becomes. Raising the count without fixing this just moves the spike.
+
+      **The order to do it in:**
+        1. **Make the interior LAZY, not deleted.** Generate floors and monsters on first read
+           behind one accessor, and log when a world dungeon's interior is ever generated. If the
+           log never fires in play, the generation is proven dead rather than assumed dead. This
+           is the ~90% win and it changes no behaviour.
+        2. **Cache grids by (type, floor)** - ~370 of them serve everything. Player instances must
+           take a copy, because `_spawn_all_dungeon_floor_items` mutates the grid in place.
+        3. **Index dungeons by position** so the map and threat lookups stop scanning. This is
+           what actually unlocks a big count.
+        4. Only then decide whether placement becomes a pure function of (x, y, seed). What
+           blocks that is not placement but three pieces of mutable state: `cleared_by` (which
+           should be per-character anyway, and is already implicated in a re-farm bug),
+           the despawn/threat lifecycle, and the post threat-cap pacing.
+
+- [ ] **RANK DOES NOT PAY OFF IN EGGS, which is the reason to climb it. Owner 2026-09-11:**
+      *"each of those higher ranked ones should ideally have a higher chance to drop higher rank
+      eggs (we should check this and fix it if they don't)."* **Checked. Mostly they do not.**
+
+      A dungeon has three egg sources and only ONE of them knows the dungeon's rank:
+      | source | how many | does it inherit the dungeon's rank? |
+      |---|---|---|
+      | the boss egg, on completion | one, guaranteed | **yes** |
+      | floor loot eggs, ~35% a floor | the volume | **no - it rolls `1 + randi() % 8`** |
+      | treasure chests | - | yes, but the path is DEAD (see below) |
+
+      So an H1 and an H9 hand out the same floor eggs: rank uniform 1-8, mean 4.5, in both. The
+      only difference a player can feel is the single boss egg.
+
+      **What rank is worth when it does land.** Egg rank becomes the companion's `sub_tier`, which
+      multiplies its stats (1.0x at rank 1, 2.0x at rank 9) and its abilities (1.0x to 1.75x), and
+      its valor (200 to 440 for a tier-1 egg). That is a big prize attached to one egg per run.
+
+      **Four faults found while checking, all small and all in the same place:**
+        1. `_roll_floor_item` TAKES `sub_tier` and never reads it - a dead parameter passed by
+           three call sites. The egg line overwrites it with a random roll.
+        2. The floor-egg roll is `1 + randi() % 8`, so a floor egg can **never be rank 9** even
+           though dungeons now generate rank 9.
+        3. A rank-9 dungeon already hands out a rank-9 BOSS egg, which is the 2.0x/1.75x tier the
+           tables still label "Fusion-only (Phase 4)". Raising dungeons from 8 ranks to 9 appears
+           to have opened that door by accident - it makes an H9 boss egg beat anything fusion
+           can make below rank 9. **Wants a decision, not just a fix.**
+        4. The rank-aware chest-egg path (`_open_dungeon_treasure`) is unreachable in player
+           instances: `_spawn_all_dungeon_floor_items` blanks every treasure tile and re-homes it
+           as floor loot, so the chest code never runs.
+      Also: the FINAL chest rolls gear at the player's level, not the dungeon's, so its equipment
+      is identical at rank 1 and rank 9. Materials and XP do scale with rank (x1.0 to x1.8); valor
+      coins, boss materials, the card reward and escape scrolls do not scale with rank at all.
+
+      **PARTLY FIXED 2026-09-11 - floor eggs now follow the dungeon.** `_floor_egg_rank` rolls in
+      a window around the dungeon's own rank (two below, one above, named as
+      `FLOOR_EGG_RANK_SPREAD_DOWN/UP` so the owner can widen or close it). Mean egg rank goes
+      from a flat 4.5 at every rank to 1.5 at rank 1 and 8.0 at rank 9, rank 9 is reachable for
+      the first time, and a given dungeon still gives several different ranks.
+      **This is a real economy change in both directions:** low-rank dungeons got noticeably
+      worse for eggs and high-rank ones noticeably better. That is the point, but it wants a feel
+      check in play. Probe `floor_egg_rank.gd`; restoring the old roll fails it.
+      **Still open from this item:** faults 3 and 4 (rank-9 boss eggs handing out the
+      "Fusion-only" multipliers, and the dead chest path), the final chest rolling gear at the
+      player's level rather than the dungeon's, and valor/boss materials/cards not scaling with
+      rank at all.
+
 - [ ] **A DUNGEON'S LEVEL AND THE LAND AROUND IT ARE UNRELATED. Owner report 2026-09-11, and it
       is exactly as reported.** Owner: *"I just did a G2 Kelpie Marsh at -23, -64 where the
       monsters are Lv ~16 on the overworld. Do dungeons spawn in similar level to the overworld
