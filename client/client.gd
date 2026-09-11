@@ -44419,6 +44419,7 @@ const _DUNGEON_LANDMARK_TILE := {
 	63: "shrine",            # SHRINE
 	64: "rest_room",         # REST_ROOM
 	65: "elite_den",         # ELITE_DEN
+	66: "gamble_cache",      # GAMBLE_CACHE
 }
 
 # 2026-09-08 (tile pass). The dungeon cell is 32px: a clean 2x of a 16px tile, 1:1 for the 32px

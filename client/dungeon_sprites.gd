@@ -37,6 +37,7 @@ const TILE_DIR := "res://client/sprites/tile_floor32/"
 const TILE_FRAMES := {
 	"elite_den": 1,
 	"final_chest": 4,
+	"gamble_cache": 1,
 	"gold_hoard": 1,
 	"infernal_brazier": 3,
 	"lava_pool": 1,
