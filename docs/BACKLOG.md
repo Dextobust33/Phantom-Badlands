@@ -13,8 +13,11 @@ common way to lose a session.
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-11, third session of the day)
 
 **Master is clean and pushed. Nothing is parked.** Card instances (step 1 of THE ORDER) is merged.
-**Next in THE ORDER is step 2, sprite interiors** (sanctuary first, one interior end to end). It
-needs the owner's eyes on screenshots, so start it with them available.
+**Next in THE ORDER is step 4: the OVERWORLD, Phase 2.95, starting with PHASE 1** (move rendering
+from the server to the client, no visual change). Sprite interiors is finished as a separate arc:
+the Sanctuary is done, and NPC post interiors turned out to be overworld tiles rather than their
+own screen, so they are part of Phase 2 there. Phase 1 is also the item that RAISES the player
+ceiling, since it removes the most expensive per-player work the server does.
 
 **Unreleased on master, all probed** — none of it has been played yet:
 - **Card instances.** Every copy of a card is its own card (`cleave`, `cleave#2`): its own uses,
@@ -296,7 +299,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 45 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 47 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -335,7 +338,10 @@ every "before" below is a case where doing it the other way means redoing the fi
    format, the deck UI, the combat hand, the milestone system and the market. Authoring the cards
    first means rewriting all of that around them afterwards.
 
-**2. SPRITE INTERIORS, Phase 3.45 (13 items) — but SLICE it.** The arc's own instruction is
+**2. SPRITE INTERIORS, Phase 3.45 — ✅ THE SLICE THAT EXISTS IS DONE (the Sanctuary, 2026-09-11).**
+   The other interior on that list, NPC POSTS, turned out to BE the overworld (posts are tiles in
+   the world grid, not a screen), so it moved to step 4 with the overworld. What remains here is
+   nothing on its own. Historical note and the original instruction:
    *"slice it the way the dungeon was sliced, which worked: one interior end-to-end"*, and that
    instruction exists to stop 53 rooms being redone. One room end to end, look at it, then the
    remaining twelve items.
@@ -343,8 +349,11 @@ every "before" below is a case where doing it the other way means redoing the fi
 **3. 2D EFFECTS, Phase 3.46 (3 items)** — torch/lamp lighting and the atmosphere pass sit ON TOP
    of the interiors. Done first, they would be redone against the new floors.
 
-**4. OVERWORLD SPRITES, Phase 2.95 (2 items), strictly in order.** Phase 1 moves rendering to the
-   client with NO visual change; Phase 2 is the art. Phase 2 without Phase 1 is a rewrite.
+**4. OVERWORLD SPRITES, Phase 2.95 — NOW THE BIG ONE, and strictly in order.** Phase 1 moves
+   rendering to the client with NO visual change (and raises the player ceiling: it removes the
+   most expensive per-player thing the server does). Phase 2 is the art, and its scope includes
+   **NPC post interiors and the zoom-inside-a-post ask**, because those are overworld tiles.
+   Phase 2 without Phase 1 is a rewrite. Do Phase 1 next.
 
 **5. THE DUNGEON ARC, Phase 5 (6 items)** — atlas hub, dungeon-centred questing, the dungeon card
    pass, themed floor equipment. The 53-card content lives here and is unblocked by step 1.
@@ -1123,6 +1132,10 @@ yet.**
 
 So the cost is not "sprites". It is "rendered on the server".
 
+**THE TWO STEPS, in order. Step 2 cannot start before step 1, and everything the overworld shows
+- wilderness, NPC POST INTERIORS, player-built posts, other players, monsters - is step 2's
+scope, because they are all tiles in the same grid.**
+
 - [ ] **PHASE 1 — move overworld rendering to the CLIENT. No art, no visual change.**
       Send tile DATA and let the client draw, exactly as the dungeon already does. Purely
       architectural, independently valuable, and measurable on its own:
@@ -1167,6 +1180,23 @@ So the cost is not "sprites". It is "rendered on the server".
       CAVEAT on the 17.2 ms: measured standalone, without a live `chunk_manager` wired, so the
       production path may differ. Confirm against the real server before committing to Phase 1's
       payoff figure — the DIRECTION is not in doubt, the magnitude is worth re-checking.
+
+- [ ] **PHASE 2 SCOPE — what "sprite the overworld" has to cover** (2026-09-11, after the
+      Sanctuary shipped and posts turned out to be overworld tiles):
+      * **Wilderness tiles** - terrain, nodes, roads, water, structures.
+      * **NPC POST INTERIORS** - `wall`, `floor`, `door`, and the station tiles (`forge`,
+        `apothecary`, `workbench`, `enchant_table`, `writing_desk`, `market`, `inn`,
+        `quest_board`, `blacksmith`, `healer`, `cartographer`, `companion_stable`, `tower`,
+        `guard`, `post_marker`). The Raven `interiors` and `craft_stations` packs were bought for
+        exactly these, and `tools/bake_sanctuary.py` shows the cut-and-bake pattern.
+      * **ZOOM INSIDE A POST** - the owner's older ask, and now clearly a mode of this renderer:
+        bigger cells while `_is_npc_post_interior` is true, so a post reads as a room.
+      * **FIGURES** - the player, companions, monsters and other players, at the owner's scale
+        rule (player > companion; monsters bigger in dungeons). `sanctuary_room.gd::overlay_cells`
+        already solves a figure larger than its cell: the room is one composed image and figures
+        are overlays that may span cells. Reuse it rather than writing a second one.
+      * **What NOT to redo**: the Sanctuary is finished and is its own screen; it does not become
+        part of this.
 
 ## Phase 2.9 — v0.9.769 SHIPPED + MAP RESET EXECUTED (2026-09-11)
 
@@ -1593,11 +1623,23 @@ rooms out of sprites from those packs."*
 This was discussed across two sessions and never reached the list. Recording it because the packs
 are now bought, unzipped and licence-cleared, so the blocker is design rather than assets.
 
-- [x] **ANSWERED (recorded 2026-09-11): does the OVERWORLD have to become sprites too?** It does not. A post interior, the sanctuary and a dungeon room are each a
-      SEPARATE screen from the overworld map — `_render_house_map()` already draws the sanctuary
-      as its own thing. The dungeon proved a monospace text canvas can be a sprite grid with no
-      renderer rewrite, so an interior can be spritten without touching the overworld at all. The
-      mixed look is a deliberate split (sprite interiors, ASCII wilderness), not a compromise.
+- [x] **ANSWERED 2026-09-11, then CORRECTED the same day — and the correction moves work between
+      arcs, so read it before planning either.** The question was whether spriting interiors
+      forces the overworld to become sprites too.
+      * **The SANCTUARY and a DUNGEON ROOM: no.** Each is its own screen (`_render_house_map()`,
+        the dungeon canvas), so both were spritten without touching the overworld. Sanctuary done.
+      * **An NPC POST: YES, it is the overworld.** Checked in the code rather than assumed:
+        `npc_post_database._place_stations` stamps a post's walls, floor and stations into the
+        WORLD CHUNKS as ordinary tile types (`wall`, `floor`, `forge`, `market`, `inn`,
+        `quest_board`...), and `world_system._is_npc_post_interior` just asks the chunk manager
+        whether a tile belongs to a post. A player walks into a post on the same map, in the same
+        renderer. There is no post-interior screen to sprite.
+      * **So post interiors are not a separate job: they are the overworld job** (Phase 2.95),
+        and they arrive with it. "Zoom the map inside NPC posts" is the same thing seen from the
+        other side - a render MODE of the overworld renderer (bigger cells while inside a post),
+        which only exists once that renderer is client-side.
+      The first version of this entry said posts were a separate screen. That was wrong, and
+      acting on it would have built a post-interior screen the game does not have.
 - [x] **RECORDED — the assets are ready and better than what we have.** Every Raven pack ships the SAME
       tileset pre-rendered at 16, 32, 48 and 64px, so a 64px cell draws at native resolution with
       zero scaling — sharper than the current dungeon floor, which is a 16px tile upscaled 4x.
@@ -2351,12 +2393,14 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       this is a polish item rather than a gap — and it is the natural companion to the Raven room
       work, which will settle what a themed floor should look like anyway.
 
-- [ ] **Zoom the map inside NPC posts** (owner 2026-09-08) — **now part of Phase 3.45, do not
-      plan it twice.** *"We may also want to zoom in the map when players are in a post for the
-      same type of functionality in the future."* This and the sprite-interiors arc are the same
-      screen: a post interior drawn larger, with sprites. Phase 3.45 owns the design; this line
-      stays only so the older ask is not lost. (The Dungeon Atlas was once tracked as three
-      separate tasks in three places — that is the mistake this cross-reference exists to avoid.)
+- [ ] **Zoom the map inside NPC posts** (owner 2026-09-08) — **now part of Phase 2.95 PHASE 2, do
+      not plan it twice.** *"We may also want to zoom in the map when players are in a post for
+      the same type of functionality in the future."* Re-pointed 2026-09-11: this used to say
+      Phase 3.45 (sprite interiors), on the belief that a post interior was its own screen. It is
+      not - a post is tiles in the WORLD grid - so both the zoom and the post's sprites belong to
+      the overworld renderer, and neither can happen before Phase 1 moves that renderer to the
+      client. (The Dungeon Atlas was once tracked as three separate tasks in three places — that
+      is the mistake this cross-reference exists to avoid.)
 
 - [ ] **Dungeon revamp — the design IS captured**, in `docs/design/dungeon_revamp.md` (139 lines)
       plus `docs/design/dungeon_themes.md`. This line used to say "details not yet captured",
