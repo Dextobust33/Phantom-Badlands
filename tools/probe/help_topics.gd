@@ -33,6 +33,7 @@ func _init() -> void:
 	ck(empty.is_empty(), "no topic is blank %s" % ("" if empty.is_empty() else str(empty)))
 
 	print("\n--- numbers are read, not typed ---")
+	var main: String = c._main_help_text()
 	var titles := _topic(secs, "TITLES & ENDGAME")
 	var t_ab := _topic(secs, "TITLE ABILITIES")
 	for pair in [["Summon", Titles.JARL_ABILITIES["summon"]], ["Knight", Titles.HIGH_KING_ABILITIES["knight"]],
@@ -54,7 +55,19 @@ func _init() -> void:
 	var eq := _topic(secs, "EQUIPMENT & GEAR")
 	ck(eq.find("Nearly Broken") >= 0 and eq.find("merchants") < 0, "condition ladder complete; repair is at a blacksmith")
 	var gath := _topic(secs, "CRAFTING & GATHERING")
-	ck(gath.find("Wrong key") < 0 and gath.find("3 choices") >= 0, "gathering describes the live 3-choice minigame")
+	# 2026-09-11 — the first fix wrote "3 choices" here, copied from the main page. Measured in
+	# handle_gathering_start: mining/logging/foraging/shallow fishing are a SCRATCH-OFF grid; only
+	# deep-water fishing is the 3-choice chain. The check follows the dispatch, not the prose.
+	ck(gath.find("Wrong key") < 0 and gath.find("scratches") >= 0 and gath.find("Deep-water fishing") >= 0,
+		"gathering describes the scratch-off grid, and the 3-choice chain only for deep water")
+	ck(main.find("3-choice minigame. Pick correctly") < 0 and main.find("face-down cards") >= 0,
+		"the main page no longer calls all gathering a 3-choice minigame")
+	var srv := FileAccess.get_file_as_string("res://server/server.gd")
+	var hs := srv.find("func handle_gathering_start(")
+	var he := srv.find("
+func ", hs + 10)
+	ck(srv.substr(hs, he - hs).find("_maybe_send_gather_hint(peer_id, job_type)") >= 0,
+		"the first-gather tutorial is sent from the LIVE entry point")
 	var comp := _topic(secs, "COMPANIONS")
 	ck(comp.find("Frost Guardian") < 0 and comp.find("Eggs:") >= 0, "companions describes eggs, not invented soul gems")
 	var dun := _topic(secs, "DUNGEONS")
@@ -69,11 +82,9 @@ func _init() -> void:
 	ck(cm_src.find('"Drops a weapon. Guaranteed."') < 0 and cm_src.find('"50% chance to drop a weapon."') >= 0,
 		"the in-combat Weapon Master badge states the real 50%")
 
-	print("
---- the MAIN help page formats ---")
+	print("\n--- the MAIN help page formats ---")
 	# 2026-09-11 — it was a 23-argument positional `%` over text full of percent signs, so it failed
 	# on every call and Godot showed it UNFORMATTED: every key read "[%s]", every "25%%" doubled.
-	var main: String = c._main_help_text()
 	ck(main.length() > 5000, "main help builds (%d chars)" % main.length())
 	ck(main.find("[%s]") < 0, "no key placeholder survives as a raw [%s]")
 	ck(main.find("%%") < 0, "no doubled percent sign reaches the player")

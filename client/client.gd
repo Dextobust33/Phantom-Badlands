@@ -34472,11 +34472,11 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [b][color=#FFD700]══ JOBS & GATHERING ══[/color][/b]
 [color=#FFD700]Jobs:[/color] 5 Gathering Jobs (Mining, Logging, Foraging, Fishing, Soldier) + 5 Specialty Jobs (Phase 2).
   Try any job up to Lv5, then commit permanently. More→Jobs to view and commit.
-[color=#00FFFF]Gathering:[/color] Walk to a resource node → press [{k4}] → 3-choice minigame. Pick correctly to gain materials!
+[color=#00FFFF]Gathering:[/color] Walk to a resource node → press [{k4}] → a grid of face-down cards. Scratch to reveal and keep what you find; more skill = more scratches. Deep-water fishing is a 3-choice chain instead.
   Each correct pick chains to the next round. Wrong pick ends the chain. Higher job level = better hints.
 [color=#FFA500]Fishing:[/color] At water ([color=#00FFFF]~[/color]) | [color=#CD7F32]Mining:[/color] At ore ([color=#CD7F32]O[/color]) | [color=#228B22]Logging:[/color] At forests ([color=#228B22]T[/color]) | [color=#9ACD32]Foraging:[/color] At herbs/bushes
 [color=#FF6600]Soldier:[/color] After killing a monster, press Harvest to extract bonus parts (3-choice minigame).
-[color=#808080]Tools:[/color] Pickaxe/Axe/Sickle/Rod — optional but powerful! Reveal shows correct answer, Save cancels 1 mistake.
+[color=#808080]Tools:[/color] Pickaxe/Axe/Sickle/Rod — optional but powerful! A tool turns some cards face-up before you start.
   Tools have durability (T1=10, T5=100). New characters start with T1 starter tools.
 [color=#FFD700]Bulk Craft:[/color] Stackable recipes (structures, scrolls, runes, etc.) support crafting 1-99x at once!
   Use -Qty/+Qty/Max buttons when a recipe is selected. One minigame for the whole batch.
@@ -34833,7 +34833,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "CRAFTING & GATHERING",
 			"keywords": ["craft", "crafting", "gather", "gathering", "salvage", "essence", "fish", "fishing", "mine", "mining", "log", "logging", "chop", "ore", "wood", "material", "materials", "fail", "wrong", "key", "button"],
-			"content": "[color=#FFD700]Crafting & Gathering[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Gathering[/color] - stand on a resource and press R:\n• [color=#00FFFF]Fishing[/color] at water, [color=#8B4513]Mining[/color] at stone and ore, [color=#228B22]Logging[/color] at trees and brush, [color=#9ACD32]Foraging[/color] at herbs, flowers and mushrooms\n• Each round offers [b]3 choices[/b]. Pick the right one to gain materials and keep the chain going; a wrong pick ends it\n• Tier rises with distance from the origin, and so does what you can find\n• [color=#808080]Tools[/color] (Rod, Pickaxe, Axe, Sickle) are optional but strong: Reveal shows the right answer, Save cancels one mistake\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] each gathering job levels up as you use it, and a higher level makes the right choice easier to spot"
+			"content": "[color=#FFD700]Crafting & Gathering[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Gathering[/color] - stand on a resource and press R:\n• [color=#00FFFF]Fishing[/color] at water, [color=#8B4513]Mining[/color] at stone and ore, [color=#228B22]Logging[/color] at trees and brush, [color=#9ACD32]Foraging[/color] at herbs, flowers and mushrooms\n• You get a grid of face-down cards and a number of [b]scratches[/b]: reveal a card to keep what is under it\n• Scratches start at 2 and grow with that job\'s skill, one more per 25 levels\n• Deep-water fishing is different: 3 choices a round, pick right to keep the chain going, a wrong pick ends it\n• Tier rises with distance from the origin, and so does what you can find\n• [color=#808080]Tools[/color] (Rod, Pickaxe, Axe, Sickle) are optional but strong: a tool turns some cards face-up before you start\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] each gathering job levels up as you use it"
 		},
 		{
 			"title": "GUARDS & TOWERS",

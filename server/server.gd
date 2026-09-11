@@ -16978,52 +16978,34 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 
 func _maybe_send_gather_hint(peer_id: int, gather_type: String) -> void:
 	if _hint_deferred_for_newbie(peer_id): return
-	"""Audit #3 v0.9.528 — first gather session (fish/mine/log) teaches the
-	wait→reaction minigame, skill XP, tier scaling, and tool bonuses. One
-	flag covers all three gather types — the first to fire sets the flag.
-	Fires once per character; flag persists via to_dict / from_dict."""
+	"""First gather session teaches the minigame. Fires once per character (`seen_gather_hint`).
+
+	2026-09-11 — rewritten, and actually SENT. It used to be called only from handle_fish_start /
+	handle_mine_start / handle_log_start, which nothing routes to any more (the client sends
+	`gathering_start`), so no new player ever saw it - and its text described the wait-and-react
+	minigame retired in v0.9.369. It now describes what handle_gathering_start really runs: a
+	scratch-off grid for mining / logging / foraging / shallow fishing, and the 3-choice chain
+	only for deep-water fishing. Numbers are read from the scratch-off constants."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
 	if character.seen_gather_hint:
 		return
 	character.seen_gather_hint = true
-	var skill_label = "Fishing"
-	var verb_present = "fishing"
-	var action = "cast the line"
-	var node_label = "fish splashing in water (~)"
-	var color = "#4488FF"
-	var icon = "🎣"
-	if gather_type == "mining":
-		skill_label = "Mining"
-		verb_present = "mining"
-		action = "swing the pickaxe"
-		node_label = "ore deposits in mountains (*)"
-		color = "#B87333"
-		icon = "⛏"
-	elif gather_type == "logging":
-		skill_label = "Logging"
-		verb_present = "chopping wood"
-		action = "swing the axe"
-		node_label = "dense forest patches (%)"
-		color = "#8B5A2B"
-		icon = "🪓"
-	var title = "[color=%s]%s Gathering[/color]" % [color, icon]
-	var body = (
-		"You started %s — your first gather session.\n\n" % verb_present
-		+ "[color=#FFD700]── The minigame ──[/color]\n"
-		+ "  • [color=#FFD700]Wait phase[/color] — patience. The action bar shows a [b]Wait...[/b] message; do nothing until it clears.\n"
-		+ "  • [color=#FFD700]React phase[/color] — a target key appears. Hit it before the window closes to %s and land the catch.\n"
-		+ "  • Miss the window → you lose the catch but keep your tool.\n\n"
-		+ "[color=#FFD700]── Tier scaling ──[/color]\n"
-		+ "  • Nodes are tiered (node tier 1–9) based on distance from origin. Higher tier = better drops.\n"
-		+ "  • Node tier 1–2 need 1 reaction; 3–5 need 2; 6+ need 3.\n"
-		+ "  • Find nodes by exploring: %s.\n\n"
-		+ "[color=#FFD700]── Skill XP ──[/color]\n"
-		+ "  • Each successful gather raises your [color=%s]%s skill[/color]. Higher skill = faster waits + wider react windows + better drop rolls.\n"
-		+ "  • Equipped tools (rod/pickaxe/axe) further reduce wait time and boost yield.\n\n"
-		+ "Materials feed Crafting, Salvage Essence, and Sanctuary projects. Gather steady, gather safe."
-	) % [action, node_label, color, skill_label]
+	var labels := {"fishing": "Fishing", "mining": "Mining", "logging": "Logging", "foraging": "Foraging"}
+	var skill_label: String = String(labels.get(gather_type, "Gathering"))
+	var title := "[color=#9ACD32]%s[/color]" % skill_label
+	var body := (
+		"Your first %s session.\n\n" % skill_label.to_lower()
+		+ "[color=#FFD700]── The card grid ──[/color]\n"
+		+ "  • You get %d face-down cards and a number of [b]scratches[/b]. Reveal a card to keep what is under it.\n" % SCRATCH_OFF_SLOT_COUNT
+		+ "  • Scratches start at %d and grow with your %s skill, one more per 25 levels (up to %d).\n" % [SCRATCH_OFF_BASE_SCRATCHES, skill_label, SCRATCH_OFF_MAX_SCRATCHES]
+		+ "  • [color=#FFD700]Deep-water fishing[/color] is different: 3 choices a round. Pick right to keep the chain going; a wrong pick ends it.\n\n"
+		+ "[color=#FFD700]── Tools and tiers ──[/color]\n"
+		+ "  • A matching tool (rod, pickaxe, axe or sickle) turns some cards face-up before you start.\n"
+		+ "  • Nodes are tiered by distance from the origin. Further out = better finds.\n\n"
+		+ "Materials feed Crafting, Salvage Essence and Sanctuary projects."
+	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
 
@@ -21109,6 +21091,9 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	if companion_hint > 0:
 		hint_strength = minf(1.0, hint_strength + (companion_hint / 100.0))
 
+	# First session of any kind teaches the minigame. From HERE, the one live entry point, so every
+	# route below (scratch-off or deep-water 3-choice) is covered.
+	_maybe_send_gather_hint(peer_id, job_type)
 	# Check tool availability
 	var tool_subtype = _get_tool_subtype_for_job(job_type)
 	var tool = _find_tool_in_inventory(character, tool_subtype)

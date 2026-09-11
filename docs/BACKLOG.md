@@ -290,7 +290,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 46 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 45 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -2124,11 +2124,17 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       the title UI and help, and `get_knight_damage_bonus` / `get_mentee_xp_bonus` /
       `get_mentee_extra_xp_bonus` have no callers. Same shape as `gold_find`. Wire them (a
       player-power change, rare endgame titles only) or remove the promise.
-- [ ] **New players get no gathering tutorial.** `_maybe_send_gather_hint` is only called from
-      `handle_fish_start` / `handle_mine_start` / `handle_log_start`, which nothing routes to; the
-      live path is `gathering_start`. The hint's text also describes the dead reaction minigame.
-      Rewrite it for the 3-choice minigame and send it from `handle_gathering_start`, and delete
-      the three dead handlers.
+- [x] **FIXED 2026-09-11 — the first-gather tutorial is sent again, and says what really happens.**
+      It was only called from three handlers nothing routes to, so no new player had seen it since
+      v0.9.369; its text described the retired wait-and-react game. Now sent from
+      `handle_gathering_start` and rewritten from the dispatch: mining / logging / foraging /
+      shallow fishing are a **16-card scratch-off grid** (2 scratches + 1 per 25 skill, max 8; a
+      tool pre-reveals cards); only deep-water fishing is the 3-choice chain.
+      **My own mistake, corrected in the same pass:** the help fix earlier today described ALL
+      gathering as 3-choice, copied from the main help page's claim without reading the dispatch.
+      Both pages now match the code, and `help_topics.gd` checks against the dispatch.
+      The three dead handlers (`handle_fish_start` / `handle_mine_start` / `handle_log_start`)
+      are still in server.gd; delete them in a cleanup pass.
 - [ ] **Buff panel, party half.** Same strip for each party member, plus a STACKING indicator.
 - [x] **Card upgrade preview — DONE 2026-09-07.** The estimate counted `power` picks alone while
       the combat manager applied nine more multipliers from hard-coded literals, so five upgrades
