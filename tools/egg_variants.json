@@ -1,0 +1,835 @@
+[
+  {
+    "color": "#DC143C",
+    "color2": "",
+    "name": "Crimson",
+    "pattern": "solid",
+    "rarity": 10
+  },
+  {
+    "color": "#007FFF",
+    "color2": "",
+    "name": "Azure",
+    "pattern": "solid",
+    "rarity": 10
+  },
+  {
+    "color": "#228B22",
+    "color2": "",
+    "name": "Verdant",
+    "pattern": "solid",
+    "rarity": 10
+  },
+  {
+    "color": "#C0C0C0",
+    "color2": "",
+    "name": "Silver",
+    "pattern": "solid",
+    "rarity": 10
+  },
+  {
+    "color": "#FFBF00",
+    "color2": "",
+    "name": "Amber",
+    "pattern": "solid",
+    "rarity": 10
+  },
+  {
+    "color": "#0A0A0A",
+    "color2": "",
+    "name": "Obsidian",
+    "pattern": "solid",
+    "rarity": 10
+  },
+  {
+    "color": "#FF2400",
+    "color2": "",
+    "name": "Scarlet",
+    "pattern": "solid",
+    "rarity": 10
+  },
+  {
+    "color": "#0047AB",
+    "color2": "",
+    "name": "Cobalt",
+    "pattern": "solid",
+    "rarity": 10
+  },
+  {
+    "color": "#FFD700",
+    "color2": "",
+    "name": "Golden",
+    "pattern": "solid",
+    "rarity": 8
+  },
+  {
+    "color": "#2F2F2F",
+    "color2": "",
+    "name": "Shadow",
+    "pattern": "solid",
+    "rarity": 8
+  },
+  {
+    "color": "#9400D3",
+    "color2": "",
+    "name": "Violet",
+    "pattern": "solid",
+    "rarity": 8
+  },
+  {
+    "color": "#FF7F50",
+    "color2": "",
+    "name": "Coral",
+    "pattern": "solid",
+    "rarity": 8
+  },
+  {
+    "color": "#008080",
+    "color2": "",
+    "name": "Teal",
+    "pattern": "solid",
+    "rarity": 8
+  },
+  {
+    "color": "#FF007F",
+    "color2": "",
+    "name": "Rose",
+    "pattern": "solid",
+    "rarity": 8
+  },
+  {
+    "color": "#32CD32",
+    "color2": "",
+    "name": "Lime",
+    "pattern": "solid",
+    "rarity": 8
+  },
+  {
+    "color": "#B87333",
+    "color2": "",
+    "name": "Copper",
+    "pattern": "solid",
+    "rarity": 8
+  },
+  {
+    "color": "#87CEEB",
+    "color2": "",
+    "name": "Frost",
+    "pattern": "solid",
+    "rarity": 6
+  },
+  {
+    "color": "#FF4500",
+    "color2": "",
+    "name": "Infernal",
+    "pattern": "solid",
+    "rarity": 5
+  },
+  {
+    "color": "#ADFF2F",
+    "color2": "",
+    "name": "Toxic",
+    "pattern": "solid",
+    "rarity": 5
+  },
+  {
+    "color": "#9966CC",
+    "color2": "",
+    "name": "Amethyst",
+    "pattern": "solid",
+    "rarity": 5
+  },
+  {
+    "color": "#191970",
+    "color2": "",
+    "name": "Midnight",
+    "pattern": "solid",
+    "rarity": 5
+  },
+  {
+    "color": "#FFFFF0",
+    "color2": "",
+    "name": "Ivory",
+    "pattern": "solid",
+    "rarity": 5
+  },
+  {
+    "color": "#B7410E",
+    "color2": "",
+    "name": "Rust",
+    "pattern": "solid",
+    "rarity": 5
+  },
+  {
+    "color": "#98FF98",
+    "color2": "",
+    "name": "Mint",
+    "pattern": "solid",
+    "rarity": 5
+  },
+  {
+    "color": "#FF4500",
+    "color2": "#FFD700",
+    "name": "Sunset",
+    "pattern": "gradient_down",
+    "rarity": 4
+  },
+  {
+    "color": "#00BFFF",
+    "color2": "#000080",
+    "name": "Ocean",
+    "pattern": "gradient_down",
+    "rarity": 4
+  },
+  {
+    "color": "#228B22",
+    "color2": "#006400",
+    "name": "Forest",
+    "pattern": "gradient_down",
+    "rarity": 4
+  },
+  {
+    "color": "#9400D3",
+    "color2": "#FF1493",
+    "name": "Dusk",
+    "pattern": "gradient_down",
+    "rarity": 4
+  },
+  {
+    "color": "#FF0000",
+    "color2": "#8B0000",
+    "name": "Ember",
+    "pattern": "gradient_down",
+    "rarity": 4
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#87CEEB",
+    "name": "Arctic",
+    "pattern": "gradient_down",
+    "rarity": 4
+  },
+  {
+    "color": "#FF4500",
+    "color2": "#2F2F2F",
+    "name": "Volcanic",
+    "pattern": "gradient_down",
+    "rarity": 3
+  },
+  {
+    "color": "#FF69B4",
+    "color2": "#4B0082",
+    "name": "Twilight",
+    "pattern": "gradient_down",
+    "rarity": 3
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#FF6347",
+    "name": "Dawn",
+    "pattern": "gradient_up",
+    "rarity": 4
+  },
+  {
+    "color": "#000080",
+    "color2": "#00CED1",
+    "name": "Depths",
+    "pattern": "gradient_up",
+    "rarity": 4
+  },
+  {
+    "color": "#006400",
+    "color2": "#90EE90",
+    "name": "Bloom",
+    "pattern": "gradient_up",
+    "rarity": 4
+  },
+  {
+    "color": "#8B0000",
+    "color2": "#FF6347",
+    "name": "Rising",
+    "pattern": "gradient_up",
+    "rarity": 3
+  },
+  {
+    "color": "#2F2F2F",
+    "color2": "#FF4500",
+    "name": "Core",
+    "pattern": "middle",
+    "rarity": 3
+  },
+  {
+    "color": "#4B0082",
+    "color2": "#FF1493",
+    "name": "Heart",
+    "pattern": "middle",
+    "rarity": 3
+  },
+  {
+    "color": "#000080",
+    "color2": "#00FFFF",
+    "name": "Soul",
+    "pattern": "middle",
+    "rarity": 3
+  },
+  {
+    "color": "#228B22",
+    "color2": "#ADFF2F",
+    "name": "Nexus",
+    "pattern": "middle",
+    "rarity": 2
+  },
+  {
+    "color": "#2F2F2F",
+    "color2": "#FFD700",
+    "name": "Beacon",
+    "pattern": "middle",
+    "rarity": 2
+  },
+  {
+    "color": "#FF8C00",
+    "color2": "#2F2F2F",
+    "name": "Tiger",
+    "pattern": "striped",
+    "rarity": 3
+  },
+  {
+    "color": "#FF69B4",
+    "color2": "#FFFFFF",
+    "name": "Candy",
+    "pattern": "striped",
+    "rarity": 3
+  },
+  {
+    "color": "#FFFF00",
+    "color2": "#000000",
+    "name": "Electric",
+    "pattern": "striped",
+    "rarity": 3
+  },
+  {
+    "color": "#00CED1",
+    "color2": "#006994",
+    "name": "Aquatic",
+    "pattern": "striped",
+    "rarity": 2
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#9400D3",
+    "name": "Regal",
+    "pattern": "striped",
+    "rarity": 2
+  },
+  {
+    "color": "#9400D3",
+    "color2": "#2F2F2F",
+    "name": "Haunted",
+    "pattern": "striped",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#000000",
+    "name": "Outlined",
+    "pattern": "edges",
+    "rarity": 3
+  },
+  {
+    "color": "#2F2F2F",
+    "color2": "#00FF00",
+    "name": "Glowing",
+    "pattern": "edges",
+    "rarity": 3
+  },
+  {
+    "color": "#8B0000",
+    "color2": "#FF4500",
+    "name": "Burning",
+    "pattern": "edges",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#00BFFF",
+    "name": "Frozen",
+    "pattern": "edges",
+    "rarity": 2
+  },
+  {
+    "color": "#2F2F2F",
+    "color2": "#ADFF2F",
+    "name": "Toxic Glow",
+    "pattern": "edges",
+    "rarity": 2
+  },
+  {
+    "color": "#FF4500",
+    "color2": "#FFD700",
+    "name": "Slash",
+    "pattern": "diagonal_down",
+    "rarity": 3
+  },
+  {
+    "color": "#FFFF00",
+    "color2": "#4B0082",
+    "name": "Lightning",
+    "pattern": "diagonal_down",
+    "rarity": 3
+  },
+  {
+    "color": "#00FFFF",
+    "color2": "#FF00FF",
+    "name": "Rift",
+    "pattern": "diagonal_down",
+    "rarity": 2
+  },
+  {
+    "color": "#87CEEB",
+    "color2": "#2F2F2F",
+    "name": "Shattered",
+    "pattern": "diagonal_down",
+    "rarity": 2
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#FFFFFF",
+    "name": "Ascendant",
+    "pattern": "diagonal_up",
+    "rarity": 3
+  },
+  {
+    "color": "#FF0000",
+    "color2": "#FFD700",
+    "name": "Phoenix",
+    "pattern": "diagonal_up",
+    "rarity": 2
+  },
+  {
+    "color": "#00BFFF",
+    "color2": "#FFFFFF",
+    "name": "Comet",
+    "pattern": "diagonal_up",
+    "rarity": 2
+  },
+  {
+    "color": "#9400D3",
+    "color2": "#E6E6FA",
+    "name": "Crescent",
+    "pattern": "diagonal_up",
+    "rarity": 2
+  },
+  {
+    "color": "#FF0000",
+    "color2": "#0000FF",
+    "name": "Split",
+    "pattern": "split_v",
+    "rarity": 3
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#000000",
+    "name": "Duality",
+    "pattern": "split_v",
+    "rarity": 3
+  },
+  {
+    "color": "#FF69B4",
+    "color2": "#00CED1",
+    "name": "Twilit",
+    "pattern": "split_v",
+    "rarity": 2
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#9400D3",
+    "name": "Balanced",
+    "pattern": "split_v",
+    "rarity": 2
+  },
+  {
+    "color": "#FF4500",
+    "color2": "#228B22",
+    "name": "Chimeric",
+    "pattern": "split_v",
+    "rarity": 2
+  },
+  {
+    "color": "#FF69B4",
+    "color2": "#00FF00",
+    "name": "Mosaic",
+    "pattern": "checker",
+    "rarity": 3
+  },
+  {
+    "color": "#FF0000",
+    "color2": "#FFD700",
+    "name": "Harlequin",
+    "pattern": "checker",
+    "rarity": 2
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#4B0082",
+    "name": "Aura",
+    "pattern": "radial",
+    "rarity": 3
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#FF4500",
+    "name": "Corona",
+    "pattern": "radial",
+    "rarity": 2
+  },
+  {
+    "color": "#000000",
+    "color2": "#FFD700",
+    "name": "Eclipse",
+    "pattern": "radial",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#000000",
+    "name": "Barcode",
+    "pattern": "columns",
+    "rarity": 3
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#2F2F2F",
+    "name": "Zebra",
+    "pattern": "columns",
+    "rarity": 3
+  },
+  {
+    "color": "#00FF00",
+    "color2": "#FF00FF",
+    "name": "Neon Bars",
+    "pattern": "columns",
+    "rarity": 2
+  },
+  {
+    "color": "#FF8C00",
+    "color2": "#000000",
+    "name": "Jailbird",
+    "pattern": "columns",
+    "rarity": 2
+  },
+  {
+    "color": "#8B4513",
+    "color2": "#D2691E",
+    "name": "Layered",
+    "pattern": "bands",
+    "rarity": 3
+  },
+  {
+    "color": "#4682B4",
+    "color2": "#87CEEB",
+    "name": "Stratified",
+    "pattern": "bands",
+    "rarity": 3
+  },
+  {
+    "color": "#696969",
+    "color2": "#A9A9A9",
+    "name": "Sediment",
+    "pattern": "bands",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#8B4513",
+    "name": "Framed",
+    "pattern": "corners",
+    "rarity": 3
+  },
+  {
+    "color": "#2F2F2F",
+    "color2": "#FFD700",
+    "name": "Gilded",
+    "pattern": "corners",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#8B0000",
+    "name": "Corrupted",
+    "pattern": "corners",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#FF0000",
+    "name": "Marked",
+    "pattern": "cross",
+    "rarity": 3
+  },
+  {
+    "color": "#2F2F2F",
+    "color2": "#9400D3",
+    "name": "Hex",
+    "pattern": "cross",
+    "rarity": 2
+  },
+  {
+    "color": "#D2691E",
+    "color2": "#FF4500",
+    "name": "Branded",
+    "pattern": "cross",
+    "rarity": 2
+  },
+  {
+    "color": "#006994",
+    "color2": "#00CED1",
+    "name": "Tidal",
+    "pattern": "wave",
+    "rarity": 3
+  },
+  {
+    "color": "#4B0082",
+    "color2": "#E6E6FA",
+    "name": "Ripple",
+    "pattern": "wave",
+    "rarity": 3
+  },
+  {
+    "color": "#228B22",
+    "color2": "#90EE90",
+    "name": "Current",
+    "pattern": "wave",
+    "rarity": 2
+  },
+  {
+    "color": "#FF8C00",
+    "color2": "#FFFACD",
+    "name": "Mirage",
+    "pattern": "wave",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#2F2F2F",
+    "name": "Speckled",
+    "pattern": "scatter",
+    "rarity": 3
+  },
+  {
+    "color": "#191970",
+    "color2": "#FFFFFF",
+    "name": "Starry",
+    "pattern": "scatter",
+    "rarity": 3
+  },
+  {
+    "color": "#D2691E",
+    "color2": "#8B4513",
+    "name": "Freckled",
+    "pattern": "scatter",
+    "rarity": 2
+  },
+  {
+    "color": "#4B0082",
+    "color2": "#FFD700",
+    "name": "Glittering",
+    "pattern": "scatter",
+    "rarity": 2
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#8B0000",
+    "name": "Spotted",
+    "pattern": "scatter",
+    "rarity": 2
+  },
+  {
+    "color": "#4682B4",
+    "color2": "#000080",
+    "name": "Ringed",
+    "pattern": "ring",
+    "rarity": 3
+  },
+  {
+    "color": "#2F2F2F",
+    "color2": "#00FFFF",
+    "name": "Orbital",
+    "pattern": "ring",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#FFD700",
+    "name": "Halo",
+    "pattern": "ring",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#808080",
+    "name": "Misty",
+    "pattern": "fade",
+    "rarity": 3
+  },
+  {
+    "color": "#696969",
+    "color2": "#2F2F2F",
+    "name": "Smoky",
+    "pattern": "fade",
+    "rarity": 3
+  },
+  {
+    "color": "#E6E6FA",
+    "color2": "#FF69B4",
+    "name": "Dreamlike",
+    "pattern": "fade",
+    "rarity": 2
+  },
+  {
+    "color": "#00BFFF",
+    "color2": "#000080",
+    "name": "Fading",
+    "pattern": "fade",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFACD",
+    "color2": "",
+    "name": "Shiny",
+    "pattern": "solid",
+    "rarity": 2
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#FFFFFF",
+    "name": "Radiant",
+    "pattern": "gradient_down",
+    "rarity": 2
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#FFD700",
+    "name": "Blessed",
+    "pattern": "edges",
+    "rarity": 1
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#4B0082",
+    "name": "Starfall",
+    "pattern": "diagonal_down",
+    "rarity": 1
+  },
+  {
+    "color": "#E6E6FA",
+    "color2": "#9400D3",
+    "name": "Spectral",
+    "pattern": "gradient_up",
+    "rarity": 1
+  },
+  {
+    "color": "#E6E6FA",
+    "color2": "#87CEEB",
+    "name": "Ethereal",
+    "pattern": "middle",
+    "rarity": 1
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#FFFFFF",
+    "name": "Celestial",
+    "pattern": "striped",
+    "rarity": 1
+  },
+  {
+    "color": "#FF0000",
+    "color2": "#00FFFF",
+    "name": "Bifrost",
+    "pattern": "diagonal_up",
+    "rarity": 1
+  },
+  {
+    "color": "#FF69B4",
+    "color2": "#00FFFF",
+    "name": "Prismatic",
+    "pattern": "striped",
+    "rarity": 1
+  },
+  {
+    "color": "#4B0082",
+    "color2": "#000000",
+    "name": "Void",
+    "pattern": "gradient_down",
+    "rarity": 1
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#4B0082",
+    "name": "Cosmic",
+    "pattern": "diagonal_down",
+    "rarity": 1
+  },
+  {
+    "color": "#FFFFFF",
+    "color2": "#FFD700",
+    "name": "Divine",
+    "pattern": "middle",
+    "rarity": 1
+  },
+  {
+    "color": "#1A1A2E",
+    "color2": "#FF6B00",
+    "name": "Eclipsed",
+    "pattern": "radial",
+    "rarity": 1
+  },
+  {
+    "color": "#FFD700",
+    "color2": "#8B0000",
+    "name": "Wyrmgold",
+    "pattern": "scales",
+    "rarity": 1
+  },
+  {
+    "color": "#00121F",
+    "color2": "#00E5FF",
+    "name": "Abyssal",
+    "pattern": "gradient_down",
+    "rarity": 1
+  },
+  {
+    "color": "#FF3300",
+    "color2": "#FFD700",
+    "name": "Emberwake",
+    "pattern": "gradient_up",
+    "rarity": 1
+  },
+  {
+    "color": "#E0FFFF",
+    "color2": "#0077BE",
+    "name": "Hoarfrost",
+    "pattern": "edges",
+    "rarity": 1
+  },
+  {
+    "color": "#2E003E",
+    "color2": "#FF5FA2",
+    "name": "Nightbloom",
+    "pattern": "diagonal_up",
+    "rarity": 1
+  },
+  {
+    "color": "#3A3A5C",
+    "color2": "#7DF9FF",
+    "name": "Stormglass",
+    "pattern": "striped",
+    "rarity": 1
+  },
+  {
+    "color": "#0B0B0B",
+    "color2": "#7CFC00",
+    "name": "Gravebloom",
+    "pattern": "middle",
+    "rarity": 1
+  }
+]
