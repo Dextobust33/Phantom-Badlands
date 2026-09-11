@@ -277,11 +277,11 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 54 open items, sequenced so nothing gets built twice (2026-09-11)
+## ⚑ THE ORDER — 47 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
-**54 open across 15 arcs, 72 done.** The order below is dependency-driven, not preference —
+**54 open across 15 arcs, 72 done** — recounted the same day at **47 open (43 + 4 partial)** after ticking seven room-pass entries that v0.9.768 had already shipped. The order below is dependency-driven, not preference —
 every "before" below is a case where doing it the other way means redoing the first piece.
 
 **0. CUT THE RELEASE. — ✅ DONE 2026-09-11, shipped as v0.9.771 then v0.9.772.** Was a gate, not
@@ -1533,13 +1533,12 @@ rooms out of sprites from those packs."*
 This was discussed across two sessions and never reached the list. Recording it because the packs
 are now bought, unzipped and licence-cleared, so the blocker is design rather than assets.
 
-- [ ] **Answer the owner's own feasibility question first: does the OVERWORLD have to become
-      sprites too?** It does not. A post interior, the sanctuary and a dungeon room are each a
+- [x] **ANSWERED (recorded 2026-09-11): does the OVERWORLD have to become sprites too?** It does not. A post interior, the sanctuary and a dungeon room are each a
       SEPARATE screen from the overworld map — `_render_house_map()` already draws the sanctuary
       as its own thing. The dungeon proved a monospace text canvas can be a sprite grid with no
       renderer rewrite, so an interior can be spritten without touching the overworld at all. The
       mixed look is a deliberate split (sprite interiors, ASCII wilderness), not a compromise.
-- [ ] **The assets are ready and better than what we have.** Every Raven pack ships the SAME
+- [x] **RECORDED — the assets are ready and better than what we have.** Every Raven pack ships the SAME
       tileset pre-rendered at 16, 32, 48 and 64px, so a 64px cell draws at native resolution with
       zero scaling — sharper than the current dungeon floor, which is a 16px tile upscaled 4x.
       178 of 190 files sit on a clean 16 grid. `interiors` covers post interiors, `cozy_home` the
@@ -1549,7 +1548,7 @@ are now bought, unzipped and licence-cleared, so the blocker is design rather th
       information about which cells are floor and which are wall.
       One anomaly: `the_underworld` sheets are 654x366, NOT a multiple of 16 — it has padding the
       others do not. Check before using it as a grid.
-- [ ] **Cost is not a reason to hesitate — measured 2026-09-10.** Client cost scales with CELLS ON
+- [x] **MEASURED 2026-09-10 — cost is not a reason to hesitate.** Client cost scales with CELLS ON
       SCREEN, not with how many tiles are owned: a room built from sprites costs the same as a
       corridor built from sprites. The SERVER has no idea sprites exist (not one `.png` reference
       in `server.gd` or `shared/`), so none of this touches concurrent player capacity. The two
@@ -1570,7 +1569,7 @@ ASCII-versus-sprites like the interiors are. It is **two art packs meeting at a 
 question is whether their palettes belong in the same room. That is a coherence problem, and it
 does not exist in the interiors case at all.
 
-- [ ] **Pick the room pack by MEASUREMENT, not by name.** Palettes compared in HSV against the
+- [x] **DONE in v0.9.768 — the room pool was picked by MEASUREMENT (`bake_room_floors.py`, contrast-gated), not by name.** Palettes compared in HSV against the
       darkcave corridor sheet (2026-09-10), because two greys with different casts look identical
       in an RGB average and wrong on screen:
       | pack | hue gap | value gap | sat gap |
@@ -1588,7 +1587,7 @@ does not exist in the interiors case at all.
       Raven packs are 0.57-0.66. Rooms would read as brighter than the corridors leading to them
       — which is what a lit room off a dark passage should look like. Decide deliberately whether
       to lean into that or flatten it; do not correct it by reflex.
-- [ ] **Room VARIETY — DECIDED 2026-09-10: unique and fun beats coherent.** Owner, walking the
+- [x] **DONE in v0.9.768 (room identity via `label_rooms`, one pack per chamber). Room VARIETY — DECIDED 2026-09-10: unique and fun beats coherent.** Owner, walking the
       first build: *"we will probably want more variety to the rooms... We have plenty of assets
       to make a huge variety of rooms once we get these working properly."* Then, asked whether a
       room's look should follow the DUNGEON THEME or vary within a floor: *"I'm less concerned
@@ -1611,7 +1610,7 @@ does not exist in the interiors case at all.
       Assets are not the constraint: 20 packs, each shipping 16/32/48/64px plus RPG Maker
       autotile sheets that NAME which cells are floor, wall and object.
 
-- [ ] **THREE LAYERS per room — the owner's design, 2026-09-10.** *"If for each room we were to
+- [~] **THREE LAYERS per room — the owner's design, 2026-09-10. Layers 1 (floor) and 2 (decor) SHIPPED v0.9.768; only layer 3 (walls / rim tint) is open.** *"If for each room we were to
       pick a random pack for the floors, a random pack for the walls, and a random pack for decor
       items that would add 3 layers of variety to make some interesting rooms I believe. We could
       even do doors or chests and things to break it up."*
@@ -1736,7 +1735,7 @@ does not exist in the interiors case at all.
       cells. Options: a doorway/threshold tile from the room pack that reads as belonging to
       both; a one-tile border of rubble; or accepting the cut. Needs to be looked at on screen,
       not reasoned about — the same way the prop occlusion question was settled.
-- [ ] **The renderer needs no change; telling a room from a corridor is the actual work.** A room
+- [x] **DONE in v0.9.768 (`DungeonTiles.label_rooms`, cached per floor). The renderer needs no change; telling a room from a corridor was the actual work.** A room
       cell is one inline `[img]` exactly like a corridor cell — only the sheet it indexes differs.
       But the distinction does NOT survive generation: `_carve_room` and `_connect_rooms` both
       write `TileType.EMPTY`, so by the time the grid reaches the client a room floor and a
@@ -1768,7 +1767,7 @@ CanvasLayer, driven by `set_shader_parameter`. Anything below is a second use of
 new plumbing. There is also `region_tint.gdshader`. So "is this possible in Godot" is settled: yes,
 and this project already does it.
 
-- [ ] **DECIDED 2026-09-10: torch + lamps, and DARKNESS IS A DUNGEON TRAIT.** Owner, after
+- [~] **DECIDED 2026-09-10: torch + lamps, and DARKNESS IS A DUNGEON TRAIT. The default light (62% ambient + lamps) SHIPPED v0.9.768; what is OPEN is the per-dungeon LIGHT LEVEL property and the dark late-game dungeons.** Owner, after
       seeing five treatments: *"I like the 4th one of Torch + lamps but I don't want the dungeon
       to be too dark if players don't have a torch. The only way I'd be open to that is if players
       don't have to micromanage it. Entering dark dungeons all the time would get old. I guess we
@@ -1807,7 +1806,7 @@ and this project already does it.
       ship it off by default as a setting.
       The GameMaker documentation the owner found is a `.pdf` with subset-encoded fonts - its text
       could not be extracted - so it is a reference for the LOOK, not a recipe to port.
-- [ ] **Cheaper atmosphere worth considering before any shader:** the compositor can already bake
+- [x] **SUPERSEDED — the shader route shipped in v0.9.768, so the baked-dim alternative is moot. Cheaper atmosphere worth considering before any shader:** the compositor can already bake
       per-cell variants, so a DIM version of a floor tile is a cached texture rather than a shader
       pass. That is how the existing occlusion and decor work; it would not need a shader at all,
       at the cost of more cache entries. Worth comparing before reaching for GPU work.
