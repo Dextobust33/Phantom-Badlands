@@ -34911,6 +34911,23 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 				"kind": "escape_scroll", "char": "!", "color": "#87CEEB",
 				"item_data": {"name": scroll_drop.name, "item_type": "escape_scroll", "is_consumable": true,
 					"tier_max": scroll_drop.tier_max, "type": "consumable", "level": 1, "rarity": "uncommon"}})
+	# (d2) Guarantee ONE piece of equipment somewhere in the dungeon.
+	#
+	# The scattered roll is a per-item chance, so "some dungeons give you nothing" is not a bug
+	# in it - it is what a 26% chance over ~7 items means. Raising the percentage far enough to
+	# make a zero unlikely would also make the average run much richer, which is the overdoing
+	# the owner asked to avoid. A floor under the worst case costs nothing on an average run.
+	#
+	# Placed on a RANDOM floor rather than the first, so it does not become a thing you grab and
+	# leave; the escape scroll above is deliberately on floor 0 for the opposite reason.
+	if floor_count > 0:
+		var _geq_floor: int = randi() % floor_count
+		var _geq = drop_tables.roll_dungeon_chest_equipment(tier, maxi(1, dungeon_level))
+		if _geq is Dictionary and not _geq.is_empty():
+			_place_floor_item_random(instance_id, _geq_floor, floor_grids[_geq_floor], {
+				"kind": "equipment", "char": "◆",
+				"color": _get_rarity_color(_geq.get("rarity", "common")), "item_data": _geq})
+
 	# (e) P2 Slice 3 — dungeon-gather quest relics: N guaranteed themed relics spread across
 	# floors, tagged with the quest_id. Auto-pickup ticks the GATHER quest (_award_floor_item).
 	var gr_name := String(active_dungeons.get(instance_id, {}).get("gather_relic_name", ""))
@@ -34935,13 +34952,21 @@ func _roll_floor_item(dungeon_type: String, tier: int, sub_tier: int, level: int
 			return {}
 		return {"kind": "egg", "char": "◉", "color": "#A335EE", "item_data": egg}
 	var lvl: int = max(1, level)
+	# 2026-09-10 - equipment 20% -> 26%, taken out of the crafting-material share rather than
+	# added on top, so the number of items on a floor does not change.
+	#
+	# Owner: "going through a whole dungeon without finding any doesn't feel great." The maths
+	# agreed: a tier-1 dungeon scatters ~1-2 extra items on each of 5 floors, so ~7.5 rolls at
+	# 20% is an expected 1.5 pieces - and an expected 1.5 means turning up empty-handed a fifth
+	# of the time. 26% lifts that to ~2, and the guaranteed piece below removes the zero case
+	# outright, which is the half the player actually feels.
 	var roll := randi() % 100
-	if roll < 40:  # crafting material
+	if roll < 34:  # crafting material
 		var mat = drop_tables.roll_crafting_material_drop(tier)
 		if mat.is_empty():
 			return {}
 		return {"kind": "material", "char": "▪", "color": "#1EFF00", "item_data": mat}
-	elif roll < 62:  # valor coins
+	elif roll < 56:  # valor coins
 		var v := randi_range(tier * 2, tier * 6)
 		return {"kind": "valor", "char": "¢", "color": "#FFD700", "item_data": {"valor": v}}
 	elif roll < 82:  # equipment
@@ -34949,11 +34974,25 @@ func _roll_floor_item(dungeon_type: String, tier: int, sub_tier: int, level: int
 		if eq.is_empty():
 			return {}
 		return {"kind": "equipment", "char": "◆", "color": _get_rarity_color(eq.get("rarity", "common")), "item_data": eq}
-	else:  # consumable
+	elif roll < 96:  # consumable
 		var con = drop_tables.roll_dungeon_chest_consumable(tier, lvl)
 		if con.is_empty():
 			return {}
 		return {"kind": "consumable", "char": "♦", "color": "#FFD700", "item_data": con}
+	else:  # 4% - a Scroll of Summoning
+		# Owner 2026-09-10: "For Scrolls of Summoning lets add those as rare floor loot to
+		# dungeons as well." It is the scroll that lets you NAME your next encounter (any
+		# monster in the game, spawned at the local area's level with its own tier's loot), so
+		# a dungeon floor is the right place to find one: you are already somewhere dangerous
+		# and deciding what to pick a fight with next.
+		#
+		# 4%, carved out of the consumable band rather than added on top, so the floor's total
+		# item count is unchanged and this does not quietly inflate dungeon loot.
+		var summon = drop_tables._generate_item(
+			{"item_type": "scroll_monster_select", "rarity": "rare"}, lvl)
+		if not (summon is Dictionary) or summon.is_empty():
+			return {}
+		return {"kind": "consumable", "char": "♦", "color": "#FF00FF", "item_data": summon}
 
 func _place_floor_item_random(instance_id: String, floor_num: int, grid: Array, item: Dictionary) -> void:
 	# Find a random EMPTY tile and drop the item there.
