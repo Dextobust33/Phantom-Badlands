@@ -24854,8 +24854,16 @@ func handle_server_message(message: Dictionary):
 				# v0.9.664 — defer the round divider: it's now queued before the FIRST
 				# message of the UPCOMING round (state.round) so it reads at round-start
 				# instead of landing mid-round. See the "combat_message" handler.
-				_combat_known_round = int(state.get("round", _combat_known_round + 1))
-				_pending_round_divider = true
+				# 2026-09-11 - only when the round NUMBER actually changes. Every combat_update
+				# armed a divider, and a free item action sends one WITHOUT advancing the round -
+				# so four potions in round 4 printed "Round 4" four times and chopped the log into
+				# four fake turns. Owner: "not sure if using two items is working right? Didn't
+				# seem like the monster did anything?" - the repeated dividers are a large part of
+				# why it read that way.
+				var _new_round: int = int(state.get("round", _combat_known_round + 1))
+				if _new_round != _combat_known_round:
+					_combat_known_round = _new_round
+					_pending_round_divider = true
 				var new_hp = state.get("player_hp", character_data.get("current_hp", 0))
 				var max_hp = state.get("player_max_hp", character_data.get("max_hp", 1))
 

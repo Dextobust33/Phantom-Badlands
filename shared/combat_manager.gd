@@ -8260,9 +8260,11 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 			# item costs this member their own action instead.
 			messages.append("[color=#FFA500](You've already taken a free action this round — this one costs you your turn.)[/color]")
 		else:
-			messages.append("[color=#FFA500](You've already taken a free action this round — the enemy seizes the moment![/color]")
+			messages.append("[color=#FFA500](You've already taken a free action this round — the enemy seizes the moment!)[/color]")
 		var _mt = process_monster_turn(combat)
-		for _mm in _mt.get("messages", []):
+		# BOTH shapes - see `monster_turn_lines`. Reading only "messages" here is what made a
+		# second item a free hit for the monster with no line to show for it.
+		for _mm in monster_turn_lines(_mt):
 			messages.append(_mm)
 		var _ended: bool = character.current_hp <= 0
 		return {
@@ -8316,6 +8318,35 @@ func party_use_item(leader_id: int, pid: int, item_index: int, target: String = 
 		return res
 	res["spent_action"] = spent
 	return res
+
+
+static func monster_turn_lines(result: Dictionary) -> Array:
+	"""The monster turn's output, as lines, whichever shape it came back in.
+
+	`process_monster_turn` has a dozen return points and TWO shapes: most return
+	{"message": "a\\nb"} (singular, newline-joined) and a couple return {"messages": [...]}.
+	The comment at its main call site has said so for months.
+
+	2026-09-11 - that cost a real bug. `process_use_item`'s second-item branch read
+	`_mt.get("messages", [])`, found nothing, and appended nothing - so the monster took its
+	turn, dealt its damage, and said NOTHING. Owner: "not sure if using two items is working
+	right? Didn't seem like the monster did anything?" Reproduced exactly: HP 329 -> 238 with
+	two messages returned, neither of them the monster's.
+
+	This is Pitfall #9 in CLAUDE.md word for word - one side writes `message`, the other reads
+	`messages`. The fix is a single reader rather than a third hand-rolled unpack, so the next
+	caller cannot pick the wrong key either."""
+	var out: Array = []
+	var many = result.get("messages", null)
+	if many is Array:
+		for m in many:
+			out.append(m)
+	var one := String(result.get("message", ""))
+	if one != "":
+		for line in one.split("\n"):
+			if String(line) != "":
+				out.append(line)
+	return out
 
 
 func process_monster_turn(combat: Dictionary) -> Dictionary:
