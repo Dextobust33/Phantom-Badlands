@@ -161,6 +161,53 @@ Two scenarios were added for it: **`cycle_cards`** (dungeon cards carrying cycle
 reveal upgrade already taken on a class card) and **`in_dungeon`** (parked on a dungeon entrance,
 stocked, for the hover / chest / run-log checks).
 
+## STAT DESCRIPTIONS ARE A BIBLE. THEY MUST BE READ OFF THE CODE, NOT WRITTEN FROM MEMORY
+
+Owner, 2026-09-11: *"When putting in stat descriptions that are meant to be our bible it's not
+acceptable to run off intuition. Did you do the same for class stat descriptions on each of their
+pages? What about the help screen? Making guesses is costing us time and leading to bad info (aka
+low quality slop)."*
+
+Correct, and the audit found more than the line that prompted it. CLAUDE.md already carries this
+rule for EQUIPMENT (*"NEVER state what gear can do from memory"*); it applies to every
+player-facing description and it did not get applied here.
+
+**What I got wrong, written from intuition and shipped into the new companion screen:**
+- **Speed** said *"How often it gets to act... more turns over a fight."* It does **nothing** of
+  the kind. Companion speed feeds the PLAYER: initiative (`effective_dex = player_dex +
+  companion_speed/2`), hit chance (`+ comp_speed_hit/3`), dodge, and flee. The companion never
+  gets an extra turn from it.
+- **Health** said *"Scales with YOUR max health."* That behaviour was deliberately REMOVED on
+  2026-09-04, because equipping +HP gear moved the companion and levelling up shrank it. The
+  companion's OWN level drives it.
+
+**What the audit then found elsewhere, none of which I wrote:**
+- **Help screen, hit chance:** stated `75% + (DEX - enemy speed)`. The code subtracts **half** the
+  enemy's speed (`player_dex - int(monster_speed / 2.0)`).
+- **Help screen, initiative, TWO different blocks each wrong in a different way:**
+  one said `(speed-DEX)x2% chance enemy strikes first`; the other said
+  `mon_spd/2 - DEX/10 (min 5%, max 45%, ambusher +15%)`. The code is a speed-scaled base, a
+  logarithmic DEX penalty, clamped **5-55**, ambusher **+8**.
+- **`gold_find` is a DEAD STAT.** It appears only in client display code - the Kobold's "Treasure
+  Sense" passive advertises "+Valor find" and **no server or shared code consumes it**. Its
+  description now says so; **wiring it is a gameplay decision and needs the owner's call.**
+- A stale `x0.75` energy-scaling formula in a comment inside `stat_description_for`
+  (`max_energy` normalised to x1.0 in v0.9.700).
+
+**The class stat descriptions themselves held up.** Each already carried a verified correction in
+its comment (Ranger DEX cannot crit, only the Ninja rolls Assassinate, a class only names the pool
+it spends) and all eight spot-checks passed against the real formulas.
+
+**The structural fix: `tools/probe/stat_claims.gd`.** It pins each numeric claim to the constant
+or formula that produces it - crit base and per-DEX from `balance_config`, the hit-chance divisor
+and clamp, the initiative clamp and ambusher bonus, all three pool formulas, the aggro cap - and
+checks the class descriptions name only stats that really contribute. It deliberately tests
+NUMBERS rather than prose, because every drift found here was a number. A tuning change now breaks
+the CHECK instead of quietly making the help page lie.
+
+- [ ] **Wire `gold_find`, or remove it from the tables.** Owner's call: it is authored on companion
+      passives (Kobold "Treasure Sense") and displayed to players, and nothing applies it.
+
 ## LIVE REPORTS, 2026-09-11 post-v0.9.770 (owner, one session) -- NOTHING HERE IS SHIPPED
 
 Owner: *"Please make sure you're documenting my messages and adding them to the to do or ensuring

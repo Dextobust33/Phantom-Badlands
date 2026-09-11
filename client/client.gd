@@ -34106,7 +34106,7 @@ func show_help():
 [color=#00FFFF]Lvl Penalty:[/color] -1.5%/lvl (max-25%) for attacks vs higher monsters. [color=#FF4444]Monster +4%/lvl exponential![/color]
 [color=#00FFFF]Hit:[/color] 75%+(DEX-spd) [30-95%] | [color=#00FFFF]Flee:[/color] 40%+DEX+spd+WIT/2-monSpd/2-lvldiff | [color=#00FFFF]Enemy:[/color] 85%+lvl-DEX/5(max30%)-spd/2 [40-95%]
 [color=#66FF66]Trickster Dodge:[/color] +WIT/50% dodge (max 15%). Combined with DEX dodge, tricksters are harder to hit!
-[color=#FF4444]Initiative:[/color] mon_spd/2 - DEX/10 (min 5%, max 45%, ambusher +15%)
+[color=#FF4444]Initiative:[/color] rises with the enemy's speed, falls with your DEX (min 5%, max 55%, ambusher +8)
 
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
 [color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75% dodge[/color] on enemy turn!
@@ -34593,7 +34593,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "COMBAT FORMULAS",
 			"keywords": ["combat", "attack", "damage", "defense", "hit", "miss", "dodge", "flee", "crit", "critical", "formula", "calculation", "level", "penalty", "initiative"],
-			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - enemy speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 40% + DEX + speed, penalised by the level RATIO (~30 pts per doubling of the monster's level), floor 25%\n[color=#FF4444]Initiative:[/color] If monster speed > DEX, (speed-DEX)×2% chance enemy strikes first"
+			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - HALF the enemy's speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 40% + DEX + speed, penalised by the level RATIO (~30 pts per doubling of the monster's level), floor 25%\n[color=#FF4444]Initiative:[/color] the enemy's chance to go first rises with ITS speed (5% at speed 0 up to 25% at speed 50+), falls with your DEX, and rises again when you fight above your level or tier. Clamped 5-55%, ambusher +8."
 		},
 		{
 			"title": "ASSASSINATE",
@@ -43729,21 +43729,28 @@ func _on_comp_panel_inspect_back() -> void:
 # One table, consumed by the inspect screen and the companions panel, so the two cannot explain
 # the same stat differently. Wording says what the number DOES to this fight, not what it is.
 const COMPANION_STAT_HELP := {
-	"health":    "How much damage your companion can absorb before it is knocked out. Scales with YOUR max health, so it stays useful as you level rather than falling behind.",
-	"damage":    "Damage it deals on its turn. Rolls in this range each time it attacks.",
-	"aggro":     "How often enemies attack your companion INSTEAD OF YOU. Higher means it soaks more hits — a tank keeps you alive by being hit in your place.",
-	"speed":     "How often it gets to act. Higher speed means more turns over a fight, so every other bonus it has fires more often.",
-	"attack":    "Raises YOUR attack power by this percent while it is out.",
+	# EVERY line below was read off its consumption site in combat_manager / server before being
+	# written. The first draft was written from intuition and TWO of them were wrong - Speed
+	# claimed the companion acted more often (it does not; it sharpens the PLAYER), and Health
+	# claimed it scaled with the owner's max HP (that was removed on 2026-09-04 precisely so
+	# gear and levels would stop moving it). Owner caught it: *"Regarding the companion speed is
+	# that an accurate description? Do they actually get to act more?"*
+	# `tools/probe/companion_stat_help.gd` pins each line to the code that implements it.
+	"health":    "Damage it can absorb before it is knocked out. Driven by the COMPANION'S OWN level, not yours - your gear and your level do not move it, so a high-level companion keeps its value beside a low-level character.",
+	"damage":    "Damage it deals on its turn. Rolls somewhere in this range each time it attacks.",
+	"aggro":     "The chance each incoming hit lands on your companion INSTEAD OF YOU. Rolled per hit, so one multi-strike round can split between the two of you. Caps at 80%.",
+	"speed":     "Does NOT give your companion extra turns. It sharpens YOU: the enemy wins initiative less often, your hit chance and dodge improve, and you flee more reliably.",
+	"attack":    "Raises YOUR attack damage by this percent while it is out.",
 	"defense":   "Raises YOUR defence by this percent while it is out.",
-	"hp_bonus":  "Raises YOUR maximum health by this percent while it is out.",
-	"hp_regen":  "Health you recover each turn of combat.",
-	"mana_bonus": "Raises your maximum mana by this percent.",
-	"mana_regen": "Mana you recover each turn of combat.",
+	"hp_bonus":  "Raises YOUR maximum health by this percent for the duration of a fight.",
+	"hp_regen":  "Health you recover at the start of each of your turns.",
+	"mana_bonus": "Raises your maximum mana, stamina or energy by this percent for the duration of a fight.",
+	"mana_regen": "Mana, stamina or energy you recover each turn.",
 	"crit_chance": "Added chance for your hits to critical.",
 	"crit_damage": "Extra damage your criticals deal.",
-	"lifesteal": "Percent of the damage you deal that comes back as health.",
+	"lifesteal": "Percent of the damage you deal that returns to you as health.",
 	"flee_bonus": "Improves your chance to escape a fight you choose to leave.",
-	"gold_find": "Extra gold from kills.",
+	"gold_find": "Intended to add Valor from kills. NOT CURRENTLY APPLIED - the bonus is displayed but no code consumes it (found 2026-09-11).",
 	"gathering_yield": "Extra materials from fishing, mining and logging.",
 	"gathering_hint": "Improves the odds of spotting a rare gathering node.",
 	"wisdom_bonus": "Raises your Wisdom, which resists poison and other lingering effects.",
