@@ -1212,6 +1212,9 @@ func _reconcile_lost_rank_choices(peer_id: int) -> void:
 		log_message("[RANKFIX] Dropped %d unusable non-combat rank-up choice(s) for %s" % [_purged, character.name])
 
 	var restored := 0
+	# 2026-09-11 — extra COPIES ("cleave#2") earn their own milestones, so they are candidates
+	# alongside the bare card names.
+	var _cands: Array = []
 	for entry in character.get_all_available_abilities():
 		var ability := String(entry.get("name", ""))
 		if ability == "":
@@ -1221,6 +1224,12 @@ func _reconcile_lost_rank_choices(peer_id: int) -> void:
 		# to the ability table later without being added to the list.
 		if ability in _noncombat or bool(entry.get("non_combat", false)):
 			continue
+		_cands.append(ability)
+	for _k in character.combat_deck_collection.keys():
+		var _iid := String(_k)
+		if Character.is_card_instance(_iid) and not (Character.card_base(_iid) in _noncombat):
+			_cands.append(_iid)
+	for ability in _cands:
 		var gap: int = character.milestones_owed(ability) - int(queued.get(ability, 0))
 		if gap <= 0:
 			continue
@@ -6222,7 +6231,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			"upgrade_offer": rcp.get("upgrade_offer", []),
 			"reveals_allowed": CardUpgradesScript.REVEALS_ALLOWED,
 			"current_effect_rank": int(characters[peer_id].ability_effect_ranks.get(rcp.get("ability", ""), 0)) if characters.has(peer_id) else 0,
-			"current_copy_count": int(characters[peer_id].combat_deck_collection.get(rcp.get("ability", ""), 1)) if characters.has(peer_id) else 1,
+			"current_copy_count": characters[peer_id].card_copies_owned(Character.card_base(String(rcp.get("ability", "")))) if characters.has(peer_id) else 1,
 			"variant_offer": rcp.get("variant_offer", {}),
 		})
 
@@ -7114,7 +7123,7 @@ func _flush_pending_rank_choices(peer_id: int) -> void:
 			"upgrade_offer": entry.get("upgrade_offer", []),
 			"reveals_allowed": CardUpgradesScript.REVEALS_ALLOWED,
 			"current_effect_rank": int(character.ability_effect_ranks.get(ab, 0)),
-			"current_copy_count": int(character.combat_deck_collection.get(ab, 1)),
+			"current_copy_count": character.card_copies_owned(Character.card_base(ab)),
 			"variant_offer": entry.get("variant_offer", {}),
 		})
 		return   # one at a time; the rest arrive via `next_pending` as each is resolved
@@ -7204,7 +7213,7 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 			"type": "rank_choice_applied",
 			"ability": ability_name,
 			"choice": choice,
-			"new_copy_count": int(character.combat_deck_collection.get(ability_name, 1)),
+			"new_copy_count": character.card_copies_owned(Character.card_base(ability_name)),
 			"new_effect_rank": int(character.ability_effect_ranks.get(ability_name, 0)),
 			"variant_stack": imprint_result.get("stack_after", []),
 			"variant_trait_id": trait_id,
@@ -17746,8 +17755,12 @@ func handle_market_list_card(peer_id: int, message: Dictionary):
 	if not (card_id.begins_with("companion_card_") or card_id.begins_with("dungeon_card_")):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Only companion and dungeon cards can be traded."})
 		return
-	var owned = int(character.combat_deck_collection.get(card_id, 0))
-	if owned <= 0:
+	# 2026-09-11 — copies are INSTANCES. A specific copy ("...#2") may be named; a bare card id
+	# sells the copy with the least to lose (benched first, then fewest picks and uses).
+	var sell_iid: String = card_id if (Character.is_card_instance(card_id) and character.combat_deck_collection.has(card_id)) \
+		else character.least_invested_instance(Character.card_base(card_id), false, true)
+	card_id = Character.card_base(card_id)
+	if sell_iid == "":
 		send_to_peer(peer_id, {"type": "market_error", "message": "You don't own a spare copy of that card to sell."})
 		return
 
@@ -17759,17 +17772,16 @@ func handle_market_list_card(peer_id: int, message: Dictionary):
 	if bonus > 0:
 		base_valor = int(base_valor * (1.0 + bonus))
 
-	# Remove ONE copy from the collection; if that empties the slot, drop the key and let
-	# ensure_min_deck_size backfill the active deck so it never falls below the minimum.
-	character.combat_deck_collection[card_id] = owned - 1
-	if int(character.combat_deck_collection[card_id]) <= 0:
-		character.combat_deck_collection.erase(card_id)
+	# Remove THAT copy; its uses and milestone picks leave with it (the buyer gets them), and
+	# ensure_min_deck_size backfills the active deck so it never falls below the minimum.
+	var carried: Dictionary = character.remove_card_instance(sell_iid)
 	character.ensure_min_deck_size()
 
 	var listing = {
 		"account_id": account_id,
 		"seller_name": character.name,
-		"item": {"type": "card", "card_id": card_id, "name": card_name, "tier": card_tier},
+		"item": {"type": "card", "card_id": card_id, "name": card_name, "tier": card_tier,
+			"instance": carried, "upgrades": (carried.get("picks", []) as Array).size()},
 		"base_valor": base_valor,
 		"supply_category": "card",
 		"listed_at": int(Time.get_unix_time_from_system()),
@@ -17894,7 +17906,7 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	elif item.get("type", "") == "card":
 		# #39 — a card goes into the deck collection; block if already at the copy cap.
 		var _cid = String(item.get("card_id", ""))
-		if int(character.combat_deck_collection.get(_cid, 0)) >= int(character.MAX_ABILITY_COPIES):
+		if character.card_copies_owned(_cid) >= int(character.MAX_ABILITY_COPIES):
 			send_to_peer(peer_id, {"type": "market_error", "message": "You already own the max (%d) copies of that card." % int(character.MAX_ABILITY_COPIES)})
 			return
 	elif character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
@@ -17972,8 +17984,9 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		# #39 — add the earned card to the buyer's deck collection (capped). Card listings
 		# are single-copy, so buy_qty is 1; clamp defensively anyway.
 		var _bcid = String(item.get("card_id", ""))
-		var _bhave = int(character.combat_deck_collection.get(_bcid, 0))
-		character.combat_deck_collection[_bcid] = mini(int(character.MAX_ABILITY_COPIES), _bhave + buy_qty)
+		# The copy arrives with the upgrades and uses its seller put on it.
+		var _prog = item.get("instance", {})
+		character.grant_card_copy(_bcid, _prog if _prog is Dictionary else {})
 	else:
 		# Add each item individually (tools, consumables, etc. need separate copies)
 		for _i in range(buy_qty):
@@ -33972,9 +33985,8 @@ func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "", 
 	# Prefer the themed dungeon-exclusive card for this dungeon type.
 	var dcard: String = DropTablesScript.dungeon_card_id_for_dungeon(dungeon_type) if dungeon_type != "" else ""
 	if dcard != "":
-		var cur: int = int(character.combat_deck_collection.get(dcard, 0))
-		if cur < int(character.MAX_ABILITY_COPIES):
-			character.combat_deck_collection[dcard] = cur + 1  # granted PERMANENT
+		var cur: int = character.card_copies_owned(dcard)
+		if cur < int(character.MAX_ABILITY_COPIES) and character.grant_card_copy(dcard) != "":   # granted PERMANENT, its own copy
 			out["granted"] = true
 			out["exclusive"] = true
 			out["ability"] = dcard
@@ -33989,7 +34001,7 @@ func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "", 
 		if bool(entry.get("non_combat", false)):
 			continue
 		var aname = str(entry.get("name", ""))
-		if int(character.combat_deck_collection.get(aname, 1)) >= character.MAX_ABILITY_COPIES:
+		if character.card_copies_owned(aname) >= character.MAX_ABILITY_COPIES:
 			continue
 		var w = 1 + int(character.ability_uses.get(aname, 0))
 		candidates.append(entry)
@@ -34862,8 +34874,10 @@ func _use_ability_tome(peer_id: int, item_index: int, item: Dictionary):
 	if item_index < 0 or item_index >= character.inventory.size():
 		return
 
-	var existing_count = int(character.combat_deck_collection.get(gift_ability, 0))
-	character.combat_deck_collection[gift_ability] = existing_count + 1
+	var existing_count = character.card_copies_owned(gift_ability)
+	if character.grant_card_copy(gift_ability) == "":
+		send_to_peer(peer_id, {"type": "error", "message": "You already hold the most copies of that card a deck can carry."})
+		return
 	character.remove_item(item_index)
 
 	var display_name = drop_tables.get_ability_tome_display(gift_ability)
@@ -38525,8 +38539,7 @@ func handle_gm_give_test_card(peer_id: int, message: Dictionary):
 	var ch = characters[peer_id]
 	var granted := []
 	for cid in ["dungeon_card_venom_fang", "dungeon_card_crimson_draught", "companion_card_wolf", "companion_card_giant_spider"]:
-		var cur := int(ch.combat_deck_collection.get(cid, 0))
-		ch.combat_deck_collection[cid] = min(int(ch.MAX_ABILITY_COPIES), cur + 1)
+		ch.grant_card_copy(cid)
 		granted.append(DropTablesScript.card_display_name(cid))
 	save_character(peer_id)
 	send_character_update(peer_id)
@@ -41665,7 +41678,8 @@ func _handle_party_combat_command(peer_id: int, command: String, target: String 
 		# the class. Owner chose to let Assassinate replace it.
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Outsmart has been retired — Assassinate is the Trickster finisher now. Build Read, then take the shot.[/color]"})
 		return
-	elif cmd in CombatManager.MAGE_ABILITY_COMMANDS or cmd in CombatManager.WARRIOR_ABILITY_COMMANDS or cmd in CombatManager.TRICKSTER_ABILITY_COMMANDS or cmd in CombatManager.UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
+	elif Character.card_base(cmd) in CombatManager.MAGE_ABILITY_COMMANDS or Character.card_base(cmd) in CombatManager.WARRIOR_ABILITY_COMMANDS or Character.card_base(cmd) in CombatManager.TRICKSTER_ABILITY_COMMANDS or Character.card_base(cmd) in CombatManager.UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
+		# 2026-09-11 — `cmd` may name a COPY ("cleave#2"); the card is checked, the copy is kept.
 		action = {"kind": "ability", "ability": cmd, "arg": arg}
 		# v0.9.740 — aim a buff at a teammate. Validated here (in the party, in THIS fight,
 		# still standing) so combat_manager can trust the pid; a bad one silently self-casts
@@ -41675,7 +41689,7 @@ func _handle_party_combat_command(peer_id: int, command: String, target: String 
 			var _pc = combat_mgr.active_party_combats.get(leader_id, {})
 			var _tst = _pc.get("member_states", {}).get(_tpid, {})
 			if _tpid != peer_id and _pc.get("characters", {}).has(_tpid) 					and not _tst.get("dead", false) and not _tst.get("fled", false):
-				if CombatManager.canonical_ability(cmd) in CombatManager.PARTY_TARGETABLE_BUFFS:
+				if CombatManager.canonical_ability(Character.card_base(cmd)) in CombatManager.PARTY_TARGETABLE_BUFFS:
 					action["target_pid"] = _tpid
 				else:
 					send_to_peer(peer_id, {"type": "text", "message":

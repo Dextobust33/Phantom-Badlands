@@ -3698,6 +3698,7 @@ func _build_hand_strip() -> HBoxContainer:
 static func companion_card_art_bbcode(card_name: String) -> String:
 	"""v0.9.683 — the monster ASCII art for a companion card, centered, or "" if
 	the id isn't a companion card / has no art. Keyed by de-slugged type name."""
+	card_name = Character.card_base(card_name)   # art is the card's, whichever copy
 	if not card_name.begins_with("companion_card_"):
 		return ""
 	var mtype := card_name.trim_prefix("companion_card_").capitalize()
@@ -4692,12 +4693,16 @@ func _refresh_hand() -> void:
 		var card_name = str(_combat_hand[i])
 		var info = _resolve_card_info(card_name)
 		cell.set_meta("card_name", card_name)
+		# 2026-09-11 — `card_name` is the COPY ("cleave#2"): it is what gets played and what the
+		# per-copy facts (upgrades, casts, the server's preview) are keyed by. `_card` is the
+		# card, for everything that is the same on every copy.
+		var _card := Character.card_base(card_name)
 		cell.set_meta("can_afford", bool(info.get("can_afford", true)))
 
 		# Category theming — banner colour + icon.
 		var category_info: Dictionary = {}
 		if client_ref and client_ref.has_method("get_ability_category_info"):
-			category_info = client_ref.get_ability_category_info(card_name)
+			category_info = client_ref.get_ability_category_info(_card)
 		var category_color_hex := str(category_info.get("color", "#8C7656"))
 		cell.set_meta("category_color", category_color_hex)
 		if glyph_lbl:
@@ -4706,7 +4711,7 @@ func _refresh_hand() -> void:
 		# v0.9.683 — companion cards render the companion's monster art in place of
 		# the glyph.
 		var art_img: Control = cell.find_child("ArtImg", true, false)
-		var _cart := companion_card_art_bbcode(card_name)
+		var _cart := companion_card_art_bbcode(_card)
 		if _cart != "":
 			if art_img:
 				_apply_card_art(art_img, _cart)
@@ -4805,7 +4810,7 @@ func _refresh_hand() -> void:
 		# their own state below and are excluded here. Only the matching class's
 		# archetype abilities build the meter (universal/companion cards don't).
 		if effect_lbl and (_momentum_active or _combo_active or _focus_active):
-			var _arch := Character.get_ability_archetype(card_name)
+			var _arch := Character.get_ability_archetype(_card)
 			# 2026-09-09 - ONE pip path for all three engines.
 			#
 			# The Warrior and Mage branches used to print a bare "+⚡" / "+◈" whatever the card
@@ -4822,7 +4827,7 @@ func _refresh_hand() -> void:
 			# The FINISHER spends the bar instead of feeding it, so it never shows a feed marker.
 			# One list for all three paths; it used to be three separate `card_name !=` tests, and
 			# the Trickster's was simply missing for a month.
-			if _eng_on and card_name not in ["devastate", "perfect_heist", "meteor"]:
+			if _eng_on and _card not in ["devastate", "perfect_heist", "meteor"]:
 				# Glyph and colour are per-SHAPE; the NAME is per-class and comes from the
 				# archetype-keyed table, never from one of the three label variables by hand.
 				var _glyph := "⚡"
@@ -4885,7 +4890,7 @@ func _refresh_hand() -> void:
 		# The animation gate dims the whole hand: these cards are genuinely unplayable right now,
 		# and that is the same thing "uncastable" already means here.
 		var castable := bool(info.get("can_afford", true)) and not _hand_gated
-		if _momentum_active and card_name == "devastate" and _momentum < 1:
+		if _momentum_active and _card == "devastate" and _momentum < 1:
 			castable = false
 			cell.set_meta("can_afford", false)
 			if effect_lbl:
@@ -4896,7 +4901,7 @@ func _refresh_hand() -> void:
 
 		# v0.9.697 — Mage Meteor DISCHARGES Focus (bigger per-Focus bonus, resets ramp).
 		# Not gated; the note shows the payoff for spending the ramp now.
-		if _focus_active and card_name == "meteor" and effect_lbl:
+		if _focus_active and _card == "meteor" and effect_lbl:
 			if _focus >= _focus_max:
 				effect_lbl.text = "Discharge! +%d%%" % int(_focus * 25)
 				effect_lbl.add_theme_color_override("font_color", Color("#7AE0FF"))
@@ -4917,7 +4922,7 @@ func _refresh_hand() -> void:
 		_set_cell_dim(cell, false, castable)
 		# v0.9.715 — class payoff cards get a meter-scaled glow: Devastate
 		# (Momentum, hard-locked at 0) and Meteor (Focus, soft-dim at 0).
-		_apply_finisher_visual(cell, card_name, castable)
+		_apply_finisher_visual(cell, _card, castable)
 
 	# Status line
 	if _hand_status_label:

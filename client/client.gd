@@ -11142,6 +11142,9 @@ func send_combat_command(command: String, target: String = ""):
 		display_game("[color=#FF0000]You are not in combat![/color]")
 		return
 
+	# 2026-09-11 — `command` may play a COPY ("cleave#2 15"). Everything decided locally reads
+	# the CARD; the payload carries the copy so the server consumes the right one.
+	var base_cmd := Character.card_base(command)
 	# #76 — party combat is SIMULTANEOUS: one action per round. Once locked in, ignore
 	# further presses (no mash) until the round resolves. Spectators can't act at all.
 	var _in_party := party_combat_active or party_waiting_for_turn or party_combat_spectating
@@ -11154,7 +11157,7 @@ func send_combat_command(command: String, target: String = ""):
 			return
 		# v0.9.740 — a buff played in a party fight asks WHO it is for before it is submitted.
 		# `target` being set means we are coming BACK from the picker, so no loop.
-		if target == "" and _party_buff_can_target_ally(command):
+		if target == "" and _party_buff_can_target_ally(base_cmd):
 			_start_buff_target_select(command)
 			return
 		# 2026-09-11 — and then asks "lock this in?" before the one-way submit. Armed only by
@@ -11169,11 +11172,11 @@ func send_combat_command(command: String, target: String = ""):
 	# number with no animation attached to it. Defer the whole FX burst to our own beat
 	# during playback (_dispatch_party_fx head branch) — the moment the hit really lands.
 	if _in_party:
-		_party_pending_fx_cmd = command
+		_party_pending_fx_cmd = base_cmd
 	else:
-		_start_combat_command_animation(command)
+		_start_combat_command_animation(base_cmd)
 
-	display_game("[color=#00FFFF]> %s[/color]" % command)
+	display_game("[color=#00FFFF]> %s[/color]" % base_cmd)
 	# v0.9.403 — Lufia II battlefield reveal: hide the party stat boxes the
 	# moment a card is played so FX play out on a clear stage. end_action_phase
 	# is triggered after the next combat_update arrives (see message handler).
@@ -11190,7 +11193,7 @@ func send_combat_command(command: String, target: String = ""):
 	# round-trip behind the client-side animation. Companion/monster trails still
 	# fire from the message dispatch (their animations are message-timed too).
 	if not _in_party and combat_scene_panel and combat_scene_panel.has_method("play_travel_fx"):
-		var _cmd_l := command.to_lower()
+		var _cmd_l := base_cmd.to_lower()
 		if not (_cmd_l in _NO_TRAVEL_COMMANDS):
 			combat_scene_panel.play_travel_fx("player", _travel_fx_type(_cmd_l))
 	# v0.9.409 — transition lockout: hold off draining the combat message
@@ -13253,6 +13256,10 @@ func _on_combat_card_played(card_name: String) -> void:
 
 func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	"""Get combat info for an ability (display name, cost, resource type)"""
+	# 2026-09-11 — the hand holds COPIES ("cleave#2"). The tables are keyed by card; the server's
+	# per-copy cost (efficiency picks differ between copies) is keyed by the copy.
+	var _iid := ability_name
+	ability_name = Character.card_base(ability_name)
 	var resource_type = "mana" if path == "mage" else ("stamina" if path == "warrior" else "energy")
 
 	# Ability definitions with display name, base cost, and cost percentage (for mage scaling)
@@ -13325,8 +13332,9 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	# combat_manager.gd is a shared script, so the real numbers are simply read. Display names
 	# stay local — those are genuinely client-side presentation.
 	# Server-sent cost wins outright — it is the number that will actually be charged.
-	if _server_ability_costs.has(ability_name):
-		var _sc: Dictionary = _server_ability_costs[ability_name]
+	var _ck: String = _iid if _server_ability_costs.has(_iid) else ability_name
+	if _server_ability_costs.has(_ck):
+		var _sc: Dictionary = _server_ability_costs[_ck]
 		result = result.duplicate()
 		result["cost"] = int(_sc.get("ceiling", 0))
 		result["cost_floor"] = int(_sc.get("floor", 0))
@@ -13454,6 +13462,7 @@ func get_ability_category_info(ability_name: String) -> Dictionary:
 	"""Return {category, color, tint_alpha, glyph} for an ability card.
 	Falls back to neutral defaults when an ability isn't in the table
 	(unknown ability — should never happen for current cards)."""
+	ability_name = Character.card_base(ability_name)   # category is the card's, whichever copy
 	# v0.9.680/681 — companion cards: category follows the card's KIND (damage/
 	# debuff → offense so the milestone chooser offers Rider; self-buff/heal/
 	# shield → buff so it offers Duration). ★ glyph marks the companion identity;
@@ -13675,6 +13684,9 @@ func _get_ability_mastery_damage_mult(ability_name: String) -> float:
 
 func _estimate_ability_card_effect(ability_name: String, planned_cost: int, fraction: float) -> Dictionary:
 	# Returns {text, color} for the third row of a combat hand card.
+	# 2026-09-11 — a COPY's number is the server's per-copy preview; the mirror below is per card.
+	var _iid := ability_name
+	ability_name = Character.card_base(ability_name)
 	# Damage abilities show "~N dmg" (orange); non-damage show a short tag.
 	#
 	# 2026-09-03 — the SERVER's number wins. Everything below this block is a
@@ -13683,8 +13695,9 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 	# right — a partial migration nobody could see from the client. The mirror is kept
 	# ONLY as a fallback for a card the server did not describe (companion/dungeon
 	# cards, and any state where no combat_state has arrived yet).
-	if _server_ability_effects.has(ability_name):
-		var _se: Dictionary = _server_ability_effects[ability_name]
+	var _ek: String = _iid if _server_ability_effects.has(_iid) else ability_name
+	if _server_ability_effects.has(_ek):
+		var _se: Dictionary = _server_ability_effects[_ek]
 		var _sv: int = int(_se.get("value", 0))
 		var _sk: String = String(_se.get("kind", ""))
 		var _scales: String = String(_se.get("scales", ""))
@@ -14065,7 +14078,10 @@ const _ABILITY_ALIASES := {
 }
 
 func _canonical_ability(name: String) -> String:
-	return String(_ABILITY_ALIASES.get(name, name))
+	# A COPY ("cleave#2") canonicalises to its card; the copy number is only meaningful to the
+	# hand and the command that plays it.
+	var _b := Character.card_base(name)
+	return String(_ABILITY_ALIASES.get(_b, _b))
 
 func _party_buff_can_target_ally(command: String) -> bool:
 	"""True when this command is a buff worth asking about — i.e. we are in a party fight that
@@ -19783,7 +19799,7 @@ func get_card_reveal_text(ability_name: String) -> String:
 	one and cycle two, so if every card states its own reveal the whole trade is legible at a
 	glance - which is how Dune: Imperium reads, and it costs no extra click on every turn of
 	every fight. The server owns the values; this only formats what it already sent."""
-	var eff = _server_ability_effects.get(ability_name, {}) if typeof(_server_ability_effects) == TYPE_DICTIONARY else {}
+	var eff = _server_effect_for(ability_name)
 	if eff is Dictionary and String(eff.get("reveal", "")) != "":
 		return String(eff["reveal"])
 	return ""
@@ -19797,9 +19813,7 @@ func get_card_engine_gain(ability_name: String) -> int:
 	a conditional one — should SHOW that on the card. Read from the authoritative payload rather
 	than re-derived here; a client copy of that rule would be the fourth mirror removed this
 	week."""
-	if typeof(_server_ability_effects) != TYPE_DICTIONARY:
-		return 0
-	var eff = _server_ability_effects.get(ability_name, {})
+	var eff = _server_effect_for(ability_name)
 	if not (eff is Dictionary):
 		return 0
 	return int(eff.get("engine_gain", 0))
@@ -19813,9 +19827,7 @@ func get_card_engine_breakdown(ability_name: String) -> Dictionary:
 	double and the preview counted it as though it always landed. The split comes from the server
 	for the same reason the total does - a client copy of that rule would be another mirror."""
 	var out: Dictionary = {"sure": 0, "maybe": 0, "chance": 0}
-	if typeof(_server_ability_effects) != TYPE_DICTIONARY:
-		return out
-	var eff = _server_ability_effects.get(ability_name, {})
+	var eff = _server_effect_for(ability_name)
 	if not (eff is Dictionary):
 		return out
 	out["sure"] = int(eff.get("engine_sure", 0))
@@ -20196,7 +20208,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		# rather than letting them find out by measuring, which is what the owner had to do.
 		if String(_cd.get("kind", "")) == "focus" 				and not Character.class_crit_affects_abilities(String(character_data.get("class_type", ""))):
 			_base += " [color=#FF6666]Does nothing for you: Steady Hand means your cards never crit (it still helps your basic attacks).[/color]"
-		if int(character_data.get("combat_deck_collection", {}).get(ability_name, 0)) >= 1:
+		if _card_copies_owned(ability_name) >= 1:
 			return _base + " [color=#7AE07A]Permanent card (earned).[/color]"
 		var _mt = ability_name.trim_prefix("companion_card_").capitalize()
 		var _need = _dt.companion_card_permanence_uses(_mt)
@@ -20341,6 +20353,7 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 	var s_wits := _get_card_effective_stat("wits")
 	# v0.9.694 — mirror the authoritative estimate so pip/description/effect agree.
 	var est_dmg := int(_ability_card_estimate(ability_name).get("damage", 0))
+	ability_name = Character.card_base(ability_name)   # the copy's number is in est_dmg; the text is the card's
 	# v0.9.698 — companion cards: headline number (damage/heal) from the pip helper +
 	# the card's own flavor text. Buff/utility companion cards show just their flavor.
 	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
@@ -20710,7 +20723,7 @@ func _get_ability_tooltip(ability_name: String) -> String:
 		if ability_name != "magic_bolt":  # v0.9.698 — Bolt's cost is player-chosen; Efficiency is a no-op
 			opts += " / Efficiency"
 		next_preview = "Next milestone (rank %d, %s): choose %s. Cards also tier up steadily as you use them." % [next_rank, next_name, opts]
-	var _copies_now = int(character_data.get("combat_deck_collection", {}).get(ability_name, 1))
+	var _copies_now = _card_copies_in_deck(ability_name)
 	var deck_line := "In deck: ×%d/3 (extra copies from dungeon rewards & companion cards)" % _copies_now
 	var lines: Array = [display]
 	if cost_clean.strip_edges() != "":
@@ -20922,6 +20935,7 @@ func _ability_display_name(ability_name: String) -> String:
 	rank-up / cull / mastery messages used the raw internal id (e.g. 'Tactical
 	retreat') while the actual card in the player's hand showed 'Recharge' —
 	players couldn't connect the two. Mirrors combat_manager._ability_display_name."""
+	ability_name = Character.card_base(ability_name)   # a copy is named for its card
 	# v0.9.680/681 — companion cards: unique per-type card name from the table.
 	# #38 — dungeon cards resolve their proper name via the shared table too.
 	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
@@ -21338,7 +21352,7 @@ func _on_milestone_tile_hover(slot: int) -> void:
 	# combat hand renders from, so the "now" half of the comparison cannot drift from what the
 	# player is about to see in the fight.
 	var now_line := ""
-	var eff = _server_ability_effects.get(ab, {}) if typeof(_server_ability_effects) == TYPE_DICTIONARY else {}
+	var eff = _server_effect_for(ab)
 	if eff is Dictionary and not eff.is_empty():
 		var kind := String(eff.get("kind", ""))
 		var val := int(eff.get("value", 0))
@@ -21649,7 +21663,7 @@ func _present_rank_choice(payload: Dictionary) -> void:
 	_show_rank_choice_popup(
 		ability_name,
 		int(payload.get("new_rank", 0)),
-		int(payload.get("current_copy_count", character_data.get("combat_deck_collection", {}).get(ability_name, 1))),
+		int(payload.get("current_copy_count", maxi(1, _card_copies_owned(ability_name)))),
 		int(payload.get("current_effect_rank", character_data.get("ability_effect_ranks", {}).get(ability_name, 0))),
 		payload.get("variant_offer", {}) if payload.get("variant_offer", null) is Dictionary else {}
 	)
@@ -25085,7 +25099,7 @@ func handle_server_message(message: Dictionary):
 				var new_count = int(message.get("new_count", 1))
 				display_game("[color=#9ACD32]Culled one copy of %s — deck now × %d.[/color]" % [cull_label, new_count])
 				if ability_panel and ability_panel.has_method("update_deck_collection"):
-					ability_panel.update_deck_collection(character_data.get("combat_deck_collection", {}))
+					ability_panel.update_deck_collection(_deck_counts_by_card())
 			else:
 				var reason = str(message.get("reason", "Cull rejected"))
 				# Reason like "Cannot cull below 1 copy" — surface in popup if
@@ -34712,7 +34726,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 [color=#00FFFF]The cards you DON'T play still pay.[/color] Every card left in your hand when the turn ends gives a smaller benefit as it cycles — a [b]ward[/b], a [b]heal[/b], [b]chip damage[/b], or a point of your class [b]engine[/b]. The card face names which on its [color=#FFFFFF]cycles:[/color] line, so you can read the trade before you commit to a play.
 [color=#00FF00]So deck WIDTH is a real choice.[/color] A thin deck draws its best cards more often. A wider one draws them less, but everything you pass over is still working for you. Neither is simply correct — it depends on what your cards pay when they cycle.
 [color=#FFD700]Upgrades.[/color] Using a card enough times reaches a [b]milestone[/b] and offers you a choice of upgrades. Some ([color=#FFFFFF]Foretold[/color], [color=#FFFFFF]Held in Reserve[/color], [color=#FFFFFF]Smouldering[/color]) add or improve what the card pays on cycle, and print the amount on its face.
-[color=#AAAAAA]You can hold up to 3 copies of a card. Extra copies come from clearing dungeons, and dungeon-exclusive cards are found only there — any class can run them.[/color]"
+[color=#AAAAAA]You can hold up to 3 copies of a card, and [b]each copy is its own card[/b]: it levels on its own and takes its own upgrades, so two copies can roll differently — and a spare can be sold at a trading post with its upgrades on it. Extra copies come from clearing dungeons, and dungeon-exclusive cards are found only there — any class can run them.[/color]"
 		},
 		{
 			"title": "UNIVERSAL ABILITIES",
@@ -42753,7 +42767,7 @@ func _populate_market_panel() -> void:
 		# Pass the dict through so material/food bulk counts can be computed.
 		var mats = character_data.get("crafting_materials", {})
 		# #39 — pass the deck collection so the "List Combat Card" row counts tradeable cards.
-		var _deck_coll = character_data.get("combat_deck_collection", {})
+		var _deck_coll = _owned_counts_by_card()
 		market_panel.update_bulk_counts(
 			inv if inv is Array else [],
 			eggs if eggs is Array else [],
@@ -42901,11 +42915,71 @@ func _on_market_panel_refresh() -> void:
 		pending_market_action = "browse"
 		send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
 
+# ===== CARD INSTANCES (2026-09-11) — see Character.card_base and friends =====
+# `character_data.combat_deck_collection` is keyed per COPY ("cleave", "cleave#2") with 1 = in
+# the deck, 0 = benched. Nothing on the client should index it by card id any more; these are
+# the four questions the UI asks, answered once.
+
+func _card_instances_of(card_id: String) -> Array:
+	var out: Array = []
+	var coll = character_data.get("combat_deck_collection", {})
+	if not (coll is Dictionary):
+		return out
+	for k in coll.keys():
+		if Character.card_base(String(k)) == card_id:
+			out.append(String(k))
+	return out
+
+func _card_copies_owned(card_id: String) -> int:
+	return _card_instances_of(card_id).size()
+
+func _card_copies_in_deck(card_id: String) -> int:
+	var coll = character_data.get("combat_deck_collection", {})
+	var n := 0
+	for iid in _card_instances_of(card_id):
+		if int(coll.get(iid, 0)) > 0:
+			n += 1
+	return n
+
+func _deck_counts_by_card() -> Dictionary:
+	"""{card_id: copies IN THE DECK}, a key for every owned card (0 when all copies are benched).
+	The shape the deck screen reads: key present = owned, value = in the deck."""
+	var out := {}
+	var coll = character_data.get("combat_deck_collection", {})
+	if not (coll is Dictionary):
+		return out
+	for k in coll.keys():
+		var b := Character.card_base(String(k))
+		out[b] = int(out.get(b, 0)) + (1 if int(coll[k]) > 0 else 0)
+	return out
+
+func _owned_counts_by_card() -> Dictionary:
+	"""{card_id: copies OWNED}, in the deck or not - what the market can list."""
+	var out := {}
+	var coll = character_data.get("combat_deck_collection", {})
+	if not (coll is Dictionary):
+		return out
+	for k in coll.keys():
+		var b := Character.card_base(String(k))
+		out[b] = int(out.get(b, 0)) + 1
+	return out
+
+func _server_effect_for(ability_name: String) -> Dictionary:
+	"""The server's preview for a hand entry: keyed by the COPY it previewed, so a copy is looked
+	up as itself first and only then as its card (the deck screen asks by card)."""
+	if typeof(_server_ability_effects) != TYPE_DICTIONARY:
+		return {}
+	if _server_ability_effects.has(ability_name):
+		var e = _server_ability_effects[ability_name]
+		return e if e is Dictionary else {}
+	var e2 = _server_ability_effects.get(Character.card_base(ability_name), {})
+	return e2 if e2 is Dictionary else {}
+
 func _tradeable_cards() -> Array:
 	"""#39 — the earned collectible cards (companion + dungeon) the player owns a
 	permanent copy of, shaped for the market card picker."""
 	var out: Array = []
-	var coll: Dictionary = character_data.get("combat_deck_collection", {})
+	var coll: Dictionary = _owned_counts_by_card()
 	var dt = preload("res://shared/drop_tables.gd")
 	for cid in coll.keys():
 		var cids := String(cid)
@@ -43284,7 +43358,8 @@ func _populate_ability_panel() -> void:
 	# Mastery Slice 1 — pass ability_uses so the panel can render rank + progress.
 	var ability_uses = character_data.get("ability_uses", {})
 	# Slice 6c — pass deck collection so panel shows copy counts + cull buttons.
-	var deck_collection = character_data.get("combat_deck_collection", {})
+	# 2026-09-11 — the panel wants {card: copies in deck}; the collection is per COPY now.
+	var deck_collection = _deck_counts_by_card()
 	# #69 — class + race passives (from character_update) shown as Trait cards on the deck.
 	var _class_trait = character_data.get("class_trait", {})
 	var _race_trait = character_data.get("race_trait", {})
@@ -44043,7 +44118,7 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 		lines.append("  [color=#AAAAAA]%s[/color]" % String(card_data.get("desc", "")))
 		# Whether it is PERMANENT yet, because that is the thing a player is working toward.
 		var card_id: String = _dtl.companion_card_id_for(monster_type)
-		var owned: int = int(character_data.get("combat_deck_collection", {}).get(card_id, 0))
+		var owned: int = _card_copies_owned(card_id)
 		if owned > 0:
 			lines.append("  [color=#7CFF9B]Permanent — yours to keep.[/color]")
 		else:
