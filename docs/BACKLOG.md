@@ -216,6 +216,25 @@ They need their own release.**
       `COMPANION_CARD_DATA`, giving name / kind / desc), which is absent entirely; and a
       multiplier breakdown read from the shared sources rather than copies.
 
+- [ ] **3b. The COMPANIONS SCREEN gets the same pass, and the MULTIPLIER must be simplified.**
+      Owner, 2026-09-11: *"when we work the companions Inspect we also need to comb over the
+      Companions Screen as well. The multiplier is confusing to the players in its current form so
+      we need to simplify it or make it easier for them to understand what it is they are looking
+      at."*
+      **Why it is confusing, concretely.** A companion's power comes from THREE multipliers shown
+      in three different formats, which then MULTIPLY together and are never totalled:
+      `(+60% stats)` for the variant, `(x1.4 stats)` for the rank, `(+25% stats)` for the border.
+      A player reading "+60%", "x1.4" and "+25%" cannot combine them, and none of the three is the
+      number they actually want.
+      **The fix is to show the EFFECT, not the arithmetic** -- the same rule applied to the tier
+      ladder and to card upgrades earlier today. Lead with real stats (combat HP, damage per turn)
+      because that is what the multipliers exist to produce; give ONE combined figure if a
+      multiplier is shown at all; put the three-way breakdown in the hover for anyone who wants
+      it. Nobody should have to multiply three differently-formatted numbers to learn whether
+      their companion is good.
+      **And it must read from the shared sources** -- see item 3: the variant multiplier is
+      currently wrong for 93% of variants precisely because this screen keeps its own copy.
+
 - [ ] **4. Tier/rank on the companion surfaces has no VISUAL ordering cue.** Owner: *"all I see to
       signify Tier and rank is H1 and G1. What happened to the bars or ways to make it obvious
       which tiers and ranks are better?"*
