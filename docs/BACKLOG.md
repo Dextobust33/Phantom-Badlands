@@ -161,6 +161,35 @@ Two scenarios were added for it: **`cycle_cards`** (dungeon cards carrying cycle
 reveal upgrade already taken on a class card) and **`in_dungeon`** (parked on a dungeon entrance,
 stocked, for the hover / chest / run-log checks).
 
+## v0.9.772 SHIPPED (2026-09-11) -- the launcher can reach players again
+
+Owner: *"We historically had a way for the client to download the launcher and effectively 'self
+update' it without players having to reinstall the launcher from the site. Is that something we
+can still do here?"*
+
+**It was never removed. It was never switched on.** Read out of the code rather than remembered:
+the capability exists TWICE — `launcher.gd:373` replaces itself when the manifest's
+`launcher_version` differs from its own `LAUNCHER_VERSION`, and `client.gd::_maybe_update_launcher`
+replaces the launcher as a bootstrap. **Both bail when the field is absent**, and the manifest was
+hand-written and never carried it. So for its entire life every launcher fix has required a manual
+reinstall from the website, and CLAUDE.md recorded that symptom as design: *"it does not
+self-update"*. That line is now corrected, with the cause named.
+
+**The structural half, so it cannot go missing again:** `tools/make_client_manifest.py` generates
+the manifest from `VERSION.txt`, `RUNTIME_VERSION.txt` and the `LAUNCHER_VERSION` constant in
+`launcher.gd` — the three places that actually own those numbers. Hand-writing a file whose fields
+must match three other files is the "one value, two places" shape that caused this.
+`tools/probe/launcher_selfupdate.gd` asserts the field is present, non-empty, and equal to the
+constant. And `build_linux_release.sh` now runs the `--editor --quit` recompile on BOTH projects
+itself, rather than CLAUDE.md asking a human to remember it before running the script.
+
+`LAUNCHER_VERSION` 2.3 → 2.4. Verified by RUNNING the exported launcher in a clean directory and
+reading the `LAUNCHER_VERSION.txt` marker it writes on startup — `2.4` — not by grepping a pck.
+Release gate green on all eight checks. Seven assets up; the live manifest carries
+`"launcher_version": "2.4"` and both launcher URLs answer 200. No `server/` or `shared/` change
+since v0.9.771, so no redeploy.
+
+
 ## v0.9.771 SHIPPED (2026-09-11) -- the accuracy release, 12 commits
 
 All 18 probes green before the build. Released as documented: changelog written, version bumped
@@ -201,8 +230,9 @@ confirmation. They can now accumulate real data instead of waiting.
       files, and passed 687 control-text lines. Comments and changelog prose are excluded on
       purpose — several quote the old glyph while explaining its removal, and rewriting those
       would falsify the record rather than fix a button.
-      **The launcher change means both launcher ZIPs must be rebuilt and re-uploaded** on the next
-      release — it does not self-update, so a Linux player keeps the broken launcher until then.
+      **Both launcher ZIPs were rebuilt and re-uploaded in v0.9.772** — and, as it turns out, the
+      launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
+      v0.9.772 entry below.
 
 ## ⚑ THE ORDER — 54 open items, sequenced so nothing gets built twice (2026-09-11)
 

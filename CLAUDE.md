@@ -402,7 +402,7 @@ Rules:
 - **Bump `RUNTIME_VERSION.txt` ONLY when the exe changes** (Godot engine/version upgrade, export-template change, new GDExtension dll). Most releases keep it the same → players skip the 38MB runtime download and only pull the ~12MB pck. When you DO bump it, name the runtime zip `-rN.zip` with the new N and set `runtime_version` in the manifest to match.
 - **Linux is a single embedded binary** (pck baked in) — NOT splittable. Omit `linux` from the manifest so Linux launchers fall back to the full client zip.
 - Generate the pck/runtime zips with `Compress-Archive` (same as the full zips); write the manifest JSON; attach all three with `gh release upload`.
-- The launcher itself (`launcher/launcher.gd`) reaching players requires rebuilding + re-uploading BOTH launcher zips whenever launcher.gd changes (it does not self-update).
+- **When `launcher/launcher.gd` changes, bump `LAUNCHER_VERSION` in it and rebuild + re-upload BOTH launcher zips.** The launcher DOES self-update: it compares the manifest's `launcher_version` against its own constant (`launcher.gd:373`) and replaces itself, and the game does the same as a bootstrap (`client.gd::_maybe_update_launcher`). Both bail when the field is absent — and it was absent from the hand-written manifest for its whole life, which is why this line used to read "it does not self-update". That was the symptom recorded as design. **Generate the manifest, never hand-write it:** `python tools/make_client_manifest.py` reads VERSION.txt, RUNTIME_VERSION.txt and the launcher constant, so the field cannot go missing again. Probe: `tools/probe/launcher_selfupdate.gd`.
 
 **Launcher download targets** (must always exist at these URLs):
 - `releases/latest/download/phantom-badlands-launcher.zip` (Windows)
