@@ -401,6 +401,33 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       STILL UNVERIFIED and shipped on code review: party equipment rewards (2 clients) and
       leader logout/permadeath (3 clients) - `party3` and `party3_leader_dies` set both up.
 
+## Phase 2.9 — v0.9.769 SHIPPED + MAP RESET EXECUTED (2026-09-11)
+
+v0.9.769 is live (7 assets, gate passed, running server hash verified against the local build).
+The map was reset on the live server the same night.
+
+**Reset outcome, verified on disk:** kept 11 accounts, 17 characters (max level 12, 69 gear
+items) and 183,962 Valor across 10 accounts; moved 16 of 17 characters to the Crossroads (the
+17th is an ORPHAN file no account's `character_slots` references, so it is unreachable in game
+and was correctly skipped); kept all 5 corpses, none of which needed moving — every one landed
+on `empty` ground under the new seed; regenerated 60 posts; cleared the market, all chunk
+deltas, and every dungeon instance. New seed 349942589444.
+
+A backup sits at `~/pb-backup-pre-worldreset-*.tar.gz` on the server (601 entries, 82 character
+files, 485 chunks) with an `at` job scheduled to delete it 2026-09-13 02:43. If the new world
+turns out to be bad, restore it BEFORE that job runs.
+
+- [ ] **Two things the reset exposed that are worth remembering.**
+      1. `generate_posts` could not place a single post, for ANY seed — fixed the same night. It
+         had been invisible for as long as it has existed because nothing regenerates posts in
+         normal play; the live world's 60 were made before the water check was added and simply
+         persisted in `npc_posts.json`. **Any generator that only runs at world creation is
+         untested by definition** — the reset is now the only thing that exercises them, so run
+         it on a scratch world after touching one.
+      2. `wipe_all_chunks()` and `clear_all_market_data()` both existed, both documented
+         themselves as wipe support, and both had zero callers. Worth a sweep for other
+         half-built capabilities: a function nobody calls is a feature nobody has tested.
+
 ## Phase 3.0 — LIVE PLAYTEST REPORTS, 2026-09-10 (owner, one session)
 
 Eleven reports in one sitting. Six are fixed and committed; the rest are recorded here with what
