@@ -2239,6 +2239,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_house_unregister_companion(peer_id, message)
 		"house_recall_companion":
 			handle_house_recall_companion(peer_id, message)
+		"house_set_avatar":
+			handle_house_set_avatar(peer_id, message)
 		"house_register_from_storage":
 			handle_house_register_companion_from_storage(peer_id, message)
 		"home_stone_companion_response":
@@ -15385,6 +15387,27 @@ func handle_house_unregister_companion(peer_id: int, message: Dictionary):
 	})
 
 	# Send updated house data
+	_send_house_update(peer_id)
+
+func handle_house_set_avatar(peer_id: int, message: Dictionary) -> void:
+	"""The Sanctuary mirror: the look this ACCOUNT's Sanctuary shows. Owner 2026-09-11: *"add a
+	mirror or something where the player can change their default sprite their sanctuary loads
+	up for their account."* An empty id clears it (back to the last character's look). Only ids a
+	character could actually have are accepted - the same shared list the mirror offers."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var account_id: String = String(peers[peer_id].account_id)
+	var bid := String(message.get("battler_id", ""))
+	if bid != "" and not (bid in BattlerPools.all_ids()):
+		send_to_peer(peer_id, {"type": "error", "message": "That look is not available."})
+		return
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No Sanctuary found."})
+		return
+	house["avatar"] = bid
+	persistence.save_house(account_id, house)
 	_send_house_update(peer_id)
 
 func handle_house_recall_companion(peer_id: int, message: Dictionary) -> void:

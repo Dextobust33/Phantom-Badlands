@@ -858,7 +858,7 @@ const HOUSE_TILE_PLAYER = "@"     # Player marker
 # kennel block + separate F fusion tile into one Stable station).
 const HOUSE_MAP_BASE = [
 	"#############################",
-	"#                           #",
+	"#                     M     #",
 	"#                           #",
 	"#                           #",
 	"#                           #",
@@ -880,12 +880,15 @@ const HOUSE_MAP_BASE = [
 
 # Companion tile positions (row, col) - base 2, up to 10 with upgrades
 # Arranged in two rows at the top of the house, spaced 3 apart
+# 2026-09-11 — the second row moved from row 3 to row 5. With companions drawn ON their cushions
+# at 1.3x in the sprite Sanctuary, adjacent rows put one companion's head in the lap of the one
+# behind it. Client-only: the server never sees these positions.
 const COMPANION_POSITIONS = [
 	[2, 4], [2, 7],       # base 2
-	[3, 4], [3, 7],       # upgrades 1-2
-	[2, 10], [3, 10],     # upgrades 3-4
-	[2, 13], [3, 13],     # upgrades 5-6
-	[2, 16], [3, 16]      # upgrades 7-8
+	[5, 4], [5, 7],       # upgrades 1-2
+	[2, 10], [5, 10],     # upgrades 3-4
+	[2, 13], [5, 13],     # upgrades 5-6
+	[2, 16], [5, 16]      # upgrades 7-8
 ]
 
 # v0.9.497 — KENNEL_POSITIONS retired. The K tile is now a single fixed
@@ -6133,6 +6136,16 @@ func _dev_run_shots() -> void:
 				# ...and the sub-screen it opens must get the canvas back as TEXT.
 				display_house_storage()
 				await _dev_shot_capture("sanctuary_storage")
+				# The mirror: open it, click a look the way a player does, and come back to the room
+				# after the SERVER has answered, so the capture proves the save round trip.
+				execute_local_action("house_mirror")
+				await _dev_shot_capture("sanctuary_mirror")
+				_on_game_output_meta_clicked("avatar_pick:m1_5")
+				await get_tree().create_timer(1.5).timeout
+				house_mode = "main"
+				display_house_main()
+				update_action_bar()
+				await _dev_shot_capture("sanctuary_new_look")
 
 			_:
 				pass
@@ -8578,6 +8591,20 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif house_mode == "mirror":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
+				{"label": "Use my hero", "action_type": "local", "action_data": "house_mirror_clear",
+					"enabled": String(house_data.get("avatar", "")) != ""},
+				{"label": "Click a look", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif house_mode == "mastery":
 			# Slice 3 — Sanctuary mastery headstart purchase
 			var mastery_recs: Dictionary = house_data.get("mastery_records", {})
@@ -8811,6 +8838,10 @@ func update_action_bar():
 					# same unified Stable.
 					interact_label = "Stable"
 					interact_action = "house_stable"
+					interact_enabled = true
+				"M":
+					interact_label = "Mirror"
+					interact_action = "house_mirror"
 					interact_enabled = true
 
 			# Slice 3 — Mastery button always visible from main; lights up when account has any record
@@ -16070,6 +16101,16 @@ func execute_local_action(action: String):
 		# House/Sanctuary actions
 		"house_logout":
 			send_to_server({"type": "logout_account"})
+		"house_mirror":
+			house_mode = "mirror"
+			pending_house_action = ""
+			display_house_mirror()
+			update_action_bar()
+		"house_mirror_clear":
+			house_data["avatar"] = ""
+			send_to_server({"type": "house_set_avatar", "battler_id": ""})
+			display_house_mirror()
+			update_action_bar()
 		"house_storage":
 			house_mode = "storage"
 			pending_house_action = ""
@@ -23752,6 +23793,8 @@ func handle_server_message(message: Dictionary):
 					display_house_stable()
 				elif house_mode == "mastery":
 					display_house_mastery()
+				elif house_mode == "mirror":
+					display_house_mirror()
 				else:
 					display_house_main()
 				update_action_bar()
@@ -36665,6 +36708,15 @@ func _on_game_output_meta_clicked(meta) -> void:
 	"""v0.9.612 — dispatch clicks on BBCode [url=...] links in game_output.
 	Currently the L-view flock pagination links are the only consumers."""
 	var meta_str: String = str(meta)
+	if meta_str.begins_with("avatar_pick:"):
+		# The Sanctuary mirror. Applied locally at once so the page answers the click, and sent so
+		# it is kept; the server's house_update redraws the page with the saved value.
+		var _bid := meta_str.substr(12)
+		house_data["avatar"] = _bid
+		send_to_server({"type": "house_set_avatar", "battler_id": _bid})
+		display_house_mirror()
+		update_action_bar()
+		return
 	if meta_str.begins_with("atlas_locate:"):
 		# Dungeon Atlas — click a discovered dungeon to locate the nearest active one.
 		send_to_server({"type": "dungeon_locate", "dungeon_type": meta_str.substr(13)})
@@ -37111,6 +37163,10 @@ func _on_log_meta_hover(meta) -> void:
 	2026-09-08 — also handles `mon:<type>:<level>`, emitted by the dungeon grid, so hovering a
 	monster on the floor names it and shows its art."""
 	var m := str(meta)
+	# The Sanctuary mirror's looks are click targets, not formulas - falling through to the
+	# formula popup below would show the raw link text.
+	if m.begins_with("avatar_pick:"):
+		return
 	if m.begins_with("tile:"):
 		# A theme tile, hovered either in the side-panel key or on the floor itself.
 		var dt := String(dungeon_data.get("dungeon_type", ""))
@@ -49561,7 +49617,7 @@ func _is_house_tile_walkable(tile: String) -> bool:
 	"""Check if a tile can be walked on"""
 	# F retained in walkable set so legacy save-state players who land on
 	# an old F tile aren't softlocked, but new layouts no longer place F.
-	return tile in [" ", ".", "C", "S", "U", "D", "K", "F"]
+	return tile in [" ", ".", "C", "S", "U", "D", "K", "F", "M"]
 
 func _clamp_house_player_position():
 	"""Ensure player is within bounds and on walkable tile"""
@@ -49591,7 +49647,7 @@ func _move_house_player(dx: int, dy: int) -> bool:
 	if _is_house_tile_walkable(tile):
 		house_player_x = new_x
 		house_player_y = new_y
-		house_interactable_at = tile if tile in ["C", "S", "U", "D", "K", "F"] else ""
+		house_interactable_at = tile if tile in ["C", "S", "U", "D", "K", "F", "M"] else ""
 		# The sprite Sanctuary draws you facing the way you walked, as the overworld does. Shared
 		# variable on purpose: the overworld sets it again on its first move.
 		if dx < 0:
@@ -49602,12 +49658,23 @@ func _move_house_player(dx: int, dy: int) -> bool:
 			_local_map_facing = "up"
 		elif dy > 0:
 			_local_map_facing = "down"
+		_house_walk_frame = 1 if _house_walk_frame != 1 else 2
+		_house_last_move_ms = Time.get_ticks_msec()
 		return true
 	return false
 
 # ===== The sprite Sanctuary (Phase 3.45, first slice) =====
 const _SanctuaryRoom = preload("res://client/sanctuary_room.gd")
 var _house_room_rendering: bool = false
+## Sanctuary animation. Companions cycle their 3 idle frames on a timer; you walk through your
+## walk frames while moving and stand once you stop. Owner: *"I assume it would difficult to get
+## animations on the player sprite and companions?"* - it was not: both sets of frames existed.
+var _house_anim_tick: int = 0
+var _house_walk_frame: int = 0
+var _house_last_move_ms: int = 0
+var _house_anim_timer: Timer = null
+const HOUSE_ANIM_SEC := 0.45
+const HOUSE_STAND_AFTER_MS := 320
 ## The Sanctuary's text while the room owns the canvas - stats, server replies, notices. Drawn in
 ## the side panel by `_house_side_refresh`; cleared with the canvas in `display_house_main`.
 var _house_side_lines: Array[String] = []
@@ -49617,18 +49684,40 @@ func _house_room_active() -> bool:
 	return game_state == GameState.HOUSE_SCREEN and house_mode == "main" and _SanctuaryRoom.available()
 
 
-func _house_player_sprite32() -> String:
-	"""Your 32px floor-backed sprite, or "" - the compositor keys that floor out, so only these
-	two baked folders qualify. With no character chosen yet the Sanctuary shows a stand-in."""
-	var bid := BattlerSprite.id_from_data(character_data) if not character_data.is_empty() else ""
-	if bid == "":
+func _house_player_sprite() -> String:
+	"""Your TRANSPARENT overworld sprite (17x31), drawn at SanctuaryRoom.PLAYER_SCALE. With no
+	character chosen yet the Sanctuary shows a stand-in, so the room is never without a figure."""
+	# The mirror's choice wins: it is the ACCOUNT's look, set on purpose. Then the last character,
+	# then a stand-in, so the room is never without a figure.
+	var bid := String(house_data.get("avatar", ""))
+	if bid == "" or not BattlerSprite.has_overworld_by_id(bid):
+		bid = BattlerSprite.id_from_data(character_data) if not character_data.is_empty() else ""
+	if bid == "" or not BattlerSprite.has_overworld_by_id(bid):
 		bid = "1_1"
-	var ow := "res://client/sprites/overworld_floor32/%s/%s_stand.png" % [bid, _local_map_facing]
-	if ResourceLoader.exists(ow):
-		return ow
-	var _suffix := "_flip" if _local_map_facing == "right" else ""
-	var bf := "res://client/sprites/battler_floor32/%s%s.png" % [bid, _suffix]
-	return bf if ResourceLoader.exists(bf) else ""
+	var frame := _house_walk_frame if Time.get_ticks_msec() - _house_last_move_ms < HOUSE_STAND_AFTER_MS else 0
+	return BattlerSprite.overworld_path_by_id(bid, _local_map_facing, frame)
+
+
+func _house_residents(layout: Array) -> Array:
+	"""Registered companions who are HOME, one per cushion in slot order: [{x, y, path}].
+	A companion checked out to a character is out adventuring, so its cushion stays empty."""
+	var out: Array = []
+	var comps: Array = house_data.get("registered_companions", {}).get("companions", [])
+	for i in range(mini(comps.size(), COMPANION_POSITIONS.size())):
+		var comp = comps[i]
+		if not (comp is Dictionary) or comp.get("checked_out_by", null) != null:
+			continue
+		var pos: Array = COMPANION_POSITIONS[i]
+		var yy: int = int(pos[0])
+		var xx: int = int(pos[1])
+		if yy >= layout.size() or xx >= String(layout[yy]).length() or String(layout[yy])[xx] != "C":
+			continue
+		var mt := String(comp.get("monster_type", comp.get("name", "")))
+		# Offset by slot so the companions do not breathe in unison.
+		var path := _DungeonSprites.monster_path(mt, _house_anim_tick + i)
+		if path != "" and ResourceLoader.exists(path):
+			out.append({"x": xx, "y": yy, "path": path})
+	return out
 
 
 func _render_house_room() -> void:
@@ -49637,6 +49726,7 @@ func _render_house_room() -> void:
 	if layout.is_empty() or game_output == null:
 		return
 	_SanctuaryRoom.build(layout)
+	_house_anim_ensure()
 	var cell := _SanctuaryRoom.CELL
 	var map_h := layout.size()
 	var map_w := String(layout[0]).length()
@@ -49647,18 +49737,23 @@ func _render_house_room() -> void:
 		vp_h = mini(map_h, maxi(7, int(game_output.size.y / cell) - 1))
 	var vp_x := clampi(house_player_x - vp_w / 2, 0, maxi(0, map_w - vp_w))
 	var vp_y := clampi(house_player_y - vp_h / 2, 0, maxi(0, map_h - vp_h))
-	var me := _house_player_sprite32()
+	# Companions on their cushions, then you at twice the raw sprite's size - two cells tall, so
+	# drawn into every cell you cover. One overlay pass, so whoever stands lower is in front.
+	var sprites: Array = []
+	for r in _house_residents(layout):
+		sprites.append({"key": String(r.path), "x": r.x, "y": r.y, "lift": 6,
+			"img": _SanctuaryRoom.sprite_image(String(r.path), _SanctuaryRoom.COMPANION_SCALE, true)})
+	var _me := _house_player_sprite()
+	sprites.append({"key": _me, "x": house_player_x, "y": house_player_y, "lift": 2,
+		"img": _SanctuaryRoom.sprite_image(_me, _SanctuaryRoom.PLAYER_SCALE, false)})
+	var me_cells: Dictionary = _SanctuaryRoom.overlay_cells(sprites)
 	var rows := PackedStringArray()
 	for y in range(vp_y, vp_y + vp_h):
 		var row := ""
 		for x in range(vp_x, vp_x + vp_w):
-			var path := _SanctuaryRoom.cell_path(x, y)
-			if x == house_player_x and y == house_player_y:
-				if me != "":
-					path = _DungeonComposite.over_prop(me, path)
-				else:
-					row += "[color=#00FF00]@[/color]"
-					continue
+			var path: String = me_cells.get(Vector2i(x, y), "")
+			if path == "":
+				path = _SanctuaryRoom.cell_path(x, y)
 			row += "[img=%dx%d]%s[/img]" % [cell, cell, path]
 		rows.append(row)
 	game_output.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -49667,6 +49762,65 @@ func _render_house_room() -> void:
 	# A tiny font so the TEXT line is shorter than a 32px image: rows are then exactly one tile tall.
 	display_game("[center][font_size=6]%s[/font_size][/center]" % "\n".join(rows))
 	_house_room_rendering = false
+
+
+func display_house_mirror() -> void:
+	"""The Sanctuary mirror: every look a character can have, drawn and clickable.
+
+	Owner 2026-09-11: *"add a mirror or something where the player can change their default
+	sprite their sanctuary loads up for their account."* The choices are BattlerPools.all_ids(),
+	the same list the server validates against, so the page cannot offer a look it will refuse."""
+	game_output.clear()
+	house_mode = "mirror"
+	_update_house_map()   # the side panel names this page, not whatever was open before
+	game_output.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	game_output.meta_underlined = false   # every look is a link; an underline would cut through it
+	_render_breadcrumb(["Sanctuary", "Mirror"])
+	display_game("[color=#8FE3FF]═══════ MIRROR ═══════[/color]")
+	display_game("[color=#AAAAAA]Choose how you appear in your Sanctuary. Click a look; your characters are not changed.[/color]")
+	display_game("")
+	var current := String(house_data.get("avatar", ""))
+	var per_row := 12
+	var row := ""
+	var n := 0
+	for bid in BattlerPools.all_ids():
+		var path := BattlerSprite.overworld_path_by_id(String(bid), "down", 0)
+		if path == "":
+			continue
+		var img := "[img=34x62]%s[/img]" % path
+		var cell := "[url=avatar_pick:%s]%s[/url]" % [bid, img]
+		if String(bid) == current:
+			cell = "[bgcolor=#3A5A2A]%s[/bgcolor]" % cell
+		row += cell + "  "
+		n += 1
+		if n % per_row == 0:
+			display_game("[center]%s[/center]" % row)
+			row = ""
+	if row != "":
+		display_game("[center]%s[/center]" % row)
+	display_game("")
+	if current == "":
+		display_game("[color=#808080]Showing: your last character's look. Pick one to keep it here.[/color]")
+	else:
+		display_game("[color=#7AE07A]Your Sanctuary look is set.[/color] [color=#808080]\"Use my hero\" goes back to your last character's.[/color]")
+
+
+func _house_anim_ensure() -> void:
+	"""Start the Sanctuary's animation timer once. It idles cheaply when the room is not shown."""
+	if _house_anim_timer != null:
+		return
+	_house_anim_timer = Timer.new()
+	_house_anim_timer.wait_time = HOUSE_ANIM_SEC
+	_house_anim_timer.autostart = true
+	_house_anim_timer.timeout.connect(_on_house_anim_tick)
+	add_child(_house_anim_timer)
+
+
+func _on_house_anim_tick() -> void:
+	if not _house_room_active():
+		return
+	_house_anim_tick += 1
+	_render_house_room()
 
 
 func _house_side_refresh() -> void:
@@ -49681,7 +49835,8 @@ func _house_side_refresh() -> void:
 		"U": out.append("[color=#00FFFF]Upgrades[/color] - press %s" % _k)
 		"D": out.append("[color=#FF6600]Door[/color] - press %s to Play" % _k)
 		"K", "F": out.append("[color=#FF8800]Companion Stable[/color] - press %s" % _k)
-		_: out.append("[color=#808080]Walk onto the chest, statue, cushions, Stable or door.[/color]")
+		"M": out.append("[color=#8FE3FF]Mirror[/color] - press %s to choose your Sanctuary look" % _k)
+		_: out.append("[color=#808080]Walk onto the chest, statue, cushions, Stable, mirror or door.[/color]")
 	out.append("")
 	for l in _house_side_lines:
 		out.append(l)
@@ -49805,6 +49960,8 @@ func _update_house_map():
 					lines.append("[color=#A335EE]Companion Kennel[/color]")
 				"upgrades":
 					lines.append("[color=#00FFFF]Upgrade Forge[/color]")
+				"mirror":
+					lines.append("[color=#8FE3FF]Mirror[/color]")
 			lines.append("")
 			lines.append("[color=#808080]Press %s to return[/color]" % get_action_key_name(0))
 			map_display.append_text("\n".join(lines))

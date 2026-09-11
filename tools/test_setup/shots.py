@@ -54,6 +54,31 @@ def grant_admin():
     print("  admin ok (%d newly granted)" % n)
 
 
+def seed_sanctuary_companions(account_id):
+    """The `sanctuary` scene needs companions AT HOME to show them on their cushions, and the
+    test account has none registered. Seed two into its local Sanctuary - local test data only,
+    never production - plus one CHECKED OUT, which must leave its cushion empty."""
+    houses_path = os.path.join(os.path.dirname(scen.ACCOUNTS), "houses.json")
+    with open(houses_path, encoding="utf-8") as f:
+        db = json.load(f)
+    house = db.get("houses", {}).get(account_id)
+    if house is None:
+        print("  (no Sanctuary for %s yet - companions not seeded)" % account_id)
+        return
+    base = {"level": 8, "tier": 1, "sub_tier": 3, "variant": "Normal", "variant_color": "#FFFFFF",
+            "registered_at": 0, "checkout_time": None, "battles_fought": 12}
+    house.setdefault("registered_companions", {})["companions"] = [
+        dict(base, id="shot_wolf", name="Wolf", monster_type="Wolf", checked_out_by=None),
+        dict(base, id="shot_goblin", name="Goblin", monster_type="Goblin", checked_out_by=None),
+        dict(base, id="shot_spider", name="Giant Spider", monster_type="Giant Spider",
+             checked_out_by="SomeoneElse"),
+    ]
+    house.setdefault("upgrades", {})["companion_slots"] = 1   # three cushions
+    with open(houses_path, "w", encoding="utf-8") as f:
+        json.dump(db, f, indent="	")
+    print("  sanctuary companions seeded (2 home, 1 checked out)")
+
+
 def main():
     # --player=N picks which of scen.PLAYERS logs in (default 0, a Wizard). 2026-09-08: the
     # monster's debuff chips cannot be photographed with a class that applies none, so a
@@ -90,6 +115,8 @@ def main():
     # screenshot of the popup instead of the scene that was asked for. Cost a dungeon capture.
     runner._settle_milestones(scen.PLAYERS[:player_idx + 1])
     grant_admin()
+    if "sanctuary" in scenes:
+        seed_sanctuary_companions(scen.PLAYERS[player_idx][1])
 
     print("[3/4] server")
     subprocess.Popen([scen.GODOT, "--path", scen.PROJECT, "--screen", "1", "--windowed",

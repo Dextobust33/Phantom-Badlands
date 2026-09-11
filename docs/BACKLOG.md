@@ -1133,6 +1133,17 @@ So the cost is not "sprites". It is "rendered on the server".
       an art regression indistinguishable — the exact trap that hid the boss ring and the
       missing post-stamping.
 
+- [ ] **SPRITE SCALE across the game (owner direction 2026-09-11, while reviewing the sprite
+      Sanctuary):** *"This makes me also wonder if we should increase player, companion, and
+      monster sprite sizes in the overworld and dungeon as well in the future. I kind of like the
+      look of the player being a bit larger than the companions. It might make more sense to have
+      larger monsters in dungeons and the companions always be a bit smaller than the player."*
+      So the rule to carry into Phase 2 here and into the dungeon: **player > companion**, and
+      **dungeon monsters larger** than today. The Sanctuary shows the mechanism: the room is one
+      composed image and figures are overlays that can span cells (`sanctuary_room.gd`
+      `overlay_cells`), so a sprite bigger than its cell is solved. What it costs in the dungeon
+      is the monster art: `monster_floor32` is a ~0.5x reduction of the Time Fantasy originals,
+      so bigger dungeon monsters should be re-baked from the originals rather than enlarged.
 - [ ] **PHASE 2 — sprite it, as a client-only concern.**
       Measured on the real viewport rather than extrapolated from the dungeon:
       **529 inline images = 10.40 ms** per redraw; making every tile hoverable costs
@@ -1616,8 +1627,15 @@ are now bought, unzipped and licence-cleared, so the blocker is design rather th
       grid): only the centre plank cell (14,1) tiles with no seam. Verified in-game walking onto
       the chest and opening storage. Probe `sanctuary_room.gd` (27 checks; a missing piece fails
       2); `--buildverify` + release gate assert the art ships. ASCII map is the fallback.
-      **Next:** the owner's look; then show a registered companion's sprite on its cushion; then
-      NPC post interiors (which also covers "Zoom the map inside NPC posts").
+      **Owner's first look (2026-09-11), all done the same day:** companions on their cushions
+      (registered and at home; a checked-out one leaves its cushion empty), a soft gold ring on
+      every INTERACTABLE object and none on decoration, the player at 2x the raw sprite (two
+      cells tall), animation (companions cycle 3 idle frames on a 0.45s timer, the player walks
+      through its walk frames and stands when idle), companions at 1.3x, the second cushion row
+      moved to row 5 so figures do not overlap, and a **MIRROR** station: click any character
+      look to set the ACCOUNT's Sanctuary look (`house_set_avatar`, stored on the house,
+      validated against the shared `BattlerPools.all_ids()`). Probe now 24 checks.
+      **Next:** NPC post interiors (which also covers "Zoom the map inside NPC posts").
       Original: Slice it the way the dungeon was sliced, which worked: one interior end-to-end
       (the sanctuary, since `_render_house_map()` exists), screenshot, iterate — then posts. The
       DUNGEON ROOMS are a separate problem with its own entry below; do not bundle them in.

@@ -52,6 +52,7 @@ PIECES = {
     "chest": (COZY, (320, 352, 352, 384)),          # S - storage
     "statue": (INTERIORS, (332, 145, 356, 192)),    # U - upgrades
     "cushion": (COZY, (64, 193, 80, 206)),          # C - a companion's place
+    "mirror": (COZY, (80, 150, 96, 176)),           # M - choose your Sanctuary look (arched glass)
     "cushion_teal": (COZY, (168, 257, 184, 272)),   # K - the Stable's cushion
     "rug_green": (COZY, (67, 210, 125, 254)),       # under the Stable
     "rug_blue": (COZY, (18, 195, 62, 253)),

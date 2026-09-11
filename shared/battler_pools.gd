@@ -43,6 +43,19 @@ const EXPANDED_POOLS := {
 	"Ninja":     ["4_5", "1_8", "7_3", "4_3", "4_4", "5_1", "m2_4", "m3_1", "m3_2"],
 }
 
+static func all_ids() -> Array:
+	"""Every look a character can have, once each, in a stable order - the Sanctuary mirror's
+	choices. Derived from the pools rather than listed again, so a look added to a class pool is
+	offered by the mirror with no second edit, and the server validates against the same list."""
+	var seen := {}
+	var out: Array = []
+	for cls in EXPANDED_POOLS.keys():
+		for id in EXPANDED_POOLS[cls]:
+			if not seen.has(id):
+				seen[id] = true
+				out.append(String(id))
+	return out
+
 static func legacy_id_for(cls: String, char_name: String) -> String:
 	"""Reproduce the v0.9.669 live-derived id exactly, for legacy backfill."""
 	var pool: Array = LEGACY_POOLS.get(cls, [])

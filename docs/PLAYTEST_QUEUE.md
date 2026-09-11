@@ -257,6 +257,10 @@ Log in: the Sanctuary is now a sprite room on the main canvas, text on the right
       and Space opens it. Storage / Upgrades / Stable screens still work and come back to the room.
 - [ ] Log in with a fresh account: the welcome says "the little figure in the room is you".
 - [ ] Look and feel: floor, walls, windows, furniture placement - what would you change?
+- [ ] Companions sit on their cushions and breathe; you walk with a stride and stand when still.
+- [ ] Only the things you can use have the gold ring (chest, statue, cushions, Stable, mirror, door).
+- [ ] The MIRROR: click a look, go back - the room shows it; log out and in - it is kept; "Use my
+      hero" puts back your last character's look.
 
 ## Order I would go in
 

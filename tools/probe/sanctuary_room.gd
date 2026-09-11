@@ -15,6 +15,13 @@ func ck(ok: bool, msg: String) -> void:
 	print(("  PASS  " if ok else "  FAIL  ") + msg)
 
 
+func _uniq(a: Array) -> int:
+	var d := {}
+	for x in a:
+		d[x] = true
+	return d.size()
+
+
 func _init() -> void:
 	if not ROOM.available():
 		# NOT a pass: the art is licence-restricted and untracked, so a fresh clone lacks it.
@@ -66,6 +73,54 @@ func _init() -> void:
 	layout2[3] = r3.substr(0, 4) + "C" + r3.substr(5)
 	ROOM.build(layout2)
 	ck(ROOM._room != before, "a new companion slot DOES recompose it")
+
+	print("\n--- figures: bigger than a cell, animated, layered ---")
+	ROOM.build(layout)
+	var me_img: Image = ROOM.sprite_image("res://client/sprites/battlers/overworld/1_1/down_stand.png", ROOM.PLAYER_SCALE, false)
+	ck(me_img != null and me_img.get_height() == 62, "the player is drawn at 2x the raw sprite (62px tall)")
+	var cells: Dictionary = ROOM.overlay_cells([{"key": "me", "img": me_img, "x": 14, "y": 9, "lift": 2}])
+	ck(cells.has(Vector2i(14, 9)) and cells.has(Vector2i(14, 8)), "a 2x player covers its own cell AND the one above")
+	var wolf := "res://client/sprites/monster_floor32/wolf_1.png"
+	var comp_img: Image = ROOM.sprite_image(wolf, ROOM.COMPANION_SCALE, true)
+	ck(comp_img != null and comp_img.get_height() > 32 and comp_img.get_height() < me_img.get_height(),
+		"a companion is ~1.3x its dungeon sprite, and still smaller than the player")
+	ck(comp_img.get_pixel(0, 0).a == 0.0, "the companion's baked dungeon floor is keyed out")
+	var w0: Dictionary = ROOM.overlay_cells([{"key": "wolf_1", "img": comp_img, "x": 4, "y": 2, "lift": 6}])
+	var comp2: Image = ROOM.sprite_image("res://client/sprites/monster_floor32/wolf_2.png", ROOM.COMPANION_SCALE, true)
+	var w1: Dictionary = ROOM.overlay_cells([{"key": "wolf_2", "img": comp2, "x": 4, "y": 2, "lift": 6}])
+	ck(w0.get(Vector2i(4, 2), "") != w1.get(Vector2i(4, 2), ""), "a new animation frame is a new cell texture")
+	var both: Dictionary = ROOM.overlay_cells([
+		{"key": "wolf_1", "img": comp_img, "x": 4, "y": 2, "lift": 6},
+		{"key": "me", "img": me_img, "x": 4, "y": 3, "lift": 2}])
+	ck(both.has(Vector2i(4, 2)) and both[Vector2i(4, 2)] != w0.get(Vector2i(4, 2), ""),
+		"where the player and a companion share a cell, both are drawn into it")
+	ck(ROOM.STATION_PIECE.has("M") and ROOM._piece("mirror") != null, "the mirror is a station with art")
+	var o: Image = ROOM._outline("chest")
+	var ring := 0
+	for yy in range(o.get_height()):
+		for xx in range(o.get_width()):
+			var px: Color = o.get_pixel(xx, yy)
+			if px.a > 0.0 and px.a < 0.7 and absf(px.b - ROOM.HIGHLIGHT.b) < 0.02 and absf(px.r - ROOM.HIGHLIGHT.r) < 0.02:
+				ring += 1
+	var mid := Vector2i(ROOM._piece("chest").get_width() / 2, ROOM._piece("chest").get_height() / 2)
+	ck(o != null and o.get_width() == ROOM._piece("chest").get_width() + 4 and ring > 40
+		and o.get_pixelv(mid + Vector2i(2, 2)) == ROOM._piece("chest").get_pixelv(mid),
+		"stations get a 2px highlight ring (%d ring pixels) and the art itself is untouched" % ring)
+
+	print("\n--- who sits on a cushion ---")
+	var cc = load(CLIENT).new()
+	cc.house_data = {"registered_companions": {"companions": [
+		{"name": "Wolf", "monster_type": "Wolf", "checked_out_by": null},
+		{"name": "Goblin", "monster_type": "Goblin", "checked_out_by": "Hero"}]}}
+	var res: Array = cc._house_residents(layout)
+	ck(res.size() == 1 and int(res[0].x) == 4 and int(res[0].y) == 2, "a companion at home sits on ITS cushion; a checked-out one leaves it empty")
+	cc.house_data = {"avatar": "m1_5"}
+	ck(cc._house_player_sprite().find("/m1_5/") >= 0, "the mirror's chosen look is what the Sanctuary shows")
+	cc.free()
+	var ids: Array = BattlerPools.all_ids()
+	ck(ids.size() > 50 and ids.size() == _uniq(ids), "the mirror offers every character look once (%d)" % ids.size())
+	var srv := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(srv.find("if bid != \"\" and not (bid in BattlerPools.all_ids()):") >= 0, "the server refuses a look the mirror does not offer")
 
 	var src := FileAccess.get_file_as_string(CLIENT)
 	ck(src.find("if _house_room_active() and not _house_room_rendering:") >= 0,
