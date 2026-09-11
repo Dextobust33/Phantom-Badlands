@@ -312,7 +312,7 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 48 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — 50 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -2496,6 +2496,49 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       note as above: some should rattle the enemy.
 
 ## Phase 5 — the dungeon arc (the big content direction)
+
+- [ ] **A DUNGEON'S LEVEL AND THE LAND AROUND IT ARE UNRELATED. Owner report 2026-09-11, and it
+      is exactly as reported.** Owner: *"I just did a G2 Kelpie Marsh at -23, -64 where the
+      monsters are Lv ~16 on the overworld. Do dungeons spawn in similar level to the overworld
+      area you find them? Ideally they should."* **They do not, and nothing in the code tries to.**
+
+      **Traced, with the numbers for that exact tile.**
+      | at (-23, -64), distance 68 from origin | level |
+      |---|---|
+      | overworld encounters | **15-17** |
+      | the G2 dungeon standing on it | **7-9**, rising to ~12 on its deepest floor |
+
+      **Why.** They are two ladders that never meet.
+        * The OVERWORLD level is a curve on distance from origin (`_distance_to_level`), pulled
+          DOWN near posts whose own origin-distance is lower, then multiplied by a hotspot roll.
+          At distance 68 that lands on 16-17.
+        * A DUNGEON's level comes from its TYPE's hardcoded tier, the rank that distance picks
+          inside that tier, the floor index, and the player's level clamped into the rank's band.
+          Tier 2's band is L6-22 and rank 2 of 9 is L7-9. **The overworld level at the tile is
+          never read.**
+        * And the TYPE is chosen **uniformly at random from every dungeon type** when a world
+          dungeon spawns. `spawn_weight` exists in the data and is read by nothing.
+      The only place the two systems touch is threat spill: monsters that leak out of a dungeon
+      onto the map are clamped INTO the local band, so beside this dungeon you meet its Orcs at
+      L15-17 while the same Orcs inside it are L7-9.
+
+      **The question for the owner, because the obvious fix has a consequence.** If a dungeon's
+      level follows the land, then either:
+        * **(a) the GRADE follows too** - a dungeon in a L16 region is picked from the types whose
+          tier covers L16, so "G2" keeps meaning "L7-22" and you simply stop finding G2s out
+          there. Grades stay honest, but the variety at any one spot narrows, and a low-level
+          player exploring far from home finds nothing they can enter.
+        * **(b) the grade stays a label and the LEVEL is re-anchored** - a G2 Kelpie Marsh in a
+          L16 region hosts L16 monsters. Every dungeon anywhere is enterable at local level, but
+          "G2" no longer tells you the difficulty, and the tier bands in `power_rank.gd` stop
+          describing dungeons.
+        * **(c) keep both and make the SPAWN honest** - leave the level maths alone and simply
+          stop spawning a tier-2 dungeon in a L16 region, by filtering type choice on the local
+          overworld level. Smallest change, and it makes `spawn_weight` mean something at last.
+      **(c) is what I would do first** - it is a filter at one call site, it changes no level
+      formula, and it can be measured (spawn 500 dungeons, compare each one's band against the
+      overworld level at its tile). (a) and (b) are design changes that want the owner's call.
+      **Ask before building.**
 
 - [x] **SHIPPED v0.9.760-767 — the dungeon RENDERER, its sprites, and the hoverable key.**
       This replaces three separate open entries (~245 lines) that were still describing this as
