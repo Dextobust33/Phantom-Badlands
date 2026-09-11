@@ -330,6 +330,63 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       trade-off first.
       Re-injection: flattening the weights and stripping `rarity` from the wire fails 2 checks.
 
+- [ ] **MEASURED 2026-09-11: the pool is same-y, and the upgrades are INVISIBLE after you pick
+      them.** Owner: *"How different are each of the cards though truly? Many of them feel like a
+      bit of the same and many of them are fairly situational. Situational can be good but only
+      if there is a clear answer to how to use them properly and make it easily apparent in
+      combat when it's worth using. If not it all becomes micro-management and feels like dead
+      options."* Audited rather than argued — `tools/probe/upgrade_variety.gd`.
+
+      **(a) The sameness is real.** What number each upgrade moves:
+
+      | channel | n | | channel | n |
+      |---|---|---|---|---|
+      | damage | **13** | | heal | 4 |
+      | resource | 8 | | crit / turn / mitigate / chip | **1 each** |
+      | shield | 6 | | | |
+      | buff strength | 6 | | | |
+      | engine | 5 | | | |
+      | control | 5 | | | |
+
+      Thirteen ways to say "the damage number goes up", and the genuinely distinct effects — an
+      extra turn, damage mitigation, a crit chance, chip damage from the discard — are ONE ENTRY
+      EACH. The variety is in the long tail and the tail is one card wide.
+
+      **(b) "Situational" is LESS true than it feels, which makes (a) worse.** 27 always-on,
+      9 pure variance (a 12% crit chance is not a decision), and only **15 genuinely
+      conditional**. So most of the pool is 27 always-on upgrades that largely move the same
+      number — interchangeable, which is exactly the "bit of the same" feeling.
+
+      **(c) The triggers are mostly NOT hidden — 9 of 15 are already on screen.** Foe HP,
+      your HP, the resource bar and the monster's status chips already show Executioner,
+      Closing Cost, Vindication, Desperation, Bulwark, Kindling, All In, Harrying and
+      Demoralising. Genuinely blind: **Opener, Opening Act** (first use this fight),
+      **Relentless** (every 3rd cast) and the three **REVEALs** (fire when you do NOT play it).
+
+      **(d) THE ACTUAL GAP, and it applies to all 15 equally.** Nothing connects the visible
+      state to the card:
+      * the upgrade table carries **no machine-readable trigger** — the condition exists only in
+        English prose, so nothing downstream *can* know when an upgrade is live;
+      * a card in the combat hand does not show **which upgrades it carries at all** (verified:
+        `combat_scene_panel.gd` mentions milestone picks only in the CHOOSER, never on a played
+        card);
+      * so nothing can say one is **live this turn**.
+      A player picks Executioner at a milestone and it vanishes into the card's invisible state.
+      The foe drops to 25% — the most visible number on the screen — and the player still has to
+      *remember* which of five cards carries it. That is the micro-management the owner means,
+      and it is not caused by the triggers being obscure.
+
+      **The fix, in the order that makes each step worth doing:**
+      1. **Add a structured `trigger` to each upgrade** (foe_hp_below, self_hp_below, first_use,
+         resource_full, resource_empty, foe_stunned, on_kill, cast_cadence, on_cycle, none).
+         One field; nothing else can be built without it.
+      2. **Show a card's upgrades on its face in the hand**, and mark one **LIVE** when its
+         trigger is satisfied right now. This is the whole ask — "easily apparent in combat when
+         it's worth using" — and it makes the 9 already-visible triggers pay off immediately.
+      3. **Then author upward**, using the channel table above rather than adding a fourteenth
+         damage multiplier. The thin channels ARE the variety.
+      Sequencing matters: authoring more content before 2 lands just adds more invisible picks.
+
 - [ ] **WIDEN the pool with genuinely distinctive upgrades — owner, 2026-09-11.** *"I don't think
       our upgrade pool currently offers enough distinctive and interesting options as of yet but
       this is a start at least."* Agreed, and the rarity work makes the gap measurable rather
