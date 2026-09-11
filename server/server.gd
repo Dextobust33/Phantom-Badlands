@@ -30625,8 +30625,25 @@ func _check_dungeon_spawns():
 		# personal copies, so the world instance's active_players is always empty).
 		var entered_despawn_at = instance.get("entered_despawn_at", 0)
 		if entered_despawn_at > 0 and instance.active_players.is_empty() and current_time >= entered_despawn_at:
-			dungeons_to_remove.append(instance_id)
-			log_message("Despawning entered dungeon: %s (re-entry window elapsed)" % instance_id)
+			# ...unless somebody is still DOWN THERE. The window is 5 minutes from the first entry
+			# and a five-floor run takes longer, so this fired mid-run and erased the world tile out
+			# from under the player. `active_players` cannot see it: players run PERSONAL instances,
+			# so the world instance's own list is always empty - which is why the existing guard
+			# never caught this.
+			#
+			# What it broke, reported 2026-09-10: "I was also able to go back into the dungeon and
+			# complete it again, getting the chest again." The re-farm lock is stored ON the world
+			# instance (`cleared_by`), and `_on_world_dungeon_boss_defeated` records it by looking
+			# the tile up at COMPLETION time. With the tile already gone the lookup found nothing,
+			# so the lock was never written - and silently, since that function just falls out of
+			# its loop. The same miss also skipped clearing the post's threat, which is supposed to
+			# happen on the first boss defeat.
+			if _world_dungeon_has_live_runs(int(instance.world_x), int(instance.world_y)):
+				log_message("Holding world dungeon %s at (%d,%d): a personal run is still active" % [
+					instance_id, int(instance.world_x), int(instance.world_y)])
+			else:
+				dungeons_to_remove.append(instance_id)
+				log_message("Despawning entered dungeon: %s (re-entry window elapsed)" % instance_id)
 
 		# Also check for very old dungeons (24+ hours) with no players
 		var age = current_time - instance.spawned_at
@@ -31025,6 +31042,25 @@ func _on_world_dungeon_entered(x: int, y: int):
 				log_message("World dungeon %s at (%d,%d) entered — stays enterable %ds more" % [instance_id, x, y, int(DUNGEON_ENTERED_DESPAWN_DELAY)])
 			break
 
+func _world_dungeon_has_live_runs(wx: int, wy: int) -> bool:
+	"""Is any personal dungeon instance still being run from the world tile at (wx, wy)?
+
+	Entry stamps `origin_wx`/`origin_wy` onto the personal instance, which is the only link back
+	to the tile it came from. A world dungeon must outlive every run that originated at it,
+	because completion looks the tile up again to record the clear and to drop the post's threat.
+
+	Deliberately asks about RUNS rather than adding a refcount: a count has to be decremented on
+	every exit path (finish, flee, escape scroll, disconnect, death) and one missed path leaks a
+	tile forever. Reading the live instances cannot drift."""
+	for inst_id in active_dungeons:
+		var inst = active_dungeons[inst_id]
+		if inst.get("owner_peer_id", -1) < 0:
+			continue                      # world dungeons are not runs
+		if int(inst.get("origin_wx", -999999)) == wx and int(inst.get("origin_wy", -999999)) == wy:
+			return true
+	return false
+
+
 func _world_dungeon_cleared_by(peer_id: int, x: int, y: int) -> bool:
 	"""C0 — has this player already CLEARED the world dungeon at (x,y)? (re-farm guard).
 	The 'D' lingers a few minutes for co-op; once you've beaten its boss you're locked
@@ -31062,6 +31098,11 @@ func _on_world_dungeon_boss_defeated(peer_id: int, origin_wx: int, origin_wy: in
 				cleared.append(peer_id)
 			inst["cleared_by"] = cleared
 			return
+	# Falling out of that loop means the world tile is GONE, so the re-farm lock and the threat
+	# clear were both dropped on the floor. That used to happen silently and is the whole reason
+	# the re-farm went unnoticed; now it says so.
+	log_message("WARN world dungeon at (%d,%d) not found at completion - re-farm lock and threat clear SKIPPED for peer %d" % [
+		origin_wx, origin_wy, peer_id])
 
 func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: int = -1) -> Array:
 	"""Get all dungeon entrances visible within the given radius.
@@ -33804,6 +33845,19 @@ func _complete_dungeon(peer_id: int):
 	# C0 — capture the origin world 'D' (set on entry) so boss defeat can clear that
 	# post's threat + lock the tile against a re-farm. -999999 = not a world-'D' run
 	# (e.g. a quest dungeon) → no threat/lock.
+	# 2026-09-10 - which path completed this run, and was the boss actually dealt with? Owner
+	# reported a dungeon completing with no boss fought, twice. The completion itself is fine on
+	# the page from every caller, so record the state instead of reasoning about it again.
+	var _cfloors: int = dungeon_floors.get(instance_id, []).size()
+	var _alive_bosses: int = 0
+	for _fk in dungeon_monsters.get(instance_id, {}):
+		for _m in dungeon_monsters[instance_id][_fk]:
+			if _m.get("is_boss", false) and _m.get("alive", false):
+				_alive_bosses += 1
+	log_message("DUNGEON-COMPLETE %s on floor %d/%d of %s - bosses still alive: %d%s" % [
+		character.name, character.dungeon_floor + 1, _cfloors, instance_id, _alive_bosses,
+		"  <<< completed WITHOUT killing the boss" if _alive_bosses > 0 else ""])
+
 	var origin_wx = -999999
 	var origin_wy = -999999
 	if active_dungeons.has(instance_id):
@@ -34715,6 +34769,24 @@ func _spawn_all_dungeon_monsters(instance_id: String, dungeon_type: String, dung
 		var grid = floor_grids[floor_num]
 		var rooms = all_rooms[floor_num] if floor_num < all_rooms.size() else []
 		_spawn_dungeon_floor_monsters(instance_id, floor_num, dungeon_type, dungeon_level, rooms, grid, is_boss_floor)
+
+	# 2026-09-10 - owner: "I didn't fight a boss as there wasn't one." The placement search was
+	# measured at 0 failures in 2000 trials, so a missing boss should be impossible - which is
+	# exactly the kind of belief worth checking rather than trusting. `_spawn_dungeon_floor_monsters`
+	# appends nothing and says nothing when `boss_pos.x < 0`, so a floor with no boss is currently
+	# indistinguishable from a floor with one.
+	var _last: int = floor_grids.size() - 1
+	var _bosses: int = 0
+	for _m in dungeon_monsters.get(instance_id, {}).get(_last, []):
+		if _m.get("is_boss", false):
+			_bosses += 1
+	var _bd: Dictionary = dungeon_data.get("boss", {})
+	if _bosses != 1 and not _bd.is_empty():
+		log_message("WARN dungeon %s (%s): boss floor %d got %d bosses, expected 1 - this run cannot be completed by killing one" % [
+			instance_id, dungeon_type, _last + 1, _bosses])
+	else:
+		log_message("DUNGEON-SPAWN %s (%s): %d floors, %d boss on floor %d" % [
+			instance_id, dungeon_type, floor_grids.size(), _bosses, _last + 1])
 
 	# Dungeon revamp B — populate Azure Dreams-style floor loot, but ONLY for the personal
 	# instances players actually explore (id "player_dungeon_..."). World 'D' entry points
