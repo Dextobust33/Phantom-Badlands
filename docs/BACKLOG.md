@@ -161,6 +161,22 @@ Two scenarios were added for it: **`cycle_cards`** (dungeon cards carrying cycle
 reveal upgrade already taken on a class card) and **`in_dungeon`** (parked on a dungeon entrance,
 stocked, for the hover / chest / run-log checks).
 
+## v0.9.771 SHIPPED (2026-09-11) -- the accuracy release, 12 commits
+
+All 18 probes green before the build. Released as documented: changelog written, version bumped
+and pushed, editor recompile forced BEFORE export, `VERSION.txt` copied into the build dir before
+gating, release gate green on all eight checks including 930 dungeon-art lookups, Linux pair
+built, 60-second in-game countdown sent (two players were online), binary staged as `.new` and
+swapped inside the window.
+
+Verified by the RUNNING process: `sha256 542d5e88...` on `/proc/<pid>/exe` matches the local
+build. Seven assets up; both launcher URLs and the delta manifest answer 200.
+
+**Five items were blocked on this release** -- watch the characters to L25, feel-check the rest
+change, the party-broken repro, the dungeon-level second example, and the dungeon-depth
+confirmation. They can now accumulate real data instead of waiting.
+
+
 ## LIVE REPORT 2026-09-11 (post-v0.9.770, LINUX)
 
 - [ ] **Top-right toolbar icons do not render on Linux.** Owner: *"I've added a screenshot called
