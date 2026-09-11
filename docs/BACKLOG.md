@@ -161,6 +161,31 @@ Two scenarios were added for it: **`cycle_cards`** (dungeon cards carrying cycle
 reveal upgrade already taken on a class card) and **`in_dungeon`** (parked on a dungeon entrance,
 stocked, for the hover / chest / run-log checks).
 
+## LIVE REPORT 2026-09-11 (post-v0.9.770, LINUX)
+
+- [ ] **Top-right toolbar icons do not render on Linux.** Owner: *"I've added a screenshot called
+      linux. The icons for the bug report and a few others aren't displaying properly (up in the
+      very top right)."* Screenshot at
+      `Desktop/Test_Install/phantom-badlands-launcher/claude_screenshots/linux.png`.
+      **Confirmed from the image.** The strip draws several buttons as the font's MISSING-GLYPH
+      BOX, while the music toggle renders correctly right beside them.
+      **Cause, read off the code rather than guessed:** those buttons use EMOJI as label text.
+      `client.gd:3017` builds Suggest Idea and Report Issue from emoji, and `client.gd:2960` does
+      the same for the screenshot button. The music toggle is U+266A, a plain BMP symbol, which
+      is exactly why it is the one that survives. Windows supplies the emoji from a system font;
+      the Linux build has no such guarantee, so each one falls back to tofu.
+      **Same class as the six tofu glyphs fixed on 2026-09-11** (baked tiles rendering as the
+      font's `.notdef` box), reached from the UI side instead of the bake side -- the lesson was
+      recorded and simply never applied to live button text.
+      **Three ways out, cheapest first:** (a) swap to BMP symbols the bundled font covers, the way
+      the music note already works; (b) short text labels (`Idea` / `Bug` / `Shot`), which also
+      helps anyone who cannot read a 13px pictogram; (c) bundle an emoji-capable font and force it
+      on those buttons -- heaviest, and only worth it if emoji are wanted elsewhere.
+      **Add a coverage assertion either way.** The tofu fix earlier today added exactly that for
+      baked glyphs; the same check belongs on any glyph used as a UI affordance. Must be verified
+      on the LINUX build, since it cannot reproduce on Windows.
+
+
 ## ⚑ THE ORDER — 54 open items, sequenced so nothing gets built twice (2026-09-11)
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
