@@ -451,6 +451,22 @@ Jackpot Gamble art; and six glyph tiles baked as the font's missing-glyph box.
       many, and whether any boss is still alive, flagging "completed WITHOUT killing the boss".
       Read those two lines from the next run before touching anything.
 
+- [ ] **Make variant names and traits HOVERABLE.** Owner 2026-09-10: *"We should also consider
+      making variant names hoverable so players can see what they do (swift, weapon master,
+      champion, venemous, etc.)"* Two different things are being named there and both want it:
+      the monster VARIANT baked into the name ("Venomous Orc", "Skeleton Champion") and the
+      TRAIT list under it ("Regenerates", "* WEAPON MASTER *").
+      **Now cheap, and it was not before.** The trait line has ONE emission point,
+      `generate_encounter_text`'s `notable_abilities` in combat_manager.gd — and as of
+      2026-09-10 all six scroll-grantable traits go through it (three used to be missing
+      entirely). The hover idiom already exists and is used four times over: `[url=<detail>]`
+      plus `meta_hover`, as on dungeon monsters, floor loot, theme tiles and card damage
+      formulas. So this is: give each entry a one-line description, wrap it in the existing
+      `[url=]`, and let the existing tooltip do the rest.
+      Do the TRAITS first — they are a closed list in one function. Variants are prefixed into
+      the monster's name string, so they need the name split before they can be wrapped, which
+      is the fiddlier half.
+
 - [ ] **Does the health bar lag on multi-hits / monster abilities?** Owner asked, and hedged:
       *"I may have been moving too fast though."* Two things ruled OUT: the bar's tween is 0.3s
       (`animate_hp_bar_change`), and the bar reads `character_data.current_hp` directly, so it is
