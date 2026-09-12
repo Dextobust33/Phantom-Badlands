@@ -10,11 +10,37 @@ common way to lose a session.
 
 ---
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after the v0.9.773 release)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after v0.9.775)
 
-**v0.9.774 IS LIVE** (v0.9.773 plus the same-night fix for the four things the owner hit in his
-first play of it - see the shipped sections below; the 774 fix was client-only, so the deployed
-server binary is still the 773 one and is correct).
+**v0.9.775 IS LIVE.** Client-only, like 774, so the deployed server binary is still the 773 one
+and is correct. Seven assets on the tag; the Windows gate passed at `version 0.9.775`, the Linux
+one gave its documented SKIP.
+
+### The 775 lesson, because it cost two releases
+
+774 found the right cause (the old font-metric overlay was drawing the player on a picture map)
+and stood the overlay down - but the replacement code in `client/overworld_room.gd` sat ONE LEVEL
+too deep, inside `if overlay != "" and overlay != "fog" and not figures.has(...)`. That condition
+is false exactly when there IS a figure. So 774 removed the misplaced player and drew nothing in
+its place, and the centre square went blank.
+
+**The probe passed through all of it, twice**, because it asserted the figure block by READING THE
+SOURCE - and the source was right. Indentation is invisible to a text search. `overworld_render.gd`
+now composes the same view twice and compares the PIXELS of the centre cell (416 of 1024 change
+with a figure, 274 more with a companion behind); re-injecting the exact fault takes both to zero,
+which is how the check was proven to fire.
+
+And the FIRST version of even that pixel check was unsound and passed against the broken code:
+supplying a figure also suppresses the overlay marker on that square, so 175 pixels moved with
+nobody drawn. The control is now an entry that is present but names no sprite. **When a check
+compares two states, make sure the only thing that differs between them is the thing under test.**
+
+**Still open from the overworld arc:**
+- Map hover / click-to-inspect for players and companions, lost when the overlay stood down. The
+  dungeon-entrance `[url=owdg:...]` mechanism is the proven replacement.
+- The companion overlaps its owner heavily at the current -7/+2 offsets (roughly 9 of 17 content
+  columns visible). Readable, not pretty. A nudge to about -9/+3 would help; untested, so it was
+  NOT bundled into a fix release.
 
 **v0.9.773 IS LIVE.** Server deployed and verified by hashing the RUNNING process against the
 local build (`cbd5f158…`, identical), listening on 9080. All seven assets are on the tag. The
@@ -53,6 +79,18 @@ that is a small follow-up release. **Judge against +/-10pp, not 5** - see the ru
   `world_dungeon_*` means something reads a world dungeon's interior after all.
 - **Everything in `docs/PLAYTEST_QUEUE.md` items 11 and 12 is now LIVE**, not pending. They were
   written as "unreleased"; they describe what to check in the build players now have.
+
+## v0.9.775 SHIPPED (2026-09-12) -- the square you stand on was empty
+
+774's fix never ran. `client/overworld_room.gd`'s figure block was indented into the branch that
+is skipped exactly when there is a figure, so the composed map drew the ground, the tiles and the
+markers and no people at all. Dedented to the body of the cell loop.
+
+- `tools/probe/overworld_render.gd` gained a PIXEL comparison of the centre cell, with a control
+  that supplies a figure entry naming no sprite (so the marker is suppressed on both sides).
+  Verified to fail on the re-injected fault.
+- Verified in the RUNNING client via `python tools/test_setup/shots.py world` before the release,
+  not only in the probe. That is the whole reason this one is right.
 
 ## v0.9.774 SHIPPED (2026-09-12, same night) -- the figures were in the wrong place
 
