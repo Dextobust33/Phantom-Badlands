@@ -2679,7 +2679,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 - [ ] **DUNGEONS GET A RARITY. Owner 2026-09-11:** *"Dungeons should have a rarity moving
       forward."* The data is already written and has never been read: `spawn_weight` sits on all
-      53 types with values from 50 down to about 18, appears about forty times in
+      53 types with values from 50 down to 1, appears about forty times in
       `dungeon_database.gd`, and **nothing in the codebase reads it**. Selection is
       `dungeon_types[randi() % dungeon_types.size()]` - uniform over every type in the game.
       Two axes to decide between, and they are not the same thing:

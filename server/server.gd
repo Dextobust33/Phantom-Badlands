@@ -30614,7 +30614,8 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 		"spawned_at": int(Time.get_unix_time_from_system()),
 		"active_players": [],
 		"dungeon_level": dungeon_level,
-		"sub_tier": sub_tier
+		"sub_tier": sub_tier,
+		"tier": int(dungeon_data.get("tier", 1)),
 	}
 
 	# Generate all floor grids (BSP rooms + corridors)
@@ -30732,6 +30733,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"active_players": [],
 		"dungeon_level": dungeon_level,
 		"sub_tier": sub_tier,
+		"tier": int(dungeon_data.get("tier", 1)),
 		"owner_peer_id": peer_id,  # Track who owns this instance
 		"owner_username": peers.get(peer_id, {}).get("username", ""),  # For reconnect lookup
 		"quest_id": quest_id,  # Track which quest this is for
@@ -30872,7 +30874,7 @@ func _ensure_starter_dungeon_exists():
 	# Check if there's already a tier 1 dungeon near the origin
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
-		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		var dungeon_data = _dungeon_data_for(instance)
 		if dungeon_data.tier == 1:
 			var distance = sqrt(instance.world_x * instance.world_x + instance.world_y * instance.world_y)
 			if distance <= STARTER_AREA_RADIUS:
@@ -30912,7 +30914,8 @@ func _ensure_starter_dungeon_exists():
 		"spawned_at": int(Time.get_unix_time_from_system()),
 		"active_players": [],
 		"dungeon_level": dungeon_level,
-		"sub_tier": 1
+		"sub_tier": 1,
+		"tier": int(dungeon_data.get("tier", 1)),
 	}
 
 	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
@@ -30997,7 +31000,7 @@ func _check_dungeon_spawns():
 	while projected_count < MIN_WORLD_DUNGEONS and (active_dungeons.size() + _pending_dungeon_spawn_queue.size()) < MAX_ACTIVE_DUNGEONS:
 		if enqueued_this_tick >= MAX_ENQUEUE_PER_TICK:
 			break
-		_pending_dungeon_spawn_queue.append(dungeon_types[randi() % dungeon_types.size()])
+		_pending_dungeon_spawn_queue.append(_pick_weighted_dungeon_type())
 		projected_count += 1
 		enqueued_this_tick += 1
 
@@ -31007,7 +31010,7 @@ func _check_dungeon_spawns():
 			break
 		if randf() >= 0.5:
 			break
-		_pending_dungeon_spawn_queue.append(dungeon_types[randi() % dungeon_types.size()])
+		_pending_dungeon_spawn_queue.append(_pick_weighted_dungeon_type())
 		projected_count += 1
 		enqueued_this_tick += 1
 
@@ -31075,6 +31078,7 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 		"active_players": [],
 		"dungeon_level": dungeon_level,
 		"sub_tier": sub_tier,
+		"tier": int(dungeon_data.get("tier", 1)),
 		"completed_at": 0
 	}
 	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
@@ -31204,7 +31208,10 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	# MAX_CONCURRENT_POST_THREATS active threats, and (b) aren't inside the
 	# post-cleared cooldown window. T1 dungeons don't count as threats so they
 	# bypass this gate.
-	var dungeon_tier: int = int(dungeon_data.get("tier", 1))
+	# Aim at a grade, then let the ground decide. The threat gate used to key off the TYPE's
+	# tier; it keys off the target grade now, because that is what the dungeon will actually be.
+	var _target_cell: Dictionary = _pick_dungeon_grade()
+	var dungeon_tier: int = int(_target_cell["tier"])
 	var enforce_threat_limits: bool = dungeon_tier >= 2 and chunk_manager != null
 	var now_unix: int = int(Time.get_unix_time_from_system()) if enforce_threat_limits else 0
 	var r_sq_local: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS
@@ -31215,9 +31222,12 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		# …), so this spreads dungeons without leaving the band. (Previously a ±100-tile offset
 		# was added here "for spread" — but that swamped low tiers' narrow bands and scattered
 		# T1/T2 dungeons ~145 tiles out into high-level overworld, mismatching their level.)
-		var reloc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+		var reloc = _roll_location_in_ring(float(_target_cell["d0"]), float(_target_cell["d1"]))
 		world_x = reloc.x
 		world_y = reloc.y
+		if world_x < world_system.WORLD_MIN_X or world_x > world_system.WORLD_MAX_X \
+				or world_y < world_system.WORLD_MIN_Y or world_y > world_system.WORLD_MAX_Y:
+			continue
 
 		# Check if this location overlaps with a trading post, NPC post, or existing dungeon
 		if trading_post_db.is_trading_post_tile(world_x, world_y) \
@@ -31256,10 +31266,12 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		next_dungeon_id -= 1  # Reclaim the ID
 		return ""
 
-	# Calculate rank based on distance from origin
-	var distance = sqrt(float(world_x * world_x + world_y * world_y))
-	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
-	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
+	# The GRADE is a reading of the land, not a number off the type. This is what makes an A5
+	# Goblin Dungeon possible and what stops a G2 standing in L15-17 country.
+	var _land: Dictionary = _grade_of_land(world_x, world_y)
+	var grade_tier: int = int(_land["tier"])
+	var sub_tier: int = int(_land["rank"])
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(grade_tier, sub_tier)
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 
 	# Create instance
@@ -31272,6 +31284,7 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		"active_players": [],
 		"dungeon_level": dungeon_level,
 		"sub_tier": sub_tier,
+		"tier": grade_tier,
 		"completed_at": 0  # 0 means not completed yet
 	}
 
@@ -31281,6 +31294,72 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	# (Measured by tools/probe/lazy_dungeon_interior.gd on a dev box; the monster spawn is on top
 	# of that and the code's own note has bursts of eight costing ~5 s on the live server.)
 	return instance_id
+
+## Placement maths lives in DungeonDatabase so the probe exercises the SAME code the server
+## runs - see `tools/probe/dungeon_placement.gd`. The server owns the world, so it is what
+## supplies the level-to-distance inverse.
+var _grade_cells_cache: Array = []
+
+
+func _dungeon_grade_cells() -> Array:
+	if _grade_cells_cache.is_empty():
+		_grade_cells_cache = DungeonDatabaseScript.grade_cells(world_system.distance_for_level)
+	return _grade_cells_cache
+
+
+func _pick_dungeon_grade() -> Dictionary:
+	return DungeonDatabaseScript.pick_grade(_dungeon_grade_cells())
+
+
+func _roll_location_in_ring(d0: float, d1: float) -> Vector2i:
+	return DungeonDatabaseScript.roll_location_in_ring(d0, d1)
+
+
+func _pick_weighted_dungeon_type() -> String:
+	return DungeonDatabaseScript.pick_weighted_type()
+
+
+func _grade_of_land(x: int, y: int) -> Dictionary:
+	"""The grade of the country at a tile: what the wilderness there is worth, turned into a
+	{tier, rank}. `get_post_anchored_level` rather than the raw distance curve, because posts
+	pull the level down around them and a dungeon beside a post should match the post's country,
+	not the abstract ring it happens to sit in."""
+	var level: int = int(world_system.get_post_anchored_level(x, y))
+	return PowerRankScript.grade_for_level(maxi(1, level))
+
+
+func _dungeon_data_for(instance: Dictionary) -> Dictionary:
+	"""The dungeon type's data, with `tier` replaced by THIS INSTANCE's grade.
+
+	From 2026-09-11 a dungeon's grade belongs to the instance rather than the type - owner:
+	*"We do want lower types of monster dungeons to be possible in high level areas (example an
+	A5 Goblin Dungeon, or a S2 Kelpie one etc)."*
+
+	Call sites fetch the type's dict and then read `.tier` from it, often several times. Giving
+	them this instead of `get_dungeon(...)` means every one of those reads follows the instance,
+	which is both fewer edits and far less likely to leave one behind - and leaving one behind is
+	precisely how a dungeon ends up advertising a grade its monsters do not have."""
+	var dd: Dictionary = DungeonDatabaseScript.get_dungeon(String(instance.get("dungeon_type", ""))).duplicate()
+	if dd.is_empty():
+		return dd
+	dd["tier"] = _instance_tier(instance)
+	return dd
+
+
+func _instance_tier(instance: Dictionary) -> int:
+	"""A live dungeon's GRADE.
+
+	From 2026-09-11 the grade is a property of the INSTANCE, decided by the land it stands in,
+	rather than a number hardcoded on its type. Owner: *"We do want lower types of monster
+	dungeons to be possible in high level areas (example an A5 Goblin Dungeon, or a S2 Kelpie
+	one etc)."* A Goblin Caves is still a Goblin Caves - its species, boss, egg and colour are
+	what the TYPE is for - but what grade it is depends on where it spawned.
+
+	Falls back to the type's old fixed tier so instances saved before this keep resolving."""
+	if instance.has("tier"):
+		return int(instance["tier"])
+	return int(DungeonDatabaseScript.get_dungeon(String(instance.get("dungeon_type", ""))).get("tier", 1))
+
 
 func _ensure_dungeon_interior(instance_id: String) -> bool:
 	"""Build a dungeon's floors, rooms and monsters if anything ever actually asks for them.
@@ -31333,7 +31412,7 @@ func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 		if peer_id >= 0 and instance.has("owner_peer_id") and instance.owner_peer_id != peer_id:
 			continue
 		if instance.world_x == x and instance.world_y == y:
-			var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+			var dungeon_data = _dungeon_data_for(instance)
 			var inst_sub_tier = instance.get("sub_tier", 1)
 			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, inst_sub_tier)
 			return {
@@ -31466,7 +31545,7 @@ func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: in
 		var dx = abs(instance.world_x - center_x)
 		var dy = abs(instance.world_y - center_y)
 		if dx <= radius and dy <= radius:
-			var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+			var dungeon_data = _dungeon_data_for(instance)
 			visible.append({
 				"x": instance.world_x,
 				"y": instance.world_y,
@@ -31883,7 +31962,7 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 			continue
 		if instance.has("owner_peer_id"):
 			continue  # Personal instances don't threaten the world
-		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		var dungeon_data = _dungeon_data_for(instance)
 		if dungeon_data.is_empty():
 			continue
 		var tier = int(dungeon_data.get("tier", 1))
@@ -32029,7 +32108,7 @@ func _count_active_threats_near_post(post_x: int, post_y: int, exclude_instance_
 			continue
 		if inst.has("owner_peer_id"):
 			continue
-		var dungeon_data = DungeonDatabaseScript.get_dungeon(inst.dungeon_type)
+		var dungeon_data = _dungeon_data_for(inst)
 		if dungeon_data.is_empty():
 			continue
 		if int(dungeon_data.get("tier", 1)) < 2:
@@ -32066,7 +32145,7 @@ func _stamp_post_cooldowns_for_cleared_dungeon(inst_x: int, inst_y: int, instanc
 	var inst = active_dungeons[instance_id]
 	if inst.has("owner_peer_id"):
 		return
-	var dungeon_data = DungeonDatabaseScript.get_dungeon(inst.dungeon_type)
+	var dungeon_data = _dungeon_data_for(inst)
 	if dungeon_data.is_empty() or int(dungeon_data.get("tier", 1)) < 2:
 		return
 	var now: int = int(Time.get_unix_time_from_system())
@@ -32180,7 +32259,7 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 			continue
 		if instance.has("owner_peer_id"):
 			continue  # Personal instances aren't world threats
-		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		var dungeon_data = _dungeon_data_for(instance)
 		if dungeon_data.is_empty():
 			continue
 		var tier = int(dungeon_data.get("tier", 1))
@@ -33263,7 +33342,7 @@ func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer
 		var dist = int(sqrt(dx * dx + dy * dy))
 		if dist > max_radius:
 			continue
-		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		var dungeon_data = _dungeon_data_for(instance)
 		candidates.append({
 			"name": dungeon_data.get("name", "Unknown Dungeon"),
 			"dungeon_type": instance.dungeon_type,
@@ -33325,7 +33404,7 @@ func _find_nearest_dungeon_for_quest(from_x: int, from_y: int, dungeon_type: Str
 		# Skip other players' personal quest dungeons
 		if peer_id >= 0 and instance.has("owner_peer_id") and instance.owner_peer_id != peer_id:
 			continue
-		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		var dungeon_data = _dungeon_data_for(instance)
 
 		# Check if this dungeon matches the quest requirements
 		var matches = false
@@ -33384,7 +33463,7 @@ func _get_player_dungeon_info(peer_id: int, quest_id: String, from_x: int, from_
 		return {}
 
 	var instance = active_dungeons[instance_id]
-	var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+	var dungeon_data = _dungeon_data_for(instance)
 
 	return {
 		"x": instance.world_x,

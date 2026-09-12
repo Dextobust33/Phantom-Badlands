@@ -2955,6 +2955,84 @@ static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int
 		"boss_egg": boss_egg  # GUARANTEED egg from the boss monster
 	}
 
+## How the 81 grades share out the world's dungeons.
+##
+## By AREA alone, half of them would sit in S country - its ring is half the map - and about one
+## would sit in H country, which is no use to a new player who has to clear H1-3 before G. A flat
+## quota does the opposite and makes the rim empty. `GRADE_AREA_BIAS` blends the two: 0 gives
+## every grade the same number, 1 distributes purely by area.
+const GRADE_AREA_BIAS := 0.35
+## And rarity WITHIN a tier. Owner 2026-09-11: *"Dungeons should have a rarity moving forward."*
+## Area works against this on its own, because a tier's higher ranks sit in its outer, larger
+## part; this is the counterweight, applied per rank step (rank 9 ends up at 0.85^8, about 0.27).
+const GRADE_RANK_FALLOFF := 0.85
+
+static func grade_cells(dist_for_level: Callable) -> Array:
+	"""The 81 (tier, rank) cells, each with the ring of world where the LAND is at its levels.
+
+	This is the heart of the 2026-09-11 placement change. A dungeon used to be dropped in
+	`tier*30 .. tier*60`, a ring that had nothing to do with where the wilderness actually
+	reaches its monsters' levels - which is how the owner found a G2 holding L7-9 monsters in
+	L15-17 country."""
+	var cells: Array = []
+	var total_area := 0.0
+	for t in range(1, PowerRank.RANKS + 1):
+		for r in range(1, PowerRank.RANKS + 1):
+			var rng: Dictionary = get_sub_tier_level_range(t, r)
+			var lo: int = int(rng.get("min_level", 1))
+			var hi: int = maxi(int(rng.get("max_level", lo)), lo + 1)
+			var d0: float = float(dist_for_level.call(lo))
+			var d1: float = float(dist_for_level.call(hi))
+			if d1 <= d0:
+				d1 = d0 + 1.0
+			var area: float = PI * (d1 * d1 - d0 * d0)
+			total_area += area
+			cells.append({"tier": t, "rank": r, "d0": d0, "d1": d1, "area": area})
+	for c in cells:
+		var share: float = float(c["area"]) / maxf(1.0, total_area)
+		c["weight"] = pow(share, GRADE_AREA_BIAS) * pow(GRADE_RANK_FALLOFF, float(int(c["rank"]) - 1))
+	return cells
+
+
+static func pick_grade(cells: Array) -> Dictionary:
+	"""Which grade to aim the next world dungeon at. The LAND still has the final say - the
+	placer reads the grade back off the ground it lands on - so this is a bias, not a decree."""
+	var total := 0.0
+	for c in cells:
+		total += float(c["weight"])
+	var roll := randf() * total
+	for c in cells:
+		roll -= float(c["weight"])
+		if roll <= 0.0:
+			return c
+	return cells[cells.size() - 1]
+
+
+static func roll_location_in_ring(d0: float, d1: float) -> Vector2i:
+	"""A point somewhere in an annulus. Radius is drawn on the SQUARE so points spread evenly
+	over the area rather than bunching against the inner edge."""
+	var angle := randf() * TAU
+	var u := randf()
+	var rr := sqrt(d0 * d0 + u * (d1 * d1 - d0 * d0))
+	return Vector2i(int(cos(angle) * rr), int(sin(angle) * rr))
+
+
+static func pick_weighted_type() -> String:
+	"""A dungeon type, by RARITY. Owner 2026-09-11: *"Dungeons should have a rarity moving
+	forward."* `spawn_weight` has been authored on all 53 types since forever - values from 50
+	down to 1 - and until now nothing in the codebase read it; selection was
+	`dungeon_types[randi() % dungeon_types.size()]`, uniform over every type in the game."""
+	var total := 0.0
+	for dt in DUNGEON_TYPES:
+		total += maxf(1.0, float(DUNGEON_TYPES[dt].get("spawn_weight", 50)))
+	var roll := randf() * total
+	for dt in DUNGEON_TYPES:
+		roll -= maxf(1.0, float(DUNGEON_TYPES[dt].get("spawn_weight", 50)))
+		if roll <= 0.0:
+			return String(dt)
+	return String(DUNGEON_TYPES.keys()[0])
+
+
 static func get_spawn_location_for_tier(tier: int) -> Vector2i:
 	"""Get a suitable spawn location for a dungeon of the given tier"""
 	# Dungeons spawn further from origin for higher tiers
