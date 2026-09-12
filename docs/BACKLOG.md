@@ -2550,14 +2550,28 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       the owner, not only the 0.06 damage term, sized so the weakest of a tier beats the strongest
       of the one below. Both ladders route through `PowerRank.power_index` so ONE number orders
       all 81 cells and `tools/probe/power_rank.gd` finally asserts a stat rather than a label.
-      Ascension stops being a downgrade as a consequence, without changing what it does.
+      **CORRECTION to what this note first said: ascension does NOT stop being a downgrade as a
+      consequence.** I wrote that before checking. Ascension resets the companion's LEVEL to 1,
+      and level is the entire base of both HP and damage - the grade multiplier sits on top of
+      it. Three H companions still become one G1 that is far weaker than any of them. Making
+      tier real is necessary and not sufficient; **ascension needs its own fix, carrying rank
+      and level across**, and that is still open.
       Owner also asked the fair question behind it: *"the alternative is if our current system
       holds and we can make a clear progression path for players that they will be able to
       understand easily."* Worth keeping in view - if tier is made real, the player-facing
       promise becomes simply "further right on the ladder is stronger, always", which is the
       easiest thing to explain and the thing the display already implies.
-      **Re-calibration:** this is a player-power change, so the monster curve is stale after it
-      (`speciescal` / `refcal` / `rolecal`). Budget that into the work.
+      **DONE 2026-09-11 - one ladder, `PowerRank.power_mult(tier, rank)`.** Geometric in
+      `power_index`, so it is monotonic across all 81 cells by construction: one constant,
+      `GRADE_POWER_STEP = 1.30`, says each grade is 30% above the one below and a rank is a
+      ninth of the way there. Span H1 1.00 to S9 10.30.
+      It now drives companion HP (which never read tier at all), the bonuses a companion grants
+      its owner, its abilities, and combat damage quality - the four places that between them
+      made an H9 beat a G1. The two rank-only tables it replaced are read by nothing.
+      Probe `companion_ladder.gd` checks the STATS through the functions combat calls, at all
+      eight grade boundaries, not the label. That distinction is the whole point: the old probe
+      asserted "G1 > H9" and passed, because `power_index` was called by nothing in the game.
+      **Re-calibration:** run after this, since it changes player power.
 
 - [ ] **A WORLD DUNGEON BUILDS ITS WHOLE INTERIOR AND NOBODY EVER LOOKS AT IT.** Found 2026-09-11
       while costing the owner's *"massively increase the amount of dungeons"*. This is the reason

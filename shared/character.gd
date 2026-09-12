@@ -4820,8 +4820,10 @@ func get_companion_bonus(bonus_type: String) -> float:
 	# entry for 90% of them. Rank comes from the shared table rather than a third inline copy.
 	var _dt = load("res://shared/drop_tables.gd")
 	var multiplier = _dt.companion_variant_mult(active_companion)
+	# ONE ladder for companion quality: `PowerRank.power_mult(tier, rank)`. It used to be a rank
+	# table that never read tier at all, which is how an H9 came to beat a G1 on every axis.
 	var sub_tier = active_companion.get("sub_tier", 1)
-	var sub_tier_mult = float(_dt.COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
+	var sub_tier_mult: float = PowerRank.power_mult(int(active_companion.get("tier", 1)), int(sub_tier))
 	return base_value * multiplier * sub_tier_mult
 
 func has_active_companion() -> bool:
@@ -4952,9 +4954,10 @@ static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int 
 	if owner_max_hp <= 0:
 		# Legacy/no-owner path (tools, display of a companion with no owner context).
 		return 30 + level * 5 + sub_tier * 10 + hp_bonus
-	# Rank is the companion's own quality axis; keep it as a modest spread so a rarer
-	# companion is meaningfully beefier without breaking the share model.
-	var sub_mult: float = 1.0 + 0.05 * float(maxi(1, sub_tier) - 1)
+	# GRADE and rank together, through the one ladder. This line used to be rank only
+	# (`1.0 + 0.05 * (rank - 1)`) and `calculate_companion_max_hp` never read tier anywhere at
+	# all - so a tier-1 rank-9 companion out-tanked a tier-2 rank-1 one by about three times.
+	var sub_mult: float = PowerRank.power_mult(int(companion.get("tier", 1)), sub_tier)
 	# hp_bonus is a PERCENTAGE everywhere else it is consumed (combat_manager applies it as
 	# get_total_max_hp() * bonus/100). It was added FLAT here, so the same table field meant
 	# two different things in two places. Treated as a percentage now, consistently.
@@ -5327,8 +5330,10 @@ func get_companion_effective_bonuses() -> Dictionary:
 	# Same shared sources as get_companion_bonus above — see the note there.
 	var _dt = load("res://shared/drop_tables.gd")
 	var multiplier = _dt.companion_variant_mult(active_companion)
+	# ONE ladder for companion quality: `PowerRank.power_mult(tier, rank)`. It used to be a rank
+	# table that never read tier at all, which is how an H9 came to beat a G1 on every axis.
 	var sub_tier = active_companion.get("sub_tier", 1)
-	var sub_tier_mult = float(_dt.COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
+	var sub_tier_mult: float = PowerRank.power_mult(int(active_companion.get("tier", 1)), int(sub_tier))
 	var combined = multiplier * sub_tier_mult
 
 	if combined != 1.0:
@@ -5373,7 +5378,7 @@ func get_companion_scaled_abilities() -> Dictionary:
 
 	# Get scaled abilities from drop_tables
 	var drop_tables = preload("res://shared/drop_tables.gd").new()
-	return drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, sub_tier, hybrid_partner_type)
+	return drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, sub_tier, hybrid_partner_type, int(active_companion.get("tier", 1)))
 
 func get_companion_level() -> int:
 	"""Get active companion's level."""

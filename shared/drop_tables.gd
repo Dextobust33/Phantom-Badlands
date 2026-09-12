@@ -1998,7 +1998,7 @@ func get_all_companion_abilities(tier: int, companion_level: int) -> Array:
 
 # ===== NEW MONSTER-SPECIFIC COMPANION ABILITY SYSTEM =====
 
-func get_monster_companion_abilities(monster_type: String, companion_level: int, variant_multiplier: float = 1.0, sub_tier: int = 1, hybrid_partner_type: String = "") -> Dictionary:
+func get_monster_companion_abilities(monster_type: String, companion_level: int, variant_multiplier: float = 1.0, sub_tier: int = 1, hybrid_partner_type: String = "", tier: int = 1) -> Dictionary:
 	"""Get all abilities for a companion based on monster type and level.
 	Returns dict with 'passive', 'active', 'threshold' keys, each containing scaled ability data.
 	variant_multiplier: Applies to base values for rarer variants (from VARIANT_STAT_MULTIPLIERS).
@@ -2010,8 +2010,9 @@ func get_monster_companion_abilities(monster_type: String, companion_level: int,
 
 	var result = {"passive": {}, "active": {}, "threshold": {}}
 
-	# Combine variant and rank multipliers
-	var effective_mult = variant_multiplier * COMPANION_SUB_TIER_ABILITY_MULT.get(sub_tier, 1.0)
+	# Variant, and the one grade-and-rank ladder. This was a rank-only table, so a companion's
+	# abilities did not care what grade it was either.
+	var effective_mult = variant_multiplier * PowerRank.power_mult(tier, sub_tier)
 
 	# Check for monster-specific abilities
 	if COMPANION_MONSTER_ABILITIES.has(monster_type):
@@ -2031,8 +2032,8 @@ func get_monster_companion_abilities(monster_type: String, companion_level: int,
 	else:
 		# Fallback to tier-based abilities for unknown monster types
 		var companion_data = COMPANION_DATA.get(monster_type, {})
-		var tier = companion_data.get("tier", 1)
-		var tier_abilities = get_all_companion_abilities(tier, companion_level)
+		var species_tier = companion_data.get("tier", 1)
+		var tier_abilities = get_all_companion_abilities(species_tier, companion_level)
 		if tier_abilities.size() >= 1:
 			result.passive = tier_abilities[0]
 		if tier_abilities.size() >= 2:
@@ -2862,7 +2863,7 @@ func get_companion_attack_damage(companion_tier: int, player_level: int, compani
 	var attack_bonus = companion_bonuses.get("attack", 0)
 	total = int(total * (1.0 + float(attack_bonus) / 100.0))
 	# Apply rank multiplier (1.0x to 1.7x for ranks 1-8)
-	total = int(total * COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
+	total = int(total * PowerRank.power_mult(companion_tier, sub_tier))
 	# v0.9.570 — apply border-tier multiplier (1.00x base, up to 3.00x Mythic)
 	total = int(total * get_companion_border_mult(border_tier))
 	return total

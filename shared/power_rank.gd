@@ -169,6 +169,32 @@ static func color(tier: int) -> String:
 	return TIER_COLORS[clampi(tier - 1, 0, TIER_COLORS.size() - 1)]
 
 
+## How much stronger each GRADE is than the one below it. One number, and the whole ladder
+## follows from it: a rank is a ninth of the way from one grade to the next, so nine ranks of
+## climbing is worth exactly one grade and the weakest of a grade always beats the strongest of
+## the one below.
+##
+## 2026-09-11. Before this, tier was very nearly decorative for companions: HP never read it at
+## all and damage gave it +0.06 against a rank's +0.05, so eight ranks outweighed eight grades.
+## An H9 companion carried about 3.1x the HP of a G1 and handed its owner 2.0x bonuses against
+## 1.0x. The owner asked for the comparison and then chose the fix: *"1 sounds like the right
+## path"* - make tier real - with the condition that players can understand the result, which is
+## why it is one rule rather than two tables.
+const GRADE_POWER_STEP := 1.30
+
+
+static func power_mult(tier: int, rank: int) -> float:
+	"""The quality multiplier for a companion at this grade and rank.
+
+	Geometric in `power_index`, so it is monotonic over all 81 cells by construction - there is
+	no ordering for a future edit to break, because there is only one ladder. Spans 1.0 at H1 to
+	about 8.2 at S9.
+
+	This multiplies QUALITY, not the base: a companion's HP and damage are built from its LEVEL,
+	and this sits on top."""
+	return pow(GRADE_POWER_STEP, float(power_index(tier, rank)) / float(RANKS))
+
+
 static func tag(tier: int, rank: int) -> String:
 	"""The label in its danger colour, no hover. For BBCode surfaces with no meta handler wired -
 	most panel rows. The colour alone still answers "is this better than that one" without the

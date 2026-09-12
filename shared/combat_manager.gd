@@ -1724,7 +1724,9 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 			var _cmp_g: float = 1.0
 			# Tier and rank stay as the companion's own quality spread, bounded so a rare
 			# companion is better without turning the share into a different order of magnitude.
-			var _cmp_quality: float = 1.0 + 0.06 * float(maxi(1, int(companion_tier)) - 1) + 0.05 * float(maxi(1, int(companion_sub_tier)) - 1)
+			# The same ladder HP and bonuses use. It was `1 + 0.06*(tier-1) + 0.05*(rank-1)`,
+			# which made eight ranks worth more than eight grades and let the two cross over.
+			var _cmp_quality: float = PowerRank.power_mult(maxi(1, int(companion_tier)), maxi(1, int(companion_sub_tier)))
 			# IDENTITY (user 2026-09-02: "percentage damage makes them all feel the same rather
 			# than having their own identities, some hit harder, have higher hp").
 			# The identity data already exists in COMPANION_DATA — a Gnoll carries attack 5, a
@@ -2169,8 +2171,9 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		var monster_type = companion.get("monster_type", "")
 		var variant_mult = character.get_variant_stat_multiplier()
 		var companion_sub_tier = companion.get("sub_tier", 1)
+		var companion_tier = companion.get("tier", 1)
 		var hybrid_partner_type = String(companion.get("hybrid_partner_type", ""))
-		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier, hybrid_partner_type)
+		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier, hybrid_partner_type, int(companion_tier))
 		# Store for use by active/threshold handlers later
 		combat_state["companion_abilities"] = companion_abilities
 
@@ -12326,8 +12329,9 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		var monster_type = companion.get("monster_type", "")
 		var variant_mult = character.get_variant_stat_multiplier()
 		var companion_sub_tier = companion.get("sub_tier", 1)
+		var companion_tier = companion.get("tier", 1)
 		var hybrid_partner_type = String(companion.get("hybrid_partner_type", ""))
-		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier, hybrid_partner_type)
+		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier, hybrid_partner_type, int(companion_tier))
 		combat_state["companion_abilities"] = companion_abilities
 
 		if not companion_abilities.passive.is_empty():
