@@ -31007,7 +31007,14 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.778[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.779[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOUR RESOURCE BAR MEANS SOMETHING NOW.[/color] Measured across 630 fights: [b]not one turn[/b] ever fell back to a basic attack, and the bar never dropped below half. A full bar bought [b]20 casts[/b] in the mid game against a design of 6-10, so ability costs were close to free. Costs past the early game are [b]doubled[/b]. A long fight now ends with about a quarter of your bar instead of half — push a hard fight and you will feel it.")
+	display_game("  [color=#1EFF00]◆ The early game is deliberately untouched.[/color] Low-level costs are set by a flat number this change does not reach, so while you are still learning a class nothing gets tighter. The squeeze arrives with your gear.")
+	display_game("  [color=#FF8000]★ AND EVERY MONSTER WAS RE-MEASURED AGAINST THE NEW YOU.[/color] Making casts cost more makes you weaker, so the whole monster curve was re-derived from real fights — how much species differ from each other, how hard a level is, and how much harder a Champion or a Boss is. [b]All 21 role checkpoints land on target.[/b]")
+	display_game("  [color=#1EFF00]◆ More ground underfoot in dungeons.[/color] Room floors drew from seven looks for a whole dungeon, and six of those were a single tile. Now nine, including [b]cave rock[/b] and [b]sandstone paving[/b] — so two chambers on one floor are less likely to be the same room twice.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.778[/color]")
 	display_game("  [color=#FF8000]★ YOU CAN POINT AT PEOPLE ON THE MAP AGAIN.[/color] Hovering another player — or the companion walking behind them — brings back their card with portrait, level and class, and [b]clicking examines them[/b]. Clicking a companion opens its inspect view. This was lost when the map became pictures instead of letters: the old letter-map drew people as separate little panels that could be hovered, and a painted map has none.")
 	display_game("  [color=#1EFF00]◆ And a stray line stopped cutting across your character.[/color] Making a square clickable draws a link underline under it. Harmless under a dungeon marker; your character is drawn [b]larger than its square[/b], so the line came out straight through you and your companion at knee height. Gone.")
 	display_game("")
@@ -31028,12 +31035,6 @@ func display_changelog():
 
 	display_game("[color=#808080]v0.9.775[/color]")
 	display_game("  [color=#FF8000]★ YOU AND YOUR COMPANION ARE BACK ON THE MAP.[/color] v0.9.774 stood down the old letter-map overlay that was drawing you in the wrong place — but the code meant to draw you into the picture instead sat inside a branch that is skipped [i]exactly when there is someone to draw[/i]. So the square you stand on was simply [b]empty[/b]. Your character and the companion walking behind you are drawn there now.")
-	display_game("")
-
-	display_game("[color=#808080]v0.9.774[/color]")
-	display_game("  [color=#FF8000]★ THE FIGURES ON THE NEW MAP WERE IN THE WRONG PLACE.[/color] Your character was drawn by the OLD text-map code, which positions things by counting letters — so on the new picture map [b]you stood about a row off[/b], and everything around you looked shifted because of it. Your companion was still a bare letter. Both are drawn into the map itself now, at the right square and the right size.")
-	display_game("  [color=#1EFF00]◆ A gathering node you have already taken now LOOKS taken.[/color] The old letter map dimmed a spent node to a grey comma. The picture map drew the tile and looked for a [i]spent[/i] version that was never made — so [b]a used-up ore vein was identical to a fresh one[/b] and looked like it had not cleared. It dims now.")
-	display_game("  [color=#1EFF00]◆ Trading posts stopped hiding their own doors.[/color] Stepping inside zoomed the view to the middle of the room — but a post is 17-20 tiles across in a 23-tile view, so there was nothing spare to crop and the [b]walls and doors were cut off[/b]. No crop now; the post still reads as a room because it stands on its own floor.")
 	display_game("")
 
 	display_game("[color=#808080]v0.9.768[/color]")
