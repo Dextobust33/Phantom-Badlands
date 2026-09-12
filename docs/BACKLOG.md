@@ -16,15 +16,47 @@ common way to lose a session.
 local build (`f63e3ece…`, identical). Seven assets on the tag; Windows gate passed at 0.9.776,
 Linux gave its documented SKIP.
 
-### ⚑ STILL THE FIRST JOB: `rolecal` has never run against the new curve
+### ✔ `rolecal` IS DONE (2026-09-12). Not yet released.
 
-```bash
-godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- rolecal
-```
-`speciescal` and `refcal` are current; `role_multipliers` (how much harder an elite or boss is
-than a normal monster of its level) were carried forward from the previous base. Second-order
-error in the RATIO, not first-order in the scale. Takes the better part of an hour. Judge against
-+/-10pp, not 5.
+21 of 21 rows on target, 0 saturated. `anchors` / `species_power` / `target_turns` untouched, so
+the layers stayed orthogonal. The curve on disk is now complete for the first time since the
+773 arc. **It is committed but NOT deployed** - the live server still runs the old role
+multipliers, so this wants a small release (server deploy + client, since both read the file).
+
+What changed, and it is two different things:
+- **L1 roughly doubled**: str_mult 3.79->7.08 empowered, 3.48->7.80 elite, 2.76->5.62 boss.
+  Elite at L1 was winning 99% against a 40% target before any of this.
+- **Mid and late game came DOWN 17-50%** - elites and bosses had been sized against the base
+  curve that `refcal` has since corrected.
+
+**The trap it nearly shipped with.** The first completed run left L1 at exactly
+`seed x 1.35^(0.75*6)` = seed x 3.859 for all three roles, bit-identical to the previous
+calibration. Six identical numbers read as convergence; they were the per-pass clamp binding on
+every pass. Fixed by `passes` 6 -> 12 (reach 14.9x) after `tools/probe/rolecal_l1_reach.gd`
+measured that L1 needs ~7x and that `str_mult` really is the knob there. Rows now print
+`clamped=N/12` and flag `SATURATED`, so a loop out of travel cannot look like one that converged.
+
+**An adaptive early exit was tried and reverted the same hour** - it stopped on a single n=40
+batch reading in-band, and two such batches differ by ~11pp, so it fired on noise. Fixed passes
+also keep runs comparable, which is how a real move is told from scatter (run1 vs run3 on the
+already-converged levels: median ratio 1.003).
+
+**And the "it ran too long" question is answered:** 45 minutes was `DEFAULT_BUDGET_SECONDS`
+= 2700, the sim's own watchdog, which aborts printing "results are INCOMPLETE". The abandoned run
+would have produced nothing either way. `tools/probe/rolecal_projection.gd` now times one batch
+per level (1/21 of the run) so the budget is set from a measurement.
+
+### ⚑ OPEN QUESTION this raised - for the owner, not for me to decide
+
+Win rate is on target everywhere, but **fight LENGTH and COST are not, and the chain cannot steer
+by them**. At L1 the measured fights are 3.1-4.1 turns against design targets of 7/9/14, costing
+71-84% of the player's health bar against targets of 55/65/80. Across the whole table cost runs
+66-92%. So a role encounter is currently SHORT and SWINGY rather than long and attritional.
+
+Under permadeath that is a death-rate question, and `refcal` REPORTS death rate but cannot steer
+by it (see CLAUDE.md). Worth deciding deliberately: is a 3-turn elite that takes three quarters
+of your bar the intended shape? If not, the lever is `ROLE_TARGETS` / the base curve, not
+`role_multipliers`.
 
 ### The lesson from 775/776, which cost three releases between them
 
