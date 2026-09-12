@@ -12,6 +12,10 @@ common way to lose a session.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after the v0.9.773 release)
 
+**v0.9.774 IS LIVE** (v0.9.773 plus the same-night fix for the four things the owner hit in his
+first play of it - see the shipped sections below; the 774 fix was client-only, so the deployed
+server binary is still the 773 one and is correct).
+
 **v0.9.773 IS LIVE.** Server deployed and verified by hashing the RUNNING process against the
 local build (`cbd5f158…`, identical), listening on 9080. All seven assets are on the tag. The
 Windows release gate passed; the Linux one gave its documented SKIP (a Linux binary cannot be run
@@ -49,6 +53,44 @@ that is a small follow-up release. **Judge against +/-10pp, not 5** - see the ru
   `world_dungeon_*` means something reads a world dungeon's interior after all.
 - **Everything in `docs/PLAYTEST_QUEUE.md` items 11 and 12 is now LIVE**, not pending. They were
   written as "unreleased"; they describe what to check in the build players now have.
+
+## v0.9.774 SHIPPED (2026-09-12, same night) -- the figures were in the wrong place
+
+Four reports from the owner's first play of v0.9.773, and THREE OF THEM WERE ONE CAUSE.
+
+**The cause.** `_sync_map_sprites_overlay` still drew the player and companions over the map,
+placing them from FONT metrics - character width times two, the font's line height, a sprite size
+derived from the font size. That was right when a map cell was two text characters. It is
+meaningless over a grid of 26-pixel images.
+
+So the player stood about a row off; and because a player judges everything against where they
+see themselves, the STATIONS in a post read as one square too low (*"I have to try to walk into
+the space above them to interact"*) and gathering nodes looked out of line. The companion was a
+bare letter (*"just showing a K"* - Kelpie). And the player did not grow with the post zoom,
+because the overlay never knew the cells had changed size.
+**Fix: the overlay stands down when the map is art**, returning before it computes a single
+metric. The figures are already composed into the image at the right square and the right scale.
+
+**The post zoom is GONE, and that is a measurement correcting a guess.** It shipped as "crop to
+the middle 11, draw them twice as big", on the assumption that you cannot see past a post's walls
+so the edges were spare. Measured after the report: **a post is 17-20 tiles across in a 23-tile
+view.** There was nothing spare, and the crop was cutting off the walls and the DOORS - *"The
+post doesn't seem to have obvious doors, seems like you have to walk out and in through part of
+the wall."* A post still reads as a room because it stands on its own floor, which was the half
+of the idea that worked.
+
+**A harvested node now looks harvested.** The text map dimmed a spent node to a grey comma. The
+sprite map drew the tile and then looked for an overlay called `depleted` that was never baked,
+so a used-up ore vein was pixel-identical to a fresh one - *"not sure if they are clearing
+properly once I get them."* They were clearing; they did not LOOK it. Depleted cells dim now.
+
+**Client-only: the live server binary from v0.9.773 is still correct and was not redeployed.**
+
+- [ ] **OPEN, and taken out by this fix: map hover and click-to-inspect for players and
+      companions.** The overlay that was stood down also carried them. The mechanism to restore
+      it already exists and is proven - the dungeon-entrance hover wraps a map cell in `[url=]`
+      and the payload carries what it needs. Same shape, for `!other` cells and the figure that
+      stands on them.
 
 ## v0.9.773 SHIPPED (2026-09-12) -- the overworld is drawn, and dungeons belong where they stand
 
