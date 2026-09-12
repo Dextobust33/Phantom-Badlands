@@ -195,8 +195,8 @@ func _init() -> void:
 	ck(cli.find("const CLIENT_CAPS := {\"map\": 1}") >= 0, "and `map` is among them")
 	var loc := cli.find("var map_payload = message.get(\"map\", null)")
 	ck(loc > 0, "the location handler reads the payload")
-	ck(loc > 0 and cli.substr(loc, 400).find("MapPayload.inflate(map_payload)") >= 0,
-		"...and inflates it")
+	ck(loc > 0 and cli.substr(loc, 400).find("_overworld_display(map_payload)") >= 0,
+		"...and hands it to the overworld renderer, which inflates or sprites it")
 	ck(loc > 0 and cli.substr(loc, 400).find("message.get(\"description\", \"\")") >= 0,
 		"...still falling back to the old string, so an old server keeps working")
 	ck(srv.find("world_system.build_map_payload(") >= 0, "the server builds the payload once")

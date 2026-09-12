@@ -1311,8 +1311,9 @@ scope, because they are all tiles in the same grid.**
       it as a figure. Every failure falls back to the text map - art missing, no meaning grid,
       renderer refusing - because a map that will not draw is worse than one made of letters.
       **Still open:**
-      monster figures on the overworld at the owner's scale rule, and the dungeon entrance
-      hover (which waits on the Phase 3 tooltip fixes - same surface).
+      nothing. **PHASE 2 IS DONE.**
+      (The old "monster figures on the overworld" line was wrong: the overworld never draws
+      individual monsters, only hotzones, so there was nothing there to sprite.)
       **DONE since:** the settings toggle, other players and everyone's companions as figures
       wearing their variant tint, and the ZOOM inside a post (half the width at double the size,
       so the panel does not jump, with the post's own floor under it instead of the biome).
@@ -2961,9 +2962,11 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       spike somewhere else.
 
       **Owner, same breath:** *"We will also want to make sure the entrances are hoverable and
-      sprited once we get all of the overworld spriting in."* Recorded in Phase 2.95 PHASE 2 -
-      a dungeon entrance is an overworld tile, so it sprites with everything else, and hover is
-      the same surface as the three tooltip faults in Phase 3.
+      sprited once we get all of the overworld spriting in."* **BOTH DONE 2026-09-11.** The
+      sprite came with the phase; the hover was built ON the tooltip fixes rather than beside
+      them, since it is the same surface, which is why it waited for them. The payload names
+      every entrance in view with its NAME, GRADE and the levels inside - with ~3,150 dungeons
+      in the world an H4 and an S9 are the same purple marker until you can ask one.
 
 - [x] **SHIPPED v0.9.760-767 — the dungeon RENDERER, its sprites, and the hoverable key.**
       This replaces three separate open entries (~245 lines) that were still describing this as

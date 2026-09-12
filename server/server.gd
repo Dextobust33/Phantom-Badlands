@@ -31656,10 +31656,21 @@ func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: in
 		var dy = abs(instance.world_y - center_y)
 		if dx <= radius and dy <= radius:
 			var dungeon_data = _dungeon_data_for(instance)
+			# Enough to HOVER it. Owner 2026-09-11, agreeing the density work: *"We will also
+			# want to make sure the entrances are hoverable and sprited."* With three thousand
+			# dungeons in the world the hover is not a nicety - it is how a player tells an H4
+			# from an S9 without walking onto it and finding out.
+			var _vst: int = int(instance.get("sub_tier", 1))
+			var _vsr = DungeonDatabaseScript.get_sub_tier_level_range(int(dungeon_data.get("tier", 1)), _vst)
 			visible.append({
 				"x": instance.world_x,
 				"y": instance.world_y,
-				"color": dungeon_data.color
+				"color": dungeon_data.color,
+				"name": String(dungeon_data.get("name", "Dungeon")),
+				"tier": int(dungeon_data.get("tier", 1)),
+				"sub_tier": _vst,
+				"min_level": int(_vsr.get("min_level", 1)),
+				"max_level": int(_vsr.get("max_level", 1)),
 			})
 	return visible
 

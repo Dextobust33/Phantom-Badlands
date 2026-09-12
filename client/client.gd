@@ -18,6 +18,8 @@ const OVERWORLD_POST_CROP := 11
 ## Off falls back to the letters, and so does a build whose art is missing. There is no settings
 ## button for this yet - see the backlog; the fallback is automatic, so nobody is stranded.
 var overworld_sprites := true
+## The dungeon entrances in the current view, keyed by map cell, so a hover can name one.
+var _overworld_dungeons: Dictionary = {}
 
 ## What this BUILD can read off the wire, sent with login. The server checks it before sending
 ## anything an older build would not understand, and a client that says nothing keeps getting
@@ -37213,6 +37215,12 @@ func _on_log_meta_hover(meta) -> void:
 	# formula popup below would show the raw link text.
 	if m.begins_with("avatar_pick:"):
 		return
+	if m.begins_with("owdg:"):
+		# A dungeon entrance on the overworld map.
+		var info = _overworld_dungeons.get(m.substr(5), null)
+		if info is Dictionary:
+			_show_overworld_dungeon_hover(info)
+		return
 	if m.begins_with("tile:"):
 		# A theme tile, hovered either in the side-panel key or on the floor itself.
 		var dt := String(dungeon_data.get("dungeon_type", ""))
@@ -37255,6 +37263,24 @@ func _on_log_meta_hover(meta) -> void:
 		return
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(m)
+
+
+func _show_overworld_dungeon_hover(info: Dictionary) -> void:
+	"""Name a dungeon entrance without stepping onto it.
+
+	Under permadeath, and with the world now holding thousands of these, what matters is the
+	GRADE and the levels inside - an H4 and an S9 are the same purple marker otherwise. Uses the
+	same popup every other hover in the game uses rather than a second tooltip style."""
+	var tier := int(info.get("tier", 0))
+	var rank := int(info.get("rank", 0))
+	var lo := int(info.get("lo", 0))
+	var hi := int(info.get("hi", 0))
+	var label: String = PowerRank.label(tier, rank) if tier > 0 else "?"
+	var body := "%s  [%s]" % [String(info.get("name", "Dungeon")), label]
+	if lo > 0:
+		body += "  -  monsters Lv %d-%d" % [lo, hi]
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(body)
 
 
 func _show_dungeon_monster_hover(monster_type: String, level: int, variant_name: String = "",
@@ -45709,11 +45735,20 @@ func _overworld_display(payload: Dictionary) -> String:
 	var inside_post: bool = bool(payload.get("post", false))
 	var px: int = OVERWORLD_SPRITE_PX * 2 if inside_post else OVERWORLD_SPRITE_PX
 	var crop: int = OVERWORLD_POST_CROP if inside_post else 0
+	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
+	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With
+	# three thousand dungeons in the world this is how a player tells an H4 from an S9 without
+	# walking onto it. Same `[url=]` + `meta_hover_started` every other hover in this game uses.
+	_overworld_dungeons = payload.get("dungeons", {})
 	return MapPayload.inflate_sprites(payload, func(x: int, y: int) -> String:
 		var cell: String = _OverworldRoom.cell_path(x, y)
 		if cell == "":
 			return "  "
-		return "[img=%dx%d]%s[/img]" % [px, px, cell], crop)
+		var img := "[img=%dx%d]%s[/img]" % [px, px, cell]
+		var dkey := "%d,%d" % [x, y]
+		if _overworld_dungeons.has(dkey):
+			return "[url=owdg:%s]%s[/url]" % [dkey, img]
+		return img, crop)
 
 
 func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "") -> String:

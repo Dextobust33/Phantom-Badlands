@@ -17,6 +17,7 @@ const WorldSystemScript = preload("res://shared/world_system.gd")
 const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
 const MapPayload = preload("res://shared/map_payload.gd")
 const Room = preload("res://client/overworld_room.gd")
+const PR = preload("res://shared/power_rank.gd")
 
 var fails := 0
 func ck(ok: bool, msg: String) -> void:
@@ -47,7 +48,9 @@ func _init() -> void:
 		[{"x": 41, "y": 40, "name": "Kestrel", "in_my_party": true, "appearance_variant": "1_1",
 			"companion": {"monster_type": "Wolf", "variant_color": "#39FF14",
 				"variant_color2": "", "variant_pattern": "solid"}}],
-		[{"x": 38, "y": 41, "color": "#A335EE"}], [], [{"x": 40, "y": 38}], [{"x": 43, "y": 41}],
+		[{"x": 38, "y": 41, "color": "#A335EE", "name": "Goblin Caves", "tier": 1, "sub_tier": 4,
+			"min_level": 4, "max_level": 5}],
+		[], [{"x": 40, "y": 38}], [{"x": 43, "y": 41}],
 		explored, [], false, [])
 	var meaning: Array = MapPayload.cells(payload.get("meaning", {}))
 	var biomes: Array = MapPayload.cells(payload.get("biomes", {}))
@@ -168,6 +171,40 @@ func _init() -> void:
 		"and a companion's baked dungeon floor is cut out first")
 	ck(dsrc.substr(dsrc.find("static func cutout("), 1400).find("_background_mask(sprite_path, img)") >= 0,
 		"...by the same colour key that tints it, so the two compose")
+
+	print("
+--- a dungeon entrance can be hovered ---")
+	# With three thousand dungeons in the world, an H4 and an S9 are the same purple marker
+	# until you can ask. The server is the only side that knows which is which.
+	var dg: Dictionary = payload.get("dungeons", {})
+	ck(not dg.is_empty(), "the payload names %d dungeon entrance(s) in view" % dg.size())
+	for k in dg:
+		var d: Dictionary = dg[k]
+		ck(String(d.get("name", "")) != "", "entrance at %s has a name" % k)
+		ck(int(d.get("tier", 0)) > 0 and int(d.get("rank", 0)) > 0,
+			"...and a grade (%s%d)" % [PR.letter(int(d.get("tier", 1))), int(d.get("rank", 0))])
+		ck(int(d.get("hi", 0)) >= int(d.get("lo", 0)) and int(d.get("lo", 0)) > 0,
+			"...and the levels inside (%d-%d)" % [int(d.get("lo", 0)), int(d.get("hi", 0))])
+	# The fixture above is shaped like what `get_visible_dungeons` returns, so check the SERVER
+	# really fills those fields - otherwise this tests the fixture and nothing else.
+	var srv2 := FileAccess.get_file_as_string("res://server/server.gd")
+	var gvd_i := srv2.find("func get_visible_dungeons(")
+	var gvd := srv2.substr(gvd_i, srv2.find("
+func ", gvd_i + 10) - gvd_i)
+	for field in ['"name":', '"tier":', '"sub_tier":', '"min_level":', '"max_level":']:
+		ck(gvd.find(field) >= 0, "get_visible_dungeons sends %s" % field.replace('"', "").replace(":", ""))
+
+	var cli2 := FileAccess.get_file_as_string("res://client/client.gd")
+	ck(cli2.find('return "[url=owdg:%s]%s[/url]" % [dkey, img]') >= 0,
+		"the client wraps an entrance cell in a url, which is what makes it hoverable")
+	ck(cli2.find('if m.begins_with("owdg:"):') >= 0, "and handles that hover")
+	ck(cli2.find("func _show_overworld_dungeon_hover(") >= 0, "...through one function")
+	var hov_i := cli2.find("func _show_overworld_dungeon_hover(")
+	var hov := cli2.substr(hov_i, cli2.find("
+func ", hov_i + 10) - hov_i)
+	ck(hov.find("PowerRank.label(tier, rank)") >= 0,
+		"...which shows the GRADE, the thing that tells an H4 from an S9")
+	ck(hov.find("monsters Lv %d-%d") >= 0, "...and the levels inside it")
 
 	print("
 --- and every fallback lands on the text map ---")
