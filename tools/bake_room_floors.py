@@ -55,6 +55,19 @@ FLOORS = {
     # Its only cells that pass both gates are bright red and orange, which are roof tiles and
     # carpets rather than ground. One fewer pack beats a forced bad choice.
     'cozy_home':       [(4, 11)],                          # timber
+    # 2026-09-12 - two more packs, found by `tools/scan_room_floor_candidates.py`, which applies
+    # THESE gates (imported, not restated) to the twelve packs that were unzipped and unused.
+    # Six of the seven packs above bake a single tile, so "each room picks its own look" was
+    # seven looks for a whole dungeon. Owner: *"If we need more variety we can still look at the
+    # other sprite packs we have for more Floors, walls, and decor."*
+    #
+    # The scan produced 40 candidates and the RENDER threw most of them out, which is the step
+    # this file already warns cannot be skipped: the survivors were largely solid palette
+    # SWATCHES (pure teal, black, white) and, among the textured ones, roof tiles, tree trunks,
+    # planks and shadow. `beach_ocean_and_shore` reproduced the trap recorded above word for
+    # word - its best textured candidate is WATER.
+    'miners_cave':     [(3, 3), (6, 2)],                   # speckled cave rock + mauve stone
+    'red_rock_desert': [(2, 1)],                           # sandstone paving
 }
 
 

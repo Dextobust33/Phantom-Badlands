@@ -215,7 +215,7 @@ properly once I get them."* They were clearing; they did not LOOK it. Depleted c
 
 **Client-only: the live server binary from v0.9.773 is still correct and was not redeployed.**
 
-- [ ] **OPEN, and taken out by this fix: map hover and click-to-inspect for players and
+- [x] **DONE v0.9.778 — restored on the `[url=]` mechanism.** **OPEN, and taken out by this fix: map hover and click-to-inspect for players and
       companions.** The overlay that was stood down also carried them. The mechanism to restore
       it already exists and is proven - the dungeon-entrance hover wraps a map cell in `[url=]`
       and the payload carries what it needs. Same shape, for `!other` cells and the figure that
@@ -1354,7 +1354,11 @@ bucket, neither of which needed a single line of client code.
       zero disagreements; making the lookup visit one bucket instead of four produces 320.
       **Server-side only: needs a deploy, no client change, nothing visual.**
 
-- [ ] **What is LEFT in the 15.6 ms, if it ever needs attacking again.** The minimap is still
+- [x] **DONE v0.9.776 — the minimap was the remaining cost, and it had a 7x in it after all.**
+      6.9-7.6 ms a move -> 0.9 ms standing, 1.4 ms walking. Snapped sample lattice + a per-cell
+      glyph memo keyed by WORLD coordinate (shared by every player, invalidated by
+      `chunk_manager.tile_revision`), and markers scattered into their cells rather than all 861
+      cells asking whether a marker is there. Was: the minimap is still
       7.4 ms of it and is now dominated by its own 861 `get_tile` + biome-colour + BBCode string
       work, not by anything with an obvious 10x in it. The map grid is 4.7 KB of the 25.6 KB on
       the wire; the minimap is most of the rest. Phase 1 below is what removes that class of
@@ -2109,7 +2113,21 @@ does not exist in the interiors case at all.
            look, needs no wall art at all, and the room mask already exists. Note the repo rule
            against `color=` on floor-backed sprites — the rim is not floor-backed, but the art
            gate scans for that pattern and would need to know the difference.
-- [ ] **More variety when it is wanted: the OTHER packs, and MULTI-TILE decor** (owner,
+- [~] **MORE PACKS DONE 2026-09-12 (7 -> 9, 10 baked tiles -> 13). MULTI-TILE DECOR still open.**
+      `tools/scan_room_floor_candidates.py` is the missing half of the bake script: it applies
+      that script's OWN gates (imported, never restated) to the twelve packs that were unzipped
+      and unused, ranks by texture and renders every survivor beside the wall rim.
+      It produced 40 candidates and **the render threw most of them out**, which is the step the
+      bake script warns cannot be skipped: most survivors were solid palette SWATCHES (pure teal,
+      black, white) and the textured ones were roof tiles, tree trunks, planks and shadow.
+      `beach_ocean_and_shore` reproduced the recorded trap word for word - its best textured
+      candidate is WATER.
+      Added: **`miners_cave`** (two variants - speckled cave rock and mauve stone, the most
+      dungeon-appropriate art in the whole set) and **`red_rock_desert`** (sandstone paving).
+      Both pass the bake's wall and corridor gates and were looked at as room blocks against the
+      rim. `tools/probe/room_pack_pool.gd` holds the hand-written `ROOM_PACKS` list against the
+      baked FILES in both directions - a pack listed but not baked draws nothing, a pack baked
+      but not listed is art no player ever sees. Was: **More variety when it is wanted: the OTHER packs, and MULTI-TILE decor** (owner,
       2026-09-10, after the three layers landed): *"If we need more variety we can still look at
       the other sprite packs we have for more Floors, walls, and decor or even expand to
       multi-tile decor."*
@@ -2171,7 +2189,17 @@ does not exist in the interiors case at all.
       floor-loot KIND (bracketed like other pickups), a passive creature you catch, or a tile you
       interact with? `farmlands_v3` has 12 chicken frames, so there is art for any of the three.
 
-- [ ] **Walls only where they explain the space** (owner, 2026-09-10): *"It may be better if only
+- [x] **DONE — and DECIDED ON SCREEN, which is better than this entry proposed.**
+      `client.gd::_dungeon_supports_floor` draws rock where the cell ABOVE is floor, so the rock
+      sits UNDER the ground you walk on and a corridor reads as held up rather than outlined.
+      `tools/probe/wall_samples.gd` renders three candidate rules on the SAME generated floor
+      (rendering three different floors would have compared the floors) — 78 rock cells for the
+      old all-sides rim against 37 and 42 for the two directional rules — and the owner picked
+      from the pictures: *"The bottom one looks the best out of those."*
+      Note the rule's recorded limit, which is an ASSET gap not a rule gap: *"unless we are
+      planning to use something different to make the floors look supported from below."* A
+      dedicated wall FACE below a floor edge would do this better, and none of the pool packs
+      ship one. Was: **Walls only where they explain the space** (owner, 2026-09-10): *"It may be better if only
       the spaces below a corridor show those (almost as if they are holding up the corridors) and
       then walls would only be placed above spaces in a room, helping people differentiate the
       rooms from the corridors even further."*
@@ -2311,7 +2339,12 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 
-- [ ] **HOVER TOOLTIPS: three faults, reported live 2026-09-11 by the owner.** All three are the
+- [x] **DONE v0.9.773 — all three, and two of them were one cause as predicted.** Nothing owned
+      the tooltip's lifetime: `_wire_hover(rtl)` now connects hover-in and hover-out as a pair
+      across all 8 surfaces (0 hand-wired connections remain), the panel watches its own
+      `visibility_changed` and closes the popup, placement reads the mouse in the POPUP's
+      coordinate space after a layout frame, and APEX/ELITE are wrapped as hoverable terms.
+      Probe: `tools/probe/hover_lifetime.gd`. Was: **HOVER TOOLTIPS: three faults, reported live 2026-09-11 by the owner.** All three are the
       same surface and should be fixed together, because two of them are almost certainly one
       cause (nothing owns the tooltip's lifetime or its placement).
       1. **A tooltip gets STUCK on screen and never leaves.** Owner: *"I've got a Thorned -

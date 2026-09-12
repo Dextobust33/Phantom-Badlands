@@ -107,9 +107,18 @@ const CAVE_ROCK := Vector2i(4, 4)
 const ROOM_FLOOR_DIR := "res://client/sprites/room_floor32/"
 
 ## The packs in the pool. Order is not meaningful; a room hashes into it.
+## 2026-09-12 - miners_cave and red_rock_desert added, which is 7 packs -> 9 and, because
+## miners_cave bakes two variants, 10 baked tiles -> 13. Chosen by
+## `tools/scan_room_floor_candidates.py` applying the bake script's own gates to the twelve
+## unzipped-but-unused packs, then RENDERED and looked at - which threw out most of what the
+## measurement liked, including a `beach_ocean_and_shore` tile that is water.
+##
+## This list is asserted against the baked FILES by `tools/probe/room_pack_pool.gd`, because a
+## hand-kept list beside a generated directory is the "one value, two places" shape that this
+## file already avoids for the variant COUNT.
 const ROOM_PACKS := [
-	"cozy_home", "farmlands_v3", "green_dungeon", "red_desert_ruin",
-	"shroom_chasm", "the_underworld", "winter_forest",
+	"cozy_home", "farmlands_v3", "green_dungeon", "miners_cave", "red_desert_ruin",
+	"red_rock_desert", "shroom_chasm", "the_underworld", "winter_forest",
 ]
 
 ## pack -> how many variant tiles it baked. Counted from the FILES rather than written down a
