@@ -207,6 +207,45 @@ func ", hov_i + 10) - hov_i)
 	ck(hov.find("monsters Lv %d-%d") >= 0, "...and the levels inside it")
 
 	print("
+--- the OLD text-map overlay must not fight the composed map ---")
+	# Four reports, one cause. `_sync_map_sprites_overlay` places the player and companion
+	# letters from FONT metrics - char width times two, the font line height, a sprite size
+	# derived from the font size. None of that describes a grid of 26-pixel images, so in sprite
+	# mode it drew the player a row off and companions as bare letters, and everything else
+	# looked shifted relative to where the player appeared to be.
+	var cli3 := FileAccess.get_file_as_string("res://client/client.gd")
+	var sync_i := cli3.find("func _sync_map_sprites_overlay(")
+	var sync := cli3.substr(sync_i, cli3.find("
+func ", sync_i + 10) - sync_i)
+	ck(sync.find("if overworld_sprites and _OverworldRoom.available() and not dungeon_mode:") >= 0,
+		"the overlay stands down when the map is art")
+	var guard := sync.substr(sync.find("if overworld_sprites and _OverworldRoom"), 400)
+	ck(guard.find("local.visible = false") >= 0 and guard.find("_remote_companion_pool") >= 0,
+		"...hiding the player, the companion letters and every remote figure")
+	ck(guard.find("return") >= 0, "...and returns before it computes a single font metric")
+
+	print("
+--- and a post is no longer cropped ---")
+	# A post is 17-20 tiles across in a 23-tile view: there is nothing to crop away, and the crop
+	# was cutting off the walls and the doors.
+	var disp2_i := cli3.find("func _overworld_display(")
+	var disp2 := cli3.substr(disp2_i, cli3.find("
+func ", disp2_i + 10) - disp2_i)
+	ck(disp2.find("var crop: int = 0") >= 0, "the crop is off")
+	ck(disp2.find("OVERWORLD_SPRITE_PX * 2") < 0, "and so is the double-size zoom that needed it")
+	# The thing that actually made a post read as a room is the floor, and that stays.
+	var post_payload2: Dictionary = ws.build_map_payload(
+		int(cm.get_npc_posts()[0].get("x", 0)), int(cm.get_npc_posts()[0].get("y", 0)),
+		11, [], [], [], [], [], {}, [], false, [])
+	var pb2: Array = MapPayload.cells(post_payload2.get("biomes", {}))
+	var on_post := 0
+	for row in pb2:
+		for b in row:
+			if String(b) == "post":
+				on_post += 1
+	ck(on_post > 200, "%d of 529 cells stand on the post's own floor, which is what reads as a room" % on_post)
+
+	print("
 --- and every fallback lands on the text map ---")
 	# A map that will not draw is worse than a map made of letters.
 	ck(MapPayload.inflate_sprites({}, func(_x, _y): return "x") == "",

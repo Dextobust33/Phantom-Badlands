@@ -30969,7 +30969,12 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.773[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.774[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE FIGURES ON THE NEW MAP WERE IN THE WRONG PLACE.[/color] Your character was drawn by the OLD text-map code, which positions things by counting letters — so on the new picture map [b]you stood about a row off[/b], and everything around you looked shifted because of it. Your companion was still a bare letter. Both are drawn into the map itself now, at the right square and the right size.")
+	display_game("  [color=#1EFF00]◆ Trading posts stopped hiding their own doors.[/color] Stepping inside zoomed the view to the middle of the room — but a post is 17-20 tiles across in a 23-tile view, so there was nothing spare to crop and the [b]walls and doors were cut off[/b]. No crop now; the post still reads as a room because it stands on its own floor.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.773[/color]")
 	display_game("  [color=#FF8000]★ THE OVERWORLD IS DRAWN, NOT SPELLED.[/color] The map was coloured letters. It is now [b]art[/b] — ground that changes with the country you are in, and a real sprite for every tree, rock, ore vein, herb, flower, reed, berry, mushroom, cactus and ice bloom you can gather. [b]You stand on it as your own character[/b], other players as theirs, and everyone[color=#FFFFFF]\'[/color]s companion walks behind them wearing its own colours. Turn it off under [b]Settings → Game Settings[/b] if you prefer the letters.")
 	display_game("  [color=#FF8000]★ A TRADING POST IS A ROOM NOW.[/color] Step inside and the view [b]zooms[/b] — the forge, the market, the healer, the board and the stable all drawn on the post[color=#FFFFFF]\'[/color]s own floor instead of a letter on the dirt outside.")
 	display_game("  [color=#FF8000]★ FIFTEEN TIMES AS MANY DUNGEONS, AND THEY BELONG WHERE THEY STAND.[/color] A [b]G2[/b] holding level 7-9 monsters could sit in level 15-17 wilderness, because a dungeon[color=#FFFFFF]\'[/color]s grade had nothing to do with its surroundings. Now the LAND decides: a dungeon is placed where the world already reaches its levels, and [b]a Goblin Caves far from home is a high grade with high-level goblins in it[/b]. The count went from 200 to 3,000 and they now cover the whole world instead of the middle 4% of it. [b]Hover any entrance[/b] to read its grade and the levels inside before you commit.")
@@ -40917,6 +40922,24 @@ func _sync_map_sprites_overlay() -> void:
 	if map_display.has_method("get_content_height"):
 		map_display.get_content_height()
 
+	# When the map is ART, the player and every companion are already composed INTO the image at
+	# the right cell and the right scale. This overlay places them from FONT metrics - character
+	# width times two, the font's line height, a sprite size derived from the font size - none of
+	# which describe a grid of 26-pixel images. Owner 2026-09-12, all four reports and one cause:
+	# *"The zoom in on posts doesn't increase the players sprite size"*, *"my companion on the
+	# overworld is also just showing a K"*, and *"sprites for everything inside of the post are
+	# drawn 1 space too low... I have to try to walk into the space above them to interact"* -
+	# that last one is this overlay drawing YOU a row off, so everything else looked shifted
+	# relative to you.
+	if overworld_sprites and _OverworldRoom.available() and not dungeon_mode:
+		local.visible = false
+		if _local_companion_label:
+			_local_companion_label.visible = false
+		for slot in _remote_sprite_pool:
+			slot.visible = false
+		for lbl in _remote_companion_pool:
+			lbl.visible = false
+		return
 	var font = map_display.get_theme_font("normal_font")
 	var font_size = map_display.get_theme_font_size("normal_font_size")
 	if font == null or font_size <= 0:
@@ -45729,12 +45752,16 @@ func _overworld_display(payload: Dictionary) -> String:
 		figures["%d,%d" % [mid, mid]] = mine
 	if not _OverworldRoom.build(meaning, biomes, figures):
 		return MapPayload.inflate(payload)
-	# Inside an NPC post, draw the middle of the view at double size. A post is a ROOM - the
-	# owner asked for it to read as one - and you cannot see past its walls, so cropping to the
-	# centre costs nothing and keeps the panel exactly as wide as it was.
-	var inside_post: bool = bool(payload.get("post", false))
-	var px: int = OVERWORLD_SPRITE_PX * 2 if inside_post else OVERWORLD_SPRITE_PX
-	var crop: int = OVERWORLD_POST_CROP if inside_post else 0
+	# NO CROP INSIDE A POST, and the reason is a measurement rather than a preference. The zoom
+	# shipped as "crop to the middle 11 and draw them twice as big", on the assumption that you
+	# cannot see past a post's walls so the edges were wasted. Measured afterwards: a post is
+	# 17-20 tiles across in a 23-tile view. There is nothing to crop away - the crop was cutting
+	# off the walls and the DOORS. Owner: *"The post doesn't seem to have obvious doors, seems
+	# like you have to walk out and in through part of the wall."*
+	# A post already reads as a room because it stands on its own floor, which is the part that
+	# worked.
+	var px: int = OVERWORLD_SPRITE_PX
+	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
 	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With
 	# three thousand dungeons in the world this is how a player tells an H4 from an S9 without
