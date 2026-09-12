@@ -93,6 +93,17 @@ CUTS = {
     'tile:blacksmith':  ('green_village', 7, 13),
     'tile:healer':      ('green_village', 8, 13),
     'tile:hedge':       ('green_village', 5, 8),
+
+    # --- the rest of the post decor, from the interiors pack ------------------------------
+    'tile:lectern':  ('interiors', 3, 18),
+    'tile:mosaic':   ('interiors', 0, 27),
+    'tile:pylon':    ('interiors', 9, 22),
+    'tile:statue':   ('interiors', 9, 24),
+    'tile:easel':    ('interiors', 4, 19),
+    'tile:pedestal': ('interiors', 3, 25),
+    'tile:bench':    ('interiors', 4, 11, (1, 2)),
+    'tile:beehive':  ('honey_bee', 6, 0),
+    'tile:throne':   ('honey_bee', 6, 10, (2, 1)),
     'tile:floor':      ('miners_cave', 2, 6),
     'tile:water':      ('beach_ocean_and_shore', 1, 27),
     'tile:deep_water': ('beach_ocean_and_shore', 3, 27),
