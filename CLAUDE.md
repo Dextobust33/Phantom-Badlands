@@ -147,6 +147,12 @@ produced nine instrument defects and two genuine game bugs. The recurring shapes
   early unless it is the `--script` Godot was launched with.
 - **Run probes ONE AT A TIME.** Each headless Godot loads the whole project; parallel batches of
   them hit the 10-minute tool cap and stalled a session on 2026-09-11.
+- **A probe whose script fails to PARSE never exits.** Headless Godot prints the parse error and
+  then sits there spinning, because the `SceneTree` script that would have called `quit()` never
+  loaded. Backgrounded, that is a CPU-eating zombie you will not notice: 2026-09-11 left two of
+  them running for 30 and 167 minutes, competing with a calibration run for the same cores.
+  **If a probe seems slow, check `Get-Process godot*` before believing the clock** - a run that
+  is genuinely working shows CPU time climbing in step with wall time, and a zombie does not.
 
 **And the counterpart: check the CARD and the POLICY before blaming the class.** Twice in one day
 the class was fine — `overload` in the Sorcerer's deck (20% max HP a cast) was halving its survival,
