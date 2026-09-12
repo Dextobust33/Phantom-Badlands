@@ -10,123 +10,57 @@ common way to lose a session.
 
 ---
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after v0.9.776)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after v0.9.779)
 
-**v0.9.776 IS LIVE.** Server deployed and verified by hashing the RUNNING process against the
-local build (`f63e3ece…`, identical). Seven assets on the tag; Windows gate passed at 0.9.776,
-Linux gave its documented SKIP.
+**v0.9.779 IS LIVE.** Server deployed and verified by hashing the RUNNING process (`4364258b…`,
+identical); seven assets on the tag; Windows gate passed at 0.9.779, Linux gave its documented
+SKIP. The calibration chain is COMPLETE and current for the first time since the 773 arc.
 
-### ✔ `rolecal` IS DONE AND SHIPPED as v0.9.777 (2026-09-12).
+### What shipped, and what it leaves open
 
-21 of 21 rows on target, 0 saturated. `anchors` / `species_power` / `target_turns` untouched, so
-the layers stayed orthogonal. The curve on disk is now complete for the first time since the
-773 arc. Server deployed and verified by hashing the RUNNING process (`c78c293d...`, identical); seven
-assets on the tag; Windows gate passed at 0.9.777.
+- **Resource costs doubled past the early game.** The cost table documents a band of 6-10 casts
+  per full bar and was delivering 20.5 at L20, 16.3 at L100, 14.5 at L1000; across 630 fights not
+  one turn fell back to a basic attack. Early game untouched by construction (the flat ceiling
+  still wins for 9 of 9 classes at L1).
+- **The whole chain re-run** — speciescal, refcal, rolecal — 21 of 21 role rows on target, none
+  saturated, each layer moving only its own quantity.
+- **Room floor pool 7 packs -> 9.**
 
-What changed, and it is two different things:
-- **L1 roughly doubled**: str_mult 3.79->7.08 empowered, 3.48->7.80 elite, 2.76->5.62 boss.
-  Elite at L1 was winning 99% against a 40% target before any of this.
-- **Mid and late game came DOWN 17-50%** - elites and bosses had been sized against the base
-  curve that `refcal` has since corrected.
+**STILL OPEN, and both are owner judgement rather than measurement:**
+1. **Resources bite but do not run DRY** — no class is ever forced to a basic attack. Is a
+   quarter-bar at the end of a long fight far enough? Feel it in play.
+2. **Engine cycles sit at ~1.75 at high level against a target of 2**, and ~1.0 at L20. Cost does
+   not touch engine build RATE, so this needs a different lever (engine gain, or `ROLE_TARGETS`).
+   Another player-side change = another full chain. **Do not start it without deciding it is
+   worth ~2 hours.**
+3. **Death rate read 1.7% at L2500 and L5000** against a ~0.3% design target, 0.0% everywhere
+   else. Two deaths at that sample size, so not yet a signal - but the chain steers by WIN rate
+   and is structurally blind to deaths, so this is the column to watch in play.
 
-**The trap it nearly shipped with.** The first completed run left L1 at exactly
-`seed x 1.35^(0.75*6)` = seed x 3.859 for all three roles, bit-identical to the previous
-calibration. Six identical numbers read as convergence; they were the per-pass clamp binding on
-every pass. Fixed by `passes` 6 -> 12 (reach 14.9x) after `tools/probe/rolecal_l1_reach.gd`
-measured that L1 needs ~7x and that `str_mult` really is the knob there. Rows now print
-`clamped=N/12` and flag `SATURATED`, so a loop out of travel cannot look like one that converged.
+### ⚑ THE RULE THAT SAVED THE MOST TIME THIS SESSION
 
-**An adaptive early exit was tried and reverted the same hour** - it stopped on a single n=40
-batch reading in-band, and two such batches differ by ~11pp, so it fired on noise. Fixed passes
-also keep runs comparable, which is how a real move is told from scatter (run1 vs run3 on the
-already-converged levels: median ratio 1.003).
+Owner: *"Ensure you're checking before building each item to ensure we aren't recreating things
+already done."* Counting the backlog found **five** items already shipped or already decided —
+the minimap cost (v0.9.776), map hover/click (v0.9.778), three hover-tooltip faults (v0.9.773),
+the directional wall rim (built AND chosen on screen from three rendered candidates), and a
+"tilemap_pack is unused" note that was simply wrong. **Run the probe, call the function, check
+the changelog — and only then trust the entry.** See [[feedback_verify_before_building]].
 
-**And the "it ran too long" question is answered:** 45 minutes was `DEFAULT_BUDGET_SECONDS`
-= 2700, the sim's own watchdog, which aborts printing "results are INCOMPLETE". The abandoned run
-would have produced nothing either way. `tools/probe/rolecal_projection.gd` now times one batch
-per level (1/21 of the run) so the budget is set from a measurement.
+### Count
 
-### ⚑ NEXT: fight LENGTH and the resource economy (owner direction, 2026-09-12)
+**46 open, 7 partial, 96 done** (2026-09-12, after v0.9.779). Largest arcs: the dungeon arc (14),
+combat UX debt (6), later/unscheduled (5), dungeon rooms (4).
 
-Answering the question v0.9.777 raised. Owner, verbatim:
+## v0.9.779 SHIPPED (2026-09-12) -- the resource economy, and the curve re-measured behind it
 
-> Fight length should normally be long enough for you to engage with your engine a couple of
-> times if you're fighting enemies of your level. It's okay if shorter in the lower levels as
-> players are still learning their engines and characters. Ability resource costs likely need
-> looked at as well to avoid resource costs being too free. If a fight runs long you should be
-> struggling a bit for resources. I'm not worried about health cost necessarily if we are
-> tracking win loss it should help account for that.
-
-So, as targets:
-- **Same-level fight = about TWO engine cycles.** Not a turn count pulled from the air - the
-  number follows from how long a cycle takes for that class, which differs by engine SHAPE
-  (Momentum / Focus / Read). Measure the cycle first, then the fight.
-- **Low levels may be shorter** and that is intended, not a defect to correct. Players are still
-  learning the engine.
-- **Resources should bind.** A long fight should leave you short. Right now costs may be close to
-  free, which would make the resource bar decoration rather than a decision.
-- **HP cost is NOT a target.** Win/loss already accounts for it. Do not tune against the cost
-  column.
-
-**This does NOT contradict [[feedback_length_is_not_the_goal]]** ("never pad a fight to make it
-last"). Length is the CONSEQUENCE of engine cycles and resource pressure; it is not to be bought
-by inflating monster HP. If the measured fix is "give the monster more health", it is the wrong
-fix.
-
-**Order of work (measurement before tuning):**
-1. How long is ONE engine cycle, per class? Build-to-spend, in turns.
-2. How long is a same-level fight now, per class, at several levels?
-3. Does resource EVER bind? Count turns where the class could not afford the card it wanted, and
-   the reserve it ends a fight holding. `lowlevel` and `classes` already probe near this.
-4. Only then decide whether the lever is `TARGET_TURNS_NORMAL` (currently 5.0), per-class costs,
-   regen, or the cards themselves. **Per-class, not global** - a global change is cancelled by the
-   next refit (see CLAUDE.md).
-5. Any change here is player-side, so it invalidates the curve: re-run the whole chain
-   (`speciescal` -> `refcal` -> `rolecal`) afterwards, ~25 min plus rolecal's hour.
-
-Related and already known: [[project_resource_economy_scaling]] - costs are flat and capped, fully
-so for Warrior and Trickster, which is exactly the shape that makes resources stop binding as the
-game goes on.
-
-### ⚑ OPEN QUESTION this raised - for the owner, not for me to decide
-
-Win rate is on target everywhere, but **fight LENGTH and COST are not, and the chain cannot steer
-by them**. At L1 the measured fights are 3.1-4.1 turns against design targets of 7/9/14, costing
-71-84% of the player's health bar against targets of 55/65/80. Across the whole table cost runs
-66-92%. So a role encounter is currently SHORT and SWINGY rather than long and attritional.
-
-Under permadeath that is a death-rate question, and `refcal` REPORTS death rate but cannot steer
-by it (see CLAUDE.md). Worth deciding deliberately: is a 3-turn elite that takes three quarters
-of your bar the intended shape? If not, the lever is `ROLE_TARGETS` / the base curve, not
-`role_multipliers`.
-
-### The lesson from 775/776, which cost three releases between them
-
-Three separate faults, one shape: **a check that READS THE SOURCE cannot see whether the code
-runs.** An invisible player (indentation), a depleted-node fix that never reached its hotzone
-branch, and a minimap sized by two different numbers all passed source-reading probes.
-
-The replacements all EXECUTE and measure output, and each was proven by re-injecting its fault:
-- `overworld_render.gd` composes twice and diffs the centre cell's pixels.
-- `depleted_looks_spent.gd` depletes a real node and diffs the meaning grid, then the pixels —
-  **with a control** (a fresh ore vein against a fresh tree), because a renderer drawing nothing
-  but ground would otherwise pass on the dimming alone.
-- `minimap_golden.gd` holds a reference copy of the old per-cell logic and compares character for
-  character.
-
-**And the control must differ in ONE thing.** The first pixel check in 775 passed against broken
-code because supplying a figure also suppressed the cell's marker glyph — 175 pixels moved with
-nobody drawn.
-
-### Still open from the overworld arc
-
-- ~~Map hover / click-to-inspect for players and companions~~ **DONE, v0.9.778.**
-- Older clients do not know the `!hotdepleted:` meaning and draw such a node without its red
-  hotzone warning until they update. Self-limiting; no action unless it is still around in a few
-  releases.
-- The minimap now costs 0.9ms standing / 1.4ms walking (was 6.9 / 8.9). If a further cut is ever
-  wanted, the remaining cost is the 861 `PackedStringArray` appends and the marker scatter, not
-  terrain.
+- `cost_percent` doubled uniformly (holds relative card pricing, so it does not re-open which
+  card is worth casting). Casts per full bar 20.5 -> 10.6 at L20, 16.3 -> 13.0 at L100,
+  14.5 -> 11.2 at L1000. Lowest resource in a fight 50-68% -> 26-47%.
+- Rejected on measurement, not taste: the sim POLICY (it already spends max-affordable up to the
+  ceiling, so it pays what the game charges) and `GEAR_COST_SHARE` (bites hardest at high gear,
+  but the slack was worst at L20).
+- Full chain re-run once each; 21 of 21 rolecal rows on target, 0 saturated.
+- Room floor pool 7 -> 9 packs, 10 -> 13 baked tiles.
 
 ## v0.9.778 SHIPPED (2026-09-12) -- hover and click-to-inspect for people on the map
 
