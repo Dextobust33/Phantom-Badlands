@@ -281,6 +281,39 @@ different, so this list is entirely about "did anything move".
 - [ ] **Old client against the new server**: keep a previous build and log in with it. It must
       still get a map. This is the one that cannot be checked any other way.
 
+## 12. The dungeon arc  *(one client + a server deploy, 2026-09-11, UNRELEASED)*
+
+Seven changes that are really one: dungeons now stand in country that matches them, there are
+3,000 of them instead of 200, and a dungeon type no longer decides its own difficulty.
+
+- [ ] **Walk.** You should meet a dungeon every minute or two of travel, roughly one per hundred
+      tiles, anywhere in the world - including far out, where there used to be none at all. Does
+      that feel right, or do they start to feel like wallpaper?
+- [ ] **Check a few against their surroundings.** The grade on the entrance panel should match
+      the wilderness around it. Standing in level 16 country should not produce a G2.
+- [ ] **Look for an odd pairing.** A Goblin Caves far from home should now be a high grade with
+      high-level goblins in it. That is the point, but it is the thing most likely to read as a
+      bug, so say if it does.
+- [ ] **Go in.** Most monsters are the dungeon's own species, some are neighbours of the same
+      grade, and the map letter should match whichever one you are looking at. The boss is
+      always the dungeon's own.
+- [ ] **Clear one.** The guaranteed egg is still the dungeon's own creature. Floor eggs may be
+      any species you actually met down there.
+- [ ] **Compare a low rank with a high one for EGGS.** Rank 1 now averages a rank 1.5 egg and
+      rank 9 averages 8.0, where both used to average 4.5. Low-rank dungeons are meaningfully
+      worse for eggs now. Is that too harsh?
+- [ ] **Rarity.** Common dungeon types should turn up far more often than rare ones, and a rank 9
+      should be scarcer than a rank 1 in the same country.
+- [ ] **Server feel.** Moving around should be no slower than before despite fifteen times as
+      many dungeons. Watch for hitches when a fresh world fills.
+- [ ] **Log check:** `[LAZY-DUNGEON]` should NEVER appear for a `world_dungeon_*`. If it does,
+      something reads a world dungeon's interior and the caller needs finding.
+- [ ] **Log out inside a personal dungeon, come back within half an hour** - your run is still
+      there. Leave one longer than that, or die in one, and it should be gone.
+- [ ] **COMPANIONS: a grade now beats the grade below it.** A companion at a high rank of a low
+      grade got weaker and a high-grade one got stronger. Check a familiar companion still feels
+      reasonable, and that the monster curve re-calibration did not make ordinary fights swingy.
+
 ## Order I would go in
 
 1. **Arrow movement** — highest risk, and independent of everything else.

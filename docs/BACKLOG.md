@@ -32,14 +32,32 @@ ceiling, since it removes the most expensive per-player work the server does.
 - **The overworld map as DATA** (Phase 2.95 PHASE 1). 28.2 KB a step becomes 3.4 KB, with the
   display string rebuilt on the client byte for byte. **Server deploy AND client release, and
   the old-client path is the thing to check by hand** — `map_payload.gd`, `map_payload_golden.gd`.
-- **Personal dungeons get cleaned up.** A 30-minute grace after their owner goes offline, a
-  24-hour age cap, and an immediate drop on permadeath. Server-side, **needs a DEPLOY** -
-  `personal_dungeon_cleanup.gd`.
-- **Dungeon markers stop building rooms nobody enters.** A world dungeon no longer generates its
-  floors and ~70 monsters at spawn; that happens on demand, and logs when it does so the claim is
-  proven rather than assumed. Server-side, **needs a DEPLOY** - `lazy_dungeon_interior.gd`.
-- **Floor eggs follow the dungeon rank.** Mean egg rank goes from a flat 4.5 everywhere to 1.5 at
-  rank 1 and 8.0 at rank 9. Server-side, **needs a DEPLOY** - `floor_egg_rank.gd`.
+**THE DUNGEON ARC (2026-09-11) is all unreleased and all server-side except the last line.**
+It is one arc and wants ONE deploy and one playtest, not six:
+- **Dungeons stand in country that matches them.** Placement follows the land, and the GRADE is
+  read off the ground rather than off the type - which is what makes an A5 Goblin Dungeon
+  possible. 1,489 of 1,500 sampled spawns land inside their own level band, none further than two
+  levels off. `dungeon_placement.gd`, `dungeon_grade_from_land.gd`.
+- **There are 3,000 of them instead of 200**, spread over the whole world rather than the inner
+  4%, at about one per 100 tiles walked. Affordable because dungeons are indexed by position: a
+  map-radius query is 1.8us against 117us scanning. `dungeon_index.gd`.
+- **Dungeons have a rarity.** `spawn_weight`, authored on all 53 types and read by nothing since
+  it was written, now picks the type; a higher rank is rarer than a lower one in the same country.
+- **A dungeon holds more than one kind of monster** - three in four its own species, the rest
+  neighbours of the same grade. The boss and the guaranteed egg stay its own. `dungeon_species_mix.gd`.
+- **Floor eggs follow the dungeon.** By RANK (mean 4.5 flat before, now 1.5 at rank 1 to 8.0 at
+  rank 9) and by SPECIES (whatever actually spawned down there). `floor_egg_rank.gd`.
+- **Dungeon markers stop building rooms nobody enters**, and say so in the log if anything ever
+  reads one. `lazy_dungeon_interior.gd`.
+- **Personal dungeons get cleaned up** - a 30-minute grace after their owner goes offline, a
+  24-hour cap, and an immediate drop on permadeath. `personal_dungeon_cleanup.gd`.
+- **COMPANIONS: a grade finally beats the grade below it.** One ladder for HP, owner bonuses,
+  abilities and damage. This is a PLAYER-POWER change, so the monster curve was re-calibrated
+  after it. `companion_ladder.gd`.
+**What to watch in play:** the world should feel full of dungeons without feeling like wallpaper;
+a dungeon's grade should match its surroundings; low-rank dungeons are now worse for eggs and
+high-rank ones better; and companions at a high rank of a low grade got weaker while high-grade
+ones got stronger.
 - **Cosmetic VARIANTS on sprites.** A lime wolf is lime in the dungeon and on its Sanctuary
   cushion, not only in its ASCII art; eleven patterns, and the baked floor under the sprite is
   left alone — `monster_tint.gd`. Client-side, nothing to deploy.
