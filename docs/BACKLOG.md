@@ -78,15 +78,30 @@ nobody drawn.
 
 ### Still open from the overworld arc
 
-- **Map hover / click-to-inspect for players and companions**, lost when the old overlay stood
-  down in 774. The dungeon-entrance `[url=owdg:...]` mechanism is the proven replacement, and it
-  is the next thing to do in this arc.
+- ~~Map hover / click-to-inspect for players and companions~~ **DONE, v0.9.778.**
 - Older clients do not know the `!hotdepleted:` meaning and draw such a node without its red
   hotzone warning until they update. Self-limiting; no action unless it is still around in a few
   releases.
 - The minimap now costs 0.9ms standing / 1.4ms walking (was 6.9 / 8.9). If a further cut is ever
   wanted, the remaining cost is the 861 `PackedStringArray` appends and the marker scatter, not
   terrain.
+
+## v0.9.778 SHIPPED (2026-09-12) -- hover and click-to-inspect for people on the map
+
+The last thing the overworld sprite arc still owed. Restored on `[url=]` + `meta_hover_started`,
+the dungeon-entrance mechanism, because a composed image has no Controls to hang `mouse_entered`
+off. `map_display` had hover connected and `meta_clicked` NEVER connected, which is why clicking
+could not come back until this.
+
+- `_show_map_tooltip` accepts a NULL anchor and follows the cursor.
+- **The payload now names WHO is in each figure cell.** The first version re-derived the cell on
+  the client with its own copy of the server's grid mapping - two copies of one calculation,
+  failing as a hover that confidently names the wrong person. `_nearby_player_at_cell` is gone.
+- `map_display.meta_underlined = false` - the url underline was slicing through the player and
+  companion at knee height now that figures draw at 43px in a 26px line. **Found in a screenshot,
+  not by a probe.**
+- Three stale SOURCE-READING checks in `overworld_render.gd` deleted rather than re-synced: they
+  broke on renames while the behaviour was correct, and both areas now have probes that execute.
 
 ## v0.9.777 SHIPPED (2026-09-12) -- the role layer, measured against the current player
 
