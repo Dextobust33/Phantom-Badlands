@@ -10,75 +10,64 @@ common way to lose a session.
 
 ---
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after v0.9.775)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after v0.9.776)
 
-**v0.9.775 IS LIVE.** Client-only, like 774, so the deployed server binary is still the 773 one
-and is correct. Seven assets on the tag; the Windows gate passed at `version 0.9.775`, the Linux
-one gave its documented SKIP.
+**v0.9.776 IS LIVE.** Server deployed and verified by hashing the RUNNING process against the
+local build (`f63e3ece…`, identical). Seven assets on the tag; Windows gate passed at 0.9.776,
+Linux gave its documented SKIP.
 
-### The 775 lesson, because it cost two releases
+### ⚑ STILL THE FIRST JOB: `rolecal` has never run against the new curve
 
-774 found the right cause (the old font-metric overlay was drawing the player on a picture map)
-and stood the overlay down - but the replacement code in `client/overworld_room.gd` sat ONE LEVEL
-too deep, inside `if overlay != "" and overlay != "fog" and not figures.has(...)`. That condition
-is false exactly when there IS a figure. So 774 removed the misplaced player and drew nothing in
-its place, and the centre square went blank.
-
-**The probe passed through all of it, twice**, because it asserted the figure block by READING THE
-SOURCE - and the source was right. Indentation is invisible to a text search. `overworld_render.gd`
-now composes the same view twice and compares the PIXELS of the centre cell (416 of 1024 change
-with a figure, 274 more with a companion behind); re-injecting the exact fault takes both to zero,
-which is how the check was proven to fire.
-
-And the FIRST version of even that pixel check was unsound and passed against the broken code:
-supplying a figure also suppresses the overlay marker on that square, so 175 pixels moved with
-nobody drawn. The control is now an entry that is present but names no sprite. **When a check
-compares two states, make sure the only thing that differs between them is the thing under test.**
-
-**Still open from the overworld arc:**
-- Map hover / click-to-inspect for players and companions, lost when the overlay stood down. The
-  dungeon-entrance `[url=owdg:...]` mechanism is the proven replacement.
-- The companion overlaps its owner heavily at the current -7/+2 offsets (roughly 9 of 17 content
-  columns visible). Readable, not pretty. A nudge to about -9/+3 would help; untested, so it was
-  NOT bundled into a fix release.
-
-**v0.9.773 IS LIVE.** Server deployed and verified by hashing the RUNNING process against the
-local build (`cbd5f158…`, identical), listening on 9080. All seven assets are on the tag. The
-Windows release gate passed; the Linux one gave its documented SKIP (a Linux binary cannot be run
-on this host, and the shared recompile rules out the stale-cache fault the gate exists for).
-
-### ⚑ THE ONE THING THAT DID NOT SHIP CLEAN — read this first
-
-**`rolecal` was NOT run against the new curve.** The owner needed the release out that night;
-rolecal had been going 45 minutes with no end in sight, so it was stopped BEFORE it wrote, and
-the curve on disk is exactly what `refcal` produced. Verified: `git diff` on
-`reference_monster_curve.json` was empty at export time, so there is no half-written file and no
-race - the state is clean, it is just incomplete.
-
-**What that means, precisely.** `speciescal` (how much species differ from each other) and
-`refcal` (how hard a level is on average) are current. `role_multipliers` - how much harder an
-ELITE or a BOSS is than a normal monster of the same level - were carried forward, and they were
-calibrated against the PREVIOUS base. Elites and bosses still scale with the corrected base, so
-this is a second-order error in the RATIO, not a first-order error in the scale. It is the
-difference between "elites are somewhat off" and "elites are wrong".
-
-**Do this first next session:**
 ```bash
 godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- rolecal
 ```
-It takes the better part of an hour on this machine. If it moves `role_multipliers` materially,
-that is a small follow-up release. **Judge against +/-10pp, not 5** - see the rule below.
+`speciescal` and `refcal` are current; `role_multipliers` (how much harder an elite or boss is
+than a normal monster of its level) were carried forward from the previous base. Second-order
+error in the RATIO, not first-order in the scale. Takes the better part of an hour. Judge against
++/-10pp, not 5.
 
-### Also worth knowing before anything else
+### The lesson from 775/776, which cost three releases between them
 
-- **The world is filling with dungeons right now.** `MIN_WORLD_DUNGEONS` went 150 -> 3000, and
-  the server spawns in batches every 120s. Nothing confirmed the fill in the log because Godot
-  buffers stdout and the fresh process had not flushed; the server is listening, its memory is
-  flat at ~300 MB (which is what lazy interiors predict) and its CPU is single digits. **Check
-  the count in play**, and watch for `[LAZY-DUNGEON]` in the log - that line appearing for a
-  `world_dungeon_*` means something reads a world dungeon's interior after all.
-- **Everything in `docs/PLAYTEST_QUEUE.md` items 11 and 12 is now LIVE**, not pending. They were
-  written as "unreleased"; they describe what to check in the build players now have.
+Three separate faults, one shape: **a check that READS THE SOURCE cannot see whether the code
+runs.** An invisible player (indentation), a depleted-node fix that never reached its hotzone
+branch, and a minimap sized by two different numbers all passed source-reading probes.
+
+The replacements all EXECUTE and measure output, and each was proven by re-injecting its fault:
+- `overworld_render.gd` composes twice and diffs the centre cell's pixels.
+- `depleted_looks_spent.gd` depletes a real node and diffs the meaning grid, then the pixels —
+  **with a control** (a fresh ore vein against a fresh tree), because a renderer drawing nothing
+  but ground would otherwise pass on the dimming alone.
+- `minimap_golden.gd` holds a reference copy of the old per-cell logic and compares character for
+  character.
+
+**And the control must differ in ONE thing.** The first pixel check in 775 passed against broken
+code because supplying a figure also suppressed the cell's marker glyph — 175 pixels moved with
+nobody drawn.
+
+### Still open from the overworld arc
+
+- **Map hover / click-to-inspect for players and companions**, lost when the old overlay stood
+  down in 774. The dungeon-entrance `[url=owdg:...]` mechanism is the proven replacement, and it
+  is the next thing to do in this arc.
+- Older clients do not know the `!hotdepleted:` meaning and draw such a node without its red
+  hotzone warning until they update. Self-limiting; no action unless it is still around in a few
+  releases.
+- The minimap now costs 0.9ms standing / 1.4ms walking (was 6.9 / 8.9). If a further cut is ever
+  wanted, the remaining cost is the 861 `PackedStringArray` appends and the marker scatter, not
+  terrain.
+
+## v0.9.776 SHIPPED (2026-09-12) -- the minimap could not see most of itself
+
+- **The range bug the owner reported.** `_minimap_cells` draws +/-40 by +/-20 tiles; the dungeon
+  list it was handed came from `get_visible_dungeons(x, y, vision_radius)` - radius 11. Six
+  sevenths of the picture could never show a dungeon. Both are sized off `MINIMAP_REACH` now, and
+  the duplicate `const MAP_HALF_W/H` inside the function are gone.
+- **6.9ms -> 0.9ms per move** (walking 8.9 -> 1.4). Sample lattice snapped to world coordinates
+  so a per-cell glyph memo can hit at all, keyed by world coordinate so it is shared by every
+  player, invalidated by `chunk_manager.tile_revision`. Markers scattered rather than gathered.
+- **The companion trails again**, in the cell its owner stepped out of, picked from facing.
+- **Figures compose at 1.35x** into their own cache, so scaling a figure cannot scale a tile.
+- **A spent gathering node in a HOTZONE** was identical to a full one - both reported `!hot:`.
 
 ## v0.9.775 SHIPPED (2026-09-12) -- the square you stand on was empty
 
