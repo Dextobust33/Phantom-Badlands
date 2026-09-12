@@ -30974,6 +30974,7 @@ func display_changelog():
 	display_game("  [color=#FF8000]★ AND IT COSTS THE SERVER A SEVENTH OF WHAT IT DID.[/color] The minimap rebuilt all 861 of its squares from scratch on [b]every single step[/b], for ground that never changes — [b]6.9ms a move, the most expensive thing in walking[/b]. It now remembers ground it has already worked out, and finds markers by walking the handful that exist instead of asking all 861 squares whether one is there. Measured: [b]6.9ms down to 0.9ms[/b]; walking, 8.9ms down to 1.4ms.")
 	display_game("  [color=#1EFF00]◆ Your companion walks behind you again.[/color] It was being drawn on [b]your own square[/b], mostly hidden behind you. It is back in the square you just stepped out of, picked from the way you are facing — where it always was before the map became pictures.")
 	display_game("  [color=#1EFF00]◆ You are drawn bigger.[/color] Characters are painted at [b]a third again their old size[/b] and stand on their square rather than inside it, so a person reads as a person instead of a smudge.")
+	display_game("  [color=#1EFF00]◆ A gathering node you have taken looks taken INSIDE a hotzone too.[/color] v0.9.774 fixed this on open ground. In a hotzone both a full node and a spent one were still reported to the map the same way, so [b]a harvested ore vein there was identical to a fresh one[/b]. It now keeps its red warning and goes dim.")
 	display_game("")
 
 	display_game("[color=#808080]v0.9.775[/color]")

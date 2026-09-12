@@ -2458,7 +2458,12 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 						var intensity = _get_hotspot_intensity_in_clusters(x, y, _hotspot_clusters)
 						var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
 						line_parts.append("[color=%s] ![/color]" % hz_color)
-						sem_parts.append("!hot:" + tile_type)
+						# `!hotdepleted:`, not `!hot:`. The TEXT map told these apart - a spent node
+						# in a hotzone drew a red `!` while a fresh one drew its own glyph in red -
+						# but both were reported to the sprite renderer as `!hot:<tile>`, so a
+						# harvested ore vein inside a hotzone was pixel-identical to a full one.
+						# Same fault the owner reported outside hotzones, one branch further in.
+						sem_parts.append("!hotdepleted:" + tile_type)
 						biome_parts.append(_cell_biome(x, y))
 					else:
 						# Depleted node — show dim passable ground

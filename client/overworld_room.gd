@@ -24,6 +24,11 @@ const _DYN := "res://__overworld/"
 ## biome ground, and void is a square outside your sight.
 const NO_TILE := ["empty", "void", ""]
 
+## Overlays that share another overlay's picture. A spent node inside a hotzone still wants the
+## hotzone warning drawn on it - what marks it as spent is the dimming below, not a sprite of
+## its own.
+const OVERLAY_SPRITE := {"hotdepleted": "hot"}
+
 static var _grid: Image = null
 static var _key: String = ""
 static var _cells: Dictionary = {}
@@ -154,7 +159,7 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 				if t != null:
 					grid.blend_rect(t, Rect2i(Vector2i.ZERO, t.get_size()), Vector2i(x * CELL, y * CELL))
 			if overlay != "" and overlay != "fog" and not figures.has("%d,%d" % [x, y]):
-				var o := _img(DIR + "overlay/%s.png" % overlay)
+				var o := _img(DIR + "overlay/%s.png" % OVERLAY_SPRITE.get(overlay, overlay))
 				if o != null:
 					grid.blend_rect(o, Rect2i(Vector2i.ZERO, o.get_size()), Vector2i(x * CELL, y * CELL))
 
@@ -193,7 +198,7 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 				# Remembered ground, not seen ground. Darkened rather than hidden, which is what
 				# the text map did with a dim colour.
 				_darken(grid, x, y, 0.45)
-			elif overlay == "depleted":
+			elif overlay == "depleted" or overlay == "hotdepleted":
 				# A node you have already harvested. The TEXT map drew it as a dim grey comma -
 				# obviously spent. The sprite map drew the tile and then looked for an overlay called
 				# "depleted", which does not exist, so a used-up ore vein looked exactly like a fresh
