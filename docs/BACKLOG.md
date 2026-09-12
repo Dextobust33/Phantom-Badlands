@@ -1340,16 +1340,19 @@ scope, because they are all tiles in the same grid.**
         biome-specific, and they are what a player is actually hunting for on the map.
       * **REAL ART, NOT GLYPHS.** Owner 2026-09-11, on seeing the glyph fallback: *"We should
         have enough sprites that glyphs shouldn't be needed."* So the glyph bake is the last
-        resort for a tile not yet cut, not the plan. **30 of 67 cut so far** - all fourteen gatherables, all six biome grounds, water, deep
-        water, path, floor, bridge, wall, and nine post stations from the `craft_stations` pack
-        that was bought for them. 37 still on a glyph, nearly all of them post DECOR (banner,
-        lamp post, statue, fountain, well, shrine, obelisk and the like).
-        Pipeline: `tools/tileset_contact_sheet.py` renders a pack sheet with row and column
-        numbers on it, `tools/bake_overworld_tiles.py` holds the (pack, row, col) table and cuts,
-        `tools/preview_overworld_tiles.py` composes a sample field so a pick can be judged at the
-        size a player sees. **Pick cells off the OPACITY MAP, not off the rendered sheet** - two
-        picks in a row were empty cells because a scaled screenshot is not measurement.
-        A tree spans 3x3 in a Raven pack; cut the block and shrink it, or you get a fragment.
+        resort for a tile not yet cut, not the plan. **ALL 67 DONE (2026-09-11).** Every tile type has real art from the Raven
+        packs - fourteen gatherables, six biome grounds, water, roads, walls, the post stations,
+        and every piece of post decor. `empty` and `void` deliberately have none: empty IS the
+        biome ground and void is a tile outside your sight, so both draw the ground and nothing
+        over it. The glyph baker stays as the fallback for anything added later, and currently
+        bakes nothing.
+        Pipeline: `tools/tileset_contact_sheet.py` (a sheet with row/column numbers, and
+        `--map` for an opacity map), `tools/bake_overworld_tiles.py` (the (pack, row, col) table
+        and the cutting), `tools/preview_overworld_tiles.py` (composes every tile over every
+        biome ground, which is what caught three real mistakes).
+        **Rules learned here:** pick cells off the OPACITY MAP, never off the rendered sheet;
+        a Raven tree or station spans several cells, so cut the block and shrink it; and a
+        ground-class tile must be fully opaque or the biome bleeds through its corners.
       * **67 tile types in all** (`TILE_RENDER`), so the resolver needs a COVERAGE probe that
         calls it on every one rather than a table someone eyeballs. This is the `.png.png` lesson:
         v0.9.761 shipped with all 53 dungeon monster sprites broken because the table was checked

@@ -104,6 +104,24 @@ CUTS = {
     'tile:bench':    ('interiors', 4, 11, (1, 2)),
     'tile:beehive':  ('honey_bee', 6, 0),
     'tile:throne':   ('honey_bee', 6, 10, (2, 1)),
+
+    # --- the last of them: post structures, monuments and plots ---------------------------
+    'tile:companion_stable': ('farmlands_v3', 16, 7, (3, 3)),
+    'tile:cartographer':     ('interiors', 4, 17),
+    'tile:tower':            ('sun_city', 16, 0, (3, 1)),
+    'tile:guard':            ('sun_city', 20, 9),
+    # The cross on a post reads as a scarecrow frame, which is what one is. The farm pack has no
+    # scarecrow of its own - it has a windmill, which is a different thing.
+    'tile:scarecrow':        ('green_village', 1, 4),
+    'tile:post_marker':      ('green_village', 4, 6),
+    'tile:garden_plot':      ('sun_city', 13, 17, (2, 2)),
+    'tile:tent':             ('farmlands_v3', 14, 2, (2, 2)),
+    'tile:cage':             ('farmlands_v3', 21, 15),
+    'tile:shrine':           ('sun_city', 19, 5),
+    'tile:totem':            ('sun_city', 19, 9),
+    'tile:obelisk':          ('sun_city', 20, 5),
+    'tile:sundial':          ('sun_city', 14, 15),
+    'tile:birdbath':         ('farmlands_v3', 17, 18),
     'tile:floor':      ('miners_cave', 2, 6),
     'tile:water':      ('beach_ocean_and_shore', 1, 27),
     'tile:deep_water': ('beach_ocean_and_shore', 3, 27),
@@ -330,7 +348,11 @@ def main():
         cut += 1
     print('cut %d tiles from real art' % cut)
 
-    have_art = set(k.split(':', 1)[1] for k in CUTS if k.startswith('tile:'))
+    # `empty` IS the biome ground and `void` is a tile outside your sight: both draw the ground
+    # and nothing else. Giving either one a tile put something on top of every bare square in the
+    # world. They are listed here so a future reader sees the decision rather than a gap.
+    NO_TILE = ('empty', 'void')
+    have_art = set(k.split(':', 1)[1] for k in CUTS if k.startswith('tile:')) | set(NO_TILE)
     n = 0
     for name, (ch, col) in sorted(tiles.items()):
         if name in have_art:
@@ -344,7 +366,7 @@ def main():
         if bake_glyph(ch, col, os.path.join(OUT, 'overlay', name + '.png')):
             m += 1
     print('baked %d overlay glyphs' % m)
-    print('%d files in %s' % (len(biomes) + n + m, OUT))
+    print('%d files in %s' % (len(biomes) + cut + n + m, OUT))
 
 
 if __name__ == '__main__':

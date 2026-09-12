@@ -29,7 +29,8 @@ PROPS = ['tree', 'stone', 'ore_vein', 'dense_brush', 'bush', 'herb', 'flower', '
          'banner', 'writing_desk', 'door', 'well', 'fountain', 'signpost', 'quest_board',
          'lamp_post', 'torch', 'crate', 'storage', 'cairn', 'blacksmith', 'healer', 'hedge',
          'lectern', 'mosaic', 'pylon', 'statue', 'easel', 'pedestal', 'bench', 'beehive',
-         'throne']
+         'throne', 'companion_stable', 'cartographer', 'tower', 'guard', 'post_marker',
+         'garden_plot', 'tent', 'cage', 'shrine', 'totem', 'obelisk', 'sundial', 'birdbath', 'scarecrow']
 BIOMES = ['plains', 'forest', 'mountain', 'swamp', 'snow', 'desert']
 
 
