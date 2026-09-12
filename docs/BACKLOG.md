@@ -1340,8 +1340,10 @@ scope, because they are all tiles in the same grid.**
         biome-specific, and they are what a player is actually hunting for on the map.
       * **REAL ART, NOT GLYPHS.** Owner 2026-09-11, on seeing the glyph fallback: *"We should
         have enough sprites that glyphs shouldn't be needed."* So the glyph bake is the last
-        resort for a tile not yet cut, not the plan. **16 of 67 cut so far** from
-        `green_forest_v2`; 52 still on a glyph.
+        resort for a tile not yet cut, not the plan. **30 of 67 cut so far** - all fourteen gatherables, all six biome grounds, water, deep
+        water, path, floor, bridge, wall, and nine post stations from the `craft_stations` pack
+        that was bought for them. 37 still on a glyph, nearly all of them post DECOR (banner,
+        lamp post, statue, fountain, well, shrine, obelisk and the like).
         Pipeline: `tools/tileset_contact_sheet.py` renders a pack sheet with row and column
         numbers on it, `tools/bake_overworld_tiles.py` holds the (pack, row, col) table and cuts,
         `tools/preview_overworld_tiles.py` composes a sample field so a pick can be judged at the

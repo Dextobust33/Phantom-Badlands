@@ -66,6 +66,18 @@ CUTS = {
     'tile:path':       ('farmlands_v3', 2, 4),
     'tile:wall':       ('winter_forest', 7, 14),
     'tile:bridge':     ('miners_cave', 6, 4),
+
+    # --- NPC POST STATIONS. The craft_stations pack was bought for exactly these. Each station
+    # is drawn two or three cells across, so they are region cuts shrunk to one tile.
+    'tile:forge':         ('craft_stations', 0, 0, (3, 2)),
+    'tile:apothecary':    ('craft_stations', 3, 6, (2, 2)),
+    'tile:workbench':     ('craft_stations', 5, 0, (2, 2)),
+    'tile:enchant_table': ('craft_stations', 7, 1, (2, 1)),
+    'tile:market':        ('craft_stations', 9, 0, (1, 2)),
+    'tile:inn':           ('craft_stations', 10, 0, (1, 2)),
+    'tile:brazier':       ('craft_stations', 2, 6, (1, 2)),
+    'tile:banner':        ('craft_stations', 5, 6, (2, 2)),
+    'tile:writing_desk':  ('craft_stations', 7, 6, (2, 2)),
     'tile:floor':      ('miners_cave', 2, 6),
     'tile:water':      ('beach_ocean_and_shore', 1, 27),
     'tile:deep_water': ('beach_ocean_and_shore', 3, 27),

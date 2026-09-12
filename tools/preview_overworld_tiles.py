@@ -24,7 +24,9 @@ PAD = 26
 # the ground, and a prop on it would hide the thing it is meant to be.
 PROPS = ['tree', 'stone', 'ore_vein', 'dense_brush', 'bush', 'herb', 'flower', 'reed',
          'brambleberry', 'mountain_herb', 'mushroom', 'swamp_lily', 'cactus', 'ice_bloom',
-         'water', 'deep_water', 'path', 'floor', 'bridge', 'wall']
+         'water', 'deep_water', 'path', 'floor', 'bridge', 'wall',
+         'forge', 'apothecary', 'workbench', 'enchant_table', 'market', 'inn', 'brazier',
+         'banner', 'writing_desk']
 BIOMES = ['plains', 'forest', 'mountain', 'swamp', 'snow', 'desert']
 
 
