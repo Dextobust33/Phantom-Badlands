@@ -30971,6 +30971,7 @@ func display_changelog():
 	# could not say so; and the special rooms finally have art.
 	display_game("[color=#00FF00]v0.9.774[/color] [color=#808080](Current)[/color]")
 	display_game("  [color=#FF8000]★ THE FIGURES ON THE NEW MAP WERE IN THE WRONG PLACE.[/color] Your character was drawn by the OLD text-map code, which positions things by counting letters — so on the new picture map [b]you stood about a row off[/b], and everything around you looked shifted because of it. Your companion was still a bare letter. Both are drawn into the map itself now, at the right square and the right size.")
+	display_game("  [color=#1EFF00]◆ A gathering node you have already taken now LOOKS taken.[/color] The old letter map dimmed a spent node to a grey comma. The picture map drew the tile and looked for a [i]spent[/i] version that was never made — so [b]a used-up ore vein was identical to a fresh one[/b] and looked like it had not cleared. It dims now.")
 	display_game("  [color=#1EFF00]◆ Trading posts stopped hiding their own doors.[/color] Stepping inside zoomed the view to the middle of the room — but a post is 17-20 tiles across in a 23-tile view, so there was nothing spare to crop and the [b]walls and doors were cut off[/b]. No crop now; the post still reads as a room because it stands on its own floor.")
 	display_game("")
 

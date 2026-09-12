@@ -164,6 +164,13 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 				# Remembered ground, not seen ground. Darkened rather than hidden, which is what
 				# the text map did with a dim colour.
 				_darken(grid, x, y, 0.45)
+			elif overlay == "depleted":
+				# A node you have already harvested. The TEXT map drew it as a dim grey comma -
+				# obviously spent. The sprite map drew the tile and then looked for an overlay called
+				# "depleted", which does not exist, so a used-up ore vein looked exactly like a fresh
+				# one. Owner 2026-09-12: "not sure if they are clearing properly once I get them."
+				# They WERE clearing. They just did not look it.
+				_darken(grid, x, y, 0.42)
 	_grid = grid
 	return true
 

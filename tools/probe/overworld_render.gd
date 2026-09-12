@@ -225,6 +225,21 @@ func ", sync_i + 10) - sync_i)
 	ck(guard.find("return") >= 0, "...and returns before it computes a single font metric")
 
 	print("
+--- a harvested node LOOKS harvested ---")
+	# The text map drew a spent node as a dim grey comma. The sprite map drew the tile and then
+	# looked for an overlay called "depleted" that was never baked, so a used-up ore vein was
+	# pixel-identical to a fresh one and looked like it had not cleared at all.
+	var rsrc2 := FileAccess.get_file_as_string("res://client/overworld_room.gd")
+	ck(rsrc2.find('elif overlay == "depleted":') >= 0, "the renderer handles a depleted node")
+	var dep_i := rsrc2.find('elif overlay == "depleted":')
+	ck(rsrc2.substr(dep_i, 600).find("_darken(grid, x, y,") >= 0,
+		"...by dimming it, the way the text map dimmed its comma")
+	ck(Room._overlay_name("!depleted:ore_vein") == "depleted", "`!depleted:ore_vein` reads as depleted")
+	ck(Room._under_tile("!depleted:ore_vein") == "ore_vein", "...standing on an ore vein, which still draws")
+	ck(not FileAccess.file_exists("res://client/sprites/overworld32/overlay/depleted.png"),
+		"and there is no depleted overlay sprite - which is exactly why it needed the dim")
+
+	print("
 --- and a post is no longer cropped ---")
 	# A post is 17-20 tiles across in a 23-tile view: there is nothing to crop away, and the crop
 	# was cutting off the walls and the doors.
