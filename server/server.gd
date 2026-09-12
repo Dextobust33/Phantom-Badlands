@@ -7976,8 +7976,14 @@ func send_location_update(peer_id: int):
 	# Get nearby players for map display (within map radius)
 	var nearby_players = get_nearby_players(peer_id, vision_radius)
 
-	# Get nearby dungeon entrances for map display (filtered to exclude other players' personal dungeons)
-	var dungeon_locations = get_visible_dungeons(character.x, character.y, vision_radius, peer_id)
+	# Dungeon entrances for the map AND the minimap (filtered to exclude other players' personal
+	# dungeons). Sized off the MINIMAP's reach, not the player's line of sight: the minimap draws
+	# +/-40 tiles and used to be handed a list gathered at radius 11, so a dungeon well inside the
+	# picture simply was not in it until the player walked within sight. The main map ignores the
+	# extra entries - it looks them up by cell - and the hover dictionary is built only for cells
+	# actually on screen, so nothing downstream sees a wider list as anything but more misses.
+	var map_dungeon_reach: int = maxi(vision_radius, world_system.MINIMAP_REACH)
+	var dungeon_locations = get_visible_dungeons(character.x, character.y, map_dungeon_reach, peer_id)
 
 	# Get depleted node keys for map display (shows dim markers for depleted nodes)
 	var depleted_keys = chunk_manager.get_depleted_keys() if chunk_manager else depleted_nodes.keys()

@@ -53,6 +53,35 @@ static func _img(path: String) -> Image:
 	return im
 
 
+## How much bigger a FIGURE is drawn than the 32px cell it stands on.
+##
+## Owner 2026-09-12: *"the player sprite still looks a little small on the overworld map."* It
+## was: the art is 32x32 with padding, so a character's actual body is about 17 by 30 pixels, and
+## the grid then draws each cell at 26 screen pixels - so a person came out around 14 pixels wide.
+## Drawing the figure at 1.35x and anchoring it to the BOTTOM of its cell lets it overflow upward
+## into the square above, which is what every tile-based game does and what this renderer was
+## built to allow: *"that also makes a figure larger than its cell possible later."*
+const FIGURE_SCALE := 1.35
+static var _figure_cache: Dictionary = {}
+
+
+static func _figure_img(path: String) -> Image:
+	"""A figure sprite at FIGURE_SCALE, cached separately from the tile it stands on.
+
+	Its own cache on purpose: `_img` hands back the SHARED image for a path, and resizing that in
+	place would silently scale up every other use of the same file."""
+	if _figure_cache.has(path):
+		return _figure_cache[path]
+	var src := _img(path)
+	var out: Image = null
+	if src != null:
+		out = src.duplicate()
+		out.resize(maxi(1, int(round(src.get_width() * FIGURE_SCALE))),
+			maxi(1, int(round(src.get_height() * FIGURE_SCALE))), Image.INTERPOLATE_NEAREST)
+	_figure_cache[path] = out
+	return out
+
+
 static func _ground(biome: String) -> Image:
 	var im := _img(DIR + "ground/%s.png" % biome)
 	return im if im != null else _img(DIR + "ground/plains.png")
@@ -142,27 +171,24 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 			# the compositing happens above, so a floor-backed figure stands on the wrong ground.
 			var fig_entry = figures.get("%d,%d" % [x, y], null)
 			if fig_entry != null:
-				# A companion has no tile of its own - it walks with its owner - so it stands
-				# behind and to one side, the way the dungeon already draws one.
-				var behind := ""
-				var front := ""
+				# A cell holds ONE figure. A companion is not drawn on its owner's square any
+				# more - it stands on the square its owner just walked out of, which is what the
+				# old letter map did and what the owner expected to keep: the client picks that
+				# cell and sends the companion as its own entry.
+				var fpath := ""
 				if fig_entry is Dictionary:
-					behind = String(fig_entry.get("behind", ""))
-					front = String(fig_entry.get("main", ""))
+					fpath = String(fig_entry.get("main", ""))
 				else:
-					front = String(fig_entry)
-				for pair in [[behind, -7], [front, 2]]:
-					var fpath := String(pair[0])
-					if fpath == "":
-						continue
-					var fi := _img(fpath)
-					if fi == null:
-						continue
-					# Anchored to the BOTTOM of the cell, so a figure taller than 32 stands on
-					# its tile rather than floating above it.
-					grid.blend_rect(fi, Rect2i(Vector2i.ZERO, fi.get_size()),
-						Vector2i(x * CELL + (CELL - fi.get_width()) / 2 + int(pair[1]),
-							(y + 1) * CELL - fi.get_height()))
+					fpath = String(fig_entry)
+				if fpath != "":
+					var fi := _figure_img(fpath)
+					if fi != null:
+						# Centred on its cell and anchored to the BOTTOM of it, so a figure taller
+						# than its square stands ON the tile and overflows into the one above
+						# rather than floating.
+						grid.blend_rect(fi, Rect2i(Vector2i.ZERO, fi.get_size()),
+							Vector2i(x * CELL + (CELL - fi.get_width()) / 2,
+								(y + 1) * CELL - fi.get_height()))
 			if overlay == "fog":
 				# Remembered ground, not seen ground. Darkened rather than hidden, which is what
 				# the text map did with a dim colour.

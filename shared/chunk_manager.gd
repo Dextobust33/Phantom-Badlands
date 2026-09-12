@@ -127,6 +127,14 @@ func get_tile(world_x: int, world_y: int) -> Dictionary:
 	# Fallback if terrain_generator not set yet
 	return {"type": "empty", "blocks_move": false, "blocks_los": false}
 
+## Bumped on every tile EDIT. Anything that caches a derived view of the terrain - the minimap's
+## per-cell glyph memo is the first - compares this and drops the whole cache rather than trying
+## to work out which keys one edit touched. A player building a post rewrites dozens of tiles at
+## once, so per-key invalidation is both harder and slower than starting over, and a counter
+## cannot fall out of step the way a hand-maintained invalidation list can.
+var tile_revision: int = 0
+
+
 func set_tile(world_x: int, world_y: int, data: Dictionary) -> void:
 	"""Set tile data at world coordinates. Marks the chunk as dirty."""
 	if world_x < WORLD_MIN or world_x > WORLD_MAX or world_y < WORLD_MIN or world_y > WORLD_MAX:
@@ -147,6 +155,7 @@ func set_tile(world_x: int, world_y: int, data: Dictionary) -> void:
 
 	chunk_data["modified_tiles"][tile_key] = data
 	_dirty_chunks[chunk_key] = true
+	tile_revision += 1
 
 func remove_tile_modification(world_x: int, world_y: int) -> void:
 	"""Remove any modification at this tile, reverting to procedural generation."""
@@ -159,6 +168,7 @@ func remove_tile_modification(world_x: int, world_y: int) -> void:
 		if modified_tiles.has(tile_key):
 			modified_tiles.erase(tile_key)
 			_dirty_chunks[chunk_key] = true
+			tile_revision += 1
 
 func is_tile_modified(world_x: int, world_y: int) -> bool:
 	"""Check if a tile has been explicitly modified from its procedural state."""

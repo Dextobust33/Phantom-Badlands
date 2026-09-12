@@ -30969,7 +30969,14 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.775[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.776[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE MINIMAP WAS BLIND TO SIX SEVENTHS OF ITSELF.[/color] It draws [b]40 tiles east and west and 20 north and south[/b] — but the dungeon list it was handed only ever covered as far as you could SEE, eleven tiles. So a dungeon well inside the picture was simply missing from it and [b]popped into existence only once you walked within sight of it[/b]. Both are sized off the same number now, so they cannot drift apart again.")
+	display_game("  [color=#FF8000]★ AND IT COSTS THE SERVER A SEVENTH OF WHAT IT DID.[/color] The minimap rebuilt all 861 of its squares from scratch on [b]every single step[/b], for ground that never changes — [b]6.9ms a move, the most expensive thing in walking[/b]. It now remembers ground it has already worked out, and finds markers by walking the handful that exist instead of asking all 861 squares whether one is there. Measured: [b]6.9ms down to 0.9ms[/b]; walking, 8.9ms down to 1.4ms.")
+	display_game("  [color=#1EFF00]◆ Your companion walks behind you again.[/color] It was being drawn on [b]your own square[/b], mostly hidden behind you. It is back in the square you just stepped out of, picked from the way you are facing — where it always was before the map became pictures.")
+	display_game("  [color=#1EFF00]◆ You are drawn bigger.[/color] Characters are painted at [b]a third again their old size[/b] and stand on their square rather than inside it, so a person reads as a person instead of a smudge.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.775[/color]")
 	display_game("  [color=#FF8000]★ YOU AND YOUR COMPANION ARE BACK ON THE MAP.[/color] v0.9.774 stood down the old letter-map overlay that was drawing you in the wrong place — but the code meant to draw you into the picture instead sat inside a branch that is skipped [i]exactly when there is someone to draw[/i]. So the square you stand on was simply [b]empty[/b]. Your character and the companion walking behind you are drawn there now.")
 	display_game("")
 
@@ -30996,20 +31003,6 @@ func display_changelog():
 	display_game("  [color=#FF8000]★ LINUX: THE ICONS THAT WERE EMPTY BOXES NOW DRAW.[/color] The bug-report, suggest-idea and screenshot buttons, [b]Review Damage[/b] in combat, the gathering labels, and [b]every button in the launcher[/b] were drawn with emoji — which Linux has no font for, so they came out as boxes. All replaced with symbols that render everywhere.")
 	display_game("  [color=#FF8000]★ YOUR LAUNCHER UPDATES ITSELF AGAIN.[/color] The launcher has been able to replace itself for a while, and the game can replace it too — but both read a version field that our release file was missing, so neither ever fired. It is there now: [b]you should not need to reinstall the launcher from the website again[/b].")
 	display_game("")
-
-	display_game("[color=#808080]v0.9.771[/color]")
-	display_game("  [color=#FF8000]★ 58 PHANTOM SAFE ZONES EXISTED WHERE NOTHING DOES.[/color] Fifty-eight trading posts from an older version of the world were still claiming ground — [b]194 tiles within 120 of the Crossroads alone[/b]. You could stand on open road and be told you were safe, with no post in sight, and [b]no monster could spawn there[/b]. They are gone.")
-	display_game("  [color=#FF8000]★ THE COMPANION SCREENS WERE LYING ABOUT YOUR STATS.[/color] The variant bonus shown on a companion was [b]wrong for 111 of 119 variants[/b] — most read as 'no bonus at all' when they had one. Now read from the real source.")
-	display_game("  [color=#FF8000]★ INSPECT A COMPANION AND ACTUALLY LEARN SOMETHING.[/color] It now lists [color=#FFFFFF]Health[/color], [color=#FFFFFF]Damage[/color], [color=#FFFFFF]Aggro[/color] and [color=#FFFFFF]Speed[/color] — [b]hover any of them[/b] to read what it does — plus [b]the combat card that companion gives you[/b] and how close it is to being yours permanently. And the kennel can inspect now too.")
-	display_game("  [color=#1EFF00]◆ One [b]Power[/b] number instead of three multipliers.[/color] Variant, rank and border used to be shown as [color=#808080]+60%[/color], [color=#808080]x1.4[/color] and [color=#808080]+25%[/color] — three formats that multiply together and were never added up. Now a single [color=#FFD700]Power x2.14[/color], with the breakdown on hover.")
-	display_game("  [color=#1EFF00]◆ Every screen speaks the new tier ladder.[/color] Around 40 places still said [color=#808080]T1-7[/color] or [color=#808080]Tier 2-1[/color] — the Dungeon Atlas, quest text, the market, fusion, threat warnings, egg labels. All converted, and the ladder BAR now appears on every companion surface.")
-	display_game("  [color=#1EFF00]◆ Hovering a monster's prefix works again.[/color] [color=#FF5555]Frenzied[/color] drew as a link and did nothing — the nameplate could not receive the mouse at all. The same fault was hiding on the companion inspect screen.")
-	display_game("  [color=#1EFF00]◆ Your shield now SAYS when it ate part of a hit.[/color] A ward smaller than the blow absorbed correctly but reported nothing, so a 6-point shield against a 22-point swing looked like it never existed. Reads [color=#7AA8FF]shield eats 6[/color] in the line now.")
-	display_game("  [color=#1EFF00]◆ A companion's Valor Find finally does something.[/color] It was displayed on companions and consumed by nothing. It now raises the chance a kill opens the loot minigame.")
-	display_game("  [color=#1EFF00]◆ Dungeon names describe the right dungeon.[/color] The list matched by type alone and took whichever came first — so the tier, the level band and the map coordinates could all belong to a dungeon you had already finished, or someone else's.")
-	display_game("  [color=#1EFF00]◆ Help-screen formulas corrected.[/color] Hit chance subtracts HALF the enemy's speed, not all of it, and two different pages stated two different wrong initiative formulas.")
-	display_game("")
-
 
 	display_game("[color=#808080]v0.9.768[/color]")
 	display_game("  [color=#FF8000]★ EVERY ROOM LOOKS LIKE ITS OWN PLACE NOW.[/color] Dungeon chambers no longer share one floor. Each room draws its [b]own material[/b] — cut stone, brick, grass, timber, pale sand, violet rock — and its [b]own decoration[/b], from a pool of tilesets. Corridors keep the old cave floor, so stepping out of a passage into a room is a visible change of ground rather than more of the same.")
@@ -45712,34 +45705,58 @@ func _overworld_display(payload: Dictionary) -> String:
 	if meaning.is_empty():
 		return MapPayload.inflate(payload)
 	var figures: Dictionary = {}
+	var rows_n: int = meaning.size()
+	var cols_n: int = meaning[0].size() if rows_n > 0 else 0
 	# OTHER players, and the companions travelling with them. The client cannot know who is out
 	# there - it is sent resolved cells, not a roster - so the server names them in the payload.
+	var pending_companions: Array = []
 	for k in payload.get("figures", {}):
 		var ent = payload["figures"][k]
 		if not (ent is Dictionary):
 			continue
-		var entry: Dictionary = {}
 		var pth := _overworld_look_path(String(ent.get("id", "")))
 		if pth != "":
-			entry["main"] = pth
+			figures[String(k)] = {"main": pth}
 		var comp = ent.get("companion", {})
 		if comp is Dictionary:
 			var cpath := _overworld_companion_path(comp)
 			if cpath != "":
-				entry["behind"] = cpath
-		if not entry.is_empty():
-			figures[String(k)] = entry
-	# You, at the centre of your own view, with your own companion behind you.
+				# Another player's facing is not in the payload, so their companion trails WEST -
+				# the same default the old letter map used when it could not tell.
+				var kp: PackedStringArray = String(k).split(",")
+				if kp.size() == 2:
+					pending_companions.append([int(kp[0]) - 1, int(kp[1]), cpath])
+	# You, at the centre of your own view.
 	var me := _overworld_figure_path()
-	var mine: Dictionary = {}
+	var mid: int = rows_n / 2
 	if me != "":
-		mine["main"] = me
+		figures["%d,%d" % [mid, mid]] = {"main": me}
+	# YOUR companion walks in the square you just stepped out of, picked from which way you are
+	# facing. Owner 2026-09-12: *"The companion will still follow behind the player like before
+	# right?"* - it did on the letter map (`_apply_companion_trail`) and the first composed map
+	# lost that, drawing it on your own square seven pixels to the left, where you covered most
+	# of it. This restores the trailing cell.
 	var my_comp := _overworld_companion_path(character_data.get("active_companion", {}))
 	if my_comp != "":
-		mine["behind"] = my_comp
-	if not mine.is_empty():
-		var mid: int = meaning.size() / 2
-		figures["%d,%d" % [mid, mid]] = mine
+		var tdx := -1
+		var tdy := 0
+		match _local_map_facing:
+			"right": tdx = -1
+			"left": tdx = 1
+			"up": tdx = 0; tdy = 1
+			"down": tdx = 0; tdy = -1
+		pending_companions.append([mid + tdx, mid + tdy, my_comp])
+	# Companions are placed LAST and never over a person: two players standing a square apart
+	# must not have one's companion delete the other.
+	for pc in pending_companions:
+		var cx: int = int(pc[0])
+		var cy: int = int(pc[1])
+		if cx < 0 or cy < 0 or cx >= cols_n or cy >= rows_n:
+			continue
+		var ck2 := "%d,%d" % [cx, cy]
+		if figures.has(ck2):
+			continue
+		figures[ck2] = {"main": String(pc[2])}
 	if not _OverworldRoom.build(meaning, biomes, figures):
 		return MapPayload.inflate(payload)
 	# NO CROP INSIDE A POST, and the reason is a measurement rather than a preference. The zoom

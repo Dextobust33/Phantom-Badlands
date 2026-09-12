@@ -3776,6 +3776,18 @@ const MINIMAP_OPEN := "[right][font_size=9]"
 const MINIMAP_CLOSE := "[/font_size][/right]"
 const MINIMAP_STEP := 2
 const MINIMAP_HALF_W := 20
+const MINIMAP_HALF_H := 10
+
+## How far from the player the minimap actually DRAWS, in world tiles.
+##
+## This exists because the picture and the marker list were sized by two different numbers.
+## `_minimap_cells` drew +/-40 by +/-20 tiles, while the dungeon list it was handed came from
+## `get_visible_dungeons(x, y, vision_radius)` - radius 11, the player's line of sight. So six
+## sevenths of the minimap could never show a dungeon, and one 15 tiles away blinked into
+## existence only when the player walked within sight of it. Owner 2026-09-12: *"dungeons and
+## things only pop up on it in some steps even if they are pretty close."*
+## The server now sizes its query off THIS, so the two cannot drift apart again.
+const MINIMAP_REACH := MINIMAP_HALF_W * MINIMAP_STEP
 
 
 func _minimap_caption() -> String:
@@ -3793,90 +3805,179 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 	return out + MINIMAP_CLOSE + _minimap_caption()
 
 
+## The minimap's per-cell TERRAIN glyph, memoised by world coordinate.
+##
+## Measured before this existed (tools/probe/minimap_cost.gd): the minimap cost 6.9-7.6 ms of
+## server time on every step, of which 3.2 ms was `get_tile` + `get_biome_at` and the rest was
+## building 861 BBCode colour tags. All of it was recomputed from scratch each move for terrain
+## that does not change.
+##
+## Two things make the memo work, and it needs both:
+##   * the sample lattice is SNAPPED to multiples of STEP in world space rather than centred on
+##     the player. Unsnapped, every one of the 861 sample points shifts by one when you take a
+##     step, so not a single cell is reusable and a cache is pure overhead.
+##   * the entries are keyed by WORLD coordinate, so they are shared by every player on the
+##     server, not rebuilt per connection.
+## Markers - you, dungeons, posts - are NOT memoised. They move.
+const MINI_GLYPH_CACHE_MAX := 60000
+var _mini_glyphs: Dictionary = {}
+var _mini_glyph_rev: int = -1
+
+
+func _minimap_glyph(wx: int, wy: int) -> String:
+	"""The terrain character for one minimap cell. Memoised; see `_mini_glyphs`."""
+	var k := "%d,%d" % [wx, wy]
+	var hit = _mini_glyphs.get(k, null)
+	if hit != null:
+		return hit
+	var out := ""
+	var tile = chunk_manager.get_tile(wx, wy)
+	match String(tile.get("type", "empty")):
+		"water":
+			out = "[color=#4488FF]~[/color]"
+		"deep_water":
+			out = "[color=#2244AA]~[/color]"
+		"bridge":
+			out = "[color=#C4A882]=[/color]"
+		"path":
+			out = "[color=#8B7355]:[/color]"
+		"wall":
+			out = "[color=#888888]#[/color]"
+		"tree", "dense_brush":
+			out = "[color=#1A6B1A]T[/color]"
+		"stone", "ore_vein":
+			out = "[color=#887766]o[/color]"
+		"floor", "door", "forge", "apothecary", "workbench", "enchant_table",		"writing_desk", "market", "inn", "quest_board", "post_marker",		"blacksmith", "healer", "throne", "storage", "guard":
+			out = "[color=#FFD700].[/color]"
+		_:
+			# Slice 6a — the minimap picks up biome tint so the overview shows biome regions at a
+			# glance. Dimmed (~45% brightness) so the small chars stay legible.
+			var mseed = chunk_manager.world_seed if chunk_manager else 0
+			out = "[color=%s].[/color]" % _dim_color(get_biome_empty_color(get_biome_at(wx, wy, mseed)), 0.45)
+	if _mini_glyphs.size() >= MINI_GLYPH_CACHE_MAX:
+		_mini_glyphs.clear()
+	_mini_glyphs[k] = out
+	return out
+
+
 func _minimap_cells(center_x: int, center_y: int, dungeon_locations: Array = []) -> Array:
 	"""A compact zoomed-out minimap centred on the player, one BBCode cell per character.
 	Samples every 2 world tiles, so each character covers a 2x2 tile area; coverage is +/-40 tiles
-	east/west and +/-20 north/south (41x21 characters)."""
+	east/west and +/-20 north/south (41x21 characters).
+
+	The sample points are SNAPPED to the world lattice rather than hung off the player, so the
+	same ground keeps the same character as you walk - which is what lets `_minimap_glyph` memoise
+	and what stops the whole picture reshuffling on every step."""
 	if not chunk_manager:
 		return []
 
-	# Sample step: 2 world tiles per minimap char
-	const STEP = 2
-	const MAP_HALF_W = 20  # minimap chars in each direction (x)
-	const MAP_HALF_H = 10  # minimap chars in each direction (y)
+	# Terrain edits (a player building a post rewrites dozens of tiles) invalidate the memo. One
+	# integer compare, rather than an invalidation list that can fall behind.
+	var rev: int = int(chunk_manager.tile_revision) if "tile_revision" in chunk_manager else 0
+	if rev != _mini_glyph_rev:
+		_mini_glyphs.clear()
+		_mini_glyph_rev = rev
 
-	# Build dungeon lookup
-	var dungeon_set: Dictionary = {}
-	for d in dungeon_locations:
-		dungeon_set["%d,%d" % [int(d.x), int(d.y)]] = true
+	# Sample step and extent come from the FILE constants, not local copies. They used to be
+	# declared again here, which is how the picture and the marker list ended up sized by two
+	# different numbers in the first place.
+	var STEP: int = MINIMAP_STEP
+	var MAP_HALF_W: int = MINIMAP_HALF_W
+	var MAP_HALF_H: int = MINIMAP_HALF_H
+
+	# Snap to the lattice. The player's own 2x2 block is still the centre character, so the marker
+	# does not move; what changes is that the sampled COORDINATES are stable.
+	var base_x: int = center_x - posmod(center_x, STEP)
+	var base_y: int = center_y - posmod(center_y, STEP)
 
 	# NPC posts, in a coarse spatial bucket rather than a list to scan — see `_near_npc_post`.
-	var post_buckets: Dictionary = _bucket_post_points(chunk_manager.get_npc_posts())
+	# Cached: this filed all ~240 post points in the world on EVERY step, and the posts only
+	# change when somebody builds one, which also writes tiles and so bumps the revision.
+	var post_buckets: Dictionary = _post_buckets_cached()
+
+	# SCATTER the markers, do not GATHER them. Asking each of the 861 cells "is there a dungeon
+	# here?" cost four "%d,%d" formats per cell - 3,444 string allocations a step - to answer no
+	# 860 times. Walking the handful of markers instead and writing them into the cells they land
+	# in costs one pass over a list that is usually a few entries long. Same answer, and the cost
+	# now scales with the number of markers rather than the size of the picture.
+	var marks: Dictionary = {}
+	for d in dungeon_locations:
+		var mdx: int = floori(float(int(d.x) - base_x) / float(STEP))
+		var mdy: int = floori(float(int(d.y) - base_y) / float(STEP))
+		if absi(mdx) <= MAP_HALF_W and absi(mdy) <= MAP_HALF_H:
+			marks["%d,%d" % [mdx, mdy]] = "[color=#FF4444]D[/color]"
+
+	# Posts the same way. A post point marks the cells within POST_NEAR of it, and only those
+	# cells pay for the real `is_npc_post_tile` check - which is the same set the old per-cell
+	# scan would have reached, minus the 3,444 bucket keys it built to find them.
+	var reach: int = int(ceil(float(POST_NEAR) / float(STEP)))
+	for pp in _post_points_in_box(post_buckets,
+			base_x - MAP_HALF_W * STEP - POST_NEAR, base_x + MAP_HALF_W * STEP + POST_NEAR,
+			base_y - MAP_HALF_H * STEP - POST_NEAR, base_y + MAP_HALF_H * STEP + POST_NEAR):
+		var cx: int = floori(float(pp.x - base_x) / float(STEP))
+		var cy: int = floori(float(pp.y - base_y) / float(STEP))
+		for ox in range(cx - reach, cx + reach + 1):
+			if absi(ox) > MAP_HALF_W:
+				continue
+			for oy in range(cy - reach, cy + reach + 1):
+				if absi(oy) > MAP_HALF_H:
+					continue
+				var mk := "%d,%d" % [ox, oy]
+				if marks.has(mk):
+					continue
+				var pwx: int = base_x + ox * STEP
+				var pwy: int = base_y + oy * STEP
+				if absi(pp.x - pwx) > POST_NEAR or absi(pp.y - pwy) > POST_NEAR:
+					continue
+				if chunk_manager.is_npc_post_tile(pwx, pwy):
+					marks[mk] = "[color=#FFD700]P[/color]"
 
 	var rows: Array = []
 	for miny in range(MAP_HALF_H, -MAP_HALF_H - 1, -1):
 		var line: PackedStringArray = PackedStringArray()
 		for minx in range(-MAP_HALF_W, MAP_HALF_W + 1):
-			var wx = center_x + minx * STEP
-			var wy = center_y + miny * STEP
-
-			# Player marker (exact center)
+			# Player marker (the 2x2 block the player is standing in)
 			if minx == 0 and miny == 0:
 				line.append("[color=#FFFF00]@[/color]")
 				continue
-
-			# Dungeon — check nearby world tiles in the 2x2 sample block
-			var has_dungeon = false
-			for dox in range(STEP):
-				for doy in range(STEP):
-					if dungeon_set.has("%d,%d" % [wx + dox, wy + doy]):
-						has_dungeon = true
-						break
-				if has_dungeon:
-					break
-			if has_dungeon:
-				line.append("[color=#FF4444]D[/color]")
+			var mk2 := "%d,%d" % [minx, miny]
+			if marks.has(mk2):
+				line.append(marks[mk2])
 				continue
-
-			# NPC post
-			if _near_npc_post(post_buckets, wx, wy):
-				line.append("[color=#FFD700]P[/color]")
-				continue
-
-			# Tile type from chunk
-			var tile = chunk_manager.get_tile(wx, wy)
-			var tile_type = tile.get("type", "empty")
-
-			match tile_type:
-				"water":
-					line.append("[color=#4488FF]~[/color]")
-				"deep_water":
-					line.append("[color=#2244AA]~[/color]")
-				"bridge":
-					line.append("[color=#C4A882]=[/color]")
-				"path":
-					line.append("[color=#8B7355]:[/color]")
-				"wall":
-					line.append("[color=#888888]#[/color]")
-				"tree", "dense_brush":
-					line.append("[color=#1A6B1A]T[/color]")
-				"stone", "ore_vein":
-					line.append("[color=#887766]o[/color]")
-				"floor", "door", "forge", "apothecary", "workbench", "enchant_table",\
-				"writing_desk", "market", "inn", "quest_board", "post_marker",\
-				"blacksmith", "healer", "throne", "storage", "guard":
-					line.append("[color=#FFD700].[/color]")
-				_:
-					# Slice 6a — minimap also picks up biome tint so the overview
-					# shows biome regions at a glance. Dimmed (~45% brightness) so
-					# the small chars stay legible.
-					var minimap_seed = chunk_manager.world_seed if chunk_manager else 0
-					var minimap_biome = get_biome_at(wx, wy, minimap_seed)
-					line.append("[color=%s].[/color]" % _dim_color(get_biome_empty_color(minimap_biome), 0.45))
-
+			line.append(_minimap_glyph(base_x + minx * STEP, base_y + miny * STEP))
 		rows.append(line)
 
 	return rows
+
+
+var _post_bucket_cache: Dictionary = {}
+var _post_bucket_rev: int = -1
+var _post_bucket_n: int = -1
+
+
+func _post_buckets_cached() -> Dictionary:
+	"""`_bucket_post_points` for the whole world, held between moves.
+
+	Rebuilt when the tile revision moves or the post count changes - building a post writes tiles,
+	so the revision covers it, and the count is a cheap second guard in case a post is ever added
+	without touching terrain."""
+	var posts: Array = chunk_manager.get_npc_posts()
+	var rev: int = int(chunk_manager.tile_revision) if "tile_revision" in chunk_manager else 0
+	if rev != _post_bucket_rev or posts.size() != _post_bucket_n:
+		_post_bucket_cache = _bucket_post_points(posts)
+		_post_bucket_rev = rev
+		_post_bucket_n = posts.size()
+	return _post_bucket_cache
+
+
+func _post_points_in_box(buckets: Dictionary, x0: int, x1: int, y0: int, y1: int) -> Array:
+	"""Post points whose bucket overlaps the box. The caller still checks the real distance."""
+	var out: Array = []
+	for bx in range(floori(float(x0) / float(POST_BUCKET)), floori(float(x1) / float(POST_BUCKET)) + 1):
+		for by in range(floori(float(y0) / float(POST_BUCKET)), floori(float(y1) / float(POST_BUCKET)) + 1):
+			for pp in buckets.get("%d,%d" % [bx, by], []):
+				out.append(pp)
+	return out
 
 func to_dict() -> Dictionary:
 	"""Serialize world system state"""

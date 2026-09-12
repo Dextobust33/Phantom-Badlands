@@ -155,16 +155,38 @@ func _init() -> void:
 			moved += 1
 	ck(moved > 40, "%d of 1024 centre pixels CHANGE when a figure is supplied - the player is drawn" % moved)
 
-	# And the companion is a second figure, not a decoration on the first.
+	# Drawn BIGGER than the square it stands on. Owner 2026-09-12: *"the player sprite still looks
+	# a little small on the overworld map."* The art is 32x32 with padding around a body about 17
+	# wide, and the grid then draws a cell at 26 screen pixels.
+	var raw := Room._img(me)
+	var big := Room._figure_img(me)
+	ck(raw != null and big != null and big.get_width() > raw.get_width(),
+		"a figure is composed at %dpx against a %dpx cell" % [
+			big.get_width() if big != null else 0, Room.CELL])
+	ck(raw != null and raw.get_width() == 32,
+		"...and the source art is untouched at %dpx, so scaling a figure cannot scale a tile" % [
+			raw.get_width() if raw != null else 0])
+
+	# And the companion stands on its OWN square - the one its owner walked out of - rather than
+	# on top of its owner. Owner 2026-09-12: *"The companion will still follow behind the player
+	# like before right?"* It did on the letter map; the first composed map drew it on the
+	# player's square where the player covered it.
 	var comp := "res://client/sprites/overworld_pad32/1_2/down_stand.png"
 	if ResourceLoader.exists(comp):
-		Room.build(meaning, biomes, {"11,11": {"main": me, "behind": comp}})
-		var both_px := _cell_pixels(11, 11)
+		var trail_bare := _cell_pixels(10, 11)
+		Room.build(meaning, biomes, {"11,11": me, "10,11": {"main": comp}})
+		var trail_px := _cell_pixels(10, 11)
 		var moved2 := 0
-		for i in range(mini(fig_px.size(), both_px.size())):
-			if not fig_px[i].is_equal_approx(both_px[i]):
+		for i in range(mini(trail_bare.size(), trail_px.size())):
+			if not trail_bare[i].is_equal_approx(trail_px[i]):
 				moved2 += 1
-		ck(moved2 > 20, "%d more pixels change when a companion walks behind you" % moved2)
+		ck(moved2 > 40, "%d pixels change on the square BEHIND you - the companion trails" % moved2)
+		var still_me := _cell_pixels(11, 11)
+		var owner_moved := 0
+		for i in range(mini(fig_px.size(), still_me.size())):
+			if not fig_px[i].is_equal_approx(still_me[i]):
+				owner_moved += 1
+		ck(owner_moved == 0, "and your own square is unchanged by it (%d pixels)" % owner_moved)
 	# Leave the renderer holding the view the pictures below expect.
 	Room.build(meaning, biomes, figures)
 
@@ -201,9 +223,11 @@ func _init() -> void:
 			with_comp += 1
 			ck(String(ent["companion"].get("monster_type", "")) != "",
 				"...and its companion names a species")
-	var rsrc := FileAccess.get_file_as_string("res://client/overworld_room.gd")
-	ck(rsrc.find('behind = String(fig_entry.get("behind", ""))') >= 0,
-		"the renderer draws a companion BEHIND its owner rather than instead of them")
+	var cli_t := FileAccess.get_file_as_string("res://client/client.gd")
+	ck(cli_t.find("pending_companions.append([mid + tdx, mid + tdy, my_comp])") >= 0,
+		"the client places your companion on the square you stepped out of")
+	ck(cli_t.find('if figures.has(ck2):') >= 0,
+		"...and never over another person standing there")
 	var dsrc := FileAccess.get_file_as_string("res://client/dungeon_composite.gd")
 	ck(dsrc.find("static func cutout(") >= 0,
 		"and a companion's baked dungeon floor is cut out first")
