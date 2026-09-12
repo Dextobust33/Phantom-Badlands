@@ -79,6 +79,38 @@ static func append_text(segs: Array, s: String) -> void:
 		segs.append(text(s))
 
 
+static func cells(grid: Dictionary) -> Array:
+	"""One grid back as rows of values.
+
+	`inflate` turns a grid into the display STRING. The sprite renderer needs the values
+	themselves - what each cell is, which biome it stands on - so both go through here rather
+	than each decoding the base64 in its own way."""
+	var w: int = int(grid.get("w", 0))
+	var h: int = int(grid.get("h", 0))
+	var pal: Array = grid.get("p", [])
+	var bpp: int = int(grid.get("b", 1))
+	if w <= 0 or h <= 0 or pal.is_empty():
+		return []
+	var bytes: PackedByteArray = Marshalls.base64_to_raw(String(grid.get("c", "")))
+	var rows: Array = []
+	var at := 0
+	for _y in range(h):
+		var row: PackedStringArray = PackedStringArray()
+		for _x in range(w):
+			var i := 0
+			if bpp == 2:
+				if at + 1 < bytes.size():
+					i = bytes[at] | (bytes[at + 1] << 8)
+				at += 2
+			else:
+				if at < bytes.size():
+					i = bytes[at]
+				at += 1
+			row.append(String(pal[i]) if i < pal.size() else "")
+		rows.append(row)
+	return rows
+
+
 static func inflate(payload: Dictionary) -> String:
 	"""Rebuild the display string. This is the ONLY definition of what a payload means, and the
 	server renders through it too, so a client can never draw something the server would not."""

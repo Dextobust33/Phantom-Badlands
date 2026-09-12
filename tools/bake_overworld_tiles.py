@@ -209,6 +209,11 @@ OVERLAYS = {
     'threat': ('!', 'FFAA00'),
     'hot': ('!', 'FF0000'),
     'merchant': ('$', 'FFD700'),
+    # The player and other players get a glyph here so no cell is ever blank. They are REPLACED
+    # by real figure sprites when the renderer is given them - the overworld already has 80
+    # player looks in `overworld_floor32` - but a marker that is always present beats a hole.
+    'player': ('@', 'FFFF00'),
+    'other': ('*', '00FFFF'),
 }
 
 
