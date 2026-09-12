@@ -26,7 +26,8 @@ PROPS = ['tree', 'stone', 'ore_vein', 'dense_brush', 'bush', 'herb', 'flower', '
          'brambleberry', 'mountain_herb', 'mushroom', 'swamp_lily', 'cactus', 'ice_bloom',
          'water', 'deep_water', 'path', 'floor', 'bridge', 'wall',
          'forge', 'apothecary', 'workbench', 'enchant_table', 'market', 'inn', 'brazier',
-         'banner', 'writing_desk']
+         'banner', 'writing_desk', 'door', 'well', 'fountain', 'signpost', 'quest_board',
+         'lamp_post', 'torch', 'crate', 'storage', 'cairn', 'blacksmith', 'healer', 'hedge']
 BIOMES = ['plains', 'forest', 'mountain', 'swamp', 'snow', 'desert']
 
 
