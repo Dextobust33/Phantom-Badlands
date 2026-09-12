@@ -10,107 +10,80 @@ common way to lose a session.
 
 ---
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-11, third session of the day)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after the v0.9.773 release)
 
-**Master is clean and pushed. Nothing is parked.** Card instances (step 1 of THE ORDER) is merged.
-**Next in THE ORDER is step 4: the OVERWORLD, Phase 2.95, starting with PHASE 1** (move rendering
-from the server to the client, no visual change). Sprite interiors is finished as a separate arc:
-the Sanctuary is done, and NPC post interiors turned out to be overworld tiles rather than their
-own screen, so they are part of Phase 2 there. Phase 1 is also the item that RAISES the player
-ceiling, since it removes the most expensive per-player work the server does.
+**v0.9.773 IS LIVE.** Server deployed and verified by hashing the RUNNING process against the
+local build (`cbd5f158…`, identical), listening on 9080. All seven assets are on the tag. The
+Windows release gate passed; the Linux one gave its documented SKIP (a Linux binary cannot be run
+on this host, and the shared recompile rules out the stale-cache fault the gate exists for).
 
-**Unreleased on master, all probed** — none of it has been played yet:
-- **Card instances.** Every copy of a card is its own card (`cleave`, `cleave#2`): its own uses,
-  milestone picks and effect rank; legacy `{card: count}` saves split on load with each copy
-  inheriting the shared progress; the hand and deck carry copies; a sold copy takes its upgrades
-  to the buyer; card listings never merge; thinning benches a copy and `+` brings it back.
-  Probe `card_instances.gd` (47 checks), `card_market_roundtrip.gd` rewritten.
-- **SERVER: two overworld costs, both invisible.** The tile cache (~1,390 disk stats per move
-  gone) and the minimap's post bucket. Together a location update costs **15.6 ms instead of
-  31.1 ms** in the real world, and the server no longer re-generates a tile it just made.
-  **Needs a DEPLOY**; no client change, nothing visual — `tile_cache.gd`, `minimap_posts.gd`.
-- **The overworld map as DATA** (Phase 2.95 PHASE 1). 28.2 KB a step becomes 3.4 KB, with the
-  display string rebuilt on the client byte for byte. **Server deploy AND client release, and
-  the old-client path is the thing to check by hand** — `map_payload.gd`, `map_payload_golden.gd`.
-**THE DUNGEON ARC (2026-09-11) is all unreleased and all server-side except the last line.**
-It is one arc and wants ONE deploy and one playtest, not six:
-- **Dungeons stand in country that matches them.** Placement follows the land, and the GRADE is
-  read off the ground rather than off the type - which is what makes an A5 Goblin Dungeon
-  possible. 1,489 of 1,500 sampled spawns land inside their own level band, none further than two
-  levels off. `dungeon_placement.gd`, `dungeon_grade_from_land.gd`.
-- **There are 3,000 of them instead of 200**, spread over the whole world rather than the inner
-  4%, at about one per 100 tiles walked. Affordable because dungeons are indexed by position: a
-  map-radius query is 1.8us against 117us scanning. `dungeon_index.gd`.
-- **Dungeons have a rarity.** `spawn_weight`, authored on all 53 types and read by nothing since
-  it was written, now picks the type; a higher rank is rarer than a lower one in the same country.
-- **A dungeon holds more than one kind of monster** - three in four its own species, the rest
-  neighbours of the same grade. The boss and the guaranteed egg stay its own. `dungeon_species_mix.gd`.
-- **Floor eggs follow the dungeon.** By RANK (mean 4.5 flat before, now 1.5 at rank 1 to 8.0 at
-  rank 9) and by SPECIES (whatever actually spawned down there). `floor_egg_rank.gd`.
-- **Dungeon markers stop building rooms nobody enters**, and say so in the log if anything ever
-  reads one. `lazy_dungeon_interior.gd`.
-- **Personal dungeons get cleaned up** - a 30-minute grace after their owner goes offline, a
-  24-hour cap, and an immediate drop on permadeath. `personal_dungeon_cleanup.gd`.
-- **COMPANIONS: a grade finally beats the grade below it.** One ladder for HP, owner bonuses,
-  abilities and damage. This is a PLAYER-POWER change, so the monster curve was re-calibrated
-  after it. `companion_ladder.gd`.
-**What to watch in play:** the world should feel full of dungeons without feeling like wallpaper;
-a dungeon's grade should match its surroundings; low-rank dungeons are now worse for eggs and
-high-rank ones better; and companions at a high rank of a low grade got weaker while high-grade
-ones got stronger.
-- **Cosmetic VARIANTS on sprites.** A lime wolf is lime in the dungeon and on its Sanctuary
-  cushion, not only in its ASCII art; eleven patterns, and the baked floor under the sprite is
-  left alone — `monster_tint.gd`. Client-side, nothing to deploy.
-- **The sprite SANCTUARY**, with companions on cushions, animation, the 2x player, station
-  highlights and the MIRROR (account look). The mirror needs the server deploy too —
-  `sanctuary_room.gd`.
-- Recall on the Sanctuary companions page — `companion_recall.gd`.
-- Party combat CONFIRM step, party only — `party_confirm.gd`.
-- Tier level bands in one table — `tier_bands.gd`.
-- Licences recorded; restricted art stays untracked.
-- Help screen: 26 audited fixes, the main help page formats again (keys had shown as `[%s]`),
-  gathering described as it really works — `help_topics.gd`.
-- Ranger and Barbarian card faces include their engine ramp — `preview_drift.gd`.
-- First-gather tutorial is sent again, rewritten for the scratch-off grid.
-`docs/PLAYTEST_QUEUE.md` items 7-8 cover Recall and the confirm step. **Card instances needs a
-playtest line too before release:** a character with two copies of one card, thin one, restore it,
-rank one copy up and confirm only that copy shows the upgrade, list a spare at a trading post.
+### ⚑ THE ONE THING THAT DID NOT SHIP CLEAN — read this first
 
-**Card instances, second slice (not started):** the deck screen still shows ONE tile per card
-with a copy count, and the market picker lists by card and sells the least-invested copy. To
-let a player choose WHICH copy to thin or sell, both need per-copy rows showing each copy's
-upgrades. The server already accepts a specific copy id (`cull_ability_card`,
-`market_list_card`), so this is client UI only.
+**`rolecal` was NOT run against the new curve.** The owner needed the release out that night;
+rolecal had been going 45 minutes with no end in sight, so it was stopped BEFORE it wrote, and
+the curve on disk is exactly what `refcal` produced. Verified: `git diff` on
+`reference_monster_curve.json` was empty at export time, so there is no half-written file and no
+race - the state is clean, it is just incomplete.
 
-**Track B note:** card instances changes player power only for decks holding extra copies (a
-second copy now levels on its own instead of sharing the first's rank). Batch it with the rest of
-Track B for the single chain run; do not run the chain for it alone.
+**What that means, precisely.** `speciescal` (how much species differ from each other) and
+`refcal` (how hard a level is on average) are current. `role_multipliers` - how much harder an
+ELITE or a BOSS is than a normal monster of the same level - were carried forward, and they were
+calibrated against the PREVIOUS base. Elites and bosses still scale with the corrected base, so
+this is a second-order error in the RATIO, not a first-order error in the scale. It is the
+difference between "elites are somewhat off" and "elites are wrong".
 
-**Help screen FIXED (Track A, unreleased):** all 26 audited entries corrected, and the main help
-page now formats; it had shown every key binding as `[%s]`. Pinned by `tools/probe/help_topics.gd`.
-Two owner questions came out of it: the dead Knight/Mentee bonuses (see Phase 3 list).
+**Do this first next session:**
+```bash
+godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- rolecal
+```
+It takes the better part of an hour on this machine. If it moves `role_multipliers` materially,
+that is a small follow-up release. **Judge against +/-10pp, not 5** - see the rule below.
 
-**Four owner decisions are answered (0b done)** — see THE ORDER.
+### Also worth knowing before anything else
 
-**Five items are waiting on live play data now that v0.9.772 shipped** — the five characters at
-L25+, the rest-change feel check, the "party play isn't working" repro, the dungeon-level mismatch
-second example, and the dungeon-depth confirmation. Ask the owner whether any produced data before
-re-deriving them.
+- **The world is filling with dungeons right now.** `MIN_WORLD_DUNGEONS` went 150 -> 3000, and
+  the server spawns in batches every 120s. Nothing confirmed the fill in the log because Godot
+  buffers stdout and the fresh process had not flushed; the server is listening, its memory is
+  flat at ~300 MB (which is what lazy interiors predict) and its CPU is single digits. **Check
+  the count in play**, and watch for `[LAZY-DUNGEON]` in the log - that line appearing for a
+  `world_dungeon_*` means something reads a world dungeon's interior after all.
+- **Everything in `docs/PLAYTEST_QUEUE.md` items 11 and 12 is now LIVE**, not pending. They were
+  written as "unreleased"; they describe what to check in the build players now have.
 
-**Standing rules that cost time this session when forgotten** (all now enforced by tooling, but
-know why they exist):
-- **Never write a player-facing stat or formula description from intuition.** Owner: *"When
-  putting in stat descriptions that are meant to be our bible it's not acceptable to run off
-  intuition... Making guesses is costing us time and leading to bad info (aka low quality slop)."*
-  `tools/probe/stat_claims.gd` checks the claims against the code. Run it after touching any.
-- **An audit written around the wrong UNIT is as wrong as a guess and far more convincing.** This
-  fired three times in one session (card ids vs display names; format strings vs surfaces;
-  a gate's definition vs its callers). When sweeping, enumerate the SURFACES the player sees, not
-  the strings you expect them to contain.
-- **Prove every fix by re-injecting the fault** and watching the probe fail. A detector that never
-  fires looks exactly like one that finds nothing.
+## v0.9.773 SHIPPED (2026-09-12) -- the overworld is drawn, and dungeons belong where they stand
 
----
+Twenty-one commits. The whole overworld sprite arc and the whole dungeon arc, in one release.
+
+**The map is art.** All 67 overworld tile types and all 7 map markers cut from the Raven packs -
+every gatherable, six biome grounds, water, roads, walls, the post stations and every piece of
+post decor. `client/overworld_room.gd` composes the grid into one image and the client draws
+slices of it; you, other players and everyone's companions are figures wearing their variant
+tints; a post crops to its middle at double size and reads as a room on its own floor. A setting
+turns it off, and every failure falls back to the text map, because the art is licence-restricted
+and not in git.
+
+**The map on the wire.** `build_map_payload` is the single implementation and the display string
+is that payload inflated, so text and sprites cannot describe two different maps. 28.2 KB a step
+became 5.2 KB. A golden of 21 views captured BEFORE any of it guards that the text form never
+moved.
+
+**Dungeons.** Grade is now a reading of the land rather than a number on the type, which fixed
+the owner's G2-in-L15-country report and made an A5 Goblin Dungeon possible at the same time.
+200 dungeons became 3,000 spread over the whole world instead of its middle 4%, affordable
+because they are indexed by position - a map query went 117us to 1.8us. Types have a rarity at
+last (`spawn_weight` had been authored and read by nothing). A dungeon holds more than one
+species. Floor eggs follow the dungeon's rank AND what actually spawned in it. Entrances can be
+hovered. Markers stop building interiors nobody enters. Personal dungeons get cleaned up.
+
+**Companions.** One ladder for grade and rank drives health, damage, abilities and the bonuses
+granted - an H9 had been three times tougher than a G1. `speciescal` and `refcal` were re-run
+after it; `rolecal` was not (see NEXT SESSION).
+
+**Fixes.** The three hover faults, two of which were one cause. Variant tints on sprites
+everywhere. Two server loops that made a step cost twice what it needed to.
+
+**What is NOT yet checked in play:** all of it. Nothing here has been played, and the playtest
+queue items 11 and 12 are the list.
 
 ## Where the game is (2026-09-11)
 

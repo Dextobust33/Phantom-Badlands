@@ -220,7 +220,7 @@ python tools/test_setup/run.py healthy
       target (*"Forcefield on test002"*).
 - [ ] Solo fight on the same character: **no confirm step**, cards play immediately.
 
-## 8. Sanctuary RECALL  *(one client, 2026-09-11, UNRELEASED)*
+## 8. Sanctuary RECALL  *(LIVE in v0.9.773 since 2026-09-12)*
 
 At character select, the Sanctuary companions page can pull a companion back from the character
 holding it. No scenario yet; the setup is three clicks.
@@ -233,7 +233,7 @@ holding it. No scenario yet; the setup is three clicks.
 - [ ] Log in as A WITH the companion, stay logged in from a second client, and try Recall from
       the first → refused with *"A is logged in right now"*.
 
-## 9. Card instances  *(one client, 2026-09-11, UNRELEASED)*
+## 9. Card instances  *(LIVE in v0.9.773 since 2026-09-12)*
 
 Every copy of a card is now its own card. A save made before this splits `{card: 2}` into two
 copies, each carrying the progress the card had.
@@ -248,7 +248,7 @@ Any character. Use **Admin > Items > Grant Test Cards (dungeon + companion, trad
 - [ ] At a trading post, list a Venom Fang. It sells the copy **without** the upgrade, and a
       second listing appears as its **own row** rather than merging into a stack.
 
-## 10. Sprite Sanctuary  *(one client, 2026-09-11, UNRELEASED)*
+## 10. Sprite Sanctuary  *(LIVE in v0.9.773 since 2026-09-12)*
 
 Log in: the Sanctuary is now a sprite room on the main canvas, text on the right.
 
@@ -262,7 +262,7 @@ Log in: the Sanctuary is now a sprite room on the main canvas, text on the right
 - [ ] The MIRROR: click a look, go back - the room shows it; log out and in - it is kept; "Use my
       hero" puts back your last character's look.
 
-## 11. The overworld map arrives as DATA  *(one client + a server deploy, 2026-09-11, UNRELEASED)*
+## 11. The overworld map arrives as DATA  *(LIVE in v0.9.773 since 2026-09-12)*
 
 The map the server sends is no longer a wall of BBCode. It is a palette plus one byte per square,
 and the client rebuilds the same string: ~28 KB a step becomes ~3.4 KB. Nothing should look any
@@ -281,7 +281,7 @@ different, so this list is entirely about "did anything move".
 - [ ] **Old client against the new server**: keep a previous build and log in with it. It must
       still get a map. This is the one that cannot be checked any other way.
 
-## 12. The dungeon arc  *(one client + a server deploy, 2026-09-11, UNRELEASED)*
+## 12. The dungeon arc  *(LIVE in v0.9.773 since 2026-09-12)*
 
 Seven changes that are really one: dungeons now stand in country that matches them, there are
 3,000 of them instead of 200, and a dungeon type no longer decides its own difficulty.
@@ -313,6 +313,18 @@ Seven changes that are really one: dungeons now stand in country that matches th
 - [ ] **COMPANIONS: a grade now beats the grade below it.** A companion at a high rank of a low
       grade got weaker and a high-grade one got stronger. Check a familiar companion still feels
       reasonable, and that the monster curve re-calibration did not make ordinary fights swingy.
+
+## ⚑ v0.9.773 is LIVE — items 10, 11 and 12 are the release, not a preview
+
+Everything below that says "unreleased" was shipped on 2026-09-12. Items 11 and 12 are the two
+biggest changes this game has had in one release, and **none of it has been played yet**. If you
+only have time for one thing: **walk around**. The map is art now, there are fifteen times as
+many dungeons, and both of those are judged by feel rather than by a probe.
+
+One thing to watch that no probe can: **`rolecal` did not run before this release**, so how much
+harder an ELITE or a BOSS is than a normal monster of the same level is calibrated against the
+previous curve. If elites feel off, that is the first suspect, and it is a known gap rather than
+a mystery.
 
 ## Order I would go in
 
