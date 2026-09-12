@@ -78,7 +78,7 @@ static func _under_tile(meaning: String) -> String:
 	return meaning.substr(colon + 1) if colon >= 0 else ""
 
 
-static func build(meaning_rows: Array, biome_rows: Array) -> bool:
+static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = {}) -> bool:
 	"""Compose the map. Cheap when nothing has changed, which is most redraws that are not moves."""
 	if meaning_rows.is_empty() or not available():
 		return false
@@ -91,6 +91,9 @@ static func build(meaning_rows: Array, biome_rows: Array) -> bool:
 		key += "".join(r) + ";"
 	for r in biome_rows:
 		key += "".join(r) + ";"
+	# Figures are part of the key: the map has to recompose when you walk, and you are a figure.
+	for fk in figures:
+		key += "%s=%s;" % [fk, figures[fk]]
 	if key == _key and _grid != null:
 		return true
 	_key = key
@@ -121,10 +124,26 @@ static func build(meaning_rows: Array, biome_rows: Array) -> bool:
 				var t := _img(DIR + "tile/%s.png" % tile_name)
 				if t != null:
 					grid.blend_rect(t, Rect2i(Vector2i.ZERO, t.get_size()), Vector2i(x * CELL, y * CELL))
-			if overlay != "" and overlay != "fog":
+			if overlay != "" and overlay != "fog" and not figures.has("%d,%d" % [x, y]):
 				var o := _img(DIR + "overlay/%s.png" % overlay)
 				if o != null:
 					grid.blend_rect(o, Rect2i(Vector2i.ZERO, o.get_size()), Vector2i(x * CELL, y * CELL))
+			# A FIGURE - you, another player - replaces the marker glyph if the caller supplied
+			# one. The overworld already carries 80 player looks; the renderer does not choose
+			# between them, it draws what it is handed.
+			# Hand it a TRANSPARENT sprite (`overworld_pad32`), never the floor-backed set
+			# (`overworld_floor32`): those have the dungeon floor baked into every frame, because
+			# BBCode could not composite there. Here the compositing happens above, so a
+			# floor-backed figure arrives standing on a square of the wrong ground.
+			var fig := String(figures.get("%d,%d" % [x, y], ""))
+			if fig != "":
+				var fi := _img(fig)
+				if fi != null:
+					# Anchored to the BOTTOM of the cell, so a figure taller than 32 stands on
+					# its tile rather than floating above it.
+					grid.blend_rect(fi, Rect2i(Vector2i.ZERO, fi.get_size()),
+						Vector2i(x * CELL + (CELL - fi.get_width()) / 2,
+							(y + 1) * CELL - fi.get_height()))
 			if overlay == "fog":
 				# Remembered ground, not seen ground. Darkened rather than hidden, which is what
 				# the text map did with a dim colour.

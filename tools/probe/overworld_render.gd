@@ -61,7 +61,15 @@ func _init() -> void:
 	ck(kinds.size() > 5, "%d distinct cell meanings in one view" % kinds.size())
 
 	print("\n--- and it composes ---")
-	ck(Room.build(meaning, biomes), "the renderer builds a map from it")
+	# A FIGURE on the centre cell - you. The overworld already carries 80 player looks; the
+	# renderer draws what it is handed rather than choosing.
+	# `overworld_pad32`, NOT `overworld_floor32`. The floor-backed set has the dungeon floor baked
+	# into every frame, because BBCode could not composite there; here the renderer composites, so
+	# a figure must be transparent or it arrives standing on a square of someone else's ground.
+	var me := "res://client/sprites/overworld_pad32/1_1/down_stand.png"
+	var figures: Dictionary = {"11,11": me} if ResourceLoader.exists(me) else {}
+	ck(Room.build(meaning, biomes, figures), "the renderer builds a map from it")
+	ck(not figures.is_empty(), "and a player figure is available to stand on the centre cell")
 	ck(Room.cell_path(0, 0) != "", "and serves a cell as something an [img] tag can load")
 	ck(Room.cell_path(0, 0) == Room.cell_path(0, 0), "the same cell twice is the same texture")
 
@@ -109,6 +117,13 @@ func _init() -> void:
 	ck(Room._under_tile("!hot:tree") == "tree", "and `!hot:tree` resolves to a tree")
 	ck(Room._overlay_name("!hot:tree") == "hot", "with `hot` over it")
 	ck(Room._overlay_name("tree") == "", "while plain terrain has no overlay at all")
+
+	print("\n--- and a figure replaces the marker rather than sitting beside it ---")
+	var src2 := FileAccess.get_file_as_string("res://client/overworld_room.gd")
+	ck(src2.find('and not figures.has("%d,%d" % [x, y])') >= 0,
+		"the overlay glyph is skipped where a figure stands")
+	ck(src2.find("(y + 1) * CELL - fi.get_height()") >= 0,
+		"and a figure is anchored to the bottom of its cell, so a tall one stands on its tile")
 
 	# The picture. A probe can say "not black"; only eyes can say "readable".
 	var out := Image.create(23 * 32, 23 * 32, false, Image.FORMAT_RGBA8)

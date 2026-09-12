@@ -122,6 +122,16 @@ CUTS = {
     'tile:obelisk':          ('sun_city', 20, 5),
     'tile:sundial':          ('sun_city', 14, 15),
     'tile:birdbath':         ('farmlands_v3', 17, 18),
+
+    # --- OVERLAYS as art too. Owner 2026-09-11: *"Dungeons markers should have a sprite, so
+    # should corpses, bounties, hotzone we will want to do graphically rather than the glyph"*.
+    'overlay:dungeon':  ('green_forest_v2', 2, 9),
+    'overlay:corpse':   ('red_rock_desert', 5, 5),
+    'overlay:bounty':   ('interiors', 6, 30),
+    'overlay:hot':      ('green_forest_v2', 4, 11),
+    'overlay:threat':   ('interiors', 6, 26),
+    'overlay:sack':     ('green_forest_v2', 9, 9),
+    'overlay:merchant': ('green_village', 7, 2, (2, 2)),
     'tile:floor':      ('miners_cave', 2, 6),
     'tile:water':      ('beach_ocean_and_shore', 1, 27),
     'tile:deep_water': ('beach_ocean_and_shore', 3, 27),
@@ -366,11 +376,14 @@ def main():
             n += 1
     print('%d tiles still on a glyph, waiting for art' % n)
 
+    overlay_art = set(k.split(':', 1)[1] for k in CUTS if k.startswith('overlay:'))
     m = 0
     for name, (ch, col) in sorted(OVERLAYS.items()):
+        if name in overlay_art:
+            continue
         if bake_glyph(ch, col, os.path.join(OUT, 'overlay', name + '.png')):
             m += 1
-    print('baked %d overlay glyphs' % m)
+    print('%d overlays still on a glyph' % m)
     print('%d files in %s' % (len(biomes) + cut + n + m, OUT))
 
 
