@@ -46,6 +46,48 @@ already-converged levels: median ratio 1.003).
 would have produced nothing either way. `tools/probe/rolecal_projection.gd` now times one batch
 per level (1/21 of the run) so the budget is set from a measurement.
 
+### ⚑ NEXT: fight LENGTH and the resource economy (owner direction, 2026-09-12)
+
+Answering the question v0.9.777 raised. Owner, verbatim:
+
+> Fight length should normally be long enough for you to engage with your engine a couple of
+> times if you're fighting enemies of your level. It's okay if shorter in the lower levels as
+> players are still learning their engines and characters. Ability resource costs likely need
+> looked at as well to avoid resource costs being too free. If a fight runs long you should be
+> struggling a bit for resources. I'm not worried about health cost necessarily if we are
+> tracking win loss it should help account for that.
+
+So, as targets:
+- **Same-level fight = about TWO engine cycles.** Not a turn count pulled from the air - the
+  number follows from how long a cycle takes for that class, which differs by engine SHAPE
+  (Momentum / Focus / Read). Measure the cycle first, then the fight.
+- **Low levels may be shorter** and that is intended, not a defect to correct. Players are still
+  learning the engine.
+- **Resources should bind.** A long fight should leave you short. Right now costs may be close to
+  free, which would make the resource bar decoration rather than a decision.
+- **HP cost is NOT a target.** Win/loss already accounts for it. Do not tune against the cost
+  column.
+
+**This does NOT contradict [[feedback_length_is_not_the_goal]]** ("never pad a fight to make it
+last"). Length is the CONSEQUENCE of engine cycles and resource pressure; it is not to be bought
+by inflating monster HP. If the measured fix is "give the monster more health", it is the wrong
+fix.
+
+**Order of work (measurement before tuning):**
+1. How long is ONE engine cycle, per class? Build-to-spend, in turns.
+2. How long is a same-level fight now, per class, at several levels?
+3. Does resource EVER bind? Count turns where the class could not afford the card it wanted, and
+   the reserve it ends a fight holding. `lowlevel` and `classes` already probe near this.
+4. Only then decide whether the lever is `TARGET_TURNS_NORMAL` (currently 5.0), per-class costs,
+   regen, or the cards themselves. **Per-class, not global** - a global change is cancelled by the
+   next refit (see CLAUDE.md).
+5. Any change here is player-side, so it invalidates the curve: re-run the whole chain
+   (`speciescal` -> `refcal` -> `rolecal`) afterwards, ~25 min plus rolecal's hour.
+
+Related and already known: [[project_resource_economy_scaling]] - costs are flat and capped, fully
+so for Warrior and Trickster, which is exactly the shape that makes resources stop binding as the
+game goes on.
+
 ### ⚑ OPEN QUESTION this raised - for the owner, not for me to decide
 
 Win rate is on target everywhere, but **fight LENGTH and COST are not, and the chain cannot steer
