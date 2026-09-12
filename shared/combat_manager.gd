@@ -280,46 +280,60 @@ const VARIABLE_COST_MIN_FRACTION: float = 0.3
 # small early-game pools). Effect scales with spend, so these remain the "full
 # power" cost; spend down to floor_ratio for a cheaper, weaker cast.
 const VARIABLE_COST_TABLE: Dictionary = {
+	# ⚑ 2026-09-12 - cost_percent DOUBLED across the board. The band this table says it holds
+	# ("~6-10 casts at a full pool") was not being met: measured with
+	# tools/probe/resource_flow.gd, a full bar bought 20.5 casts at L20, 16.3 at L100 and 14.5
+	# at L1000 - two to three times the intended band - so the resource bar never bound. Across
+	# 630 fights not ONE turn fell back to a basic attack and the bar never dropped below half.
+	#
+	# Owner 2026-09-12: *"Ability resource costs likely need looked at as well to avoid resource
+	# costs being too free. If a fight runs long you should be struggling a bit for resources."*
+	#
+	# A UNIFORM factor on purpose: it holds every card's price relative to every other card, so
+	# this changes the economy without re-opening which card is worth casting. The early game is
+	# untouched by construction - tools/probe/cost_branch.gd measured that the FLAT ceiling still
+	# wins for 9 of 9 classes at L1 and 8 of 9 at L5, so cost_percent is dead weight there, which
+	# is what keeps L1 at its already-correct ~9 casts while the mid and late game tighten.
 	# #6c (2026-09-02) — cost_percent values re-solved to hold a CASTS-PER-BAR band (~6-10 at a
 	# full pool) instead of a fixed percentage. They were tuned against much smaller pools: at
 	# L1000 they were delivering 48-88 casts per bar, so resource management did not exist past
 	# the early game. The flat `ceiling` still governs the early game, where 4-6 casts was
 	# already correct, so these only bite once the pool is large.
-	"power_strike": {"ceiling": 7, "cost_percent": 19, "floor_ratio": 0.3, "resource": "stamina"},
-	"shield_bash":  {"ceiling": 13, "cost_percent": 22, "floor_ratio": 0.3, "resource": "stamina"},
-	"cleave":       {"ceiling": 20, "cost_percent": 27, "floor_ratio": 0.3, "resource": "stamina"},
-	"devastate":    {"ceiling": 32, "cost_percent": 30, "floor_ratio": 0.3, "resource": "stamina"},
-	"blast":        {"ceiling": 34, "cost_percent": 21, "floor_ratio": 0.3, "resource": "mana"},   # 4→6 (2026-08-25 resource fix — eased from 7 for flock sustain; scales w/ pool to L1000)
-	"meteor":       {"ceiling": 65, "cost_percent": 27, "floor_ratio": 0.3, "resource": "mana"},  # 8→14 (#6c: re-priced against its anchored weight — see below)
-	"ambush":       {"ceiling": 20, "cost_percent": 22, "floor_ratio": 0.3, "resource": "energy"},
-	"exploit":      {"ceiling": 24, "cost_percent": 18, "floor_ratio": 0.3, "resource": "energy"},
-	"gambit":       {"ceiling": 24, "cost_percent": 19, "floor_ratio": 0.3, "resource": "energy"},
+	"power_strike": {"ceiling": 7, "cost_percent": 38, "floor_ratio": 0.3, "resource": "stamina"},
+	"shield_bash":  {"ceiling": 13, "cost_percent": 44, "floor_ratio": 0.3, "resource": "stamina"},
+	"cleave":       {"ceiling": 20, "cost_percent": 54, "floor_ratio": 0.3, "resource": "stamina"},
+	"devastate":    {"ceiling": 32, "cost_percent": 60, "floor_ratio": 0.3, "resource": "stamina"},
+	"blast":        {"ceiling": 34, "cost_percent": 42, "floor_ratio": 0.3, "resource": "mana"},   # 4→6 (2026-08-25 resource fix — eased from 7 for flock sustain; scales w/ pool to L1000)
+	"meteor":       {"ceiling": 65, "cost_percent": 54, "floor_ratio": 0.3, "resource": "mana"},  # 8→14 (#6c: re-priced against its anchored weight — see below)
+	"ambush":       {"ceiling": 20, "cost_percent": 44, "floor_ratio": 0.3, "resource": "energy"},
+	"exploit":      {"ceiling": 24, "cost_percent": 36, "floor_ratio": 0.3, "resource": "energy"},
+	"gambit":       {"ceiling": 24, "cost_percent": 38, "floor_ratio": 0.3, "resource": "energy"},
 	# #6c (2026-09-02) — the utility and buff cards were left behind when the DAMAGE cards were
 	# re-priced, so they stayed effectively free: Forcefield at 3% was the long-standing
 	# "net cost zero" case, and a player reported still seeing a 0-cost ability after the first
 	# pass. They are re-priced here but kept deliberately CHEAPER than the damage cards
 	# (10-22 against 19-30), because a buff pays out over several turns rather than in one hit.
-	"forcefield":   {"ceiling": 15, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},   # 2→3
+	"forcefield":   {"ceiling": 15, "cost_percent": 20, "floor_ratio": 0.3, "resource": "mana"},   # 2→3
 	# Warrior buffs (v0.9.263): magnitude scales with spend, duration unchanged.
-	"war_cry":      {"ceiling": 11, "cost_percent": 15, "floor_ratio": 0.3, "resource": "stamina"},
-	"fortify":      {"ceiling": 17, "cost_percent": 16, "floor_ratio": 0.3, "resource": "stamina"},
-	"iron_skin":    {"ceiling": 24, "cost_percent": 18, "floor_ratio": 0.3, "resource": "stamina"},
-	"rally":        {"ceiling": 24, "cost_percent": 18, "floor_ratio": 0.3, "resource": "stamina"},
-	"berserk":      {"ceiling": 27, "cost_percent": 19, "floor_ratio": 0.3, "resource": "stamina"},
+	"war_cry":      {"ceiling": 11, "cost_percent": 30, "floor_ratio": 0.3, "resource": "stamina"},
+	"fortify":      {"ceiling": 17, "cost_percent": 32, "floor_ratio": 0.3, "resource": "stamina"},
+	"iron_skin":    {"ceiling": 24, "cost_percent": 36, "floor_ratio": 0.3, "resource": "stamina"},
+	"rally":        {"ceiling": 24, "cost_percent": 36, "floor_ratio": 0.3, "resource": "stamina"},
+	"berserk":      {"ceiling": 27, "cost_percent": 38, "floor_ratio": 0.3, "resource": "stamina"},
 	# Mage CC (v0.9.264): haste = magnitude scaling, paralyze + banish = chance scaling.
-	"haste":        {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "mana"},   # 3→5
+	"haste":        {"ceiling": 24, "cost_percent": 24, "floor_ratio": 0.3, "resource": "mana"},   # 3→5
 	# #36 (2026-08-27) Mage 7→9: Frost Nova = soft control (chip frost dmg + accuracy chill),
 	# variable mana. Overload is HP-cost and NOT listed here (handled in its own case).
-	"frost_nova":   {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "mana"},
-	"paralyze":     {"ceiling": 42, "cost_percent": 15, "floor_ratio": 0.3, "resource": "mana"},   # 5→7 (eased from 8)
-	"banish":       {"ceiling": 55, "cost_percent": 18, "floor_ratio": 0.3, "resource": "mana"},   # 7→9 (eased from 10)
+	"frost_nova":   {"ceiling": 24, "cost_percent": 24, "floor_ratio": 0.3, "resource": "mana"},
+	"paralyze":     {"ceiling": 42, "cost_percent": 30, "floor_ratio": 0.3, "resource": "mana"},   # 5→7 (eased from 8)
+	"banish":       {"ceiling": 55, "cost_percent": 36, "floor_ratio": 0.3, "resource": "mana"},   # 7→9 (eased from 10)
 	# Trickster utility (v0.9.265): chance scaling for pickpocket + perfect_heist,
 	# magnitude scaling for distract + sabotage. Analyze + Vanish stay fixed-cost
 	# (binary mechanics — partial cast doesn't make sense).
-	"distract":     {"ceiling": 11, "cost_percent": 13, "floor_ratio": 0.3, "resource": "energy"},
-	"pickpocket":   {"ceiling": 14, "cost_percent": 14, "floor_ratio": 0.3, "resource": "energy"},
-	"sabotage":     {"ceiling": 18, "cost_percent": 15, "floor_ratio": 0.3, "resource": "energy"},
-	"shadowstep":   {"ceiling": 16, "cost_percent": 14, "floor_ratio": 0.3, "resource": "energy"},
+	"distract":     {"ceiling": 11, "cost_percent": 26, "floor_ratio": 0.3, "resource": "energy"},
+	"pickpocket":   {"ceiling": 14, "cost_percent": 28, "floor_ratio": 0.3, "resource": "energy"},
+	"sabotage":     {"ceiling": 18, "cost_percent": 30, "floor_ratio": 0.3, "resource": "energy"},
+	"shadowstep":   {"ceiling": 16, "cost_percent": 28, "floor_ratio": 0.3, "resource": "energy"},
 	# 2026-09-06 — `vanish` was a FLAT 40 in a table where everything else is a percentage of the
 	# pool: 71% of a Ninja's entire 56-energy bar at level 1, for one of only five cards it holds.
 	# The Ninja is the only class in the game that basic-attacks meaningfully (22% of its turns
@@ -339,8 +353,8 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	#
 	# Both already read `variable_fraction` in their cast code and were silently always getting
 	# 1.0 for it, so scaling with spend is what they were written to expect.
-	"vanish":       {"ceiling": 40, "cost_percent": 16, "floor_ratio": 0.3, "resource": "energy"},
-	"perfect_heist":{"ceiling": 34, "cost_percent": 22, "floor_ratio": 0.3, "resource": "energy"},
+	"vanish":       {"ceiling": 40, "cost_percent": 32, "floor_ratio": 0.3, "resource": "energy"},
+	"perfect_heist":{"ceiling": 34, "cost_percent": 44, "floor_ratio": 0.3, "resource": "energy"},
 }
 
 # Active combats (peer_id -> combat_state)
