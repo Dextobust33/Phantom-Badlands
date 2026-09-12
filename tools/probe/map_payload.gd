@@ -40,7 +40,8 @@ func _init() -> void:
 	# that mangled every index would still agree with itself and pass. Proven - corrupting the
 	# palette index left the round-trip check green. So the reference here is the CELLS, which
 	# the encoder never touches.
-	var ref_rows: Array = ws._map_cells(40, 40, 11, [], [], [], [], [], {}, {}, {})
+	# _map_cells returns [look, meaning] now; the decode check is about the look grid.
+	var ref_rows: Array = ws._map_cells(40, 40, 11, [], [], [], [], [], {}, {}, {})[ws.CELLS_LOOK]
 	var ref_lines: PackedStringArray = PackedStringArray()
 	for r in ref_rows:
 		ref_lines.append("".join(r))
@@ -115,6 +116,74 @@ func _init() -> void:
 			seg["c"] = String(seg["c"]).substr(0, 8)
 	var short_out: String = MapPayload.inflate(truncated)
 	ck(short_out.length() > 0, "a truncated grid still inflates (%d chars) instead of crashing the client" % short_out.length())
+
+	print("\n--- and it carries what each cell IS, for the sprites ---")
+	# PHASE 2 draws the overworld. It needs the tile's own identity; deriving it back out of a
+	# colour and a glyph would be a second copy of the render table, waiting to go stale.
+	var meaning: Dictionary = pay.get("meaning", {})
+	ck(not meaning.is_empty(), "the payload carries a meaning grid")
+	var look: Dictionary = {}
+	for seg in pay.get("segs", []):
+		if seg is Dictionary and seg.has("w") and int(seg["w"]) == 23:
+			look = seg
+			break
+	ck(not look.is_empty(), "and the 23x23 map grid is there to compare it against")
+	ck(int(meaning.get("w", 0)) == int(look.get("w", -1)) and int(meaning.get("h", 0)) == int(look.get("h", -1)),
+		"the two grids are the same shape (%dx%d), so no cell has a look without a meaning" % [
+			int(meaning.get("w", 0)), int(meaning.get("h", 0))])
+
+	var known := {}
+	for k in ws.TILE_RENDER:
+		known[String(k)] = true
+	var strange := 0
+	var overlays := 0
+	var terrain := 0
+	var example := ""
+	for entry in meaning.get("p", []):
+		var m := String(entry)
+		if m.begins_with("!"):
+			overlays += 1
+			continue
+		if known.has(m):
+			terrain += 1
+			continue
+		strange += 1
+		if example == "":
+			example = m
+	ck(strange == 0, "every meaning is either an overlay or a real tile type%s" % (
+		"" if example == "" else " (found %s)" % example))
+	ck(terrain > 0, "%d distinct terrain types appear in one view" % terrain)
+	ck(overlays > 0, "%d distinct overlay kinds appear too" % overlays)
+
+	# The one cell whose meaning is certain, and the tile under it.
+	var bytes: PackedByteArray = Marshalls.base64_to_raw(String(meaning.get("c", "")))
+	var w: int = int(meaning.get("w", 0))
+	var h: int = int(meaning.get("h", 0))
+	var pal: Array = meaning.get("p", [])
+	var centre: String = ""
+	if w > 0 and h > 0 and bytes.size() >= w * h:
+		var idx: int = (h / 2) * w + (w / 2)
+		centre = String(pal[bytes[idx]]) if bytes[idx] < pal.size() else ""
+	ck(centre == "!player", "the centre cell says it is the player, not a tile (got %s)" % centre)
+
+	var matched := 0
+	var mismatched := 0
+	for yy in range(h):
+		for xx in range(w):
+			var i: int = yy * w + xx
+			if i >= bytes.size() or bytes[i] >= pal.size():
+				continue
+			var m := String(pal[bytes[i]])
+			if m.begins_with("!"):
+				continue
+			# grid row 0 is the NORTH edge; the map is drawn top-down from +radius
+			var wx: int = 40 + xx - (w / 2)
+			var wy: int = 40 - yy + (h / 2)
+			if String(cm.get_tile(wx, wy).get("type", "")) == m:
+				matched += 1
+			else:
+				mismatched += 1
+	ck(mismatched == 0, "%d terrain cells name the tile that is actually there, %d do not" % [matched, mismatched])
 
 	print("\n--- the wiring, on both sides ---")
 	# A payload nobody sends is a payload nobody benefits from, and a negotiation with one half

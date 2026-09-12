@@ -1321,6 +1321,10 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 	flips the at-post 'Safe' header to 'Under Threat'.
 	"""
 	var segs: Array = []
+	# The map's MEANING, alongside its look. Not a segment: it is not part of the display string,
+	# and `inflate` must never see it, or the text the player reads would change. PHASE 2 draws
+	# from this; PHASE 1's renderer ignores it entirely.
+	var _meaning: Dictionary = {}
 
 	# Pre-compute lookup set for the inner renderer to avoid repeated linear
 	# scans during the per-tile loop.
@@ -1360,7 +1364,9 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 			MapPayload.append_text(segs, _get_compass_line(center_x, center_y, post))
 			MapPayload.append_text(segs, "\n")
 			MapPayload.append_text(segs, "[center]")
-			segs.append(MapPayload.grid(_map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set), "\n", ""))
+			var _cells: Array = _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
+			segs.append(MapPayload.grid(_cells[CELLS_LOOK], "\n", ""))
+			_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 			MapPayload.append_text(segs, "[/center]")
 			# Minimap — zoomed-out overview at small font, appended below the main map
 			# The minimap, as cells rather than as 21 KB of repeated colour tags.
@@ -1369,7 +1375,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 				MapPayload.append_text(segs, MINIMAP_OPEN)
 				segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
 				MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
-			return {"f": MapPayload.FORMAT, "segs": segs}
+			return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning}
 
 	# Check legacy Trading Post
 	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
@@ -1379,11 +1385,13 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		MapPayload.append_text(segs, "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver"))
 		MapPayload.append_text(segs, "[center]")
 		if chunk_manager:
-			segs.append(MapPayload.grid(_map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set), "\n", ""))
+			var _cells: Array = _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
+			segs.append(MapPayload.grid(_cells[CELLS_LOOK], "\n", ""))
+			_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 		else:
 			MapPayload.append_text(segs, generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations))
 		MapPayload.append_text(segs, "[/center]")
-		return {"f": MapPayload.FORMAT, "segs": segs}
+		return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning}
 
 	# Check if in a player enclosure — treat as safe zone
 	var in_enclosure = false
@@ -1428,7 +1436,9 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 	# Add the main map (centered)
 	MapPayload.append_text(segs, "[center]")
 	if chunk_manager:
-		segs.append(MapPayload.grid(_map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set), "\n", ""))
+		var _cells: Array = _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
+		segs.append(MapPayload.grid(_cells[CELLS_LOOK], "\n", ""))
+		_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 	else:
 		MapPayload.append_text(segs, generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations))
 	MapPayload.append_text(segs, "[/center]")
@@ -1441,7 +1451,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
 		MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
 
-	return {"f": MapPayload.FORMAT, "segs": segs}
+	return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning}
 
 func is_apex_frontier(x: int, y: int) -> bool:
 	"""Audit #10 v0.9.512 — true when the coord is in the apex frontier zone
@@ -2125,6 +2135,12 @@ func bresenham_line(x0: int, y0: int, x1: int, y1: int) -> Array[Vector2i]:
 
 # ===== NEW MAP RENDERER (Chunk-based with LOS) =====
 
+## `_map_cells` returns [look, meaning]: two same-shaped grids, one of BBCode and one of what
+## each cell actually is. Named so call sites read as intent rather than as an index.
+const CELLS_LOOK := 0
+const CELLS_MEANING := 1
+
+
 func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}, pvp_sack_set: Dictionary = {}) -> Array:
 	"""Generate ASCII map using chunk-based tile data with LOS raycasting.
 	Slice 6j — explored_tiles is mutated in place: any tile that resolves
@@ -2132,6 +2148,11 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 	tile that is LOS-blocked but previously seen renders as fog instead
 	of blank."""
 	var rows: Array = []
+	# What each cell IS, in parallel with how it LOOKS. PHASE 2 (spriting the overworld) needs
+	# the tile's own identity, and deriving it back out of a colour and a glyph would be a second
+	# copy of the render table waiting to go stale. Built in the same loop, so a cell cannot
+	# appear in one grid and not the other.
+	var sem_rows: Array = []
 
 	# v0.9.427 — pre-collect hotspot clusters for the entire vision area in a
 	# single window scan. Replaces per-tile _is_hotspot() (121 hash checks
@@ -2222,6 +2243,7 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 	var _diag_render_start: int = Time.get_ticks_usec()
 	for dy in range(radius, -radius - 1, -1):
 		var line_parts: PackedStringArray = PackedStringArray()
+		var sem_parts: PackedStringArray = PackedStringArray()
 		for dx in range(-radius, radius + 1):
 			var x = center_x + dx
 			var y = center_y + dy
@@ -2230,11 +2252,13 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 			# Outside vision radius
 			if dist > radius:
 				line_parts.append("  ")
+				sem_parts.append("!void")
 				continue
 
 			# Out of world bounds
 			if x < WORLD_MIN_X or x > WORLD_MAX_X or y < WORLD_MIN_Y or y > WORLD_MAX_Y:
 				line_parts.append("  ")
+				sem_parts.append("!void")
 				continue
 
 			var pos_key = "%d,%d" % [x, y]
@@ -2242,6 +2266,7 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 			# Player position (always visible)
 			if dx == 0 and dy == 0:
 				line_parts.append("[color=#FFFF00] @[/color]")
+				sem_parts.append("!player")
 				continue
 
 			# LOS check — tiles outside line of sight are blank, unless the
@@ -2250,8 +2275,10 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 			if not visible_tiles.get(pos_key, false):
 				if explored_tiles.has(pos_key):
 					line_parts.append(_render_fog_tile(x, y))
+					sem_parts.append("!fog")
 				else:
 					line_parts.append("  ")
+					sem_parts.append("!void")
 				continue
 
 			# Audit #11 Slice 8 — overlay red warning glyph on threatened post
@@ -2265,6 +2292,7 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				# warning families on the map read as distinct shades at a
 				# glance. Legend below the map documents this; see also help.
 				line_parts.append("[color=#FFAA00] ![/color]")
+				sem_parts.append("!threat")
 				continue
 
 			# Priority: players > dungeons > bounties > corpses > sacks > merchants > terrain
@@ -2277,26 +2305,32 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				# Party members show in green, others in cyan
 				var player_color = "#00FF00" if first_player.get("in_my_party", false) else "#00FFFF"
 				line_parts.append("[color=%s] %s[/color]" % [player_color, player_char])
+				sem_parts.append("!other")
 			elif dungeon_positions.has(pos_key):
 				var dungeon = dungeon_positions[pos_key]
 				var dungeon_color = dungeon.get("color", "#A335EE")
 				line_parts.append("[color=%s] D[/color]" % dungeon_color)
+				sem_parts.append("!dungeon")
 			elif bounty_positions.has(pos_key):
 				# v0.9.566 — bounty target uses gold ? to read distinct from
 				# the red ! hotzone glyph (player feedback). "?" reads as
 				# "find this target" — known location, named monster.
 				line_parts.append("[color=#FFD700] ?[/color]")
+				sem_parts.append("!bounty")
 			elif corpse_positions.has(pos_key):
 				line_parts.append("[color=#FF0000] X[/color]")
+				sem_parts.append("!corpse")
 			elif pvp_sack_set.has(pos_key):
 				# Audit #14 Slice D.2 — PvP loot sack dropped at apex death tile.
 				# Gold $ marks claimable contents (valor + gear + eggs + companion).
 				# Any player walking onto the tile auto-claims via handle_move.
 				line_parts.append("[color=#FFD700] $[/color]")
+				sem_parts.append("!sack")
 			elif is_merchant_at(x, y):
 				var merchant_color = _get_merchant_map_color(x, y)
 				var merchant_char = _get_merchant_map_char(x, y)
 				line_parts.append("[color=%s] %s[/color]" % [merchant_color, merchant_char])
+				sem_parts.append("!merchant")
 			else:
 				# Render tile from chunk data — v0.9.430 uses the per-render
 				# cache populated in setup. Skips the procedural-noise pipeline
@@ -2319,9 +2353,11 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 						var intensity = _get_hotspot_intensity_in_clusters(x, y, _hotspot_clusters)
 						var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
 						line_parts.append("[color=%s] ![/color]" % hz_color)
+						sem_parts.append("!hot:" + tile_type)
 					else:
 						# Depleted node — show dim passable ground
 						line_parts.append("[color=#444444] ,[/color]")
+						sem_parts.append("!depleted:" + tile_type)
 				elif in_hotzone and tile_type in GATHERABLE_TYPES:
 					# v0.9.635 — Keep the gather tile's NATIVE glyph visible inside
 					# hotzones, just tint it red. Player report: 'currently the
@@ -2335,24 +2371,31 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 					var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
 					var render = TILE_RENDER.get(tile_type, TILE_RENDER["empty"])
 					line_parts.append("[color=%s] %s[/color]" % [hz_color, render.char])
+					sem_parts.append("!hot:" + tile_type)
 				elif in_hotzone and (tile_type == "empty" or not TILE_RENDER.get(tile_type, {}).get("blocks_move", false)):
 					# Passable empty tile in hotzone — show red ! with intensity gradient
 					var intensity = _get_hotspot_intensity_in_clusters(x, y, _hotspot_clusters)
 					var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
 					line_parts.append("[color=%s] ![/color]" % hz_color)
+					sem_parts.append("!hot")
 				elif in_hotzone:
 					# Non-passable, non-gather tile in hotzone — dark red `!`
 					line_parts.append("[color=#8B0000] ![/color]")
+					sem_parts.append("!hot")
 				elif tile_type == "guard":
 					# Guard post — color based on active guard status
 					line_parts.append(_render_guard_tile(x, y))
+					sem_parts.append("guard")
 				elif tile_type == "tower":
 					# Tower — gold if boosting a nearby guard
 					line_parts.append(_render_tower_tile(x, y))
+					sem_parts.append("tower")
 				else:
 					line_parts.append(_render_tile_bbcode(tile_type, tile_tier, x, y))
+					sem_parts.append(tile_type)
 
 		rows.append(line_parts)
+		sem_rows.append(sem_parts)
 	var _diag_render_us: int = Time.get_ticks_usec() - _diag_render_start
 	# The join moved out of this function with PHASE 1: cells go on the wire and the client
 	# joins them. Reported as 0 so the timing line keeps its shape.
@@ -2374,12 +2417,13 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 			radius,
 			visible_tiles.size(),
 		])
-	return rows
+	# Both grids, so a caller that wants sprites and a caller that wants text read the same walk.
+	return [rows, sem_rows]
 
 func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}, pvp_sack_set: Dictionary = {}) -> String:
 	"""The main map as a string. One line per row, exactly as `_map_cells` produced them."""
 	var lines: PackedStringArray = PackedStringArray()
-	for r in _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set):
+	for r in _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)[CELLS_LOOK]:
 		lines.append("".join(r))
 	return "\n".join(lines)
 

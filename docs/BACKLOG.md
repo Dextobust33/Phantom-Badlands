@@ -1262,11 +1262,20 @@ scope, because they are all tiles in the same grid.**
       **Needs a DEPLOY and a client release together** (the saving only lands for clients that
       can read it; either half alone is still correct).
 
-- [ ] **What PHASE 1 did NOT do, so PHASE 2 does not assume it.** The payload carries a cell's
-      rendered BBCode, not yet its TILE TYPE. Sprites need the type (and tier) beside the glyph;
-      that is an additive field on the palette entry, which is why the palette exists rather than
-      a flat byte grid. The spectate path (`watch_location`) still sends the old string, and the
-      1.4 ms of server-side string building is still spent for clients that cannot read a payload.
+- [x] **DONE 2026-09-11 - the payload carries what each cell IS, which PHASE 2 needs.**
+      `_map_cells` now returns TWO same-shaped grids, look and meaning, built in the same walk so
+      a cell cannot appear in one and not the other. Terrain cells carry their tile type; overlays
+      carry a `!`-prefixed kind (`!player`, `!dungeon`, `!fog`, `!hot:tree`, `!depleted:ore_vein`
+      and so on) that can never be mistaken for terrain.
+      It rides as `payload.meaning`, deliberately NOT a segment: `inflate` never sees it, so the
+      text a player reads is still byte-identical to the golden. Wire cost 3.4 KB -> 4.4 KB, still
+      6.4x smaller than the 28.2 KB string it replaced.
+      **Deriving the type back out of a colour and a glyph was the alternative, and it would have
+      been a second copy of the render table waiting to go stale.**
+      Probe: 153 terrain cells checked against `chunk_manager.get_tile` at the same coordinates;
+      making them all claim `empty` fails it.
+      Still open from PHASE 1: the spectate path (`watch_location`) sends the old string, and the
+      string building is still spent for clients that cannot read a payload.
 
 - [x] **DONE 2026-09-11 — cosmetic VARIANTS show on sprites, not just in ASCII art.** Owner:
       *"all monsters have variants that change what their ASCII art looks like (like lime ones, or
@@ -1322,7 +1331,17 @@ scope, because they are all tiles in the same grid.**
 
 - [ ] **PHASE 2 SCOPE — what "sprite the overworld" has to cover** (2026-09-11, after the
       Sanctuary shipped and posts turned out to be overworld tiles):
-      * **Wilderness tiles** - terrain, nodes, roads, water, structures.
+      * **Wilderness tiles** - terrain, roads, water, structures. The GROUND varies by biome
+        (plains, forest, mountain, swamp, snow, desert); most props do not.
+      * **EVERY GATHERABLE gets its own sprite.** Owner 2026-09-11: *"We will want sprites for all
+        of the gatherables as well if that wasn't already expected."* That is `tree`, `stone`,
+        `ore_vein`, `dense_brush`, `herb`, `flower`, `mushroom`, `bush`, `reed`, `cactus`,
+        `ice_bloom`, `swamp_lily`, `mountain_herb`, `brambleberry` - fourteen, several of them
+        biome-specific, and they are what a player is actually hunting for on the map.
+      * **67 tile types in all** (`TILE_RENDER`), so the resolver needs a COVERAGE probe that
+        calls it on every one rather than a table someone eyeballs. This is the `.png.png` lesson:
+        v0.9.761 shipped with all 53 dungeon monster sprites broken because the table was checked
+        and the lookup was never called.
       * **NPC POST INTERIORS** - `wall`, `floor`, `door`, and the station tiles (`forge`,
         `apothecary`, `workbench`, `enchant_table`, `writing_desk`, `market`, `inn`,
         `quest_board`, `blacksmith`, `healer`, `cartographer`, `companion_stable`, `tower`,
