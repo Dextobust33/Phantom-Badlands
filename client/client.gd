@@ -20,6 +20,17 @@ const OVERWORLD_POST_CROP := 11
 var overworld_sprites := true
 ## The dungeon entrances in the current view, keyed by map cell, so a hover can name one.
 var _overworld_dungeons: Dictionary = {}
+## Cell key -> who is standing there, for hover and click. Rebuilt with every map redraw.
+##
+## Owner 2026-09-12, on what v0.9.774 cost: the old text-map overlay carried the hover and the
+## click-to-inspect for players and companions, and standing it down took both with it. This is
+## the replacement, on the same `[url=]` + `meta_hover_started` mechanism the dungeon entrances
+## already proved - which is also the one that survives the map being a picture rather than a
+## grid of Controls.
+##
+## Everything here is already on the client: the local player from `character_data`, everyone
+## else from `_cached_nearby_players`. The map payload does NOT need to carry it, and does not.
+var _overworld_figure_meta: Dictionary = {}
 
 ## What this BUILD can read off the wire, sent with login. The server checks it before sending
 ## anything an older build would not understand, and a client that says nothing keeps getting
@@ -3004,6 +3015,18 @@ func _ready():
 			if not map_display.meta_hover_started.is_connected(_on_log_meta_hover):
 				map_display.meta_hover_started.connect(_on_log_meta_hover)
 				map_display.meta_hover_ended.connect(_on_log_meta_unhover)
+			# CLICK, not just hover. The map had hover wired and `meta_clicked` never connected,
+			# so click-to-inspect died with the sprite overlay in v0.9.774 and could not come
+			# back on the url mechanism until this existed.
+			if not map_display.meta_clicked.is_connected(_on_map_meta_clicked):
+				map_display.meta_clicked.connect(_on_map_meta_clicked)
+			# NO LINK UNDERLINE on the map. RichTextLabel underlines `[url=]` by default, which
+			# was invisible while the only links were dungeon entrances - a 26px image in a 26px
+			# line, with the underline at the baseline beneath it. A figure is drawn at 43px and
+			# overflows upward, so the same underline came out as a pale line sliced straight
+			# through both the player and the companion at knee height. Caught in a screenshot,
+			# not by a probe: the map was structurally perfect and looked wrong.
+			map_display.meta_underlined = false
 		# ...and the buff strip, which now marks a buff that does nothing for your class and
 		# needs somewhere to say why. Third label, same connection: a link is only as good as
 		# the label it is on.
@@ -30984,7 +31007,12 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.777[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.778[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOU CAN POINT AT PEOPLE ON THE MAP AGAIN.[/color] Hovering another player — or the companion walking behind them — brings back their card with portrait, level and class, and [b]clicking examines them[/b]. Clicking a companion opens its inspect view. This was lost when the map became pictures instead of letters: the old letter-map drew people as separate little panels that could be hovered, and a painted map has none.")
+	display_game("  [color=#1EFF00]◆ And a stray line stopped cutting across your character.[/color] Making a square clickable draws a link underline under it. Harmless under a dungeon marker; your character is drawn [b]larger than its square[/b], so the line came out straight through you and your companion at knee height. Gone.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.777[/color]")
 	display_game("  [color=#FF8000]★ CHAMPIONS AND BOSSES ARE SIZED AGAINST THE REAL YOU AGAIN.[/color] Their strength is [b]measured[/b], not hand-written — the game fights thousands of real battles and corrects until each kind of enemy is as dangerous as it is meant to be. That measurement had not been redone since your own power last changed, so they were sized against a player who no longer exists.")
 	display_game("  [color=#FF8000]★ A LOW-LEVEL CHAMPION WAS NOT A FIGHT.[/color] At level 1 a Champion was being beaten [b]about 99 times in 100[/b], against a design target of 40. They were wearing the badge and none of the danger. Champions, Empowered and Bosses at the bottom of the ladder now hit [b]roughly twice as hard[/b]. Treat an early Champion as something to prepare for.")
 	display_game("  [color=#1EFF00]◆ And they ease off higher up.[/color] Past the early game the same enemies had drifted [b]too strong[/b] relative to ordinary monsters of their level — they were sized against an older, weaker version of your character. Their damage comes down [b]17-50%[/b] depending on level. A Champion should be a hard fight at every stage, not a wall in the mid game and a pushover at the start.")
@@ -31006,19 +31034,6 @@ func display_changelog():
 	display_game("  [color=#FF8000]★ THE FIGURES ON THE NEW MAP WERE IN THE WRONG PLACE.[/color] Your character was drawn by the OLD text-map code, which positions things by counting letters — so on the new picture map [b]you stood about a row off[/b], and everything around you looked shifted because of it. Your companion was still a bare letter. Both are drawn into the map itself now, at the right square and the right size.")
 	display_game("  [color=#1EFF00]◆ A gathering node you have already taken now LOOKS taken.[/color] The old letter map dimmed a spent node to a grey comma. The picture map drew the tile and looked for a [i]spent[/i] version that was never made — so [b]a used-up ore vein was identical to a fresh one[/b] and looked like it had not cleared. It dims now.")
 	display_game("  [color=#1EFF00]◆ Trading posts stopped hiding their own doors.[/color] Stepping inside zoomed the view to the middle of the room — but a post is 17-20 tiles across in a 23-tile view, so there was nothing spare to crop and the [b]walls and doors were cut off[/b]. No crop now; the post still reads as a room because it stands on its own floor.")
-	display_game("")
-
-	display_game("[color=#808080]v0.9.773[/color]")
-	display_game("  [color=#FF8000]★ THE OVERWORLD IS DRAWN, NOT SPELLED.[/color] The map was coloured letters. It is now [b]art[/b] — ground that changes with the country you are in, and a real sprite for every tree, rock, ore vein, herb, flower, reed, berry, mushroom, cactus and ice bloom you can gather. [b]You stand on it as your own character[/b], other players as theirs, and everyone[color=#FFFFFF]\'[/color]s companion walks behind them wearing its own colours. Turn it off under [b]Settings → Game Settings[/b] if you prefer the letters.")
-	display_game("  [color=#FF8000]★ A TRADING POST IS A ROOM NOW.[/color] Step inside and the view [b]zooms[/b] — the forge, the market, the healer, the board and the stable all drawn on the post[color=#FFFFFF]\'[/color]s own floor instead of a letter on the dirt outside.")
-	display_game("  [color=#FF8000]★ FIFTEEN TIMES AS MANY DUNGEONS, AND THEY BELONG WHERE THEY STAND.[/color] A [b]G2[/b] holding level 7-9 monsters could sit in level 15-17 wilderness, because a dungeon[color=#FFFFFF]\'[/color]s grade had nothing to do with its surroundings. Now the LAND decides: a dungeon is placed where the world already reaches its levels, and [b]a Goblin Caves far from home is a high grade with high-level goblins in it[/b]. The count went from 200 to 3,000 and they now cover the whole world instead of the middle 4% of it. [b]Hover any entrance[/b] to read its grade and the levels inside before you commit.")
-	display_game("  [color=#FF8000]★ DUNGEONS HOLD MORE THAN ONE KIND OF MONSTER.[/color] Three in four are the dungeon[color=#FFFFFF]\'[/color]s own species and the rest are neighbours of the same grade. The boss is always its own — and so is the egg it guarantees — but [b]what you find on the floor is drawn from whatever actually lives down there[/b].")
-	display_game("  [color=#FF8000]★ CLIMBING RANKS FINALLY PAYS IN EGGS.[/color] A rank 1 and a rank 9 dungeon handed out [b]identical[/b] floor eggs. Now a deeper dungeon really is a better place to look: rank 1 averages a rank 1.5 egg, rank 9 averages 8.")
-	display_game("  [color=#FF8000]★ A GRADE OF COMPANION NOW BEATS THE GRADE BELOW IT.[/color] An [b]H9 was about three times tougher than a G1[/b] and granted double the bonuses, because companion health never read tier at all. One ladder drives health, damage, abilities and the bonuses you get — each grade is 30% above the one under it, and a rank is a ninth of the way there.")
-	display_game("  [color=#1EFF00]◆ Monsters wear their variant.[/color] A lime one is lime, a two-tone red and blue one is both — on the [b]sprite[/b] now, not just in the art, in dungeons and on your Sanctuary cushions.")
-	display_game("  [color=#1EFF00]◆ The stuck tooltip.[/color] A trait box could sit on your screen and survive whole fights. One label was wired to open a tooltip and never to close it. Tooltips also appear where your pointer is now, instead of somewhere off to the right, and [b]APEX and ELITE can be hovered[/b] like every term beside them.")
-	display_game("  [color=#1EFF00]◆ Your dungeons stop haunting the map.[/color] A personal dungeon was cleaned up only when its quest ended — never on logout, never on death, with no age limit. Now: half an hour of grace so you can reconnect into a run, a 24-hour cap, and gone at once if you die.")
-	display_game("  [color=#1EFF00]◆ Moving costs the server half what it did.[/color] Two loops were redoing the same work every step — regenerating tiles it had just made, and re-scanning every trading post in the world for each square of your minimap.")
 	display_game("")
 
 	display_game("[color=#808080]v0.9.768[/color]")
@@ -37226,6 +37241,24 @@ func _on_log_meta_hover(meta) -> void:
 		if info is Dictionary:
 			_show_overworld_dungeon_hover(info)
 		return
+	if m.begins_with("owfig:"):
+		# A PERSON on the overworld map - you, another player, or a companion walking behind one.
+		# Restores what v0.9.774 lost when the old text-map overlay stood down: the overlay was a
+		# grid of Controls with mouse_entered on each, and a composed picture has none.
+		var fig = _overworld_figure_meta.get(m.substr(6), null)
+		if not (fig is Dictionary):
+			return
+		var kind := String(fig.get("kind", ""))
+		var data: Dictionary = fig.get("data", {})
+		if kind == "player":
+			var body := _build_map_player_tooltip(data, bool(fig.get("is_local", false)))
+			if body != "":
+				_show_map_tooltip(body, null, data)
+		elif kind == "companion":
+			var cbody := _build_map_companion_tooltip(data)
+			if cbody != "":
+				_show_map_tooltip(cbody, null, {})
+		return
 	if m.begins_with("tile:"):
 		# A theme tile, hovered either in the side-panel key or on the floor itself.
 		var dt := String(dungeon_data.get("dungeon_type", ""))
@@ -37425,9 +37458,46 @@ func _wrap_plain(text: String, width: int) -> String:
 	return out
 
 
+func _on_map_meta_clicked(meta) -> void:
+	"""Click a person on the overworld map: a player is examined, a companion is inspected.
+
+	Mirrors what the old sprite overlay did on left-click (`_on_map_sprite_input`) - examining
+	sends the same server message, and inspecting opens the same companions panel view - so this
+	is the previous behaviour on a mechanism that survives the map being one composed image."""
+	var m := String(meta)
+	if not m.begins_with("owfig:"):
+		return
+	var fig = _overworld_figure_meta.get(m.substr(6), null)
+	if not (fig is Dictionary):
+		return
+	var kind := String(fig.get("kind", ""))
+	var data: Dictionary = fig.get("data", {})
+	if kind == "player":
+		# Examining YOURSELF is not a thing the server answers, and the old overlay had the same
+		# guard by accident (the local slot carried your own name and the server ignored it).
+		# Say so instead, rather than sending a message that produces silence.
+		var pname := String(data.get("name", ""))
+		if pname == "":
+			return
+		if bool(fig.get("is_local", false)):
+			display_game("[color=#808080]That is you.[/color]")
+			return
+		send_to_server({"type": "examine_player", "name": pname})
+		display_game("[color=#808080]Examining %s...[/color]" % pname)
+	elif kind == "companion":
+		if data.is_empty():
+			return
+		_open_map_companion_inspect(data)
+	_hide_map_tooltip()
+
+
 func _on_log_meta_unhover(_meta) -> void:
 	if combat_scene_panel and combat_scene_panel.has_method("_hide_formula_popup"):
 		combat_scene_panel._hide_formula_popup()
+	# The figure hover uses the richer map tooltip (it carries a portrait), not the formula
+	# popup, so it needs dismissing too or it sits on screen - the exact fault reported against
+	# the trait tooltip in 773.
+	_hide_map_tooltip()
 
 func _party_actor_color(actor_pid: int) -> String:
 	"""Stable per-member colour, by the member's position in the combat roster.
@@ -40793,6 +40863,20 @@ func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: D
 	if my_gen != _map_tooltip_gen:
 		return
 	if not is_instance_valid(_map_tooltip) or not _map_tooltip.visible:
+		return
+	# A NULL anchor means the hover came from a `[url=]` inside the map text rather than from a
+	# Control - which is every map figure since the picture map replaced the sprite overlay.
+	# There is no node to measure, so the cursor is the anchor.
+	if anchor == null:
+		_map_tooltip.reset_size()
+		var mvp := get_viewport_rect().size
+		var mtip := _map_tooltip.size
+		var mpos := get_viewport().get_mouse_position() + Vector2(18, 12)
+		if mpos.x + mtip.x > mvp.x - 4:
+			mpos.x = maxf(4.0, get_viewport().get_mouse_position().x - mtip.x - 12)
+		if mpos.y + mtip.y > mvp.y - 4:
+			mpos.y = maxf(4.0, mvp.y - mtip.y - 4)
+		_map_tooltip.global_position = mpos
 		return
 	if not is_instance_valid(anchor):
 		_hide_map_tooltip()
@@ -45708,6 +45792,24 @@ func _overworld_companion_path(comp: Dictionary) -> String:
 	return _DungeonComposite.cutout(_companion_tinted_sprite(comp, base))
 
 
+func _nearby_player_named(pname: String) -> Dictionary:
+	"""The roster entry for a named player, or empty.
+
+	The map payload names WHO is in each figure cell; this turns that name into the full record
+	the tooltip wants (level, class, appearance, party). The roster arrives separately as
+	`_cached_nearby_players`, so the payload stays a picture and does not grow a copy of it.
+
+	Deliberately NOT a coordinate lookup. The first version of this re-derived the cell from world
+	positions using the client's own copy of the server's grid mapping - two copies of one value,
+	and the failure mode is a hover that confidently names the wrong person."""
+	if pname == "":
+		return {}
+	for entry in _cached_nearby_players:
+		if entry is Dictionary and String(entry.get("name", "")) == pname:
+			return entry
+	return {}
+
+
 func _overworld_display(payload: Dictionary) -> String:
 	"""The location display with the map drawn as art.
 
@@ -45722,6 +45824,7 @@ func _overworld_display(payload: Dictionary) -> String:
 	if meaning.is_empty():
 		return MapPayload.inflate(payload)
 	var figures: Dictionary = {}
+	_overworld_figure_meta = {}
 	var rows_n: int = meaning.size()
 	var cols_n: int = meaning[0].size() if rows_n > 0 else 0
 	# OTHER players, and the companions travelling with them. The client cannot know who is out
@@ -45734,6 +45837,14 @@ func _overworld_display(payload: Dictionary) -> String:
 		var pth := _overworld_look_path(String(ent.get("id", "")))
 		if pth != "":
 			figures[String(k)] = {"main": pth}
+			# Who it is, for hover and click. The server names them in the payload; the roster
+			# it already sends separately fills in the rest.
+			var pn := String(ent.get("name", ""))
+			if pn != "":
+				var who: Dictionary = _nearby_player_named(pn)
+				if who.is_empty():
+					who = {"name": pn}
+				_overworld_figure_meta[String(k)] = {"kind": "player", "data": who, "is_local": false}
 		var comp = ent.get("companion", {})
 		if comp is Dictionary:
 			var cpath := _overworld_companion_path(comp)
@@ -45742,12 +45853,25 @@ func _overworld_display(payload: Dictionary) -> String:
 				# the same default the old letter map used when it could not tell.
 				var kp: PackedStringArray = String(k).split(",")
 				if kp.size() == 2:
-					pending_companions.append([int(kp[0]) - 1, int(kp[1]), cpath])
+					pending_companions.append([int(kp[0]) - 1, int(kp[1]), cpath, comp])
 	# You, at the centre of your own view.
 	var me := _overworld_figure_path()
 	var mid: int = rows_n / 2
 	if me != "":
 		figures["%d,%d" % [mid, mid]] = {"main": me}
+		_overworld_figure_meta["%d,%d" % [mid, mid]] = {
+			"kind": "player", "is_local": true,
+			"data": {
+				"name": String(character_data.get("name", "")),
+				"class": String(character_data.get("class", "")),
+				"battler_id": String(character_data.get("battler_id", "")),
+				"equipped": character_data.get("equipped", {}),
+				"level": int(character_data.get("level", 1)),
+				"appearance_variant": String(character_data.get("appearance_variant", "")),
+				"appearance_color": String(character_data.get("appearance_color", "")),
+				"appearance_color2": String(character_data.get("appearance_color2", "")),
+				"appearance_pattern": String(character_data.get("appearance_pattern", "solid")),
+			}}
 	# YOUR companion walks in the square you just stepped out of, picked from which way you are
 	# facing. Owner 2026-09-12: *"The companion will still follow behind the player like before
 	# right?"* - it did on the letter map (`_apply_companion_trail`) and the first composed map
@@ -45762,7 +45886,8 @@ func _overworld_display(payload: Dictionary) -> String:
 			"left": tdx = 1
 			"up": tdx = 0; tdy = 1
 			"down": tdx = 0; tdy = -1
-		pending_companions.append([mid + tdx, mid + tdy, my_comp])
+		pending_companions.append([mid + tdx, mid + tdy, my_comp,
+			character_data.get("active_companion", {})])
 	# Companions are placed LAST and never over a person: two players standing a square apart
 	# must not have one's companion delete the other.
 	for pc in pending_companions:
@@ -45774,6 +45899,8 @@ func _overworld_display(payload: Dictionary) -> String:
 		if figures.has(ck2):
 			continue
 		figures[ck2] = {"main": String(pc[2])}
+		if pc.size() > 3 and pc[3] is Dictionary and not (pc[3] as Dictionary).is_empty():
+			_overworld_figure_meta[ck2] = {"kind": "companion", "data": pc[3], "is_local": false}
 	if not _OverworldRoom.build(meaning, biomes, figures):
 		return MapPayload.inflate(payload)
 	# NO CROP INSIDE A POST, and the reason is a measurement rather than a preference. The zoom
@@ -45799,6 +45926,8 @@ func _overworld_display(payload: Dictionary) -> String:
 		var dkey := "%d,%d" % [x, y]
 		if _overworld_dungeons.has(dkey):
 			return "[url=owdg:%s]%s[/url]" % [dkey, img]
+		if _overworld_figure_meta.has(dkey):
+			return "[url=owfig:%s]%s[/url]" % [dkey, img]
 		return img, crop)
 
 

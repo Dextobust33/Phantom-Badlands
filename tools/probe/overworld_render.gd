@@ -223,11 +223,13 @@ func _init() -> void:
 			with_comp += 1
 			ck(String(ent["companion"].get("monster_type", "")) != "",
 				"...and its companion names a species")
+	# The companion trailing behind is asserted by PIXELS above ("pixels change on the square
+	# BEHIND you"), not by searching the source for an argument list. The source version of this
+	# check broke the moment the call gained a fourth argument, while the behaviour was untouched
+	# - which is the whole argument against source-reading checks in one line.
 	var cli_t := FileAccess.get_file_as_string("res://client/client.gd")
-	ck(cli_t.find("pending_companions.append([mid + tdx, mid + tdy, my_comp])") >= 0,
-		"the client places your companion on the square you stepped out of")
 	ck(cli_t.find('if figures.has(ck2):') >= 0,
-		"...and never over another person standing there")
+		"a companion is never placed over another person standing there")
 	var dsrc := FileAccess.get_file_as_string("res://client/dungeon_composite.gd")
 	ck(dsrc.find("static func cutout(") >= 0,
 		"and a companion's baked dungeon floor is cut out first")
@@ -291,11 +293,10 @@ func ", sync_i + 10) - sync_i)
 	# The text map drew a spent node as a dim grey comma. The sprite map drew the tile and then
 	# looked for an overlay called "depleted" that was never baked, so a used-up ore vein was
 	# pixel-identical to a fresh one and looked like it had not cleared at all.
-	var rsrc2 := FileAccess.get_file_as_string("res://client/overworld_room.gd")
-	ck(rsrc2.find('elif overlay == "depleted":') >= 0, "the renderer handles a depleted node")
-	var dep_i := rsrc2.find('elif overlay == "depleted":')
-	ck(rsrc2.substr(dep_i, 600).find("_darken(grid, x, y,") >= 0,
-		"...by dimming it, the way the text map dimmed its comma")
+	# The DRAWING of a spent node is proven by composing it both ways and comparing pixels and
+	# brightness - tools/probe/depleted_looks_spent.gd, which also covers the hotzone case. The
+	# two source-reading checks that used to sit here broke on a rename while the behaviour was
+	# correct, and had never proven anything the pixel probe does not prove better.
 	ck(Room._overlay_name("!depleted:ore_vein") == "depleted", "`!depleted:ore_vein` reads as depleted")
 	ck(Room._under_tile("!depleted:ore_vein") == "ore_vein", "...standing on an ore vein, which still draws")
 	ck(not FileAccess.file_exists("res://client/sprites/overworld32/overlay/depleted.png"),

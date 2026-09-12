@@ -2383,7 +2383,14 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				# face - two people on a tile stay the `*` they have always been.
 				var _fv := String(first_player.get("appearance_variant", ""))
 				if _fv != "" and players_here.size() == 1:
-					var _fig: Dictionary = {"kind": "player", "id": _fv}
+					# The NAME rides along, and it saves the client re-deriving this cell from
+					# world coordinates with its own copy of the grid mapping. That copy is how a
+					# hover names the wrong person after any off-by-one: the server is the only
+					# side that knows which cell it put this figure in, so it says who is in it.
+					var _fig: Dictionary = {
+						"kind": "player", "id": _fv,
+						"name": String(first_player.get("name", "")),
+					}
 					# Owner 2026-09-11: *"Same with other players companions."* A companion has no
 					# tile of its own - it travels with its owner - so it rides in the same cell
 					# and the renderer stands it behind them, as the dungeon already does.
