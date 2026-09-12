@@ -54,30 +54,42 @@ FONTS = [r'C:\Windows\Fonts\consola.ttf', r'C:\Windows\Fonts\seguisym.ttf']
 CUTS = {
     # --- ground, one per biome ---------------------------------------------------------
     'ground:forest':   ('green_forest_v2', 1, 8),
-    'ground:plains':   ('green_forest_v2', 0, 8),
+    'ground:plains':   ('farmlands_v3', 0, 0),
+    'ground:desert':   ('red_rock_desert', 1, 1),
+    'ground:snow':     ('winter_forest', 1, 0),
+    'ground:mountain': ('miners_cave', 2, 3),
+    'ground:swamp':    ('green_forest_v2', 0, 11),
 
     # --- the land itself ---------------------------------------------------------------
-    'tile:empty':      ('green_forest_v2', 0, 9),
-    'tile:path':       ('green_forest_v2', 1, 18),
-    'tile:floor':      ('green_forest_v2', 8, 11),
-    'tile:water':      ('green_forest_v2', 12, 12),
-    'tile:deep_water': ('green_forest_v2', 12, 15),
+    # NOTE: `empty` gets no entry ON PURPOSE. Empty IS the biome ground - giving it a prop put a
+    # tuft of grass on every bare tile in the world and hid the ground it was meant to show.
+    'tile:path':       ('farmlands_v3', 2, 4),
+    'tile:wall':       ('winter_forest', 7, 14),
+    'tile:bridge':     ('miners_cave', 6, 4),
+    'tile:floor':      ('miners_cave', 2, 6),
+    'tile:water':      ('beach_ocean_and_shore', 1, 27),
+    'tile:deep_water': ('beach_ocean_and_shore', 3, 27),
 
     # --- gatherables. Owner: *"We will want sprites for all of the gatherables as well"* ---
     # a whole tree, shrunk from its 3x3 block - see cut_from_pack's note on span
     'tile:tree':         ('green_forest_v2', 5, 0, (3, 3)),
     'tile:stone':        ('green_forest_v2', 0, 4),
+    'tile:ore_vein':     ('miners_cave', 6, 5),
     'tile:bush':         ('green_forest_v2', 1, 9),
     'tile:dense_brush':  ('green_forest_v2', 1, 11),
     'tile:herb':         ('green_forest_v2', 1, 13),
     'tile:flower':       ('green_forest_v2', 1, 12),
     'tile:reed':         ('green_forest_v2', 1, 10),
-    'tile:brambleberry': ('green_forest_v2', 2, 11),
+    'tile:brambleberry': ('farmlands_v3', 2, 29),
+    'tile:cactus':       ('red_rock_desert', 4, 4),
+    'tile:ice_bloom':    ('winter_forest', 5, 6),
+    'tile:mushroom':     ('shroom_chasm', 5, 2),
+    'tile:swamp_lily':   ('shroom_chasm', 6, 3),
     'tile:mountain_herb':('green_forest_v2', 11, 5),
 }
 
 
-def cut_from_pack(pack, row, col, dest, span=None):
+def cut_from_pack(pack, row, col, dest, span=None, opaque=False):
     """One cell, or a REGION of cells shrunk to one.
 
     `span=(rows, cols)` takes a block and scales it down to 32x32. Raven draws a tree across
@@ -103,6 +115,22 @@ def cut_from_pack(pack, row, col, dest, span=None):
     if cell.getbbox() is None:
         raise SystemExit('%s (%d,%d) is EMPTY - a blank cell would draw a hole, which is the '
                          'fault the glyph fallback exists to prevent' % (pack, row, col))
+    if opaque:
+        # GROUND-class tiles must cover the cell completely. Raven draws a body of water as a
+        # rounded block, so its corners are transparent - and the biome ground underneath then
+        # shows through as a green rim around every deep-water tile. Fill the gaps with the
+        # cell's own commonest colour rather than hunting for a cell that happens to be square.
+        counts = {}
+        for px in cell.getdata():
+            if px[3] > 200:
+                counts[px[:3]] = counts.get(px[:3], 0) + 1
+        if not counts:
+            raise SystemExit('%s (%d,%d) has no opaque pixel to take a fill colour from'
+                             % (pack, row, col))
+        fill = max(counts.items(), key=lambda kv: kv[1])[0] + (255,)
+        base = _I.new('RGBA', cell.size, fill)
+        base.alpha_composite(cell)
+        cell = base
     cell.save(dest)
 
 
@@ -258,7 +286,9 @@ def main():
         kind, name = key.split(':', 1)
         pack, row, col = spec[0], spec[1], spec[2]
         span = spec[3] if len(spec) > 3 else None
-        cut_from_pack(pack, row, col, os.path.join(OUT, kind, name + '.png'), span)
+        # ground-class tiles must not let the biome show through - see cut_from_pack
+        opaque = kind == 'ground' or name in ('water', 'deep_water', 'path', 'floor', 'wall')
+        cut_from_pack(pack, row, col, os.path.join(OUT, kind, name + '.png'), span, opaque)
         cut += 1
     print('cut %d tiles from real art' % cut)
 

@@ -30,10 +30,38 @@ def find_sheet(pack):
     raise SystemExit('no All Tileset sheet for %r' % pack)
 
 
+def opacity_map(pack):
+    """Which cells actually hold art, as text.
+
+    PICK FROM THIS, NOT FROM THE PICTURE. Two picks in a row landed on empty cells because a
+    contact sheet scaled down to fit a screen is not a measurement - the same mistake, in a new
+    costume, as every other "I looked at it and it seemed fine"."""
+    sheet = Image.open(find_sheet(pack)).convert('RGBA')
+    cols = sheet.size[0] // CELL
+    rows = sheet.size[1] // CELL
+    print('%s: %d x %d cells' % (pack, cols, rows))
+    print('    ' + ''.join('%-3d' % c for c in range(cols)))
+    for r in range(rows):
+        line = ''
+        for c in range(cols):
+            cell = sheet.crop((c * CELL, r * CELL, (c + 1) * CELL, (r + 1) * CELL))
+            if cell.getbbox() is None:
+                line += '.  '
+                continue
+            a = cell.getchannel('A')
+            filled = sum(1 for v in a.tobytes()) and sum(1 for v in a.tobytes() if v > 200) / float(CELL * CELL)
+            line += '#  ' if filled > 0.95 else ('o  ' if filled > 0.3 else '-  ')
+        print('%-4d' % r + line)
+    print('# full (ground/water/path)   o partial (a prop)   - sparse   . empty')
+
+
 def main():
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
     pack = sys.argv[1]
+    if '--map' in sys.argv:
+        opacity_map(pack)
+        return
     row_lo, row_hi = 0, 10 ** 9
     if '--rows' in sys.argv:
         lo, hi = sys.argv[sys.argv.index('--rows') + 1].split('-')

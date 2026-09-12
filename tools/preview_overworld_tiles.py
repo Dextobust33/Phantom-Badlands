@@ -20,8 +20,11 @@ SCALE = 2
 PAD = 26
 
 # A strip per biome, showing the ground alone and then each prop laid over it.
-PROPS = ['tree', 'stone', 'bush', 'dense_brush', 'herb', 'flower', 'reed', 'brambleberry',
-         'mountain_herb', 'water', 'deep_water', 'path', 'floor', 'empty']
+# All fourteen gatherables the owner asked for, then the land itself. `empty` is absent: it IS
+# the ground, and a prop on it would hide the thing it is meant to be.
+PROPS = ['tree', 'stone', 'ore_vein', 'dense_brush', 'bush', 'herb', 'flower', 'reed',
+         'brambleberry', 'mountain_herb', 'mushroom', 'swamp_lily', 'cactus', 'ice_bloom',
+         'water', 'deep_water', 'path', 'floor', 'bridge', 'wall']
 BIOMES = ['plains', 'forest', 'mountain', 'swamp', 'snow', 'desert']
 
 
