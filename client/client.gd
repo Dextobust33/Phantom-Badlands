@@ -30969,7 +30969,13 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.776[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.777[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ CHAMPIONS AND BOSSES ARE SIZED AGAINST THE REAL YOU AGAIN.[/color] Their strength is [b]measured[/b], not hand-written — the game fights thousands of real battles and corrects until each kind of enemy is as dangerous as it is meant to be. That measurement had not been redone since your own power last changed, so they were sized against a player who no longer exists.")
+	display_game("  [color=#FF8000]★ A LOW-LEVEL CHAMPION WAS NOT A FIGHT.[/color] At level 1 a Champion was being beaten [b]about 99 times in 100[/b], against a design target of 40. They were wearing the badge and none of the danger. Champions, Empowered and Bosses at the bottom of the ladder now hit [b]roughly twice as hard[/b]. Treat an early Champion as something to prepare for.")
+	display_game("  [color=#1EFF00]◆ And they ease off higher up.[/color] Past the early game the same enemies had drifted [b]too strong[/b] relative to ordinary monsters of their level — they were sized against an older, weaker version of your character. Their damage comes down [b]17-50%[/b] depending on level. A Champion should be a hard fight at every stage, not a wall in the mid game and a pushover at the start.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.776[/color]")
 	display_game("  [color=#FF8000]★ THE MINIMAP WAS BLIND TO SIX SEVENTHS OF ITSELF.[/color] It draws [b]40 tiles east and west and 20 north and south[/b] — but the dungeon list it was handed only ever covered as far as you could SEE, eleven tiles. So a dungeon well inside the picture was simply missing from it and [b]popped into existence only once you walked within sight of it[/b]. Both are sized off the same number now, so they cannot drift apart again.")
 	display_game("  [color=#FF8000]★ AND IT COSTS THE SERVER A SEVENTH OF WHAT IT DID.[/color] The minimap rebuilt all 861 of its squares from scratch on [b]every single step[/b], for ground that never changes — [b]6.9ms a move, the most expensive thing in walking[/b]. It now remembers ground it has already worked out, and finds markers by walking the handful that exist instead of asking all 861 squares whether one is there. Measured: [b]6.9ms down to 0.9ms[/b]; walking, 8.9ms down to 1.4ms.")
 	display_game("  [color=#1EFF00]◆ Your companion walks behind you again.[/color] It was being drawn on [b]your own square[/b], mostly hidden behind you. It is back in the square you just stepped out of, picked from the way you are facing — where it always was before the map became pictures.")
@@ -30998,11 +31004,6 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ The stuck tooltip.[/color] A trait box could sit on your screen and survive whole fights. One label was wired to open a tooltip and never to close it. Tooltips also appear where your pointer is now, instead of somewhere off to the right, and [b]APEX and ELITE can be hovered[/b] like every term beside them.")
 	display_game("  [color=#1EFF00]◆ Your dungeons stop haunting the map.[/color] A personal dungeon was cleaned up only when its quest ended — never on logout, never on death, with no age limit. Now: half an hour of grace so you can reconnect into a run, a 24-hour cap, and gone at once if you die.")
 	display_game("  [color=#1EFF00]◆ Moving costs the server half what it did.[/color] Two loops were redoing the same work every step — regenerating tiles it had just made, and re-scanning every trading post in the world for each square of your minimap.")
-	display_game("")
-
-	display_game("[color=#808080]v0.9.772[/color]")
-	display_game("  [color=#FF8000]★ LINUX: THE ICONS THAT WERE EMPTY BOXES NOW DRAW.[/color] The bug-report, suggest-idea and screenshot buttons, [b]Review Damage[/b] in combat, the gathering labels, and [b]every button in the launcher[/b] were drawn with emoji — which Linux has no font for, so they came out as boxes. All replaced with symbols that render everywhere.")
-	display_game("  [color=#FF8000]★ YOUR LAUNCHER UPDATES ITSELF AGAIN.[/color] The launcher has been able to replace itself for a while, and the game can replace it too — but both read a version field that our release file was missing, so neither ever fired. It is there now: [b]you should not need to reinstall the launcher from the website again[/b].")
 	display_game("")
 
 	display_game("[color=#808080]v0.9.768[/color]")
