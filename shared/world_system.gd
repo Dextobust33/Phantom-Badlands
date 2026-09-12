@@ -1327,6 +1327,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 	var _meaning: Dictionary = {}
 	var _biomes: Dictionary = {}
 	var _figures: Dictionary = {}
+	var _inside_post: bool = false
 
 	# Pre-compute lookup set for the inner renderer to avoid repeated linear
 	# scans during the per-tile loop.
@@ -1347,6 +1348,10 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 	if chunk_manager and chunk_manager.is_npc_post_tile(center_x, center_y):
 		var post = chunk_manager.get_npc_post_at(center_x, center_y)
 		if not post.is_empty():
+			# Inside a post. The sprite map reads this and draws the middle of the view larger, so
+			# a post looks like a ROOM rather than a patch of map - the owner's older ask, and
+			# cheap here because you cannot see far inside one anyway.
+			_inside_post = true
 			# v0.9.350 — drop [b] so the post header uses the regular font
 			# variant. The bold font has slightly different line metrics,
 			# which shifted the map block ~2px lower when entering a post
@@ -1382,7 +1387,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 				MapPayload.append_text(segs, MINIMAP_OPEN)
 				segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
 				MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
-			return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures}
+			return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post}
 
 	# Check legacy Trading Post
 	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
@@ -1403,7 +1408,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		else:
 			MapPayload.append_text(segs, generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations))
 		MapPayload.append_text(segs, "[/center]")
-		return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures}
+		return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post}
 
 	# Check if in a player enclosure — treat as safe zone
 	var in_enclosure = false
@@ -1468,7 +1473,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
 		MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
 
-	return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures}
+	return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post}
 
 func is_apex_frontier(x: int, y: int) -> bool:
 	"""Audit #10 v0.9.512 — true when the coord is in the apex frontier zone
@@ -2161,6 +2166,11 @@ func _cell_biome(x: int, y: int) -> String:
 	Wrapped rather than called directly so the sprite renderer's need for it on EVERY cell does
 	not become 529 fresh noise evaluations a move: the biome fields have a wavelength of about
 	200 tiles, so neighbouring cells almost always share an answer."""
+	# Inside an NPC post you are standing on its FLOOR, not on the country the building sits in.
+	# Without this the sprite map drew every station on a square of snow or sand. Checked before
+	# the cache because a post is a handful of tiles inside an 8x8 block, not a whole block.
+	if chunk_manager and chunk_manager.is_npc_post_tile(x, y):
+		return "post"
 	var seed_v: int = chunk_manager.world_seed if chunk_manager else 0
 	var k: String = "%d,%d,%d" % [x >> 3, y >> 3, seed_v]
 	if _cell_biome_cache.has(k):

@@ -58,6 +58,10 @@ CUTS = {
     'ground:desert':   ('red_rock_desert', 1, 1),
     'ground:snow':     ('winter_forest', 1, 0),
     'ground:mountain': ('miners_cave', 2, 3),
+    # Not a biome: the floor INSIDE an NPC post. A post is a building, so what you stand on
+    # there is its floor, not the snow or sand the building happens to sit in. Without this the
+    # stations were drawn on the surrounding biome and every one wore a square of snow.
+    'ground:post':     ('miners_cave', 2, 6),
     'ground:swamp':    ('green_forest_v2', 0, 11),
 
     # --- the land itself ---------------------------------------------------------------

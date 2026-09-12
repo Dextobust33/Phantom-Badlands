@@ -12,6 +12,9 @@ const _OverworldRoom = preload("res://client/overworld_room.gd")
 ## straight downscale; the text map's own cell is about this wide, which is what keeps the panel
 ## the same size and the header aligned.
 const OVERWORLD_SPRITE_PX := 26
+## How many squares of the view survive the crop inside a post. Half the width, drawn at double
+## the size, so the panel stays the same and the room gets twice the detail.
+const OVERWORLD_POST_CROP := 11
 ## Off falls back to the letters, and so does a build whose art is missing. There is no settings
 ## button for this yet - see the backlog; the fallback is automatic, so nobody is stranded.
 var overworld_sprites := true
@@ -45700,11 +45703,17 @@ func _overworld_display(payload: Dictionary) -> String:
 		figures["%d,%d" % [mid, mid]] = mine
 	if not _OverworldRoom.build(meaning, biomes, figures):
 		return MapPayload.inflate(payload)
+	# Inside an NPC post, draw the middle of the view at double size. A post is a ROOM - the
+	# owner asked for it to read as one - and you cannot see past its walls, so cropping to the
+	# centre costs nothing and keeps the panel exactly as wide as it was.
+	var inside_post: bool = bool(payload.get("post", false))
+	var px: int = OVERWORLD_SPRITE_PX * 2 if inside_post else OVERWORLD_SPRITE_PX
+	var crop: int = OVERWORLD_POST_CROP if inside_post else 0
 	return MapPayload.inflate_sprites(payload, func(x: int, y: int) -> String:
 		var cell: String = _OverworldRoom.cell_path(x, y)
 		if cell == "":
 			return "  "
-		return "[img=%dx%d]%s[/img]" % [OVERWORLD_SPRITE_PX, OVERWORLD_SPRITE_PX, cell])
+		return "[img=%dx%d]%s[/img]" % [px, px, cell], crop)
 
 
 func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "") -> String:

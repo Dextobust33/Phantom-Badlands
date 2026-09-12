@@ -1311,8 +1311,11 @@ scope, because they are all tiles in the same grid.**
       it as a figure. Every failure falls back to the text map - art missing, no meaning grid,
       renderer refusing - because a map that will not draw is worse than one made of letters.
       **Still open:**
-      companion and monster figures at the owner's scale rule wearing their variant tint, the
-      ZOOM inside a post, and the dungeon entrance hover.
+      monster figures on the overworld at the owner's scale rule, and the dungeon entrance
+      hover (which waits on the Phase 3 tooltip fixes - same surface).
+      **DONE since:** the settings toggle, other players and everyone's companions as figures
+      wearing their variant tint, and the ZOOM inside a post (half the width at double the size,
+      so the panel does not jump, with the post's own floor under it instead of the biome).
       Probe `overworld_render.gd` renders the real world and checks the header is byte-identical
       to the text form, so nothing above the map can shift.
       Measured on the real viewport rather than extrapolated from the dungeon:

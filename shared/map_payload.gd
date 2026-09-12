@@ -151,7 +151,7 @@ static func inflate(payload: Dictionary) -> String:
 	return out
 
 
-static func inflate_sprites(payload: Dictionary, cell_bbcode: Callable) -> String:
+static func inflate_sprites(payload: Dictionary, cell_bbcode: Callable, crop: int = 0) -> String:
 	"""The display string with the MAP GRID drawn as images instead of letters.
 
 	Phase 2.95 PHASE 2. Everything except the map itself stays exactly as it was - the header,
@@ -172,10 +172,22 @@ static func inflate_sprites(payload: Dictionary, cell_bbcode: Callable) -> Strin
 		var h: int = int(seg.get("h", 0))
 		var row_sep: String = String(seg.get("rs", "
 "))
+		# `crop` draws only the middle NxN of the grid. Inside an NPC post the caller doubles the
+		# cell size and crops to match, so the post reads as a ROOM at the same panel width -
+		# and you cannot see past its walls anyway, so nothing is lost by leaving the rest out.
+		var x0 := 0
+		var y0 := 0
+		var x1 := w
+		var y1 := h
+		if crop > 0 and crop < w and crop < h:
+			x0 = (w - crop) / 2
+			y0 = (h - crop) / 2
+			x1 = x0 + crop
+			y1 = y0 + crop
 		var lines: PackedStringArray = PackedStringArray()
-		for y in range(h):
+		for y in range(y0, y1):
 			var parts: PackedStringArray = PackedStringArray()
-			for x in range(w):
+			for x in range(x0, x1):
 				parts.append(String(cell_bbcode.call(x, y)))
 			lines.append("".join(parts))
 		out += row_sep.join(lines) + String(seg.get("t", ""))

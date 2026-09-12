@@ -183,6 +183,57 @@ func ", body_start + 10) - body_start)
 	ck(cli.find("overworld_pad32/%s/%s%s.png") >= 0,
 		"and the player figure comes from the TRANSPARENT sprite set")
 
+	print("
+--- inside a post, the view becomes a room ---")
+	# The owner's older ask: a post should read as a room rather than a patch of map. Half the
+	# width at double the size keeps the panel exactly as wide and doubles the detail, and you
+	# cannot see past a post's walls anyway.
+	var posts: Array = cm.get_npc_posts()
+	ck(posts.size() > 0, "the world has posts to stand in")
+	var post_payload: Dictionary = ws.build_map_payload(
+		int(posts[0].get("x", 0)), int(posts[0].get("y", 0)), 11, [], [], [], [], [], {}, [], false, [])
+	ck(bool(post_payload.get("post", false)), "standing on one, the payload says so")
+	ck(not bool(payload.get("post", false)), "and standing in the wilderness it does not")
+	var pm: Array = MapPayload.cells(post_payload.get("meaning", {}))
+	var pb: Array = MapPayload.cells(post_payload.get("biomes", {}))
+	Room.build(pm, pb, {})
+	var cropped: String = MapPayload.inflate_sprites(post_payload,
+		func(x: int, y: int) -> String:
+			var c: String = Room.cell_path(x, y)
+			return "[img=52x52]%s[/img]" % c if c != "" else "  ", 11)
+	ck(cropped.count("[img=52x52]") == 11 * 11,
+		"the post view is %d squares at double size, not %d" % [cropped.count("[img=52x52]"), 23 * 23])
+	var uncropped: String = MapPayload.inflate_sprites(post_payload,
+		func(x: int, y: int) -> String:
+			var c: String = Room.cell_path(x, y)
+			return "[img=26x26]%s[/img]" % c if c != "" else "  ", 0)
+	ck(uncropped.count("[img=26x26]") == 23 * 23, "and without the crop it is still the full view")
+	# Same panel width: 11 squares at 52px is 572, 23 at 26px is 598. Close enough that the map
+	# does not jump when you step through a door, which is the whole point.
+	ck(absi(11 * 52 - 23 * 26) < 40, "the two are within %dpx of each other, so the panel does not jump" % absi(11 * 52 - 23 * 26))
+
+	# A post, as a picture.
+	var pout := Image.create(11 * 32, 11 * 32, false, Image.FORMAT_RGBA8)
+	for y in range(6, 17):
+		for x in range(6, 17):
+			var pp: String = Room.cell_path(x, y)
+			if pp == "":
+				continue
+			var ptex := load(pp) as Texture2D
+			if ptex == null:
+				continue
+			var pim := ptex.get_image()
+			if pim.is_compressed():
+				pim.decompress()
+			pim.convert(Image.FORMAT_RGBA8)
+			pout.blit_rect(pim, Rect2i(Vector2i.ZERO, pim.get_size()), Vector2i((x - 6) * 32, (y - 6) * 32))
+	pout.resize(pout.get_width() * 3, pout.get_height() * 3, Image.INTERPOLATE_NEAREST)
+	pout.save_png("res://claude_screenshots/overworld_post.png")
+	print("  wrote claude_screenshots/overworld_post.png")
+
+	# Rebuild the wilderness view for the picture below.
+	Room.build(meaning, biomes, figures)
+
 	# The picture. A probe can say "not black"; only eyes can say "readable".
 	var out := Image.create(23 * 32, 23 * 32, false, Image.FORMAT_RGBA8)
 	for y in range(23):
