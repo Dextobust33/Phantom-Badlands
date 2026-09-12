@@ -45598,6 +45598,33 @@ func _overworld_figure_path() -> String:
 	return path if ResourceLoader.exists(path) else ""
 
 
+func _overworld_look_path(look_id: String) -> String:
+	"""Another player's overworld sprite from their look id. Transparent set, standing frame -
+	the map does not animate other people, only you."""
+	if look_id == "":
+		return ""
+	var p := "res://client/sprites/overworld_pad32/%s/down_stand.png" % look_id
+	return p if ResourceLoader.exists(p) else ""
+
+
+func _overworld_companion_path(comp: Dictionary) -> String:
+	"""A companion's sprite for the composed map: its species, wearing its variant, with the
+	baked dungeon floor CUT OUT.
+
+	The monster sprites carry a floor because BBCode could not composite in the dungeon. Here the
+	renderer composites, so the floor has to go or the companion stands on a square of dungeon
+	in the middle of a snowfield."""
+	if comp == null or not (comp is Dictionary):
+		return ""
+	var mt := String(comp.get("monster_type", comp.get("name", "")))
+	if mt == "":
+		return ""
+	var base: String = _DungeonSprites.monster_path(mt, 0)
+	if base == "" or not ResourceLoader.exists(base):
+		return ""
+	return _DungeonComposite.cutout(_companion_tinted_sprite(comp, base))
+
+
 func _overworld_display(payload: Dictionary) -> String:
 	"""The location display with the map drawn as art.
 
@@ -45611,12 +45638,35 @@ func _overworld_display(payload: Dictionary) -> String:
 	var biomes: Array = MapPayload.cells(payload.get("biomes", {}))
 	if meaning.is_empty():
 		return MapPayload.inflate(payload)
-	# You, at the centre of your own view.
 	var figures: Dictionary = {}
+	# OTHER players, and the companions travelling with them. The client cannot know who is out
+	# there - it is sent resolved cells, not a roster - so the server names them in the payload.
+	for k in payload.get("figures", {}):
+		var ent = payload["figures"][k]
+		if not (ent is Dictionary):
+			continue
+		var entry: Dictionary = {}
+		var pth := _overworld_look_path(String(ent.get("id", "")))
+		if pth != "":
+			entry["main"] = pth
+		var comp = ent.get("companion", {})
+		if comp is Dictionary:
+			var cpath := _overworld_companion_path(comp)
+			if cpath != "":
+				entry["behind"] = cpath
+		if not entry.is_empty():
+			figures[String(k)] = entry
+	# You, at the centre of your own view, with your own companion behind you.
 	var me := _overworld_figure_path()
+	var mine: Dictionary = {}
 	if me != "":
+		mine["main"] = me
+	var my_comp := _overworld_companion_path(character_data.get("active_companion", {}))
+	if my_comp != "":
+		mine["behind"] = my_comp
+	if not mine.is_empty():
 		var mid: int = meaning.size() / 2
-		figures["%d,%d" % [mid, mid]] = me
+		figures["%d,%d" % [mid, mid]] = mine
 	if not _OverworldRoom.build(meaning, biomes, figures):
 		return MapPayload.inflate(payload)
 	return MapPayload.inflate_sprites(payload, func(x: int, y: int) -> String:

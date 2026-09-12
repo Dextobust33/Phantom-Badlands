@@ -44,7 +44,9 @@ func _init() -> void:
 	# Walk once so the second view has FOG to draw, which is its own branch.
 	ws.build_map_payload(35, 35, 11, [], [], [], [], [], explored, [], false, [])
 	var payload: Dictionary = ws.build_map_payload(40, 40, 11,
-		[{"x": 41, "y": 40, "name": "Kestrel", "in_my_party": true}],
+		[{"x": 41, "y": 40, "name": "Kestrel", "in_my_party": true, "appearance_variant": "1_1",
+			"companion": {"monster_type": "Wolf", "variant_color": "#39FF14",
+				"variant_color2": "", "variant_pattern": "solid"}}],
 		[{"x": 38, "y": 41, "color": "#A335EE"}], [], [{"x": 40, "y": 38}], [{"x": 43, "y": 41}],
 		explored, [], false, [])
 	var meaning: Array = MapPayload.cells(payload.get("meaning", {}))
@@ -143,6 +145,29 @@ func _init() -> void:
 	var head_t := text_form.substr(0, text_form.find("[center]"))
 	var head_s := sprite_form.substr(0, sprite_form.find("[center]"))
 	ck(head_t == head_s, "and the header is byte-identical, so nothing above the map shifted")
+
+	print("
+--- other players, and the companions walking with them ---")
+	# The client is sent resolved cells, not a roster, so it cannot know who is out there or what
+	# they look like. The server names them.
+	var pf: Dictionary = payload.get("figures", {})
+	ck(not pf.is_empty(), "the payload names %d other player figure(s)" % pf.size())
+	var with_comp := 0
+	for k in pf:
+		var ent: Dictionary = pf[k]
+		ck(String(ent.get("id", "")) != "", "figure at %s carries a look id" % k)
+		if ent.has("companion"):
+			with_comp += 1
+			ck(String(ent["companion"].get("monster_type", "")) != "",
+				"...and its companion names a species")
+	var rsrc := FileAccess.get_file_as_string("res://client/overworld_room.gd")
+	ck(rsrc.find('behind = String(fig_entry.get("behind", ""))') >= 0,
+		"the renderer draws a companion BEHIND its owner rather than instead of them")
+	var dsrc := FileAccess.get_file_as_string("res://client/dungeon_composite.gd")
+	ck(dsrc.find("static func cutout(") >= 0,
+		"and a companion's baked dungeon floor is cut out first")
+	ck(dsrc.substr(dsrc.find("static func cutout("), 1400).find("_background_mask(sprite_path, img)") >= 0,
+		"...by the same colour key that tints it, so the two compose")
 
 	print("
 --- and every fallback lands on the text map ---")

@@ -1326,6 +1326,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 	# from this; PHASE 1's renderer ignores it entirely.
 	var _meaning: Dictionary = {}
 	var _biomes: Dictionary = {}
+	var _figures: Dictionary = {}
 
 	# Pre-compute lookup set for the inner renderer to avoid repeated linear
 	# scans during the per-tile loop.
@@ -1372,6 +1373,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 			segs[segs.size() - 1]["g"] = "map"
 			_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 			_biomes = MapPayload.grid(_cells[CELLS_BIOME], "", "")
+			_figures = _cells[CELLS_FIGURES]
 			MapPayload.append_text(segs, "[/center]")
 			# Minimap — zoomed-out overview at small font, appended below the main map
 			# The minimap, as cells rather than as 21 KB of repeated colour tags.
@@ -1380,7 +1382,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 				MapPayload.append_text(segs, MINIMAP_OPEN)
 				segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
 				MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
-			return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes}
+			return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures}
 
 	# Check legacy Trading Post
 	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
@@ -1397,10 +1399,11 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 			segs[segs.size() - 1]["g"] = "map"
 			_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 			_biomes = MapPayload.grid(_cells[CELLS_BIOME], "", "")
+			_figures = _cells[CELLS_FIGURES]
 		else:
 			MapPayload.append_text(segs, generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations))
 		MapPayload.append_text(segs, "[/center]")
-		return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes}
+		return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures}
 
 	# Check if in a player enclosure — treat as safe zone
 	var in_enclosure = false
@@ -1452,6 +1455,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		segs[segs.size() - 1]["g"] = "map"
 		_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 		_biomes = MapPayload.grid(_cells[CELLS_BIOME], "", "")
+		_figures = _cells[CELLS_FIGURES]
 	else:
 		MapPayload.append_text(segs, generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations))
 	MapPayload.append_text(segs, "[/center]")
@@ -1464,7 +1468,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
 		MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
 
-	return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes}
+	return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures}
 
 func is_apex_frontier(x: int, y: int) -> bool:
 	"""Audit #10 v0.9.512 — true when the coord is in the apex frontier zone
@@ -2173,6 +2177,7 @@ func _cell_biome(x: int, y: int) -> String:
 const CELLS_LOOK := 0
 const CELLS_MEANING := 1
 const CELLS_BIOME := 2
+const CELLS_FIGURES := 3
 
 
 func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}, pvp_sack_set: Dictionary = {}) -> Array:
@@ -2191,6 +2196,10 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 	## tiles (it tints the dot); a sprite map needs it for every cell, because the ground is
 	## drawn under the tile rather than replaced by it.
 	var biome_rows: Array = []
+	## Which cells hold ANOTHER PLAYER, and what they look like. The client cannot know: it is
+	## sent a resolved cell, not the roster. Keyed "gridx,gridy" so the renderer can place a
+	## figure without re-deriving where anybody is.
+	var figure_ids: Dictionary = {}
 
 	# v0.9.427 — pre-collect hotspot clusters for the entire vision area in a
 	# single window scan. Replaces per-tile _is_hotspot() (121 hash checks
@@ -2352,6 +2361,24 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				line_parts.append("[color=%s] %s[/color]" % [player_color, player_char])
 				sem_parts.append("!other")
 				biome_parts.append(_cell_biome(x, y))
+				# Their LOOK, so the sprite map draws them as themselves rather than as a marker.
+				# A stack of players already collapses to one glyph, so only a lone player gets a
+				# face - two people on a tile stay the `*` they have always been.
+				var _fv := String(first_player.get("appearance_variant", ""))
+				if _fv != "" and players_here.size() == 1:
+					var _fig: Dictionary = {"kind": "player", "id": _fv}
+					# Owner 2026-09-11: *"Same with other players companions."* A companion has no
+					# tile of its own - it travels with its owner - so it rides in the same cell
+					# and the renderer stands it behind them, as the dungeon already does.
+					var _oc: Dictionary = first_player.get("companion", {})
+					if _oc is Dictionary and String(_oc.get("monster_type", "")) != "":
+						_fig["companion"] = {
+							"monster_type": String(_oc.get("monster_type", "")),
+							"variant_color": String(_oc.get("variant_color", "")),
+							"variant_color2": String(_oc.get("variant_color2", "")),
+							"variant_pattern": String(_oc.get("variant_pattern", "solid")),
+						}
+					figure_ids["%d,%d" % [dx + radius, radius - dy]] = _fig
 			elif dungeon_positions.has(pos_key):
 				var dungeon = dungeon_positions[pos_key]
 				var dungeon_color = dungeon.get("color", "#A335EE")
@@ -2478,7 +2505,7 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 			visible_tiles.size(),
 		])
 	# Both grids, so a caller that wants sprites and a caller that wants text read the same walk.
-	return [rows, sem_rows, biome_rows]
+	return [rows, sem_rows, biome_rows, figure_ids]
 
 func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}, pvp_sack_set: Dictionary = {}) -> String:
 	"""The main map as a string. One line per row, exactly as `_map_cells` produced them."""

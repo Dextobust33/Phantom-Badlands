@@ -251,6 +251,46 @@ static func tinted(sprite_path: String, color1: String, color2: String = "", pat
 	return dyn
 
 
+static func cutout(sprite_path: String) -> String:
+	"""The same sprite with its baked floor made TRANSPARENT, as a path.
+
+	The dungeon's sprites carry the floor because BBCode could not composite two images into one
+	cell. The OVERWORLD renderer composites the whole grid itself (`client/overworld_room.gd`),
+	so a floor-backed companion would arrive standing on a square of dungeon floor in the middle
+	of a snowfield - which is exactly what the first overworld render did with the player.
+
+	Same border-connected colour key `over_prop` and `tinted` use, so a sprite is cut out the
+	same way it is tinted and the two compose."""
+	if sprite_path == "":
+		return sprite_path
+	var key := "cut|%s" % sprite_path
+	if _out_cache.has(key):
+		return _out_cache[key]
+	if _rejected.has(key):
+		return sprite_path
+	var img := _image_for(sprite_path)
+	if img == null:
+		_rejected[key] = true
+		return sprite_path
+	var w := img.get_width()
+	var out := img.duplicate() as Image
+	var cut := 0
+	for i in _background_mask(sprite_path, img):
+		var px := out.get_pixel(i % w, i / w)
+		out.set_pixel(i % w, i / w, Color(px.r, px.g, px.b, 0.0))
+		cut += 1
+	if cut == 0:
+		# Nothing keyable: hand back the original rather than a needless copy.
+		_rejected[key] = true
+		return sprite_path
+	var tex := ImageTexture.create_from_image(out)
+	var dyn := _DYN_DIR + "c%d.png" % abs(hash(key))
+	tex.take_over_path(dyn)
+	_keepalive.append(tex)
+	_out_cache[key] = dyn
+	return dyn
+
+
 static func bordered(path: String, color_hex: String) -> String:
 	"""`path` with corner brackets in `color_hex`, marking it as something you can PICK UP.
 
