@@ -130,6 +130,44 @@ func _init() -> void:
 	ck(src2.find("(y + 1) * CELL - fi.get_height()") >= 0,
 		"and a figure is anchored to the bottom of its cell, so a tall one stands on its tile")
 
+	# THE CHECK THAT WOULD HAVE CAUGHT IT. Every assertion above reads the SOURCE, and the source
+	# was right - every line the probe looked for was present. What was wrong was the INDENTATION:
+	# the figure block sat inside the `not figures.has(...)` branch, a condition that is false
+	# exactly when there is a figure. It compiled, it read correctly, and it drew nobody. Two
+	# releases went out with an empty square where the player should be.
+	#
+	# So: compose the same view twice, once without a figure and once with, and compare the PIXELS
+	# of the centre cell. There is no way to pass this without the figure actually being drawn.
+	#
+	# AND THE CONTROL MATTERS AS MUCH AS THE TEST. The first version of this check compared "no
+	# figures at all" against "a figure", and PASSED against the broken code - because supplying a
+	# figure also SUPPRESSES the overlay glyph on that cell, so 175 pixels changed without anyone
+	# being drawn. The control is now an entry that is PRESENT but names no sprite: the overlay is
+	# suppressed either way, so every pixel that moves is the figure itself.
+	var _bare_ok := Room.build(meaning, biomes, {"11,11": ""})
+	var bare_px := _cell_pixels(11, 11)
+	var _fig_ok := Room.build(meaning, biomes, figures)
+	var fig_px := _cell_pixels(11, 11)
+	ck(bare_px.size() == 1024 and fig_px.size() == 1024, "the centre cell reads back as 32x32 pixels")
+	var moved := 0
+	for i in range(mini(bare_px.size(), fig_px.size())):
+		if not bare_px[i].is_equal_approx(fig_px[i]):
+			moved += 1
+	ck(moved > 40, "%d of 1024 centre pixels CHANGE when a figure is supplied - the player is drawn" % moved)
+
+	# And the companion is a second figure, not a decoration on the first.
+	var comp := "res://client/sprites/overworld_pad32/1_2/down_stand.png"
+	if ResourceLoader.exists(comp):
+		Room.build(meaning, biomes, {"11,11": {"main": me, "behind": comp}})
+		var both_px := _cell_pixels(11, 11)
+		var moved2 := 0
+		for i in range(mini(fig_px.size(), both_px.size())):
+			if not fig_px[i].is_equal_approx(both_px[i]):
+				moved2 += 1
+		ck(moved2 > 20, "%d more pixels change when a companion walks behind you" % moved2)
+	# Leave the renderer holding the view the pictures below expect.
+	Room.build(meaning, biomes, figures)
+
 	print("
 --- the display string the client will show ---")
 	# The map becomes images; everything AROUND it must not move, or the header and the sprite
@@ -346,3 +384,22 @@ func ", body_start + 10) - body_start)
 
 	print("\n[OVERWORLDRENDER] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)
+
+
+static func _cell_pixels(x: int, y: int) -> Array:
+	"""The composed cell at (x, y) as a flat array of colours, so two builds can be compared."""
+	var p: String = Room.cell_path(x, y)
+	if p == "":
+		return []
+	var tex := load(p) as Texture2D
+	if tex == null:
+		return []
+	var im := tex.get_image()
+	if im.is_compressed():
+		im.decompress()
+	im.convert(Image.FORMAT_RGBA8)
+	var out: Array = []
+	for yy in range(im.get_height()):
+		for xx in range(im.get_width()):
+			out.append(im.get_pixel(xx, yy))
+	return out

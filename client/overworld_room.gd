@@ -128,38 +128,41 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 				var o := _img(DIR + "overlay/%s.png" % overlay)
 				if o != null:
 					grid.blend_rect(o, Rect2i(Vector2i.ZERO, o.get_size()), Vector2i(x * CELL, y * CELL))
-			# A FIGURE - you, another player - replaces the marker glyph if the caller supplied
-			# one. The overworld already carries 80 player looks; the renderer does not choose
-			# between them, it draws what it is handed.
-			# Hand it a TRANSPARENT sprite (`overworld_pad32`), never the floor-backed set
-			# (`overworld_floor32`): those have the dungeon floor baked into every frame, because
-			# BBCode could not composite there. Here the compositing happens above, so a
-			# floor-backed figure arrives standing on a square of the wrong ground.
-				var fig_entry = figures.get("%d,%d" % [x, y], null)
-				if fig_entry != null:
-					# A cell can hold a figure AND the companion travelling with it. Owner 2026-09-11,
-					# on other players: *"Same with other players companions."* A companion has no tile
-					# of its own - it walks with its owner - so it stands behind and to one side, the
-					# way the dungeon already draws one.
-					var behind := ""
-					var front := ""
-					if fig_entry is Dictionary:
-						behind = String(fig_entry.get("behind", ""))
-						front = String(fig_entry.get("main", ""))
-					else:
-						front = String(fig_entry)
-					for pair in [[behind, -7], [front, 2]]:
-						var fpath := String(pair[0])
-						if fpath == "":
-							continue
-						var fi := _img(fpath)
-						if fi == null:
-							continue
-						# Anchored to the BOTTOM of the cell, so a figure taller than 32 stands on its
-						# tile rather than floating above it.
-						grid.blend_rect(fi, Rect2i(Vector2i.ZERO, fi.get_size()),
-							Vector2i(x * CELL + (CELL - fi.get_width()) / 2 + int(pair[1]),
-								(y + 1) * CELL - fi.get_height()))
+
+			# A FIGURE - you, another player, and the companion travelling with them.
+			#
+			# THE INDENTATION HERE IS THE POINT. This block sat one level deeper for two
+			# releases, inside the `not figures.has(...)` branch above - a condition that is
+			# FALSE exactly when there is a figure to draw. So it could never run, and the map
+			# showed no player at all. It compiled, and a probe that read the source found every
+			# line it was looking for. Only a screenshot showed the empty square.
+			#
+			# Hand it a TRANSPARENT sprite (`overworld_pad32`), never the floor-backed set: those
+			# carry the dungeon floor baked in, because BBCode could not composite there. Here
+			# the compositing happens above, so a floor-backed figure stands on the wrong ground.
+			var fig_entry = figures.get("%d,%d" % [x, y], null)
+			if fig_entry != null:
+				# A companion has no tile of its own - it walks with its owner - so it stands
+				# behind and to one side, the way the dungeon already draws one.
+				var behind := ""
+				var front := ""
+				if fig_entry is Dictionary:
+					behind = String(fig_entry.get("behind", ""))
+					front = String(fig_entry.get("main", ""))
+				else:
+					front = String(fig_entry)
+				for pair in [[behind, -7], [front, 2]]:
+					var fpath := String(pair[0])
+					if fpath == "":
+						continue
+					var fi := _img(fpath)
+					if fi == null:
+						continue
+					# Anchored to the BOTTOM of the cell, so a figure taller than 32 stands on
+					# its tile rather than floating above it.
+					grid.blend_rect(fi, Rect2i(Vector2i.ZERO, fi.get_size()),
+						Vector2i(x * CELL + (CELL - fi.get_width()) / 2 + int(pair[1]),
+							(y + 1) * CELL - fi.get_height()))
 			if overlay == "fog":
 				# Remembered ground, not seen ground. Darkened rather than hidden, which is what
 				# the text map did with a dim colour.

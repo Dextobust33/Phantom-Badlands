@@ -30969,7 +30969,11 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.774[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.775[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOU AND YOUR COMPANION ARE BACK ON THE MAP.[/color] v0.9.774 stood down the old letter-map overlay that was drawing you in the wrong place — but the code meant to draw you into the picture instead sat inside a branch that is skipped [i]exactly when there is someone to draw[/i]. So the square you stand on was simply [b]empty[/b]. Your character and the companion walking behind you are drawn there now.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.774[/color]")
 	display_game("  [color=#FF8000]★ THE FIGURES ON THE NEW MAP WERE IN THE WRONG PLACE.[/color] Your character was drawn by the OLD text-map code, which positions things by counting letters — so on the new picture map [b]you stood about a row off[/b], and everything around you looked shifted because of it. Your companion was still a bare letter. Both are drawn into the map itself now, at the right square and the right size.")
 	display_game("  [color=#1EFF00]◆ A gathering node you have already taken now LOOKS taken.[/color] The old letter map dimmed a spent node to a grey comma. The picture map drew the tile and looked for a [i]spent[/i] version that was never made — so [b]a used-up ore vein was identical to a fresh one[/b] and looked like it had not cleared. It dims now.")
 	display_game("  [color=#1EFF00]◆ Trading posts stopped hiding their own doors.[/color] Stepping inside zoomed the view to the middle of the room — but a post is 17-20 tiles across in a 23-tile view, so there was nothing spare to crop and the [b]walls and doors were cut off[/b]. No crop now; the post still reads as a room because it stands on its own floor.")
@@ -31006,21 +31010,6 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ Help-screen formulas corrected.[/color] Hit chance subtracts HALF the enemy's speed, not all of it, and two different pages stated two different wrong initiative formulas.")
 	display_game("")
 
-	display_game("[color=#808080]v0.9.770[/color]")
-	display_game("  [color=#FF8000]★ TIERS ARE LETTERS NOW, AND A LABEL YOU CAN ACTUALLY ORDER.[/color] [b]T1-5[/b] was two numbers that looked alike and meant different things. Everything now reads as a [b]letter and a rank[/b] — tiers run [color=#FFFFFF]H G F E D C B A S[/color] weakest to strongest, rank 1-9 inside a tier, and [b]both climb the same way[/b]. So D9 beats D1, and C1 beats D9. Every label is coloured by danger and hovering one shows you the whole ladder.")
-	display_game("  [color=#1EFF00]◆ Dungeons go all the way to the top rank.[/color] They stopped at 9-of-8 while a fused companion could reach the ninth — so the best dungeon you could find was labelled a rank below the best companion you could own. Same ceiling, one more step.")
-	display_game("  [color=#FF8000]★ CARD UPGRADES ARE RARE NOW — AND YOU CAN SEE WHICH.[/color] Every rank-up drew from one flat pool, so nothing could ever be uncommon: you saw [b]41%[/b] of everything a card could be offered at its very first rank-up. Upgrades now come in [color=#FFFFFF]common[/color] / [color=#1EFF00]uncommon[/color] / [color=#0070DD]rare[/color] / [color=#A335EE]epic[/color], with the colour, a gauge and a heavier frame on the card.")
-	display_game("  [color=#FF8000]★ YOUR CARDS SHOW WHICH UPGRADES ARE WORTH USING RIGHT NOW.[/color] A card in your hand lists the upgrades it carries, and [b]lights up the one whose moment has come[/b] — Executioner when the foe is nearly dead, Last Stand when you are, Relentless on the cast that completes its third. The rank-up screen also tags each pick with when it pays.")
-	display_game("  [color=#1EFF00]◆ Five new upgrades, and none of them just add damage.[/color] [color=#FFFFFF]Sure Strike[/color] (first cast each fight is a guaranteed crit), [color=#FFFFFF]Last Stand[/color], [color=#FFFFFF]Second Look[/color] and [color=#FFFFFF]Slow Mend[/color] (both pay out when you do NOT play the card) and [color=#FFFFFF]Rally Point[/color].")
-	display_game("  [color=#FF8000]★ 36% OF YOUR HITS UNDER-REPORTED THEIR DAMAGE.[/color] More than a third of player actions applied damage the log never mentioned — a hit landing with no number, and an enemy health bar that moved less than it should. Now zero, measured over 1,600 actions.")
-	display_game("  [color=#1EFF00]◆ Every Ranger and Barbarian card told you the wrong number.[/color] Steady Aim and Rage lift every card you play, and no card face knew it — understating itself by up to [b]88%[/b] on a full meter.")
-	display_game("  [color=#1EFF00]◆ ANALYZE tells you something worth knowing.[/color] It reported four facts out of the thirty a monster carries. It now shows defence, speed, its traits, whether killing it [b]brings friends[/b], and whether it is worth the fight.")
-	display_game("  [color=#1EFF00]◆ Your hand dims while the round plays out.[/color] A multi-hit round takes up to [b]4.5 seconds[/b] to read out, and the cards looked playable the whole time while your health bar still showed the previous round. They now dim, and say [b]press Space to skip ahead[/b].")
-	display_game("  [color=#1EFF00]◆ Equipment comparison shows DEX, INT and WIS.[/color] A ring with +6 DEX produced no line at all, while the same ring with +6 WITS did.")
-	display_game("  [color=#1EFF00]◆ A dungeon's name described whichever dungeon came first in a list.[/color] The tier, the level band and the map coordinates could all belong to a different dungeon — one already finished, one belonging to another player, or one on the far side of the map.")
-	display_game("  [color=#1EFF00]◆ Every egg variant has its own artwork.[/color] Twenty variants shared a picture with another one. 119 variants, 119 distinct eggs.")
-	display_game("  [color=#1EFF00]◆ Trading posts can be built over water, and a Ranger's crit is honestly described.[/color] Posts no longer refuse a site for a nearby pond; and a crit buff that does nothing for a Ranger now says so instead of sitting in the buff panel.")
-	display_game("")
 
 	display_game("[color=#808080]v0.9.768[/color]")
 	display_game("  [color=#FF8000]★ EVERY ROOM LOOKS LIKE ITS OWN PLACE NOW.[/color] Dungeon chambers no longer share one floor. Each room draws its [b]own material[/b] — cut stone, brick, grass, timber, pale sand, violet rock — and its [b]own decoration[/b], from a pool of tilesets. Corridors keep the old cave floor, so stepping out of a passage into a room is a visible change of ground rather than more of the same.")
