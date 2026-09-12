@@ -3033,6 +3033,30 @@ static func pick_weighted_type() -> String:
 	return String(DUNGEON_TYPES.keys()[0])
 
 
+## How much of a dungeon's floor population is its OWN species. The rest are neighbours from
+## the same grade. Owner 2026-09-11: other monsters of the same tier, *"more rare, less likely
+## than the main dungeon monster/boss type"*.
+const NATIVE_SPECIES_SHARE := 0.75
+
+
+static func pick_floor_species(native: String, pool: PackedStringArray, native_share: float = NATIVE_SPECIES_SHARE) -> String:
+	"""Which species one floor monster is: usually the dungeon's own, sometimes a neighbour.
+
+	Pure, and here rather than on the server, so `tools/probe/dungeon_species_mix.gd` can MEASURE
+	the mix instead of reading the source for it. That distinction is not pedantic - the first
+	version of that probe passed with the mix switched off, because the text it was looking for
+	was still sitting inside a branch that could no longer be reached."""
+	if native == "" or pool.is_empty():
+		return native
+	if randf() <= native_share:
+		return native
+	for _try in range(4):
+		var cand := String(pool[randi() % pool.size()])
+		if cand != "" and cand != native:
+			return cand
+	return native
+
+
 static func get_spawn_location_for_tier(tier: int) -> Vector2i:
 	"""Get a suitable spawn location for a dungeon of the given tier"""
 	# Dungeons spawn further from origin for higher tiers

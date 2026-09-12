@@ -35283,7 +35283,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 			for gx in range(grid[gy].size()):
 				var _t := int(grid[gy][gx])
 				if _t == _tt_treasure or _t == _tt_scattered or _t == _tt_hoard:
-					var reh := _roll_floor_item(dungeon_type, tier, sub_tier, dungeon_level, boss_egg_monster, false)
+					var reh := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, false)
 					grid[gy][gx] = _tt_empty
 					_dbg_blanked += 1
 					if not reh.is_empty():
@@ -35303,12 +35303,12 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 		# (b) A few extra scattered items per floor (tier-scaled), on random empty tiles.
 		var extra: int = 1 + tier / 3 + (randi() % 2)  # ~1-4 per floor
 		for _i in range(extra):
-			var it := _roll_floor_item(dungeon_type, tier, sub_tier, dungeon_level, boss_egg_monster, false)
+			var it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, false)
 			if not it.is_empty():
 				_place_floor_item_random(instance_id, floor_num, grid, it)
 		# (c) Dungeon type-matched EGG as floor loot — ~35% chance per floor.
 		if boss_egg_monster != "" and randf() < 0.35:
-			var egg_it := _roll_floor_item(dungeon_type, tier, sub_tier, dungeon_level, boss_egg_monster, true)
+			var egg_it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, true)
 			if not egg_it.is_empty():
 				_place_floor_item_random(instance_id, floor_num, grid, egg_it)
 	# (d) Guarantee one Escape Scroll as floor loot on the first floor.
@@ -35357,6 +35357,19 @@ const FLOOR_EGG_RANK_SPREAD_DOWN := 2
 const FLOOR_EGG_RANK_SPREAD_UP := 1
 
 
+func _floor_egg_species(instance_id: String, fallback: String) -> String:
+	"""Whose egg a floor drop is.
+
+	Drawn from `spawned_species`, the list `_dungeon_floor_species` builds as it populates the
+	floors - so the eggs a dungeon gives up are the creatures a player actually met in it, and a
+	species that turned up rarely yields a rare egg by the same token. Falls back to the
+	dungeon's own boss egg species, which is also what the guaranteed clear egg always is."""
+	var seen: Array = active_dungeons.get(instance_id, {}).get("spawned_species", [])
+	if seen.is_empty():
+		return fallback
+	return String(seen[randi() % seen.size()])
+
+
 func _floor_egg_rank(dungeon_rank: int) -> int:
 	"""The rank of an egg found on a dungeon FLOOR.
 
@@ -35374,12 +35387,21 @@ func _floor_egg_rank(dungeon_rank: int) -> int:
 	return lo + (randi() % (hi - lo + 1))
 
 
-func _roll_floor_item(dungeon_type: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool) -> Dictionary:
+func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool) -> Dictionary:
 	"""Roll one floor-loot item. Returns {kind, char, color, item_data} or {} on a miss."""
 	if force_egg:
 		if boss_egg_monster == "":
 			return {}
-		var egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _floor_egg_rank(sub_tier))
+		# WHICH creature's egg. Owner 2026-09-11: *"The floor loot eggs could also be of any of
+		# the monster types that spawn in that dungeon, the boss should still be of the dungeon
+		# type and the guaranteed egg should be of it as well."* So the guaranteed clear egg and
+		# the boss stay the dungeon's own; only what you find on the floor varies, and it varies
+		# with what really spawned rather than with a fixed list.
+		var egg_species: String = _floor_egg_species(instance_id, boss_egg_monster)
+		var egg = drop_tables.get_egg_for_monster(egg_species, {}, _floor_egg_rank(sub_tier))
+		if egg.is_empty() and egg_species != boss_egg_monster:
+			# Not every species can be hatched. Fall back rather than drop nothing.
+			egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _floor_egg_rank(sub_tier))
 		if egg.is_empty():
 			return {}
 		return {"kind": "egg", "char": "◉", "color": "#A335EE", "item_data": egg}
@@ -35528,6 +35550,23 @@ func _award_floor_item(peer_id: int, item: Dictionary) -> bool:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]%s lies here but your inventory is full.[/color]" % String(data.get("name", "An item"))})
 			return false
 
+func _dungeon_floor_species(instance_id: String, native: String, grade_tier: int) -> String:
+	"""Which species this particular floor monster is.
+
+	Mostly the dungeon's own - a Goblin Caves should still read as goblins - with a minority from
+	the same grade, so a floor has some texture and the eggs it drops are not all one creature.
+	Every species that actually spawns is remembered on the instance, because the FLOOR eggs are
+	drawn from what was really down there rather than from a fixed list."""
+	var pick: String = DungeonDatabaseScript.pick_floor_species(
+		native, monster_db.tier_species_names(grade_tier))
+	if active_dungeons.has(instance_id):
+		var seen: Array = active_dungeons[instance_id].get("spawned_species", [])
+		if not (pick in seen):
+			seen.append(pick)
+			active_dungeons[instance_id]["spawned_species"] = seen
+	return pick
+
+
 func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_type: String, dungeon_level: int, rooms: Array, grid: Array, is_boss_floor: bool):
 	"""Spawn monster entities on a single dungeon floor"""
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
@@ -35581,7 +35620,12 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 			continue  # Couldn't find valid position
 
 		occupied_positions.append(pos)
-		var display_char = monster_type[0].to_upper() if monster_type.length() > 0 else "M"
+		# This monster's own species, which is usually but not always the dungeon's.
+		var _species: String = _dungeon_floor_species(instance_id, monster_type,
+			_instance_tier(active_dungeons.get(instance_id, {})))
+		# The letter follows the MONSTER now. It used to be the dungeon's one species for every
+		# tile on the floor, which was true right up until a floor could hold two kinds.
+		var display_char = _species[0].to_upper() if _species.length() > 0 else "M"
 
 		# 2026-09-08 - decide the VARIANT here, at spawn, not when the fight starts.
 		#
@@ -35595,11 +35639,13 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 		# existing FLOCK idiom, which exists for exactly this reason: "no re-roll, no compounding".
 		# Storing the identity rather than the whole monster keeps the saved dungeon small and
 		# keeps the STATS derived at fight time, where level scaling belongs.
-		var _roll: Dictionary = monster_db.generate_monster_by_name(monster_type, monster_level)
+		var _roll: Dictionary = monster_db.generate_monster_by_name(_species, monster_level)
 		var monster_entity = {
 			"id": next_dungeon_monster_id,
 			"x": pos.x, "y": pos.y,
-			"monster_type": monster_type,
+			# The MONSTER's species, not the dungeon's - the fight that starts when a player
+			# walks into this tile has to be with the creature they were looking at.
+			"monster_type": _species,
 			"level": monster_level,
 			"display_char": display_char,
 			"display_color": display_color,
@@ -35609,7 +35655,7 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 			"boss_data": {},
 			"variant_type": String(_roll.get("variant_type", "")),
 			"empowered_mods": _roll.get("empowered_mods", []),
-			"variant_name": String(_roll.get("name", monster_type)),
+			"variant_name": String(_roll.get("name", _species)),
 			"appearance_color": String(_roll.get("appearance_color", "")),
 			"appearance_color2": String(_roll.get("appearance_color2", "")),
 			"appearance_pattern": String(_roll.get("appearance_pattern", "")),

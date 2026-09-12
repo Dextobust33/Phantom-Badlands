@@ -2713,9 +2713,21 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
         * the guaranteed clear EGG stays the dungeon's own species, always;
         * FLOOR eggs may come from any species that actually spawned in that dungeon - so the
           mixed pool feeds the egg pool, and a rarer species in the mix is a rarer egg.
-      Note this makes the map letter question real: every monster currently shows the first
-      letter of the one species, so a mixed floor needs the letter (and the sprite) to follow the
-      individual monster.
+      **DONE 2026-09-11.** `DungeonDatabase.pick_floor_species` decides each monster: 75% the
+      dungeon's own, the rest neighbours from the same GRADE (the instance's grade, so an A5
+      Goblin Dungeon draws A-grade company). The entity carries its own species, so the fight, the
+      variant roll and the map letter all follow the monster the player walked into rather than
+      the dungeon. Every species that spawns is remembered on the instance, and `_floor_egg_species`
+      draws floor eggs from that list - so a species that turned up rarely yields a rare egg by
+      the same token, and a species with no egg falls back rather than dropping nothing.
+      The boss and the guaranteed clear egg are untouched, and the probe checks that explicitly.
+      **The mix share is one constant, `NATIVE_SPECIES_SHARE`; setting it to 1.0 turns the whole
+      thing off cleanly.**
+      Probe `dungeon_species_mix.gd`. **Worth reading the note in it:** the first version checked
+      the SOURCE for the mix and passed happily when the branch was replaced with `if false:`.
+      It measures 20,000 picks now, and disabling the mix fails it.
+      Still open here: `monster_pool` on the type is still read by nothing but the Atlas, which
+      now under-promises rather than over-promising.
 
 
 

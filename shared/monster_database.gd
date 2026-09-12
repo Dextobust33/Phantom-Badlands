@@ -435,6 +435,27 @@ func get_random_monster_name_from_tier(tier: int) -> String:
 	var base_stats = get_monster_base_stats(monster_type)
 	return base_stats.get("name", "Goblin")
 
+var _tier_species_names_cache: Dictionary = {}
+
+
+func tier_species_names(tier: int) -> PackedStringArray:
+	"""Every species that belongs to a tier, by display name.
+
+	Added 2026-09-11 so a dungeon can hold more than one kind of monster. Owner: *"I would be
+	fine with dungeons having other monsters of the same tier spawning within them (more rare,
+	less likely than the main dungeon monster/boss type)."* The tier membership lists already
+	existed; nothing had ever needed them as names."""
+	if _tier_species_names_cache.has(tier):
+		return _tier_species_names_cache[tier]
+	var out := PackedStringArray()
+	for mt in _get_tier_monsters(tier):
+		var n := String(get_monster_base_stats(mt).get("name", ""))
+		if n != "":
+			out.append(n)
+	_tier_species_names_cache[tier] = out
+	return out
+
+
 func _get_tier_monsters(tier: int) -> Array:
 	"""Get list of monster types for a specific tier"""
 	match tier:
