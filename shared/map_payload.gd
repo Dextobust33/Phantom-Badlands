@@ -151,6 +151,37 @@ static func inflate(payload: Dictionary) -> String:
 	return out
 
 
+static func inflate_sprites(payload: Dictionary, cell_bbcode: Callable) -> String:
+	"""The display string with the MAP GRID drawn as images instead of letters.
+
+	Phase 2.95 PHASE 2. Everything except the map itself stays exactly as it was - the header,
+	the `[center]` wrapper, the minimap, the caption - because only the map is being sprited.
+	The grid the server marked `g == "map"` is replaced cell by cell; `cell_bbcode` is handed
+	(x, y) and returns the BBCode for that square.
+
+	Falling back to `inflate` for anything that is not that grid is deliberate: a client whose
+	art is missing, or a payload from a server that does not mark its map, still draws a map."""
+	var out := ""
+	for seg in payload.get("segs", []):
+		if not (seg is Dictionary):
+			continue
+		if seg.has("s") or String(seg.get("g", "")) != "map":
+			out += inflate({"segs": [seg]})
+			continue
+		var w: int = int(seg.get("w", 0))
+		var h: int = int(seg.get("h", 0))
+		var row_sep: String = String(seg.get("rs", "
+"))
+		var lines: PackedStringArray = PackedStringArray()
+		for y in range(h):
+			var parts: PackedStringArray = PackedStringArray()
+			for x in range(w):
+				parts.append(String(cell_bbcode.call(x, y)))
+			lines.append("".join(parts))
+		out += row_sep.join(lines) + String(seg.get("t", ""))
+	return out
+
+
 static func wire_size(payload: Dictionary) -> int:
 	"""Bytes this payload costs as JSON - what the comparison against the old string is about."""
 	return JSON.stringify(payload).length()

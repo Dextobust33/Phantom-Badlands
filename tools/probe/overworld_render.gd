@@ -125,6 +125,39 @@ func _init() -> void:
 	ck(src2.find("(y + 1) * CELL - fi.get_height()") >= 0,
 		"and a figure is anchored to the bottom of its cell, so a tall one stands on its tile")
 
+	print("
+--- the display string the client will show ---")
+	# The map becomes images; everything AROUND it must not move, or the header and the sprite
+	# overlay drift apart. This compares the sprite display against the text one it replaces.
+	var text_form: String = MapPayload.inflate(payload)
+	var sprite_form: String = MapPayload.inflate_sprites(payload,
+		func(x: int, y: int) -> String:
+			var c: String = Room.cell_path(x, y)
+			return "[img=26x26]%s[/img]" % c if c != "" else "  ")
+	var imgs := sprite_form.count("[img=26x26]")
+	ck(imgs == 23 * 23, "the map is %d images, one per square" % imgs)
+	ck(sprite_form.find("[center]") >= 0 and text_form.find("[center]") >= 0,
+		"the [center] wrapper survives, so the map sits where it did")
+	ck(sprite_form.count("minimap (") == text_form.count("minimap ("),
+		"the minimap is still there, still text - only the map was sprited")
+	var head_t := text_form.substr(0, text_form.find("[center]"))
+	var head_s := sprite_form.substr(0, sprite_form.find("[center]"))
+	ck(head_t == head_s, "and the header is byte-identical, so nothing above the map shifted")
+
+	print("
+--- and every fallback lands on the text map ---")
+	# A map that will not draw is worse than a map made of letters.
+	ck(MapPayload.inflate_sprites({}, func(_x, _y): return "x") == "",
+		"an empty payload yields nothing rather than erroring")
+	var cli := FileAccess.get_file_as_string("res://client/client.gd")
+	var body_start := cli.find("func _overworld_display(")
+	var body := cli.substr(body_start, cli.find("
+func ", body_start + 10) - body_start)
+	ck(body.count("return MapPayload.inflate(payload)") == 3,
+		"the client falls back to the text map on all three failures (art, payload, renderer)")
+	ck(cli.find("overworld_pad32/%s/%s%s.png") >= 0,
+		"and the player figure comes from the TRANSPARENT sprite set")
+
 	# The picture. A probe can say "not black"; only eyes can say "readable".
 	var out := Image.create(23 * 32, 23 * 32, false, Image.FORMAT_RGBA8)
 	for y in range(23):

@@ -1367,6 +1367,9 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 			MapPayload.append_text(segs, "[center]")
 			var _cells: Array = _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
 			segs.append(MapPayload.grid(_cells[CELLS_LOOK], "\n", ""))
+			# Mark it: a payload holds two grids and only THIS one is the map a sprite
+			# renderer replaces. The minimap stays text.
+			segs[segs.size() - 1]["g"] = "map"
 			_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 			_biomes = MapPayload.grid(_cells[CELLS_BIOME], "", "")
 			MapPayload.append_text(segs, "[/center]")
@@ -1389,6 +1392,9 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		if chunk_manager:
 			var _cells: Array = _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
 			segs.append(MapPayload.grid(_cells[CELLS_LOOK], "\n", ""))
+			# Mark it: a payload holds two grids and only THIS one is the map a sprite
+			# renderer replaces. The minimap stays text.
+			segs[segs.size() - 1]["g"] = "map"
 			_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 			_biomes = MapPayload.grid(_cells[CELLS_BIOME], "", "")
 		else:
@@ -1441,6 +1447,9 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 	if chunk_manager:
 		var _cells: Array = _map_cells(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
 		segs.append(MapPayload.grid(_cells[CELLS_LOOK], "\n", ""))
+		# Mark it: a payload holds two grids and only THIS one is the map a sprite
+		# renderer replaces. The minimap stays text.
+		segs[segs.size() - 1]["g"] = "map"
 		_meaning = MapPayload.grid(_cells[CELLS_MEANING], "", "")
 		_biomes = MapPayload.grid(_cells[CELLS_BIOME], "", "")
 	else:

@@ -1305,7 +1305,16 @@ scope, because they are all tiles in the same grid.**
       `overlay_cells`), so a sprite bigger than its cell is solved. What it costs in the dungeon
       is the monster art: `monster_floor32` is a ~0.5x reduction of the Time Fantasy originals,
       so bigger dungeon monsters should be re-baked from the originals rather than enlarged.
-- [ ] **PHASE 2 — sprite it, as a client-only concern.**
+- [~] **PHASE 2 — sprite it, as a client-only concern. LARGELY DONE 2026-09-11.**
+      All 67 tile types and all 7 map overlays are real Raven art; `client/overworld_room.gd`
+      composes the grid into one image and the client draws slices of it; the player stands on
+      it as a figure. Every failure falls back to the text map - art missing, no meaning grid,
+      renderer refusing - because a map that will not draw is worse than one made of letters.
+      **Still open:** a settings toggle (`overworld_sprites` is a variable with no button yet),
+      companion and monster figures at the owner's scale rule wearing their variant tint, the
+      ZOOM inside a post, and the dungeon entrance hover.
+      Probe `overworld_render.gd` renders the real world and checks the header is byte-identical
+      to the text form, so nothing above the map can shift.
       Measured on the real viewport rather than extrapolated from the dungeon:
       **529 inline images = 10.40 ms** per redraw; making every tile hoverable costs
       **+0.10 ms**, i.e. free. That is **1.1% of one client core** at one move/second, 4.2% at

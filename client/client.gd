@@ -6,6 +6,16 @@ extends Control
 ## server, so the client cannot draw something the server would not have drawn.
 const MapPayload = preload("res://shared/map_payload.gd")
 
+## The overworld drawn as sprites rather than letters (Phase 2.95 PHASE 2).
+const _OverworldRoom = preload("res://client/overworld_room.gd")
+## How wide a map square is on screen when it is drawn as art. The tiles are 32px, so this is a
+## straight downscale; the text map's own cell is about this wide, which is what keeps the panel
+## the same size and the header aligned.
+const OVERWORLD_SPRITE_PX := 26
+## Off falls back to the letters, and so does a build whose art is missing. There is no settings
+## button for this yet - see the backlog; the fallback is automatic, so nobody is stranded.
+var overworld_sprites := true
+
 ## What this BUILD can read off the wire, sent with login. The server checks it before sending
 ## anything an older build would not understand, and a client that says nothing keeps getting
 ## the shape clients have always been sent - which is what lets an old exe survive a new server.
@@ -24270,7 +24280,7 @@ func handle_server_message(message: Dictionary):
 				var desc = ""
 				var map_payload = message.get("map", null)
 				if map_payload is Dictionary and not map_payload.is_empty():
-					desc = MapPayload.inflate(map_payload)
+					desc = _overworld_display(map_payload)
 				if desc == "":
 					desc = message.get("description", "")
 				# Don't clear game_output on location updates - map is displayed separately
@@ -45568,6 +45578,52 @@ func update_dungeon_map():
 	# after the other two callers had been taught not to.
 	_dungeon_panel_refresh()
 	_set_dungeon_side_boxes_visible(false)
+
+
+func _overworld_figure_path() -> String:
+	"""The local player's overworld sprite, TRANSPARENT, for the composed map.
+
+	`overworld_pad32`, never `overworld_floor32`. The floor-backed frames have the dungeon floor
+	baked into every one, because BBCode cannot composite two images into one cell - but the
+	overworld renderer composites the whole grid itself, so a floor-backed figure would arrive
+	standing on a square of dungeon floor in the middle of a snowfield. That is not hypothetical:
+	it is what the first render did."""
+	if character_data == null or character_data.is_empty():
+		return ""
+	var bid := BattlerSprite.id_from_data(character_data)
+	if bid == "":
+		return ""
+	var frame: String = ["_stand", "_walk1", "_walk2"][clampi(posmod(_dungeon_anim_tick, 3), 0, 2)]
+	var path := "res://client/sprites/overworld_pad32/%s/%s%s.png" % [bid, _local_map_facing, frame]
+	return path if ResourceLoader.exists(path) else ""
+
+
+func _overworld_display(payload: Dictionary) -> String:
+	"""The location display with the map drawn as art.
+
+	Everything except the map grid is untouched - the header, the minimap, the caption - so this
+	cannot move the layout. Every failure falls back to `inflate`, which is the text map the
+	server has always sent: art missing, payload without a meaning grid, renderer refusing to
+	build. A map that will not draw is worse than a map made of letters."""
+	if not overworld_sprites or not _OverworldRoom.available():
+		return MapPayload.inflate(payload)
+	var meaning: Array = MapPayload.cells(payload.get("meaning", {}))
+	var biomes: Array = MapPayload.cells(payload.get("biomes", {}))
+	if meaning.is_empty():
+		return MapPayload.inflate(payload)
+	# You, at the centre of your own view.
+	var figures: Dictionary = {}
+	var me := _overworld_figure_path()
+	if me != "":
+		var mid: int = meaning.size() / 2
+		figures["%d,%d" % [mid, mid]] = me
+	if not _OverworldRoom.build(meaning, biomes, figures):
+		return MapPayload.inflate(payload)
+	return MapPayload.inflate_sprites(payload, func(x: int, y: int) -> String:
+		var cell: String = _OverworldRoom.cell_path(x, y)
+		if cell == "":
+			return "  "
+		return "[img=%dx%d]%s[/img]" % [OVERWORLD_SPRITE_PX, OVERWORLD_SPRITE_PX, cell])
 
 
 func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "") -> String:
