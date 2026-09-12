@@ -5723,6 +5723,8 @@ func _input(event):
 			elif keycode == KEY_6:
 				_toggle_map_legend()
 			elif keycode == KEY_7:
+				_toggle_overworld_sprites()
+			elif keycode == KEY_8:
 				settings_submenu = "stat_priority"
 				game_output.clear()
 				_display_stat_priority_settings()
@@ -28474,6 +28476,8 @@ func _load_keybinds():
 				# v0.9.417 — condensed_combat_log removed; ignore any saved value.
 				if data.has("show_map_legend"):
 					show_map_legend = data["show_map_legend"]
+				if data.has("overworld_sprites"):
+					overworld_sprites = bool(data["overworld_sprites"])
 				if data.has("comparison_pinned_stats") and data["comparison_pinned_stats"] is Array:
 					comparison_pinned_stats = data["comparison_pinned_stats"]
 
@@ -28506,6 +28510,7 @@ func _save_keybinds():
 	save_data["sfx_muted"] = sfx_muted
 	# v0.9.417 — condensed_combat_log removed; no longer saved.
 	save_data["show_map_legend"] = show_map_legend
+	save_data["overworld_sprites"] = overworld_sprites
 	save_data["comparison_pinned_stats"] = comparison_pinned_stats
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
@@ -29080,8 +29085,15 @@ func display_game_settings():
 	display_game("[5] Tutorial on New Character: %s" % tutorial_status)
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
 	display_game("[6] Map Legend: %s" % legend_status)
+	# Phase 2.95 PHASE 2. Off falls back to the letters the map has always been, and so does a
+	# build whose art is missing - so this can never leave anyone without a map.
+	var sprites_status = "[color=#00FF00]ON[/color]" if overworld_sprites else "[color=#FF6666]OFF[/color]"
+	if _OverworldRoom.available():
+		display_game("[7] Overworld Map Sprites: %s" % sprites_status)
+	else:
+		display_game("[color=#808080][7] Overworld Map Sprites: art not installed[/color]")
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
-	display_game("[7] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
+	display_game("[8] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
 	display_game("")
 	if skip_craft or skip_gather:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -39680,6 +39692,25 @@ func _toggle_map_legend():
 	if settings_mode and settings_submenu == "game":
 		game_output.clear()
 		display_game_settings()
+
+func _toggle_overworld_sprites():
+	"""Draw the overworld as art, or as the letters it has always been.
+
+	A real setting rather than a variable, per the project rule that a new entry point is a
+	visible control. It is also the honest escape hatch: the art is licence-restricted and not in
+	git, machines differ, and a player who does not like it should not have to."""
+	overworld_sprites = not overworld_sprites
+	_save_keybinds()
+	game_output.clear()
+	var status = "SPRITES" if overworld_sprites else "TEXT"
+	var color = "#00FF00" if overworld_sprites else "#FF6666"
+	display_game("[color=%s]Overworld Map: %s[/color]" % [color, status])
+	display_game("[color=#808080]Take a step to redraw the map.[/color]")
+	await get_tree().create_timer(1.0).timeout
+	if settings_submenu == "game_settings":
+		game_output.clear()
+		display_game_settings()
+
 
 func _toggle_condensed_combat_log():
 	"""Toggle the per-turn condensed combat log."""

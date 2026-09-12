@@ -1310,7 +1310,7 @@ scope, because they are all tiles in the same grid.**
       composes the grid into one image and the client draws slices of it; the player stands on
       it as a figure. Every failure falls back to the text map - art missing, no meaning grid,
       renderer refusing - because a map that will not draw is worse than one made of letters.
-      **Still open:** a settings toggle (`overworld_sprites` is a variable with no button yet),
+      **Still open:**
       companion and monster figures at the owner's scale rule wearing their variant tint, the
       ZOOM inside a post, and the dungeon entrance hover.
       Probe `overworld_render.gd` renders the real world and checks the header is byte-identical
