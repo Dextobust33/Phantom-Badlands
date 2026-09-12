@@ -2182,9 +2182,25 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       3. **APEX is not hoverable and should be.** It appears in monster names like the traits do,
          and every other term beside it explains itself. Owner: *"APEX should be a hoverable term
          in names as well."*
-      Worth a probe that enumerates every term the name line can contain and asserts each one has
-      a tooltip entry - that is the same "a lookup table is checked by CALLING the lookup" rule
-      that caught the `.png.png` dungeon sprites.
+      **ALL THREE FIXED 2026-09-11, and two really were one cause.**
+        1. **The stuck box.** `_monster_name_label` was the one surface out of eight connected
+           for `meta_hover_started` and never for `meta_hover_ended`, so the popup it opened had
+           nothing that would ever close it. Every other label had the pair written out by hand
+           on adjacent lines, which is exactly how one came to be missed. There is one
+           `_wire_hover()` now and the probe fails if a raw connect reappears.
+        2. **"Persisted through fights"** is the OTHER half, and hover-out does not fix it:
+           when the LABEL leaves rather than the pointer - combat ends, the scene is rebuilt -
+           no hover-out can fire, because there is nothing left to leave. The panel now closes
+           the popup when its own visibility drops.
+        3. **The misplaced box.** Two faults in one line. The popup's SIZE was read in the same
+           frame its text was set, so the clamp that keeps it on screen was clamping against the
+           PREVIOUS popup's size; and the mouse was read in the combat panel's canvas space
+           while the popup lives under the scene root, which are only the same space when
+           nothing between them carries a transform - and this project scales its UI.
+        4. **APEX and ELITE are hoverable**, wrapped in the same `[url=]` the trait chips use.
+           The apex text carries the real 38% win band read off `APEX_TARGET_WIN`, not a number
+           invented for the tooltip.
+      Probe `hover_lifetime.gd`; restoring the original one-sided wiring fails it.
 
 - [x] **FIXED 2026-09-11.** The ramp is now ONE computation, `CombatManager.engine_damage_ramp`,
       called by the funnel for both classes and sent as combat state (`engine_damage_ramp`)

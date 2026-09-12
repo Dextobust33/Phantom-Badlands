@@ -407,6 +407,13 @@ func _ready() -> void:
 	clip_contents = true
 	_load_mono_font()
 	_build_layout()
+	# A tooltip must not outlive the thing that opened it. Owner 2026-09-11: a trait box
+	# "persisted through fights". Connecting hover-out fixes the case where the pointer leaves a
+	# label; this is the case where the LABEL leaves - the panel closes, combat ends, the whole
+	# scene is rebuilt - and no hover-out ever fires because there is nothing left to leave.
+	visibility_changed.connect(func():
+		if not visible:
+			_hide_formula_popup())
 	visible = false
 
 
@@ -539,8 +546,7 @@ func _build_layout() -> void:
 	# not receive hover at all. PASS keeps clicks falling through to the scroll beneath, so
 	# scrolling and dragging are unaffected.
 	_log_label.mouse_filter = Control.MOUSE_FILTER_PASS
-	_log_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
-	_log_label.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
+	_wire_hover(_log_label)
 	_log_scroll.add_child(_log_label)
 
 	# Build the picker overlay (initially hidden). Lives in the same
@@ -663,8 +669,7 @@ func _build_log_panel() -> Control:
 	# look like a different font rather than a highlight - "Don't really care for the font that
 	# magic bolts damage is". Colour is the affordance; the popup is the payoff.
 	_battle_log_band.meta_underlined = false
-	_battle_log_band.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
-	_battle_log_band.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
+	_wire_hover(_battle_log_band)
 	_battle_log_band.add_theme_font_size_override("normal_font_size", 14)
 	_battle_log_scroll.add_child(_battle_log_band)
 	return _battle_log_frame
@@ -2943,8 +2948,7 @@ func _build_monster_column() -> VBoxContainer:
 		_lufia_monster_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_lufia_monster_status.autowrap_mode = TextServer.AUTOWRAP_OFF
 		_lufia_monster_status.mouse_filter = Control.MOUSE_FILTER_PASS
-		_lufia_monster_status.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
-		_lufia_monster_status.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
+		_wire_hover(_lufia_monster_status)
 		# 2026-09-08 - HIDDEN until it has something to say. Reported live: "Monster ASCII art
 		# looks skewed... Can't see the bottom of combat anymore." That was this label: a
 		# RichTextLabel with fit_content still claims a line of height when empty, and this
@@ -2963,7 +2967,7 @@ func _build_monster_column() -> VBoxContainer:
 	_monster_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# The name can carry a hoverable empowered prefix ("Juggernaut Giant Spider"). Same popup
 	# every other chip in this panel uses, rather than a second tooltip style to maintain.
-	_monster_name_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
+	_wire_hover(_monster_name_label)
 	# PASS, not IGNORE. Owner 2026-09-11: *"I just ran into a Frenzied Giant Rat. Frenzied in its
 	# name is Red and underlined but hovering it does nothing."*
 	#
@@ -3097,8 +3101,7 @@ func _build_shared_status_strip() -> HBoxContainer:
 	# PASS, not IGNORE: the label must receive hover for [url] metas to fire, while still
 	# letting clicks through to whatever is behind it.
 	_player_status_label.mouse_filter = Control.MOUSE_FILTER_PASS
-	_player_status_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
-	_player_status_label.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
+	_wire_hover(_player_status_label)
 	_status_strip.add_child(_player_status_label)
 
 	_monster_status_label = RichTextLabel.new()
@@ -3109,8 +3112,7 @@ func _build_shared_status_strip() -> HBoxContainer:
 	_monster_status_label.size_flags_stretch_ratio = 1.0
 	_monster_status_label.add_theme_font_size_override("normal_font_size", 12)
 	_monster_status_label.mouse_filter = Control.MOUSE_FILTER_PASS
-	_monster_status_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
-	_monster_status_label.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
+	_wire_hover(_monster_status_label)
 	_status_strip.add_child(_monster_status_label)
 
 	return _status_strip
@@ -3197,6 +3199,12 @@ const _STATUS_HELP := {
 	"open_guard_penalty": "Guard down. You take more damage than usual until it passes - the cost of a card that traded defence for power.",
 	"time_stop":          "Time stopped. You act again before the enemy gets another turn.",
 }
+
+
+## What the two danger tags say when hovered. Quotes are avoided entirely: a `"` ends BBCode
+## url parsing dead, which is why `_format_status_chip` substitutes them.
+const _APEX_HELP_APEX := "APEX - one of the species this world is built to be feared for. An apex fight is tuned to a 38% win rate where an ordinary one is 60%, so it is the encounter most likely to end a run. All of the deepest two tiers are apex; lower down they are a minority, 19 species of 49."
+const _APEX_HELP_ELITE := "ELITE - a stronger roll of this species, above a normal monster of the same level, and it drops better for it."
 
 
 func _format_status_chip(key: String, suffix: String) -> String:
@@ -4204,12 +4212,44 @@ func _show_formula_popup(formula: String, mono: bool = false) -> void:
 	_formula_popup_lbl.text = "[color=#D4A017][b]ƒ[/b][/color]  [color=#EDE3C8]%s[/color]" % formula
 	_formula_popup.visible = true
 	_formula_popup.reset_size()
-	var mp := get_global_mouse_position()
+	# TWO things had to change here, both reported as one symptom. Owner 2026-09-11: *"when
+	# hovering the underlined Damage word on a companion inspect the hoverbox appeared way over
+	# on the right of my screen."*
+	#
+	# 1. The SIZE was read in the same frame the text was set. A PanelContainer's size comes from
+	#    its label's minimum size, and that is recomputed during layout - so `size` here was the
+	#    PREVIOUS popup's size. The clamp below is what keeps a tooltip on screen, and clamping
+	#    against the wrong size puts it somewhere unrelated to the word under the pointer.
+	# 2. The mouse was read from THIS PANEL's canvas space while the popup lives under the
+	#    scene root (`top_level`, parented to the root). Those are only the same space when
+	#    nothing in between carries a transform, and this project scales its UI.
+	#    Asking the POPUP for the mouse position guarantees it matches `global_position`.
+	await get_tree().process_frame
+	if not is_instance_valid(_formula_popup) or not _formula_popup.visible:
+		return
+	var mp := _formula_popup.get_global_mouse_position()
 	var sz := _formula_popup.size
 	var vp := get_viewport_rect().size
-	var x: float = clamp(mp.x + 14.0, 4.0, vp.x - sz.x - 4.0)
-	var y: float = clamp(mp.y - sz.y - 10.0, 4.0, vp.y - sz.y - 4.0)
+	var x: float = clamp(mp.x + 14.0, 4.0, maxf(4.0, vp.x - sz.x - 4.0))
+	var y: float = clamp(mp.y - sz.y - 10.0, 4.0, maxf(4.0, vp.y - sz.y - 4.0))
 	_formula_popup.global_position = Vector2(x, y)
+
+func _wire_hover(rtl: RichTextLabel) -> void:
+	"""Wire a label's hover to the shared popup - BOTH ways, always.
+
+	Owner 2026-09-11: *"I've got a Thorned - reflects melee damage box stuck on my screen after
+	hovering a Thorned hobgoblin. It has persisted through fights."*
+
+	The cause was one surface out of eight. `_monster_name_label` was connected for
+	`meta_hover_started` and never for `meta_hover_ended`, so the popup it opened had nothing
+	that would ever close it. Every other label in this file had the pair written out by hand
+	directly beneath each other, which is exactly how one of them came to be missed.
+
+	One call now, and `tools/probe/hover_lifetime.gd` fails if a raw `meta_hover_started.connect`
+	reappears anywhere in this file. That retires the class rather than the instance."""
+	rtl.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
+	rtl.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
+
 
 func _hide_formula_popup() -> void:
 	if _formula_popup != null and is_instance_valid(_formula_popup):
@@ -4374,8 +4414,7 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	back_txt.mouse_filter = Control.MOUSE_FILTER_PASS  # v0.9.688 — receive number hover
 	# v0.9.689 — polished formula popup on number hover (numbers are [url]-tagged).
 	back_txt.meta_underlined = false
-	back_txt.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
-	back_txt.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
+	_wire_hover(back_txt)
 	back_txt.text = "[b]%s[/b]\n%s" % [display, back_bbcode]
 	back.add_child(back_txt)
 	root.add_child(back)
@@ -6644,11 +6683,17 @@ func _refresh_monster() -> void:
 	var niche_tag := _get_niche_passive_tag()
 	# Danger tags read BEFORE the name so they cannot be missed, and an apex carries a skull
 	# because it is the one a player is most likely to lose to.
+	# Both tags are HOVERABLE. Owner 2026-09-11: *"APEX should be a hoverable term in names as
+	# well."* The empowered prefixes in the name beside them already explain themselves, so a
+	# player who hovers Thorned and learns what it does then hovers APEX and learns nothing is
+	# being told the game has no answer. Facts read off the code, not written from memory: apex
+	# is a SPECIES flag (`MonsterDatabase.APEX_SPECIES`, 19 of 49 species and all of tiers 7-8)
+	# and it is calibrated to a 38% win band against the normal 60%.
 	var danger_tag := ""
 	if _monster_is_elite:
-		danger_tag += "[color=#FFD700][b][ELITE][/b][/color] "
+		danger_tag += "[url=%s][color=#FFD700][b][ELITE][/b][/color][/url] " % _APEX_HELP_ELITE
 	if _monster_is_apex:
-		danger_tag += "[color=#FF3B3B][b]☠ APEX[/b][/color] "
+		danger_tag += "[url=%s][color=#FF3B3B][b]☠ APEX[/b][/color][/url] " % _APEX_HELP_APEX
 	_monster_name_label.text = "%s[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]%s" % [danger_tag, _monster_name_color, _monster_name, _monster_level, niche_tag]
 	# v0.9.650 — apply the per-element user scale by rewriting the font_size
 	# tag in the stored BBCode. Source BBCode looks like
