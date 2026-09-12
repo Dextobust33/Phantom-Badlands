@@ -3098,7 +3098,30 @@ func run_role_calibrate():
 	#
 	# So each anchor level is calibrated independently, exactly as the baseline curve already
 	# is, and monster_database interpolates between them.
-	var passes := 6
+	# HOW MANY PASSES, AND WHY IT IS NOT SIX.
+	#
+	# 2026-09-12: a completed run left L1 at exactly `seed x 1.35^(0.75*6)` = seed x 3.859 for ALL
+	# THREE roles - bit-identical to the previous run - and still measured empowered 65%/50%,
+	# elite 70%/40%, boss 56%/30%. That is not convergence, it is SATURATION: the per-pass clamp
+	# bound on every one of the six passes, so the loop wrote the furthest value it can reach and
+	# stopped. The comment that used to sit here claimed "1.35^6 still spans ~6x overall, which is
+	# ample range" - it is not 6x, because `CAL_CORRECTION_EXP` is 0.75, so the real span is
+	# 1.35^(0.75*6) = 3.86x. `tools/probe/rolecal_l1_reach.gd` then measured what L1 needs: win
+	# rate responds strongly to str_mult there (it falls 84-94pp over a x1 -> x64 sweep) and every
+	# role crosses its target between x3.86 and x8. The knob was right; the travel was short.
+	#
+	# 12 passes reach 1.35^(0.75*12) = 14.9x, which covers that with room to spare. Extra passes
+	# are SAFE rather than merely affordable: the correction is (measured/target)^0.75, so it
+	# tends to 1 as the measurement approaches target and the loop refines instead of overshooting.
+	# The clamp only binds while it is far away, which is exactly when travel is wanted.
+	#
+	# AND IT IS A FIXED COUNT, not an early exit. An early exit was tried first and abandoned the
+	# same day: it stopped as soon as ONE n=40 batch read inside the 8pp band, and two n=40
+	# batches differ by ~11pp of sampling error, so it fired on noise - empowered L1 exited at
+	# pass 8 having measured in-band and then verified at 63% against 50%. A single proportion at
+	# this sample size is not evidence of convergence. Fixed passes also keep the run comparable
+	# with the previous one, which is how sampling noise gets told from a real move.
+	var passes := 12
 	# 2026-09-03 — SAMPLE SIZE HAD TO RISE WITH THE METRIC CHANGE, and this is the part that is
 	# easy to miss. `danger` was a mean over a continuous variable, so six fights gave a usable
 	# estimate. A WIN RATE is a proportion: at n=6 its standard error is about 20 percentage
@@ -3135,6 +3158,11 @@ func run_role_calibrate():
 			# hp_mult is fixed at the role's design length ratio with no feedback, so the
 			# fight is proportionally longer by construction and cannot chase its own tail.
 			hp_m = t_turns / maxf(0.1, float(monster_db.ROLE_TARGETS.get("normal", {}).get("turns", 5.0)))
+			# Whether the FINAL pass was still clamped. That - not the pass count - is the
+			# honest saturation signal: a clamped last pass means the loop was still travelling
+			# at full tilt when it ran out of passes, which is what hid the L1 fault.
+			var clamped_last := false
+			var clamped_n := 0
 			for pass_i in range(passes):
 				# Override with a single-anchor table so this level uses exactly these values.
 				monster_db.set_calibrated_role_multipliers({
@@ -3144,6 +3172,8 @@ func run_role_calibrate():
 				if r.is_empty():
 					break
 				last = r
+				if _budget_expired():
+					break
 				# 2026-09-03 — steer by WIN RATE, not cost. Cost saturates on death (a corpse has
 				# spent 100% of its bar), so at a low win rate the signal was pinned near the
 				# target's ceiling and the correction had nothing left to push against — which
@@ -3154,7 +3184,11 @@ func run_role_calibrate():
 				# value is floored well above zero because a 0% sample carries no gradient —
 				# without that floor a too-hard monster would be told to get 4x harder.
 				var w_meas: float = maxf(0.02, float(r["win"]))
-				st_m *= pow(clampf(w_meas / maxf(0.01, t_win), 0.75, 1.35), CAL_CORRECTION_EXP)
+				var ratio: float = w_meas / maxf(0.01, t_win)
+				clamped_last = ratio > 1.35 or ratio < 0.75
+				if clamped_last:
+					clamped_n += 1
+				st_m *= pow(clampf(ratio, 0.75, 1.35), CAL_CORRECTION_EXP)
 			# Same lag refcal had: the loop measures THEN corrects, so `last` describes the
 			# multiplier one step before the one being written. Measured consequence — empowered
 			# was written past its target and came out at 59-74% cost against 55%, above ELITE
@@ -3171,10 +3205,14 @@ func run_role_calibrate():
 			else:
 				var _w: float = float(last.get("win", 0.0)) * 100.0
 				var _tw: float = t_win * 100.0
-				print("%-11s %7d %9.2f %9.2f %9.1f %8.0f%% %6.0f%% %7.0f%% %s" % [
+				# The clamp count is printed because a row whose LAST pass was still clamped
+				# ran out of travel rather than converging - the distinction that hid the L1
+				# fault behind six identical-looking numbers.
+				print("%-11s %7d %9.2f %9.2f %9.1f %8.0f%% %6.0f%% %7.0f%% %-4s clamped=%d/%d%s" % [
 					role, lvl, hp_m, st_m, float(last["turns"]),
 					float(last["cost"]) * 100.0, _w, _tw,
-					"ok" if absf(_w - _tw) <= 8.0 else "OFF"])
+					"ok" if absf(_w - _tw) <= 8.0 else "OFF",
+					clamped_n, passes, "  SATURATED" if clamped_last else ""])
 		out_roles[role] = anchors
 	# Merge into the existing curve file — the baseline anchors from refcal must survive.
 	var existing := {}
