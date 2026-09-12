@@ -1338,6 +1338,16 @@ scope, because they are all tiles in the same grid.**
         `ore_vein`, `dense_brush`, `herb`, `flower`, `mushroom`, `bush`, `reed`, `cactus`,
         `ice_bloom`, `swamp_lily`, `mountain_herb`, `brambleberry` - fourteen, several of them
         biome-specific, and they are what a player is actually hunting for on the map.
+      * **REAL ART, NOT GLYPHS.** Owner 2026-09-11, on seeing the glyph fallback: *"We should
+        have enough sprites that glyphs shouldn't be needed."* So the glyph bake is the last
+        resort for a tile not yet cut, not the plan. **16 of 67 cut so far** from
+        `green_forest_v2`; 52 still on a glyph.
+        Pipeline: `tools/tileset_contact_sheet.py` renders a pack sheet with row and column
+        numbers on it, `tools/bake_overworld_tiles.py` holds the (pack, row, col) table and cuts,
+        `tools/preview_overworld_tiles.py` composes a sample field so a pick can be judged at the
+        size a player sees. **Pick cells off the OPACITY MAP, not off the rendered sheet** - two
+        picks in a row were empty cells because a scaled screenshot is not measurement.
+        A tree spans 3x3 in a Raven pack; cut the block and shrink it, or you get a fragment.
       * **67 tile types in all** (`TILE_RENDER`), so the resolver needs a COVERAGE probe that
         calls it on every one rather than a table someone eyeballs. This is the `.png.png` lesson:
         v0.9.761 shipped with all 53 dungeon monster sprites broken because the table was checked
