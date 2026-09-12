@@ -16,12 +16,12 @@ common way to lose a session.
 local build (`f63e3ece…`, identical). Seven assets on the tag; Windows gate passed at 0.9.776,
 Linux gave its documented SKIP.
 
-### ✔ `rolecal` IS DONE (2026-09-12). Not yet released.
+### ✔ `rolecal` IS DONE AND SHIPPED as v0.9.777 (2026-09-12).
 
 21 of 21 rows on target, 0 saturated. `anchors` / `species_power` / `target_turns` untouched, so
 the layers stayed orthogonal. The curve on disk is now complete for the first time since the
-773 arc. **It is committed but NOT deployed** - the live server still runs the old role
-multipliers, so this wants a small release (server deploy + client, since both read the file).
+773 arc. Server deployed and verified by hashing the RUNNING process (`c78c293d...`, identical); seven
+assets on the tag; Windows gate passed at 0.9.777.
 
 What changed, and it is two different things:
 - **L1 roughly doubled**: str_mult 3.79->7.08 empowered, 3.48->7.80 elite, 2.76->5.62 boss.
@@ -87,6 +87,19 @@ nobody drawn.
 - The minimap now costs 0.9ms standing / 1.4ms walking (was 6.9 / 8.9). If a further cut is ever
   wanted, the remaining cost is the 861 `PackedStringArray` appends and the marker scatter, not
   terrain.
+
+## v0.9.777 SHIPPED (2026-09-12) -- the role layer, measured against the current player
+
+- 21 of 21 anchor rows on target, none saturated. L1 str_mult 3.79->7.08 empowered, 3.48->7.80
+  elite, 2.76->5.62 boss; mid and late game down 17-50%. An elite at L1 had been won 99% of the
+  time against a 40% target.
+- `passes` 6 -> 12 in rolecal, because the L1 rows were SATURATED at the clamp and looked
+  converged. See [[feedback_saturation_is_not_convergence]] / the NEXT SESSION block.
+- **The release gate now proves the packaged build carries the curve.** It is DATA, so every
+  freshness probe passed on a build that had lost it, and monster_database then silently reverts
+  to legacy base_level scaling. Proven by injecting the fault. That injection also caught a check
+  of mine that could not fail - `role_multipliers(...).is_empty()` reads false with the curve
+  gone, because the fallback returns a well-formed dictionary.
 
 ## v0.9.776 SHIPPED (2026-09-12) -- the minimap could not see most of itself
 
