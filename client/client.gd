@@ -2427,6 +2427,21 @@ func _ready():
 		# still has them is to ask the running engine.
 		print("[BUILDVERIFY] max_fps=", Engine.max_fps)
 		print("[BUILDVERIFY] vsync_mode=", DisplayServer.window_get_vsync_mode())
+		# The CALIBRATED monster curve is a DATA file, not code, so the stale-script-cache probes
+		# above say nothing about it. If `shared/reference_monster_curve.json` ever falls out of an
+		# export, monster_database silently reverts to legacy base_level scaling - the sawtooth,
+		# the 85x same-level variance, the tier-boundary collapses - and nothing on screen says so.
+		# Added with v0.9.777, which shipped a re-calibration of the role layer: a build that does
+		# not carry the curve ships none of it.
+		var _mdb = load("res://shared/monster_database.gd").new()
+		add_child(_mdb)
+		_mdb.generate_monster_by_name("Goblin", 1, true, "normal")
+		print("[BUILDVERIFY] curve_calibrated=", _mdb._curve_is_calibrated)
+		# NOT `role_multipliers(...).is_empty()`. Proven by injecting the fault: with the curve
+		# removed that still reads true, because the function falls back to derived algebra and
+		# returns a perfectly well-formed dictionary. Ask instead whether the CALIBRATED table was
+		# populated, which is the thing that goes missing.
+		print("[BUILDVERIFY] curve_roles=", not _mdb._calibrated_role_mults.is_empty())
 		get_tree().quit()
 		return
 	# 2026-09-05 — enforce vsync HERE rather than in project.godot.
