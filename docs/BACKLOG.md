@@ -2610,9 +2610,20 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
            for a long time and nobody noticed. Decide that before touching it. (This is the
            measure-before-building rule earning its keep - the cache was three lines from being
            written on the strength of reading the seed.)
-        3. [ ] **Index dungeons by position** so the map and threat lookups stop scanning. A move
-           costs ~3 linear passes over every active dungeon today. **This is what actually
-           unlocks the ~3,150 dungeons the owner asked for**; everything else is memory.
+        3. [x] **DONE 2026-09-11 - dungeons are indexed by position, and the count is raised to
+           what the owner asked for.** A tile index answers "am I standing on one?" in one
+           lookup, and 64-wide buckets answer the map markers, the threat cone and the per-post
+           threat count. Measured at 3,000 dungeons: a map-radius query is 1.8us bucketed against
+           117us scanning, and 400 box queries agree with the full scan exactly.
+           Spawning no longer builds a set of every dungeon's coordinates, which was what made
+           FILLING a world quadratic.
+           **Counts: MIN 150 -> 3000, MAX 200 -> 3300, active cap 300 -> 4200.** The drain takes a
+           2 ms frame budget rather than one dungeon per frame, since a spawn is now a placement
+           roll and a dictionary insert.
+           **The index cannot go stale by accident:** one function creates a dungeon, one erases
+           it, and the probe fails if a raw write or a second erase appears. A missed hook shows
+           up as a dungeon you cannot walk into or a `D` that will not go away - both silent.
+           Probe `dungeon_index.gd`.
         4. [ ] Only then decide whether placement becomes a pure function of (x, y, seed). What
            blocks that is not placement but three pieces of mutable state: `cleared_by` (which
            should be per-character anyway, and is already implicated in a re-farm bug),

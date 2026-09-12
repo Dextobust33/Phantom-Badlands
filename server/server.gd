@@ -285,7 +285,16 @@ var pending_final_chest: Dictionary = {}  # peer_id -> {instance_id, floor_num, 
 # immediate teleport + completion screen).
 var pending_chest_reward_lines: Dictionary = {}  # peer_id -> Array[String]
 var next_dungeon_id: int = 1
-const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
+## 2026-09-11: these were 300 / 150 / 200, and every one of them was a workaround for a world
+## dungeon costing ~4 ms of grid generation, ~620 KB of RAM, and three linear scans per player
+## move. All three are gone - the interior is lazy and lookups are bucketed - so the count is
+## now set by what the owner asked for rather than by what the server could bear.
+##
+## Owner: *"We also want to massively increase the amount of dungeons that players can find on
+## the map. We don't want players to have to walk hundreds of tiles without seeing any dungeons."*
+## `tools/dungeon_density.gd` prices one dungeon per 100 tiles walked, across the whole world
+## rather than the inner 4% of it, at about 3,150.
+const MAX_ACTIVE_DUNGEONS = 4200  # world + personal instances
 const DUNGEON_SPAWN_CHECK_INTERVAL = 120.0  # v0.9.348: 30→120s. Check fires per-tick A* over chunk grid, contributing to lag spikes with 88+ dungeons in play. Refilling completed dungeons within 2min is acceptable.
 const DUNGEON_DESPAWN_DELAY = 60.0  # Despawn completed dungeons after 60 seconds
 # C0 (dungeon revamp) — a world 'D' stays enterable for this long AFTER the first player
@@ -306,8 +315,8 @@ const DUNGEON_WANDER_SPAWN_CAP = 4      # max EXTRA monsters beyond the floor's 
 const DUNGEON_VIEW_W = 25               # keep in step with client _render_dungeon_grid view_w
 const DUNGEON_VIEW_H = 11               # keep in step with client _render_dungeon_grid view_h
 const DUNGEON_WANDER_SPAWN_MARGIN = 2   # extra tiles beyond the view edge
-const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tiles of travel
-const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
+const MIN_WORLD_DUNGEONS = 3000  # about one per 100 tiles walked, everywhere
+const MAX_WORLD_DUNGEONS = 3300  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
 # #61 (2026-08-26) — dungeon-instance persistence across restarts. All dungeon state is
 # in-memory; a restart used to wipe it (players lost runs, quest instances vanished). We
@@ -30477,15 +30486,7 @@ func handle_dungeon_exit(peer_id: int):
 		if player_dungeon_instances[peer_id].has(free_run_key):
 			player_dungeon_instances[peer_id].erase(free_run_key)
 			# Clean up the instance itself
-			if active_dungeons.has(instance_id):
-				active_dungeons.erase(instance_id)
-			if dungeon_floors.has(instance_id):
-				dungeon_floors.erase(instance_id)
-			if dungeon_floor_rooms.has(instance_id):
-				dungeon_floor_rooms.erase(instance_id)
-			if dungeon_monsters.has(instance_id):
-				dungeon_monsters.erase(instance_id)
-			dungeon_floor_items.erase(instance_id)
+			_erase_dungeon_instance(instance_id)
 			if dungeon_traps.has(instance_id):
 				dungeon_traps.erase(instance_id)
 
@@ -30606,7 +30607,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 
 	# Create instance
-	active_dungeons[instance_id] = {
+	_register_dungeon(instance_id, {
 		"instance_id": instance_id,
 		"dungeon_type": dungeon_type,
 		"world_x": spawn_x,
@@ -30616,7 +30617,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 		"dungeon_level": dungeon_level,
 		"sub_tier": sub_tier,
 		"tier": int(dungeon_data.get("tier", 1)),
-	}
+	})
 
 	# Generate all floor grids (BSP rooms + corridors)
 	var floor_grids = []
@@ -30724,7 +30725,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	var dungeon_level = clampi(player_level, sub_range.min_level, sub_range.max_level)
 
 	# Create instance
-	active_dungeons[instance_id] = {
+	_register_dungeon(instance_id, {
 		"instance_id": instance_id,
 		"dungeon_type": dungeon_type,
 		"world_x": spawn_x,
@@ -30740,7 +30741,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"fabled_boss_name": fabled_boss_name,  # P2 Slice 2 — non-empty → boss renamed + buffed
 		"gather_relic_name": gather_relic_name,  # P2 Slice 3 — dungeon-gather relic
 		"gather_relic_count": gather_relic_count
-	}
+	})
 
 	# Generate all floor grids (BSP rooms + corridors)
 	var floor_grids = []
@@ -30771,10 +30772,97 @@ const PERSONAL_DUNGEON_GRACE_SECONDS := 1800
 const PERSONAL_DUNGEON_MAX_AGE_SECONDS := 86400
 
 
+## How big a square each spatial bucket covers. Bigger means fewer buckets to visit per query
+## and more dungeons to sift inside each; 64 keeps both small at any plausible dungeon count.
+const DUNGEON_BUCKET := 64
+
+## Where the dungeons are. Built so the map, the "am I standing on one?" check and the threat
+## lookups stop walking every dungeon in the world.
+##
+## 2026-09-11: a single player move cost roughly THREE linear passes over `active_dungeons` -
+## `get_visible_dungeons` for the map and `_get_threat_zone_dungeon_at` twice. At the old cap of
+## 200 that is 600 iterations a step, and it grows with the count. The owner wants thousands of
+## dungeons (*"We don't want players to have to walk hundreds of tiles without seeing any
+## dungeons"*), which that shape simply cannot carry.
+var _dungeon_tile_index: Dictionary = {}
+var _dungeon_buckets: Dictionary = {}
+
+
+func _dungeon_bucket_key(x: int, y: int) -> String:
+	return "%d,%d" % [floori(float(x) / float(DUNGEON_BUCKET)), floori(float(y) / float(DUNGEON_BUCKET))]
+
+
+func _index_dungeon(instance_id: String) -> void:
+	"""Put one dungeon into the spatial index. Every path that creates a dungeon goes through
+	`_register_dungeon`, which calls this - see the probe, which fails if a raw write appears."""
+	if not active_dungeons.has(instance_id):
+		return
+	var inst: Dictionary = active_dungeons[instance_id]
+	var x: int = int(inst.get("world_x", 0))
+	var y: int = int(inst.get("world_y", 0))
+	_dungeon_tile_index["%d,%d" % [x, y]] = instance_id
+	var bk := _dungeon_bucket_key(x, y)
+	if not _dungeon_buckets.has(bk):
+		_dungeon_buckets[bk] = []
+	if not (instance_id in _dungeon_buckets[bk]):
+		_dungeon_buckets[bk].append(instance_id)
+
+
+func _unindex_dungeon(instance_id: String) -> void:
+	if not active_dungeons.has(instance_id):
+		return
+	var inst: Dictionary = active_dungeons[instance_id]
+	var x: int = int(inst.get("world_x", 0))
+	var y: int = int(inst.get("world_y", 0))
+	var tk := "%d,%d" % [x, y]
+	if String(_dungeon_tile_index.get(tk, "")) == instance_id:
+		_dungeon_tile_index.erase(tk)
+	var bk := _dungeon_bucket_key(x, y)
+	if _dungeon_buckets.has(bk):
+		_dungeon_buckets[bk].erase(instance_id)
+		if _dungeon_buckets[bk].is_empty():
+			_dungeon_buckets.erase(bk)
+
+
+func _register_dungeon(instance_id: String, instance: Dictionary) -> void:
+	"""The ONE way a dungeon comes into existence. Writing `active_dungeons[id] = {...}` directly
+	would leave it out of the index, which shows up as a dungeon you cannot walk into or a `D`
+	that will not go away - both silent."""
+	active_dungeons[instance_id] = instance
+	_index_dungeon(instance_id)
+
+
+func _rebuild_dungeon_index() -> void:
+	"""For the paths that replace or empty `active_dungeons` wholesale - loading a saved state,
+	a world reset, a map wipe."""
+	_dungeon_tile_index.clear()
+	_dungeon_buckets.clear()
+	for iid in active_dungeons:
+		_index_dungeon(String(iid))
+
+
+func _dungeons_near(x: int, y: int, radius: int) -> Array:
+	"""Candidate dungeon ids whose bucket overlaps the box. The caller still checks the real
+	distance; this only decides who is worth asking about."""
+	var out: Array = []
+	var bx0 := floori(float(x - radius) / float(DUNGEON_BUCKET))
+	var bx1 := floori(float(x + radius) / float(DUNGEON_BUCKET))
+	var by0 := floori(float(y - radius) / float(DUNGEON_BUCKET))
+	var by1 := floori(float(y + radius) / float(DUNGEON_BUCKET))
+	for bx in range(bx0, bx1 + 1):
+		for by in range(by0, by1 + 1):
+			for iid in _dungeon_buckets.get("%d,%d" % [bx, by], []):
+				out.append(iid)
+	return out
+
+
 func _erase_dungeon_instance(instance_id: String) -> void:
-	"""Forget a dungeon instance completely. The ONE place that knows which dictionaries hold
+	"""Forget a dungeon instance completely.
+
+	Unindexes FIRST, while the instance is still there to read its coordinates from. The ONE place that knows which dictionaries hold
 	dungeon state, because there were three lists of erases and one of them had already fallen a
 	dictionary behind (the world cull never erased `dungeon_traps`)."""
+	_unindex_dungeon(instance_id)
 	active_dungeons.erase(instance_id)
 	dungeon_floors.erase(instance_id)
 	dungeon_floor_rooms.erase(instance_id)
@@ -30906,7 +30994,7 @@ func _ensure_starter_dungeon_exists():
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 
 	# Create instance
-	active_dungeons[instance_id] = {
+	_register_dungeon(instance_id, {
 		"instance_id": instance_id,
 		"dungeon_type": dungeon_type,
 		"world_x": spawn_x,
@@ -30916,7 +31004,7 @@ func _ensure_starter_dungeon_exists():
 		"dungeon_level": dungeon_level,
 		"sub_tier": 1,
 		"tier": int(dungeon_data.get("tier", 1)),
-	}
+	})
 
 	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
 	# building its floors and ~70 monsters here spent ~4.3 ms of grid generation and ~528 KB on
@@ -30993,7 +31081,10 @@ func _check_dungeon_spawns():
 	# v0.9.344: capped at 8/tick, still ~5s on Hetzner CPX11 per diag logs;
 	# v0.9.377: 1/frame, expected ~hundreds of ms per individual frame.)
 	var dungeon_types = DungeonDatabaseScript.DUNGEON_TYPES.keys()
-	const MAX_ENQUEUE_PER_TICK = 8
+	# Was 8, when a single spawn generated a whole dungeon interior and bursts of eight cost
+	# seconds. A spawn is now a placement roll and a dictionary insert, so the limit exists to
+	# keep one tick from hitching rather than to keep the server alive.
+	const MAX_ENQUEUE_PER_TICK = 400
 	var enqueued_this_tick: int = 0
 	var projected_count: int = world_dungeon_count
 	# Required spawns (under minimum)
@@ -31015,26 +31106,42 @@ func _check_dungeon_spawns():
 		enqueued_this_tick += 1
 
 
+## How long one frame may spend spawning dungeons. A TIME budget rather than a count, because
+## the cost of a spawn is now dominated by how many placement attempts it takes rather than by
+## anything fixed - and because the world holds thousands, so "one per frame" would take hours
+## to fill it.
+const DUNGEON_SPAWN_FRAME_BUDGET_US := 2000
+
+
 func _drain_pending_dungeon_spawn():
-	"""v0.9.377 — pop one queued dungeon spawn per frame. Called from _process.
-	Limits each frame's spawn cost to a single _create_world_dungeon call
-	(BSP gen + monster spawn) instead of letting _check_dungeon_spawns burst
-	8 of them in the same tick. Self-clearing — when the queue is empty
-	there's no work to do."""
+	"""Spawn queued world dungeons, up to a couple of milliseconds a frame.
+
+	v0.9.377 did one per frame, because a spawn generated the whole dungeon interior and bursts
+	of eight cost seconds. The interior is lazy now (see `_ensure_dungeon_interior`) and a spawn
+	is a placement roll plus a dictionary insert, so the frame budget is about keeping a tick
+	smooth rather than about keeping the server alive. Self-clearing - an empty queue is no work.
+	"""
 	if _pending_dungeon_spawn_queue.is_empty():
 		return
 	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
 		_pending_dungeon_spawn_queue.clear()
 		return
-	var dungeon_type: String = String(_pending_dungeon_spawn_queue.pop_front())
-	var spawn_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
-	var instance_id: String = _create_world_dungeon(dungeon_type)
-	if DIAG_TIMING_ENABLED:
-		var spawn_ms: float = (Time.get_ticks_usec() - spawn_start_us) / 1000.0
-		if spawn_ms >= 50.0:
-			log_message("Diag: _create_world_dungeon(%s) took %.1fms (queue_left=%d)" % [dungeon_type, spawn_ms, _pending_dungeon_spawn_queue.size()])
-	if instance_id != "":
-		log_message("Spawned world dungeon: %s (queued, %d left)" % [instance_id, _pending_dungeon_spawn_queue.size()])
+	var started_us: int = Time.get_ticks_usec()
+	var spawned: int = 0
+	while not _pending_dungeon_spawn_queue.is_empty():
+		if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
+			_pending_dungeon_spawn_queue.clear()
+			break
+		var dungeon_type: String = String(_pending_dungeon_spawn_queue.pop_front())
+		if _create_world_dungeon(dungeon_type) != "":
+			spawned += 1
+		if Time.get_ticks_usec() - started_us >= DUNGEON_SPAWN_FRAME_BUDGET_US:
+			break
+	# One line per frame, not one per dungeon: filling a world is three thousand of these.
+	if spawned > 0 and (_pending_dungeon_spawn_queue.is_empty() or spawned >= 25):
+		log_message("Spawned %d world dungeon(s) in %.1fms (%d queued, %d live)" % [
+			spawned, float(Time.get_ticks_usec() - started_us) / 1000.0,
+			_pending_dungeon_spawn_queue.size(), active_dungeons.size()])
 
 func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, radius: int = 60) -> String:
 	"""Create a world dungeon near specific coordinates (for quest restoration after restart)."""
@@ -31069,7 +31176,7 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
-	active_dungeons[instance_id] = {
+	_register_dungeon(instance_id, {
 		"instance_id": instance_id,
 		"dungeon_type": dungeon_type,
 		"world_x": world_x,
@@ -31080,7 +31187,7 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 		"sub_tier": sub_tier,
 		"tier": int(dungeon_data.get("tier", 1)),
 		"completed_at": 0
-	}
+	})
 	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
 	# building its floors and ~70 monsters here spent ~4.3 ms of grid generation and ~528 KB on
 	# rooms nobody enters, because entering spins up a personal instance that generates its own.
@@ -31150,6 +31257,7 @@ func _load_dungeon_state() -> void:
 	if typeof(state) != TYPE_DICTIONARY:
 		return
 	active_dungeons = state.get("active_dungeons", {})
+	_rebuild_dungeon_index()
 	dungeon_floors = state.get("dungeon_floors", {})
 	dungeon_floor_rooms = state.get("dungeon_floor_rooms", {})
 	dungeon_monsters = state.get("dungeon_monsters", {})
@@ -31168,12 +31276,7 @@ func _load_dungeon_state() -> void:
 		else:
 			inst["active_players"] = []
 	for iid in to_drop:
-		active_dungeons.erase(iid)
-		dungeon_floors.erase(iid)
-		dungeon_floor_rooms.erase(iid)
-		dungeon_monsters.erase(iid)
-		dungeon_floor_items.erase(iid)
-		dungeon_npcs.erase(iid)
+		_erase_dungeon_instance(iid)
 		dungeon_traps.erase(iid)
 	log_message("[DUNGEON PERSIST] Reloaded %d dungeon instance(s), dropped %d completed" % [active_dungeons.size(), to_drop.size()])
 
@@ -31198,11 +31301,9 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	var max_attempts = 20
 	var found_valid = false
 
-	# Collect existing dungeon coordinates to avoid stacking
-	var existing_coords = {}
-	for eid in active_dungeons:
-		var ed = active_dungeons[eid]
-		existing_coords[Vector2i(ed.world_x, ed.world_y)] = true
+	# Stacking is checked against the tile index. Building a set of every dungeon's coordinates
+	# here was O(N) per spawn, which is O(N-squared) to fill a world - fine at 200 dungeons and
+	# not at the thousands the owner asked for.
 
 	# v0.9.598 — T2+ dungeons only spawn near posts that (a) aren't already at
 	# MAX_CONCURRENT_POST_THREATS active threats, and (b) aren't inside the
@@ -31232,7 +31333,7 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		# Check if this location overlaps with a trading post, NPC post, or existing dungeon
 		if trading_post_db.is_trading_post_tile(world_x, world_y) \
 				or world_system.is_safe_zone(world_x, world_y) \
-				or existing_coords.has(Vector2i(world_x, world_y)):
+				or _dungeon_tile_index.has("%d,%d" % [world_x, world_y]):
 			continue
 
 		# v0.9.598 — for T2+ spawn candidates, check every post within the
@@ -31275,7 +31376,7 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 
 	# Create instance
-	active_dungeons[instance_id] = {
+	_register_dungeon(instance_id, {
 		"instance_id": instance_id,
 		"dungeon_type": dungeon_type,
 		"world_x": world_x,
@@ -31286,7 +31387,7 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		"sub_tier": sub_tier,
 		"tier": grade_tier,
 		"completed_at": 0  # 0 means not completed yet
-	}
+	})
 
 	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
 	# building its floors and ~70 monsters here spent ~4.3 ms of grid generation and ~528 KB on
@@ -31402,8 +31503,12 @@ func _ensure_dungeon_interior(instance_id: String) -> bool:
 
 func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 	"""Check if there's a dungeon entrance at the given coordinates.
-	Excludes completed dungeons and other players' personal quest dungeons."""
-	for instance_id in active_dungeons:
+	Excludes completed dungeons and other players' personal quest dungeons.
+
+	One dictionary lookup since 2026-09-11. It used to walk every dungeon in the world on a path
+	that runs whenever a player moves."""
+	var _hit: String = String(_dungeon_tile_index.get("%d,%d" % [x, y], ""))
+	for instance_id in ([_hit] if _hit != "" and active_dungeons.has(_hit) else []):
 		var instance = active_dungeons[instance_id]
 		# Skip completed dungeons - they're waiting to despawn
 		if instance.get("completed_at", 0) > 0:
@@ -31532,9 +31637,14 @@ func _on_world_dungeon_boss_defeated(peer_id: int, origin_wx: int, origin_wy: in
 
 func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: int = -1) -> Array:
 	"""Get all dungeon entrances visible within the given radius.
-	Excludes completed dungeons and other players' personal quest dungeons."""
+	Excludes completed dungeons and other players' personal quest dungeons.
+
+	Reads the spatial buckets rather than every dungeon in the world. This runs on every player
+	move, so it was one of the three linear passes that made a large dungeon count impossible."""
 	var visible = []
-	for instance_id in active_dungeons:
+	for instance_id in _dungeons_near(center_x, center_y, radius):
+		if not active_dungeons.has(instance_id):
+			continue
 		var instance = active_dungeons[instance_id]
 		# Skip completed dungeons - they're waiting to despawn
 		if instance.get("completed_at", 0) > 0:
@@ -32100,8 +32210,13 @@ func _count_active_threats_near_post(post_x: int, post_y: int, exclude_instance_
 	exclude the just-cleared dungeon when counting REMAINING threats."""
 	var count: int = 0
 	var r_sq: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS
-	for instance_id in active_dungeons:
+	# Bucketed: the distance test below already rejects anything further than the radius, so
+	# asking only the buckets inside it gives the same count. This is called once per post per
+	# spawn ATTEMPT, so with thousands of dungeons the linear form made the world fill quadratic.
+	for instance_id in _dungeons_near(post_x, post_y, THREAT_CORRIDOR_RADIUS):
 		if instance_id == exclude_instance_id:
+			continue
+		if not active_dungeons.has(instance_id):
 			continue
 		var inst = active_dungeons[instance_id]
 		if inst.get("completed_at", 0) > 0:
@@ -32250,7 +32365,12 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 	var best: Dictionary = {}
 	var best_dist_sq: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS + 1
 	var threat_count: int = 0
-	for instance_id in active_dungeons:
+	# Bucketed since 2026-09-11. The loop already rejects anything beyond THREAT_CORRIDOR_RADIUS
+	# (see best_dist_sq above), so asking only the buckets inside that radius cannot change the
+	# answer - it just stops this walking every dungeon in the world, twice per player move.
+	for instance_id in _dungeons_near(x, y, THREAT_CORRIDOR_RADIUS):
+		if not active_dungeons.has(instance_id):
+			continue
 		var instance = active_dungeons[instance_id]
 		if instance.get("completed_at", 0) > 0:
 			continue
@@ -34452,15 +34572,7 @@ func _complete_dungeon(peer_id: int):
 		if player_dungeon_instances[peer_id].has(free_run_key):
 			player_dungeon_instances[peer_id].erase(free_run_key)
 			# Clean up the instance itself
-			if active_dungeons.has(instance_id):
-				active_dungeons.erase(instance_id)
-			if dungeon_floors.has(instance_id):
-				dungeon_floors.erase(instance_id)
-			if dungeon_floor_rooms.has(instance_id):
-				dungeon_floor_rooms.erase(instance_id)
-			if dungeon_monsters.has(instance_id):
-				dungeon_monsters.erase(instance_id)
-			dungeon_floor_items.erase(instance_id)
+			_erase_dungeon_instance(instance_id)
 			if dungeon_traps.has(instance_id):
 				dungeon_traps.erase(instance_id)
 
@@ -40366,6 +40478,7 @@ func _do_world_reset() -> Array:
 	#    dictionaries alone would resurrect every instance on the next restart.
 	var dungeon_n: int = active_dungeons.size()
 	active_dungeons.clear()
+	_rebuild_dungeon_index()
 	dungeon_floors.clear()
 	dungeon_floor_rooms.clear()
 	dungeon_monsters.clear()
@@ -40672,6 +40785,7 @@ func _execute_map_wipe_same_seed(keep_market: bool):
 		depleted_nodes.clear()
 	active_bounties.clear()
 	active_dungeons.clear()
+	_rebuild_dungeon_index()
 	_pending_dungeon_spawn_queue.clear()
 	dungeon_floors.clear()
 	dungeon_floor_rooms.clear()
@@ -40731,6 +40845,7 @@ func _execute_full_wipe(admin_peer_id: int):
 	pending_trade_requests.clear()
 	active_bounties.clear()
 	active_dungeons.clear()
+	_rebuild_dungeon_index()
 	_pending_dungeon_spawn_queue.clear()
 	player_enclosures.clear()
 	player_post_names.clear()
@@ -40770,6 +40885,7 @@ func _execute_map_wipe(admin_peer_id: int):
 		depleted_nodes.clear()
 	active_bounties.clear()
 	active_dungeons.clear()
+	_rebuild_dungeon_index()
 	_pending_dungeon_spawn_queue.clear()
 	dungeon_floors.clear()
 	dungeon_floor_rooms.clear()
