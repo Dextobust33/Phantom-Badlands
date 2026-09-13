@@ -165,7 +165,8 @@ static func _under_tile(meaning: String) -> String:
 	return meaning.substr(colon + 1) if colon >= 0 else ""
 
 
-static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = {}) -> bool:
+static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = {},
+		dungeons: Dictionary = {}) -> bool:
 	"""Compose the map. Cheap when nothing has changed, which is most redraws that are not moves."""
 	if meaning_rows.is_empty() or not available():
 		return false
@@ -181,6 +182,11 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 	# Figures are part of the key: the map has to recompose when you walk, and you are a figure.
 	for fk in figures:
 		key += "%s=%s;" % [fk, str(figures[fk])]
+	# Dungeon families are part of the picture now, so they are part of what decides whether it
+	# has to be redrawn.
+	for dk in dungeons:
+		var _di = dungeons[dk]
+		key += "d%s=%s;" % [dk, String(_di.get("family", "")) if _di is Dictionary else ""]
 	if key == _key and _grid != null:
 		return true
 	_key = key
@@ -221,7 +227,18 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 					if t != null:
 						grid.blend_rect(t, Rect2i(Vector2i.ZERO, t.get_size()), Vector2i(x * CELL, y * CELL))
 			if overlay != "" and overlay != "fog" and not figures.has("%d,%d" % [x, y]):
-				var o := _overlay_img(overlay)
+				# A dungeon's marker depends on what KIND of place it is, and that arrives in the
+				# `dungeons` side channel rather than in the meaning string - see the note in
+				# `world_system._map_cells`. Older servers send no family and get the generic
+				# marker, which is exactly the fallback `_overlay_img` already provides.
+				var oname := overlay
+				if overlay == "dungeon":
+					var dinfo = dungeons.get("%d,%d" % [x, y], null)
+					if dinfo is Dictionary:
+						var fam := String(dinfo.get("family", ""))
+						if fam != "":
+							oname = "dungeon_%s" % fam
+				var o := _overlay_img(oname)
 				if o != null:
 					grid.blend_rect(o, Rect2i(Vector2i.ZERO, o.get_size()), Vector2i(x * CELL, y * CELL))
 

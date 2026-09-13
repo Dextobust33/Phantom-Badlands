@@ -100,8 +100,20 @@ func _init() -> void:
 	ck(ssrc.find("DungeonDatabaseScript.entrance_family(") >= 0,
 		"the server tags each visible dungeon with its family")
 	var wsrc := FileAccess.get_file_as_string("res://shared/world_system.gd")
-	ck(wsrc.find('sem_parts.append("!dungeon_%s" % _fam if _fam != "" else "!dungeon")') >= 0,
-		"...and the map payload carries it, falling back to the plain marker if absent")
+	# ⚑ AND IT IS NOT IN THE MEANING STRING. Putting it there made dungeons VANISH from the
+	# overworld map for every client older than the change - they look up an overlay file that
+	# does not exist in their build and draw nothing. The family rides in the per-cell `dungeons`
+	# dict, which an old client simply ignores.
+	ck(wsrc.find('sem_parts.append("!dungeon")') >= 0,
+		"the meaning string stays plain `!dungeon`, so older clients still draw a marker")
+	ck(wsrc.find('"family": String(dungeon.get("family", "")),') >= 0,
+		"...and the family rides in the dungeons side channel instead")
+	var csrc2 := FileAccess.get_file_as_string("res://client/overworld_room.gd")
+	ck(csrc2.find('oname = "dungeon_%s" % fam') >= 0,
+		"the renderer reads the family from that channel")
+	var cl := FileAccess.get_file_as_string("res://client/client.gd")
+	ck(cl.find('_OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}))') >= 0,
+		"and it is handed THIS step's dungeons, not the previous step's")
 
 	print("\n[DUNGEONVARIETY] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)

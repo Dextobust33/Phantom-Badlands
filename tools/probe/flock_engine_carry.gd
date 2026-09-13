@@ -78,5 +78,38 @@ func _init() -> void:
 	var n_sites := ssrc.count('"engine_carry": _flock_engine_carry(peer_id)')
 	ck(n_sites >= 3, "at all %d places a flock is queued, not just one" % n_sites)
 
+	print("\n===== AND IT SURVIVES THE ACTUAL END OF A FIGHT =====")
+	# ⚑ THE ONE THING THE CHECKS ABOVE CANNOT SEE. `chain_engine_carry` is correct arithmetic on
+	# whatever it is handed - but the snapshot is taken inside `end_combat`, AFTER victory
+	# processing has already run on the same combat dict. If anything in that path zeroes the
+	# engine, the carry is computed from zero and every class silently loses everything.
+	#
+	# Owner 2026-09-13: *"It seemed like it happened after I used my kelpie card and the monster
+	# died"* - a COMPANION kill, which runs victory processing and then ends the fight. So drive
+	# the real end and read back what was kept.
+	var ch = CharacterScript.new()
+	ch.name = "Probe"
+	ch.class_type = "Grifter"
+	ch.level = 10
+	var mon := {"name": "Goblin", "level": 8, "current_hp": 50, "max_hp": 50,
+		"strength": 5, "defense": 2, "experience_reward": 10, "gold_reward": 5}
+	var started = cm.start_combat(1, ch, mon)
+	if not (started is Dictionary) or not started.get("success", false):
+		ck(false, "could not start a probe combat - %s" % str(started))
+	else:
+		var live = cm.get_active_combat(1)
+		live["momentum"] = 6
+		live["combo"] = 6
+		live["focus"] = 6
+		cm.end_combat(1, true, true)
+		var kept: Dictionary = cm.get_last_combat_engines(1)
+		print("  ended a real fight holding 6/6/6 -> kept momentum %s, combo %s, focus %s" % [
+			str(kept.get("momentum", "MISSING")), str(kept.get("combo", "MISSING")),
+			str(kept.get("focus", "MISSING"))])
+		ck(int(kept.get("momentum", 0)) == 6,
+			"unspent Leverage survives the end of the fight (got %d)" % int(kept.get("momentum", 0)))
+		ck(int(kept.get("focus", 0)) == 6, "and Focus-shaped engines do too")
+		ck(int(kept.get("combo", 0)) == 3, "and Read halves, as designed")
+
 	print("\n[FLOCKCARRY] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)

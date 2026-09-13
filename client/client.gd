@@ -46307,7 +46307,11 @@ func _overworld_display(payload: Dictionary) -> String:
 		figures[ck2] = {"main": String(pc[2])}
 		if pc.size() > 3 and pc[3] is Dictionary and not (pc[3] as Dictionary).is_empty():
 			_overworld_figure_meta[ck2] = {"kind": "companion", "data": pc[3], "is_local": false}
-	if not _OverworldRoom.build(meaning, biomes, figures):
+	# Read from the PAYLOAD, not from `_overworld_dungeons` - that member is assigned further
+	# down, after this call, so using it here would compose the map from the PREVIOUS step's
+	# dungeons. Correct on every frame but the one where a dungeon appears, which is the only
+	# frame that matters.
+	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {})):
 		return MapPayload.inflate(payload)
 	# NO CROP INSIDE A POST, and the reason is a measurement rather than a preference. The zoom
 	# shipped as "crop to the middle 11 and draw them twice as big", on the assumption that you

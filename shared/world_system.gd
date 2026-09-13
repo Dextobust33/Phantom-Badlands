@@ -2717,16 +2717,27 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				var dungeon = dungeon_positions[pos_key]
 				var dungeon_color = dungeon.get("color", "#A335EE")
 				line_parts.append("[color=%s] D[/color]" % dungeon_color)
-				# The MARKER varies by what kind of place it is - `!dungeon_cave`,
-				# `!dungeon_crypt` and so on. An unknown or missing family falls back to plain
-				# `!dungeon`, and the renderer falls back again if that family has no art, so a
-				# new dungeon type can never punch a hole in the map.
-				var _fam := String(dungeon.get("family", ""))
-				sem_parts.append("!dungeon_%s" % _fam if _fam != "" else "!dungeon")
+				# ⚑ THE MEANING STRING IS A PROTOCOL SURFACE. DO NOT ADD TO IT.
+				#
+				# This briefly emitted `!dungeon_cave`, `!dungeon_crypt` and so on, to vary the
+				# marker by what kind of place it is. Every client older than that change looks
+				# up `overlay/dungeon_cave.png`, does not find it, and draws NOTHING - so the
+				# moment the server deployed, dungeons disappeared from the overworld map for
+				# everyone who had not updated. Owner, within the hour: *"I seen one on the
+				# minimap but it doesn't show anything on the overworld map."*
+				#
+				# The family rides in the per-cell `dungeons` dict instead - a side channel the
+				# client already receives for the hover. An old client ignores a key it does not
+				# know and keeps drawing the generic marker; a new one reads it and draws the
+				# varied one. Backward compatible by construction rather than by luck.
+				sem_parts.append("!dungeon")
 				# What this entrance IS, so the client can hover it. With thousands of dungeons
 				# in the world, telling an H4 from an S9 without walking into it is the whole
 				# point of a marker.
 				dungeon_info["%d,%d" % [dx + radius, radius - dy]] = {
+					# What the entrance looks like. A client that does not know this key ignores
+					# it and draws the generic marker - see the note above.
+					"family": String(dungeon.get("family", "")),
 					"name": String(dungeon.get("name", "")),
 					"tier": int(dungeon.get("tier", 0)),
 					"rank": int(dungeon.get("sub_tier", 0)),
