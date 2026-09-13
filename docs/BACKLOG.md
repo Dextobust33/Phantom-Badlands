@@ -163,7 +163,8 @@ All of this came out of the distribution work. Recorded before starting any of i
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
-**v0.9.782 IS LIVE** (server hash-verified `6def650b`, seven assets on the tag, Windows gate
+**v0.9.783 IS LIVE** (server hash-verified `074c338c`) - hunting grounds, and the danger guard
+taught to read what actually spawns. **v0.9.782 IS LIVE** (server hash-verified `6def650b`, seven assets on the tag, Windows gate
 passed, no script errors). It carries the blindsiding guard, the map level hover, and the
 who-is-online feed. Next up in this block: hotzones.
 
@@ -200,7 +201,12 @@ day (the dungeon grade lie, the world reshape, the lag, the one-time relocation)
       The `[url=]` hover mechanism from v0.9.778 already carries per-square data; this is the
       same shape.
 
-- [ ] **HOTZONES -> RICH HUNTING GROUNDS, that EXPIRE or MOVE.** Owner picked "rich hunting
+- [x] **HOTZONES -> RICH HUNTING GROUNDS — DONE, LIVE in v0.9.783.** They move every 3 hours
+      (epoch folded into the coordinate hash, so no table and no persistence), are fewer and
+      bigger (typically 37 tiles, never under 13, same 2.64% coverage), spawn 10-30% elites, and
+      the screen leads with the reward instead of "DANGER ZONE - stay back". Measuring them first
+      found that the danger guard shipped that morning was BLIND to hotzones - warned level ran
+      2.06x under what spawned, 2.75x at worst. ~~Original ask:~~ Owner picked "rich hunting
       grounds" and added: *"they should expire at some point or move around. Ideally players
       shouldn't be able to farm the same hotzone for real world days, maybe a few hours before
       they move."*
