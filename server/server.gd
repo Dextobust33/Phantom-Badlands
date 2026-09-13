@@ -399,8 +399,26 @@ var _post_threat_cooldown_until: Dictionary = {}
 # is a one-line change. Remaining perf lever (per the memo) is
 # cross-render tile caching in `generate_tile`'s procedural noise
 # pipeline; not pursued here.
-const DIAG_TIMING_ENABLED := false
-const DIAG_FRAME_SPIKE_MS := 100  # log frame if any tick exceeds this
+## ⚑ A RUNTIME SWITCH, NOT A CONSTANT.
+##
+## Owner 2026-09-13, on the lag returning: *"We really need a comprehensive tool or way to deal
+## with this."* The instrumentation below is comprehensive - every sub-region of the tick and
+## every message handler is already timed. What it was not was USABLE: a `const false` means
+## turning it on is an edit, a rebuild, an export and a deploy, so in practice it stays off and
+## the next report starts from nothing again.
+##
+## It is a variable now, flipped from /admin -> Misc while players are on, and it defaults to OFF
+## so it costs nothing when nobody is looking.
+var diag_timing_enabled := false
+## ⚑ AND IT TURNS ITSELF OFF. A diagnostic left running is a permanent tax nobody remembers to
+## stop paying, and this one times every message on every tick. Any session expires; flip it on
+## again from /admin when there is something to look at.
+const DIAG_AUTO_OFF_SECONDS := 1800.0
+var _diag_on_since: float = 0.0
+## Log a tick that takes longer than this. 100ms was tuned for a four-SECOND stall and is far too
+## coarse for what a player calls "a moment" - a 60-120ms hitch is plainly visible and was passing
+## silently under it.
+var diag_frame_spike_ms := 40
 const DIAG_THREAT_SCAN_SPIKE_MS := 50  # log frame if cumulative threat scan exceeds this
 # v0.9.377 — rate-limit spike logging. Without throttling we get 20+ identical
 # lines per second when the persistent 130ms spikes fire, drowning the worst
@@ -413,12 +431,84 @@ var _diag_spike_window_worst_ms: float = 0.0
 var _diag_spike_window_worst_line: String = ""
 var _diag_threat_scan_us_this_frame: int = 0
 # v0.9.426 — per-message-type handler timing, accumulated per _process tick.
-# Cleared at the start of each tick when DIAG_TIMING_ENABLED, populated by
+# Cleared at the start of each tick when diag_timing_enabled, populated by
 # handle_message wrapping each dispatch. Dumped in the FRAME SPIKE log line
 # (top 3 contributors) so a 100-300ms stuttery frame can be pinpointed to a
 # specific msg_type (e.g., "move=78ms select_character=42ms") instead of
 # just "buffer_process=150ms" with no further breakdown.
 var _diag_msg_handler_us: Dictionary = {}
+
+## ⚑ PER-CALL SAMPLES, not just per-tick totals.
+##
+## Owner 2026-09-13: *"I walk a few or up to around 7 steps then it freezes for a moment before
+## finally processing my last keystroke."* A per-tick total cannot answer that. An intermittent
+## stall is by definition RARE - averaged over a tick, or over a hundred moves, it disappears
+## into the mean, which is why "the server looks fine" and "the game stutters" have both been
+## true at once in this project before.
+##
+## So every dispatch is sampled individually and the distribution is kept. The number that
+## matters is the WORST ONE and how often it happens, not the average.
+const PERF_SAMPLE_MAX := 600
+var _perf_samples: Array = []        # {"t": msg type, "us": int, "at": unix seconds}
+var _perf_started_at: int = 0
+
+
+func _perf_record(msg_type: String, us: int) -> void:
+	_perf_samples.append({"t": msg_type, "us": us, "at": int(Time.get_unix_time_from_system())})
+	if _perf_samples.size() > PERF_SAMPLE_MAX:
+		# Keep the RECENT window. An old spike is not what the player is reporting now.
+		_perf_samples = _perf_samples.slice(_perf_samples.size() - PERF_SAMPLE_MAX)
+
+
+func perf_report() -> String:
+	"""What is actually slow, in the terms the report was made: worst case, not average."""
+	if _perf_samples.is_empty():
+		return "[color=#FF8800]No samples. Turn timing ON first (/admin -> Misc), then play for a minute.[/color]"
+	var by_type: Dictionary = {}
+	for sm in _perf_samples:
+		var t := String(sm["t"])
+		if not by_type.has(t):
+			by_type[t] = []
+		by_type[t].append(int(sm["us"]))
+	var lines: PackedStringArray = []
+	var span: int = int(Time.get_unix_time_from_system()) - _perf_started_at
+	lines.append("[color=#FFD700]HANDLER TIMING[/color]  %d samples over %ds" % [
+		_perf_samples.size(), span])
+	lines.append("[color=#888888]%-22s %6s %8s %8s %8s[/color]" % ["message", "n", "median", "p95", "WORST"])
+	var rows: Array = []
+	for t in by_type:
+		var arr: Array = by_type[t]
+		arr.sort()
+		rows.append({
+			"t": t, "n": arr.size(),
+			"med": int(arr[arr.size() / 2]),
+			"p95": int(arr[mini(arr.size() - 1, int(arr.size() * 0.95))]),
+			"max": int(arr[arr.size() - 1]),
+		})
+	rows.sort_custom(func(a, b): return a["max"] > b["max"])
+	for r in rows:
+		var col := "#FF4444" if int(r["max"]) > 60000 else ("#FFAA00" if int(r["max"]) > 20000 else "#88FF88")
+		lines.append("[color=%s]%-22s %6d %6.1fms %6.1fms %6.1fms[/color]" % [
+			col, r["t"], int(r["n"]), int(r["med"]) / 1000.0,
+			int(r["p95"]) / 1000.0, int(r["max"]) / 1000.0])
+	# The individual stalls, with when - so they can be lined up against what the player did.
+	var worst: Array = _perf_samples.duplicate()
+	worst.sort_custom(func(a, b): return int(a["us"]) > int(b["us"]))
+	lines.append("")
+	lines.append("[color=#FFD700]THE SLOWEST INDIVIDUAL CALLS[/color]")
+	for i in range(mini(8, worst.size())):
+		var w = worst[i]
+		lines.append("  %7.1fms  %-18s  %s ago" % [
+			int(w["us"]) / 1000.0, String(w["t"]),
+			_ago(int(Time.get_unix_time_from_system()) - int(w["at"]))])
+	return "
+".join(lines)
+
+
+func _ago(seconds: int) -> String:
+	if seconds < 60:
+		return "%ds" % seconds
+	return "%dm%02ds" % [seconds / 60, seconds % 60]
 
 
 # Combat command rate limiting (peer_id -> last command time in msec)
@@ -1313,7 +1403,7 @@ func _process(delta):
 	var _diag_buffer_process_us: int = 0
 	# v0.9.378 — round two: instrument the remaining un-instrumented blocks
 	# so we can find what's responsible for the ~4.8s spike with no other
-	# sub-region accounting for it. Each is conditional on DIAG_TIMING_ENABLED.
+	# sub-region accounting for it. Each is conditional on diag_timing_enabled.
 	var _diag_flush_char_saves_us: int = 0
 	var _diag_world_threat_refresh_us: int = 0
 	var _diag_check_dungeon_spawns_us: int = 0
@@ -1328,7 +1418,12 @@ func _process(delta):
 	var _diag_map_flush_us: int = 0
 	var _diag_security_check_us: int = 0
 	var _diag_stale_check_us: int = 0
-	if DIAG_TIMING_ENABLED:
+	if diag_timing_enabled:
+		_diag_on_since += delta
+		if _diag_on_since >= DIAG_AUTO_OFF_SECONDS:
+			diag_timing_enabled = false
+			_diag_on_since = 0.0
+			print("[PERF] timing auto-disabled after %d minutes" % int(DIAG_AUTO_OFF_SECONDS / 60.0))
 		_diag_frame_start_us = Time.get_ticks_usec()
 		_diag_threat_scan_us_this_frame = 0
 		_diag_msg_handler_us.clear()
@@ -1346,7 +1441,7 @@ func _process(delta):
 	_world_threat_refresh_timer += delta
 	if _world_threat_refresh_timer >= WORLD_THREAT_REFRESH_INTERVAL:
 		_world_threat_refresh_timer = 0.0
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			var _refresh_start_us = Time.get_ticks_usec()
 			_refresh_world_threat_states()
 			var _refresh_ms = (Time.get_ticks_usec() - _refresh_start_us) / 1000.0
@@ -1357,16 +1452,16 @@ func _process(delta):
 
 	# v0.9.346 — flush at most one throttled character save per tick. Spreads
 	# disk I/O over many frames instead of letting bursts hit synchronously.
-	var _flush_chr_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+	var _flush_chr_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 	_flush_pending_character_saves()
-	if DIAG_TIMING_ENABLED:
+	if diag_timing_enabled:
 		_diag_flush_char_saves_us = Time.get_ticks_usec() - _flush_chr_start_us
 
 	# Auto-save timer
 	auto_save_timer += delta
 	if auto_save_timer >= AUTO_SAVE_INTERVAL:
 		auto_save_timer = 0.0
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			var _save_start_us = Time.get_ticks_usec()
 			var _char_count = characters.size()
 			save_all_active_characters()
@@ -1390,36 +1485,36 @@ func _process(delta):
 
 	# Update traveling merchants and send map updates to players when merchants move
 	if world_system:
-		var _merch_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _merch_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		world_system.update_merchants(delta)
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_merchants_us = Time.get_ticks_usec() - _merch_start_us
 
 		# Check for merchant position changes and update player maps
 		merchant_update_timer += delta
 		if merchant_update_timer >= MERCHANT_UPDATE_INTERVAL:
 			merchant_update_timer = 0.0
-			var _mm_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+			var _mm_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 			send_merchant_movement_updates()
-			if DIAG_TIMING_ENABLED:
+			if diag_timing_enabled:
 				_diag_merchant_movement_us = Time.get_ticks_usec() - _mm_start_us
 
 		# Check for merchant arrivals at posts (equalization)
 		_merchant_check_timer += delta
 		if _merchant_check_timer >= MERCHANT_CHECK_INTERVAL:
 			_merchant_check_timer = 0.0
-			var _ma_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+			var _ma_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 			_check_merchant_arrivals()
-			if DIAG_TIMING_ENABLED:
+			if diag_timing_enabled:
 				_diag_check_merchant_arrivals_us = Time.get_ticks_usec() - _ma_start_us
 
 	# Periodic road path check — try to connect one unconnected post pair
 	_road_check_timer += delta
 	if _road_check_timer >= ROAD_CHECK_INTERVAL:
 		_road_check_timer = 0.0
-		var _road_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _road_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		_try_connect_road()
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_road_check_us = Time.get_ticks_usec() - _road_start_us
 
 	# v0.9.381 — poll the SSH-writable shutdown sentinel so deploys can trigger
@@ -1441,9 +1536,9 @@ func _process(delta):
 	dungeon_spawn_timer += delta
 	if dungeon_spawn_timer >= DUNGEON_SPAWN_CHECK_INTERVAL:
 		dungeon_spawn_timer = 0.0
-		var _cds_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _cds_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		_check_dungeon_spawns()
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_check_dungeon_spawns_us = Time.get_ticks_usec() - _cds_start_us
 
 	# #61 — periodic dungeon-state snapshot (crash safety; a hard kill loses ≤ this interval).
@@ -1462,31 +1557,31 @@ func _process(delta):
 
 	# v0.9.377 — drain one queued dungeon spawn per frame (BSP gen + monster
 	# spawn was bursting ~5s frames; one-per-frame keeps each frame bounded).
-	var _drain_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+	var _drain_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 	_drain_pending_dungeon_spawn()
-	if DIAG_TIMING_ENABLED:
+	if diag_timing_enabled:
 		_diag_drain_spawn_us = Time.get_ticks_usec() - _drain_start_us
 
 	# Process gathering node respawns and chunk manager ticks
 	if chunk_manager:
-		var _node_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _node_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		chunk_manager.process_node_respawns(delta)
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_node_respawns_us = Time.get_ticks_usec() - _node_start_us
 
 		# Geological events (resource respawning in depleted areas)
-		var _geo_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _geo_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		var geo_events = chunk_manager.process_geological_events(delta)
 		for event in geo_events:
 			_broadcast_geological_event(event)
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_geo_events_us = Time.get_ticks_usec() - _geo_start_us
 
 		# Periodic chunk save (piggyback on auto-save)
 		if auto_save_timer < 0.1:  # Just after auto-save reset
-			var _chunk_save_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+			var _chunk_save_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 			chunk_manager.save_dirty_chunks()
-			if DIAG_TIMING_ENABLED:
+			if diag_timing_enabled:
 				_diag_chunk_save_us = Time.get_ticks_usec() - _chunk_save_start_us
 	else:
 		process_node_respawns(delta)
@@ -1495,9 +1590,9 @@ func _process(delta):
 	guard_decay_timer += delta
 	if guard_decay_timer >= GUARD_DECAY_CHECK_INTERVAL:
 		guard_decay_timer = 0.0
-		var _gd_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _gd_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		_tick_guard_decay()
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_guard_decay_us = Time.get_ticks_usec() - _gd_start_us
 
 	# Wall decay timer. v0.9.526 — restored after v0.9.525 over-rip: world-state
@@ -1506,9 +1601,9 @@ func _process(delta):
 	wall_decay_timer += delta
 	if wall_decay_timer >= WALL_DECAY_CHECK_INTERVAL:
 		wall_decay_timer = 0.0
-		var _wd_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _wd_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		_tick_wall_decay()
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_wall_decay_us = Time.get_ticks_usec() - _wd_start_us
 
 	# Check for new connections
@@ -1578,7 +1673,7 @@ func _process(delta):
 		})
 
 	# Process existing connections
-	var _peer_io_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+	var _peer_io_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 	var disconnected_peers = []
 	for peer_id in peers.keys():
 		var peer_data = peers[peer_id]
@@ -1607,26 +1702,26 @@ func _process(delta):
 					continue
 
 				# Try to parse complete JSON messages
-				var _buf_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+				var _buf_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 				process_buffer(peer_id)
-				if DIAG_TIMING_ENABLED:
+				if diag_timing_enabled:
 					_diag_buffer_process_us += Time.get_ticks_usec() - _buf_start_us
-	if DIAG_TIMING_ENABLED:
+	if diag_timing_enabled:
 		_diag_peer_io_us = (Time.get_ticks_usec() - _peer_io_start_us) - _diag_buffer_process_us
 
 	# Clean up disconnected peers
-	var _dc_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+	var _dc_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 	for peer_id in disconnected_peers:
 		handle_disconnect(peer_id)
-	if DIAG_TIMING_ENABLED:
+	if diag_timing_enabled:
 		_diag_disconnect_us = Time.get_ticks_usec() - _dc_start_us
 
 	# ===== NETWORK OPTIMIZATION: Flush batched updates =====
 	# Phase 1: Flush pending character deltas (one send per peer per frame)
 	if USE_DELTA_UPDATES:
-		var _df_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _df_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		_flush_pending_character_updates()
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_delta_flush_us = Time.get_ticks_usec() - _df_start_us
 
 	# Phase 1: Periodic forced full update (desync safety net)
@@ -1634,10 +1729,10 @@ func _process(delta):
 		full_update_timer += delta
 		if full_update_timer >= FULL_UPDATE_INTERVAL:
 			full_update_timer = 0.0
-			var _fu_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+			var _fu_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 			for pid in characters:
 				force_full_character_update(pid)
-			if DIAG_TIMING_ENABLED:
+			if diag_timing_enabled:
 				_diag_full_update_us = Time.get_ticks_usec() - _fu_start_us
 
 	# Phase 3: Flush batched map updates
@@ -1645,27 +1740,27 @@ func _process(delta):
 		map_update_flush_timer += delta
 		if map_update_flush_timer >= MAP_UPDATE_FLUSH_INTERVAL:
 			map_update_flush_timer = 0.0
-			var _mf_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+			var _mf_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 			_flush_dirty_map_updates()
-			if DIAG_TIMING_ENABLED:
+			if diag_timing_enabled:
 				_diag_map_flush_us = Time.get_ticks_usec() - _mf_start_us
 
 	# Security: Periodically check for stale unauthenticated connections
 	security_check_timer += delta
 	if security_check_timer >= SECURITY_CHECK_INTERVAL:
 		security_check_timer = 0.0
-		var _sc_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		var _sc_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 		_check_stale_connections()
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_stale_check_us = Time.get_ticks_usec() - _sc_start_us
 
 	# v0.9.362 — diagnostic: log frame spikes. If a single _process tick
-	# exceeds DIAG_FRAME_SPIKE_MS, log total time + threat-scan portion +
+	# exceeds diag_frame_spike_ms, log total time + threat-scan portion +
 	# active counts. This is the symptom-side check for the ~5s freeze
 	# reports — a sustained run of spikes here pinpoints the cause.
-	if DIAG_TIMING_ENABLED:
+	if diag_timing_enabled:
 		var _frame_ms = (Time.get_ticks_usec() - _diag_frame_start_us) / 1000.0
-		if _frame_ms >= DIAG_FRAME_SPIKE_MS:
+		if _frame_ms >= diag_frame_spike_ms:
 			var _threat_ms = _diag_threat_scan_us_this_frame / 1000.0
 			# v0.9.377 — print per-region breakdown so we can pinpoint what's
 			# eating the frame. Sub-times only printed for regions ≥1ms to keep
@@ -1794,11 +1889,12 @@ func handle_message(peer_id: int, message: Dictionary):
 	# FRAME SPIKE log can report which handler(s) consumed the frame, not just
 	# the bulk buffer_process total. Only the dispatch is timed; the rate-limit
 	# check above is cheap and uniform.
-	if DIAG_TIMING_ENABLED:
+	if diag_timing_enabled:
 		var _handler_start_us: int = Time.get_ticks_usec()
 		_dispatch_message(peer_id, msg_type, message)
 		var _elapsed_us: int = Time.get_ticks_usec() - _handler_start_us
 		_diag_msg_handler_us[msg_type] = int(_diag_msg_handler_us.get(msg_type, 0)) + _elapsed_us
+		_perf_record(msg_type, _elapsed_us)
 		return
 	_dispatch_message(peer_id, msg_type, message)
 
@@ -2405,6 +2501,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_settler_diag(peer_id)
 		"gm_find_hotzone":
 			handle_gm_find_hotzone(peer_id)
+		"gm_perf_toggle":
+			handle_gm_perf_toggle(peer_id)
+		"gm_perf_report":
+			handle_gm_perf_report(peer_id)
 		"gm_set_patreon_tier":
 			handle_gm_set_patreon_tier(peer_id, message)
 		"dungeon_skip_final_chest":
@@ -32395,6 +32495,68 @@ func _build_resource_rumor_line(px: int, py: int, region_name: String, quest_giv
 		region_label, mat_name
 	]
 
+## The threat corridor. A dungeon further than this from a post cannot threaten it, so the index
+## below only has to look at the buckets within reach.
+const THREAT_REACH := 80
+## Bucket edge. Equal to the reach, so a post's candidates are always in the 3x3 block of buckets
+## around it - any dungeon within 80 tiles is at most one bucket away in each axis.
+const THREAT_BUCKET := 80
+var _threat_index: Dictionary = {}          # "bx,by" -> Array of {id, inst, data, tier}
+var _threat_index_stamp: int = -1           # which rebuild the index belongs to
+var _threat_index_serial: int = 0
+
+
+func _rebuild_threat_index() -> void:
+	"""Bucket the active dungeons that can threaten anything, resolving each one ONCE.
+
+	⚑ REBUILT WHOLE, NOT INVALIDATED. Dungeons are created, completed and cleared from a dozen
+	places, and an index that has to be told about each of those is an index that will silently
+	go stale the first time somebody adds a thirteenth. This is rebuilt at the top of every
+	refresh - O(n) once, against the O(posts x n) it replaces - so there is nothing to remember.
+
+	The expensive part of the old loop was `_dungeon_data_for`, which DUPLICATES a dictionary,
+	called once per dungeon PER POST and before the `tier < 2` test that discards most of them.
+	Here it happens once per dungeon, and only for dungeons that survive the filters."""
+	_threat_index.clear()
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		if instance.get("completed_at", 0) > 0:
+			continue
+		if instance.get("threat_cleared", false):
+			continue
+		if instance.has("owner_peer_id"):
+			continue          # personal instances do not threaten the world
+		var dd: Dictionary = _dungeon_data_for(instance)
+		if dd.is_empty():
+			continue
+		var tier: int = int(dd.get("tier", 1))
+		if tier < 2:
+			continue          # T1 dungeons are newbie content, not threats
+		var bx: int = int(floor(float(instance.world_x) / float(THREAT_BUCKET)))
+		var by: int = int(floor(float(instance.world_y) / float(THREAT_BUCKET)))
+		var key := "%d,%d" % [bx, by]
+		if not _threat_index.has(key):
+			_threat_index[key] = []
+		_threat_index[key].append({"id": instance_id, "inst": instance, "data": dd, "tier": tier})
+	_threat_index_serial += 1
+	_threat_index_stamp = _threat_index_serial
+
+
+func _threat_candidates_near(post_x: int, post_y: int) -> Array:
+	"""Dungeons close enough to this post to matter, from the 3x3 buckets around it."""
+	if _threat_index_stamp < 0:
+		_rebuild_threat_index()
+	var out: Array = []
+	var bx: int = int(floor(float(post_x) / float(THREAT_BUCKET)))
+	var by: int = int(floor(float(post_y) / float(THREAT_BUCKET)))
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			var cell = _threat_index.get("%d,%d" % [bx + ox, by + oy], null)
+			if cell != null:
+				out.append_array(cell)
+	return out
+
+
 func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	"""Audit #11 Slice 6 — dynamic post state. A post is 'Under Threat' when
 	a tier-2+ world dungeon is active within 80 tiles. Returns the nearest
@@ -32419,10 +32581,22 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	if _threat_state_cache.has(cache_key):
 		return _threat_state_cache[cache_key]
 	# v0.9.362 diag — accumulate uncached-scan time per frame to detect spikes.
-	var _diag_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+	var _diag_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 	var threats: Array = []
-	for instance_id in active_dungeons:
-		var instance = active_dungeons[instance_id]
+	# ⚑ ONLY THE DUNGEONS THAT COULD POSSIBLY REACH THIS POST.
+	#
+	# This used to walk EVERY active dungeon for EVERY post, and `_dungeon_data_for` duplicates a
+	# dictionary, so the allocation happened before the `tier < 2` filter that throws most of
+	# them away. Measured at 120 posts: 75ms at 200 dungeons, 370ms at 1000, and 1,379ms at
+	# 2,000 - every three seconds, on the tick that answers every message. Owner: *"I walk a few
+	# or up to around 7 steps then it freezes"* and *"it even seems to happen in combat"*, which
+	# is the tell that it was periodic work rather than anything on the move path.
+	#
+	# `_threat_candidates_near` returns the pre-filtered dungeons from the buckets within reach.
+	# Nothing else about the computation changes.
+	for entry in _threat_candidates_near(post_x, post_y):
+		var instance_id = entry["id"]
+		var instance = entry["inst"]
 		if instance.get("completed_at", 0) > 0:
 			continue
 		# C0/C3 — a world dungeon whose BOSS has been defeated no longer threatens,
@@ -32432,12 +32606,10 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 			continue
 		if instance.has("owner_peer_id"):
 			continue  # Personal instances don't threaten the world
-		var dungeon_data = _dungeon_data_for(instance)
-		if dungeon_data.is_empty():
-			continue
-		var tier = int(dungeon_data.get("tier", 1))
-		if tier < 2:
-			continue  # T1 dungeons are newbie content — not "threats"
+		# Resolved ONCE when the index was built, not once per post. That duplicate was the
+		# single most expensive thing in the old loop.
+		var dungeon_data: Dictionary = entry["data"]
+		var tier: int = int(entry["tier"])
 		var dx = instance.world_x - post_x
 		var dy = instance.world_y - post_y
 		var dist = int(sqrt(dx * dx + dy * dy))
@@ -32455,7 +32627,7 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	if threats.is_empty():
 		var empty_result = {"threatened": false}
 		_threat_state_cache[cache_key] = empty_result
-		if DIAG_TIMING_ENABLED:
+		if diag_timing_enabled:
 			_diag_threat_scan_us_this_frame += Time.get_ticks_usec() - _diag_start_us
 		return empty_result
 	threats.sort_custom(func(a, b): return a.distance < b.distance)
@@ -32486,7 +32658,7 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 		"max_tier": max_threat_tier,
 	}
 	_threat_state_cache[cache_key] = result
-	if DIAG_TIMING_ENABLED:
+	if diag_timing_enabled:
 		_diag_threat_scan_us_this_frame += Time.get_ticks_usec() - _diag_start_us
 	return result
 
@@ -32499,6 +32671,8 @@ func _refresh_world_threat_states() -> void:
 	_world_threat_states.clear()
 	if not world_system or not world_system.chunk_manager:
 		return
+	# Bucket the dungeons once, then every post reads from that instead of walking them all.
+	_rebuild_threat_index()
 	# Temporarily clear the per-tick cache so the recomputation isn't
 	# satisfied by stale per-tick entries from this same _process call.
 	# It will rebuild as we iterate.
@@ -43416,3 +43590,41 @@ func handle_gm_find_hotzone(peer_id: int) -> void:
 		"message": "[color=#FFAA33][GM] Hunting ground at (%d, %d). You are at (%d, %d) - walk EAST to enter. It moves in %d min.[/color]"
 			% [best.x, best.y, outside.x, outside.y,
 				int(world_system.hotzone_seconds_remaining() / 60)]})
+
+
+
+func handle_gm_perf_toggle(peer_id: int) -> void:
+	"""Turn handler timing on or off while the server is live.
+
+	Owner 2026-09-13: *"We really need a comprehensive tool or way to deal with this."* The
+	instrumentation was already comprehensive and was a `const false` - so using it meant an
+	edit, a rebuild, an export and a deploy, which is why in practice it stayed off and every
+	lag report started from nothing."""
+	if not _is_admin(peer_id):
+		return
+	diag_timing_enabled = not diag_timing_enabled
+	_diag_on_since = 0.0
+	if diag_timing_enabled:
+		_perf_samples.clear()
+		_perf_started_at = int(Time.get_unix_time_from_system())
+	send_to_peer(peer_id, {"type": "text", "message":
+		"[color=#FFD700][PERF] handler timing %s.%s[/color]" % [
+			"ON" if diag_timing_enabled else "OFF",
+			" Play for a minute, then press Report. Auto-off in %d min." % int(DIAG_AUTO_OFF_SECONDS / 60.0)
+				if diag_timing_enabled else ""]})
+	print("[PERF] timing %s by admin" % ("ENABLED" if diag_timing_enabled else "DISABLED"))
+
+
+func handle_gm_perf_report(peer_id: int) -> void:
+	"""Print what is actually slow, to the caller and to the journal."""
+	if not _is_admin(peer_id):
+		return
+	var body := perf_report()
+	send_to_peer(peer_id, {"type": "text", "message": body})
+	print("[PERF] ---- report ----")
+	for line in body.split("
+"):
+		print("[PERF] " + line.replace("[/color]", "").replace("[color=#FFD700]", "")
+			.replace("[color=#888888]", "").replace("[color=#FF4444]", "")
+			.replace("[color=#FFAA00]", "").replace("[color=#88FF88]", "")
+			.replace("[color=#FF8800]", ""))
