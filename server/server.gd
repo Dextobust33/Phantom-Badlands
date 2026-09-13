@@ -43224,6 +43224,12 @@ const DANGER_STEP_RATIO := 2.0
 ## Confirmations are remembered per player: `peer_id -> the ratio band already accepted`.
 ## Without this a jagged border would ask on every other step.
 var _danger_step_ack: Dictionary = {}
+## How many steps on calmer ground before an accepted danger band lapses and will be asked
+## again. Long enough that fighting along a border does not nag; short enough that setting out
+## again after a trip home still warns you.
+const DANGER_ACK_DECAY_STEPS := 40
+## `peer_id -> consecutive steps spent below the band they accepted`.
+var _danger_step_below: Dictionary = {}
 
 
 func _danger_band(ratio: float) -> int:
@@ -43258,10 +43264,26 @@ func _confirm_dangerous_step(peer_id: int, character, nx: int, ny: int) -> bool:
 	if band <= acked:
 		# Already accepted this much danger - including walking back down into safer ground,
 		# which must never ask.
+		#
+		# ⚑ AND THE ACCEPTANCE DOES NOT LAPSE THE INSTANT YOU STEP OUT. Owner asked whether this
+		# fires once on entering or on every step inside; it is once on entering. But clearing
+		# the moment you dropped below the band had the same flavour of the problem one step
+		# removed: a player fighting AT a border - step back to heal, step in again - would be
+		# asked every single time. The acceptance now decays only after they have stayed on
+		# calmer ground for a while, so an oscillation costs one prompt and a genuinely new trip
+		# out still costs one.
 		if band < acked:
-			_danger_step_ack[peer_id] = band
+			var below: int = int(_danger_step_below.get(peer_id, 0)) + 1
+			if below >= DANGER_ACK_DECAY_STEPS:
+				_danger_step_ack[peer_id] = band
+				_danger_step_below[peer_id] = 0
+			else:
+				_danger_step_below[peer_id] = below
+		else:
+			_danger_step_below[peer_id] = 0
 		return true
 	_danger_step_ack[peer_id] = band
+	_danger_step_below[peer_id] = 0
 	var how := "far above you"
 	if band == 2:
 		how = "[b]three times your level[/b]"
@@ -43281,3 +43303,4 @@ func _clear_danger_ack(peer_id: int) -> void:
 	"""Forget a player's accepted danger band. Called when they leave, so a new character on the
 	same peer does not inherit a confirmation somebody else gave."""
 	_danger_step_ack.erase(peer_id)
+	_danger_step_below.erase(peer_id)

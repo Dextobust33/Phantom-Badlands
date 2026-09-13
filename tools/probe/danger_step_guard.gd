@@ -90,6 +90,43 @@ func _init() -> void:
 	var rearmed: bool = not srv._confirm_dangerous_step(1, ch, target.x, target.y)
 	ck(rearmed, "returning to safe ground re-arms it, so the next trip asks again")
 
+	print("
+===== IT ASKS ON ENTERING, NOT ON EVERY STEP =====")
+	# The owner's question: does this fire once when you cross in, or every step you stay?
+	# Once. Walk deep into accepted country and count.
+	srv._danger_step_ack.clear()
+	srv._danger_step_below.clear()
+	var deep := FakeChar.new()
+	deep.level = 20
+	var asks := 0
+	for i in range(60):
+		if not srv._confirm_dangerous_step(7, deep, target.x + i, 0):
+			asks += 1
+	ck(asks == 1, "60 steps into 2x country asked %d time(s), not 60" % asks)
+
+	print("
+===== AND FIGHTING ALONG A BORDER DOES NOT NAG =====")
+	# Step out, step back, twenty times - the shape of retreating to heal and re-engaging.
+	# Clearing the acceptance the instant you left would ask on every re-entry.
+	srv._danger_step_ack.clear()
+	srv._danger_step_below.clear()
+	var safe_x: int = target.x - 1
+	while safe_x > 0 and float(ws.get_post_anchored_level(safe_x, 0)) / 20.0 >= 2.0:
+		safe_x -= 1
+	var oscillation := 0
+	for i in range(20):
+		if not srv._confirm_dangerous_step(8, deep, safe_x, 0):
+			oscillation += 1
+		if not srv._confirm_dangerous_step(8, deep, target.x, 0):
+			oscillation += 1
+	ck(oscillation == 1, "twenty crossings back and forth asked %d time(s)" % oscillation)
+
+	# But a real trip home and back out SHOULD ask again.
+	for i in range(ServerScript.DANGER_ACK_DECAY_STEPS + 2):
+		srv._confirm_dangerous_step(8, deep, safe_x, 0)
+	ck(not srv._confirm_dangerous_step(8, deep, target.x, 0),
+		"...while staying away %d steps re-arms it for the next trip out" % ServerScript.DANGER_ACK_DECAY_STEPS)
+
 	print("\n===== IT IS SILENT WHERE IT SHOULD BE =====")
 	# A character AT level for the ground must never be asked, anywhere.
 	srv._danger_step_ack.clear()
