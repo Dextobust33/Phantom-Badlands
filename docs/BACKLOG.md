@@ -10,6 +10,48 @@ common way to lose a session.
 
 ---
 
+## ⚑ OWNER DIRECTION 2026-09-13 — the world reshape and what it exposed
+
+All of this came out of the distribution work. Recorded before starting any of it.
+
+### BLOCKING the release
+
+- [ ] **ONE-TIME TELEPORT to the starter post on next login.** Owner: *"we should probably have
+      everyone teleported back to the starter post on their next login just this once. So they
+      can navigate out again."* The reshape moves the country under standing characters - someone
+      at radius 700 was in ~L400 country and is not any more. Must ship WITH the reshape, must
+      fire exactly once per character, and must be obvious to the player why it happened.
+- [ ] **Does a player now have to travel much farther to find monsters at their level?** Owner
+      asked directly. It is a real consequence of widening the early bands - L100 used to be at
+      radius 250 and is now at 900. MEASURE it (distance to reach level N, before vs after) and
+      report honestly before shipping; if the walk is unreasonable the curve is wrong.
+- [ ] **Re-verify the lag fixes end to end**, client and server, in a running game rather than in
+      probes.
+
+### NEXT, in the order the owner raised them
+
+- [ ] **Roads: wider, and encounters very rare on them.** Owner: *"make paths/roads generate a
+      little wider and make encounters very rare on them so players can traverse and explore the
+      map without running into a crazy amount of encounters."* Directly mitigates the longer
+      travel above - the two are the same problem seen twice.
+- [ ] **Post distribution — are there enough to navigate BY?** Owner: *"ensure we have a
+      sufficient number of posts for people to navigate to while exploring."* 60 posts over a
+      4000x4000 world is one per ~267,000 tiles. Measure mean distance from a random point to the
+      nearest post before deciding a number.
+- [ ] **HOTZONES serve no purpose - revamp or replace.** Owner: *"hotzones don't serve much of a
+      purpose anymore. I've been thinking we either need to revamp or replace them."* Needs a
+      design conversation, not a patch. What were they for, what does regional menace now do
+      instead, and what is the gap that remains?
+- [ ] **GATHERABLES should be CLUSTERS, not scatter.** Owner: *"I don't really like the
+      distribution... I feel like they should be clusters you run into sort of like the hot ones
+      are, where you run into a large group of trees or a bunch of mining spots altogether.
+      Having them scattered everywhere makes them obstacles more than actual activities players
+      engage with."* That last sentence is the whole brief: scattered nodes are terrain, clustered
+      nodes are a destination.
+- [ ] **Audit the gatherable ART piece by piece.** Owner: *"some of the art we may want to use an
+      alternative of (we may want to audit those pieces individually)."* Same procedure as the
+      room floors: render them together, look, replace what does not read.
+
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after v0.9.779)
 
 **v0.9.779 IS LIVE.** Server deployed and verified by hashing the RUNNING process (`4364258b…`,
