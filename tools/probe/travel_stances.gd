@@ -66,6 +66,15 @@ func _init() -> void:
 	var srv2 := FileAccess.get_file_as_string("res://server/server.gd")
 	ck(srv2.find("TravelStanceScript.vision_bonus(String(character.travel_stance))") >= 0,
 		"Scouting's extra sight is applied to the vision radius")
+	# RESTING AND MEDITATING, because the Travelling blurb says "as you walk and rest" and for a
+	# while only the walking half was true. Owner asked directly, which is how it was found.
+	ck(srv2.find("var _stance_regen_rest: float = TravelStanceScript.regen_mult") >= 0,
+		"resting recovers less in a stance that recovers less")
+	ck(srv2.find("var _stance_regen_med: float = TravelStanceScript.regen_mult") >= 0,
+		"...and so does meditating, or mages would be exempt from a cost everyone else pays")
+	ck(srv2.find("REST_AMBUSH_CHANCE + int(round(") >= 0,
+		"and camping while travelling hard is more exposed, on the same axis as combat surprise")
+
 
 
 	print("\n--- an unknown stance cannot strand a character ---")

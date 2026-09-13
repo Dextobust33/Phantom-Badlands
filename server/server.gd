@@ -5986,7 +5986,12 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 	# Early-game + house bonuses stack on top.
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
 	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
-	var regen_percent = 0.30 * early_game_mult * house_regen_mult
+	# The TRAVEL STANCE scales resting too. The Travelling blurb says "as you walk and rest", and
+	# until now only the walking half was true - the same unkept-promise shape as Scouting's
+	# vision bonus, which was written and never called. Owner asked directly: *"What about
+	# resting and meditating, how do stances affect those?"*
+	var _stance_regen_rest: float = TravelStanceScript.regen_mult(String(character.travel_stance))
+	var regen_percent = 0.30 * early_game_mult * house_regen_mult * _stance_regen_rest
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
 	var stamina_regen = max(1, int(total_max_stamina * regen_percent))
@@ -6100,7 +6105,12 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 	# Only the leader (or solo player) can trigger ambush, not party followers
 	if not _is_party_follower and not _gathering_immune and not world_system.is_safe_zone(character.x, character.y):
 		var ambush_roll = randi() % 100
-		if ambush_roll < REST_AMBUSH_CHANCE:
+		# Stopping while you are travelling hard is more exposed - you have not scouted the
+		# ground you are camping on. Same axis as combat initiative, so "caught out" means one
+		# thing everywhere rather than two similar-looking numbers.
+		var _amb: int = maxi(0, REST_AMBUSH_CHANCE + int(round(
+			float(TravelStanceScript.surprise_bonus(String(character.travel_stance))) * 0.25)))
+		if ambush_roll < _amb:
 			send_to_peer(peer_id, {
 				"type": "text",
 				"message": "[color=#FF4444]You are ambushed while resting![/color]"
@@ -6139,7 +6149,11 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
 
 	# Mana regeneration: 4% of max mana (2x movement), double if at full HP
-	var base_mana_percent = 0.04 * early_game_mult * house_regen_mult  # 2x the 2% movement regen, with early game + house bonus
+	# Meditating is resting by another name, so the TRAVEL STANCE scales it the same way. Missing
+	# this would have left mages exempt from a cost every other class pays - the sort of gap that
+	# only shows up as "the mage never picks Wary".
+	var _stance_regen_med: float = TravelStanceScript.regen_mult(String(character.travel_stance))
+	var base_mana_percent = 0.04 * early_game_mult * house_regen_mult * _stance_regen_med  # 2x the 2% movement regen, with early game + house bonus
 	var mana_percent = base_mana_percent
 	if at_full_hp:
 		mana_percent *= 2.0  # 8% when HP is full
@@ -6252,7 +6266,12 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 	# Only the leader (or solo player) can trigger ambush, not party followers
 	if not is_party_follower and not gathering_immune and not world_system.is_safe_zone(character.x, character.y):
 		var ambush_roll = randi() % 100
-		if ambush_roll < REST_AMBUSH_CHANCE:
+		# Stopping while you are travelling hard is more exposed - you have not scouted the
+		# ground you are camping on. Same axis as combat initiative, so "caught out" means one
+		# thing everywhere rather than two similar-looking numbers.
+		var _amb: int = maxi(0, REST_AMBUSH_CHANCE + int(round(
+			float(TravelStanceScript.surprise_bonus(String(character.travel_stance))) * 0.25)))
+		if ambush_roll < _amb:
 			send_to_peer(peer_id, {
 				"type": "text",
 				"message": "[color=#FF4444]Your meditation is interrupted by an ambush![/color]"
