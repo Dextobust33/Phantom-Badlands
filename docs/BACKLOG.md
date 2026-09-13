@@ -79,7 +79,12 @@ All of this came out of the distribution work. Recorded before starting any of i
       long" and it is also the one that could most easily devalue exploration, which is why it
       should be decided on its own rather than bundled.
 
-- [ ] **Roads: wider, and encounters very rare on them.** Owner: *"make paths/roads generate a
+- [x] **DONE 2026-09-13 — Roads: three tiles wide, and ten times quieter.** Measured: 6.7
+      encounters per 200 steps on the road against 67.2 beside it. Deliberately NOT zero - a
+      perfectly safe road turns every journey into a rail and makes the wilderness beside it
+      pointless. The widening needed the per-tile skip rules pulled out of the stamp loop, or a
+      band would pave post interiors, bridges and (newly guarded) water at its edges.
+      Was: **Roads: wider, and encounters very rare on them.** Owner: *"make paths/roads generate a
       little wider and make encounters very rare on them so players can traverse and explore the
       map without running into a crazy amount of encounters."* Directly mitigates the longer
       travel above - the two are the same problem seen twice.

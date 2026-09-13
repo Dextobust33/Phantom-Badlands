@@ -1615,7 +1615,15 @@ func check_encounter(x: int, y: int, player_level: int = 0, bypass_level_scaling
 	if chunk_manager:
 		var tile = chunk_manager.get_tile(x, y)
 		if tile.get("type", "") == "path":
-			rate *= 0.5
+			# Roads are for GETTING SOMEWHERE. Halving the rate was a nudge; the owner asked for
+			# encounters to be "very rare on them so players can traverse and explore the map
+			# without running into a crazy amount of encounters", and after the world reshape a
+			# journey is long enough that a nudge is not enough.
+			#
+			# Not zero: a road that is perfectly safe turns every journey into a rail, and makes
+			# the wilderness beside it pointless. Rare enough to cross a continent, common enough
+			# that the road is not a different game.
+			rate *= 0.10
 	# v0.9.620 — level-diff scaling. -5% per level above the area.
 	# Player at +5 levels above area: 75% rate. +10: 50%. +20 and beyond: none.
 	#
@@ -3084,31 +3092,60 @@ func _find_post_exit(center_x: int, center_y: int) -> Vector2i:
 	# No door found — return center (shouldn't happen with well-formed posts)
 	return Vector2i(center_x, center_y)
 
+## How far either side of a waypoint a road is stamped. 1 gives a three-tile road.
+##
+## Owner 2026-09-13: *"We may want to make paths/roads generate a little wider and make encounters
+## very rare on them so players can traverse and explore the map without running into a crazy
+## amount of encounters."*
+##
+## A one-tile road was easy to step off without noticing, which mattered little when it only
+## halved the encounter rate and matters a great deal now that it nearly removes it. Three tiles
+## is wide enough to walk without threading a needle and narrow enough to still read as a road
+## rather than a clearing.
+const ROAD_HALF_WIDTH := 1
+
+
 func stamp_paths_into_chunks(paths: Dictionary) -> void:
-	"""Write path tiles into chunks for each waypoint that isn't already a floor/door/post tile."""
+	"""Write path tiles into chunks for each waypoint that isn't already a floor/door/post tile.
+
+	Stamps a ROAD_HALF_WIDTH band rather than a single tile - see that constant."""
 	if not chunk_manager:
 		return
 
 	for path_key in paths:
 		var waypoints = paths[path_key]
 		for wp in waypoints:
-			var x = wp.x if wp is Vector2i else int(wp.get("x", 0))
-			var y = wp.y if wp is Vector2i else int(wp.get("y", 0))
+			var cx0 = wp.x if wp is Vector2i else int(wp.get("x", 0))
+			var cy0 = wp.y if wp is Vector2i else int(wp.get("y", 0))
+			for _ox in range(-ROAD_HALF_WIDTH, ROAD_HALF_WIDTH + 1):
+				for _oy in range(-ROAD_HALF_WIDTH, ROAD_HALF_WIDTH + 1):
+					# A plus rather than a square: the corners of a square band make a road look
+					# like a series of blobs at every turn.
+					if absi(_ox) + absi(_oy) > ROAD_HALF_WIDTH:
+						continue
+					_stamp_one_path_tile(cx0 + _ox, cy0 + _oy)
 
-			# Skip NPC post interior tiles
-			if _is_npc_post_interior(x, y):
-				continue
 
-			# Skip tiles that are already non-blocking walkable types we don't want to overwrite
-			var existing = chunk_manager.get_tile(x, y)
-			var existing_type = existing.get("type", "empty")
-			if existing_type in ["floor", "door", "forge", "apothecary", "workbench",
-				"enchant_table", "writing_desk", "market", "inn", "quest_board",
-				"tower", "storage", "post_marker", "blacksmith", "healer", "guard", "bridge"]:
-				continue
+func _stamp_one_path_tile(x: int, y: int) -> void:
+	"""One tile of road, with the same protections the single-tile version had.
 
-			# Stamp path tile
-			chunk_manager.set_tile(x, y, {"type": "path", "blocks_move": false, "blocks_los": false})
+	Pulled out of `stamp_paths_into_chunks` when roads became a band: the skip rules have to
+	apply to every tile of the band, not just its centre, or a widened road would pave over post
+	interiors and bridges at the edges."""
+	if _is_npc_post_interior(x, y):
+		return
+	var existing = chunk_manager.get_tile(x, y)
+	var existing_type = existing.get("type", "empty")
+	if existing_type in ["floor", "door", "forge", "apothecary", "workbench",
+			"enchant_table", "writing_desk", "market", "inn", "quest_board",
+			"tower", "storage", "post_marker", "blacksmith", "healer", "guard", "bridge"]:
+		return
+	# Never pave water: a road across a lake would be a bridge, and bridges are placed
+	# deliberately elsewhere.
+	if existing_type in ["water", "deep_water"]:
+		return
+	chunk_manager.set_tile(x, y, {"type": "path", "blocks_move": false, "blocks_los": false})
+
 
 func clear_path_tiles(waypoints: Array) -> void:
 	"""Remove path tiles for a specific route (for rerouting)."""
