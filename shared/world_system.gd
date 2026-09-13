@@ -628,8 +628,11 @@ func generate_tile(world_x: int, world_y: int, seed: int) -> Dictionary:
 	# Check for water first using noise clustering
 	if _is_water_tile_generated(world_x, world_y, seed):
 		# Determine shallow vs deep
-		var deep_noise = _seeded_hash_float(world_x * 97 + world_y * 151, seed + 999)
-		if deep_noise > 0.75 and distance > 200:
+		# DEEP is the MIDDLE of a body, not a random pixel inside one - see `_water_depth_score`.
+		# A river is never deep: it is a crossing, and an impassable tile in the middle of one
+		# would cut the map in half for anyone without a bridge.
+		var deep_noise = _water_depth_score(world_x, world_y, seed)
+		if deep_noise > 0.55 and distance > 200:
 			return {"type": "deep_water", "tier": 0, "blocks_move": true, "blocks_los": false}
 		return {"type": "water", "tier": 0, "blocks_move": true, "blocks_los": false}
 
@@ -743,22 +746,88 @@ func _get_tier_for_distance(distance: float, x: int, y: int, seed: int) -> int:
 		return upper_tier
 	return lower_tier
 
+## WATER, 2026-09-13. Owner: *"I'd like water to be more of small lakes and rivers with rare
+## large lakes, instead of just big bodies of water."*
+##
+## It was ONE noise layer at frequency 0.03 (cells ~33 tiles) over a 0.62 threshold, which is a
+## recipe for blobs: every peak of a single smooth field becomes one broad lake, and there is
+## nothing in the generator that can make a river or a pond. Three layers now, each producing a
+## shape the others cannot:
+##
+##   * SMALL LAKES - higher frequency, high threshold. Only the peaks of a fine field flood, so
+##     bodies are small and numerous.
+##   * RIVERS - a RIDGE, not a peak. Water where the field passes close to its midpoint traces a
+##     winding contour line across the map, which is what a river is. This is the layer the old
+##     generator had no way to express.
+##   * GREAT LAKES - very low frequency, very high threshold, so they are rare by construction
+##     rather than by luck.
+const LAKE_FREQ := 0.075          # ~13-tile cells: small bodies
+const LAKE_THRESHOLD := 0.815
+const RIVER_FREQ := 0.006         # long, slow meanders
+const RIVER_HALF_WIDTH := 0.030   # how close to the sawtooth midpoint counts as channel
+const GREAT_LAKE_FREQ := 0.010    # ~100-tile cells
+const GREAT_LAKE_THRESHOLD := 0.885
+
+
 func _is_water_tile_generated(x: int, y: int, seed: int) -> bool:
-	"""Check if a tile should be water using noise-based clustering for natural lakes/rivers."""
-	# Use two layers of noise for natural-looking water bodies
-	# Layer 1: Large-scale water regions (low frequency)
-	var water_noise = _water_noise(x, y, seed)
-	if water_noise > 0.62:
+	"""Is this tile water? See the note above the constants for why it is three layers."""
+	# A river is the contour of a DRIFTING field, and the drift is the whole trick.
+	#
+	# The first version used `abs(noise - 0.5) < e`, which looked right in the numbers and wrong
+	# in the picture: contours of a smooth 2D field are CLOSED LOOPS, so it produced a honeycomb
+	# of canals enclosing cells of land rather than rivers, and would have cut the map into
+	# compartments nobody could cross without a bridge. Caught by rendering it - the size
+	# distribution alone said "147 bodies, mostly small", which was true and beside the point.
+	#
+	# Adding a gentle linear drift and taking the sawtooth makes the contours OPEN: a family of
+	# wandering channels that cross the map instead of closing on themselves.
+	# THE DRIFT MUST DOMINATE THE NOISE, or the contours still close. First attempt used noise*5
+	# against a drift of 0.0016/tile: over a 400-tile window the drift moves 0.64 while the noise
+	# swings 5.0, so the noise won and the rivers were still loops. The noise now only WANDERS a
+	# channel whose direction the drift decides - which is what makes the line open.
+	#
+	# Drift of 0.010 per tile in x means the sawtooth turns over every ~100 tiles, so rivers run
+	# roughly that far apart; the noise term bends each one so they are not parallel stripes.
+	var flow: float = _water_noise_at(x, y, seed + 7001, RIVER_FREQ) * 2.2 		+ float(x) * 0.0100 + float(y) * 0.0062
+	var t: float = flow - floor(flow)
+	var widen: float = 1.0 + 0.6 * clampf(sqrt(float(x * x + y * y)) / 2000.0, 0.0, 1.0)
+	if absf(t - 0.5) < RIVER_HALF_WIDTH * widen:
 		return true
 
-	# Layer 2: Small scattered ponds (very rare)
-	var pond_hash = _seeded_hash_float(x * 173 + y * 251, seed + 500)
-	return pond_hash > 0.997  # ~0.3% random scatter
+	# Small lakes: the peaks of a fine field, roughened by a second octave so they are irregular
+	# pools rather than the uniform circular dots one smooth octave produces.
+	var lake: float = _water_noise_at(x, y, seed + 100, LAKE_FREQ) * 0.72 		+ _water_noise_at(x, y, seed + 991, LAKE_FREQ * 2.7) * 0.28
+	if lake > LAKE_THRESHOLD:
+		return true
+
+	# And the rare great lake.
+	return _water_noise_at(x, y, seed + 313, GREAT_LAKE_FREQ) > GREAT_LAKE_THRESHOLD
+
+
+func _water_depth_score(x: int, y: int, seed: int) -> float:
+	"""How far INSIDE a body of water this tile is, 0 at the shore and 1 well out.
+
+	Deep water used to be a per-tile hash, which speckled it randomly through a lake instead of
+	marking its middle - so a shallow crossing could hide an impassable pixel and a lake had no
+	readable shape. Depth now follows the same field that made the water, so the middle of a
+	body is deep and its edges are not."""
+	var lake: float = _water_noise_at(x, y, seed + 100, LAKE_FREQ) * 0.72 		+ _water_noise_at(x, y, seed + 991, LAKE_FREQ * 2.7) * 0.28
+	var great := _water_noise_at(x, y, seed + 313, GREAT_LAKE_FREQ)
+	var d_lake: float = (lake - LAKE_THRESHOLD) / maxf(0.001, 1.0 - LAKE_THRESHOLD)
+	var d_great: float = (great - GREAT_LAKE_THRESHOLD) / maxf(0.001, 1.0 - GREAT_LAKE_THRESHOLD)
+	return clampf(maxf(d_lake, d_great), 0.0, 1.0)
+
 
 func _water_noise(x: int, y: int, seed: int) -> float:
-	"""Simple value noise for water clustering. Returns 0.0-1.0."""
-	# Use grid-based interpolated noise at low frequency
-	var freq = 0.03  # Low frequency = large water bodies
+	"""Kept for callers that want the original field. New code uses `_water_noise_at`."""
+	return _water_noise_at(x, y, seed, 0.03)
+
+
+func _water_noise_at(x: int, y: int, seed: int, freq: float) -> float:
+	"""Smoothstep value noise at an arbitrary frequency. Returns 0.0-1.0.
+
+	Parameterised so the three water layers share one implementation - three copies of this
+	arithmetic differing only in a constant is exactly how they would drift apart."""
 	var fx = x * freq
 	var fy = y * freq
 

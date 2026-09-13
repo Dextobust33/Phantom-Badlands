@@ -7,6 +7,15 @@ extends SceneTree
 ##
 ##   --script res://tools/probe/map_payload_golden.gd -- capture   (before, writes the golden)
 ##   --script res://tools/probe/map_payload_golden.gd              (after, compares)
+##
+## ⚑ WHEN THE WORLD ITSELF CHANGES, THIS BASELINE MUST BE RE-CAPTURED DELIBERATELY, and the
+## reason written down - otherwise a future failure means nothing, because nobody can tell a real
+## regression from a baseline that drifted.
+##
+## Re-captured 2026-09-13: the water generator was rewritten (one blobby noise layer -> small
+## lakes, drifting rivers and rare great lakes) and the level curve reshaped, so every view in the
+## golden legitimately describes terrain that no longer exists. What this probe still guards is
+## unchanged: that the TEXT map and the INFLATED PAYLOAD describe the same world, byte for byte.
 const WorldSystemScript = preload("res://shared/world_system.gd")
 const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
 const GOLDEN := "res://tools/probe/data/map_golden.json"

@@ -34,6 +34,20 @@ All of this came out of the distribution work. Recorded before starting any of i
 
 ### NEXT, in the order the owner raised them
 
+- [x] **DONE 2026-09-13 — WATER: small lakes and rivers, rare large lakes.** Owner: *"I'd like
+      water to be more of small lakes and rivers with rare large lakes, instead of just big
+      bodies of water."* It was ONE noise layer at 0.03 over a 0.62 threshold - a recipe for
+      blobs, with no way to express a river at all. Three layers now (small lakes roughened by a
+      second octave, drifting rivers, rare great lakes) and deep water follows the depth field
+      instead of a per-tile hash that speckled impassable pixels through shallow crossings.
+      Measured in a 400x400 window: 11.4% water, 127 bodies, 118 small, 5 large, one river
+      running the full 399 tiles.
+      **The numbers passed a version that was wrong.** The first rivers used `abs(noise-0.5)`,
+      whose contours are CLOSED LOOPS - it scored "127 bodies, mostly small" while drawing a
+      honeycomb of canals that would have cut the map into compartments. Only the render showed
+      it. The fix is a drift term that dominates the noise so contours stay open.
+
+
 - [x] **DONE 2026-09-13 — TRAVEL STANCES.** Four, from one shared table both sides read:
       Travelling (encounters x0.18, recovery x0.35), Wary (today's behaviour, the baseline),
       Scouting (x0.75 encounters, x0.7 recovery, +2 map sight), Hunting (x2.2 encounters, x0.85
