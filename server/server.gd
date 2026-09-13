@@ -29665,8 +29665,11 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		# advertised, not a fresh roll. See the note in _create_player_dungeon_instance.
 		var _tile_dungeon: Dictionary = _get_dungeon_at_location(character.x, character.y, peer_id)
 		var _inherit_sub: int = int(_tile_dungeon.get("sub_tier", -1))
+		# BOTH halves of the grade, not just the rank. `_instance_tier` rather than a raw read,
+		# so a dungeon saved before the grade moved onto the instance still resolves.
+		var _inherit_tier: int = _instance_tier(_tile_dungeon) if not _tile_dungeon.is_empty() else -1
 		instance_id = _create_player_dungeon_instance(peer_id, "", dungeon_type, character.level,
-			"", "", 0, _inherit_sub)
+			"", "", 0, _inherit_sub, _inherit_tier)
 		# 2026-09-10 - this is the SECOND report of "the tile said T1-2 and it opened a T1-7",
 		# after the 2026-09-08 inherit was supposed to end it. The inherit reads correctly, so a
 		# third theory is worth less than one measurement: log what the tile actually resolved to
@@ -29680,9 +29683,12 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 			var _tile_desc: String = "NONE"
 			if not _tile_dungeon.is_empty():
 				_tile_desc = "%s sub_tier=%d" % [String(_tile_dungeon.get("instance_id", "?")), _inherit_sub]
+			var _got_tier: int = _instance_tier(active_dungeons[instance_id])
 			var _flag: String = ""
-			if _inherit_sub > 0 and _got != _inherit_sub:
-				_flag = "  <<< MISMATCH: inherit was ignored"
+			if _inherit_tier > 0 and _got_tier != _inherit_tier:
+				_flag = "  <<< MISMATCH: TIER inherit was ignored (tile %d -> got %d)" % [_inherit_tier, _got_tier]
+			elif _inherit_sub > 0 and _got != _inherit_sub:
+				_flag = "  <<< MISMATCH: rank inherit was ignored"
 			elif _inherit_sub <= 0:
 				_flag = "  <<< no tile rank to inherit; depth was rolled from distance"
 			log_message("DUNGEON-ENTER %s at (%d,%d) type=%s tile=[%s] -> instance %s sub_tier=%d%s" % [
@@ -30646,7 +30652,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	log_message("Created dungeon instance: %s (%s) [%s] (tier=%d sub=%d)" % [instance_id, dungeon_data.name, PowerRank.label(dungeon_data.tier, sub_tier), dungeon_data.tier, sub_tier])
 	return instance_id
 
-func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0, force_sub_tier: int = -1) -> String:
+func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0, force_sub_tier: int = -1, force_tier: int = -1) -> String:
 	"""Create a personal dungeon instance for a player's quest. Returns instance ID.
 	fabled_boss_name (P2 Slice 2): if set, the dungeon's boss spawns renamed + buffed.
 	gather_relic_name/count (P2 Slice 3): if set, N themed relics spawn as floor loot for a
@@ -30725,7 +30731,21 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	# roll stays for instances with no originating tile (quests, fabled bosses).
 	if force_sub_tier > 0:
 		sub_tier = force_sub_tier
-	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
+	# ⚑ THE TIER IS INHERITED TOO, and this line is the whole of a 2026-09-13 report:
+	# *"I've got H1 dungeons showing on the overworld advertising monsters of a low level. When
+	# the player enters they are getting a different tier like F2, E1... This is a huge problem
+	# in a permadeath game with no easy escape from the dungeon."*
+	#
+	# The RANK was already inherited (2026-09-08, after the same shape was reported about depth).
+	# v0.9.773 then moved the TIER off the dungeon type and onto the instance, decided by the
+	# land it stands in - and this inherit was not updated with it. So the marker advertised the
+	# world dungeon's land grade and the instance a player actually entered fell back to the
+	# TYPE's tier, which also set the monster level band below. Advertised H1, delivered E1.
+	#
+	# `_dungeon_data_for` warns about exactly this: "leaving one behind is precisely how a
+	# dungeon ends up advertising a grade its monsters do not have." One was left behind.
+	var grade_tier: int = force_tier if force_tier > 0 else int(dungeon_data.get("tier", 1))
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(grade_tier, sub_tier)
 
 	# Scale dungeon level to player, clamped to rank range
 	var dungeon_level = clampi(player_level, sub_range.min_level, sub_range.max_level)
@@ -30740,7 +30760,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"active_players": [],
 		"dungeon_level": dungeon_level,
 		"sub_tier": sub_tier,
-		"tier": int(dungeon_data.get("tier", 1)),
+		"tier": grade_tier,
 		"owner_peer_id": peer_id,  # Track who owns this instance
 		"owner_username": peers.get(peer_id, {}).get("username", ""),  # For reconnect lookup
 		"quest_id": quest_id,  # Track which quest this is for

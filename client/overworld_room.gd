@@ -209,12 +209,32 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 	return true
 
 
+## One pre-made translucent black square per darkening amount. Two are ever used (fog and a
+## spent gathering node), so this cache never holds more than a couple of 32x32 images.
+static var _shade_cache: Dictionary = {}
+
+
 static func _darken(grid: Image, cx: int, cy: int, amount: float) -> void:
-	for yy in range(CELL):
-		for xx in range(CELL):
-			var px := grid.get_pixel(cx * CELL + xx, cy * CELL + yy)
-			grid.set_pixel(cx * CELL + xx, cy * CELL + yy,
-				Color(px.r * amount, px.g * amount, px.b * amount, px.a))
+	"""Multiply one cell toward black - remembered ground, or a node already harvested.
+
+	⚑ THIS IS A RECT OPERATION ON PURPOSE. It used to be a per-pixel GDScript loop: 1024
+	`get_pixel` plus 1024 `set_pixel` per cell, and a well-explored view darkens ~220 of them,
+	which measured 15.2 ms of an 18.7 ms compose - on EVERY step. Owner, from live play
+	2026-09-13: *"There is a delay to our actions intermittently."* Intermittent because the cost
+	is proportional to how much FOG is in view, which changes as you walk and grows as you
+	explore.
+
+	Alpha-blending BLACK at `1 - amount` is the same arithmetic the loop was doing:
+	`dst*(1-a) + src*a` with src black is exactly `dst * (1 - a)`. It just happens in C++ once
+	instead of 2048 times in script."""
+	var key := int(round(amount * 1000.0))
+	var shade: Image = _shade_cache.get(key, null)
+	if shade == null:
+		shade = Image.create(CELL, CELL, false, Image.FORMAT_RGBA8)
+		shade.fill(Color(0, 0, 0, clampf(1.0 - amount, 0.0, 1.0)))
+		_shade_cache[key] = shade
+	grid.blend_rect(shade, Rect2i(Vector2i.ZERO, Vector2i(CELL, CELL)),
+		Vector2i(cx * CELL, cy * CELL))
 
 
 static func cell_path(x: int, y: int) -> String:
