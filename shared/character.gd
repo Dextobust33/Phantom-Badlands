@@ -55,6 +55,9 @@ extends Resource
 ## in for a while and cannot be reasoned about later. A new character is created with it already
 ## true - see `handle_create_character` - so nobody is "migrated" into the post they start in.
 @export var world_reshape_relocated: bool = false
+## How this character is MOVING - see `shared/travel_stance.gd`. Persisted, because a stance the
+## player chose must survive a logout; nothing is more annoying than re-picking it every session.
+@export var travel_stance: String = "wary"
 
 # Audit #3 Slice 5 — additional one-time tutorial flags. All default false on
 # new characters; legacy characters get the hints on their first matching
@@ -1991,6 +1994,7 @@ func to_dict() -> Dictionary:
 		# Audit #3 Slice 3 — one-time progression-hint flag
 		"seen_progression_hint": seen_progression_hint,
 		"world_reshape_relocated": world_reshape_relocated,
+		"travel_stance": travel_stance,
 		# Audit #3 Slice 5 — additional one-time tutorial flags
 		"seen_quest_board_hint": seen_quest_board_hint,
 		"seen_dungeon_hint": seen_dungeon_hint,
@@ -2206,6 +2210,7 @@ func from_dict(data: Dictionary):
 	# Defaults FALSE, which is what makes the migration fire for every character saved before it
 	# existed. New characters are set true at creation instead.
 	world_reshape_relocated = bool(data.get("world_reshape_relocated", false))
+	travel_stance = String(data.get("travel_stance", "wary"))
 	# Audit #3 Slice 5 — additional one-time tutorial flags (default false).
 	seen_quest_board_hint = bool(data.get("seen_quest_board_hint", false))
 	seen_dungeon_hint = bool(data.get("seen_dungeon_hint", false))

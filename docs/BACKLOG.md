@@ -16,21 +16,31 @@ All of this came out of the distribution work. Recorded before starting any of i
 
 ### BLOCKING the release
 
-- [ ] **ONE-TIME TELEPORT to the starter post on next login.** Owner: *"we should probably have
+- [x] **DONE 2026-09-13, shipped in v0.9.780.** ONE-TIME TELEPORT to the starter post. Owner: *"we should probably have
       everyone teleported back to the starter post on their next login just this once. So they
       can navigate out again."* The reshape moves the country under standing characters - someone
       at radius 700 was in ~L400 country and is not any more. Must ship WITH the reshape, must
       fire exactly once per character, and must be obvious to the player why it happened.
-- [ ] **Does a player now have to travel much farther to find monsters at their level?** Owner
-      asked directly. It is a real consequence of widening the early bands - L100 used to be at
+- [x] **ANSWERED 2026-09-13.** From the ORIGIN, yes and substantially: L50 country moved from
+      radius 150 to 480, L100 from 234 to 900. From the NEAREST POST, barely: suitable ground is
+      within 10 tiles of *some* post for L10/L25/L50/L100, because posts anchor the level to
+      their own country. The design therefore leans entirely on players being able to FIND the
+      right post - which is why post distribution is the next item and not a separate one.
+      Was: **Does a player now have to travel much farther...** Owner asked directly. It is a real consequence of widening the early bands - L100 used to be at
       radius 250 and is now at 900. MEASURE it (distance to reach level N, before vs after) and
       report honestly before shipping; if the walk is unreasonable the curve is wrong.
-- [ ] **Re-verify the lag fixes end to end**, client and server, in a running game rather than in
-      probes.
+- [x] **DONE 2026-09-13** - verified in a live client/server: relocation landed the test
+      character at (0,-2) Crossroads, the area readout renders, the stance bar renders.
 
 ### NEXT, in the order the owner raised them
 
-- [ ] **TRAVEL STANCES (owner direction 2026-09-13) — the main answer to the longer walk.**
+- [x] **DONE 2026-09-13 — TRAVEL STANCES.** Four, from one shared table both sides read:
+      Travelling (encounters x0.18, recovery x0.35), Wary (today's behaviour, the baseline),
+      Scouting (x0.75 encounters, x0.7 recovery, +2 map sight), Hunting (x2.2 encounters, x0.85
+      recovery). Buttons generated from `TravelStance.ORDER` so the bar cannot disagree with the
+      server. The probe asserts NO stance is strictly better than Wary - and caught that Hunting
+      originally cost nothing, which made it a free switch rather than a choice.
+      Was: **TRAVEL STANCES (owner direction 2026-09-13) — the main answer to the longer walk.**
       Owner: *"I was debating having different stances or something where you can toggle between
       like an evasive stance where you don't get as much back each step or from rests but you're
       much less likely to hit random encounters, we would need a couple more like this and it

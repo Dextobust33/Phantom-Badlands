@@ -70,6 +70,7 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 ## The rank ladder. Preloaded rather than leaning on the global class name, which lives in the
 ## .godot cache this project has been bitten by before.
 const PowerRankScript = preload("res://shared/power_rank.gd")
+const TravelStanceScript = preload("res://shared/travel_stance.gd")
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
 const QuestManagerScript = preload("res://shared/quest_manager.gd")
 const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
@@ -1874,6 +1875,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_party_message(peer_id, message)
 		"move":
 			handle_move(peer_id, message)
+		"set_travel_stance":
+			handle_set_travel_stance(peer_id, message)
 		"hunt":
 			handle_hunt(peer_id)
 		"combat":
@@ -2806,6 +2809,11 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "text", "message":
 			"[color=#FFD700]The world has been redrawn.[/color] The land no longer gets harder in simple rings - there are calm valleys far out and dangerous country close in, and every region now says its level on your map. [color=#FFD700]You have been returned to the Crossroads once[/color] so you can set out again knowing what you are walking into. Watch the [color=#FF8800]Area[/color] reading: it is coloured against YOUR level, and it pulses when the ground would kill you."})
 		log_message("World-reshape relocation: %s moved to the starter post" % char_name)
+
+	# The client draws its stance bar from this. Sent at load so the bar is right before the
+	# player touches anything, rather than defaulting to Wary and silently disagreeing with the
+	# character's saved stance.
+	send_to_peer(peer_id, {"type": "travel_stance", "stance": String(character.travel_stance)})
 
 	var username = peers[peer_id].username
 	log_message("Character loaded: %s (Account: %s) for peer %d" % [char_name, username, peer_id])
@@ -5471,8 +5479,11 @@ func handle_move(peer_id: int, message: Dictionary):
 	# House bonus: +5% regen per level of resource_regen upgrade
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
 	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
-	var regen_percent = 0.05 * early_game_mult * house_regen_mult  # v0.9.667 — 5% per move (was 2% = ~1/step, too slow to recover between fights)
-	var hp_regen_percent = 0.01 * early_game_mult * house_regen_mult  # 1% per move for health
+	# The TRAVEL STANCE scales what a step gives back. This is the cost half of the trade - a
+	# stance that only removed encounters would be strictly better than standing still.
+	var _stance_regen: float = TravelStanceScript.regen_mult(String(character.travel_stance))
+	var regen_percent = 0.05 * early_game_mult * house_regen_mult * _stance_regen  # v0.9.667 — 5% per move (was 2% = ~1/step, too slow to recover between fights)
+	var hp_regen_percent = 0.01 * early_game_mult * house_regen_mult * _stance_regen  # 1% per move for health
 	var total_max_mana = character.get_total_max_mana()
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
@@ -5754,13 +5765,39 @@ func handle_move(peer_id: int, message: Dictionary):
 			var _area_lvl: int = world_system.get_post_anchored_level(new_pos.x, new_pos.y)
 			if character.level - _area_lvl > THREAT_BYPASS_LEVEL_GAP:
 				_in_threat = false
-		if world_system.check_encounter(new_pos.x, new_pos.y, character.level, _in_threat):
+		if world_system.check_encounter(new_pos.x, new_pos.y, character.level, _in_threat, TravelStanceScript.encounter_mult(String(character.travel_stance))):
 			# Starter area safety: halve encounters for low-level players near origin
 			var _dist = abs(new_pos.x) + abs(new_pos.y)
 			if _dist <= 20 and character.level < 10 and randf() < 0.5:
 				pass  # Suppressed encounter for new player safety
 			else:
 				trigger_encounter(peer_id)
+
+func handle_set_travel_stance(peer_id: int, message: Dictionary) -> void:
+	"""Change how this character is moving through the world.
+
+	Validated against the shared table rather than trusted: a client can send anything, and an
+	unknown stance would otherwise sit on the character forever multiplying nothing."""
+	if not peers.has(peer_id) or not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var want := String(message.get("stance", ""))
+	if not TravelStanceScript.is_valid(want):
+		return
+	if character.travel_stance == want:
+		return
+	character.travel_stance = want
+	persistence.save_character(peers[peer_id].get("account_id", ""), character)
+	var st: Dictionary = TravelStanceScript.get_stance(want)
+	send_to_peer(peer_id, {
+		"type": "travel_stance",
+		"stance": want,
+	})
+	send_to_peer(peer_id, {"type": "text", "message":
+		"[color=%s]You move %s.[/color] %s" % [
+			st.get("color", "#FFFFFF"), String(st.get("name", "Wary")).to_lower(),
+			st.get("blurb", "")]})
+
 
 func handle_hunt(peer_id: int):
 	"""Handle hunt action - actively search for monsters with increased encounter chance"""

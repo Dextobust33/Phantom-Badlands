@@ -1594,7 +1594,7 @@ func is_guard_suppressed(x: int, y: int) -> bool:
 			return true
 	return false
 
-func check_encounter(x: int, y: int, player_level: int = 0, bypass_level_scaling: bool = false) -> bool:
+func check_encounter(x: int, y: int, player_level: int = 0, bypass_level_scaling: bool = false, stance_mult: float = 1.0) -> bool:
 	"""Check if player encounters a monster (roll).
 
 	v0.9.620 — scale encounter rate down when the player is significantly
@@ -1637,6 +1637,11 @@ func check_encounter(x: int, y: int, player_level: int = 0, bypass_level_scaling
 		if level_diff > 0:
 			var scale: float = clamp(1.0 - float(level_diff) * 0.05, 0.0, 1.0)
 			rate *= scale
+	# The player's TRAVEL STANCE, last, so it scales whatever the ground and the level gap left.
+	# Applied here rather than at the call site so every path that can start a fight goes through
+	# it - a stance that only worked on ordinary movement would be a stance players learned not
+	# to trust.
+	rate *= maxf(0.0, stance_mult)
 	return randf() < rate
 
 func get_monster_level_range(x: int, y: int) -> Dictionary:

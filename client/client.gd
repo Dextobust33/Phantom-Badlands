@@ -581,6 +581,13 @@ var _stats_reminder_tween: Tween = null
 @onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
 var shortcut_buttons_container: HBoxContainer = null
 @onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
+const _TravelStance = preload("res://shared/travel_stance.gd")
+## The stance bar under the map. Built in code rather than in the scene so the buttons come from
+## the SAME table the server reads - a hand-placed button per stance in the .tscn would be a
+## second list to keep in step, which is this repo's most common bug shape.
+var _stance_bar: HBoxContainer = null
+var _stance_buttons: Dictionary = {}
+var _travel_stance: String = "wary"
 @onready var map_panel = $RootContainer/TopSection/MapPanel  # v0.9.663 — hidden during combat so the combat scene fills the TopSection width
 # Map Sprites M1 — overlay node holding TextureRect sprites for visible
 # players, attached as a child of map_display so it inherits the map's
@@ -3020,6 +3027,8 @@ func _ready():
 			# back on the url mechanism until this existed.
 			if not map_display.meta_clicked.is_connected(_on_map_meta_clicked):
 				map_display.meta_clicked.connect(_on_map_meta_clicked)
+			# The travel-stance row lives under the map and is built the first time the map is.
+			_ensure_stance_bar()
 			# NO LINK UNDERLINE on the map. RichTextLabel underlines `[url=]` by default, which
 			# was invisible while the only links were dungeon entrances - a 26px image in a 26px
 			# line, with the underline at the baseline beneath it. A figure is drawn at 43px and
@@ -24776,6 +24785,9 @@ func handle_server_message(message: Dictionary):
 			pending_continue = true
 			update_action_bar()
 
+		"travel_stance":
+			_travel_stance = String(message.get("stance", "wary"))
+			_refresh_stance_bar()
 		"character_update":
 			if message.has("character"):
 				var is_full = message.get("full", true)
@@ -32971,6 +32983,91 @@ func update_tool_status_overlay():
 func hide_tool_status_overlay():
 	if tool_status_overlay:
 		tool_status_overlay.visible = false
+
+func _ensure_stance_bar() -> void:
+	"""Build the travel-stance row under the map, once.
+
+	Owner 2026-09-13: *"it would have to be an obvious toggle likely just under their over world
+	map with multiple different colored selections, and explanation for the player."*
+
+	Built from `TravelStance.ORDER` rather than hand-placed in the scene, so the buttons, their
+	colours and their explanations all come from the same table the SERVER reads. A second list
+	in the .tscn would be one more thing to keep in step, and keeping two lists in step is what
+	goes wrong here more than anything else."""
+	if _stance_bar != null and is_instance_valid(_stance_bar):
+		return
+	var panel := map_display.get_parent()
+	if panel == null:
+		return
+	_stance_bar = HBoxContainer.new()
+	_stance_bar.name = "StanceBar"
+	_stance_bar.add_theme_constant_override("separation", 4)
+	_stance_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_child(_stance_bar)
+	# Directly under the map, above the minimap row.
+	panel.move_child(_stance_bar, mini(map_display.get_index() + 1, panel.get_child_count() - 1))
+
+	var title := Label.new()
+	title.text = "Travel:"
+	title.add_theme_font_size_override("font_size", 11)
+	title.add_theme_color_override("font_color", Color(0.6, 0.65, 0.6))
+	_stance_bar.add_child(title)
+
+	for sid in _TravelStance.ORDER:
+		var st: Dictionary = _TravelStance.get_stance(String(sid))
+		var b := Button.new()
+		b.text = String(st.get("name", "?"))
+		b.add_theme_font_size_override("font_size", 11)
+		b.custom_minimum_size = Vector2(0, 22)
+		b.focus_mode = Control.FOCUS_NONE
+		# The explanation the owner asked for, on hover, plus what it costs in plain numbers so a
+		# player can judge the trade rather than guess at it.
+		b.tooltip_text = "%s
+
+Encounters: %s
+Recovery per step and rest: %s%s" % [
+			String(st.get("blurb", "")),
+			_stance_pct(float(st.get("encounter", 1.0))),
+			_stance_pct(float(st.get("regen", 1.0))),
+			("
+Map sight: +%d" % int(st.get("vision", 0))) if int(st.get("vision", 0)) > 0 else ""]
+		b.pressed.connect(_on_stance_pressed.bind(String(sid)))
+		_stance_bar.add_child(b)
+		_stance_buttons[String(sid)] = b
+	_refresh_stance_bar()
+
+
+func _stance_pct(mult: float) -> String:
+	"""A multiplier as something a player can read: 0.18 -> "18% (much rarer)"."""
+	var pct := int(round(mult * 100.0))
+	if pct == 100:
+		return "normal"
+	return "%d%% %s" % [pct, "(more)" if pct > 100 else "(less)"]
+
+
+func _on_stance_pressed(stance_id: String) -> void:
+	if stance_id == _travel_stance:
+		return
+	send_to_server({"type": "set_travel_stance", "stance": stance_id})
+
+
+func _refresh_stance_bar() -> void:
+	"""Colour the buttons: the active one wears its stance colour, the rest stay quiet.
+
+	Colour is not the only signal - the active button is also the only one that is DISABLED, so
+	which stance is live is legible without relying on hue."""
+	for sid in _stance_buttons:
+		var b: Button = _stance_buttons[sid]
+		if not is_instance_valid(b):
+			continue
+		var st: Dictionary = _TravelStance.get_stance(String(sid))
+		var col := Color(String(st.get("color", "#FFFFFF")))
+		var active: bool = String(sid) == _travel_stance
+		b.add_theme_color_override("font_color", col if active else col.darkened(0.55))
+		b.add_theme_color_override("font_disabled_color", col)
+		b.disabled = active
+		b.text = ("▶ " if active else "") + String(st.get("name", "?"))
+
 
 func _area_level_tag(area_lv: int) -> String:
 	"""The `Lv ~N` readout, coloured by the gap between the country and the character.
