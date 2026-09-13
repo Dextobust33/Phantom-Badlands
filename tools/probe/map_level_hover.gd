@@ -48,8 +48,12 @@ func _block_range(ws, cx: int, cy: int, radius: int, span: int, block: int,
 			if cell_x >= span or cell_y >= span:
 				continue
 			# Column runs west->east; row runs NORTH->south, which is the flip worth checking.
-			var t: int = int(ws.get_post_anchored_level(
-				cx - radius + cell_x, cy + radius - cell_y))
+			# ⚑ THE HUD'S OWN SOURCE. This probe originally compared the hover against
+			# `get_post_anchored_level` and claimed that was "the Area readout". It is not - the
+			# HUD reads `get_monster_level_range(...).base_level`, which INCLUDES the hotzone
+			# multiplier. Both sides of the comparison used the same wrong function, so it
+			# passed 5/5 while the hover understated hotzone ground by up to 2.75x.
+			var t: int = ws.danger_level_at(cx - radius + cell_x, cy + radius - cell_y)
 			lo = mini(lo, t)
 			hi = maxi(hi, t)
 	return [lo, hi]
@@ -154,7 +158,7 @@ func _init() -> void:
 			continue
 		# The player is always the centre square of the view.
 		var shown: int = _client_lookup(levels, block, radius, radius)
-		var area: int = int(ws.get_post_anchored_level(cx, cy))
+		var area: int = ws.danger_level_at(cx, cy)
 		tested += 1
 		# EXACT. The grid is offset so the player's block samples the player's tile, so there is
 		# no tolerance to grant here - a difference of one means the alignment is gone.
@@ -164,6 +168,30 @@ func _init() -> void:
 			print("    (%d,%d) hover says %d, Area readout says %d" % [cx, cy, shown, area])
 	ck(tested > 0 and agree == tested,
 		"your own square reads the same as the Area tag in %d/%d places" % [agree, tested])
+
+	print("
+===== AND IT TELLS THE TRUTH INSIDE A HOTZONE =====")
+	# The case that made this necessary. A hotzone multiplies spawns by 1.5-2.5x, and every
+	# surface that warns a player has to carry that or it warns about the wrong world.
+	var hot_checked := 0
+	var hot_wrong := 0
+	var hot_worst := ""
+	for y in range(-140, 141, 2):
+		for x in range(60, 700, 2):
+			if not ws.get_hotspot_at(x, y).get("in_hotspot", false):
+				continue
+			hot_checked += 1
+			var warned: int = ws.danger_level_at(x, y)
+			var spawn_max: int = int(ws.get_monster_level_range(x, y).get("max", 0))
+			# Warned-about level must be within the spawn variance of what actually arrives.
+			if absi(warned - spawn_max) > maxi(2, int(spawn_max * 0.15)):
+				hot_wrong += 1
+				if hot_worst == "":
+					hot_worst = "(%d,%d) warns Lv %d, spawns up to Lv %d" % [x, y, warned, spawn_max]
+	ck(hot_checked > 500, "sampled %d hotzone tiles" % hot_checked)
+	ck(hot_wrong == 0, "every hotzone tile warns about what actually spawns there (%d wrong%s)" % [
+		hot_wrong, "" if hot_worst == "" else " - " + hot_worst])
+
 
 	print("\n===== IT DOES NOT COST A STEP =====")
 	var t0 := Time.get_ticks_usec()

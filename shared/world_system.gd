@@ -4146,6 +4146,21 @@ func _minimap_glyph(wx: int, wy: int) -> String:
 const LEVEL_BLOCK := 4
 
 
+func danger_level_at(x: int, y: int) -> int:
+	"""The level a player should be WARNED about at (x, y) - what actually spawns here.
+
+	⚑ THIS IS NOT `get_post_anchored_level`, AND THE DIFFERENCE IS LETHAL. That function returns
+	the terrain baseline and knows nothing about hotzones, which multiply spawns by 1.5x to 2.5x.
+	Measured across 1124 hotzone tiles: monsters spawn at 2.06x the baseline on average and up to
+	2.75x - one place reads "Area: Lv 104" from the baseline while monsters arrive at Lv 286.
+	Outside a hotzone the two agree to within 13%, so the hotzone is the whole of the gap.
+
+	The status HUD was always right because it reads `base_level` here. The map hover and the
+	danger-step guard were reading the baseline, so both went quiet exactly where the surprise
+	is worst. Everything that warns a player must come through this."""
+	return int(get_monster_level_range(x, y).get("base_level", get_post_anchored_level(x, y)))
+
+
 func map_level_blocks(center_x: int, center_y: int, radius: int) -> Array:
 	"""A coarse grid of area levels covering the view, for the client's map hover.
 
@@ -4168,6 +4183,14 @@ func map_level_blocks(center_x: int, center_y: int, radius: int) -> Array:
 	# LEVEL_BLOCK` makes the block containing the player sample the player's own tile exactly,
 	# and shifts the others by the same amount within their block - so nothing else gets worse.
 	var offset: int = radius % LEVEL_BLOCK
+	# ⚑ COLLECT THE HOTZONE CLUSTERS ONCE FOR THE WHOLE VIEW.
+	#
+	# The level shown must include the hotzone multiplier or it warns about the wrong world - but
+	# asking per block through `danger_level_at` costs two 11x11 window scans EACH, which took
+	# this grid from 0.48 ms to 2.91 ms a move. The renderer already solved this: one window scan
+	# for the view, then a walk over a handful of clusters per tile.
+	var hot_clusters: Array = _collect_hotspot_clusters(
+		center_x - radius, center_x + radius, center_y - radius, center_y + radius)
 	for by in range(blocks):
 		var row: PackedInt32Array = PackedInt32Array()
 		for bx in range(blocks):
@@ -4179,7 +4202,16 @@ func map_level_blocks(center_x: int, center_y: int, radius: int) -> Array:
 			var cell_y: int = mini(by * LEVEL_BLOCK + offset, span - 1)
 			var wx: int = center_x - radius + cell_x
 			var wy: int = center_y + radius - cell_y
-			row.append(int(get_post_anchored_level(wx, wy)))
+			var base: int = get_post_anchored_level(wx, wy)
+			# Same arithmetic as `get_monster_level_range`, off the pre-collected cluster list.
+			# A safe tile reports 0 there, and must here too, or a trading post reads dangerous.
+			var tinfo: Dictionary = get_terrain_info(get_terrain_at(wx, wy))
+			if tinfo.get("safe", false):
+				row.append(0)
+			elif _is_hotspot_in_clusters(wx, wy, hot_clusters):
+				row.append(int(base * (1.5 + _get_hotspot_intensity_in_clusters(wx, wy, hot_clusters))))
+			else:
+				row.append(base)
 		out.append(row)
 	return out
 

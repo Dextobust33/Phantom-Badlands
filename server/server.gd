@@ -43258,7 +43258,9 @@ func _confirm_dangerous_step(peer_id: int, character, nx: int, ny: int) -> bool:
 	if world_system == null:
 		return true
 	var me: int = maxi(1, int(character.level))
-	var there: int = int(world_system.get_post_anchored_level(nx, ny))
+	# `danger_level_at`, never `get_post_anchored_level` - the baseline excludes the hotzone
+	# multiplier, so reading it made this guard silent in the one place the jump is worst.
+	var there: int = world_system.danger_level_at(nx, ny)
 	var band: int = _danger_band(float(there) / float(me))
 	var acked: int = int(_danger_step_ack.get(peer_id, 0))
 	if band <= acked:

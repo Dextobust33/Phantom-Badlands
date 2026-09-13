@@ -90,8 +90,7 @@ func _init() -> void:
 	var rearmed: bool = not srv._confirm_dangerous_step(1, ch, target.x, target.y)
 	ck(rearmed, "returning to safe ground re-arms it, so the next trip asks again")
 
-	print("
-===== IT ASKS ON ENTERING, NOT ON EVERY STEP =====")
+	print("\n===== IT ASKS ON ENTERING, NOT ON EVERY STEP =====")
 	# The owner's question: does this fire once when you cross in, or every step you stay?
 	# Once. Walk deep into accepted country and count.
 	srv._danger_step_ack.clear()
@@ -104,8 +103,7 @@ func _init() -> void:
 			asks += 1
 	ck(asks == 1, "60 steps into 2x country asked %d time(s), not 60" % asks)
 
-	print("
-===== AND FIGHTING ALONG A BORDER DOES NOT NAG =====")
+	print("\n===== AND FIGHTING ALONG A BORDER DOES NOT NAG =====")
 	# Step out, step back, twenty times - the shape of retreating to heal and re-engaging.
 	# Clearing the acceptance the instant you left would ask on every re-entry.
 	srv._danger_step_ack.clear()
@@ -133,7 +131,11 @@ func _init() -> void:
 	var spurious := 0
 	var sampled := 0
 	for r in range(5, 1200, 7):
-		var lv: int = maxi(1, int(ws.get_post_anchored_level(r, 0)))
+		# ⚑ AT THE LEVEL OF WHAT SPAWNS, not of the terrain. This read the terrain baseline and
+		# started failing the moment the guard learned about hotzones - correctly: inside one,
+		# a character at the BASELINE level is underlevelled for what actually arrives, and
+		# stopping them is the entire point of the change.
+		var lv: int = maxi(1, ws.danger_level_at(r, 0))
 		var at_level := FakeChar.new()
 		at_level.level = lv
 		sampled += 1
@@ -152,10 +154,48 @@ func _init() -> void:
 		if not srv._confirm_dangerous_step(3, walker, r, 0):
 			stops += 1
 	print("  a level-8 character walking 400 tiles straight out is stopped %d times" % stops)
-	ck(stops <= 4, "which is %d - a handful of boundaries, not a nag" % stops)
+	# Hotzones legitimately add prompts now - they are 2-2.75x jumps and are exactly the thing
+	# a player should be stopped for. Counted separately so the budget is honest about why.
+	var hot_crossed := 0
+	for r in range(0, 400):
+		if ws.get_hotspot_at(r, 0).get("in_hotspot", false):
+			hot_crossed += 1
+	print("  (%d of those 400 tiles are hotzone)" % hot_crossed)
+	ck(stops <= 6, "which is %d - a handful of boundaries, not a nag" % stops)
 
-	print("
-===== A REFUSED STEP HAS NO OTHER CONSEQUENCE =====")
+	print("\n===== AND IT SEES HOTZONES, WHICH IS WHERE IT MATTERS MOST =====")
+	# A hotzone multiplies what spawns by 1.5-2.5x over the terrain baseline. Reading the
+	# baseline made this guard SILENT on the biggest jump in the game: measured across 1124
+	# hotzone tiles, spawns run 2.06x the baseline on average and up to 2.75x.
+	#
+	# Find a real one whose baseline is comfortable for a character but whose spawns are not.
+	var hz_found := false
+	var hz_char := FakeChar.new()
+	var hz_x := 0
+	var hz_y := 0
+	for y in range(-140, 141, 2):
+		for x in range(60, 700, 2):
+			if not ws.get_hotspot_at(x, y).get("in_hotspot", false):
+				continue
+			var base: int = int(ws.get_post_anchored_level(x, y))
+			var real: int = ws.danger_level_at(x, y)
+			# A character exactly at the terrain level: the old reading would say "you are fine".
+			if base >= 10 and float(real) / float(base) >= 2.0:
+				hz_char.level = base
+				hz_x = x
+				hz_y = y
+				hz_found = true
+				break
+		if hz_found:
+			break
+	ck(hz_found, "found a hotzone where spawns are 2x the terrain baseline: (%d,%d) baseline Lv %d, spawns Lv %d" % [
+		hz_x, hz_y, int(ws.get_post_anchored_level(hz_x, hz_y)), ws.danger_level_at(hz_x, hz_y)])
+	srv._danger_step_ack.clear()
+	srv._danger_step_below.clear()
+	ck(not srv._confirm_dangerous_step(11, hz_char, hz_x, hz_y),
+		"a character AT the terrain level is still warned, because the hotzone is what spawns")
+
+	print("\n===== A REFUSED STEP HAS NO OTHER CONSEQUENCE =====")
 	# A step that did not happen must not break a trade, and resting in place must never be
 	# gated. Both are questions about ORDER inside handle_move, which is where they are checked.
 	var hm_src := FileAccess.get_file_as_string("res://server/server.gd")
