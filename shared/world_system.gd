@@ -1616,15 +1616,26 @@ func check_encounter(x: int, y: int, player_level: int = 0, bypass_level_scaling
 		var tile = chunk_manager.get_tile(x, y)
 		if tile.get("type", "") == "path":
 			rate *= 0.5
-	# v0.9.620 — level-diff scaling. -5% per level above area, floored at 10%.
-	# Player at +5 levels above area: 75% rate. +10: 50%. +18+: 10% (floor).
-	# Keeps SOME encounter pressure in safe zones (10% floor) so over-leveled
-	# players aren't completely insulated; just no longer spammed.
+	# v0.9.620 — level-diff scaling. -5% per level above the area.
+	# Player at +5 levels above area: 75% rate. +10: 50%. +20 and beyond: none.
+	#
+	# ⚑ THE 10% FLOOR IS GONE (2026-09-13). It existed so an over-levelled player was not
+	# "completely insulated" - reasonable when the world was small and a player crossed low
+	# country briefly. The world reshape made journeys much longer (level 100 country moved from
+	# radius 234 to 900), and a tenth of the base rate over a five-hundred-tile walk is a great
+	# many fights worth nothing to anybody.
+	#
+	# Owner 2026-09-13: *"We don't want players to get bombarded by low level meaningless
+	# encounters while they try to get where they're going."* That is a direct override of the
+	# floor's original intent, so the floor goes rather than being tuned around.
+	#
+	# Ground worth fighting is unaffected: this only reaches zero once the player is 20 levels
+	# clear of the country, by which point the encounter had no reward and no risk.
 	if not bypass_level_scaling and player_level > 0 and rate > 0.0:
 		var area_level: int = get_post_anchored_level(x, y)
 		var level_diff: int = player_level - area_level
 		if level_diff > 0:
-			var scale: float = clamp(1.0 - float(level_diff) * 0.05, 0.1, 1.0)
+			var scale: float = clamp(1.0 - float(level_diff) * 0.05, 0.0, 1.0)
 			rate *= scale
 	return randf() < rate
 
