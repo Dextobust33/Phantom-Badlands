@@ -38,6 +38,7 @@ const STANCES := {
 		"encounter": 1.0,
 		"regen": 1.0,
 		"vision": 0,
+		"surprise": 0,
 		"blurb": "Balanced. What you have always done.",
 	},
 	TRAVELLING: {
@@ -46,12 +47,22 @@ const STANCES := {
 		"encounter": 0.18,
 		"regen": 0.35,
 		"vision": 0,
-		"blurb": "Cover ground. Far fewer encounters, but you recover much less as you walk and rest.",
+		# THE REAL COST, and it replaces one that did not bite. The regen penalty was measured
+		# (tools/probe/stance_feel.gd) and found nearly free: an empty bar refills in 57 steps
+		# against a 500-step journey, so "you arrive tired" was not true - you arrived full.
+		# Moving instead of watching means the fights you DO get start badly, which costs you
+		# exactly when you are already in trouble.
+		"surprise": 18,
+		"blurb": "Cover ground. Far fewer encounters - but you are moving, not watching, so what does find you often strikes first.",
 	},
 	HUNTING: {
 		"name": "Hunting",
 		"color": "#FF6644",
 		"encounter": 2.2,
+		# You are the one hunting, so you get the drop more often. This is Hunting's benefit
+		# beyond sheer volume - without it the stance only suited a player who wanted more
+		# fights for their own sake.
+		"surprise": -8,
 		# Hunting COSTS something too. Without this it gave up only safety, which a player who
 		# wants fights is not giving up at all - so it was a free switch rather than a choice.
 		# Caught by `tools/probe/travel_stances.gd`, which asserts no stance is strictly better
@@ -66,6 +77,7 @@ const STANCES := {
 		"encounter": 0.75,
 		"regen": 0.7,
 		"vision": 2,
+		"surprise": -4,
 		"blurb": "See further across the map. Slightly fewer encounters, slower recovery.",
 	},
 }
@@ -94,6 +106,11 @@ static func regen_mult(id: String) -> float:
 
 static func vision_bonus(id: String) -> int:
 	return int(get_stance(id).get("vision", 0))
+
+
+static func surprise_bonus(id: String) -> int:
+	"""Added to the monster's chance of acting first. Positive means you are caught out."""
+	return int(get_stance(id).get("surprise", 0))
 
 
 static func display(id: String) -> String:

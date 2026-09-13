@@ -37,6 +37,10 @@ enum CombatAction {
 # Ability lookup for parsing commands
 const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish", "frost_nova", "overload"]
 const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate", "fortify", "rally"]
+## Travel stance affects initiative - see the note at `monster_initiative_chance`. Preloaded
+## rather than using the global class name so this does not depend on an editor rescan.
+const _TravelStance = preload("res://shared/travel_stance.gd")
+
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit", "shadowstep"]
 const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
 
@@ -2028,7 +2032,15 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var monster_initiative_chance = int(base_initiative - dex_penalty)
 	if ambusher_active:
 		monster_initiative_chance += 8
-	monster_initiative_chance = clampi(monster_initiative_chance, 5, 55)
+	# THE TRAVEL STANCE. Moving fast means you are not watching the ground, so what finds you is
+	# more likely to strike first; hunting means you are the one doing the finding.
+	#
+	# This is Travelling's real cost. The regen penalty it shipped with was measured and found
+	# nearly free - an empty bar refills in 57 steps against a 500-step journey - so the stance
+	# was close to dominant. A cost that lands INSIDE the fights you did not avoid is one a
+	# player feels, and under permadeath it is a genuine decision rather than a tax.
+	monster_initiative_chance += _TravelStance.surprise_bonus(String(character.travel_stance))
+	monster_initiative_chance = clampi(monster_initiative_chance, 5, 75)
 
 	var init_roll = randi() % 100
 	var monster_goes_first = monster_initiative_chance > 0 and init_roll < monster_initiative_chance

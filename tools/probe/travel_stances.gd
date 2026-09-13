@@ -46,6 +46,27 @@ func _init() -> void:
 	ck(TS.vision_bonus(TS.SCOUTING) > 0, "Scouting sees further")
 	ck(TS.encounter_mult(TS.WARY) == 1.0 and TS.regen_mult(TS.WARY) == 1.0,
 		"Wary is exactly today's behaviour, so it is a fair baseline")
+	print("")
+	print("--- the cost that actually bites ---")
+	# The regen penalty was measured and found nearly free: an empty bar refills in 57 steps
+	# against a 500-step journey, so "you arrive tired" was not true. Travelling pays in the
+	# fights it does NOT avoid instead - a cost inside the thing you were dodging.
+	ck(TS.surprise_bonus(TS.TRAVELLING) > 10,
+		"Travelling is caught out more often (+%d to the monster acting first)" % TS.surprise_bonus(TS.TRAVELLING))
+	ck(TS.surprise_bonus(TS.HUNTING) < 0,
+		"Hunting gets the drop (%d)" % TS.surprise_bonus(TS.HUNTING))
+	ck(TS.surprise_bonus(TS.WARY) == 0, "Wary is neutral here too, so the baseline stays honest")
+	var cm := FileAccess.get_file_as_string("res://shared/combat_manager.gd")
+	ck(cm.find("_TravelStance.surprise_bonus(String(character.travel_stance))") >= 0,
+		"...and initiative actually reads it, rather than the table carrying a dead number")
+	print("")
+	print("--- every stance's promise is KEPT, not just written ---")
+	# The failure this catches: `vision_bonus` was exported and never called, so Scouting's
+	# headline benefit did nothing. A button that lies is worse than a button that is missing.
+	var srv2 := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(srv2.find("TravelStanceScript.vision_bonus(String(character.travel_stance))") >= 0,
+		"Scouting's extra sight is applied to the vision radius")
+
 
 	print("\n--- an unknown stance cannot strand a character ---")
 	# A bad save, an older client, a hand-edited message.

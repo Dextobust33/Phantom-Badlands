@@ -8043,6 +8043,15 @@ func send_location_update(peer_id: int):
 	if not character.blind_active and weather_vision_mod < 0:
 		# Floor of 3 keeps the player from being effectively blinded by fog.
 		vision_radius = max(3, vision_radius + weather_vision_mod)
+	# SCOUTING sees further. Applied after weather and not while blinded: a stance should widen
+	# the view you HAVE, not cancel a status effect or a storm.
+	#
+	# This line is the whole of Scouting's headline benefit, and it did not exist when the stance
+	# shipped - `vision_bonus` was written, exported and never called, so the button promised
+	# something the game did not do. Caught by asking "does each stance actually do what it
+	# says", which is the check worth running on any new table of numbers.
+	if not character.blind_active:
+		vision_radius += TravelStanceScript.vision_bonus(String(character.travel_stance))
 
 	# Get nearby players for map display (within map radius)
 	var nearby_players = get_nearby_players(peer_id, vision_radius)

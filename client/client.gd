@@ -33022,15 +33022,24 @@ func _ensure_stance_bar() -> void:
 		b.focus_mode = Control.FOCUS_NONE
 		# The explanation the owner asked for, on hover, plus what it costs in plain numbers so a
 		# player can judge the trade rather than guess at it.
+		var _surp: int = int(st.get("surprise", 0))
+		var _surp_line := ""
+		if _surp > 0:
+			_surp_line = "
+Caught out: %d%% more often" % _surp
+		elif _surp < 0:
+			_surp_line = "
+You strike first: %d%% more often" % -_surp
 		b.tooltip_text = "%s
 
 Encounters: %s
-Recovery per step and rest: %s%s" % [
+Recovery per step and rest: %s%s%s" % [
 			String(st.get("blurb", "")),
 			_stance_pct(float(st.get("encounter", 1.0))),
 			_stance_pct(float(st.get("regen", 1.0))),
 			("
-Map sight: +%d" % int(st.get("vision", 0))) if int(st.get("vision", 0)) > 0 else ""]
+Map sight: +%d" % int(st.get("vision", 0))) if int(st.get("vision", 0)) > 0 else "",
+			_surp_line]
 		b.pressed.connect(_on_stance_pressed.bind(String(sid)))
 		_stance_bar.add_child(b)
 		_stance_buttons[String(sid)] = b
