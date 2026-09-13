@@ -459,6 +459,65 @@ const NPC_POSTS_FILE = "user://data/npc_posts.json"
 
 var npc_posts: Array = []  # Array of {x, y, name, category, size, ...}
 
+## SPATIAL INDEX for `get_npc_post_at`, the hottest function on the server.
+##
+## Measured 2026-09-13, chasing "There is a delay to our actions intermittently": one player step
+## cost 28 ms, `_map_cells` was 25 ms of it, and inside that `is_safe_zone` measured 41.6 ms per
+## 529 cells with `_cell_biome` at 19.9 ms - while the DATA those cells need (`get_tile`,
+## `get_biome_at`) came to 1.9 ms together. The cost was never the terrain. Both funnel into
+## `get_npc_post_at`, which walked all 60 posts and every wing room: ~240 box tests a call,
+## several hundred calls a step.
+##
+## This is the SAME shape that made the minimap expensive. That was fixed in v0.9.776 at one
+## CALLER; this is the source, so `is_safe_zone`, `_cell_biome`, the minimap and every other
+## "is this tile in a post" ask get it at once. Fixing a caller and leaving the function is
+## exactly how this survived a performance pass.
+##
+## Rooms are filed by bucket and a lookup tests only its own bucket. Rebuilt lazily whenever
+## `npc_posts` is replaced - there are only two assignment sites and both invalidate.
+const POST_INDEX_BUCKET := 64
+var _post_index: Dictionary = {}
+var _post_index_built: bool = false
+
+
+func _invalidate_post_index() -> void:
+	_post_index.clear()
+	_post_index_built = false
+
+
+func _file_post_room(post: Dictionary, x0: int, y0: int, x1: int, y1: int) -> void:
+	"""File one room into every bucket its box touches, padded by the same 1 tile the lookup
+	allows for walls so a wall tile lands in the same bucket as its room."""
+	var bx0: int = floori(float(x0 - 1) / float(POST_INDEX_BUCKET))
+	var bx1: int = floori(float(x1 + 1) / float(POST_INDEX_BUCKET))
+	var by0: int = floori(float(y0 - 1) / float(POST_INDEX_BUCKET))
+	var by1: int = floori(float(y1 + 1) / float(POST_INDEX_BUCKET))
+	for bx in range(bx0, bx1 + 1):
+		for by in range(by0, by1 + 1):
+			var key := "%d,%d" % [bx, by]
+			if not _post_index.has(key):
+				_post_index[key] = []
+			_post_index[key].append({"post": post, "x0": x0, "y0": y0, "x1": x1, "y1": y1})
+
+
+func _build_post_index() -> void:
+	_post_index.clear()
+	for post in npc_posts:
+		var main_room = post.get("main_room", {})
+		if not main_room.is_empty():
+			_file_post_room(post, int(main_room["x0"]), int(main_room["y0"]), int(main_room["x1"]), int(main_room["y1"]))
+			for wing in post.get("wing_rooms", []):
+				_file_post_room(post, int(wing["x0"]), int(wing["y0"]), int(wing["x1"]), int(wing["y1"]))
+		else:
+			# Legacy size-based fallback, indexed as the same box the old scan tested.
+			var px := int(post.get("x", 0))
+			var py := int(post.get("y", 0))
+			var half := int(post.get("size", 15)) / 2
+			_file_post_room(post, px - half, py - half, px + half, py + half)
+	_post_index_built = true
+
+
+
 func load_npc_posts() -> Array:
 	"""Load NPC posts from disk. Returns empty array if none exist (first run)."""
 	if FileAccess.file_exists(NPC_POSTS_FILE):
@@ -470,15 +529,18 @@ func load_npc_posts() -> Array:
 			var error = json.parse(content)
 			if error == OK and json.data is Dictionary:
 				npc_posts = json.data.get("posts", [])
+				_invalidate_post_index()
 				print("Loaded %d NPC posts" % npc_posts.size())
 				return npc_posts
 
 	npc_posts = []
+	_invalidate_post_index()
 	return npc_posts
 
 func save_npc_posts(posts: Array) -> void:
 	"""Save NPC posts to disk."""
 	npc_posts = posts
+	_invalidate_post_index()
 	_ensure_world_directory()
 	var file = FileAccess.open(NPC_POSTS_FILE, FileAccess.WRITE)
 	if file:
@@ -556,28 +618,24 @@ func get_nearest_npc_post_with_tier(world_x: int, world_y: int) -> Dictionary:
 
 func get_npc_post_at(world_x: int, world_y: int) -> Dictionary:
 	"""Get NPC post data if the tile is inside any room of the post.
-	Uses per-room checks (main room + each wing) rather than the compound bounding box,
-	which over-approximates compound shapes and falsely includes inter-room gaps."""
-	for post in npc_posts:
-		var main_room = post.get("main_room", {})
-		if not main_room.is_empty():
-			# Check main room (floor area ± 1 tile for walls)
-			if world_x >= int(main_room["x0"]) - 1 and world_x <= int(main_room["x1"]) + 1 \
-					and world_y >= int(main_room["y0"]) - 1 and world_y <= int(main_room["y1"]) + 1:
-				return post
-			# Check each wing room independently
-			for wing in post.get("wing_rooms", []):
-				if world_x >= int(wing["x0"]) - 1 and world_x <= int(wing["x1"]) + 1 \
-						and world_y >= int(wing["y0"]) - 1 and world_y <= int(wing["y1"]) + 1:
-					return post
-		else:
-			# Legacy size-based fallback (old posts without main_room data)
-			var px = int(post.get("x", 0))
-			var py = int(post.get("y", 0))
-			var half_size = int(post.get("size", 15)) / 2
-			if abs(world_x - px) <= half_size and abs(world_y - py) <= half_size:
-				return post
+
+	Per-ROOM checks (main room + each wing) rather than the compound bounding box, which
+	over-approximates compound shapes and falsely includes inter-room gaps. That ANSWER is
+	unchanged; what changed is how many rooms get asked.
+
+	Reads `_post_index` - see the note on it. This used to walk every post in the world on every
+	call, and `is_safe_zone` and `_cell_biome` call it several hundred times per player step,
+	which made it the single most expensive thing the server did."""
+	if not _post_index_built:
+		_build_post_index()
+	var key := "%d,%d" % [
+		floori(float(world_x) / float(POST_INDEX_BUCKET)),
+		floori(float(world_y) / float(POST_INDEX_BUCKET))]
+	for room in _post_index.get(key, []):
+		if world_x >= int(room["x0"]) - 1 and world_x <= int(room["x1"]) + 1 and world_y >= int(room["y0"]) - 1 and world_y <= int(room["y1"]) + 1:
+			return room["post"]
 	return {}
+
 
 func is_npc_post_tile(world_x: int, world_y: int) -> bool:
 	"""Check if a tile is inside any NPC post."""

@@ -315,6 +315,12 @@ const DUNGEON_WANDER_SPAWN_CAP = 4      # max EXTRA monsters beyond the floor's 
 const DUNGEON_VIEW_W = 25               # keep in step with client _render_dungeon_grid view_w
 const DUNGEON_VIEW_H = 11               # keep in step with client _render_dungeon_grid view_h
 const DUNGEON_WANDER_SPAWN_MARGIN = 2   # extra tiles beyond the view edge
+## How close to a post counts as "on its doorstep", and how many dungeons may sit there.
+## Measured 2026-09-13: 100% of the world's H-grade land is within 40 tiles of a post, so without
+## a cap every low-grade dungeon stacks onto the same few addresses.
+const POST_DUNGEON_RADIUS: int = 40
+const MAX_DUNGEONS_NEAR_POST: int = 6
+
 const MIN_WORLD_DUNGEONS = 3000  # about one per 100 tiles walked, everywhere
 const MAX_WORLD_DUNGEONS = 3300  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
@@ -30927,6 +30933,53 @@ func _drop_personal_dungeons(username: String, peer_id: int, why: String) -> int
 	return gone.size()
 
 
+func _cull_crowded_posts() -> int:
+	"""Despawn world dungeons stacked on a post beyond `MAX_DUNGEONS_NEAR_POST`.
+
+	The spawn-time cap stops this happening again; this undoes what already happened. A live
+	world reached 3,300 dungeons under a placement rule that gives low-grade dungeons essentially
+	one legal address each - a post's doorstep - and the owner found the starter post ringed with
+	them.
+
+	What it will NOT remove: a dungeon anybody is standing in, one that somebody owns, or one
+	already completed and waiting to despawn on its own. Furthest from the post goes first, so
+	the ring thins from the outside and a post keeps the few nearest it rather than a random
+	scatter."""
+	if chunk_manager == null:
+		return 0
+	var removed := 0
+	for post in chunk_manager.npc_posts:
+		var px: int = int(post.get("x", 0))
+		var py: int = int(post.get("y", 0))
+		var here: Array = []
+		for iid in _dungeons_near(px, py, POST_DUNGEON_RADIUS):
+			if not active_dungeons.has(iid):
+				continue
+			var inst = active_dungeons[iid]
+			if inst.has("owner_peer_id"):
+				continue
+			if not (inst.get("active_players", []) as Array).is_empty():
+				continue
+			if int(inst.get("completed_at", 0)) > 0:
+				continue
+			var dx: int = int(inst.get("world_x", 0)) - px
+			var dy: int = int(inst.get("world_y", 0)) - py
+			var d2: int = dx * dx + dy * dy
+			if d2 <= POST_DUNGEON_RADIUS * POST_DUNGEON_RADIUS:
+				here.append({"id": iid, "d2": d2})
+		if here.size() <= MAX_DUNGEONS_NEAR_POST:
+			continue
+		here.sort_custom(func(a, b): return int(a["d2"]) > int(b["d2"]))
+		var excess: int = here.size() - MAX_DUNGEONS_NEAR_POST
+		for i in range(excess):
+			_erase_dungeon_instance(String(here[i]["id"]))
+			removed += 1
+	if removed > 0:
+		log_message("Culled %d dungeon(s) crowding posts (cap %d within %d tiles)" % [
+			removed, MAX_DUNGEONS_NEAR_POST, POST_DUNGEON_RADIUS])
+	return removed
+
+
 func _sweep_personal_dungeons() -> void:
 	"""End the reconnect grace, and cap the age.
 
@@ -31099,6 +31152,11 @@ func _check_dungeon_spawns():
 	# The personal ones get their own sweep - they are not in the loop above, which skips
 	# anything with an owner.
 	_sweep_personal_dungeons()
+
+	# ...and the doorsteps get cleared. The spawn-time cap only governs NEW dungeons, so without
+	# this a world that already piled them onto its posts stays piled until they despawn one by
+	# one. See `_cull_crowded_posts`.
+	world_dungeon_count -= _cull_crowded_posts()
 
 	# v0.9.377 — enqueue spawns instead of running them all in this frame.
 	# _process drains one queue entry per frame so the burst that used to
@@ -31360,6 +31418,51 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		if trading_post_db.is_trading_post_tile(world_x, world_y) \
 				or world_system.is_safe_zone(world_x, world_y) \
 				or _dungeon_tile_index.has("%d,%d" % [world_x, world_y]):
+			continue
+
+		# ⚑ A POST MAY ONLY HAVE SO MANY DUNGEONS ON ITS DOORSTEP, WHATEVER THEIR GRADE.
+		#
+		# Owner 2026-09-13: "posts being overwhelmed with an enormous amount of dungeons spilling
+		# out monsters. The starter post alone is overwhelmed."
+		#
+		# Measured (tools/probe/dungeon_spread.gd): the world is 0.0% H-grade country and 0.1% G,
+		# against 44.8% A and 16.6% S - and ONE HUNDRED PERCENT of the H-grade land in the world
+		# lies within 40 tiles of a post, because posts pull the level down around them. A
+		# low-grade dungeon must stand in low-grade country to BE graded low, so it has
+		# essentially one legal address on the whole map: a post's doorstep. The Crossroads
+		# sampled H:349 G:92 inside 40 tiles.
+		#
+		# The v0.9.598 threat gate below would have caught this except that it deliberately
+		# exempts tier 1 ("T1 dungeons don't count as threats"), and tier 1 is exactly what the
+		# land forces onto posts. Threat and COUNT are different problems: a dozen harmless H
+		# dungeons ringing the starter post is still a wall of D markers where a new player
+		# begins. This caps the COUNT at every grade, and reads the dungeon index so it costs a
+		# bucket lookup rather than a scan.
+		var _too_crowded := false
+		for _post in chunk_manager.npc_posts:
+			var _px: int = int(_post.get("x", 0))
+			var _py: int = int(_post.get("y", 0))
+			var _ddx: int = _px - int(world_x)
+			var _ddy: int = _py - int(world_y)
+			if _ddx * _ddx + _ddy * _ddy > POST_DUNGEON_RADIUS * POST_DUNGEON_RADIUS:
+				continue
+			var _here := 0
+			for _iid in _dungeons_near(_px, _py, POST_DUNGEON_RADIUS):
+				if not active_dungeons.has(_iid):
+					continue
+				var _inst = active_dungeons[_iid]
+				if _inst.has("owner_peer_id"):
+					continue
+				var _idx: int = int(_inst.get("world_x", 0)) - _px
+				var _idy: int = int(_inst.get("world_y", 0)) - _py
+				if _idx * _idx + _idy * _idy <= POST_DUNGEON_RADIUS * POST_DUNGEON_RADIUS:
+					_here += 1
+					if _here >= MAX_DUNGEONS_NEAR_POST:
+						break
+			if _here >= MAX_DUNGEONS_NEAR_POST:
+				_too_crowded = true
+				break
+		if _too_crowded:
 			continue
 
 		# v0.9.598 — for T2+ spawn candidates, check every post within the
