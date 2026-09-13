@@ -161,46 +161,47 @@ All of this came out of the distribution work. Recorded before starting any of i
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-12, after v0.9.779)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
-**v0.9.779 IS LIVE.** Server deployed and verified by hashing the RUNNING process (`4364258b…`,
-identical); seven assets on the tag; Windows gate passed at 0.9.779, Linux gave its documented
-SKIP. The calibration chain is COMPLETE and current for the first time since the 773 arc.
+**v0.9.781 IS LIVE.** Server deployed and verified by hashing the RUNNING process (`3d204cf9...`),
+seven assets on the tag, Windows gate passed, no script errors. v0.9.780 shipped earlier the same
+day (the dungeon grade lie, the world reshape, the lag, the one-time relocation).
 
-### What shipped, and what it leaves open
+### The two things left from the owner's 2026-09-13 list
 
-- **Resource costs doubled past the early game.** The cost table documents a band of 6-10 casts
-  per full bar and was delivering 20.5 at L20, 16.3 at L100, 14.5 at L1000; across 630 fights not
-  one turn fell back to a basic attack. Early game untouched by construction (the flat ceiling
-  still wins for 9 of 9 classes at L1).
-- **The whole chain re-run** — speciescal, refcal, rolecal — 21 of 21 role rows on target, none
-  saturated, each layer moving only its own quantity.
-- **Room floor pool 7 packs -> 9.**
+1. **HOTZONES — revamp or replace. NOT STARTED, and it wants a conversation first.** Owner:
+   *"hotzones don't serve much of a purpose anymore."* They were built when danger was uniform by
+   distance; REGIONAL MENACE now does a lot of what they were for (dangerous country in
+   unexpected places). The question to answer before writing code: what were they for, what does
+   menace now cover, and what gap actually remains?
+2. **GATHERABLE ART — audited, replacements NOT chosen.** Four pieces fail and they share one
+   cause: `tree`, `bush`, `dense_brush`, `reed` and `mountain_herb` are all cut from
+   `green_forest_v2`, so they are all the same green. tree vs bush is the worst - different JOBS,
+   near-identical art. An automated search was tried and abandoned (alpha cannot tell a herb from
+   a terrain edge); this wants `tools/tileset_contact_sheet.py <pack> --rows a-b` and an eye.
 
-**STILL OPEN, and both are owner judgement rather than measurement:**
-1. **Resources bite but do not run DRY** — no class is ever forced to a basic attack. Is a
-   quarter-bar at the end of a long fight far enough? Feel it in play.
-2. **Engine cycles sit at ~1.75 at high level against a target of 2**, and ~1.0 at L20. Cost does
-   not touch engine build RATE, so this needs a different lever (engine gain, or `ROLE_TARGETS`).
-   Another player-side change = another full chain. **Do not start it without deciding it is
-   worth ~2 hours.**
-3. **Death rate read 1.7% at L2500 and L5000** against a ~0.3% design target, 0.0% everywhere
-   else. Two deaths at that sample size, so not yet a signal - but the chain steers by WIN rate
-   and is structurally blind to deaths, so this is the column to watch in play.
+### Owed measurements, recorded rather than assumed away
 
-### ⚑ THE RULE THAT SAVED THE MOST TIME THIS SESSION
+- **GATHERING ECONOMY.** Gatherable coverage fell ~5x (30% -> 6.1%) when nodes became patches.
+  Yield per tile WALKED falls with it. That is the intent, but the gathering JOBS have not been
+  re-checked against it and may now be slow to level.
+- **DEATH RATE at L2500/L5000** read 1.7% against a ~0.3% design target in the last refcal, 0.0%
+  elsewhere. Two deaths at that sample size, so not yet a signal - but the chain steers by WIN
+  rate and is structurally blind to deaths. Watch it in play.
 
-Owner: *"Ensure you're checking before building each item to ensure we aren't recreating things
-already done."* Counting the backlog found **five** items already shipped or already decided —
-the minimap cost (v0.9.776), map hover/click (v0.9.778), three hover-tooltip faults (v0.9.773),
-the directional wall rim (built AND chosen on screen from three rendered candidates), and a
-"tilemap_pack is unused" note that was simply wrong. **Run the probe, call the function, check
-the changelog — and only then trust the entry.** See [[feedback_verify_before_building]].
+### The lesson this session kept re-teaching
 
-### Count
+**A passing number is not a working feature.** Four separate times the assertions were green and
+the thing was wrong, and only a PICTURE or an execution showed it:
+- rivers scored "127 bodies, mostly small" while drawing a honeycomb of closed canals that would
+  have cut the map into compartments;
+- gatherable clustering "passed" because rivers were being counted as enormous stands;
+- Scouting's vision bonus was written, exported and never called;
+- the world had been striped along `7x + 13y` for its whole life, invisible until scatter thinned.
 
-**46 open, 7 partial, 96 done** (2026-09-12, after v0.9.779). Largest arcs: the dungeon arc (14),
-combat UX debt (6), later/unscheduled (5), dungeon rooms (4).
+Render it, execute it, and make the control differ in ONE thing. See
+[[feedback_indentation_is_invisible_to_a_source_probe]] and
+[[feedback_verify_before_building]].
 
 ## v0.9.779 SHIPPED (2026-09-12) -- the resource economy, and the curve re-measured behind it
 
