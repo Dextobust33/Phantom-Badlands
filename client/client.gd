@@ -5967,6 +5967,39 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "move", "direction": "east"})
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("world")
+			"dangerstep":
+				# ⚑ THE SAFETY GUARD, SEEN. Owner 2026-09-13 asked that players not be
+				# blindsided by high-level country. It is a refusal the player has to read,
+				# so the only verification that means anything is looking at the frame -
+				# a probe passed on the invisible player sprite twice while it drew nothing.
+				#
+				# Stage it exactly: a level-20 character standing one step short of ground
+				# that runs twice their level, then walk into it.
+				send_to_server({"type": "gm_setlevel", "level": 20})
+				await get_tree().create_timer(1.0).timeout
+				# (296,-30) is Lv 39 - 1.95x a level-20 character, just UNDER the guard - and
+				# one step east is (297,-30) at Lv 40, exactly 2.00x, so the step genuinely
+				# CROSSES the boundary rather than starting past it.
+				#
+				# Both tiles are walkable LAND, and that is the point: the first staging put the
+				# character on a coast, the step east bumped into water, and the frame showed
+				# "Fished: 1x Medium Fish" and no warning at all. The guard was right - nothing
+				# moved - but the shot proved nothing. Picked by searching the real world for a
+				# crossing where `move_player` actually lands you on the far tile.
+				send_to_server({"type": "gm_teleport", "x": 296, "y": -30})
+				await get_tree().create_timer(1.5).timeout
+				await _dev_shot_capture("dangerstep_before")
+				# 6 is numpad EAST. `send_move` sends an INT; the string the neighbouring
+				# `world` scene passes matches nothing in `move_player` and never moved at all.
+				send_to_server({"type": "move", "direction": 6})
+				await get_tree().create_timer(1.5).timeout
+				await _dev_shot_capture("dangerstep_warned")
+				# And the map hover: the other half of the same ask. Driven directly because
+				# a scripted mouse cannot be aimed at a composed image reliably.
+				_show_overworld_level_hover("18,6")
+				await get_tree().create_timer(0.8).timeout
+				await _dev_shot_capture("dangerstep_hover")
+
 			"companions":
 				await _dev_shot_grant_companions()
 				display_companions()
@@ -25054,6 +25087,27 @@ func handle_server_message(message: Dictionary):
 				char_create_status.text = "[color=#FF0000]%s[/color]" % error_msg
 			if char_select_status and char_select_panel.visible:
 				char_select_status.text = "[color=#FF0000]%s[/color]" % error_msg
+
+		"danger_step_warning":
+			# ⚑ THE STEP WAS REFUSED, and the player has to read why before pressing again.
+			#
+			# Not an "error": the player did nothing wrong, and framing it that way teaches them
+			# to dismiss it. Not a modal either - a modal on a movement key is how you get people
+			# mashing through the confirmation they were meant to read.
+			#
+			# Owner 2026-09-13: *"we need to make sure players aren't blindsided by high level
+			# areas."* Under permadeath this is the last thing between a player and a walk they
+			# do not come back from, so it is drawn as a block rather than a line.
+			# The rule above and below is what makes this read as a STOP rather than another
+			# line of chatter scrolling past. The message already names the level and how far
+			# above you it is - an `_area_level_tag` was drawn under it at first and just
+			# repeated "Lv ~40" beneath a sentence that had already said Lv 40.
+			var rule := "[color=#FF2A2A]%s[/color]" % "─".repeat(46)
+			display_game("
+%s
+%s
+%s
+" % [rule, String(message.get("message", "")), rule])
 
 		"status_effect":
 			# Handle status effect messages (poison tick on movement, buff expiration, etc.)

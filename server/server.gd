@@ -5342,10 +5342,6 @@ func handle_move(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot move while gathering!"})
 		return
 
-	# Cancel any active trade (moving breaks trade)
-	if active_trades.has(peer_id):
-		_cancel_trade(peer_id, "Trade cancelled - you moved away.")
-
 	var direction = message.get("direction", 5)
 	var character = characters[peer_id]
 
@@ -5353,8 +5349,31 @@ func handle_move(peer_id: int, message: Dictionary):
 	var old_x = character.x
 	var old_y = character.y
 
-	# Calculate new position
+	# Calculate new position. `move_player` is pure - it reads terrain and returns where you
+	# would land - so it is safe to ask before anything is committed or cancelled.
 	var new_pos = world_system.move_player(old_x, old_y, direction)
+
+	# ⚑ DO NOT WALK BLIND INTO COUNTRY THAT WILL KILL YOU.
+	#
+	# Owner 2026-09-13: *"now that roads are safe and areas level moves around a bit we need to
+	# make sure players aren't blindsided by high level areas. We should either warn players
+	# before they enter a level much higher level than them or make it where players can hover an
+	# area of the map to see the area level."* Both were asked for; hovering is the tool for
+	# players who look, and this is the guard for players who do not.
+	#
+	# It is a consequence of two things shipped the same day: regional menace deliberately broke
+	# "further from the origin is worse", so position no longer predicts danger, and safe roads
+	# invite crossing ground nobody scouted. Under permadeath the cost of finding out by walking
+	# is the character.
+	#
+	# THIS SITS ABOVE THE TRADE CANCEL ON PURPOSE. A refused step is a step that did not happen,
+	# so it must not break a trade, cancel anything, or have any other consequence.
+	if new_pos != Vector2i(old_x, old_y) and not _confirm_dangerous_step(peer_id, character, new_pos.x, new_pos.y):
+		return
+
+	# Cancel any active trade (moving breaks trade)
+	if active_trades.has(peer_id):
+		_cancel_trade(peer_id, "Trade cancelled - you moved away.")
 
 	# If blocked and not resting (direction 5), check what we bumped into
 	if new_pos.x == old_x and new_pos.y == old_y and direction != 5:
@@ -8832,6 +8851,9 @@ func handle_disconnect(peer_id: int):
 	# so a reconnect starts fresh (and re-receives the transition warning
 	# next time they walk into the zone).
 	_pvp_zone_last_state.erase(peer_id)
+	# Same reason, for the high-level-country step guard: a reconnecting player must be asked
+	# again rather than inherit a confirmation the previous session gave.
+	_clear_danger_ack(peer_id)
 	# Slice B.2 (v0.9.563) — disconnecting player forfeits any active PvP combat.
 	_cleanup_pvp_combats_for_peer(peer_id)
 
@@ -43193,3 +43215,69 @@ func _merchant_scatter_uniques(circuit_key: String, market_key: String, this_lis
 			persistence.add_market_listing(_market_key_for_post(best_key), removed)
 			here_cnt -= 1
 			log_message("Merchant scattered %s '%s' from %s to %s" % [sc, String(removed.get("item", {}).get("name", "?")), circuit_key, best_key])
+
+
+## How far above your own level the ground has to be before stepping onto it asks first.
+## 2.0 is the ratio the Area readout already calls "far above you", so the guard fires exactly
+## where the colour the player is looking at turns red - one scale, not two.
+const DANGER_STEP_RATIO := 2.0
+## Confirmations are remembered per player: `peer_id -> the ratio band already accepted`.
+## Without this a jagged border would ask on every other step.
+var _danger_step_ack: Dictionary = {}
+
+
+func _danger_band(ratio: float) -> int:
+	"""Which warning band a ratio falls in. Bands rather than a raw number so that walking deeper
+	into country you already accepted stays silent until it gets meaningfully worse."""
+	if ratio >= 4.0:
+		return 3
+	if ratio >= 3.0:
+		return 2
+	if ratio >= DANGER_STEP_RATIO:
+		return 1
+	return 0
+
+
+func _confirm_dangerous_step(peer_id: int, character, nx: int, ny: int) -> bool:
+	"""Whether this step may proceed. Refuses the FIRST step into much harder country and lets the
+	same step through when it is repeated.
+
+	WHY A REFUSAL RATHER THAN A MESSAGE. A warning printed as the player walks in arrives at the
+	same time as the thing it warns about, and the map redraw that follows a step is exactly what
+	wipes text off the screen. Costing one keypress, only at a boundary, only when the ground is
+	at least twice your level, is the smallest thing that actually stops the walk.
+
+	It can never strand anybody: the block is one step, the same input immediately after goes
+	through, and stepping back toward safer ground is never gated."""
+	if world_system == null:
+		return true
+	var me: int = maxi(1, int(character.level))
+	var there: int = int(world_system.get_post_anchored_level(nx, ny))
+	var band: int = _danger_band(float(there) / float(me))
+	var acked: int = int(_danger_step_ack.get(peer_id, 0))
+	if band <= acked:
+		# Already accepted this much danger - including walking back down into safer ground,
+		# which must never ask.
+		if band < acked:
+			_danger_step_ack[peer_id] = band
+		return true
+	_danger_step_ack[peer_id] = band
+	var how := "far above you"
+	if band == 2:
+		how = "[b]three times your level[/b]"
+	elif band == 3:
+		how = "[b]four times your level or worse[/b]"
+	send_to_peer(peer_id, {
+		"type": "danger_step_warning",
+		"area_level": there,
+		"your_level": me,
+		"band": band,
+		"message": "[color=#FF2A2A][b]Wait.[/b][/color] The ground ahead runs about [b]Lv %d[/b] - %s (you are %d).\nStep again to go anyway." % [there, how, me],
+	})
+	return false
+
+
+func _clear_danger_ack(peer_id: int) -> void:
+	"""Forget a player's accepted danger band. Called when they leave, so a new character on the
+	same peer does not inherit a confirmation somebody else gave."""
+	_danger_step_ack.erase(peer_id)

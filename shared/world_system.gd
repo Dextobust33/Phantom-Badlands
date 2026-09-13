@@ -4156,13 +4156,29 @@ func map_level_blocks(center_x: int, center_y: int, radius: int) -> Array:
 	var out: Array = []
 	var span: int = radius * 2 + 1
 	var blocks: int = int(ceil(float(span) / float(LEVEL_BLOCK)))
+	# ⚑ ALIGNED TO THE PLAYER, not to the block's own middle.
+	#
+	# Sampling each block's midpoint reads well but produced a readout that disagreed with the
+	# `Area: Lv ~N` tag when you hovered THE SQUARE YOU ARE STANDING ON - measured 5874 against
+	# 5856 at one spot and 1716 against 1704 at another. Small in percent and exactly the kind of
+	# thing a player notices, because those are the two numbers they can see at once, and the
+	# whole point of reusing the Area colours was that there is ONE danger scale.
+	#
+	# The player is always the centre cell, `radius`. Offsetting every sample by `radius %
+	# LEVEL_BLOCK` makes the block containing the player sample the player's own tile exactly,
+	# and shifts the others by the same amount within their block - so nothing else gets worse.
+	var offset: int = radius % LEVEL_BLOCK
 	for by in range(blocks):
 		var row: PackedInt32Array = PackedInt32Array()
 		for bx in range(blocks):
-			# Sample the MIDDLE of each block rather than its corner, so the number a player
-			# reads belongs to the ground they are pointing at.
-			var wx: int = center_x - radius + bx * LEVEL_BLOCK + LEVEL_BLOCK / 2
-			var wy: int = center_y + radius - by * LEVEL_BLOCK - LEVEL_BLOCK / 2
+			# CLAMPED TO THE VIEW. The span is not a whole number of blocks (23 tiles, blocks of
+			# 4), so the last block is a stub - and offsetting inside a stub walks off the edge
+			# and samples ground the player cannot see. Measured: 279 of 2645 squares reported a
+			# level from outside the block they stand for, all along the map's rim.
+			var cell_x: int = mini(bx * LEVEL_BLOCK + offset, span - 1)
+			var cell_y: int = mini(by * LEVEL_BLOCK + offset, span - 1)
+			var wx: int = center_x - radius + cell_x
+			var wy: int = center_y + radius - cell_y
 			row.append(int(get_post_anchored_level(wx, wy)))
 		out.append(row)
 	return out
