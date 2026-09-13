@@ -163,6 +163,11 @@ All of this came out of the distribution work. Recorded before starting any of i
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
+**v0.9.782 IS LIVE** (server hash-verified `6def650b`, seven assets on the tag, Windows gate
+passed, no script errors). It carries the blindsiding guard, the map level hover, and the
+who-is-online feed. Next up in this block: hotzones.
+
+
 **v0.9.781 IS LIVE.** Server deployed and verified by hashing the RUNNING process (`3d204cf9...`),
 seven assets on the tag, Windows gate passed, no script errors. v0.9.780 shipped earlier the same
 day (the dungeon grade lie, the world reshape, the lag, the one-time relocation).
