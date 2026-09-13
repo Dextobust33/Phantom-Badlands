@@ -167,9 +167,23 @@ All of this came out of the distribution work. Recorded before starting any of i
 seven assets on the tag, Windows gate passed, no script errors. v0.9.780 shipped earlier the same
 day (the dungeon grade lie, the world reshape, the lag, the one-time relocation).
 
+- [x] **WHO IS ONLINE — DONE. Discord half is LIVE and verified.** Owner: *"a tool that is
+      efficient and doesn't use much data that shows the players currently online...
+      viewable from my android phone and in discord."* The server EDITS one Discord message
+      every 3 minutes (name, level, class, where), self-heals if that message is deleted,
+      and logs every failure. `docs/status.html` is the web half, linked from every page,
+      reading a public gist. **Owner input needed:** a gist-scoped GitHub token for the
+      server to write with - the `gh` CLI token would work but carries full repo scope,
+      which should not sit on a game server.
+
 ### ⚑ OWNER DECISIONS 2026-09-13 (second batch)
 
-- [ ] **BLINDSIDED BY HIGH-LEVEL COUNTRY — safety, do first.** Owner: *"now that roads are safe
+- [x] **BLINDSIDED BY HIGH-LEVEL COUNTRY — DONE, unreleased.** Both halves: hovering any
+      map square reports that ground's level, and a step onto country at 2x your level is
+      refused once (press again to go). Two real faults found in the hover, which had been
+      written and never run: your own square disagreed with the Area tag, and edge blocks read
+      ground outside the view. Verified in a running client, not just probed.
+      ~~Original ask:~~ Owner: *"now that roads are safe
       and areas level moves around a bit we need to make sure players aren't blindsided by high
       level areas. We should either warn players before they enter a level much higher level than
       them or make it where players can hover an area of the map to see the area level."*
