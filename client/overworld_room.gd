@@ -146,6 +146,19 @@ static func _overlay_name(meaning: String) -> String:
 	return body.substr(0, colon) if colon >= 0 else body
 
 
+static func _overlay_img(overlay: String) -> Image:
+	"""An overlay's picture, with the fallbacks that stop a new marker drawing a hole.
+
+	Dungeon markers vary by what the place IS (`dungeon_cave`, `dungeon_crypt`, ...). A family
+	whose art has not been cut yet falls back to the plain `dungeon` marker rather than to
+	nothing: a dungeon you cannot see on the map is far worse than one drawn generically, and a
+	missing file is exactly how the 53-type variety could regress silently."""
+	var im := _img(DIR + "overlay/%s.png" % OVERLAY_SPRITE.get(overlay, overlay))
+	if im == null and overlay.begins_with("dungeon_"):
+		im = _img(DIR + "overlay/dungeon.png")
+	return im
+
+
 static func _under_tile(meaning: String) -> String:
 	"""What a `!hot:tree` style meaning is standing on. Empty for a plain overlay."""
 	var colon := meaning.find(":")
@@ -208,7 +221,7 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 					if t != null:
 						grid.blend_rect(t, Rect2i(Vector2i.ZERO, t.get_size()), Vector2i(x * CELL, y * CELL))
 			if overlay != "" and overlay != "fog" and not figures.has("%d,%d" % [x, y]):
-				var o := _img(DIR + "overlay/%s.png" % OVERLAY_SPRITE.get(overlay, overlay))
+				var o := _overlay_img(overlay)
 				if o != null:
 					grid.blend_rect(o, Rect2i(Vector2i.ZERO, o.get_size()), Vector2i(x * CELL, y * CELL))
 

@@ -304,6 +304,56 @@ static func generate_traps(grid: Array, floor_num: int, tier: int, rng: RandomNu
 # Dungeons are now named after their boss monster. Defeating the boss GUARANTEES
 # that monster's companion egg. Additional eggs can drop from treasure chests
 # with chances based on monster tier (higher tier = rarer drops).
+## WHAT A DUNGEON LOOKS LIKE FROM THE OUTSIDE.
+##
+## Owner 2026-09-13: *"regarding dungeons on the over world they should have a variety, not all
+## the same tile."* There are 53 dungeon types and every one of them drew the same marker, so a
+## goblin warren and a lich's phylactery were the same picture.
+##
+## Grouped by what the ENTRANCE would be rather than by tier, because that is what a player sees
+## from outside: a cave mouth, a tomb, a gate, a rift. Tier is already carried by the hover and
+## by the marker colour, so repeating it here would say the same thing twice and tell you nothing
+## new. A type not listed falls back to `cave`, which is what most of them are.
+const ENTRANCE_FAMILY := {
+	# Dug out of the ground - warrens, dens, tunnels, deep places.
+	"goblin_caves": "cave", "kobold_tunnels": "cave", "rat_warrens": "cave",
+	"wolf_den": "cave", "gnoll_den": "cave", "troll_den": "cave",
+	"shrieker_caverns": "cave", "cerberus_pit": "cave", "balrog_depths": "cave",
+	# Buried, and not staying buried. The setting's whole premise.
+	"forgotten_crypt": "crypt", "plagued_graveyard": "crypt", "barrow_mounds": "crypt",
+	"wraith_barrow": "crypt", "vampire_crypt": "crypt", "lich_sanctum": "crypt",
+	"elder_lich_phylactery": "crypt", "death_domain": "crypt", "nazgul_shadow_keep": "crypt",
+	# Built and held by something that means to keep it.
+	"orc_stronghold": "fortress", "hobgoblin_fortress": "fortress", "giant_keep": "fortress",
+	"minotaur_labyrinth": "fortress", "titan_colosseum": "fortress",
+	"god_slayer_arena": "fortress", "golem_foundry": "fortress",
+	# Consecrated to something that should not have been worshipped.
+	"gargoyle_cathedral": "temple", "sphinx_riddle_hall": "temple", "chaos_sanctum": "temple",
+	"demon_gate": "temple", "demon_lord_throne": "temple", "succubus_parlor": "temple",
+	# Wet ground.
+	"kelpie_marsh": "marsh", "ogre_bog": "marsh", "hydra_swamp": "marsh", "siren_cove": "marsh",
+	# High and hard to reach.
+	"wyvern_roost": "aerie", "harpy_cliffs": "aerie", "gryphon_aerie": "aerie",
+	"phoenix_nest": "aerie", "dragon_hatchery": "aerie", "ancient_dragon_lair": "aerie",
+	"primordial_dragon_domain": "aerie", "chimaera_gorge": "aerie",
+	# Overgrown.
+	"jabberwock_thicket": "thicket", "spider_nest": "thicket",
+	# A hole in the world rather than a hole in the ground.
+	"void_walker_rift": "rift", "cosmic_horror_realm": "rift", "nameless_void": "rift",
+	"time_weaver_loom": "rift", "entropy_end": "rift", "elemental_nexus": "rift",
+	"world_serpent_coil": "rift", "mimic_treasury": "rift",
+}
+## Every family that has art. Asserted against the baked FILES by a probe, because a hand-kept
+## list beside a generated directory is the "one value, two places" shape.
+const ENTRANCE_FAMILIES := ["cave", "crypt", "fortress", "temple", "marsh", "aerie",
+	"thicket", "rift"]
+
+
+static func entrance_family(dungeon_type: String) -> String:
+	"""Which entrance art a dungeon type shows on the overworld."""
+	return String(ENTRANCE_FAMILY.get(dungeon_type, "cave"))
+
+
 const DUNGEON_TYPES = {
 	# ===== TIER 1 DUNGEONS (Level 1-10) =====
 	"goblin_caves": {

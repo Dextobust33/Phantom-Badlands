@@ -32011,6 +32011,10 @@ func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: in
 				"x": instance.world_x,
 				"y": instance.world_y,
 				"color": dungeon_data.color,
+				# What the ENTRANCE looks like. Owner 2026-09-13: *"dungeons on the over world
+				# should have a variety, not all the same tile."* 53 types, one picture.
+				"family": DungeonDatabaseScript.entrance_family(
+					String(instance.get("dungeon_type", ""))),
 				"name": String(dungeon_data.get("name", "Dungeon")),
 				"tier": int(dungeon_data.get("tier", 1)),
 				"sub_tier": _vst,

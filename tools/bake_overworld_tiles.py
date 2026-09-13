@@ -140,6 +140,22 @@ CUTS = {
     # --- OVERLAYS as art too. Owner 2026-09-11: *"Dungeons markers should have a sprite, so
     # should corpses, bounties, hotzone we will want to do graphically rather than the glyph"*.
     'overlay:dungeon':  ('green_forest_v2', 2, 9),
+
+    # --- DUNGEON ENTRANCES, one per family ------------------------------------------------
+    # Owner 2026-09-13: *"dungeons on the over world should have a variety, not all the same
+    # tile."* 53 dungeon types drew one marker. Grouped by what the way IN would look like -
+    # see `DungeonDatabase.ENTRANCE_FAMILY` - because that is what you see from outside; tier is
+    # already carried by the hover and the marker colour.
+    'overlay:dungeon_cave':     ('green_forest_v2', 2, 9),
+    'overlay:dungeon_crypt':    ('green_dungeon', 5, 3),
+    'overlay:dungeon_fortress': ('green_village', 10, 9),
+    'overlay:dungeon_temple':   ('sun_city', 18, 6),
+    # `marsh` and `aerie` have NO ART YET and that is deliberate. The cells tried for them read
+    # as an orange crate and a grey post - a marker that depicts the wrong thing is worse than a
+    # generic one, because a player believes it. They fall back to the plain dungeon marker,
+    # which is the path `_overlay_img` exists to provide, and the owner is picking replacements.
+    'overlay:dungeon_thicket':  ('green_dungeon', 3, 9),
+    'overlay:dungeon_rift':     ('green_dungeon', 4, 7),
     'overlay:corpse':   ('red_rock_desert', 5, 5),
     'overlay:bounty':   ('interiors', 6, 30),
     'overlay:hot':      ('green_forest_v2', 4, 11),
@@ -479,6 +495,15 @@ def _assert_no_twins(out_dir):
     are craftable structures, so this was visible in the game. Nothing compared the OUTPUTS, only
     the inputs, and two inputs that are the same look perfectly reasonable one line apart."""
     import hashlib
+    # Pairs that are the same picture ON PURPOSE, each with the reason. Anything not listed here
+    # is a copy-pasted spec line, which is how `well` and `fountain` became one image.
+    ALLOWED = {
+        # `cave` is the DEFAULT family and `dungeon` is the fallback drawn when a family has no
+        # art of its own, so the commonest kind of dungeon and the generic marker are deliberately
+        # the same picture. Splitting them would mean an unlisted dungeon type looks like a
+        # specific thing it is not.
+        ('overlay/dungeon', 'overlay/dungeon_cave'),
+    }
     twins = []
     # WITHIN a kind, not across kinds. `tile:floor` and `ground:post` are deliberately the same
     # picture - a trading post's floor IS its ground - and flagging that is noise, not a finding.
@@ -493,7 +518,9 @@ def _assert_no_twins(out_dir):
                 continue
             h = hashlib.md5(open(os.path.join(d, f), 'rb').read()).hexdigest()
             if h in seen:
-                twins.append((seen[h], '%s/%s' % (kind, f[:-4])))
+                pair = (seen[h], '%s/%s' % (kind, f[:-4]))
+                if pair not in ALLOWED and (pair[1], pair[0]) not in ALLOWED:
+                    twins.append(pair)
             else:
                 seen[h] = '%s/%s' % (kind, f[:-4])
     if twins:

@@ -2701,7 +2701,12 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				var dungeon = dungeon_positions[pos_key]
 				var dungeon_color = dungeon.get("color", "#A335EE")
 				line_parts.append("[color=%s] D[/color]" % dungeon_color)
-				sem_parts.append("!dungeon")
+				# The MARKER varies by what kind of place it is - `!dungeon_cave`,
+				# `!dungeon_crypt` and so on. An unknown or missing family falls back to plain
+				# `!dungeon`, and the renderer falls back again if that family has no art, so a
+				# new dungeon type can never punch a hole in the map.
+				var _fam := String(dungeon.get("family", ""))
+				sem_parts.append("!dungeon_%s" % _fam if _fam != "" else "!dungeon")
 				# What this entrance IS, so the client can hover it. With thousands of dungeons
 				# in the world, telling an H4 from an S9 without walking into it is the whole
 				# point of a marker.
