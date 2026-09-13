@@ -31007,7 +31007,16 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.779[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.780[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ A DUNGEON COULD LIE ABOUT WHAT WAS INSIDE IT.[/color] The map said [b]H1[/b] with low-level monsters; you walked in and met [b]E1[/b]. In a permadeath game with no easy way out, that is the worst bug this game has had. A dungeon’s grade moved onto the dungeon itself a few releases ago and the code that builds the one you ENTER was never told — so it fell back to the type’s old grade, which also set the monster levels. [b]What the map says is now what you get.[/b]")
+	display_game("  [color=#FF8000]★ THE WORLD HAS BEEN REDRAWN.[/color] The land used to get harder in simple rings, which meant [b]half the world was endgame country[/b] and only 0.03% of it suited a new character. Now there are [b]calm valleys far out and dangerous country close in[/b]. Low and mid-level ground went from 0.7% of the map to [b]nearly 13%[/b]. [color=#FFD700]You will be returned to the Crossroads once[/color] on your next login so you can set out again knowing where you stand.")
+	display_game("  [color=#FF8000]★ THE AREA READING NOW WARNS YOU.[/color] Because danger is no longer just “further out is worse”, the [b]Area: Lv ~N[/b] line is coloured against YOUR level — green when it is beneath you, orange at your level, red above it — and when the ground would kill you it [b]pulses and says LETHAL[/b].")
+	display_game("  [color=#FF8000]★ THE INTERMITTENT DELAY IS GONE.[/color] Two separate causes, one on each side. The server was asking “is this tile inside a post?” several hundred times per step and answering it by checking [b]every post in the world[/b] each time: [b]28ms a step down to 7ms[/b]. And your own game was dimming explored ground one pixel at a time in script — [b]19ms a step down to 5ms[/b]. That it got worse the more you had explored is why it came and went.")
+	display_game("  [color=#1EFF00]◆ Posts are no longer ringed with dungeons.[/color] All the low-level country in the world sat beside posts, so every low-grade dungeon had [b]one legal address[/b]. Capped at six within forty tiles, and the ones already piled up are cleared out.")
+	display_game("  [color=#1EFF00]◆ A dungeon’s monsters now suit its country.[/color] An H1 dungeon was just as likely to be a [b]Cosmic Horror’s Realm[/b] as a Goblin Caves. Starter country is now 84% goblins, wolves and rats with no Balrogs — while deep country still holds the occasional goblin warren, which was always the intent.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.779[/color]")
 	display_game("  [color=#FF8000]★ YOUR RESOURCE BAR MEANS SOMETHING NOW.[/color] Measured across 630 fights: [b]not one turn[/b] ever fell back to a basic attack, and the bar never dropped below half. A full bar bought [b]20 casts[/b] in the mid game against a design of 6-10, so ability costs were close to free. Costs past the early game are [b]doubled[/b]. A long fight now ends with about a quarter of your bar instead of half — push a hard fight and you will feel it.")
 	display_game("  [color=#1EFF00]◆ The early game is deliberately untouched.[/color] Low-level costs are set by a flat number this change does not reach, so while you are still learning a class nothing gets tighter. The squeeze arrives with your gear.")
 	display_game("  [color=#FF8000]★ AND EVERY MONSTER WAS RE-MEASURED AGAINST THE NEW YOU.[/color] Making casts cost more makes you weaker, so the whole monster curve was re-derived from real fights — how much species differ from each other, how hard a level is, and how much harder a Champion or a Boss is. [b]All 21 role checkpoints land on target.[/b]")
@@ -31031,10 +31040,6 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ Your companion walks behind you again.[/color] It was being drawn on [b]your own square[/b], mostly hidden behind you. It is back in the square you just stepped out of, picked from the way you are facing — where it always was before the map became pictures.")
 	display_game("  [color=#1EFF00]◆ You are drawn bigger.[/color] Characters are painted at [b]a third again their old size[/b] and stand on their square rather than inside it, so a person reads as a person instead of a smudge.")
 	display_game("  [color=#1EFF00]◆ A gathering node you have taken looks taken INSIDE a hotzone too.[/color] v0.9.774 fixed this on open ground. In a hotzone both a full node and a spent one were still reported to the map the same way, so [b]a harvested ore vein there was identical to a fresh one[/b]. It now keeps its red warning and goes dim.")
-	display_game("")
-
-	display_game("[color=#808080]v0.9.775[/color]")
-	display_game("  [color=#FF8000]★ YOU AND YOUR COMPANION ARE BACK ON THE MAP.[/color] v0.9.774 stood down the old letter-map overlay that was drawing you in the wrong place — but the code meant to draw you into the picture instead sat inside a branch that is skipped [i]exactly when there is someone to draw[/i]. So the square you stand on was simply [b]empty[/b]. Your character and the companion walking behind you are drawn there now.")
 	display_game("")
 
 	display_game("[color=#808080]v0.9.768[/color]")
