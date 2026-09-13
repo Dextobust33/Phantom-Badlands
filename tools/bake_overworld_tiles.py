@@ -159,6 +159,12 @@ CUTS = {
 }
 
 
+## The least ink a cell may carry and still be worth drawing. The thinnest REAL tile in the set
+## (`stone`) is 30%; this sits well under it so a legitimately sparse pick is not rejected, while
+## the 0.8% that shipped as an invisible pylon is.
+MIN_INK_COVERAGE = 0.08
+
+
 def cut_from_pack(pack, row, col, dest, span=None, opaque=False):
     """One cell, or a REGION of cells shrunk to one.
 
@@ -185,6 +191,21 @@ def cut_from_pack(pack, row, col, dest, span=None, opaque=False):
     if cell.getbbox() is None:
         raise SystemExit('%s (%d,%d) is EMPTY - a blank cell would draw a hole, which is the '
                          'fault the glyph fallback exists to prevent' % (pack, row, col))
+    # ⚑ NOT-EMPTY IS NOT THE SAME AS VISIBLE, and the difference shipped.
+    #
+    # The check above only catches a cell that is literally all zero. `tile:pylon` pointed at
+    # `interiors (9, 22)`, which carries a handful of stray pixels - 0.8% ink coverage against a
+    # 30% minimum for every other tile in the set - so it passed this guard and then drew NOTHING
+    # on the map. A player could craft a pylon, place it, and see bare grass.
+    #
+    # The question is not "is any pixel set", it is "would a player see a thing there", so the
+    # guard measures coverage. Same lesson as the dungeon art gate: check the FUNCTION.
+    ink = sum(1 for px in cell.getdata() if px[3] > 24)
+    coverage = ink / float(cell.size[0] * cell.size[1])
+    if coverage < MIN_INK_COVERAGE:
+        raise SystemExit('%s (%d,%d) is only %.1f%% ink - it would draw an invisible tile. '
+                         'Every other tile in the set is 30%% or more; pick a different cell.'
+                         % (pack, row, col, coverage * 100.0))
     if opaque:
         # GROUND-class tiles must cover the cell completely. Raven draws a body of water as a
         # rounded block, so its corners are transparent - and the biome ground underneath then
@@ -389,7 +410,38 @@ def main():
             m += 1
     print('%d overlays still on a glyph' % m)
     print('%d files in %s' % (len(biomes) + cut + n + m, OUT))
+    _assert_no_twins(OUT)
+    print('no two tiles baked to the same picture')
 
 
 if __name__ == '__main__':
     main()
+
+
+def _assert_no_twins(out_dir):
+    """No two tiles may bake to the SAME IMAGE.
+
+    ⚑ `tile:well` and `tile:fountain` both named `green_village (5, 0, (3,2))` - one copy-pasted
+    line - so they were byte-identical on disk and a player who built a well got a fountain. Both
+    are craftable structures, so this was visible in the game. Nothing compared the OUTPUTS, only
+    the inputs, and two inputs that are the same look perfectly reasonable one line apart."""
+    import hashlib
+    seen = {}
+    twins = []
+    for kind in ('tile', 'ground', 'overlay'):
+        d = os.path.join(out_dir, kind)
+        if not os.path.isdir(d):
+            continue
+        for f in sorted(os.listdir(d)):
+            if not f.endswith('.png'):
+                continue
+            h = hashlib.md5(open(os.path.join(d, f), 'rb').read()).hexdigest()
+            if h in seen:
+                twins.append((seen[h], '%s/%s' % (kind, f[:-4])))
+            else:
+                seen[h] = '%s/%s' % (kind, f[:-4])
+    if twins:
+        lines = '\n'.join('  %s is byte-identical to %s' % (a, b) for a, b in twins)
+        raise SystemExit('TWO TILES BAKED TO THE SAME PICTURE:\n%s\n'
+                         'Two names for one image means one of them is a lie on the map. '
+                         'Give each its own cell.' % lines)
