@@ -2443,6 +2443,13 @@ func _ready():
 		# The sprite Sanctuary (2026-09-11) is licence-restricted art loaded BY PATH, so a build
 		# made on a machine without the bake shows the ASCII room with nothing to say why.
 		print("[BUILDVERIFY] sanctuary_sprites=", _SanctuaryRoom.available())
+		# ⚑ THE MULTI-CELL ART IS DATA, AND DATA IS WHAT SLIPS OUT OF A BUILD. The full-size
+		# tiles are driven by `big_tiles.json`, which is a raw file rather than an imported
+		# resource - exactly the shape that made VERSION.txt ship stale and made the monster
+		# curve need its own gate line. If the manifest is absent from the .pck the renderer
+		# silently falls back to the shrunken 32px tiles and everything still "works".
+		_OverworldRoom._load_big_spans()
+		print("[BUILDVERIFY] big_tiles=", _OverworldRoom._big_spans.size())
 		# Perf guards for the 4K-laptop thermal-throttling report (v0.9.735). These live in
 		# project.godot, which is baked into the pck — so the only way to know a shipped build
 		# still has them is to ask the running engine.
@@ -5967,6 +5974,17 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "move", "direction": "east"})
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("world")
+			"postart":
+				# ⚑ THE MULTI-TILE ART, INSIDE A POST. Owner 2026-09-13: *"I believe post doors
+				# may suffer from the same problem"* - they did, worse than the rest: the cell
+				# baked as `tile:door` was a FRAGMENT out of the middle of a 3x2 door. A post is
+				# where the multi-cell art is densest (doors, forge, market, inn, well), so this
+				# is the frame that shows whether the change worked.
+				send_to_server({"type": "gm_teleport", "x": -6, "y": -6})
+				await get_tree().create_timer(2.0).timeout
+				_dev_shot_clear_overlays()
+				await _dev_shot_capture("postart")
+
 			"huntground":
 				# ⚑ THE HUNTING-GROUND SCREEN, LOOKED AT. It is the whole deliverable of the
 				# hotzone revamp - what the player reads when they find one - and it cannot be

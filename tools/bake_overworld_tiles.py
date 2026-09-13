@@ -27,6 +27,7 @@ USAGE
     python tools/bake_overworld_tiles.py            # bake everything
     python tools/bake_overworld_tiles.py --check    # report coverage, write nothing
 """
+import json
 import os
 import re
 import sys
@@ -84,9 +85,15 @@ CUTS = {
     'tile:writing_desk':  ('craft_stations', 7, 6, (2, 2)),
 
     # --- POST FURNITURE and decor, from the village pack ---------------------------------
-    'tile:door':        ('green_village', 6, 7),
+    # ⚑ A DOOR IS NOT ONE CELL. `(6, 7)` is a FRAGMENT of the middle of a door - the real art is
+    # the 3x2 block at (5,7): lintel, frame, panelling and handle. Owner 2026-09-13: *"I believe
+    # post doors may suffer from the same problem."* They did.
+    'tile:door':        ('green_village', 5, 7, (3, 2)),
     'tile:well':        ('green_village', 5, 0, (3, 2)),
-    'tile:fountain':    ('green_village', 5, 0, (3, 2)),
+    # ⚑ NOT THE SAME CELL AS `well`. Both named `(5, 0, (3,2))` - one copy-pasted line - so they
+    # baked byte-identical and a player who built a well got a fountain. That block IS a well
+    # (lintel, stone ring, bucket); the fountain is a separate water feature.
+    'tile:fountain':    ('green_village', 2, 2),
     'tile:signpost':    ('green_village', 5, 5),
     'tile:quest_board': ('green_village', 4, 5),
     'tile:lamp_post':   ('green_village', 4, 0),
@@ -101,7 +108,10 @@ CUTS = {
     # --- the rest of the post decor, from the interiors pack ------------------------------
     'tile:lectern':  ('interiors', 3, 18),
     'tile:mosaic':   ('interiors', 0, 27),
-    'tile:pylon':    ('interiors', 9, 22),
+    # `interiors (9,22)` carried 0.8% ink and drew an INVISIBLE tile - a craftable structure you
+    # could place and not see. Replaced with a lit crystal pillar, which is what stone blocks and
+    # magic dust ought to look like. Provisional: the owner is choosing from alternatives.
+    'tile:pylon':    ('interiors', 6, 25),
     'tile:statue':   ('interiors', 9, 24),
     'tile:easel':    ('interiors', 4, 19),
     'tile:pedestal': ('interiors', 3, 25),
@@ -163,6 +173,26 @@ CUTS = {
 ## (`stone`) is 30%; this sits well under it so a legitimately sparse pick is not rejected, while
 ## the 0.8% that shipped as an invisible pylon is.
 MIN_INK_COVERAGE = 0.08
+
+
+def cut_region_native(pack, row, col, span, dest):
+    """A multi-cell region kept at its NATIVE size - 3x2 cells stay 96x64 pixels.
+
+    The single-cell bake shrinks these, which is right for a minimap glyph and wrong for the map:
+    a well drawn at a sixth of its resolution stops looking like a well. The renderer composes the
+    whole grid into one image, so a tile bigger than its cell is already possible - that is what
+    `FIGURE_SCALE` does for people - and this is the art to do it with."""
+    from PIL import Image as _I
+    sheet = _I.open(find_sheet(pack)).convert('RGBA')
+    cols = sheet.size[0] // TILE
+    rows = sheet.size[1] // TILE
+    sr, sc = span
+    if row + sr > rows or col + sc > cols:
+        raise SystemExit('%s: region (%d,%d)+%dx%d runs off the sheet' % (pack, row, col, sr, sc))
+    reg = sheet.crop((col * TILE, row * TILE, (col + sc) * TILE, (row + sr) * TILE))
+    if reg.getbbox() is None:
+        raise SystemExit('%s region (%d,%d) is EMPTY' % (pack, row, col))
+    reg.save(dest)
 
 
 def cut_from_pack(pack, row, col, dest, span=None, opaque=False):
@@ -377,7 +407,9 @@ def main():
         bake_ground(col, os.path.join(OUT, 'ground', biome + '.png'))
     print('baked %d biome grounds' % len(biomes))
 
+    os.makedirs(os.path.join(OUT, 'big'), exist_ok=True)
     cut = 0
+    big_manifest = {}
     for key, spec in sorted(CUTS.items()):
         kind, name = key.split(':', 1)
         pack, row, col = spec[0], spec[1], spec[2]
@@ -385,8 +417,32 @@ def main():
         # ground-class tiles must not let the biome show through - see cut_from_pack
         opaque = kind == 'ground' or name in ('water', 'deep_water', 'path', 'floor', 'wall')
         cut_from_pack(pack, row, col, os.path.join(OUT, kind, name + '.png'), span, opaque)
+        # ⚑ AND KEEP THE ART AT ITS REAL SIZE.
+        #
+        # Owner 2026-09-13: *"The samples you provided all look like multi tile artwork you've
+        # attempted to break down into one. We should instead use the multitile art so they
+        # appear as complete on the map with only a single base tile serving as the interactable
+        # tile."*
+        #
+        # Right, and it is most of what was wrong with these tiles: `companion_stable` and `tree`
+        # are 3x3 blocks shrunk into one 32px cell, which throws away 89% of the art and leaves a
+        # smudge. The single-cell version is still baked - the minimap and any fallback want it -
+        # but the renderer prefers this one and draws it across the cells it really occupies,
+        # anchored to the base cell the player interacts with.
+        if span is not None and kind == 'tile':
+            sr, sc = span
+            if sr > 1 or sc > 1:
+                cut_region_native(pack, row, col, span,
+                                  os.path.join(OUT, 'big', name + '.png'))
+                big_manifest[name] = [sr, sc]
         cut += 1
     print('cut %d tiles from real art' % cut)
+    with open(os.path.join(OUT, 'big', 'big_tiles.json'), 'w', encoding='utf-8') as f:
+        json.dump(big_manifest, f, indent='	', sort_keys=True)
+    print('%d tiles also kept at full size (up to %dx%d cells)' % (
+        len(big_manifest),
+        max([v[1] for v in big_manifest.values()] or [0]),
+        max([v[0] for v in big_manifest.values()] or [0])))
 
     # `empty` IS the biome ground and `void` is a tile outside your sight: both draw the ground
     # and nothing else. Giving either one a tile put something on top of every bare square in the
@@ -414,9 +470,6 @@ def main():
     print('no two tiles baked to the same picture')
 
 
-if __name__ == '__main__':
-    main()
-
 
 def _assert_no_twins(out_dir):
     """No two tiles may bake to the SAME IMAGE.
@@ -426,12 +479,15 @@ def _assert_no_twins(out_dir):
     are craftable structures, so this was visible in the game. Nothing compared the OUTPUTS, only
     the inputs, and two inputs that are the same look perfectly reasonable one line apart."""
     import hashlib
-    seen = {}
     twins = []
+    # WITHIN a kind, not across kinds. `tile:floor` and `ground:post` are deliberately the same
+    # picture - a trading post's floor IS its ground - and flagging that is noise, not a finding.
+    # Two TILES sharing one picture is the fault this exists for.
     for kind in ('tile', 'ground', 'overlay'):
         d = os.path.join(out_dir, kind)
         if not os.path.isdir(d):
             continue
+        seen = {}
         for f in sorted(os.listdir(d)):
             if not f.endswith('.png'):
                 continue
@@ -445,3 +501,8 @@ def _assert_no_twins(out_dir):
         raise SystemExit('TWO TILES BAKED TO THE SAME PICTURE:\n%s\n'
                          'Two names for one image means one of them is a lie on the map. '
                          'Give each its own cell.' % lines)
+
+
+if __name__ == '__main__':
+    main()
+

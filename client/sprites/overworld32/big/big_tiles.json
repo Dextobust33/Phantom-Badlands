@@ -1,0 +1,74 @@
+{
+	"apothecary": [
+		2,
+		2
+	],
+	"banner": [
+		2,
+		2
+	],
+	"bench": [
+		1,
+		2
+	],
+	"brazier": [
+		1,
+		2
+	],
+	"companion_stable": [
+		3,
+		3
+	],
+	"door": [
+		3,
+		2
+	],
+	"enchant_table": [
+		2,
+		1
+	],
+	"forge": [
+		3,
+		2
+	],
+	"garden_plot": [
+		2,
+		2
+	],
+	"inn": [
+		1,
+		2
+	],
+	"market": [
+		1,
+		2
+	],
+	"tent": [
+		2,
+		2
+	],
+	"throne": [
+		2,
+		1
+	],
+	"tower": [
+		3,
+		1
+	],
+	"tree": [
+		3,
+		3
+	],
+	"well": [
+		3,
+		2
+	],
+	"workbench": [
+		2,
+		2
+	],
+	"writing_desk": [
+		2,
+		2
+	]
+}

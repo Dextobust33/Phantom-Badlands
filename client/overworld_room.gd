@@ -29,6 +29,46 @@ const NO_TILE := ["empty", "void", ""]
 ## its own.
 const OVERLAY_SPRITE := {"hotdepleted": "hot"}
 
+## ART THAT IS BIGGER THAN ITS CELL.
+##
+## Owner 2026-09-13: *"The samples you provided all look like multi tile artwork you've attempted
+## to break down into one. We should instead use the multitile art so they appear as complete on
+## the map with only a single base tile serving as the interactable tile."*
+##
+## Nineteen tiles were cut from blocks of two or three cells square and then SHRUNK into one
+## 32-pixel square - `companion_stable` and `tree` threw away 89% of their pixels, and a door was
+## worse than that: the cell picked was a fragment out of the middle of a 3x2 door, so it was not
+## a small door, it was a piece of one.
+##
+## The baker keeps the full-size art now, and this draws it across the cells it really occupies,
+## anchored to the BASE cell - the one the server knows about and the player walks into. Nothing
+## on the server changes: one tile is still one tile, it is only drawn bigger. This is the same
+## mechanism `FIGURE_SCALE` already uses, and the reason this renderer composes one image at all.
+const BIG_DIR := DIR + "big/"
+static var _big_spans: Dictionary = {}
+static var _big_loaded := false
+
+
+static func _load_big_spans() -> void:
+	if _big_loaded:
+		return
+	_big_loaded = true
+	var f := FileAccess.open(BIG_DIR + "big_tiles.json", FileAccess.READ)
+	if f == null:
+		return
+	var parsed = JSON.parse_string(f.get_as_text())
+	f.close()
+	if parsed is Dictionary:
+		_big_spans = parsed
+
+
+static func _big_img(tile_name: String) -> Image:
+	"""The full-size art for a tile, or null if it has none."""
+	_load_big_spans()
+	if not _big_spans.has(tile_name):
+		return null
+	return _img(BIG_DIR + "%s.png" % tile_name)
+
 static var _grid: Image = null
 static var _key: String = ""
 static var _cells: Dictionary = {}
@@ -136,6 +176,9 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 	# Black behind everything: a cell outside your sight draws nothing, and this is what it
 	# leaves - the same darkness the text map left as two blank characters.
 	grid.fill(Color(0, 0, 0, 1))
+	# Collected during the cell pass and drawn after it - see the notes at each append.
+	var bigs: Array = []
+	var figs: Array = []
 
 	for y in range(rows):
 		var mrow: PackedStringArray = meaning_rows[y]
@@ -155,9 +198,15 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 			# just a warning.
 			var tile_name := meaning if overlay == "" else _under_tile(meaning)
 			if not (tile_name in NO_TILE):
-				var t := _img(DIR + "tile/%s.png" % tile_name)
-				if t != null:
-					grid.blend_rect(t, Rect2i(Vector2i.ZERO, t.get_size()), Vector2i(x * CELL, y * CELL))
+				# Art bigger than a cell is DEFERRED to a second pass. Drawn here it would be painted
+				# over by the cells to its right and below, which have not been reached yet - the grid
+				# fills west to east, north to south.
+				if _big_img(tile_name) != null:
+					bigs.append({"x": x, "y": y, "name": tile_name})
+				else:
+					var t := _img(DIR + "tile/%s.png" % tile_name)
+					if t != null:
+						grid.blend_rect(t, Rect2i(Vector2i.ZERO, t.get_size()), Vector2i(x * CELL, y * CELL))
 			if overlay != "" and overlay != "fog" and not figures.has("%d,%d" % [x, y]):
 				var o := _img(DIR + "overlay/%s.png" % OVERLAY_SPRITE.get(overlay, overlay))
 				if o != null:
@@ -174,26 +223,10 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 			# Hand it a TRANSPARENT sprite (`overworld_pad32`), never the floor-backed set: those
 			# carry the dungeon floor baked in, because BBCode could not composite there. Here
 			# the compositing happens above, so a floor-backed figure stands on the wrong ground.
-			var fig_entry = figures.get("%d,%d" % [x, y], null)
-			if fig_entry != null:
-				# A cell holds ONE figure. A companion is not drawn on its owner's square any
-				# more - it stands on the square its owner just walked out of, which is what the
-				# old letter map did and what the owner expected to keep: the client picks that
-				# cell and sends the companion as its own entry.
-				var fpath := ""
-				if fig_entry is Dictionary:
-					fpath = String(fig_entry.get("main", ""))
-				else:
-					fpath = String(fig_entry)
-				if fpath != "":
-					var fi := _figure_img(fpath)
-					if fi != null:
-						# Centred on its cell and anchored to the BOTTOM of it, so a figure taller
-						# than its square stands ON the tile and overflows into the one above
-						# rather than floating.
-						grid.blend_rect(fi, Rect2i(Vector2i.ZERO, fi.get_size()),
-							Vector2i(x * CELL + (CELL - fi.get_width()) / 2,
-								(y + 1) * CELL - fi.get_height()))
+			# A FIGURE is COLLECTED, not drawn yet. People must stand in FRONT of the big art laid
+			# down in the next pass - a player walking past a stable should not vanish behind it.
+			if figures.has("%d,%d" % [x, y]):
+				figs.append({"x": x, "y": y, "e": figures["%d,%d" % [x, y]]})
 			if overlay == "fog":
 				# Remembered ground, not seen ground. Darkened rather than hidden, which is what
 				# the text map did with a dim colour.
@@ -205,8 +238,65 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 				# one. Owner 2026-09-12: "not sure if they are clearing properly once I get them."
 				# They WERE clearing. They just did not look it.
 				_darken(grid, x, y, 0.42)
+
+	# PASS 2 - art that is bigger than its cell.
+	#
+	# Sorted south-then-east so a structure nearer the viewer overlaps one behind it, which is
+	# the only ordering that looks right when two of them are adjacent. Each is anchored to the
+	# BOTTOM of its base cell and centred on it, so it stands ON the square the player walks into
+	# and grows upward - exactly what a figure does, and why this renderer composes one image.
+	bigs.sort_custom(func(a, b): return (a["y"] * cols + a["x"]) < (b["y"] * cols + b["x"]))
+	for b in bigs:
+		var bi := _big_img(String(b["name"]))
+		if bi == null:
+			continue
+		var bx: int = int(b["x"]) * CELL + (CELL - bi.get_width()) / 2
+		var by: int = (int(b["y"]) + 1) * CELL - bi.get_height()
+		_blend_clipped(grid, bi, bx, by)
+
+	# PASS 3 - people, last, so nobody is hidden behind a building.
+	for fr in figs:
+		var fig_entry = fr["e"]
+		# A cell holds ONE figure. A companion is not drawn on its owner's square any more - it
+		# stands on the square its owner just walked out of, which is what the old letter map did
+		# and what the owner expected to keep: the client picks that cell and sends the companion
+		# as its own entry.
+		var fpath := ""
+		if fig_entry is Dictionary:
+			fpath = String(fig_entry.get("main", ""))
+		else:
+			fpath = String(fig_entry)
+		if fpath == "":
+			continue
+		var fi := _figure_img(fpath)
+		if fi == null:
+			continue
+		# Centred on its cell and anchored to the BOTTOM of it, so a figure taller than its
+		# square stands ON the tile and overflows into the one above rather than floating.
+		_blend_clipped(grid, fi, int(fr["x"]) * CELL + (CELL - fi.get_width()) / 2,
+			(int(fr["y"]) + 1) * CELL - fi.get_height())
+
 	_grid = grid
 	return true
+
+
+static func _blend_clipped(grid: Image, src: Image, dx: int, dy: int) -> void:
+	"""Blend `src` at (dx, dy), clipping to the grid.
+
+	⚑ CLIPPING IS THE POINT. Art bigger than its cell routinely hangs off the edge of the view -
+	a 3x2 door on the top row reaches two rows above the map - and `blend_rect` with a
+	destination outside the image silently draws nothing at all. That would make exactly the
+	tiles nearest the edge disappear, which is the hardest kind of fault to notice because the
+	middle of the screen looks perfect."""
+	var sw := src.get_width()
+	var sh := src.get_height()
+	var sx := maxi(0, -dx)
+	var sy := maxi(0, -dy)
+	var w := mini(sw - sx, grid.get_width() - maxi(0, dx))
+	var h := mini(sh - sy, grid.get_height() - maxi(0, dy))
+	if w <= 0 or h <= 0:
+		return
+	grid.blend_rect(src, Rect2i(sx, sy, w, h), Vector2i(maxi(0, dx), maxi(0, dy)))
 
 
 ## One pre-made translucent black square per darkening amount. Two are ever used (fog and a

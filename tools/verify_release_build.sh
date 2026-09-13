@@ -111,6 +111,17 @@ check "outsmart_button_gone" "true"          "$(field outsmart_button_gone)"
 check "passive_single_source" "true"         "$(field passive_single_source)"
 # The sprite Sanctuary's art is loaded by path and untracked; prove the packaged build has it.
 check "sanctuary_sprites"    "true"          "$(field sanctuary_sprites)"
+# The multi-cell tile manifest is a raw .json, not an imported resource - if it misses the .pck
+# the map silently falls back to the shrunken 32px tiles and nothing else looks wrong.
+BIG_TILES="$(field big_tiles)"
+if [ "${BIG_TILES:-0}" -ge 10 ] 2>/dev/null; then
+  printf '  ok    %-22s %s multi-cell tiles
+' "big_tiles" "$BIG_TILES"
+else
+  printf '  FAIL  %-22s got "%s", want 10 or more
+' "big_tiles" "$BIG_TILES"
+  fail=1
+fi
 # The calibrated monster curve is DATA, not code, so none of the freshness probes above would
 # notice it missing from an export - and without it every monster silently reverts to legacy
 # base_level scaling. Added with v0.9.777, which shipped a re-calibration of the role layer.
