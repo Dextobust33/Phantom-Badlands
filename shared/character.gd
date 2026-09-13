@@ -785,6 +785,15 @@ const CLASS_DISPLAY_NAME := {
 	"Sage": "Oracle",
 }
 
+## Every class a character may be, as INTERNAL ids. `Sage` is shown as "Oracle"; the display name
+## is never a valid class.
+const ALL_CLASSES := ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage",
+	"Grifter", "Ranger", "Ninja"]
+
+
+static func is_valid_class(class_type: String) -> bool:
+	return class_type in ALL_CLASSES
+
 # What each stat actually does FOR THIS CLASS, read from the code rather than from intent.
 #
 # 2026-09-07, owner: "anywhere they see their stats or that gives a description of them should be

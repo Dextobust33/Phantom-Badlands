@@ -3096,6 +3096,17 @@ func handle_create_character(peer_id: int, message: Dictionary):
 
 	var char_name = message.get("name", "")
 	var char_class = message.get("class", "Fighter")
+	# ⚑ REFUSE A CLASS THE GAME DOES NOT HAVE, rather than store it.
+	#
+	# This took whatever the client sent. It was not the cause of the Oracle bug - the client was
+	# sending a real class, just the WRONG one - but it is why that bug could have been worse: a
+	# display name ("Oracle") would have been written to the character verbatim, and under
+	# permadeath an unplayable character is not something you can undo.
+	if not Character.is_valid_class(String(char_class)):
+		send_to_peer(peer_id, {"type": "error",
+			"message": "Unknown class '%s'. Please update your client." % str(char_class)})
+		print("[CREATE] refused unknown class '%s' from peer %d" % [str(char_class), peer_id])
+		return
 
 	# Validate character name
 	if char_name.is_empty():

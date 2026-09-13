@@ -12,6 +12,11 @@ const _OverworldRoom = preload("res://client/overworld_room.gd")
 ## straight downscale; the text map's own cell is about this wide, which is what keeps the panel
 ## the same size and the header aligned.
 const OVERWORLD_SPRITE_PX := 26
+## A literal newline, for building multi-line hover text without embedding real line breaks in
+## the middle of a format string - which is how the stance tooltips were written and is easy to
+## break with an edit.
+const NEWLINE := "
+"
 ## How many squares of the view survive the crop inside a post. Half the width, drawn at double
 ## the size, so the panel stays the same and the room gets twice the detail.
 const OVERWORLD_POST_CROP := 11
@@ -2986,9 +2991,22 @@ func _ready():
 	if class_option:
 		class_option.clear()
 		for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
-			# Shown under its display name; the selection is read back by INDEX against this same
-			# list, so the stored class_type stays the internal id ("Sage", not "Oracle").
+			# ⚑ THE ID TRAVELS AS METADATA, NOT AS THE LABEL.
+			#
+			# Shown under its display name, and the comment here used to claim the selection was
+			# "read back by INDEX... so the stored class_type stays the internal id". It was not:
+			# the confirm handler read `get_item_text`, and the card picker selected the dropdown
+			# by matching item TEXT against the id. `Sage` is displayed as `Oracle`, so that match
+			# never succeeded and the dropdown kept WHATEVER WAS SELECTED BEFORE.
+			#
+			# Owner 2026-09-13: *"I had a player try to create an elf mage oracle but it gave
+			# them a wizard one time and a sorcerer the next time."* Those are the two classes
+			# above Oracle in the Mage path - it was handing back the previous selection.
+			#
+			# Carrying the id as metadata means the label and the identity cannot drift apart
+			# again, which is the only reason this bug was possible.
 			class_option.add_item(CharacterScript.class_display_name(cls))
+			class_option.set_item_metadata(class_option.item_count - 1, cls)
 		class_option.item_selected.connect(_on_class_selected)
 		_update_class_description()  # Set initial description
 
@@ -5974,6 +5992,19 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "move", "direction": "east"})
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("world")
+			"scouting":
+				# ⚑ SCOUTING, LOOKED AT. Owner 2026-09-13: *"Scouting is busted"* - the map drew
+				# as horizontal bands separated by black, because +2 vision made the row of
+				# tiles wider than the fixed-width map panel and every row wrapped.
+				send_to_server({"type": "set_travel_stance", "stance": "wary"})
+				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_capture("stance_wary")
+				send_to_server({"type": "set_travel_stance", "stance": "scouting"})
+				await get_tree().create_timer(1.5).timeout
+				send_to_server({"type": "move", "direction": 6})
+				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_capture("stance_scouting")
+
 			"postart":
 				# ⚑ THE MULTI-TILE ART, INSIDE A POST. Owner 2026-09-13: *"I believe post doors
 				# may suffer from the same problem"* - they did, worse than the rest: the cell
@@ -7704,10 +7735,11 @@ func _on_archetype_card_pressed(key: String) -> void:
 
 func _on_class_card_pressed(cls: String) -> void:
 	_selected_class = cls
-	# Drive the hidden dropdown that the confirm handler reads.
+	# Drive the hidden dropdown that the confirm handler reads. Matched on the stored ID, never
+	# on the visible label - matching the label is what silently failed for the Oracle.
 	if class_option:
 		for i in range(class_option.item_count):
-			if class_option.get_item_text(i) == cls:
+			if String(class_option.get_item_metadata(i)) == cls:
 				class_option.select(i)
 				break
 	for b in _class_card_buttons:
@@ -7723,10 +7755,34 @@ func _reset_class_picker_default() -> void:
 	# Default to the beginner-friendly Warrior path / Fighter.
 	_on_archetype_card_pressed("Warrior")
 
+func _class_id_from_picker() -> String:
+	"""The internal class id the player chose, from the one place that stores ids.
+
+	Three sources in falling order of trust: the card the player actually clicked, the dropdown's
+	stored metadata, and finally its label mapped back through the display table. The last is a
+	safety net for a build where the metadata never got set - it must never be reached, but if it
+	is, mapping BACK beats sending a display name the server has no class for."""
+	if _selected_class != "":
+		return _selected_class
+	if class_option and class_option.selected >= 0:
+		var meta = class_option.get_item_metadata(class_option.selected)
+		if meta != null and String(meta) != "":
+			return String(meta)
+		var label: String = class_option.get_item_text(class_option.selected)
+		for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage",
+				"Grifter", "Ranger", "Ninja"]:
+			if CharacterScript.class_display_name(cls) == label:
+				return cls
+		return label
+	return "Fighter"
+
+
 func _on_confirm_create_pressed():
 	var char_name = new_char_name_field.text.strip_edges()
 	var char_race = race_option.get_item_text(race_option.selected) if race_option else "Human"
-	var char_class = class_option.get_item_text(class_option.selected)
+	# The INTERNAL id. `get_item_text` returns the display name, so an Oracle would have been
+	# created as the literal class "Oracle", which is not a class the game has.
+	var char_class := _class_id_from_picker()
 
 	if char_name.is_empty():
 		if char_create_status:
@@ -31120,7 +31176,17 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.783[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.784[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ THE INTERMITTENT FREEZE IS GONE.[/color] The server stalled for up to [b]1.4 seconds every 3 seconds[/b] — it re-checked every dungeon in the world against every trading post, and doubling the number of posts a few releases ago doubled that work. Now [b]12ms[/b]. It blocked the whole server, which is why it hit walking and combat alike.")
+	display_game("  [color=#FF4444]★ PICKING THE ORACLE GAVE YOU A WIZARD.[/color] The Oracle is the only class whose internal name differs from the one you see, and the creation screen matched on the name you see — so the pick silently failed and you got [b]whatever was selected before[/b]. Fixed, and the server now refuses a class it does not recognise rather than storing it.")
+	display_game("  [color=#FF8000]★ SCOUTING WORKS.[/color] It widens your view by two tiles, which made the map [b]wider than the panel it is drawn in[/b], so every row wrapped and the map came apart into bands. Tiles now scale to fit whatever your view is.")
+	display_game("  [color=#1EFF00]◆ Other players are people again.[/color] The map sent their [b]colour name[/b] where their sprite id belonged, so no player was drawn — and the only figure left near them was their companion. You were seeing their pet instead of them.")
+	display_game("  [color=#1EFF00]◆ You stand on the ground you are actually on.[/color] Walking a road showed grass under you. Your own square never said what tile it was, so nothing was drawn under your feet — bridges and post floors vanished the same way.")
+	display_game("  [color=#1EFF00]◆ Multi-tile art is drawn whole.[/color] Nineteen things — trees, stables, forges, wells — were three-by-three pictures squeezed into one square. Doors were worse: the tile was a [b]fragment cut from the middle[/b] of a door.")
+	display_game("  [color=#1EFF00]◆ Dungeons look like what they are.[/color] 53 types drew one marker; now a cave, a tomb, a fortress, a temple, a thicket and a rift are told apart at a glance.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.783[/color]")
 	display_game("  [color=#FF8000]★ HOTZONES ARE HUNTING GROUNDS NOW, AND THEY MOVE.[/color] They were a place to avoid: harder monsters, a screen that said [b]DANGER ZONE - stay back[/b], and no word anywhere that they already paid [b]30-70% more XP and loot[/b]. Now the screen leads with what you get, [b]10-30% of what lives there are Elites[/b], and the whole map of them [b]relocates every three hours[/b] — so nobody farms the same one for days, and the one you found is worth going to now.")
 	display_game("  [color=#1EFF00]◆ And they are places, not potholes.[/color] The old ones could be a [b]single tile[/b] you blundered across. They are fewer and bigger — typically 37 tiles, never under 13 — covering the same share of the world, so they read as somewhere to travel to.")
 	display_game("  [color=#FF4444]★ THE NEW DANGER WARNING WAS BLIND TO EXACTLY THESE.[/color] A hotzone multiplies what spawns by up to 2.5x, and yesterday’s warning read the terrain underneath it instead — one place showed [b]Area: Lv 104[/b] while monsters arrived at [b]Lv 286[/b]. Everything that warns you now reads what actually spawns. You also never get asked twice: the hunting-ground screen and the high-level-country warning are one question, on one scale.")
@@ -33139,21 +33205,23 @@ func _ensure_stance_bar() -> void:
 		var _surp: int = int(st.get("surprise", 0))
 		var _surp_line := ""
 		if _surp > 0:
-			_surp_line = "
-Caught out: %d%% more often" % _surp
+			_surp_line = NEWLINE + "Caught out: [b]%d%% more often[/b]" % _surp
 		elif _surp < 0:
-			_surp_line = "
-You strike first: %d%% more often" % -_surp
-		b.tooltip_text = "%s
-
-Encounters: %s
-Recovery per step and rest: %s%s%s" % [
-			String(st.get("blurb", "")),
-			_stance_pct(float(st.get("encounter", 1.0))),
-			_stance_pct(float(st.get("regen", 1.0))),
-			("
-Map sight: +%d" % int(st.get("vision", 0))) if int(st.get("vision", 0)) > 0 else "",
-			_surp_line]
+			_surp_line = NEWLINE + "You strike first: [b]%d%% more often[/b]" % -_surp
+		# ⚑ THE GAME'S OWN HOVER BOX, NOT GODOT'S HINT.
+		#
+		# Owner 2026-09-13: *"the hover of the travel type is showing the hint box we don't want
+		# to use instead of our normal hover box."* `tooltip_text` renders the engine default -
+		# a different font, a different delay and a different look from every other hover in the
+		# game, which all go through `_show_formula_popup`.
+		var _body := "[b]%s[/b]" % String(st.get("name", "?")) + "[color=#C8C8C8]" + ("%s%s" % [
+			NEWLINE, String(st.get("blurb", ""))]) + "[/color]" + NEWLINE + NEWLINE 			+ "Encounters: [b]%s[/b]" % _stance_pct(float(st.get("encounter", 1.0))) + NEWLINE 			+ "Recovery per step and rest: [b]%s[/b]" % _stance_pct(float(st.get("regen", 1.0))) 			+ (NEWLINE + "Map sight: [b]+%d[/b]" % int(st.get("vision", 0)) if int(st.get("vision", 0)) > 0 else "") 			+ _surp_line
+		b.mouse_entered.connect(func():
+			if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+				combat_scene_panel._show_formula_popup(_body))
+		b.mouse_exited.connect(func():
+			if combat_scene_panel and combat_scene_panel.has_method("_hide_formula_popup"):
+				combat_scene_panel._hide_formula_popup())
 		b.pressed.connect(_on_stance_pressed.bind(String(sid)))
 		_stance_bar.add_child(b)
 		_stance_buttons[String(sid)] = b
@@ -46249,7 +46317,23 @@ func _overworld_display(payload: Dictionary) -> String:
 	# like you have to walk out and in through part of the wall."*
 	# A post already reads as a room because it stands on its own floor, which is the part that
 	# worked.
+	# ⚑ THE TILE SIZE FITS THE VIEW, it is not a constant.
+	#
+	# Owner 2026-09-13: *"Scouting is busted"*, with a screenshot of the map drawn as horizontal
+	# bands separated by black. That is a LINE WRAP: Scouting widens the view by two tiles each
+	# way, 23 columns became 27, and 27 x 26px overflowed the fixed-width map panel, so every row
+	# wrapped and the remainder rendered as gaps.
+	#
+	# Nothing was wrong with Scouting. The map simply could not draw a view wider than the one it
+	# was built for - and weather, blindness and any future vision change move that number too,
+	# so pinning the tile size was always going to break on the first one that made it bigger.
+	# It now shrinks to fit and never exceeds the designed 26px.
 	var px: int = OVERWORLD_SPRITE_PX
+	if map_display != null and cols_n > 0 and map_display.size.x > 32.0:
+		# A couple of pixels of slack: BBCode adds no spacing between inline images, but the
+		# panel has padding and a fractional width rounds the wrong way often enough to matter.
+		var fit: int = int(floor((map_display.size.x - 6.0) / float(cols_n)))
+		px = clampi(fit, 8, OVERWORLD_SPRITE_PX)
 	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
 	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With

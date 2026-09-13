@@ -2627,7 +2627,17 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 			# Player position (always visible)
 			if dx == 0 and dy == 0:
 				line_parts.append("[color=#FFFF00] @[/color]")
-				sem_parts.append("!player")
+				# ⚑ NAME THE TILE YOU ARE STANDING ON.
+				#
+				# Owner 2026-09-13: *"walking on roads is showing the grass under the player
+				# sprite instead of the road."* `!player` alone carries no tile, so the renderer
+				# had nothing to draw under the figure and fell through to the bare biome ground.
+				# Not just roads - standing on a bridge, a post floor or a station hid it too,
+				# and because the player is always at the centre of their own view, it was the
+				# one cell they look at most.
+				#
+				# Same `overlay:tile` form `!hot:tree` already uses.
+				sem_parts.append(_marker_with_tile("!player", x, y, tile_cache))
 				biome_parts.append(_cell_biome(x, y))
 				continue
 
@@ -2670,12 +2680,18 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				# Party members show in green, others in cyan
 				var player_color = "#00FF00" if first_player.get("in_my_party", false) else "#00FFFF"
 				line_parts.append("[color=%s] %s[/color]" % [player_color, player_char])
-				sem_parts.append("!other")
+				# Another player stands on real ground too - same fault, same fix.
+				sem_parts.append(_marker_with_tile("!other", x, y, tile_cache))
 				biome_parts.append(_cell_biome(x, y))
 				# Their LOOK, so the sprite map draws them as themselves rather than as a marker.
 				# A stack of players already collapses to one glyph, so only a lone player gets a
 				# face - two people on a tile stay the `*` they have always been.
-				var _fv := String(first_player.get("appearance_variant", ""))
+				# The SPRITE id, not the colour variant - see the note beside `battler_id` in
+				# `get_nearby_players`. Falls back to the variant only so an old client/server
+				# pairing degrades to the previous behaviour rather than to a blank cell.
+				var _fv := String(first_player.get("battler_id", ""))
+				if _fv == "":
+					_fv = String(first_player.get("appearance_variant", ""))
 				if _fv != "" and players_here.size() == 1:
 					# The NAME rides along, and it saves the client re-deriving this cell from
 					# world coordinates with its own copy of the grid mapping. That copy is how a
@@ -4223,6 +4239,21 @@ func danger_level_at(x: int, y: int) -> int:
 	danger-step guard were reading the baseline, so both went quiet exactly where the surprise
 	is worst. Everything that warns a player must come through this."""
 	return int(get_monster_level_range(x, y).get("base_level", get_post_anchored_level(x, y)))
+
+
+func _marker_with_tile(marker: String, x: int, y: int, tile_cache: Dictionary) -> String:
+	"""`marker` with the tile at (x, y) appended, so whatever is standing there is drawn ON it.
+
+	A marker with no tile draws the bare biome ground, which is how a player walking a road came
+	out standing on grass. `empty` is left off deliberately - empty IS the ground, and naming it
+	would put a second copy of the ground over the first."""
+	var tile = tile_cache.get("%d,%d" % [x, y], null)
+	if tile == null and chunk_manager:
+		tile = chunk_manager.get_tile(x, y)
+	var t := String(tile.get("type", "")) if tile != null else ""
+	if t == "" or t == "empty":
+		return marker
+	return "%s:%s" % [marker, t]
 
 
 func map_level_blocks(center_x: int, center_y: int, radius: int) -> Array:
