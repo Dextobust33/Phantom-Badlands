@@ -167,6 +167,34 @@ All of this came out of the distribution work. Recorded before starting any of i
 seven assets on the tag, Windows gate passed, no script errors. v0.9.780 shipped earlier the same
 day (the dungeon grade lie, the world reshape, the lag, the one-time relocation).
 
+### ⚑ OWNER DECISIONS 2026-09-13 (second batch)
+
+- [ ] **BLINDSIDED BY HIGH-LEVEL COUNTRY — safety, do first.** Owner: *"now that roads are safe
+      and areas level moves around a bit we need to make sure players aren't blindsided by high
+      level areas. We should either warn players before they enter a level much higher level than
+      them or make it where players can hover an area of the map to see the area level."*
+      This is a direct consequence of two things I shipped: regional menace deliberately broke
+      "distance means danger", and safe roads encourage crossing ground nobody scouted. The
+      `Area: Lv ~N` readout warns about where you ARE; nothing warns about where you are GOING.
+      **Do BOTH** - hovering a map square to read its level is the tool, and a warning on
+      stepping into country far above you is the guard for players who do not hover.
+      The `[url=]` hover mechanism from v0.9.778 already carries per-square data; this is the
+      same shape.
+
+- [ ] **HOTZONES -> RICH HUNTING GROUNDS, that EXPIRE or MOVE.** Owner picked "rich hunting
+      grounds" and added: *"they should expire at some point or move around. Ideally players
+      shouldn't be able to farm the same hotzone for real world days, maybe a few hours before
+      they move."*
+      So: keep the marker and the danger, add a REASON to enter (elite/rare spawns, better loot,
+      faster XP), and give each zone a lifetime of a few hours after which it moves. Today they
+      are a static 1.5-2.5x LEVEL bump - a thing players route around, which is why they stopped
+      serving a purpose once regional menace covered "dangerous country".
+
+- [ ] **ART AUDIT — overworld terrain tiles (67) and dungeon floor art.** Owner picked both.
+      Same procedure as the gatherables: render everything on the background it really sits on,
+      look, and bring alternatives back for the owner to choose between. Owner: *"For art show me
+      alternatives for each and I can choose the better one."*
+
 ### The two things left from the owner's 2026-09-13 list
 
 1. **HOTZONES — revamp or replace. NOT STARTED, and it wants a conversation first.** Owner:
