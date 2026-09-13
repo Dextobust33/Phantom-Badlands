@@ -329,7 +329,7 @@ const BIOME_NODE_WEIGHTS = {
 		"reed": 2,
 		"dense_brush": 12,
 		# Slice 6e — biome-locked node; only spawns here.
-		"brambleberry": 8,
+		"brambleberry": 16,
 	},
 	BIOME_MOUNTAIN: {
 		"stone": 42,
@@ -341,7 +341,19 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 3,
 		"reed": 1,
 		"dense_brush": 7,
-		"mountain_herb": 6,
+		# ⚑ RAISED BECAUSE CLUSTERING MULTIPLIED THEIR RARITY.
+		#
+		# Gatherables used to roll per TILE, so a 6%% weight meant 6%% of nodes. They come in
+		# single-resource stands now, so the same weight means 6%% of STANDS - and a biome-locked
+		# type only gets stands in its own biome. Measured 2026-09-13: mountain is 2.67%% of the
+		# ground near a post and swamp 1.13%%, so `mountain_herb` came to ONE node in 48,521
+		# sampled tiles and `swamp_lily` to none reachable from any of ten posts. Four signature
+		# resources had become dead content - not blocking (no recipe needs them) but unfindable.
+		#
+		# A signature resource should be a real share of its own biome: go to the mountains and
+		# you find alpine herbs. The biomes themselves are rare near posts, which is fine - that
+		# is the trip.
+		"mountain_herb": 20,
 	},
 	BIOME_SWAMP: {
 		"stone": 8,
@@ -353,7 +365,7 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 6,
 		"reed": 22,
 		"dense_brush": 10,
-		"swamp_lily": 10,
+		"swamp_lily": 22,
 	},
 	BIOME_SNOW: {
 		"stone": 38,
@@ -365,7 +377,7 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 4,
 		"reed": 2,
 		"dense_brush": 6,
-		"ice_bloom": 6,
+		"ice_bloom": 18,
 	},
 	BIOME_DESERT: {
 		"stone": 48,
@@ -377,7 +389,7 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 12,
 		"reed": 2,
 		"dense_brush": 8,
-		"cactus": 12,
+		"cactus": 20,
 	},
 }
 
@@ -803,6 +815,17 @@ const GATHER_IN_CLUSTER_DENSITY := 0.52
 const GATHER_SCATTER_DENSITY := 0.010
 
 
+## The one resource that belongs to each biome and nowhere else. `_gather_cluster_at` guarantees
+## a share of that biome's stands to it - see the note there for why a weight could not.
+const BIOME_SIGNATURE_NODE := {
+	BIOME_MOUNTAIN: "mountain_herb",
+	BIOME_SWAMP: "swamp_lily",
+	BIOME_SNOW: "ice_bloom",
+	BIOME_DESERT: "cactus",
+	BIOME_FOREST: "brambleberry",
+}
+
+
 func _gather_cluster_at(x: int, y: int, seed: int) -> Dictionary:
 	"""Is this tile inside a resource patch, and if so which resource?
 
@@ -829,9 +852,25 @@ func _gather_cluster_at(x: int, y: int, seed: int) -> Dictionary:
 		weights = NODE_WEIGHTS
 		total = TOTAL_NODE_WEIGHT
 	var pick := _seeded_hash_int(cell_x * 8191 + cell_y * 131, seed + 77) % maxi(1, total)
+	var ptype := _roll_node_type_weighted(pick, weights)
+	# ⚑ EVERY FOURTH STAND IN A BIOME IS ITS SIGNATURE RESOURCE, and it is a GUARANTEE rather
+	# than a weight.
+	#
+	# A weighted roll gives the right answer on average and the wrong one here, because the
+	# population is tiny: each stand is all ONE type, so a 6% weight is a lottery over a handful
+	# of stands per biome. Measured 2026-09-13 - `mountain_herb` came to ONE node in 48,521
+	# tiles - and raising the weights made it NOISIER, not better: ice_bloom went 79 nodes to 17
+	# while swamp_lily went 11 to 37. Tuning a lottery does not make it less of a lottery.
+	#
+	# Keyed on the patch cell, so it is stable ground rather than something that moves, and it is
+	# proportional to the biome's own area: mountains are 2.67% of the land near a post, so
+	# alpine herbs stay a trip you make on purpose. That part is the design, not the bug.
+	var locked := String(BIOME_SIGNATURE_NODE.get(biome, ""))
+	if locked != "" and absi(_seeded_hash_int(cell_x * 7717 + cell_y * 5209, seed + 313)) % 4 == 0:
+		ptype = locked
 	return {
 		"in": true,
-		"type": _roll_node_type_weighted(pick, weights),
+		"type": ptype,
 		# How deep into the patch, so a stand thins at its edges instead of ending at a wall.
 		"strength": clampf((n - GATHER_CLUSTER_THRESHOLD) / maxf(0.001, 1.0 - GATHER_CLUSTER_THRESHOLD), 0.0, 1.0),
 	}

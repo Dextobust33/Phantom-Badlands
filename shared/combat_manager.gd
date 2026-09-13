@@ -970,7 +970,14 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			_note_crit_escalation(character, combat)
 			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ABILITY_CRIT_DAMAGE - 1.0) * 100.0))
 			if messages != null and messages is Array:
-				messages.append("[color=#00FF00]✦ Out of the shadow — the strike lands true![/color]")
+				# ⚑ SAY "CRITICAL", AND SAY WHICH CARD. Owner 2026-09-13: *"I'm not sure Phantom
+				# strike is actually critting with ambush or other damaging abilities like it
+				# says or maybe it's just not reporting them in the combat log?"* It was critting
+				# - measured 411 -> 500 on a 400 base - and it WAS printing a line. The line just
+				# said "the strike lands true", which names neither the card nor the crit, while
+				# every ordinary crit in the game announces itself as `CRITICAL!`. A player
+				# scanning the log for the thing their card promised found nothing.
+				messages.append("[color=#FF6600]CRITICAL![/color] [color=#9F70FF]Phantom Strike — out of the shadow.[/color]")
 			return max(1, mod_damage)
 		var _first_strike: bool = character.has_path_effect("first_strike_autocrit") 			and not combat.get("path_first_strike_done", false)
 		if _first_strike:
@@ -979,7 +986,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			_note_crit_escalation(character, combat)
 			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ABILITY_CRIT_DAMAGE - 1.0) * 100.0))
 			if messages != null and messages is Array:
-				messages.append("[color=#9F70FF]✦ Phantom Strike — the first blow lands true![/color]")
+				messages.append("[color=#FF6600]CRITICAL![/color] [color=#9F70FF]Phantom Strike — the first blow lands true.[/color]")
 			return max(1, mod_damage)
 		var cc: int = player_crit_chance(character, combat, str(combat.get("_crit_ability", "")))
 		# Ranger "Steady Hand" trades the top of the range for the bottom: it never glances and
