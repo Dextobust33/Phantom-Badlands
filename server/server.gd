@@ -71,6 +71,8 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 ## .godot cache this project has been bitten by before.
 const PowerRankScript = preload("res://shared/power_rank.gd")
 const TravelStanceScript = preload("res://shared/travel_stance.gd")
+const OnlineStatusScript = preload("res://server/online_status.gd")
+var _online_status = null
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
 const QuestManagerScript = preload("res://shared/quest_manager.gd")
 const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
@@ -539,6 +541,12 @@ const NODE_RESPAWN_CHECK_INTERVAL = 10.0  # Only check respawns every 10 seconds
 var node_respawn_timer: float = 0.0
 
 func _ready():
+	# WHO IS ONLINE, published to Discord and the website every few minutes. Costs one small
+	# HTTPS request per interval and nothing at all when unconfigured - see online_status.gd.
+	_online_status = OnlineStatusScript.new()
+	_online_status.name = "OnlineStatus"
+	add_child(_online_status)
+	_online_status.setup(self)
 	# Parse command line arguments for port
 	var args = OS.get_cmdline_args()
 	for arg in args:

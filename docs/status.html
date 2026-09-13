@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phantom Badlands — Who's Online</title>
+<!--
+  Reads a small JSON the game server PATCHes into a gist every few minutes. Nothing is served
+  from the game host: it runs only SSH and the game port, and adding a web server there would be
+  a new open port and another thing to patch, for a read-only list.
+
+  Set GIST_URL below to the raw URL of the gist the server writes.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#14161a; color:#d7dbe0;
+         font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         padding:18px 16px 40px; }
+  .wrap { max-width:680px; margin:0 auto; }
+  h1 { font-size:1.25rem; margin:0 0 2px; color:#f0d98a; letter-spacing:.3px; }
+  .sub { color:#7f8893; font-size:.85rem; margin-bottom:18px; }
+  .count { font-size:2rem; color:#8fd3a0; font-weight:600; }
+  table { width:100%; border-collapse:collapse; margin-top:10px; }
+  th { text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em;
+       color:#6e7681; border-bottom:1px solid #262a31; padding:6px 8px; font-weight:600; }
+  td { padding:8px; border-bottom:1px solid #1d2027; }
+  td.lv { color:#f0d98a; white-space:nowrap; }
+  td.cls { color:#9bb4d4; }
+  td.where { color:#8a9199; }
+  .empty { padding:26px 8px; color:#6e7681; }
+  .err { color:#d98a8a; }
+  @media (max-width:420px){ td.where,th.where{ display:none } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Phantom Badlands</h1>
+  <div class="sub" id="updated">loading…</div>
+  <div class="count" id="count">—</div>
+  <div id="body"></div>
+</div>
+<script>
+const GIST_URL = ""; // raw gist URL, e.g. https://gist.githubusercontent.com/<user>/<id>/raw/status.json
+function ago(unix){
+  const s = Math.max(0, Math.floor(Date.now()/1000 - unix));
+  if (s < 90) return s + " seconds ago";
+  const m = Math.floor(s/60);
+  if (m < 90) return m + " minutes ago";
+  return Math.floor(m/60) + " hours ago";
+}
+function render(d){
+  document.getElementById("updated").textContent = "updated " + ago(d.updated);
+  const n = d.count|0;
+  document.getElementById("count").textContent = n === 0 ? "nobody online" : n + (n===1?" player online":" players online");
+  const body = document.getElementById("body");
+  if (!n) { body.innerHTML = '<div class="empty">The badlands are quiet.</div>'; return; }
+  const rows = d.players.map(p =>
+    `<tr><td>${esc(p.name)}</td><td class="lv">Lv ${p.level|0}</td>` +
+    `<td class="cls">${esc(p.class)}</td><td class="where">${esc(p.where)}</td></tr>`).join("");
+  body.innerHTML = `<table><thead><tr><th>Name</th><th>Level</th><th>Class</th>` +
+    `<th class="where">Last seen near</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+async function load(){
+  if (!GIST_URL) {
+    document.getElementById("updated").innerHTML =
+      '<span class="err">Not configured yet — set GIST_URL in status.html.</span>';
+    return;
+  }
+  try {
+    const r = await fetch(GIST_URL + "?t=" + Date.now(), {cache:"no-store"});
+    render(await r.json());
+  } catch (e) {
+    document.getElementById("updated").innerHTML =
+      '<span class="err">Could not reach the status feed.</span>';
+  }
+}
+load();
+setInterval(load, 120000); // the server only republishes every ~3 min; polling faster buys nothing
+</script>
+</body>
+</html>

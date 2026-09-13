@@ -31,6 +31,9 @@ var _overworld_dungeons: Dictionary = {}
 ## Everything here is already on the client: the local player from `character_data`, everyone
 ## else from `_cached_nearby_players`. The map payload does NOT need to carry it, and does not.
 var _overworld_figure_meta: Dictionary = {}
+## Coarse area-level grid for the map hover - see `WorldSystem.map_level_blocks`.
+var _overworld_levels: Array = []
+var _overworld_level_block: int = 4
 
 ## What this BUILD can read off the wire, sent with login. The server checks it before sending
 ## anything an older build would not understand, and a client that says nothing keeps getting
@@ -37391,6 +37394,9 @@ func _on_log_meta_hover(meta) -> void:
 		if info is Dictionary:
 			_show_overworld_dungeon_hover(info)
 		return
+	if m.begins_with("owlv:"):
+		_show_overworld_level_hover(String(m.substr(5)))
+		return
 	if m.begins_with("owfig:"):
 		# A PERSON on the overworld map - you, another player, or a companion walking behind one.
 		# Restores what v0.9.774 lost when the old text-map overlay stood down: the overlay was a
@@ -37451,6 +37457,47 @@ func _on_log_meta_hover(meta) -> void:
 		return
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(m)
+
+
+func _show_overworld_level_hover(cell_key: String) -> void:
+	"""How dangerous is THAT ground? Answered for any square of the map.
+
+	The level grid is COARSE (one value per 4x4 block) because per-square levels measured 7.8 ms
+	a step on the server - more than the whole rest of the map payload. The field is smooth, so
+	the block is indistinguishable from per-square for the question being asked.
+
+	Uses the same colouring as the Area readout, deliberately: a player should not have to learn
+	two danger scales."""
+	if _overworld_levels.is_empty():
+		return
+	var parts: PackedStringArray = cell_key.split(",")
+	if parts.size() != 2:
+		return
+	var bx: int = int(parts[0]) / _overworld_level_block
+	var by: int = int(parts[1]) / _overworld_level_block
+	if by < 0 or by >= _overworld_levels.size():
+		return
+	var row = _overworld_levels[by]
+	if bx < 0 or bx >= row.size():
+		return
+	var lv: int = int(row[bx])
+	var me: int = maxi(1, int(character_data.get("level", 1)))
+	var ratio: float = float(maxi(1, lv)) / float(me)
+	var verdict := "[color=#7FD4A0]beneath you[/color]"
+	if ratio >= 0.85:
+		verdict = "[color=#FF8800]about your level[/color]"
+	if ratio >= 1.35:
+		verdict = "[color=#FF5555]above you[/color]"
+	if ratio >= 2.0:
+		verdict = "[color=#FF2A2A]far above you[/color]"
+	if ratio >= 3.0:
+		verdict = "[color=#FF2A2A][b]LETHAL[/b][/color]"
+	if ratio < 0.6:
+		verdict = "[color=#9ACD32]trivial[/color]"
+	var body := "%s  -  monsters about [b]Lv %d[/b], %s (you are %d)" % [
+		_area_level_tag(lv), lv, verdict, me]
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(body)
 
 
 func _show_overworld_dungeon_hover(info: Dictionary) -> void:
@@ -46068,6 +46115,8 @@ func _overworld_display(payload: Dictionary) -> String:
 	# three thousand dungeons in the world this is how a player tells an H4 from an S9 without
 	# walking onto it. Same `[url=]` + `meta_hover_started` every other hover in this game uses.
 	_overworld_dungeons = payload.get("dungeons", {})
+	_overworld_levels = payload.get("levels", [])
+	_overworld_level_block = maxi(1, int(payload.get("lvlblock", 4)))
 	return MapPayload.inflate_sprites(payload, func(x: int, y: int) -> String:
 		var cell: String = _OverworldRoom.cell_path(x, y)
 		if cell == "":
@@ -46078,7 +46127,13 @@ func _overworld_display(payload: Dictionary) -> String:
 			return "[url=owdg:%s]%s[/url]" % [dkey, img]
 		if _overworld_figure_meta.has(dkey):
 			return "[url=owfig:%s]%s[/url]" % [dkey, img]
-		return img, crop)
+		# EVERY other square is hoverable too, and reports how dangerous that ground is.
+		#
+		# Owner 2026-09-13: *"we need to make sure players aren't blindsided by high level
+		# areas... make it where players can hover an area of the map to see the area level."*
+		# Regional menace deliberately removed the old rule that danger grows with distance, so
+		# a player can no longer work this out by looking - the map has to say it.
+		return "[url=owlv:%s]%s[/url]" % [dkey, img], crop)
 
 
 func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "") -> String:

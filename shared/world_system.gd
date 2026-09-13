@@ -1576,7 +1576,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 				MapPayload.append_text(segs, MINIMAP_OPEN)
 				segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
 				MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
-			return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post, "dungeons": _dungeons}
+			return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post, "dungeons": _dungeons, "levels": map_level_blocks(center_x, center_y, radius), "lvlblock": LEVEL_BLOCK}
 
 	# Check legacy Trading Post
 	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
@@ -1598,7 +1598,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		else:
 			MapPayload.append_text(segs, generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations))
 		MapPayload.append_text(segs, "[/center]")
-		return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post, "dungeons": _dungeons}
+		return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post, "dungeons": _dungeons, "levels": map_level_blocks(center_x, center_y, radius), "lvlblock": LEVEL_BLOCK}
 
 	# Check if in a player enclosure — treat as safe zone
 	var in_enclosure = false
@@ -1664,7 +1664,7 @@ func build_map_payload(center_x: int, center_y: int, radius: int = 11, nearby_pl
 		segs.append(MapPayload.grid(_minimap_cells(center_x, center_y, dungeon_locations), "\n", "\n"))
 		MapPayload.append_text(segs, MINIMAP_CLOSE + _minimap_caption())
 
-	return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post, "dungeons": _dungeons}
+	return {"f": MapPayload.FORMAT, "segs": segs, "meaning": _meaning, "biomes": _biomes, "figures": _figures, "post": _inside_post, "dungeons": _dungeons, "levels": map_level_blocks(center_x, center_y, radius), "lvlblock": LEVEL_BLOCK}
 
 func is_apex_frontier(x: int, y: int) -> bool:
 	"""Audit #10 v0.9.512 — true when the coord is in the apex frontier zone
@@ -4133,6 +4133,38 @@ func _minimap_glyph(wx: int, wy: int) -> String:
 	if _mini_glyphs.size() >= MINI_GLYPH_CACHE_MAX:
 		_mini_glyphs.clear()
 	_mini_glyphs[k] = out
+	return out
+
+
+## How many tiles one entry of the hover LEVEL grid covers.
+##
+## Per-SQUARE levels would be the obvious thing and cost 7.8 ms a step, measured - more than the
+## entire rest of the map payload put together, and more than double what a step costs today. The
+## level field is smooth (regional menace works in ~600-tile cells, post anchors in tens), so a
+## 4-tile block is indistinguishable from per-square for the question a player is asking, and
+## costs 0.5 ms.
+const LEVEL_BLOCK := 4
+
+
+func map_level_blocks(center_x: int, center_y: int, radius: int) -> Array:
+	"""A coarse grid of area levels covering the view, for the client's map hover.
+
+	Owner 2026-09-13: *"now that roads are safe and areas level moves around a bit we need to make
+	sure players aren't blindsided by high level areas... make it where players can hover an area
+	of the map to see the area level."* Regional menace deliberately broke "further out is worse",
+	so a player can no longer infer danger from position - which means the map has to tell them."""
+	var out: Array = []
+	var span: int = radius * 2 + 1
+	var blocks: int = int(ceil(float(span) / float(LEVEL_BLOCK)))
+	for by in range(blocks):
+		var row: PackedInt32Array = PackedInt32Array()
+		for bx in range(blocks):
+			# Sample the MIDDLE of each block rather than its corner, so the number a player
+			# reads belongs to the ground they are pointing at.
+			var wx: int = center_x - radius + bx * LEVEL_BLOCK + LEVEL_BLOCK / 2
+			var wy: int = center_y + radius - by * LEVEL_BLOCK - LEVEL_BLOCK / 2
+			row.append(int(get_post_anchored_level(wx, wy)))
+		out.append(row)
 	return out
 
 
