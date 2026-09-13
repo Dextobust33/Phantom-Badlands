@@ -25,7 +25,10 @@ const NODE_RESPAWN_TIME = 300.0  # 5 minutes (water/fishing only)
 const POST_NODE_RESPAWN_TIME = 240.0  # 4 minutes for all nodes near a trading post
 const POST_RESOURCE_RADIUS = 22  # tiles — nodes within this radius of a post respawn
 const NODE_RESPAWN_CHECK_INTERVAL = 10.0
-const DEPLETED_PERMANENT = -1  # Sentinel for nodes that never respawn
+const DEPLETED_PERMANENT = -1  # Sentinel for nodes that never respawn (no longer used by gathering)
+## How long wild ground takes to recover. Long enough that a stand is not an infinite well you
+## stand in, short enough that the world is not permanently poorer for having been played in.
+const WILD_NODE_RESPAWN_TIME = 1800.0  # 30 minutes
 const DEPLETED_NODES_FILE = "user://data/depleted_nodes.json"
 var _node_respawn_timer: float = 0.0
 var _depleted_save_timer: float = 0.0
@@ -190,13 +193,27 @@ func deplete_node(world_x: int, world_y: int, tile_type: String = "") -> void:
 	v0.9.526 — restored after v0.9.525 over-rip. World-state respawn is fine
 	per the narrowed [[no-real-time-gates]] rule (only player-facing repeat
 	cooldowns are banned)."""
+	# ⚑ NOTHING IS STRIPPED FOREVER ANY MORE.
+	#
+	# Away from a post a gathered node used to be `DEPLETED_PERMANENT`, and that was a reasonable
+	# bargain when gatherables covered about a THIRD of the world: plenty to go round. They cover
+	# ~6% now, in stands rather than scattered, so permanent depletion means every area a player
+	# works gets stripped bare and stays that way. The world only ever gets emptier.
+	#
+	# Owner 2026-09-13: *"gatherables should likely clear from the map once they are gathered
+	# then new ones pop up in other areas."* This is the second half - the ground recovers - and
+	# the first half is that a spent node now reads as EMPTY rather than as a dimmed ghost of
+	# itself, so "other areas" is what a player sees.
+	#
+	# Post-adjacent ground still recovers fastest: it is where new characters work.
 	var coord_key = "%d,%d" % [world_x, world_y]
+	var now := Time.get_unix_time_from_system()
 	if tile_type == "water":
-		depleted_nodes[coord_key] = Time.get_unix_time_from_system() + NODE_RESPAWN_TIME
+		depleted_nodes[coord_key] = now + NODE_RESPAWN_TIME
 	elif _is_near_npc_post(world_x, world_y, POST_RESOURCE_RADIUS):
-		depleted_nodes[coord_key] = Time.get_unix_time_from_system() + POST_NODE_RESPAWN_TIME
+		depleted_nodes[coord_key] = now + POST_NODE_RESPAWN_TIME
 	else:
-		depleted_nodes[coord_key] = DEPLETED_PERMANENT
+		depleted_nodes[coord_key] = now + WILD_NODE_RESPAWN_TIME
 
 func _is_near_npc_post(world_x: int, world_y: int, radius: int) -> bool:
 	"""Returns true if (x, y) is within `radius` tiles of any NPC post center."""

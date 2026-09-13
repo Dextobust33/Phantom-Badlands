@@ -221,7 +221,18 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 				# over by the cells to its right and below, which have not been reached yet - the grid
 				# fills west to east, north to south.
 				if _big_img(tile_name) != null:
-					bigs.append({"x": x, "y": y, "name": tile_name})
+					# ⚑ CARRY THE DIMMING WITH IT. `_darken` shades the CELL, in pass one - and
+					# pass two then paints the full-size art straight over the top at full
+					# brightness. Owner 2026-09-13: *"the big tree gatherables don't change
+					# visually once gathered."* Exactly that: a spent tree was dimmed and then
+					# un-dimmed, so the one piece of feedback that says "you already took this"
+					# was lost for every tile big enough to matter.
+					var shade := 0.0
+					if overlay == "fog":
+						shade = 0.45
+					elif overlay == "depleted" or overlay == "hotdepleted":
+						shade = 0.42
+					bigs.append({"x": x, "y": y, "name": tile_name, "shade": shade})
 				else:
 					var t := _img(DIR + "tile/%s.png" % tile_name)
 					if t != null:
@@ -282,7 +293,10 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 			continue
 		var bx: int = int(b["x"]) * CELL + (CELL - bi.get_width()) / 2
 		var by: int = (int(b["y"]) + 1) * CELL - bi.get_height()
-		_blend_clipped(grid, bi, bx, by)
+		# Shade the ART, not the cell under it - the art is what the player sees. Cached per
+		# (tile, amount): dimming is a per-pixel loop, and a per-pixel loop on every compose is
+		# precisely what made the map stutter before `_darken` became a rect operation.
+		_blend_clipped(grid, _dimmed_big(String(b["name"]), float(b.get("shade", 0.0))), bx, by)
 
 	# PASS 3 - people, last, so nobody is hidden behind a building.
 	for fr in figs:
@@ -332,6 +346,41 @@ static func _blend_clipped(grid: Image, src: Image, dx: int, dy: int) -> void:
 ## One pre-made translucent black square per darkening amount. Two are ever used (fog and a
 ## spent gathering node), so this cache never holds more than a couple of 32x32 images.
 static var _shade_cache: Dictionary = {}
+
+
+static var _dim_big_cache: Dictionary = {}
+
+
+static func _dimmed_big(tile_name: String, amount: float) -> Image:
+	"""Full-size art, shaded - a spent tree, or one remembered through fog.
+
+	`_darken` shades one CELL of the composed grid, which is the right thing for an ordinary
+	tile and useless for art drawn in a LATER pass: the big art lands on top and undoes it.
+	Owner 2026-09-13: *"the big tree gatherables don't change visually once gathered."*
+
+	Multiplying the colour and leaving alpha alone keeps the transparent margins transparent,
+	which blending a translucent black square over the whole rect would not.
+
+	⚑ CACHED, because this is a per-pixel loop in script and there are only a handful of (tile,
+	amount) pairs in the game. An uncached version would run on every compose for every spent
+	node in view - the same shape as the fog darkening that measured 15.2ms of an 18.7ms
+	compose before it was rewritten."""
+	var base := _big_img(tile_name)
+	if base == null or amount <= 0.0:
+		return base
+	var key := "%s|%d" % [tile_name, int(round(amount * 1000.0))]
+	if _dim_big_cache.has(key):
+		return _dim_big_cache[key]
+	var img := base.duplicate() as Image
+	var k := clampf(amount, 0.0, 1.0)
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.0:
+				continue
+			img.set_pixel(x, y, Color(c.r * k, c.g * k, c.b * k, c.a))
+	_dim_big_cache[key] = img
+	return img
 
 
 static func _darken(grid: Image, cx: int, cy: int, amount: float) -> void:

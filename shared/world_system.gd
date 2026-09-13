@@ -2835,12 +2835,20 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 						# but both were reported to the sprite renderer as `!hot:<tile>`, so a
 						# harvested ore vein inside a hotzone was pixel-identical to a full one.
 						# Same fault the owner reported outside hotzones, one branch further in.
-						sem_parts.append("!hotdepleted:" + tile_type)
+						# ⚑ NO TILE AFTER THE COLON. A spent node CLEARS.
+						#
+						# Owner 2026-09-13: *"gatherables should likely clear from the map once
+						# they are gathered then new ones pop up in other areas."* They used to
+						# be drawn dimmed, which keeps a harvested tree standing there as a grey
+						# ghost - so a stand you have worked still looks full, and you have to
+						# walk each tile to find out. Naming no tile leaves the hotzone warning
+						# with bare ground under it.
+						sem_parts.append("!hotdepleted")
 						biome_parts.append(_cell_biome(x, y))
 					else:
-						# Depleted node — show dim passable ground
+						# Gathered, and gone - the ground is bare until it recovers. See above.
 						line_parts.append("[color=#444444] ,[/color]")
-						sem_parts.append("!depleted:" + tile_type)
+						sem_parts.append("empty")
 						biome_parts.append(_cell_biome(x, y))
 				elif in_hotzone and tile_type in GATHERABLE_TYPES:
 					# v0.9.635 — Keep the gather tile's NATIVE glyph visible inside

@@ -46194,6 +46194,21 @@ func _overworld_figure_path() -> String:
 	return path if ResourceLoader.exists(path) else ""
 
 
+func _trail_offset(facing: String) -> Vector2i:
+	"""Which cell a companion walks in, given where its owner is facing: the one BEHIND them.
+
+	Screen rows run north to south, so "behind" someone facing up is one row DOWN the grid."""
+	match facing:
+		"left":
+			return Vector2i(1, 0)
+		"up":
+			return Vector2i(0, 1)
+		"down":
+			return Vector2i(0, -1)
+		_:
+			return Vector2i(-1, 0)      # facing right, and the default
+
+
 func _overworld_look_path(look_id: String) -> String:
 	"""Another player's overworld sprite from their look id. Transparent set, standing frame -
 	the map does not animate other people, only you."""
@@ -46278,11 +46293,20 @@ func _overworld_display(payload: Dictionary) -> String:
 		if comp is Dictionary:
 			var cpath := _overworld_companion_path(comp)
 			if cpath != "":
-				# Another player's facing is not in the payload, so their companion trails WEST -
-				# the same default the old letter map used when it could not tell.
+				# ⚑ BEHIND THEM, not always to the left.
+				#
+				# Owner 2026-09-13: *"Other players companions don't look like they are following
+				# them instead they seem to always be drawn to the left of them."* They were: the
+				# offset was hard-coded to -1 on x, with a comment saying another player's facing
+				# "is not in the payload". It is not - but the client has worked it out for itself
+				# the whole time. `_update_remote_facings` diffs each remote player's position
+				# every frame and stores the direction in `_remote_facings`, for their own sprite.
+				# The companion simply never asked.
 				var kp: PackedStringArray = String(k).split(",")
 				if kp.size() == 2:
-					pending_companions.append([int(kp[0]) - 1, int(kp[1]), cpath, comp])
+					var owner_name := String(ent.get("name", ""))
+					var t := _trail_offset(String(_remote_facings.get(owner_name, "right")))
+					pending_companions.append([int(kp[0]) + t.x, int(kp[1]) + t.y, cpath, comp])
 	# You, at the centre of your own view.
 	var me := _overworld_figure_path()
 	var mid: int = rows_n / 2
@@ -46308,14 +46332,9 @@ func _overworld_display(payload: Dictionary) -> String:
 	# of it. This restores the trailing cell.
 	var my_comp := _overworld_companion_path(character_data.get("active_companion", {}))
 	if my_comp != "":
-		var tdx := -1
-		var tdy := 0
-		match _local_map_facing:
-			"right": tdx = -1
-			"left": tdx = 1
-			"up": tdx = 0; tdy = 1
-			"down": tdx = 0; tdy = -1
-		pending_companions.append([mid + tdx, mid + tdy, my_comp,
+		# The same rule as every other player's companion - one helper, so the two cannot drift.
+		var mt := _trail_offset(_local_map_facing)
+		pending_companions.append([mid + mt.x, mid + mt.y, my_comp,
 			character_data.get("active_companion", {})])
 	# Companions are placed LAST and never over a person: two players standing a square apart
 	# must not have one's companion delete the other.
