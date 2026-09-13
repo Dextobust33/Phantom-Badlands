@@ -46,6 +46,46 @@ func _make() -> Node:
 	return node
 
 
+func _simulate_day(srv) -> Dictionary:
+	"""A full 24 hours of _process ticks, counting how many REQUESTS actually leave the box.
+
+	The population is deliberately quiet, because that is the owner's case: one player logs in at
+	hour 3 and plays for two hours, moving between posts. Everything else is an empty server."""
+	var node = _make()
+	node._server = srv
+	node._cfg = {"discord_webhook": "https://example.invalid/hook"}
+	node.setup(srv)
+	var sends := 0
+	var checks := 0
+	var bytes := 0
+	var tick: float = OS_SCRIPT.CHECK_INTERVAL_SECONDS
+	var t := 0.0
+	while t < 86400.0:
+		t += tick
+		# Hours 3-5: one player on, changing location every ~10 minutes.
+		srv.characters.clear()
+		if t >= 10800.0 and t < 18000.0:
+			var c := FakeChar.new("Solo", 12, "warrior")
+			c.x = int(t / 600.0)
+			srv.characters[1] = c
+		# Drive the real decision, then account for what it would have sent.
+		node._accum += tick
+		node._since_send += tick
+		if node._accum < OS_SCRIPT.CHECK_INTERVAL_SECONDS or node._busy:
+			continue
+		node._accum = 0.0
+		checks += 1
+		var st: Dictionary = node.build_status()
+		if not node._should_send(st):
+			continue
+		node._last_sent_signature = node.status_signature(st)
+		node._since_send = 0.0
+		sends += 1
+		bytes = maxi(bytes, JSON.stringify({"content": node._status_text(st)}).length())
+	return {"sends": sends, "checks": checks, "bytes": bytes,
+		"old_timer": int(86400.0 / 180.0)}
+
+
 func _init() -> void:
 	print("--- what a player actually sees in the channel ---")
 	var node := _make()
@@ -134,9 +174,44 @@ func _init() -> void:
 	var fresh := _make()
 	fresh._server = srv
 	fresh.setup(srv)
-	var wait: float = OS_SCRIPT.PUBLISH_INTERVAL_SECONDS - fresh._accum
+	var wait: float = OS_SCRIPT.CHECK_INTERVAL_SECONDS - fresh._accum
 	ck(wait > 0.0 and wait <= 30.0, "first publish is %.0fs after boot, not %.0fs" % [
-		wait, OS_SCRIPT.PUBLISH_INTERVAL_SECONDS])
+		wait, OS_SCRIPT.CHECK_INTERVAL_SECONDS])
+	print("
+--- IT SENDS WHEN SOMETHING CHANGES, NOT ON A CLOCK ---")
+	# Owner 2026-09-13: "seems like it will be a lot of wasted data." Measured rather than argued:
+	# simulate a full day of _process ticks against a realistic population and count REQUESTS.
+	var day := _simulate_day(srv)
+	print("  a 24h day, one player on for two hours: %d request(s) sent, %d checks made" % [
+		int(day["sends"]), int(day["checks"])])
+	print("  the old fixed 3-minute timer would have sent %d" % int(day["old_timer"]))
+	var bytes_now: int = int(day["sends"]) * int(day["bytes"])
+	var bytes_old: int = int(day["old_timer"]) * int(day["bytes"])
+	print("  payload %d bytes -> %.1f KB/day now, %.1f KB/day before" % [
+		int(day["bytes"]), bytes_now / 1024.0, bytes_old / 1024.0])
+	ck(int(day["sends"]) < int(day["old_timer"]) / 4,
+		"a quiet day costs under a quarter of what the timer did")
+	ck(int(day["sends"]) >= 24,
+		"but the heartbeat still fires, so a stale feed is visible (%d sends)" % int(day["sends"]))
+
+	print("
+--- AND A PLAYER ARRIVING SHOWS UP FASTER THAN BEFORE ---")
+	ck(OS_SCRIPT.CHECK_INTERVAL_SECONDS <= 60.0,
+		"the list is checked every %.0fs" % OS_SCRIPT.CHECK_INTERVAL_SECONDS)
+	ck(OS_SCRIPT.CHECK_INTERVAL_SECONDS < 180.0,
+		"which is sooner than the 180s the fixed timer took at worst")
+	# The signature must ignore the timestamp, or nothing ever compares equal and every check
+	# sends - the exact bug this replaces, reintroduced.
+	var a: Dictionary = {"updated": 100, "count": 1, "players": [{"name": "A", "level": 2, "class": "Mage", "where": "X"}]}
+	var b: Dictionary = {"updated": 999999, "count": 1, "players": [{"name": "A", "level": 2, "class": "Mage", "where": "X"}]}
+	ck(node.status_signature(a) == node.status_signature(b),
+		"the same players at a different moment are the SAME list")
+	var c: Dictionary = {"updated": 100, "count": 1, "players": [{"name": "A", "level": 3, "class": "Mage", "where": "X"}]}
+	ck(node.status_signature(a) != node.status_signature(c), "a level-up is a change")
+	var d: Dictionary = {"updated": 100, "count": 1, "players": [{"name": "A", "level": 2, "class": "Mage", "where": "Y"}]}
+	ck(node.status_signature(a) != node.status_signature(d), "and so is moving somewhere else")
+
+
 
 	print("\n--- secrets stay out of git ---")
 	ck(OS_SCRIPT.CONFIG_PATH == "user://online_status.cfg",
@@ -155,8 +230,9 @@ func _init() -> void:
 	ck(repo_leak == "", "no webhook URL or token is committed anywhere (leak: %s)" % repo_leak)
 
 	print("\n--- and it stays cheap ---")
-	ck(OS_SCRIPT.PUBLISH_INTERVAL_SECONDS >= 120.0,
-		"publishes every %.0fs, not every tick" % OS_SCRIPT.PUBLISH_INTERVAL_SECONDS)
+	ck(OS_SCRIPT.MIN_SEND_GAP_SECONDS >= 60.0,
+		"two sends are at least %.0fs apart, so a login burst is not a request burst"
+			% OS_SCRIPT.MIN_SEND_GAP_SECONDS)
 	var page := FileAccess.get_file_as_string("res://docs/status.html")
 	ck(page.find("setInterval(load, 120000)") >= 0,
 		"and the page polls slower than the server republishes, so it never spins")

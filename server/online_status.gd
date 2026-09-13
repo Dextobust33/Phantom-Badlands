@@ -26,11 +26,30 @@ extends Node
 ## the channel, and a token is worse. See `CONFIG_PATH`.
 
 const CONFIG_PATH := "user://online_status.cfg"
-## How often to publish. Deliberately slow: the owner asked for "fairly accurate without being
-## too costly", and a status list nobody is watching second-by-second does not need to be.
-const PUBLISH_INTERVAL_SECONDS := 180.0
+
+## ⚑ IT SENDS WHEN SOMETHING CHANGES, NOT ON A CLOCK.
+##
+## Owner 2026-09-13: *"Do we think checking every 3 minutes is too excessive? The game isn't very
+## popular yet so there aren't many changes, seems like it will be a lot of wasted data."* Right,
+## and worse than it looked: a fixed timer sent the SAME payload 480 times a day whether anybody
+## logged in or not, and still took up to three minutes to show someone who just arrived. Both
+## halves of that are wrong at once.
+##
+## So the list is CHECKED often and cheaply - it is a walk over connected peers, in process, no
+## network - and only SENT when it differs from what was last sent. An empty server now sends 48
+## requests a day instead of 480, and a player arriving shows up within a minute instead of three.
+const CHECK_INTERVAL_SECONDS := 60.0
+## The floor between two sends, so a burst of logins cannot become a burst of requests.
+const MIN_SEND_GAP_SECONDS := 60.0
+## Send anyway after this long with no change, so the "updated N ago" line stays credible and a
+## silent failure is still visible as a stale timestamp rather than as nothing at all.
+const IDLE_HEARTBEAT_SECONDS := 1800.0
 
 var _accum: float = 0.0
+## What was last SENT, to compare against. Not the whole payload - the timestamp changes every
+## time and would make every check look like a change.
+var _last_sent_signature: String = ""
+var _since_send: float = 0.0
 var _cfg: Dictionary = {}
 var _discord_message_id: String = ""
 var _busy: bool = false
@@ -42,9 +61,12 @@ func setup(server_ref) -> void:
 	_load_config()
 	# Publish shortly after boot rather than waiting a full interval. A restart is exactly when
 	# the channel is most likely to be WRONG - everyone was just disconnected - so leaving it
-	# stale for three minutes is the worst time to be slow. Ten seconds of grace lets players
-	# reconnect first, so the first list is not empty.
-	_accum = PUBLISH_INTERVAL_SECONDS - 10.0
+	# stale is the worst time to be slow. Ten seconds of grace lets players reconnect first, so
+	# the first list is not empty.
+	_accum = CHECK_INTERVAL_SECONDS - 10.0
+	# Nothing has been sent by this process, so the first check always sends.
+	_last_sent_signature = ""
+	_since_send = IDLE_HEARTBEAT_SECONDS
 
 
 func _load_config() -> void:
@@ -66,10 +88,39 @@ func _process(delta: float) -> void:
 	if _cfg.is_empty() or _server == null:
 		return
 	_accum += delta
-	if _accum < PUBLISH_INTERVAL_SECONDS or _busy:
+	_since_send += delta
+	if _accum < CHECK_INTERVAL_SECONDS or _busy:
 		return
 	_accum = 0.0
-	_publish()
+	var st: Dictionary = build_status()
+	if not _should_send(st):
+		return
+	_last_sent_signature = status_signature(st)
+	_since_send = 0.0
+	_publish(st)
+
+
+func status_signature(st: Dictionary) -> String:
+	"""What makes two status lists the SAME list. Deliberately excludes `updated` - that moves on
+	every check and would make nothing ever compare equal, which is the whole bug this avoids."""
+	var parts: Array = []
+	for p in st.get("players", []):
+		parts.append("%s|%d|%s|%s" % [String(p.get("name", "")), int(p.get("level", 0)),
+			String(p.get("class", "")), String(p.get("where", ""))])
+	# The list is already sorted by level; sort again by the rendered row so two identical
+	# populations cannot differ by ordering alone.
+	parts.sort()
+	return "
+".join(parts)
+
+
+func _should_send(st: Dictionary) -> bool:
+	"""Whether this check is worth a request."""
+	if _since_send < MIN_SEND_GAP_SECONDS:
+		return false
+	if status_signature(st) != _last_sent_signature:
+		return true
+	return _since_send >= IDLE_HEARTBEAT_SECONDS
 
 
 func build_status() -> Dictionary:
@@ -116,8 +167,7 @@ func _status_text(st: Dictionary) -> String:
 	return "\n".join(lines)
 
 
-func _publish() -> void:
-	var st: Dictionary = build_status()
+func _publish(st: Dictionary) -> void:
 	_busy = true
 	_publish_discord(st)
 	_publish_gist(st)
