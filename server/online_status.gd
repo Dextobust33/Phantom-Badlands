@@ -25,6 +25,8 @@ extends Node
 ## SERVER, outside the repo. A webhook URL in a public repo is an open invitation to post into
 ## the channel, and a token is worse. See `CONFIG_PATH`.
 
+const CharacterScript = preload("res://shared/character.gd")
+
 const CONFIG_PATH := "user://online_status.cfg"
 
 ## ⚑ IT SENDS WHEN SOMETHING CHANGES, NOT ON A CLOCK.
@@ -139,7 +141,11 @@ func build_status() -> Dictionary:
 		players.append({
 			"name": String(ch.name),
 			"level": int(ch.level),
-			"class": String(ch.character_class).capitalize(),
+			# The DISPLAY name, and the right field. This is read by people in Discord and on the
+			# website, so it is a display surface like any other - `Sage` must read as "Oracle".
+			# (`character_class` is also not a field on Character; the class lives in
+			# `class_type`, so this was printing blank.)
+			"class": CharacterScript.class_display_name(String(ch.class_type)),
 			"where": where,
 		})
 	players.sort_custom(func(a, b): return int(a["level"]) > int(b["level"]))

@@ -22,15 +22,19 @@ func ck(ok: bool, msg: String) -> void:
 
 
 class FakeChar:
+	## ⚑ THE FIELD NAMES ARE THE REAL ONES. This fake had `character_class`, because the code
+	## under test read `ch.character_class` - and Character has no such field, it is `class_type`.
+	## So the feed printed a BLANK class to Discord for its whole life and this probe passed,
+	## because the stand-in copied the bug. A fake that mirrors the code cannot test the code.
 	var name := "Someone"
 	var level := 1
-	var character_class := "warrior"
+	var class_type := "Warrior"
 	var x := 0
 	var y := 0
 	func _init(n: String, lv: int, cls: String) -> void:
 		name = n
 		level = lv
-		character_class = cls
+		class_type = cls
 
 
 class FakeServer:
@@ -90,7 +94,7 @@ func _init() -> void:
 	print("--- what a player actually sees in the channel ---")
 	var node := _make()
 	var srv := FakeServer.new()
-	srv.characters = {1: FakeChar.new("Ashwyn", 42, "necromancer"), 2: FakeChar.new("Bo", 7, "warrior")}
+	srv.characters = {1: FakeChar.new("Ashwyn", 42, "Sage"), 2: FakeChar.new("Bo", 7, "Fighter")}
 	node._server = srv
 	node._cfg = {"discord_webhook": "https://example.invalid/hook"}
 
@@ -98,9 +102,20 @@ func _init() -> void:
 	ck(int(st.get("count", -1)) == 2, "both online players are listed (got %d)" % int(st.get("count", -1)))
 	var first := String(st["players"][0].get("name", ""))
 	ck(first == "Ashwyn", "sorted by level, highest first (top is %s)" % first)
-	ck(String(st["players"][0].get("class", "")) == "Necromancer", "class is shown title-cased")
+	ck(String(st["players"][0].get("class", "")) != "", "a class is actually reported, not blank")
+	# ⚑ THE DISPLAY NAME. Discord and the website are display surfaces like any other, so a
+	# `Sage` must read as "Oracle" there too. Owner 2026-09-13: *"I just made an oracle and it
+	# shows I'm a Sage..."*
+	ck(String(st["players"][0].get("class", "")) == "Oracle",
+		"a Sage is shown as 'Oracle' (got '%s')" % String(st["players"][0].get("class", "")))
 	ck(String(st["players"][0].get("where", "")) != "", "and WHERE they are is never blank")
 
+	# The real Character, so a renamed or removed field fails here instead of in Discord.
+	var real_char = load("res://shared/character.gd").new()
+	ck("class_type" in real_char,
+		"Character really has `class_type` - the field the feed reads")
+	ck(not ("character_class" in real_char),
+		"...and not `character_class`, which is what it used to read")
 	var text: String = node._status_text(st)
 	ck(text.find("Ashwyn") >= 0 and text.find("Bo") >= 0, "the Discord body names them")
 	ck(text.find("Lv 42") >= 0, "...with their level")

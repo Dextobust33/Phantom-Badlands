@@ -17,6 +17,17 @@ const OVERWORLD_SPRITE_PX := 26
 ## break with an edit.
 const NEWLINE := "
 "
+
+
+func _cls(raw) -> String:
+	"""A class as the PLAYER should see it. `Sage` is shown as "Oracle"; ids are internal.
+
+	⚑ EVERY SURFACE THAT PRINTS A CLASS GOES THROUGH HERE. Owner 2026-09-13, right after the
+	creation bug was fixed: *"I just made an oracle and it shows I'm a Sage..."* - the id was now
+	being STORED correctly, and eleven separate places were printing it raw. That is the same
+	shape as the rename rule in CLAUDE.md: one fact, many surfaces, and fixing the one that was
+	reported leaves the rest lying."""
+	return CharacterScript.class_display_name(String(raw))
 ## How many squares of the view survive the crop inside a post. Half the width, drawn at double
 ## the size, so the panel stays the same and the room gets twice the detail.
 const OVERWORLD_POST_CROP := 11
@@ -6670,7 +6681,7 @@ func display_death_screen(message: Dictionary):
 
 	# === CHARACTER INFO ===
 	display_game("[color=#FFD700]── Character ──[/color]")
-	display_game("%s %s  |  Level %d  |  XP: %s" % [race, class_type, level, format_number(experience)])
+	display_game("%s %s  |  Level %d  |  XP: %s" % [race, _cls(class_type), level, format_number(experience)])
 	display_game("Valor: %s  |  Kills: %s" % [format_number(valor), format_number(kills)])
 	display_game("")
 
@@ -6912,7 +6923,7 @@ func update_character_list_display():
 		row.add_theme_constant_override("separation", 6)
 		var char_race = char_info.get("race", "Human")
 		var btn = Button.new()
-		btn.text = "%s - Level %d %s %s" % [char_info.name, char_info.level, char_race, char_info["class"]]
+		btn.text = "%s - Level %d %s %s" % [char_info.name, char_info.level, char_race, _cls(char_info["class"])]
 		btn.custom_minimum_size = Vector2(0, 40)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.pressed.connect(_on_character_selected.bind(char_info.name))
@@ -7183,7 +7194,7 @@ func update_online_players(players: Array):
 		else:
 			online_players_list.append_text(pname)
 		online_players_list.pop()
-		online_players_list.append_text(" Lv%d %s" % [plevel, pclass])
+		online_players_list.append_text(" Lv%d %s" % [plevel, _cls(pclass)])
 		# Append AFK reason after stat line so it's visible but doesn't crowd the name.
 		var pafk_reason = String(player.get("afk_reason", ""))
 		if pafk and pafk_reason != "":
@@ -7972,7 +7983,7 @@ func display_leaderboard_death_screen(message: Dictionary):
 
 	# === CHARACTER INFO ===
 	display_game("[color=#FFD700]── Character ──[/color]")
-	display_game("%s %s  |  Level %d  |  XP: %s" % [race, class_type, level, format_number(experience)])
+	display_game("%s %s  |  Level %d  |  XP: %s" % [race, _cls(class_type), level, format_number(experience)])
 	display_game("Valor: %s  |  Kills: %s" % [format_number(valor), format_number(kills)])
 	display_game("")
 
@@ -15903,7 +15914,7 @@ func execute_local_action(action: String):
 			for m in party_members:
 				if not m.get("is_leader", false):
 					idx += 1
-					display_game("[%d] [color=#00BFFF]%s[/color] (Lv%d %s)" % [idx, m.get("name", "?"), m.get("level", 1), m.get("class_type", "")])
+					display_game("[%d] [color=#00BFFF]%s[/color] (Lv%d %s)" % [idx, m.get("name", "?"), m.get("level", 1), _cls(m.get("class_type", ""))])
 			display_game("")
 			display_game("[color=#808080]Press [%s] to cancel.[/color]" % get_action_key_name(0))
 			update_action_bar()
@@ -24779,7 +24790,7 @@ func handle_server_message(message: Dictionary):
 						else:
 							mate_afk_tag = " [color=#FFAA66][AFK][/color]"
 					var dot_color = "#FFAA66" if mate_is_afk else "#66FF66"
-					display_game("  [color=%s]●[/color] [color=#DDDDDD]%s[/color] [color=#888888]Lv %d %s[/color]%s%s" % [dot_color, mate_name, mate_level, mate_class.capitalize(), mate_self_tag, mate_afk_tag])
+					display_game("  [color=%s]●[/color] [color=#DDDDDD]%s[/color] [color=#888888]Lv %d %s[/color]%s%s" % [dot_color, mate_name, mate_level, _cls(mate_class).capitalize(), mate_self_tag, mate_afk_tag])
 
 		"party_message":
 			# Audit #14 v0.9.530 — party-channel chat. Server broadcasts to every
@@ -26275,7 +26286,7 @@ func handle_server_message(message: Dictionary):
 			bump_target_y = int(message.get("target_y", 0))
 			display_game("")
 			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
-			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) is here." % [pending_party_bump, pending_party_bump_level, pending_party_bump_class])
+			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) is here." % [pending_party_bump, pending_party_bump_level, _cls(pending_party_bump_class)])
 			var hint_parts = ["[%s] Pass" % get_action_key_name(0)]
 			if bump_can_invite:
 				hint_parts.append("[%s] Invite" % get_action_key_name(1))
@@ -26291,7 +26302,7 @@ func handle_server_message(message: Dictionary):
 			display_game("")
 			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
 			display_game("[color=#FFD700]PARTY INVITE[/color]")
-			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) invites you to a party!" % [pending_party_invite, pending_party_invite_level, pending_party_invite_class])
+			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) invites you to a party!" % [pending_party_invite, pending_party_invite_level, _cls(pending_party_invite_class)])
 			display_game("[color=#808080][%s] Accept  |  [%s] Decline[/color]" % [get_action_key_name(0), get_action_key_name(1)])
 			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
 			update_action_bar()
@@ -26320,7 +26331,7 @@ func handle_server_message(message: Dictionary):
 			display_game("[color=#00BFFF]Leader: %s[/color]" % leader_name)
 			for m in party_members:
 				if not m.get("is_leader", false):
-					display_game("  [color=#00BFFF]%s[/color] (Lv%d %s)" % [m.get("name", "?"), m.get("level", 1), m.get("class_type", "")])
+					display_game("  [color=#00BFFF]%s[/color] (Lv%d %s)" % [m.get("name", "?"), m.get("level", 1), _cls(m.get("class_type", ""))])
 			if is_party_leader:
 				display_game("[color=#808080]You lead the party. Move to guide your group.[/color]")
 			else:
@@ -26341,7 +26352,7 @@ func handle_server_message(message: Dictionary):
 
 		"party_member_joined":
 			var member = message.get("member", {})
-			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) joined the party!" % [member.get("name", "?"), member.get("level", 1), member.get("class_type", "")])
+			display_game("[color=#00BFFF]%s[/color] (Lv%d %s) joined the party!" % [member.get("name", "?"), member.get("level", 1), _cls(member.get("class_type", ""))])
 
 		"party_member_left":
 			display_game("[color=#FF8800]%s left the party.[/color]" % message.get("name", "Unknown"))
@@ -30410,7 +30421,7 @@ func _open_party_menu():
 	display_game("[color=#FFD700]Members:[/color]")
 	for m in party_members:
 		var leader_tag = " [color=#FFD700](Leader)[/color]" if m.get("is_leader", false) else ""
-		display_game("  [color=#00BFFF]%s[/color] - Lv%d %s%s" % [m.get("name", "?"), m.get("level", 1), m.get("class_type", ""), leader_tag])
+		display_game("  [color=#00BFFF]%s[/color] - Lv%d %s%s" % [m.get("name", "?"), m.get("level", 1), _cls(m.get("class_type", "")), leader_tag])
 	display_game("")
 	if is_party_leader:
 		display_game("[%s] [color=#FF6666]Disband[/color] - Disband the party" % get_action_key_name(1))
@@ -31176,7 +31187,13 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.784[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.785[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ AN ORACLE IS CALLED AN ORACLE.[/color] Last release fixed the Oracle being created as the wrong class. It was then [b]stored[/b] correctly and [b]shown[/b] as \"Sage\", its internal name, in eleven separate places — your character header, the character-select list, the online list, party messages. All of them now show the name you chose. The Discord and website player list was printing [b]no class at all[/b], which nobody had noticed.")
+	display_game("  [color=#1EFF00]◆ The market and the inn were two halves of one picture.[/color] They were cut from touching rows of a single fishmonger’s stall — the market got the goods with nothing under them, the inn got the bare counter. The market is the whole stall now, and the inn is [b]a bed[/b].")
+	display_game("  [color=#1EFF00]◆ Roads are cobblestone.[/color] The road tile measured perfectly flat — it was the blank centre fill of a dirt pattern, flooded with one colour, so a road was a [b]bright orange square[/b]. It is paved stone now, and reads as a road on grass, snow, sand and rock.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.784[/color]")
 	display_game("  [color=#FF4444]★ THE INTERMITTENT FREEZE IS GONE.[/color] The server stalled for up to [b]1.4 seconds every 3 seconds[/b] — it re-checked every dungeon in the world against every trading post, and doubling the number of posts a few releases ago doubled that work. Now [b]12ms[/b]. It blocked the whole server, which is why it hit walking and combat alike.")
 	display_game("  [color=#FF4444]★ PICKING THE ORACLE GAVE YOU A WIZARD.[/color] The Oracle is the only class whose internal name differs from the one you see, and the creation screen matched on the name you see — so the pick silently failed and you got [b]whatever was selected before[/b]. Fixed, and the server now refuses a class it does not recognise rather than storing it.")
 	display_game("  [color=#FF8000]★ SCOUTING WORKS.[/color] It widens your view by two tiles, which made the map [b]wider than the panel it is drawn in[/b], so every row wrapped and the map came apart into bands. Tiles now scale to fit whatever your view is.")

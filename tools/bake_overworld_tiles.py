@@ -68,7 +68,12 @@ CUTS = {
     # --- the land itself ---------------------------------------------------------------
     # NOTE: `empty` gets no entry ON PURPOSE. Empty IS the biome ground - giving it a prop put a
     # tuft of grass on every bare tile in the world and hid the ground it was meant to show.
-    'tile:path':       ('farmlands_v3', 2, 4),
+    # ⚑ A ROAD, NOT A COLOUR. Owner 2026-09-13: *"Roads need actual sprites, the current
+    # coloring looks bad."* It measured FLAT - pixel variance 0.0, saturation 0.66 - because
+    # `farmlands_v3 (2,4)` is the plain centre fill of a dirt autotile, and `opaque=True` then
+    # floods any gaps with its commonest colour. The result was a bright orange square.
+    # Cobblestone reads as something built and maintained, which is what a road between posts is.
+    'tile:path':       ('green_village', 17, 2),
     'tile:wall':       ('winter_forest', 7, 14),
     'tile:bridge':     ('miners_cave', 6, 4),
 
@@ -78,8 +83,18 @@ CUTS = {
     'tile:apothecary':    ('craft_stations', 3, 6, (2, 2)),
     'tile:workbench':     ('craft_stations', 5, 0, (2, 2)),
     'tile:enchant_table': ('craft_stations', 7, 1, (2, 1)),
-    'tile:market':        ('craft_stations', 9, 0, (1, 2)),
-    'tile:inn':           ('craft_stations', 10, 0, (1, 2)),
+    # ⚑ THESE TWO WERE HALVES OF ONE PICTURE.
+    #
+    # Owner 2026-09-13: *"The market and the sprite that say I'm fully rested seem to be parts of
+    # the same sprite divided in half, doesn't look good."* Exactly right: `craft_stations` rows
+    # 9 AND 10 together are a single fishmonger's stall - goods on top, counter underneath. The
+    # market took the top row and the inn took the bottom, so the market was an awning with
+    # nothing under it and the inn was a bare table.
+    #
+    # The market gets the whole stall now, and the inn gets a BED, which is what a place you rest
+    # at should look like.
+    'tile:market':        ('craft_stations', 9, 0, (2, 2)),
+    'tile:inn':           ('cozy_home', 9, 0, (2, 2)),
     'tile:brazier':       ('craft_stations', 2, 6, (1, 2)),
     'tile:banner':        ('craft_stations', 5, 6, (2, 2)),
     'tile:writing_desk':  ('craft_stations', 7, 6, (2, 2)),
@@ -483,8 +498,50 @@ def main():
     print('%d overlays still on a glyph' % m)
     print('%d files in %s' % (len(biomes) + cut + n + m, OUT))
     _assert_no_twins(OUT)
+    _warn_adjacent_sources()
     print('no two tiles baked to the same picture')
 
+
+
+def _warn_adjacent_sources():
+    """Flag any two tiles cut from ADJACENT regions of the same sheet.
+
+    ⚑ THIS SHAPE CAUSED THREE BUGS IN ONE DAY. Adjacent cells in a tileset are almost always
+    either two halves of ONE object or two near-identical variants of it:
+
+      * `market` (row 9) and `inn` (row 10) were the top and bottom of a single fishmonger's
+        stall - the market was an awning with nothing under it, the inn a bare table. Owner:
+        "parts of the same sprite divided in half, doesn't look good."
+      * `post_marker` (4,6) and `quest_board` (4,5) measured 4.4 apart at play size.
+      * `blacksmith` (7,13) and `healer` (8,13), same JOB, 13.0 apart.
+
+    Advisory rather than fatal: adjacency is sometimes fine, and a bake that refuses to run is
+    worse than one that tells you where to look. The point is that nobody was looking."""
+    boxes = []
+    for key, spec in sorted(CUTS.items()):
+        kind, name = key.split(':', 1)
+        pack, row, col = spec[0], spec[1], spec[2]
+        span = spec[3] if len(spec) > 3 else (1, 1)
+        boxes.append((pack, row, col, span[0], span[1], '%s:%s' % (kind, name)))
+    hits = []
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            a, b = boxes[i], boxes[j]
+            if a[0] != b[0]:
+                continue
+            # Touching or overlapping, in either axis.
+            r_touch = a[1] < b[1] + b[3] + 1 and b[1] < a[1] + a[3] + 1
+            c_touch = a[2] < b[2] + b[4] + 1 and b[2] < a[2] + a[4] + 1
+            if r_touch and c_touch:
+                hits.append('%s (%d,%d) and %s (%d,%d) in %s'
+                            % (a[5], a[1], a[2], b[5], b[1], b[2], a[0]))
+    if hits:
+        print('ADVISORY - %d tile pair(s) cut from touching regions of one sheet:' % len(hits))
+        for h in hits:
+            print('    ' + h)
+        print('  Adjacent cells are usually halves of one object or variants of it. Look at them.')
+    else:
+        print('no two tiles cut from touching regions')
 
 
 def _assert_no_twins(out_dir):
