@@ -31413,7 +31413,20 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		# …), so this spreads dungeons without leaving the band. (Previously a ±100-tile offset
 		# was added here "for spread" — but that swamped low tiers' narrow bands and scattered
 		# T1/T2 dungeons ~145 tiles out into high-level overworld, mismatching their level.)
-		var reloc = _roll_location_in_ring(float(_target_cell["d0"]), float(_target_cell["d1"]))
+		# ⚑ A UNIFORM POINT IN THE WORLD, NOT A DISTANCE RING.
+		#
+		# The ring came from `grade_cells(dist_for_level)`, which asks "at what radii does the
+		# land reach this grade's levels" - a question that only HAS an answer while level is a
+		# function of distance alone. Regional menace (2026-09-13) ended that: two places the same
+		# distance out are now different country, so aiming at a radius no longer aims at a grade,
+		# and the rings would have quietly skewed the whole dungeon distribution.
+		#
+		# Sampling the world uniformly and reading the grade off the ground makes the dungeon
+		# distribution FOLLOW the land distribution by construction - which is the property worth
+		# having, and the one that survives the next change to the curve. `_grade_of_land` below
+		# is already the authority on what this dungeon will be; this stops a second, now-wrong
+		# idea of where it should go from fighting it.
+		var reloc := _roll_location_in_world()
 		world_x = reloc.x
 		world_y = reloc.y
 		if world_x < world_system.WORLD_MIN_X or world_x > world_system.WORLD_MAX_X \
@@ -31545,6 +31558,19 @@ func _dungeon_grade_cells() -> Array:
 
 func _pick_dungeon_grade() -> Dictionary:
 	return DungeonDatabaseScript.pick_grade(_dungeon_grade_cells())
+
+
+func _roll_location_in_world() -> Vector2i:
+	"""A uniform point in the world disc.
+
+	`sqrt(randf())` on the radius, not `randf()`: a uniform radius would pile points at the
+	centre, because a ring's area grows with its radius. That bias is exactly the one that made
+	the old distribution hard to reason about, so it is not worth reintroducing here."""
+	var r: float = sqrt(randf()) * 2828.0
+	var a: float = randf() * TAU
+	return Vector2i(
+		clampi(int(round(cos(a) * r)), world_system.WORLD_MIN_X, world_system.WORLD_MAX_X),
+		clampi(int(round(sin(a) * r)), world_system.WORLD_MIN_Y, world_system.WORLD_MAX_Y))
 
 
 func _roll_location_in_ring(d0: float, d1: float) -> Vector2i:

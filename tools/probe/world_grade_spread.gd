@@ -38,13 +38,17 @@ func _init() -> void:
 	var total := 0.0
 	# Integrate over radius, weighting by circumference - the honest way to ask "how much of the
 	# map is this", rather than sampling points evenly in radius which under-counts the rim.
-	for step in range(1, 2829):
-		var r := float(step)
-		var w := r                       # proportional to 2*pi*r
-		var lvl: int = ws._distance_to_level(r)
-		var t := int(PR.grade_for_level(maxi(1, lvl)).get("tier", 1))
-		area[t] = float(area.get(t, 0.0)) + w
-		total += w
+	# Sampled over the PLANE, not integrated over radius: once regional menace exists, two places
+	# the same distance out are different country, so a radius integral can no longer describe
+	# the map. A uniform grid over the world is area-weighted by construction.
+	for gy in range(-1950, 1951, 25):
+		for gx in range(-1950, 1951, 25):
+			if gx * gx + gy * gy > 2828 * 2828:
+				continue
+			var lvl: int = ws.get_post_anchored_level(gx, gy)
+			var t := int(PR.grade_for_level(maxi(1, lvl)).get("tier", 1))
+			area[t] = float(area.get(t, 0.0)) + 1.0
+			total += 1.0
 	for t in range(1, 10):
 		if not area.has(t):
 			continue
@@ -57,10 +61,12 @@ func _init() -> void:
 	print("\n===== WHAT A NEW PLAYER HAS =====")
 	# The practical question: how much ground is sized for a character below level 10?
 	var low := 0.0
-	for step in range(1, 2829):
-		var r := float(step)
-		if ws._distance_to_level(r) <= 10:
-			low += r
+	for gy in range(-1950, 1951, 25):
+		for gx in range(-1950, 1951, 25):
+			if gx * gx + gy * gy > 2828 * 2828:
+				continue
+			if ws.get_post_anchored_level(gx, gy) <= 10:
+				low += 1.0
 	print("  country at level 10 or below: %.3f%% of the world by area" % (100.0 * low / total))
 	print("  ...which is a disc of radius %d tiles around the origin." % 150)
 	print("\nThe trade to decide: a flatter curve gives new players more room and pushes the")

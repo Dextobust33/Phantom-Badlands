@@ -32967,6 +32967,32 @@ func hide_tool_status_overlay():
 	if tool_status_overlay:
 		tool_status_overlay.visible = false
 
+func _area_level_tag(area_lv: int) -> String:
+	"""The `Lv ~N` readout, coloured by the gap between the country and the character.
+
+	The bands are RATIOS, not fixed level gaps, because a 10-level gap is lethal at level 12 and
+	meaningless at level 900. The pulse is reserved for the top band: something that blinks
+	constantly stops being a warning, so it only fires where the country genuinely outclasses
+	you and a careless step is a dead character."""
+	var me: int = maxi(1, int(character_data.get("level", 1)))
+	var ratio: float = float(maxi(1, area_lv)) / float(me)
+	var col := "#7FD4A0"          # comfortably below you
+	if ratio >= 0.85:
+		col = "#FF8800"           # the usual orange: about your level
+	if ratio >= 1.35:
+		col = "#FF5555"           # a real step up
+	if ratio >= 2.0:
+		col = "#FF2A2A"           # dangerous
+	if ratio < 0.6:
+		col = "#9ACD32"           # trivial for you
+	var body := "[color=%s]Lv ~%d[/color]" % [col, area_lv]
+	if ratio >= 3.0:
+		# LETHAL. Pulsed via BBCode so it needs no per-frame work and cannot desync from the
+		# text it decorates - `[pulse]` is a built-in RichTextLabel effect.
+		body = "[pulse freq=2.0 color=#FF0000AA][color=#FF2A2A][b]Lv ~%d[/b][/color][/pulse] [color=#FF5555]⚠ LETHAL[/color]" % area_lv
+	return body
+
+
 func update_status_hud():
 	"""Status HUD content is now rendered inside tool_status_overlay (see
 	update_tool_status_overlay). The original VBox of labels is hidden so it
@@ -33150,7 +33176,18 @@ func update_region_label():
 				if tdist > 0:
 					dist_md = " [color=#FFBBAA](%d tiles)[/color]" % tdist
 				threat_tag = " [color=%s]⚠ Threat: %s spillover from %s[/color]%s%s" % [tcolor, mtype, dname, dist_md, more_md]
-		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s%s%s" % [hud_area_level, danger, apex_tag, threat_tag]
+		# ⚑ THE AREA LEVEL IS COLOURED BY HOW FAR IT OUTRANKS YOU, and pulses when it is lethal.
+		#
+		# Owner 2026-09-13, on the regional-menace change: *"We will need to make the area danger
+		# a little more obvious like changing the color of the area text as it gets way higher
+		# than your character and maybe even pulse."*
+		#
+		# This matters MORE than it used to. Danger used to be inferable from distance - walk
+		# further, meet worse. Regional menace deliberately broke that so every grade of country
+		# can exist anywhere, which means the number on this line is now the player's ONLY
+		# warning, and under permadeath it has to carry that weight.
+		area_line = "[color=#9ACD32]Area:[/color] %s%s%s%s" % [
+			_area_level_tag(hud_area_level), danger, apex_tag, threat_tag]
 
 	# Slice 6k — Region line now shows the authored region name (e.g.,
 	# "Greenmeadow Reach") instead of the generic tier name. Tier color +

@@ -143,8 +143,16 @@ func _init() -> void:
 	var srv := FileAccess.get_file_as_string("res://server/server.gd")
 	ck(srv.find("_grade_of_land(world_x, world_y)") >= 0,
 		"the world placer reads the grade off the ground it landed on")
-	ck(srv.find("_roll_location_in_ring(float(_target_cell") >= 0,
-		"...having rolled its location inside that grade's ring")
+	# NOT a distance ring any more, and the reason matters. `grade_cells(dist_for_level)` asks
+	# "at what radii does the land reach this grade's levels", which only HAS an answer while
+	# level is a function of distance alone. Regional menace (2026-09-13) ended that: two places
+	# the same distance out are different country now. So placement samples the world uniformly
+	# and reads the grade off the ground, which makes the dungeon distribution follow the LAND
+	# distribution by construction - and keeps doing so the next time the curve changes.
+	ck(srv.find("var reloc := _roll_location_in_world()") >= 0,
+		"...having sampled the WORLD uniformly rather than a distance ring")
+	ck(srv.find("var r: float = sqrt(randf()) * 2828.0") >= 0,
+		"...with sqrt on the radius, so the sample is uniform by AREA and not piled at the centre")
 	ck(srv.count("_pick_weighted_dungeon_type()") >= 3,
 		"...and both spawn loops pick the TYPE by rarity")
 	ck(srv.find('"tier": grade_tier') >= 0,

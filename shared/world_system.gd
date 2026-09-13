@@ -534,6 +534,45 @@ func get_biome_display_name(biome: String) -> String:
 func get_biome_empty_color(biome: String) -> String:
 	return BIOME_EMPTY_COLORS.get(biome, "#6B5B45")
 
+## REGIONAL MENACE - how dangerous this patch of country is, relative to its distance.
+##
+## Owner 2026-09-13, on the measured distribution: *"Option 3 with a mild version of option 2."*
+##
+## Measured before this existed (`tools/probe/world_grade_spread.gd`): the world was 0.02%
+## H-grade country and 51% S-grade, because level was a pure function of distance and a ring's
+## area grows with its radius - so the rim held both the highest levels and nearly all the
+## ground. One consequence was that the ONLY low-grade land in the world sat beside posts (they
+## pull the level down locally), which is why the owner found the starter post ringed with
+## dungeons: a low-grade dungeon had one legal address on the whole map.
+##
+## Distance still sets the BASE level and still means danger as a trend. This multiplies it, so a
+## calm valley can exist far out and a savage peak can exist closer in. Every grade gets
+## addresses everywhere, which is the actual fix for the clustering.
+##
+## Same value-noise machinery as temperature and humidity, with its own seed offset so it does
+## not correlate with either - a menace layer that tracked the biome would make every swamp
+## deadly and every plain safe, which is a different and worse game.
+const MENACE_FREQ := 0.0016          # ~600-tile cells: regions, not patches
+const MENACE_MIN := 0.15             # a calm valley - deep enough to break up the rim
+const MENACE_MAX := 2.20             # a savage peak
+## Inside this radius the multiplier is damped to 1.0, so a new character cannot walk out of the
+## starter post into an S-grade pocket. Beyond it the damping releases over the same distance.
+const MENACE_SAFE_RADIUS := 220.0
+
+
+func _menace_at(x: int, y: int, world_seed: int) -> float:
+	"""The danger multiplier for this country. 1.0 is exactly what distance alone would give."""
+	var n := _biome_value_noise(x, y, world_seed + 15731, MENACE_FREQ)
+	var m: float = MENACE_MIN + (MENACE_MAX - MENACE_MIN) * n
+	# Damp toward 1.0 near the origin: the first stretch out of the starter post must be
+	# predictable, because a player there has no tools to survive a surprise.
+	var d := sqrt(float(x * x + y * y))
+	if d < MENACE_SAFE_RADIUS * 2.0:
+		var t: float = clampf((d - MENACE_SAFE_RADIUS) / MENACE_SAFE_RADIUS, 0.0, 1.0)
+		m = lerpf(1.0, m, t * t * (3.0 - 2.0 * t))
+	return m
+
+
 func _biome_temp_noise(x: int, y: int, world_seed: int) -> float:
 	"""Low-frequency value noise for temperature gradient. Cold = 0, hot = 1.
 	Uses a different hash multiplier than humidity so the two layers don't
@@ -1728,7 +1767,17 @@ func get_post_anchored_level(x: int, y: int) -> int:
 	# dominates (weight 1.0).
 	if bubble_weight >= 1.0 and bubble_level >= 0:
 		return bubble_level
-	var wilderness_level = _distance_to_level(sqrt(float(x * x + y * y)))
+	# Distance sets the base; REGIONAL MENACE shifts it. See `_menace_at`. Applied here rather
+	# than inside `_distance_to_level` because that function knows only a radius, and the whole
+	# point is that two places the same distance out can be different country.
+	#
+	# Posts still pull the level DOWN below (they contribute only when lower), so a savage pocket
+	# cannot land on a post's doorstep - which would have recreated the crowding problem from the
+	# other direction.
+	var _seed_for_menace: int = chunk_manager.world_seed if chunk_manager else 0
+	var wilderness_level = int(round(float(_distance_to_level(sqrt(float(x * x + y * y))))
+		* _menace_at(x, y, _seed_for_menace)))
+	wilderness_level = clampi(wilderness_level, 1, 10000)
 	# Slice 6L — anchor against procedurally-generated NPC posts so the level
 	# model survives a map wipe. Falls through to the wilderness curve when
 	# chunk_manager isn't ready or no posts exist (boot, dev test).
@@ -1819,17 +1868,35 @@ func _distance_to_level(distance: float) -> int:
 	if distance <= 10:
 		return 1
 
-	# Novice band (10-20): Lv 1-2 — tight 10-tile ring around the starter
-	# post. New characters still get a brief Lv 1-2 introduction, but it
-	# falls off faster than the v0.9.479 20-tile buffer.
-	if distance <= 20:
-		var t = (distance - 10) / 10.0  # 0 to 1
-		return int(1 + t * 1)  # 1 to 2
-
-	# Easy band (20-40): Lv 2-6 — compact second ring, sharper ramp.
+	# Novice band (10-40): Lv 1-5 — the whole of tier H, which is levels 1-5. It used to end at
+	# radius 20 holding only L1-2, so H country was a 10-tile ring.
 	if distance <= 40:
-		var t = (distance - 20) / 20.0  # 0 to 1
-		return int(2 + t * 4)  # 2 to 6
+		var t = (distance - 10) / 30.0  # 0 to 1
+		return int(1 + t * 4)  # 1 to 5
+
+	# 2026-09-13 — THE EARLY BANDS WIDENED, the "mild option 2" half of the owner's decision.
+	#
+	# Measured before: country at level 10 or below was 0.034% of the world by area and H-grade
+	# country 0.02%. The reason is in `PowerRank.TIER_LEVEL_BANDS`: the first FIVE tiers all live
+	# below level 100 (H is 1-5, G 6-15, F 16-30, E 31-50, D 51-100) while the last four share
+	# 101-10000. So unless the curve spends real RADIUS below level 100, those five tiers cannot
+	# occupy meaningful ground however the rest is shaped - and a low-grade dungeon then has
+	# nowhere to stand but a post's doorstep.
+	#
+	# These bands spend the first 900 tiles getting to level 100, where they used to spend 150
+	# getting to 50. The rest of the curve is unchanged.
+	if distance <= 120:
+		var t = (distance - 40) / 80.0
+		return int(6 + t * 9)       # G: 6 to 15
+	if distance <= 280:
+		var t = (distance - 120) / 160.0
+		return int(16 + t * 14)     # F: 16 to 30
+	if distance <= 480:
+		var t = (distance - 280) / 200.0
+		return int(31 + t * 19)     # E: 31 to 50
+	if distance <= 900:
+		var t = (distance - 480) / 420.0
+		return int(51 + t * 49)     # D: 51 to 100
 
 	# Distance 40-150: Levels 6-50 (catch up to old curve at the 150 anchor).
 	if distance <= 150:
@@ -1837,19 +1904,15 @@ func _distance_to_level(distance: float) -> int:
 		return int(6 + t * 44)
 
 	# Distance 150-400: Levels 50-200 (moderate growth)
-	if distance <= 400:
-		var t = (distance - 150) / 250.0  # 0 to 1
-		return int(50 + t * 150)
+	# (the 150-400 band is now covered by the widened early bands above)
 
 	# Distance 400-800: Levels 200-600 (steady)
-	if distance <= 800:
-		var t = (distance - 400) / 400.0  # 0 to 1
-		return int(200 + t * 400)
+	# (400-800 is now covered by the widened early bands above)
 
 	# Distance 800-1200: Levels 600-1500 (accelerating)
 	if distance <= 1200:
-		var t = (distance - 800) / 400.0  # 0 to 1
-		return int(600 + t * 900)
+		var t = (distance - 900) / 300.0  # 0 to 1
+		return int(101 + t * 1399)   # C into B: 101 to 1500
 
 	# Distance 1200-1800: Levels 1500-4000 (steep)
 	if distance <= 1800:
