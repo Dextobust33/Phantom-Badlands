@@ -46,6 +46,15 @@ extends Resource
 # (triggered when unspent_stat_points first ticks > 0). Prevents repeating the
 # hint on every level-up.
 @export var seen_progression_hint: bool = false
+## ONE-SHOT WORLD MIGRATION, 2026-09-13. False on every character that existed before the world
+## reshape; set true the first time they are moved home. Owner: *"we should probably have
+## everyone teleported back to the starter post on their next login just this once. So they can
+## navigate out again."*
+##
+## A FLAG rather than a date check, because a date check fires again for anyone who does not log
+## in for a while and cannot be reasoned about later. A new character is created with it already
+## true - see `handle_create_character` - so nobody is "migrated" into the post they start in.
+@export var world_reshape_relocated: bool = false
 
 # Audit #3 Slice 5 — additional one-time tutorial flags. All default false on
 # new characters; legacy characters get the hints on their first matching
@@ -1981,6 +1990,7 @@ func to_dict() -> Dictionary:
 		"unspent_stat_points": unspent_stat_points,
 		# Audit #3 Slice 3 — one-time progression-hint flag
 		"seen_progression_hint": seen_progression_hint,
+		"world_reshape_relocated": world_reshape_relocated,
 		# Audit #3 Slice 5 — additional one-time tutorial flags
 		"seen_quest_board_hint": seen_quest_board_hint,
 		"seen_dungeon_hint": seen_dungeon_hint,
@@ -2193,6 +2203,9 @@ func from_dict(data: Dictionary):
 	# Audit #3 Slice 3 — legacy chars default to false; first time we observe
 	# unspent points > 0 after this version, the hint fires once.
 	seen_progression_hint = bool(data.get("seen_progression_hint", false))
+	# Defaults FALSE, which is what makes the migration fire for every character saved before it
+	# existed. New characters are set true at creation instead.
+	world_reshape_relocated = bool(data.get("world_reshape_relocated", false))
 	# Audit #3 Slice 5 — additional one-time tutorial flags (default false).
 	seen_quest_board_hint = bool(data.get("seen_quest_board_hint", false))
 	seen_dungeon_hint = bool(data.get("seen_dungeon_hint", false))

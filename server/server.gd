@@ -2784,6 +2784,29 @@ func handle_select_character(peer_id: int, message: Dictionary):
 
 	_reconcile_lost_rank_choices(peer_id)
 
+	# ⚑ ONE-SHOT RELOCATION after the 2026-09-13 world reshape.
+	#
+	# Regional menace and the widened early bands moved the country under standing characters:
+	# somebody parked at radius 700 was in ~L400 ground and is not any more. Under permadeath
+	# that is not a cosmetic change - logging in surrounded by country that outclasses you, with
+	# no idea it moved, is how a character dies to a decision nobody made.
+	#
+	# Owner: *"we should probably have everyone teleported back to the starter post on their next
+	# login just this once. So they can navigate out again."*
+	#
+	# Deliberately NOT applied to a character already inside a dungeon - they are mid-run, the
+	# dungeon interior is unaffected by the reshape, and yanking them out would destroy the run.
+	# They get it on the login after they leave.
+	if not character.world_reshape_relocated and not character.in_dungeon:
+		character.world_reshape_relocated = true
+		var _home: Vector2i = _starter_post_position()
+		character.x = _home.x
+		character.y = _home.y
+		persistence.save_character(peers[peer_id].get("account_id", ""), character)
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#FFD700]The world has been redrawn.[/color] The land no longer gets harder in simple rings - there are calm valleys far out and dangerous country close in, and every region now says its level on your map. [color=#FFD700]You have been returned to the Crossroads once[/color] so you can set out again knowing what you are walking into. Watch the [color=#FF8800]Area[/color] reading: it is coloured against YOUR level, and it pulses when the ground would kill you."})
+		log_message("World-reshape relocation: %s moved to the starter post" % char_name)
+
 	var username = peers[peer_id].username
 	log_message("Character loaded: %s (Account: %s) for peer %d" % [char_name, username, peer_id])
 	update_player_list()
@@ -3190,6 +3213,11 @@ func handle_create_character(peer_id: int, message: Dictionary):
 
 	# Check if this is the account's very first character (for tutorial)
 	var is_first_character = persistence.is_first_character_ever(account_id)
+
+	# A character created AFTER the 2026-09-13 world reshape has nothing to be relocated from,
+	# so it is marked done at birth. Without this every new character would be "returned to the
+	# Crossroads" on its first login - from the Crossroads.
+	character.world_reshape_relocated = true
 
 	# Save character to persistence
 	persistence.save_character(account_id, character)
@@ -31579,6 +31607,27 @@ func _roll_location_in_ring(d0: float, d1: float) -> Vector2i:
 
 func _pick_weighted_dungeon_type() -> String:
 	return DungeonDatabaseScript.pick_weighted_type()
+
+
+func _starter_post_position() -> Vector2i:
+	"""Where a relocated character is put down: the post nearest the origin, which is the
+	Crossroads in every world this game generates.
+
+	Found rather than hardcoded to (0,0) - the tile at the origin is inside the post's throne
+	room, and putting a player there once left them standing in furniture."""
+	var best := Vector2i(0, 0)
+	var best_d := 1 << 30
+	if chunk_manager != null:
+		for post in chunk_manager.get_npc_posts():
+			var px := int(post.get("x", 0))
+			var py := int(post.get("y", 0))
+			var d := px * px + py * py
+			if d < best_d:
+				best_d = d
+				best = Vector2i(px, py)
+	# A couple of tiles south of the marker, which is open floor in every post layout, so the
+	# player lands ON the post rather than in whatever the centre tile happens to be.
+	return Vector2i(best.x, best.y - 2)
 
 
 func _grade_of_land(x: int, y: int) -> Dictionary:
