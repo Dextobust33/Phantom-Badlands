@@ -88,7 +88,16 @@ All of this came out of the distribution work. Recorded before starting any of i
       little wider and make encounters very rare on them so players can traverse and explore the
       map without running into a crazy amount of encounters."* Directly mitigates the longer
       travel above - the two are the same problem seen twice.
-- [ ] **Post distribution — are there enough to navigate BY?** Owner: *"ensure we have a
+- [x] **DONE 2026-09-13 — Post distribution.** The problem was not sparsity, it was CLUSTERING:
+      `POST_PLACEMENT_RADIUS` was 600 in a world of radius 2828, so all 60 posts sat in the inner
+      5% of the map by area and every one stood in H-D country. Median distance from a random
+      spot to a post was 1,353 tiles and 87% of the world was over 400 from one.
+      Now 120 posts out to radius 2600 (count derived from area, not taste): median 321, 37.5%
+      beyond 400, and posts in every grade including 28 in S country. Tier bands extended to the
+      world edge so the outer world is not one undifferentiated tier.
+      **Cost verified flat** at the owner's prompting: 7.05ms a step at 60 posts, 7.04 at 120,
+      7.42 at 240 - the bucket index made post count a design choice rather than a budget.
+      Was: **Post distribution — are there enough to navigate BY?** Owner: *"ensure we have a
       sufficient number of posts for people to navigate to while exploring."* 60 posts over a
       4000x4000 world is one per ~267,000 tiles. Measure mean distance from a random point to the
       nearest post before deciding a number.

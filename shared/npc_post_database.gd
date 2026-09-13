@@ -10,9 +10,27 @@ extends RefCounted
 # 60 posts at 70-spacing across a 600-radius world. Old sparse 18-post layout
 # (450 radius, 100 spacing) left the wilderness too quiet between posts and
 # left T6 distance bands underserved.
-const POST_COUNT_TARGET = 60
-const MAX_ATTEMPTS = 3000
-const POST_PLACEMENT_RADIUS = 600  # Max distance from origin
+## ⚑ POSTS MUST COVER THE WORLD, because the travel design now rests on them.
+##
+## Measured 2026-09-13 (tools/probe/post_spacing.gd) on a 60-post world with a 600-tile placement
+## radius: the median distance from a random spot to the nearest post was 1,353 tiles and 87% of
+## the world lay more than 400 tiles from any post - while post-to-nearest-NEIGHBOUR was only 98.
+## The posts were not sparse, they were CLUSTERED: all 60 inside the inner 5% of the map by area,
+## every one of them in H-D country, none in C, B, A or S.
+##
+## That is load-bearing. From the origin a player must now walk a long way to reach country at
+## their level; from the nearest POST, suitable ground is within ten tiles, because posts anchor
+## the level to their own country. So "can I find a post?" is the whole question, and beyond 600
+## tiles the answer was no.
+##
+## Owner: "ensure we have a sufficient number of posts for people to navigate to while exploring."
+##
+## The count follows from the AREA rather than from taste: N points spread over a disc sit about
+## 0.5*sqrt(area/N) apart, so covering radius 2600 at roughly 230 tiles between neighbours needs
+## about 120.
+const POST_COUNT_TARGET = 120
+const MAX_ATTEMPTS = 9000
+const POST_PLACEMENT_RADIUS = 2600  # Max distance from origin - nearly the whole world
 const MIN_POST_SPACING = 70  # Minimum distance between posts
 
 # Main room interior dimensions (odd for clean centering)
@@ -100,8 +118,16 @@ const TIER_BANDS = [
 	{"max_dist": 300, "tier": 4},
 	{"max_dist": 400, "tier": 5},
 	{"max_dist": 500, "tier": 6},
+	# 2026-09-13 — the bands stopped at 500 because posts did, and everything beyond fell to
+	# TIER_BAND_DEFAULT. Posts now reach 2600, so without these the whole outer world would read
+	# as one undifferentiated tier and a player could not judge progress from the post they are
+	# standing in. Spaced to follow the level curve rather than evenly: it reaches L100 at radius
+	# 900 and climbs steeply after, so the outer bands cover more ground each.
+	{"max_dist": 900, "tier": 7},
+	{"max_dist": 1400, "tier": 8},
+	{"max_dist": 2800, "tier": 9},
 ]
-const TIER_BAND_DEFAULT = 7
+const TIER_BAND_DEFAULT = 9
 
 # Starter post gets a fixed region name — it's the player's first
 # anchor, so a curated name beats a procedural roll.
