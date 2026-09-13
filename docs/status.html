@@ -1,46 +1,65 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Phantom Badlands — Who's Online</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phantom Badlands — Who's Online</title>
+    <link rel="stylesheet" href="style.css">
+    <meta name="description" content="Who is currently playing Phantom Badlands, updated every few minutes.">
 <!--
   Reads a small JSON the game server PATCHes into a gist every few minutes. Nothing is served
   from the game host: it runs only SSH and the game port, and adding a web server there would be
   a new open port and another thing to patch, for a read-only list.
 
-  Set GIST_URL below to the raw URL of the gist the server writes.
+  This page uses the SITE stylesheet rather than its own. It shipped with a private palette and
+  looked like somebody else's website sitting behind the same nav bar.
 -->
 <style>
-  :root { color-scheme: dark; }
-  body { margin:0; background:#14161a; color:#d7dbe0;
-         font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-         padding:18px 16px 40px; }
-  .wrap { max-width:680px; margin:0 auto; }
-  h1 { font-size:1.25rem; margin:0 0 2px; color:#f0d98a; letter-spacing:.3px; }
-  .sub { color:#7f8893; font-size:.85rem; margin-bottom:18px; }
-  .count { font-size:2rem; color:#8fd3a0; font-weight:600; }
-  table { width:100%; border-collapse:collapse; margin-top:10px; }
-  th { text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em;
-       color:#6e7681; border-bottom:1px solid #262a31; padding:6px 8px; font-weight:600; }
-  td { padding:8px; border-bottom:1px solid #1d2027; }
-  td.lv { color:#f0d98a; white-space:nowrap; }
-  td.cls { color:#9bb4d4; }
-  td.where { color:#8a9199; }
-  .empty { padding:26px 8px; color:#6e7681; }
-  .err { color:#d98a8a; }
-  @media (max-width:420px){ td.where,th.where{ display:none } }
+  .status-count { font-size: 2.2rem; color: var(--green); font-weight: 600; line-height: 1.2; }
+  .status-sub { color: var(--text-secondary); font-size: .9rem; margin-bottom: 1.2rem; }
+  .status-table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
+  .status-table th { text-align: left; font-size: .72rem; text-transform: uppercase;
+        letter-spacing: .08em; color: var(--text-secondary);
+        border-bottom: 1px solid var(--border); padding: .5rem .6rem; }
+  .status-table td { padding: .6rem; border-bottom: 1px solid var(--border); }
+  .status-table td.lv { color: var(--gold); white-space: nowrap; }
+  .status-table td.cls { color: var(--cyan); }
+  .status-table td.where { color: var(--text-secondary); }
+  .status-empty { padding: 1.6rem .6rem; color: var(--text-secondary); }
+  .status-err { color: var(--red); }
+  @media (max-width: 480px) { .status-table td.where, .status-table th.where { display: none; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Phantom Badlands</h1>
-  <div class="sub" id="updated">loading…</div>
-  <div class="count" id="count">—</div>
-  <div id="body"></div>
-</div>
+    <nav>
+        <div class="nav-inner">
+            <a href="index.html" class="logo">Phantom Badlands</a>
+            <div class="nav-links">
+                <a href="index.html">Home</a>
+                <a href="features.html">Features</a>
+                <a href="download.html">Download</a>
+                <a href="status.html" class="active">Who's Online</a>
+                <a href="faq.html">FAQ</a>
+                <a href="https://discord.gg/5AuceNN2dZ" target="_blank">Discord</a>
+                <a href="https://github.com/Dextobust33/Phantom-Badlands/discussions" target="_blank">Forum</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <div class="page-content">
+            <h1>Who's Online</h1>
+            <div class="status-sub" id="updated">loading…</div>
+            <div class="status-count" id="count">—</div>
+            <div id="body"></div>
+        </div>
+    </main>
+
 <script>
-const GIST_URL = ""; // raw gist URL, e.g. https://gist.githubusercontent.com/<user>/<id>/raw/status.json
+// The gist the game server PATCHes. The `/raw/` URL with no commit sha always serves the
+// LATEST revision, and it comes back with `Access-Control-Allow-Origin: *`, so this page can
+// read it directly with no key and no backend of our own.
+const GIST_URL = "https://gist.githubusercontent.com/Dextobust33/dbd09bea1d98c04b918ea57d867a5f2d/raw/status.json";
 function ago(unix){
   const s = Math.max(0, Math.floor(Date.now()/1000 - unix));
   if (s < 90) return s + " seconds ago";
@@ -53,11 +72,11 @@ function render(d){
   const n = d.count|0;
   document.getElementById("count").textContent = n === 0 ? "nobody online" : n + (n===1?" player online":" players online");
   const body = document.getElementById("body");
-  if (!n) { body.innerHTML = '<div class="empty">The badlands are quiet.</div>'; return; }
+  if (!n) { body.innerHTML = '<div class="status-empty">The badlands are quiet.</div>'; return; }
   const rows = d.players.map(p =>
     `<tr><td>${esc(p.name)}</td><td class="lv">Lv ${p.level|0}</td>` +
     `<td class="cls">${esc(p.class)}</td><td class="where">${esc(p.where)}</td></tr>`).join("");
-  body.innerHTML = `<table><thead><tr><th>Name</th><th>Level</th><th>Class</th>` +
+  body.innerHTML = `<table class="status-table"><thead><tr><th>Name</th><th>Level</th><th>Class</th>` +
     `<th class="where">Last seen near</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c =>
@@ -65,7 +84,7 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c =>
 async function load(){
   if (!GIST_URL) {
     document.getElementById("updated").innerHTML =
-      '<span class="err">Not configured yet — set GIST_URL in status.html.</span>';
+      '<span class="status-err">Not configured yet — set GIST_URL in status.html.</span>';
     return;
   }
   try {
@@ -73,7 +92,7 @@ async function load(){
     render(await r.json());
   } catch (e) {
     document.getElementById("updated").innerHTML =
-      '<span class="err">Could not reach the status feed.</span>';
+      '<span class="status-err">Could not reach the status feed.</span>';
   }
 }
 load();
