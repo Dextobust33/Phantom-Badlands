@@ -161,6 +161,17 @@ All of this came out of the distribution work. Recorded before starting any of i
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
+## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
+
+*"We've got some live players now so we want to limit our releases."* A release restarts the
+server and disconnects everyone. **Batch the work; deploy rarely.** Ship immediately only for data
+loss, a crash, something that permanently breaks a character, or a live regression we caused.
+Building and gating is free - do that as often as you like. Creating the release is not.
+
+**HELD, built and gated, not deployed:** v0.9.786 - the tile audit (well/fountain were the same
+image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
+nothing), marsh + aerie dungeon markers. All art; none of it urgent.
+
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
 **v0.9.783 IS LIVE** (server hash-verified `074c338c`) - hunting grounds, and the danger guard
