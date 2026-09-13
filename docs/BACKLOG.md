@@ -119,7 +119,16 @@ All of this came out of the distribution work. Recorded before starting any of i
       purpose anymore. I've been thinking we either need to revamp or replace them."* Needs a
       design conversation, not a patch. What were they for, what does regional menace now do
       instead, and what is the gap that remains?
-- [ ] **GATHERABLES should be CLUSTERS, not scatter.** Owner: *"I don't really like the
+- [x] **DONE 2026-09-13 — GATHERABLES come in patches.** Every tile used to roll independently at
+      25-35%, so a third of the world was nodes, uniformly smeared, no two related. A coarse
+      field now marks patches, each patch commits to ONE resource (type keyed to a grid twice the
+      width of the blobs, or a stand straddles cells and comes out a mixed hedge), and the
+      density between patches is a tenth of what it was. Coverage 30% -> 6.1%; 2,903 of 5,504
+      nodes stand in groups of 12+; 45 of 80 large stands are a single resource.
+      **NOTE FOR BALANCE:** gatherable coverage fell ~5x. Yield per tile WALKED drops accordingly
+      - which is the intent (destinations, not terrain) but it is a real economy change and the
+      gathering jobs have not been re-checked against it.
+      Was: **GATHERABLES should be CLUSTERS, not scatter.** Owner: *"I don't really like the
       distribution... I feel like they should be clusters you run into sort of like the hot ones
       are, where you run into a large group of trees or a bunch of mining spots altogether.
       Having them scattered everywhere makes them obstacles more than actual activities players

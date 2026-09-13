@@ -637,8 +637,15 @@ func generate_tile(world_x: int, world_y: int, seed: int) -> Dictionary:
 		return {"type": "water", "tier": 0, "blocks_move": true, "blocks_los": false}
 
 	# Density check — ramps from 50% near origin to 70% at edges
-	var density = 0.25 + 0.10 * clampf(distance / 2000.0, 0.0, 1.0)
-	var density_roll = _seeded_hash_float(world_x * 7 + world_y * 13, seed)
+	# GATHERABLES COME IN PATCHES - see `_gather_cluster_at`. Inside one the ground is thick with
+	# a single resource; outside, the land is mostly clear with the odd straggler. This replaces a
+	# flat 25-35% per-tile roll that made a third of the world into nodes nobody sought out.
+	var _cluster: Dictionary = _gather_cluster_at(world_x, world_y, seed)
+	var density: float = GATHER_SCATTER_DENSITY
+	if bool(_cluster.get("in", false)):
+		# Thins toward the patch edge, so a stand has a shape rather than a boundary.
+		density = GATHER_IN_CLUSTER_DENSITY * (0.45 + 0.55 * float(_cluster.get("strength", 0.0)))
+	var density_roll = _seeded_hash_float(_tile_hash(world_x, world_y), seed)
 	if density_roll >= density:
 		return {"type": "empty", "tier": 0, "blocks_move": false, "blocks_los": false}
 
@@ -658,8 +665,12 @@ func generate_tile(world_x: int, world_y: int, seed: int) -> Dictionary:
 	if total_weight <= 0:
 		total_weight = TOTAL_NODE_WEIGHT
 		weights = NODE_WEIGHTS
-	var type_roll = _seeded_hash_int(world_x * 31 + world_y * 53, seed + 1) % total_weight
+	var type_roll = _seeded_hash_int(_tile_hash(world_x + 17, world_y - 29), seed + 1) % total_weight
 	var node_type = _roll_node_type_weighted(type_roll, weights)
+	# In a patch, the PATCH decides. Without this the density would cluster but the contents
+	# would still be a mixed hedge, which is not what "a large group of trees" means.
+	if bool(_cluster.get("in", false)) and String(_cluster.get("type", "")) != "":
+		node_type = String(_cluster["type"])
 
 	# Determine tier from distance
 	var tier = _get_tier_for_distance(distance, world_x, world_y, seed)
@@ -769,6 +780,63 @@ const GREAT_LAKE_FREQ := 0.010    # ~100-tile cells
 const GREAT_LAKE_THRESHOLD := 0.885
 
 
+## GATHERABLE CLUSTERS, 2026-09-13. Owner: *"I feel like they should be clusters you run into
+## sort of like the hot ones are, where you run into a large group of trees or a bunch of mining
+## spots altogether or something. Having them scattered everywhere makes them obstacles more than
+## actual activities players engage with."*
+##
+## That last sentence is the whole brief, and the old generator could not satisfy it: every tile
+## rolled INDEPENDENTLY at 25-35%, so a third of the world was nodes, uniformly smeared, with no
+## two of them related. Scattered nodes are terrain you walk around. A stand of twenty trees is
+## somewhere you go.
+##
+## So: a coarse field marks PATCHES, each patch commits to one resource, and inside a patch the
+## ground is thick with it. Away from patches the land is mostly clear, with the occasional
+## straggler so the world does not look mown.
+const GATHER_CLUSTER_FREQ := 0.045     # ~22-tile patches
+const GATHER_CLUSTER_THRESHOLD := 0.66
+const GATHER_IN_CLUSTER_DENSITY := 0.52
+## Deliberately LOW. With water excluded from the count, scatter at 0.035 still produced more
+## lone nodes than patch nodes - half the gatherables in the world were stragglers, which is the
+## thing the owner asked to stop. It also fused neighbouring patches: a trail of singles between
+## two stands connects them, and the pair then reads as one "mixed" stand.
+const GATHER_SCATTER_DENSITY := 0.010
+
+
+func _gather_cluster_at(x: int, y: int, seed: int) -> Dictionary:
+	"""Is this tile inside a resource patch, and if so which resource?
+
+	The patch's TYPE is hashed from the patch cell rather than the tile, which is what makes a
+	stand of trees a stand of trees instead of a mixed hedge - the thing the owner is asking for.
+	Falls back to the biome's own weights for the choice, so a patch still suits its country: a
+	swamp does not sprout an ore field."""
+	var n := _water_noise_at(x, y, seed + 4242, GATHER_CLUSTER_FREQ)
+	if n <= GATHER_CLUSTER_THRESHOLD:
+		return {"in": false, "type": "", "strength": 0.0}
+	# WHICH patch is this? Snapped to a grid COARSER than the noise, and that distinction is the
+	# whole difficulty. Keying the type to a cell at the noise's own frequency looked right and
+	# measured wrong: a blob of noise above the threshold straddles cell boundaries, so one
+	# visible stand drew its type from two or three different cells and came out a mixed hedge -
+	# 76 of 187 large stands were pure on the first attempt. A type grid twice the width of the
+	# blobs means a blob almost always sits inside ONE of them.
+	var type_freq: float = GATHER_CLUSTER_FREQ * 0.5
+	var cell_x := floori(float(x) * type_freq)
+	var cell_y := floori(float(y) * type_freq)
+	var biome := get_biome_at(x, y, seed)
+	var weights: Dictionary = BIOME_NODE_WEIGHTS.get(biome, NODE_WEIGHTS)
+	var total := _biome_total_weight(weights)
+	if total <= 0:
+		weights = NODE_WEIGHTS
+		total = TOTAL_NODE_WEIGHT
+	var pick := _seeded_hash_int(cell_x * 8191 + cell_y * 131, seed + 77) % maxi(1, total)
+	return {
+		"in": true,
+		"type": _roll_node_type_weighted(pick, weights),
+		# How deep into the patch, so a stand thins at its edges instead of ending at a wall.
+		"strength": clampf((n - GATHER_CLUSTER_THRESHOLD) / maxf(0.001, 1.0 - GATHER_CLUSTER_THRESHOLD), 0.0, 1.0),
+	}
+
+
 func _is_water_tile_generated(x: int, y: int, seed: int) -> bool:
 	"""Is this tile water? See the note above the constants for why it is three layers."""
 	# A river is the contour of a DRIFTING field, and the drift is the whole trick.
@@ -850,6 +918,17 @@ func _water_noise_at(x: int, y: int, seed: int, freq: float) -> float:
 	var top = v00 + (v10 - v00) * sx
 	var bottom = v01 + (v11 - v01) * sx
 	return top + (bottom - top) * sy
+
+func _tile_hash(x: int, y: int) -> int:
+	"""A 2D coordinate hash with no visible structure.
+
+	`x * 7 + y * 13` collides along whole LINES - every tile on 7x+13y = k gets the same value -
+	which draws faint vertical stripes across the world. That was invisible while a third of all
+	tiles were nodes and became obvious the moment gatherables thinned to 3.5% scatter: the
+	render showed neat dotted columns from top to bottom. Large odd primes on each axis, combined
+	with xor rather than addition, have no such family of collisions."""
+	return (x * 73856093) ^ (y * 19349663)
+
 
 func _seeded_hash_float(coord_hash: int, seed: int) -> float:
 	"""Deterministic hash returning 0.0-1.0 from coordinate hash + seed."""
