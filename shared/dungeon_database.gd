@@ -3033,6 +3033,50 @@ static func pick_weighted_type() -> String:
 	return String(DUNGEON_TYPES.keys()[0])
 
 
+## How sharply a species is suppressed in country BELOW its own tier, per tier step.
+##
+## Measured 2026-09-13 (`tools/probe/dungeon_type_vs_grade.gd`): `pick_weighted_type` reads
+## `spawn_weight` and never sees the grade, so P(type | grade) = P(type) - an H1 dungeon was
+## exactly as likely to be a Cosmic Horror's Realm as a Goblin Caves. 7.7% of all dungeons are a
+## D-tier species and 1.0% are A/S, AT EVERY GRADE. That is how a starter post ends up ringed
+## with Balrogs holding level-2 monsters: mechanically harmless, and it still tells a new player
+## the world outside is full of Balrogs.
+##
+## The rule is deliberately ASYMMETRIC, because the owner asked for one direction and not the
+## other. Owner 2026-09-11: *"We do want lower types of monster dungeons to be possible in high
+## level areas (example an A5 Goblin Dungeon, or a S2 Kelpie one etc)."* A LOW species in HIGH
+## country is a feature - a swarm of high-level goblins. A TOP species in STARTER country is the
+## reported fault. So: at or below the grade, full weight; above it, 0.12 per step, which leaves
+## one tier of overshoot possible (a mild surprise) and makes three effectively impossible.
+const SPECIES_ABOVE_GRADE_FALLOFF := 0.12
+
+
+static func pick_weighted_type_for_grade(grade_tier: int) -> String:
+	"""A dungeon type by rarity, weighted so its SPECIES suits the country it will stand in.
+
+	`pick_weighted_type` remains for callers with no grade in hand (quests, fabled bosses)."""
+	if grade_tier <= 0:
+		return pick_weighted_type()
+	var total := 0.0
+	var weights := {}
+	for dt in DUNGEON_TYPES:
+		var d: Dictionary = DUNGEON_TYPES[dt]
+		var w := maxf(1.0, float(d.get("spawn_weight", 50)))
+		var above: int = int(d.get("tier", 1)) - grade_tier
+		if above > 0:
+			w *= pow(SPECIES_ABOVE_GRADE_FALLOFF, float(above))
+		weights[dt] = w
+		total += w
+	if total <= 0.0:
+		return pick_weighted_type()
+	var roll := randf() * total
+	for dt in DUNGEON_TYPES:
+		roll -= float(weights[dt])
+		if roll <= 0.0:
+			return String(dt)
+	return String(DUNGEON_TYPES.keys()[0])
+
+
 ## How much of a dungeon's floor population is its OWN species. The rest are neighbours from
 ## the same grade. Owner 2026-09-11: other monsters of the same tier, *"more rare, less likely
 ## than the main dungeon monster/boss type"*.

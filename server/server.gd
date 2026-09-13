@@ -31397,6 +31397,12 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	# tier; it keys off the target grade now, because that is what the dungeon will actually be.
 	var _target_cell: Dictionary = _pick_dungeon_grade()
 	var dungeon_tier: int = int(_target_cell["tier"])
+	# The SPECIES is re-rolled now that the grade is known. The type queued by the spawner was
+	# picked grade-blind, which is how a level-2 Balrog's Depths came to sit beside the starter
+	# post - see `SPECIES_ABOVE_GRADE_FALLOFF`. A species at or below the grade keeps its full
+	# rarity, so an A5 Goblin Dungeon is still perfectly possible and is still what the owner
+	# asked for; only species ABOVE their country are suppressed.
+	dungeon_type = DungeonDatabaseScript.pick_weighted_type_for_grade(dungeon_tier)
 	var enforce_threat_limits: bool = dungeon_tier >= 2 and chunk_manager != null
 	var now_unix: int = int(Time.get_unix_time_from_system()) if enforce_threat_limits else 0
 	var r_sq_local: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS
