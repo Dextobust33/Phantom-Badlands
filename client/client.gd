@@ -31076,7 +31076,13 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.781[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.782[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ THE WORLD WILL NO LONGER LET YOU WALK BLIND INTO SOMETHING THAT KILLS YOU.[/color] Since danger stopped growing with distance, you cannot tell hard country by looking at it — and roads now invite crossing ground nobody scouted. A step onto land [b]twice your level or worse[/b] is [b]refused once[/b]: you are told what is ahead, and the same key again takes you in. It only asks at the boundary, never when you walk back toward safety, and never for a step that does not move you.")
+	display_game("  [color=#FF8000]★ HOVER ANY SQUARE OF THE MAP TO READ ITS LEVEL.[/color] The other half of the same problem, for anyone who would rather look before they walk. Coloured against your own level, on the same scale as the [b]Area[/b] line, so the two can never disagree — and two faults were found fixing it: your own square reported a different number than the Area readout, and squares along the edge of the view reported ground you could not see.")
+	display_game("  [color=#1EFF00]◆ See who is online without opening the game.[/color] A live list on [b]phantombadlands.com[/b] and in Discord — name, level, class and where they are, refreshed every few minutes.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.781[/color]")
 	display_game("  [color=#FF8000]★ TRAVEL STANCES — choose how you cross the world.[/color] Four buttons under your map. [color=#4DA6FF]Travelling[/color] cuts a 500-tile journey from ~114 fights to ~19 — but you recover far less as you walk and rest, and what does find you often [b]strikes first[/b]. [color=#FF6644]Hunting[/color] doubles encounters and you get the drop instead. [color=#C9A0FF]Scouting[/color] sees two squares further. [color=#9ACD32]Wary[/color] is what you have always done.")
 	display_game("  [color=#FF8000]★ ROADS ARE WORTH WALKING ON.[/color] Three tiles wide now instead of one, and [b]ten times quieter[/b] — 6.7 encounters per 200 steps on the road against 67 beside it. Not silent: a perfectly safe road would make the wilderness pointless.")
 	display_game("  [color=#FF8000]★ TWICE AS MANY POSTS, SPREAD ACROSS THE WHOLE WORLD.[/color] Every post used to sit inside the middle 5% of the map — 87% of the world was over 400 tiles from one, and there were [b]none at all[/b] in high-level country. Now 120 posts reaching the far edges: the typical distance to the nearest one fell from [b]1,353 tiles to 321[/b].")
