@@ -30,6 +30,45 @@ All of this came out of the distribution work. Recorded before starting any of i
 
 ### NEXT, in the order the owner raised them
 
+- [ ] **TRAVEL STANCES (owner direction 2026-09-13) — the main answer to the longer walk.**
+      Owner: *"I was debating having different stances or something where you can toggle between
+      like an evasive stance where you don't get as much back each step or from rests but you're
+      much less likely to hit random encounters, we would need a couple more like this and it
+      would have to be an obvious toggle likely just under their over world map with multiple
+      different colored selections, and explanation for the player."*
+
+      **Why this is newly viable:** the regen penalty only became a real cost in v0.9.779, when
+      resource costs doubled and the bar started binding. Before that, "less back each step" was
+      a penalty nobody would feel. The two changes make each other work.
+
+      Proposed set — four, one per intent, colour-coded under the map with a one-line
+      explanation each:
+      * **Travelling** (evasive) — encounters far rarer; regen per step and from rests cut hard.
+        You cross ground and arrive tired.
+      * **Wary** (default) — today's behaviour, the baseline everything else is judged against.
+      * **Hunting** — encounters much more common, better rewards. Should ABSORB the existing
+        Hunt action rather than sit beside it, or there are two ways to do one thing.
+      * **Scouting** — wider vision, spots gatherable clusters and dungeon markers further out;
+        normal encounters, higher upkeep.
+
+      **What already exists and must not be duplicated:** roads already halve the encounter rate
+      (`check_encounter`), and there is level-diff scaling at -5% per level above the area,
+      FLOORED AT 10%. That floor is the real complaint - at +18 levels a player still rolls
+      encounters at a tenth of base, which over a 500-tile walk is many interruptions.
+
+- [ ] **TRIVIAL-ENCOUNTER AUTO-RESOLVE (my suggestion, needs the owner's call).** When the ground
+      is far below the player (say area level under a third of theirs), do not open combat at
+      all - print one line ("you scatter a pack of rats") and grant token XP. This removes the
+      INTERRUPTION without removing the world, and it targets the owner's exact words: *"low
+      level meaningless encounters"*. Complements stances rather than replacing them: stances are
+      a choice the player makes, this is the game not wasting their time.
+
+- [ ] **POST-TO-POST ROAD TRAVEL (my suggestion, deliberately held as a SEPARATE decision).**
+      Standing on a road at a discovered post, offer travel to another discovered post along it,
+      fast-forwarded with a chance of interruption. It is the most direct answer to "travel is
+      long" and it is also the one that could most easily devalue exploration, which is why it
+      should be decided on its own rather than bundled.
+
 - [ ] **Roads: wider, and encounters very rare on them.** Owner: *"make paths/roads generate a
       little wider and make encounters very rare on them so players can traverse and explore the
       map without running into a crazy amount of encounters."* Directly mitigates the longer
