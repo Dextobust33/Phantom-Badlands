@@ -134,7 +134,30 @@ All of this came out of the distribution work. Recorded before starting any of i
       Having them scattered everywhere makes them obstacles more than actual activities players
       engage with."* That last sentence is the whole brief: scattered nodes are terrain, clustered
       nodes are a destination.
-- [ ] **Audit the gatherable ART piece by piece.** Owner: *"some of the art we may want to use an
+- [~] **AUDITED 2026-09-13, four pieces need replacing; replacements NOT yet chosen.** Owner:
+      *"some of the art we may want to use an alternative of (we may want to audit those pieces
+      individually)."* Rendered all fourteen on the biome ground each actually sits on
+      (`claude_screenshots/gatherable_art_audit.png`).
+
+      **Reads well, leave alone:** brambleberry, stone, ore_vein, flower, mushroom, swamp_lily,
+      cactus, ice_bloom - each distinct in silhouette AND colour against its ground.
+
+      **Needs an alternative, and they share one cause:** `tree`, `bush`, `dense_brush`, `reed`
+      and `mountain_herb` are ALL cut from `green_forest_v2`, which is why they are all the same
+      green.
+      * **tree vs bush is the worst** - both are leafy green domes, near-identical at a glance,
+        and they are different JOBS (chopping vs foraging). A player cannot tell which they are
+        standing on.
+      * **mountain_herb** is dark green on brown rock - almost invisible.
+      * **reed** is green strokes on swamp green - blends into the ground.
+      * **dense_brush** reads as flat texture rather than an impassable thicket.
+
+      **An automated candidate search was tried and abandoned rather than trusted:** filtering
+      pack cells by "has a transparent margin" returns terrain edges, scaffolding and crates, not
+      plants - alpha cannot tell a herb from a transition tile. Picking these needs the indexed
+      contact sheet (`tools/tileset_contact_sheet.py <pack> --rows a-b`) and an eye. Sheets for
+      `farmlands_v3` are already rendered in claude_screenshots.
+      Was: **Audit the gatherable ART piece by piece.** Owner: *"some of the art we may want to use an
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
