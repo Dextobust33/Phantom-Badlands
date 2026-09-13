@@ -31187,7 +31187,13 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.785[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.786[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE TILES YOU COULD NOT TELL APART.[/color] Every tile was composed on the ground it really stands on, shrunk to the [b]26 pixels the map actually draws[/b], and compared against every other. Four were broken rather than merely plain: [b]the well and the fountain were the same image[/b], the post marker and the quest board measured [b]4 apart out of 255[/b], the blacksmith and the healer [b]13[/b] — and those two are the same job, so you could walk into the wrong one. Nothing is closer than 22 now.")
+	display_game("  [color=#1EFF00]◆ A pylon you build is now visible.[/color] It had [b]0.8% ink[/b] where every other tile has 30% or more — you could craft one, place it, and see bare grass.")
+	display_game("  [color=#1EFF00]◆ Marsh and aerie dungeons have their own markers.[/color] All eight kinds of entrance are now told apart at a glance — a cave, a tomb, a fortress, a temple, a thicket, a rift, a drowned way in and a cold one.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.785[/color]")
 	display_game("  [color=#FF8000]★ AN ORACLE IS CALLED AN ORACLE.[/color] Last release fixed the Oracle being created as the wrong class. It was then [b]stored[/b] correctly and [b]shown[/b] as \"Sage\", its internal name, in eleven separate places — your character header, the character-select list, the online list, party messages. All of them now show the name you chose. The Discord and website player list was printing [b]no class at all[/b], which nobody had noticed.")
 	display_game("  [color=#1EFF00]◆ The market and the inn were two halves of one picture.[/color] They were cut from touching rows of a single fishmonger’s stall — the market got the goods with nothing under them, the inn got the bare counter. The market is the whole stall now, and the inn is [b]a bed[/b].")
 	display_game("  [color=#1EFF00]◆ Roads are cobblestone.[/color] The road tile measured perfectly flat — it was the blank centre fill of a dirt pattern, flooded with one colour, so a road was a [b]bright orange square[/b]. It is paved stone now, and reads as a road on grass, snow, sand and rock.")

@@ -116,7 +116,11 @@ CUTS = {
     'tile:crate':       ('green_village', 2, 0),
     'tile:storage':     ('green_village', 3, 0),
     'tile:cairn':       ('green_village', 1, 5),
-    'tile:blacksmith':  ('green_village', 7, 13),
+    # ⚑ 13.0 FROM THE HEALER, AND THE SAME JOB. Both were orange-framed signs from neighbouring
+    # cells of one sheet, so at 26px you could walk into the wrong station. The HEALER's yellow
+    # cross reads correctly and is left alone; the smith gets a furnace, which is what a smith
+    # works at. Measured: 13.0 -> 50.2 apart, and 33.4 from the nearest other station.
+    'tile:blacksmith':  ('craft_stations', 1, 6, (2, 2)),
     'tile:healer':      ('green_village', 8, 13),
     'tile:hedge':       ('green_village', 5, 8),
 
@@ -142,7 +146,10 @@ CUTS = {
     # The cross on a post reads as a scarecrow frame, which is what one is. The farm pack has no
     # scarecrow of its own - it has a windmill, which is a different thing.
     'tile:scarecrow':        ('green_village', 1, 4),
-    'tile:post_marker':      ('green_village', 4, 6),
+    # ⚑ 4.4 FROM THE QUEST BOARD. `(4,6)` and `quest_board`'s `(4,5)` are neighbouring cells of
+    # one sheet, so the two were all but identical at the 26px the map draws - and they sit side
+    # by side inside every post. A framed sign with a blue emblem measures 51 apart instead.
+    'tile:post_marker':      ('green_village', 5, 14),
     'tile:garden_plot':      ('sun_city', 13, 17, (2, 2)),
     'tile:tent':             ('farmlands_v3', 14, 2, (2, 2)),
     'tile:cage':             ('farmlands_v3', 21, 15),
@@ -497,10 +504,65 @@ def main():
             m += 1
     print('%d overlays still on a glyph' % m)
     print('%d files in %s' % (len(biomes) + cut + n + m, OUT))
+    bake_tinted_markers(OUT)
     _assert_no_twins(OUT)
     _warn_adjacent_sources()
     print('no two tiles baked to the same picture')
 
+
+
+## Dungeon families whose marker is the cave mouth RE-HUED rather than a cell of its own.
+##
+## Two of the eight had no art that read: every cell tried for `marsh` and `aerie` looked like an
+## orange crate or a grey post, and a marker that depicts the wrong thing is worse than a generic
+## one because a player believes it. Re-hueing the entrance keeps the one shape a player has
+## already learned means "a way in" and changes only what KIND of way in it is - which is exactly
+## what the family is for. The dark opening itself is left alone; only the rim is re-coloured.
+TINTED_MARKERS = {
+    'dungeon_marsh': (0.47, 0.85, 0.85),   # teal - waterlogged, sunken
+    'dungeon_aerie': (0.58, 0.35, 1.15),   # pale blue-grey - cold and high
+}
+
+
+## Pairs that are the same picture ON PURPOSE, each with its reason. Anything not listed here is
+## a copy-pasted spec line, which is how `well` and `fountain` became one image.
+ALLOWED_PAIRS = {
+    # `cave` is the DEFAULT family and `dungeon` is the fallback drawn when a family has no art
+    # of its own, so the commonest kind of dungeon and the generic marker are deliberately the
+    # same picture. Splitting them would make an unlisted dungeon type look like a specific
+    # thing it is not.
+    ('overlay/dungeon', 'overlay/dungeon_cave'),
+}
+
+
+def bake_tinted_markers(out_dir):
+    """Derive the re-hued dungeon markers from the baked `dungeon` overlay.
+
+    ⚑ GENERATED, NOT HAND-MADE. These two were first produced by a one-off script, which means a
+    future bake would not reproduce them and nobody would know until they went stale. Anything the
+    game ships has to come out of the build that builds everything else."""
+    import colorsys
+    from PIL import Image as _I
+    src = os.path.join(out_dir, 'overlay', 'dungeon.png')
+    if not os.path.exists(src):
+        raise SystemExit('cannot tint markers: %s is missing' % src)
+    base = _I.open(src).convert('RGBA')
+    for name, (hue, sat_mul, val_mul) in sorted(TINTED_MARKERS.items()):
+        im = base.copy()
+        px = im.load()
+        w, h = im.size
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = px[x, y]
+                if a == 0:
+                    continue
+                hh, ss, vv = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+                if vv < 0.18:
+                    continue          # the opening stays black - it is the hole
+                nr, ng, nb = colorsys.hsv_to_rgb(hue, min(1.0, ss * sat_mul), min(1.0, vv * val_mul))
+                px[x, y] = (int(nr * 255), int(ng * 255), int(nb * 255), a)
+        im.save(os.path.join(out_dir, 'overlay', name + '.png'))
+    print('derived %d tinted dungeon marker(s)' % len(TINTED_MARKERS))
 
 
 def _warn_adjacent_sources():
@@ -517,17 +579,26 @@ def _warn_adjacent_sources():
 
     Advisory rather than fatal: adjacency is sometimes fine, and a bake that refuses to run is
     worse than one that tells you where to look. The point is that nobody was looking."""
+    # WITHIN ONE KIND only. Comparing a ground against a prop, or a marker against a tile, is
+    # meaningless - they are never confused with each other and are routinely cut from
+    # neighbouring cells of the same sheet on purpose. Including them took this from 10 pairs
+    # worth reading to 42 that were mostly noise, which is how a useful advisory gets ignored.
     boxes = []
     for key, spec in sorted(CUTS.items()):
         kind, name = key.split(':', 1)
         pack, row, col = spec[0], spec[1], spec[2]
         span = spec[3] if len(spec) > 3 else (1, 1)
-        boxes.append((pack, row, col, span[0], span[1], '%s:%s' % (kind, name)))
+        boxes.append((pack, row, col, span[0], span[1], '%s:%s' % (kind, name), kind))
     hits = []
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
             a, b = boxes[i], boxes[j]
-            if a[0] != b[0]:
+            if a[0] != b[0] or a[6] != b[6]:
+                continue
+            # Pairs that are deliberately one picture are already documented in the twin check.
+            if (a[5].replace('overlay:', 'overlay/'), b[5].replace('overlay:', 'overlay/')) in ALLOWED_PAIRS:
+                continue
+            if (b[5].replace('overlay:', 'overlay/'), a[5].replace('overlay:', 'overlay/')) in ALLOWED_PAIRS:
                 continue
             # Touching or overlapping, in either axis.
             r_touch = a[1] < b[1] + b[3] + 1 and b[1] < a[1] + a[3] + 1
@@ -552,9 +623,8 @@ def _assert_no_twins(out_dir):
     are craftable structures, so this was visible in the game. Nothing compared the OUTPUTS, only
     the inputs, and two inputs that are the same look perfectly reasonable one line apart."""
     import hashlib
-    # Pairs that are the same picture ON PURPOSE, each with the reason. Anything not listed here
-    # is a copy-pasted spec line, which is how `well` and `fountain` became one image.
-    ALLOWED = {
+    ALLOWED = ALLOWED_PAIRS
+    _unused = {
         # `cave` is the DEFAULT family and `dungeon` is the fallback drawn when a family has no
         # art of its own, so the commonest kind of dungeon and the generic marker are deliberately
         # the same picture. Splitting them would mean an unlisted dungeon type looks like a
