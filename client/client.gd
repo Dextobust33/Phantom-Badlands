@@ -5967,6 +5967,32 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "move", "direction": "east"})
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("world")
+			"huntground":
+				# ⚑ THE HUNTING-GROUND SCREEN, LOOKED AT. It is the whole deliverable of the
+				# hotzone revamp - what the player reads when they find one - and it cannot be
+				# staged from a coordinate because hunting grounds move every three hours.
+				# The GM locator finds the current nearest one and drops us one step outside.
+				# LEVEL 5 on purpose. The server only ASKS when the ground is 2x the character;
+				# a level 30 walking into starter-country hunting ground is told, not asked, and
+				# the first capture of this scene showed nothing because of it. Both paths are
+				# worth seeing, and the gated one is the one with something to read.
+				send_to_server({"type": "gm_setlevel", "level": 5})
+				await get_tree().create_timer(1.0).timeout
+				send_to_server({"type": "gm_find_hotzone"})
+				await get_tree().create_timer(2.0).timeout
+				_dev_shot_clear_overlays()
+				await _dev_shot_capture("huntground_outside")
+				# Walk EAST into it, which is the side the locator leaves you on. Stop the moment
+				# the prompt appears - every extra step is another chance for an egg to hatch
+				# over the screen we came to look at, which is what happened the first time.
+				for _i in range(14):
+					send_to_server({"type": "move", "direction": 6})
+					await get_tree().create_timer(0.45).timeout
+					if not pending_hotzone_warning.is_empty():
+						break
+				await get_tree().create_timer(0.6).timeout
+				await _dev_shot_capture("huntground_entry")
+
 			"dangerstep":
 				# ⚑ THE SAFETY GUARD, SEEN. Owner 2026-09-13 asked that players not be
 				# blindsided by high-level country. It is a refusal the player has to read,
@@ -31076,7 +31102,13 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.782[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.783[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ HOTZONES ARE HUNTING GROUNDS NOW, AND THEY MOVE.[/color] They were a place to avoid: harder monsters, a screen that said [b]DANGER ZONE - stay back[/b], and no word anywhere that they already paid [b]30-70% more XP and loot[/b]. Now the screen leads with what you get, [b]10-30% of what lives there are Elites[/b], and the whole map of them [b]relocates every three hours[/b] — so nobody farms the same one for days, and the one you found is worth going to now.")
+	display_game("  [color=#1EFF00]◆ And they are places, not potholes.[/color] The old ones could be a [b]single tile[/b] you blundered across. They are fewer and bigger — typically 37 tiles, never under 13 — covering the same share of the world, so they read as somewhere to travel to.")
+	display_game("  [color=#FF4444]★ THE NEW DANGER WARNING WAS BLIND TO EXACTLY THESE.[/color] A hotzone multiplies what spawns by up to 2.5x, and yesterday’s warning read the terrain underneath it instead — one place showed [b]Area: Lv 104[/b] while monsters arrived at [b]Lv 286[/b]. Everything that warns you now reads what actually spawns. You also never get asked twice: the hunting-ground screen and the high-level-country warning are one question, on one scale.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.782[/color]")
 	display_game("  [color=#FF4444]★ THE WORLD WILL NO LONGER LET YOU WALK BLIND INTO SOMETHING THAT KILLS YOU.[/color] Since danger stopped growing with distance, you cannot tell hard country by looking at it — and roads now invite crossing ground nobody scouted. A step onto land [b]twice your level or worse[/b] is [b]refused once[/b]: you are told what is ahead, and the same key again takes you in. It only asks at the boundary, never when you walk back toward safety, and never for a step that does not move you.")
 	display_game("  [color=#FF8000]★ HOVER ANY SQUARE OF THE MAP TO READ ITS LEVEL.[/color] The other half of the same problem, for anyone who would rather look before they walk. Coloured against your own level, on the same scale as the [b]Area[/b] line, so the two can never disagree — and two faults were found fixing it: your own square reported a different number than the Area readout, and squares along the edge of the view reported ground you could not see.")
 	display_game("  [color=#1EFF00]◆ See who is online without opening the game.[/color] A live list on [b]phantombadlands.com[/b] and in Discord — name, level, class and where they are, refreshed every few minutes.")
@@ -36849,6 +36881,11 @@ func _on_admin_panel_action(action_id: String) -> void:
 		"gm_settler_diag":
 			close_admin_menu()
 			send_to_server({"type": "gm_settler_diag"})
+		"gm_find_hotzone":
+			# Hunting grounds move every three hours, so there is no coordinate to write down
+			# and no way to test one by hand twice running.
+			close_admin_menu()
+			send_to_server({"type": "gm_find_hotzone"})
 		# v0.9.578 — Patreon supporter tier fulfillment. Walk within 5 tiles
 		# of the supporter, /admin → Patreon, pick the tier. Server resolves
 		# nearest-online-player and writes account.patreon_tier.
@@ -45434,26 +45471,52 @@ func _display_dungeon_food_warning_section() -> void:
 	display_game("")
 
 func handle_hotzone_warning(message: Dictionary):
-	"""Handle warning about entering a hotzone area"""
-	pending_hotzone_warning = {
-		"x": int(message.get("x", 0)),
-		"y": int(message.get("y", 0)),
-		"intensity": message.get("intensity", 0.5),
-		"estimated_level": int(message.get("estimated_level", 1))
-	}
+	"""You have found a hunting ground - somewhere worth fighting, that will not be here long.
+
+	⚑ THIS IS AN OFFER, NOT A WALL. It used to read "DANGER ZONE - stay back", bounce every
+	player regardless of level, and never once mention that the ground pays 30-70% more XP and
+	loot. Owner 2026-09-13: *"hotzones don't serve much of a purpose anymore."* They did pay -
+	the screen simply never said so, so the whole feature read as a level penalty.
+
+	The server decides whether this needs confirming: only when the ground is a real step up. A
+	character who outclasses it gets the same information with no question attached."""
+	var lv := int(message.get("estimated_level", 1))
+	var mine: int = maxi(1, int(message.get("your_level", character_data.get("level", 1))))
+	var needs_confirm := bool(message.get("confirm", true))
+	var mins := int(message.get("minutes_left", 0))
 
 	game_output.clear()
-	display_game("[color=#FF4444]═══════ DANGER ZONE ═══════[/color]")
+	display_game("[color=#FFAA33]═══════ HUNTING GROUND ═══════[/color]")
 	display_game("")
-	display_game("[color=#FF6666]You're approaching a Hotzone![/color]")
-	display_game("[color=#FFAA00]Estimated monster level: ~%d[/color]" % pending_hotzone_warning.estimated_level)
-	var intensity = pending_hotzone_warning.intensity
-	var intensity_label = "Low" if intensity < 0.3 else ("Medium" if intensity < 0.6 else "High")
-	display_game("[color=#FF8800]Intensity: %s[/color]" % intensity_label)
+	display_game("[color=#FFD700]Something has drawn the phantoms here.[/color]")
 	display_game("")
-	display_game("[color=#808080]Monsters here are significantly stronger.[/color]")
-	display_game("[color=#808080]Press [%s] to enter, [%s] to stay back.[/color]" % [
-		get_action_key_name(0), get_action_key_name(1)])
+	# What you get. Named first, because this is the reason to be here.
+	display_game("  [color=#88FF88]+%d%%[/color] experience and loot from everything you kill"
+		% int(message.get("xp_bonus_pct", 30)))
+	display_game("  [color=#9F70FF]%d%%[/color] of what lives here are [b]Elites[/b]"
+		% int(message.get("elite_pct", 10)))
+	display_game("")
+	# What it costs. The same Area colouring used everywhere else.
+	display_game("  Monsters run %s  [color=#808080](you are %d)[/color]" % [_area_level_tag(lv), mine])
+	if mins > 0:
+		# The reason to go NOW, and the reason nobody farms one for days.
+		display_game("  [color=#808080]The ground goes quiet again in about %s.[/color]"
+			% (("%d hours" % int(round(mins / 60.0))) if mins >= 90 else ("%d minutes" % mins)))
+	display_game("")
+	if needs_confirm:
+		pending_hotzone_warning = {
+			"x": int(message.get("x", 0)),
+			"y": int(message.get("y", 0)),
+			"intensity": message.get("intensity", 0.5),
+			"estimated_level": lv,
+		}
+		display_game("[color=#FF6666]This is well above your level.[/color]")
+		display_game("[color=#808080]Press [%s] to go in, [%s] to stay back.[/color]" % [
+			get_action_key_name(0), get_action_key_name(1)])
+	else:
+		# No question asked - clear any stale pending state so the action bar does not offer a
+		# confirmation for a step that already happened.
+		pending_hotzone_warning = {}
 
 	update_action_bar()
 

@@ -40,6 +40,9 @@ const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry",
 ## Travel stance affects initiative - see the note at `monster_initiative_chance`. Preloaded
 ## rather than using the global class name so this does not depend on an editor rescan.
 const _TravelStance = preload("res://shared/travel_stance.gd")
+## For `hotzone_reward_multiplier` - what a hunting ground pays, defined once so the xp grant,
+## the drop roll and the screen that promises it cannot drift apart.
+const WorldSystemScript = preload("res://shared/world_system.gd")
 
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit", "shadowstep"]
 const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
@@ -3342,7 +3345,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	var hotspot_intensity = float(monster.get("hotspot_intensity", 0.0))
 	var hotspot_xp_pct = 0
 	if hotspot_intensity > 0.0:
-		var hotspot_xp_mult = 1.3 + hotspot_intensity * 0.4
+		var hotspot_xp_mult = WorldSystemScript.hotzone_reward_multiplier(hotspot_intensity)
 		final_xp = int(final_xp * hotspot_xp_mult)
 		hotspot_xp_pct = int((hotspot_xp_mult - 1.0) * 100)
 
@@ -11541,7 +11544,7 @@ func roll_combat_drops(monster: Dictionary, character: Character, bonus_drop_mul
 	# the above-tier bonus.
 	var hotspot_intensity = float(monster.get("hotspot_intensity", 0.0))
 	if hotspot_intensity > 0.0:
-		var hotspot_drop_mult = 1.3 + hotspot_intensity * 0.4
+		var hotspot_drop_mult = WorldSystemScript.hotzone_reward_multiplier(hotspot_intensity)
 		drop_chance = int(drop_chance * hotspot_drop_mult)
 
 	# v0.9.682 — Plunder companion card boosts drop chance (banked during the fight).

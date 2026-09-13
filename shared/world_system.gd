@@ -2150,8 +2150,8 @@ func _is_hotspot(x: int, y: int) -> bool:
 	# Clusters are seeded at ~0.3% of tiles but expand to 1-20 tiles each
 
 	# Check nearby potential cluster centers (within max cluster radius of 5)
-	for cx in range(x - 5, x + 6):
-		for cy in range(y - 5, y + 6):
+	for cx in range(x - HOTZONE_SEARCH, x + HOTZONE_SEARCH + 1):
+		for cy in range(y - HOTZONE_SEARCH, y + HOTZONE_SEARCH + 1):
 			if _is_cluster_center(cx, cy):
 				var cluster_radius = _get_cluster_radius(cx, cy)
 				var dist = sqrt(float((x - cx) * (x - cx) + (y - cy) * (y - cy)))
@@ -2170,7 +2170,7 @@ func _collect_hotspot_clusters(min_x: int, max_x: int, min_y: int, max_y: int) -
 	and typical 33x33 padded vision (1089 cells), expect ~3 clusters per
 	render."""
 	var clusters: Array = []
-	var pad: int = 5
+	var pad: int = HOTZONE_SEARCH
 	for cx in range(min_x - pad, max_x + pad + 1):
 		for cy in range(min_y - pad, max_y + pad + 1):
 			if _is_cluster_center(cx, cy):
@@ -2206,18 +2206,77 @@ func _get_hotspot_intensity_in_clusters(x: int, y: int, clusters: Array) -> floa
 				best = intensity
 	return best
 
+## How long a set of hunting grounds stands before the whole map of them moves.
+##
+## Owner 2026-09-13: *"they should expire at some point or move around. Ideally players shouldn't
+## be able to farm the same hotzone for real world days, maybe a few hours before they move."*
+##
+## ⚑ NOTHING IS STORED. The epoch is folded into the same coordinate hash that always decided
+## where a zone was, so the world still answers "is this a hotzone?" from (x, y) alone with no
+## table, no persistence and no server memory - it just answers differently every three hours.
+## That is what makes rotation free: this is queried hundreds of times a step.
+const HOTZONE_PERIOD_SECONDS := 10800.0
+var _hot_epoch_value: int = -1
+var _hot_epoch_checked_ms: int = -1000000
+
+
+func hot_epoch() -> int:
+	"""Which three-hour window we are in. Cached: `_is_cluster_center` is called 121 times per
+	single-tile query, and a wall-clock read per call would be absurd."""
+	var now_ms: int = Time.get_ticks_msec()
+	if _hot_epoch_value < 0 or absi(now_ms - _hot_epoch_checked_ms) > 5000:
+		_hot_epoch_checked_ms = now_ms
+		_hot_epoch_value = int(floor(Time.get_unix_time_from_system() / HOTZONE_PERIOD_SECONDS))
+	return _hot_epoch_value
+
+
+static func hotzone_reward_multiplier(intensity: float) -> float:
+	"""What a hunting ground pays: 1.3x at its edge, 1.7x at its heart, on BOTH xp and drop rate.
+
+	⚑ ONE SOURCE. This number lived in three places - the xp grant, the drop roll, and the text
+	that tells the player what they are walking into - as three hand-copied `1.3 + i * 0.4`. Any
+	future tuning would have moved one of them and left the screen quoting a figure the game no
+	longer paid, which is the shape of nearly every wrong-text bug in this project."""
+	return 1.3 + clampf(intensity, 0.0, 1.0) * 0.4
+
+
+func hotzone_seconds_remaining() -> int:
+	"""How long the current set of hunting grounds has left, for telling the player."""
+	var now: float = Time.get_unix_time_from_system()
+	return int(ceil((float(hot_epoch()) + 1.0) * HOTZONE_PERIOD_SECONDS - now))
+
+
+## Hunting grounds are FEWER and BIGGER than the old danger pockets. The old ones were radius
+## 0.5-2.5 - as little as a single tile - which is something you blunder into, not somewhere you
+## travel to. Density drops in step so total coverage stays about where it was (~2.5% of ground):
+## a bigger footprint with the same coverage means fewer, findable places.
+const HOTZONE_CENTER_IN := 7          # out of HOTZONE_CENTER_OF
+const HOTZONE_CENTER_OF := 10000
+const HOTZONE_RADIUS_MIN := 2.0
+const HOTZONE_RADIUS_MAX := 5.0
+## How far to search for a centre that could cover a given tile. A centre must be within its own
+## radius to cover you, so the square window of the largest radius always contains every one.
+## DERIVED, not typed: it was hardcoded to 5 for a max radius of 2.5, and raising the radius to
+## 5.0 left it correct only by coincidence. The next change would not have been so lucky.
+const HOTZONE_SEARCH := int(ceil(HOTZONE_RADIUS_MAX))
+
+
 func _is_cluster_center(x: int, y: int) -> bool:
-	"""Check if this coordinate is a hotspot cluster center (~0.3% of tiles)"""
-	# Use a different hash to determine cluster centers
-	var hash_val = abs((x * 73 + y * 127) * 9311) % 1000
-	return hash_val < 3  # 0.3% chance to be a cluster center
+	"""Whether a hunting ground is centred on this coordinate in the CURRENT epoch.
+
+	Uses `_tile_hash` rather than the old `x * 73 + y * 127`. That linear form is the same family
+	that striped the whole world until it was replaced in the gatherable field - it was simply
+	invisible here while the zones were tiny and sparse. Making them bigger would have made the
+	pattern visible."""
+	var h: int = _tile_hash(x, y) ^ (hot_epoch() * 2654435761)
+	return absi(h) % HOTZONE_CENTER_OF < HOTZONE_CENTER_IN
+
 
 func _get_cluster_radius(x: int, y: int) -> float:
-	"""Get the radius of a hotspot cluster (results in 1-20 connected tiles)"""
-	# Use coordinate hash to determine cluster size (radius 0.5 to 2.5)
-	# radius 0.5 = ~1 tile, radius 2.5 = ~20 tiles
-	var hash_val = abs((x * 41 + y * 83) * 5717) % 100
-	return 0.5 + (hash_val / 100.0) * 2.0  # 0.5 to 2.5 radius
+	"""How big the hunting ground centred here is, this epoch."""
+	var h: int = _tile_hash(x + 7919, y + 104729) ^ (hot_epoch() * 40503)
+	var t: float = float(absi(h) % 1000) / 1000.0
+	return HOTZONE_RADIUS_MIN + t * (HOTZONE_RADIUS_MAX - HOTZONE_RADIUS_MIN)
 
 func _get_hotspot_intensity(x: int, y: int) -> float:
 	"""Get the intensity of the hotspot (for level multiplier)"""
@@ -2226,8 +2285,8 @@ func _get_hotspot_intensity(x: int, y: int) -> float:
 	var cluster_x = x
 	var cluster_y = y
 
-	for cx in range(x - 5, x + 6):
-		for cy in range(y - 5, y + 6):
+	for cx in range(x - HOTZONE_SEARCH, x + HOTZONE_SEARCH + 1):
+		for cy in range(y - HOTZONE_SEARCH, y + HOTZONE_SEARCH + 1):
 			if _is_cluster_center(cx, cy):
 				var dist = sqrt(float((x - cx) * (x - cx) + (y - cy) * (y - cy)))
 				if dist < min_dist:

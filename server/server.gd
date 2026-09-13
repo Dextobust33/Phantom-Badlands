@@ -2403,6 +2403,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_hire_test_guard(peer_id, message)
 		"gm_settler_diag":
 			handle_gm_settler_diag(peer_id)
+		"gm_find_hotzone":
+			handle_gm_find_hotzone(peer_id)
 		"gm_set_patreon_tier":
 			handle_gm_set_patreon_tier(peer_id, message)
 		"dungeon_skip_final_chest":
@@ -5747,20 +5749,45 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Check if entering a hotzone for the first time (warn before proceeding)
 	var hotspot_check = world_system.get_hotspot_at(new_pos.x, new_pos.y)
 	if hotspot_check.in_hotspot and not player_in_hotzone.has(peer_id):
-		# Use the actual monster level calculation for accurate estimate
+		# ⚑ A HUNTING GROUND IS AN OFFER, NOT A WALL.
+		#
+		# Owner 2026-09-13: *"hotzones don't serve much of a purpose anymore"* -> make them rich
+		# hunting grounds that move every few hours. This used to read "DANGER ZONE / stay back"
+		# and bounce EVERY player regardless of level, which is the wrong frame twice over: it
+		# never mentioned that the ground pays 30-70% more XP and loot, and it stopped a level
+		# 5000 character at the edge of a level 40 pocket.
+		#
+		# So it now says what is on offer, and only asks when the ground is actually a step up.
 		var level_range = world_system.get_monster_level_range(new_pos.x, new_pos.y)
-		var estimated_level = level_range.base_level
-		send_to_peer(peer_id, {
+		var estimated_level = int(level_range.base_level)
+		var my_level: int = maxi(1, int(character.level))
+		var payload := {
 			"type": "hotzone_warning",
 			"intensity": hotspot_check.intensity,
 			"estimated_level": estimated_level,
+			"your_level": my_level,
+			# Quoted from the SAME function the xp grant and the drop roll use, so the promise
+			# and the payout cannot drift.
+			"xp_bonus_pct": int(round((world_system.hotzone_reward_multiplier(
+				float(hotspot_check.intensity)) - 1.0) * 100.0)),
+			"elite_pct": int(round((HOTZONE_ELITE_CHANCE_MIN + float(hotspot_check.intensity)
+				* (HOTZONE_ELITE_CHANCE_MAX - HOTZONE_ELITE_CHANCE_MIN)) * 100.0)),
+			"minutes_left": int(world_system.hotzone_seconds_remaining() / 60),
 			"x": new_pos.x, "y": new_pos.y
-		})
-		# Move player back to previous position
-		character.x = old_x
-		character.y = old_y
-		send_location_update(peer_id)
-		return
+		}
+		if float(estimated_level) / float(my_level) < DANGER_STEP_RATIO:
+			# Comfortably within reach: tell them what they have walked into and let them walk.
+			payload["confirm"] = false
+			player_in_hotzone[peer_id] = true
+			send_to_peer(peer_id, payload)
+		else:
+			payload["confirm"] = true
+			send_to_peer(peer_id, payload)
+			# Move player back to previous position
+			character.x = old_x
+			character.y = old_y
+			send_location_update(peer_id)
+			return
 	# Clear hotzone tracking if player has left the hotzone
 	if not hotspot_check.in_hotspot and player_in_hotzone.has(peer_id):
 		player_in_hotzone.erase(peer_id)
@@ -9208,7 +9235,20 @@ func trigger_encounter(peer_id: int):
 			# still a soft bias — out-of-biome monsters can still show up,
 			# just less often.
 			var encounter_biome = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
-			monster = monster_db.generate_monster(level_range.min, level_range.max, encounter_biome)
+			# ⚑ WHAT MAKES A HUNTING GROUND WORTH THE WALK IS WHAT LIVES THERE.
+			#
+			# Owner 2026-09-13: hotzones "don't serve much of a purpose anymore". They already
+			# paid +30-70% XP and drop chance - the problem was never that the reward was zero,
+			# it was that nothing about the FIGHT felt different, so the whole thing read as a
+			# level penalty. Elites are the visible part: the base roll is 1%, which no player
+			# will ever notice, so inside a hunting ground it rises with intensity.
+			var hz: Dictionary = world_system.get_hotspot_at(character.x, character.y)
+			var forced_role := ""
+			if hz.get("in_hotspot", false):
+				var hz_i: float = float(hz.get("intensity", 0.0))
+				if randf() < HOTZONE_ELITE_CHANCE_MIN + hz_i * (HOTZONE_ELITE_CHANCE_MAX - HOTZONE_ELITE_CHANCE_MIN):
+					forced_role = "elite"
+			monster = monster_db.generate_monster(level_range.min, level_range.max, encounter_biome, forced_role)
 
 	# Slice 6i — tag the monster with hotspot intensity (0.0 outside, 0.0-1.0
 	# inside) so victory processing can apply XP + loot bonuses. We attach
@@ -43221,6 +43261,12 @@ func _merchant_scatter_uniques(circuit_key: String, market_key: String, this_lis
 ## 2.0 is the ratio the Area readout already calls "far above you", so the guard fires exactly
 ## where the colour the player is looking at turns red - one scale, not two.
 const DANGER_STEP_RATIO := 2.0
+## How often a hunting-ground encounter is an ELITE, at the edge of the ground and at its heart.
+## The world's base elite roll is 1% and only above level 15, which is not something a player can
+## perceive; these are what make a hunting ground read as somewhere different rather than just
+## somewhere harder.
+const HOTZONE_ELITE_CHANCE_MIN := 0.10
+const HOTZONE_ELITE_CHANCE_MAX := 0.30
 ## Confirmations are remembered per player: `peer_id -> the ratio band already accepted`.
 ## Without this a jagged border would ask on every other step.
 var _danger_step_ack: Dictionary = {}
@@ -43256,6 +43302,13 @@ func _confirm_dangerous_step(peer_id: int, character, nx: int, ny: int) -> bool:
 	It can never strand anybody: the block is one step, the same input immediately after goes
 	through, and stepping back toward safer ground is never gated."""
 	if world_system == null:
+		return true
+	# ⚑ ONE PROMPT, NOT TWO. A hotzone tile already has its own entry confirmation further down
+	# `handle_move`, and since this guard learned to read `danger_level_at` it sees the hotzone
+	# multiplier too - so without this, stepping into a hunting ground asked twice in a row.
+	# The hotzone prompt wins because it can say what is GOOD about the ground as well as what
+	# is dangerous, which this one cannot.
+	if world_system.get_hotspot_at(nx, ny).get("in_hotspot", false):
 		return true
 	var me: int = maxi(1, int(character.level))
 	# `danger_level_at`, never `get_post_anchored_level` - the baseline excludes the hotzone
@@ -43306,3 +43359,56 @@ func _clear_danger_ack(peer_id: int) -> void:
 	same peer does not inherit a confirmation somebody else gave."""
 	_danger_step_ack.erase(peer_id)
 	_danger_step_below.erase(peer_id)
+
+
+
+func handle_gm_find_hotzone(peer_id: int) -> void:
+	"""Put the caller one step outside the nearest hunting ground.
+
+	⚑ WHY THIS IS A TOOL AND NOT A COORDINATE. Hunting grounds move every three hours, so there
+	is no address to write into a test, a probe fixture or a screenshot scene - and something
+	that cannot be reached twice running cannot be checked twice running. This is how the
+	feature stays testable now that it is deliberately not in the same place tomorrow."""
+	if not _is_admin(peer_id) or not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var best := Vector2i(0, 0)
+	var best_d := 1 << 30
+	# Spiral outward from the player rather than scanning a fixed box: the nearest one is the
+	# useful one, and a box would bias toward whichever corner it started in.
+	for r in range(6, 260):
+		for a in range(0, 360, 6):
+			var rad: float = deg_to_rad(float(a))
+			var x: int = character.x + int(round(cos(rad) * float(r)))
+			var y: int = character.y + int(round(sin(rad) * float(r)))
+			if not world_system.get_hotspot_at(x, y).get("in_hotspot", false):
+				continue
+			var d: int = (x - character.x) * (x - character.x) + (y - character.y) * (y - character.y)
+			if d < best_d:
+				best_d = d
+				best = Vector2i(x, y)
+		if best_d < (1 << 30):
+			break
+	if best_d >= (1 << 30):
+		send_to_peer(peer_id, {"type": "text",
+			"message": "[color=#FF8800][GM] No hunting ground within 260 tiles. They move every %d minutes - try again shortly.[/color]"
+				% int(world_system.HOTZONE_PERIOD_SECONDS / 60.0)})
+		return
+	# Step to a tile just OUTSIDE it, so the entry prompt still fires when you walk in.
+	var outside := best
+	for step in range(1, 12):
+		var tx: int = best.x - step
+		if not world_system.get_hotspot_at(tx, best.y).get("in_hotspot", false):
+			outside = Vector2i(tx, best.y)
+			break
+	character.x = outside.x
+	character.y = outside.y
+	# A fresh visit, or the prompt this was built to show would be suppressed as already seen.
+	player_in_hotzone.erase(peer_id)
+	_danger_step_ack.erase(peer_id)
+	_danger_step_below.erase(peer_id)
+	send_location_update(peer_id)
+	send_to_peer(peer_id, {"type": "text",
+		"message": "[color=#FFAA33][GM] Hunting ground at (%d, %d). You are at (%d, %d) - walk EAST to enter. It moves in %d min.[/color]"
+			% [best.x, best.y, outside.x, outside.y,
+				int(world_system.hotzone_seconds_remaining() / 60)]})

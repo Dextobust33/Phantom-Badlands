@@ -190,10 +190,23 @@ func _init() -> void:
 			break
 	ck(hz_found, "found a hotzone where spawns are 2x the terrain baseline: (%d,%d) baseline Lv %d, spawns Lv %d" % [
 		hz_x, hz_y, int(ws.get_post_anchored_level(hz_x, hz_y)), ws.danger_level_at(hz_x, hz_y)])
+	# ⚑ AND THE GUARD DEFERS HERE, ON PURPOSE. This check used to assert the guard REFUSED the
+	# step, and it did - until hunting grounds got their own entry prompt that can also say what
+	# is good about the ground. Two prompts back to back is worse than either, so the guard
+	# stands down on a hotzone tile and that prompt speaks instead. What must not happen is
+	# NEITHER of them firing, which is what the last two checks are for.
 	srv._danger_step_ack.clear()
 	srv._danger_step_below.clear()
-	ck(not srv._confirm_dangerous_step(11, hz_char, hz_x, hz_y),
-		"a character AT the terrain level is still warned, because the hotzone is what spawns")
+	ck(srv._confirm_dangerous_step(11, hz_char, hz_x, hz_y),
+		"the step guard stands down on a hotzone tile - the hunting-ground prompt owns it")
+	var hsrc := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(hsrc.find('"type": "hotzone_warning"') >= 0,
+		"...and that prompt exists, so standing down is a hand-off and not a hole")
+	ck(hsrc.find("if float(estimated_level) / float(my_level) < DANGER_STEP_RATIO:") >= 0,
+		"...gating on the SAME 2x ratio, so nothing falls between the two")
+	# The danger level itself must still see the hotzone - that is what both prompts read.
+	ck(ws.danger_level_at(hz_x, hz_y) > int(ws.get_post_anchored_level(hz_x, hz_y)),
+		"and the level everything warns from still includes the hotzone multiplier")
 
 	print("\n===== A REFUSED STEP HAS NO OTHER CONSEQUENCE =====")
 	# A step that did not happen must not break a trade, and resting in place must never be

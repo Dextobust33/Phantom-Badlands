@@ -274,12 +274,16 @@ enum MonsterType {
 func _ready():
 	print("Monster Database initialized")
 
-func generate_monster(min_level: int, max_level: int, biome: String = "") -> Dictionary:
+func generate_monster(min_level: int, max_level: int, biome: String = "", force_role: String = "") -> Dictionary:
 	"""Generate a random monster appropriate for the level range.
 	Slice 6b — optional biome biases the selection toward monsters whose
 	BIOME_AFFINITY list contains the biome (3× weight). Empty biome string
 	keeps the legacy uniform selection so callers that don't care about
-	biome (forced monsters, hunting, dungeon spawns) stay unchanged."""
+	biome (forced monsters, hunting, dungeon spawns) stay unchanged.
+
+	`force_role` ("elite" / "empowered") makes that roll land instead of leaving it to chance.
+	Hunting grounds use it: what makes one worth travelling to is what LIVES there, and the base
+	elite roll is 1% - far too rare to be the draw."""
 	var target_level = randi_range(min_level, max_level)
 
 	# Select monster type based on level (with optional biome bias)
@@ -289,7 +293,7 @@ func generate_monster(min_level: int, max_level: int, biome: String = "") -> Dic
 	var base_stats = get_monster_base_stats(monster_type)
 
 	# Scale to target level
-	var monster = scale_monster_to_level(base_stats, target_level)
+	var monster = scale_monster_to_level(base_stats, target_level, false, force_role)
 
 	return monster
 
