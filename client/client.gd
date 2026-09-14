@@ -1668,6 +1668,8 @@ var _loot_agg_stack: Dictionary = {}  # base_name -> {"qty": int, "color": Strin
 var _post_loot_victory_persists: bool = false
 
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
+# The Warden draws from the PLAYER sprite pool, at player size - see _overworld_display.
+const WARDEN_FIGURE_SPRITE := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
 const UiSpotlightScript = preload("res://client/ui_spotlight.gd")
 
 # v0.9.490 — global re-openable HelpPanel for topic-based help (Home Stone
@@ -9889,22 +9891,20 @@ func update_action_bar():
 	#
 	# It reads like a cosmetic ordering detail and it is the difference between co-op working
 	# and co-op being impossible to play.
-	elif party_confirm_pending:
-		# 2026-09-11 — "lock in X?" Space confirms, Q goes back to the hand. The card's OWN key
-		# also confirms (same idiom as the buff picker: press the key twice to commit), so the
-		# fast path is two taps of one key and nobody has to find Space.
-		var _confirm := {"label": "Confirm", "action_type": "local", "action_data": "party_confirm_yes", "enabled": true}
+	elif party_round_submitted and party_combat_active:
+		# You have chosen; the round is waiting on somebody else. The ONLY thing offered here is
+		# taking it back — no confirm step, per the owner's ask. If everyone else has already
+		# picked, the server resolves before this row can be used, and says so.
+		var _change := {"label": "Change action", "action_type": "local",
+			"action_data": "party_confirm_no", "enabled": true}
 		current_actions = [
-			_confirm,
-			{"label": "Pick again", "action_type": "local", "action_data": "party_confirm_no", "enabled": true},
+			{"label": "Waiting...", "action_type": "none", "action_data": "", "enabled": false},
+			_change,
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 		for _ci in range(4, 10):
-			if _ci == party_confirm_slot:
-				current_actions.append(_confirm)
-			else:
-				current_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+			current_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
 	elif in_combat:
 		# Combat mode: Space=Attack, Q=Use Item, W=Flee, E/R/1-5=Path abilities
 		var ability_actions = _get_combat_ability_actions()
@@ -24865,6 +24865,15 @@ func handle_server_message(message: Dictionary):
 				message.get("highlight", []) as Array
 			)
 
+		"party_action_withdrawn":
+			# The server handed the choice back: re-open the hand.
+			party_round_submitted = false
+			party_confirm_command = ""
+			party_confirm_target = ""
+			if combat_scene_panel and combat_scene_panel.has_method("set_hand_gated"):
+				combat_scene_panel.set_hand_gated(false)
+			update_action_bar()
+
 		"show_movement_help":
 			# The keypad diagram, queued behind the Sanctuary hint that announces it.
 			# It used to auto-open on character entry, which put the movement lesson after
@@ -39364,14 +39373,29 @@ func _replay_post_death_messages() -> void:
 
 
 func _party_confirm_start(command: String, target: String) -> void:
-	"""Hold a party action for confirmation instead of sending it. The hand stays where it is;
-	the action bar becomes Confirm / Pick again, and the card's own key confirms."""
-	party_confirm_pending = true
+	"""Send the action straight away. Changing your mind is an UNDO, not a confirmation.
+
+	⛑ Owner 2026-09-14: *"I don't like the way Party lock in works currently ... players shouldn't
+	have to confirm all of their actions, they should just have a way to pick something different
+	if they change their mind while their party members are still deciding on their actions."*
+
+	They are right twice over. Confirming every action is friction, and the confirm row was a
+	whole action-bar STATE - which is how the same "I can't lock in" bug arrived three times:
+	`monster_select_mode` and `ability_mode` both sit above it in update_action_bar, so any card
+	that asks who to aim at (a shield, for one) reached a confirm row that could never be drawn.
+	Moving the branch fixed one shadow; the state itself was the bug.
+
+	There is no state to shadow now. Pick a card and it is submitted; while anyone else is still
+	choosing, the bar offers "Change action", which takes it back."""
 	party_confirm_command = command
 	party_confirm_target = target
-	party_confirm_slot = _party_confirm_origin_index if _party_confirm_origin_index >= 4 and _party_confirm_origin_index <= 9 else -1
+	_party_confirm_armed = true
+	send_combat_command(command, target)
+	_party_confirm_armed = false
 	if combat_scene_panel and combat_scene_panel.has_method("append_log"):
-		combat_scene_panel.append_log("[color=#66D0C0]Lock in %s?  Space confirms, Q picks again.[/color]" % _party_confirm_label())
+		combat_scene_panel.append_log(
+			"[color=#66D0C0]%s — locked in. You can still change it until the last member picks.[/color]"
+				% _party_confirm_label())
 	update_action_bar()
 
 
@@ -39408,12 +39432,9 @@ func _party_confirm_yes() -> void:
 
 
 func _party_confirm_no() -> void:
-	if not party_confirm_pending:
-		return
+	"""'Change action' - ask the server to hand the choice back."""
 	_party_confirm_clear()
-	if combat_scene_panel and combat_scene_panel.has_method("append_log"):
-		combat_scene_panel.append_log("[color=#808080]Pick a card.[/color]")
-	update_action_bar()
+	send_to_server({"type": "combat_command", "command": "party_withdraw"})
 
 
 func _party_confirm_clear() -> void:
@@ -42878,12 +42899,46 @@ func _resolve_ui_target(key: String) -> Control:
 	return null
 
 
+func _resolve_ui_group(key: String) -> Array:
+	"""Keys that stand for SEVERAL controls at once.
+
+	Owner 2026-09-14: *"When doing a border on the cards we should probably border their hotkeys
+	on the action bar as well."* Right - the card and the key that plays it are one lesson, and
+	ringing the whole action bar to reach three of its buttons points at forty things to teach
+	three. This reads the bar's CURRENT contents, so it rings however many cards are in hand
+	rather than a hardcoded three."""
+	var out: Array = []
+	match key:
+		"card_keys":
+			for i in range(action_buttons.size()):
+				if i >= current_actions.size():
+					break
+				var a = current_actions[i]
+				if not (a is Dictionary):
+					continue
+				if not bool(a.get("enabled", false)):
+					continue
+				# The ability slots: a combat action whose payload is not one of the three
+				# fixed buttons every fight has.
+				if String(a.get("action_type", "")) != "combat":
+					continue
+				var d := String(a.get("action_data", ""))
+				if d in ["attack", "flee", "use_item", ""]:
+					continue
+				out.append(action_buttons[i])
+	return out
+
+
 func _spotlight_ui(keys: Array, seconds: float = 8.0) -> void:
 	if ui_spotlight == null:
 		return
 	var controls: Array = []
 	var missed: Array = []
 	for k in keys:
+		var grp := _resolve_ui_group(String(k))
+		if not grp.is_empty():
+			controls.append_array(grp)
+			continue
 		var c := _resolve_ui_target(String(k))
 		if c == null:
 			missed.append(String(k))
@@ -46468,6 +46523,26 @@ func _overworld_display(payload: Dictionary) -> String:
 	_overworld_figure_meta = {}
 	var rows_n: int = meaning.size()
 	var cols_n: int = meaning[0].size() if rows_n > 0 else 0
+	# ⛑ THE WARDEN IS A PERSON, NOT A FIXTURE.
+	#
+	# Owner 2026-09-14: *"I've confirmed his sprite is on the overworld but should be larger like
+	# the players."* Tiles compose at 1:1; FIGURES compose at FIGURE_SCALE (1.35x), anchored to
+	# the bottom of the cell so they overflow upward, and they breathe with the idle tick. He was
+	# a tile, so he stood a third shorter than everyone else and perfectly still.
+	#
+	# Promoting him to a figure - drawn from the very sprite the player pool uses - makes him the
+	# same size, the same art, and alive, with no new rendering path. The tile beneath him is
+	# blanked so a 32px copy does not sit under the 43px one.
+	for _wy in range(rows_n):
+		var _wrow: Array = meaning[_wy]
+		for _wx in range(_wrow.size()):
+			if String(_wrow[_wx]) != "warden":
+				continue
+			figures["%d,%d" % [_wx, _wy]] = {"main": WARDEN_FIGURE_SPRITE}
+			_overworld_figure_meta["%d,%d" % [_wx, _wy]] = {
+				"kind": "npc", "is_local": false,
+				"data": {"name": "Warden Hollis", "class": "Fighter"}}
+			_wrow[_wx] = "empty"
 	# OTHER players, and the companions travelling with them. The client cannot know who is out
 	# there - it is sent resolved cells, not a roster - so the server names them in the payload.
 	var pending_companions: Array = []

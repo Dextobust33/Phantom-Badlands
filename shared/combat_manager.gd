@@ -12691,6 +12691,39 @@ func submit_party_action(leader_id: int, peer_id: int, action: Dictionary) -> Di
 	st["submitted_this_round"] = true
 	return {"ok": true, "all_submitted": _party_all_submitted(combat)}
 
+func withdraw_party_action(leader_id: int, peer_id: int) -> Dictionary:
+	"""Take back an action while the party is still deciding.
+
+	Owner 2026-09-14: *"I don't like the way Party lock in works currently ... players shouldn't
+	have to confirm all of their actions, they should just have a way to pick something different
+	if they change their mind while their party members are still deciding on their actions."*
+
+	That replaces a CONFIRM step with an UNDO one, and the difference matters beyond taste: the
+	confirm row was a whole action-bar state that three separate modes could shadow (the target
+	picker among them), which is how the same "I can't lock in" bug arrived three times. There is
+	no state to shadow now - picking a card submits it.
+
+	Withdrawal is only possible while somebody else has yet to submit. Once everyone is in, the
+	round resolves in the same call, so there is no window to take anything back - which is also
+	exactly the fairness rule you want: nobody gets to see the round land and then change it."""
+	if not active_party_combats.has(leader_id):
+		return {"ok": false, "reason": "No party combat"}
+	var combat: Dictionary = active_party_combats[leader_id]
+	var ms: Dictionary = combat.get("member_states", {})
+	if not ms.has(peer_id):
+		return {"ok": false, "reason": "Not in this party combat"}
+	var st: Dictionary = ms[peer_id]
+	if st.get("dead", false) or st.get("fled", false):
+		return {"ok": false, "reason": "You are out of this fight"}
+	if not st.get("submitted_this_round", false):
+		return {"ok": false, "reason": "You have not chosen anything yet"}
+	if _party_all_submitted(combat):
+		return {"ok": false, "reason": "Too late - the round is resolving"}
+	st["submitted_this_round"] = false
+	st["queued_action"] = {}
+	return {"ok": true}
+
+
 func _party_all_submitted(combat: Dictionary) -> bool:
 	"""True once every ALIVE, non-fled member has locked in an action this round."""
 	var ms: Dictionary = combat.get("member_states", {})

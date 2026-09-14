@@ -6479,6 +6479,20 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	if command.is_empty():
 		return
 
+	# "I changed my mind" - take the action back while the party is still choosing.
+	if command == "party_withdraw":
+		var _wl = combat_mgr.party_combat_membership.get(peer_id, -1)
+		var _wres = combat_mgr.withdraw_party_action(int(_wl), peer_id) if _wl != -1 			else {"ok": false, "reason": "No party combat"}
+		if _wres.get("ok", false):
+			send_to_peer(peer_id, {"type": "party_action_withdrawn"})
+			send_to_peer(peer_id, {"type": "text", "message":
+				"[color=#66D0C0]Action taken back — choose again.[/color]"})
+			_broadcast_party_update(int(_wl), [], false)
+		else:
+			send_to_peer(peer_id, {"type": "text", "message":
+				"[color=#FFA500]%s[/color]" % _wres.get("reason", "Can't change that now.")})
+		return
+
 	# Check if player is in party combat — route to party combat handler
 	if combat_mgr.party_combat_membership.has(peer_id):
 		# v0.9.740 — an optional "target" rides along so a buff can be aimed at a teammate
@@ -43257,7 +43271,10 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 
 "
 				+ "[color=#FFAA00]Flee is on W. Dying out here is permanent.[/color]")
-			ring = ["cards", "action_bar"]
+			# The cards themselves AND the action-bar keys that play them - one lesson, both
+			# halves lit. Ringing the whole bar to reach three of its buttons points at forty
+			# things in order to teach three.
+			ring = ["cards", "card_keys"]
 		_:
 			return
 	_send_hint(peer_id, title, body, "", ring)
