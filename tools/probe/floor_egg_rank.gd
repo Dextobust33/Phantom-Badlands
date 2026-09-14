@@ -103,5 +103,29 @@ func _init() -> void:
 	ck(ssrc2.find("var item_level = max(1, character.level)") < 0,
 		"and the looter-only version is gone")
 
+	print("\n===== EVERY COMPLETION REWARD THAT SHOULD FOLLOW RANK, DOES =====")
+	# XP and materials already applied `1.0 + (rank - 1) * 0.1`; valor did not, so a rank-9 run
+	# paid 1.8x the xp and 1.8x the materials of a rank-1 and exactly the same valor - the one
+	# reward a player converts into everything else.
+	var ssrc3 := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(ssrc3.find("var valor_bonus = int((3 + randi() % 3) * dungeon_tier * 5 * (1.0 + (inst_sub_tier - 1) * 0.1))") >= 0,
+		"valor scales with rank, on the same curve as xp and materials")
+	ck(ssrc3.find("var qty = int(m.get(\"quantity\", 1) * (1.0 + (inst_sub_tier - 1) * 0.1))") >= 0,
+		"materials still do")
+	var dsrc2 := FileAccess.get_file_as_string("res://shared/dungeon_database.gd")
+	ck(dsrc2.find("var sub_tier_mult = 1.0 + (sub_tier - 1) * 0.1") >= 0, "and so does completion xp")
+
+	print("\n===== THE TREASURE-TILE PATH IS DEAD, AND STAYS THAT WAY KNOWINGLY =====")
+	# `_open_dungeon_treasure` cannot run: floor-item spawning blanks every TREASURE tile in the
+	# only kind of instance a player walks. It is kept because re-enabling treasure tiles is a
+	# live design option - so this asserts the thing that makes it dead, and will start failing
+	# the day somebody turns it back on without noticing the old path wakes up with it.
+	ck(ssrc3.find("if _t == _tt_treasure or _t == _tt_scattered or _t == _tt_hoard:") >= 0,
+		"treasure tiles are blanked when floor loot is placed")
+	ck(ssrc3.find('if instance_id.begins_with("player_dungeon_"):') >= 0,
+		"...for every personal instance, which is the only kind a player explores")
+	ck(ssrc3.find("## ⚑ UNREACHABLE IN PRACTICE, AND THAT IS DELIBERATE") >= 0,
+		"and the dead function SAYS it is dead, so nobody debugs it for an hour")
+
 	print("\n[FLOOREGGRANK] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)

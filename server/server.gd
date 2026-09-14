@@ -34457,6 +34457,17 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		_handle_instant_death_at_combat_start(peer_id, monster.name)
 
 func _open_dungeon_treasure(peer_id: int):
+	## ⚑ UNREACHABLE IN PRACTICE, AND THAT IS DELIBERATE - do not "fix" bugs in here.
+	##
+	## `_spawn_all_dungeon_floor_items` blanks every TREASURE tile and re-homes its loot as floor
+	## items, and it runs for every `player_dungeon_*` instance - which is the only kind a player
+	## ever walks. A world `D` on the map is an entry point; stepping into it spins up a personal
+	## instance, so its untouched TREASURE tiles are never stood on either.
+	##
+	## Nothing is lost: the floor-loot path is rank-aware too (`_floor_egg_rank`), which is what
+	## this function was kept for. It is left in place rather than deleted because re-enabling
+	## treasure tiles is a live design option, and `tools/probe/floor_egg_rank.gd` asserts the
+	## blanking that makes this dead - so if somebody turns it back on, the probe says so.
 	"""Open a treasure chest in dungeon"""
 	if not characters.has(peer_id):
 		return
@@ -34818,8 +34829,14 @@ func _open_final_chest(peer_id: int):
 		else:
 			reward_lines.append("[color=#808080]%s found but inventory full![/color]" % str(bonus_consumable.get("name", "Consumable")))
 
-	# Bonus valor (3-5x typical fight reward — proxy by tier).
-	var valor_bonus = (3 + randi() % 3) * dungeon_tier * 5
+	# Bonus valor (3-5x typical fight reward — proxy by tier), SCALED BY RANK.
+	#
+	# ⚑ The rank multiplier was missing here and nowhere else in this function: the materials two
+	# blocks up already apply `1.0 + (inst_sub_tier - 1) * 0.1`, and so does the completion XP.
+	# So a rank-9 run paid 1.8x the XP and 1.8x the materials of a rank-1 and exactly the same
+	# valor - the reward a player converts into everything else. Owner 2026-09-11 asked whether
+	# climbing rank pays off; this was one of the places it quietly did not.
+	var valor_bonus = int((3 + randi() % 3) * dungeon_tier * 5 * (1.0 + (inst_sub_tier - 1) * 0.1))
 	if peers.has(peer_id):
 		persistence.add_valor(peers[peer_id].account_id, valor_bonus)
 	reward_lines.append("[color=#FFD700]+%d Valor[/color]" % valor_bonus)
