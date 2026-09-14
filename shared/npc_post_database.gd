@@ -611,6 +611,20 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 	if post_tier >= 5:
 		stations.append("companion_stable")
 
+	# THE WARDEN, at the starter post only.
+	#
+	# Owner 2026-09-14, reading the welcome text on a fresh account: *"the warden is waiting at
+	# the gate." "What gate?"* — fair, because he was not anywhere. He existed only as a party
+	# member inside the dungeon, so the first thing a new player read pointed at nothing.
+	#
+	# He stands on a tile now, and the first instruction is to walk to him. That teaches movement
+	# by giving it a destination rather than by listing keys, which is the difference between
+	# being told the controls and using them.
+	#
+	# Crossroads only: he is the START of the game, not a fixture of every post in the world.
+	if is_crossroads:
+		stations.append("warden")
+
 	# Deterministic RNG so layout is stable per post but varies between posts.
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash("post_layout_%d_%d" % [px, py])

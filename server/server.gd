@@ -3411,19 +3411,21 @@ func handle_create_character(peer_id: int, message: Dictionary):
 
 	send_location_update(peer_id)
 
-	# Welcome tutorial overlay — fires after location_update so the panel is
-	# layered on top of the map. Names the chain + companion gift + Crossroads so
-	# the first 60 seconds of play have an obvious next step.
-	send_to_peer(peer_id, {
-		"type": "tutorial_hint",
-		"title": "[color=#9ACD32]Welcome, %s![/color]" % char_name,
-		"body": (
-			"You're at [color=#FFD700]Crossroads[/color] — the safest post in the world.\n\n"
-			+ "A Warden is waiting at the gate:\n"
-			+ "  • [color=#9ACD32]Warden's Watch[/color] — three steps, in your quest log now. Each one arms you, and the last one he walks with you.\n\n"
-			+ "Press [color=#FFAA66]?[/color] on any panel whenever you want help. Good luck out there."
-		),
-	})
+	# The first thing a new player reads. ONE instruction.
+	#
+	# Owner 2026-09-14, on the version this replaces: *"the warden is waiting at the gate."
+	# "What gate?"* - and the rest of it named a quest log they had never seen and a step count
+	# they had no use for. Their standard for the whole opening: *"ask what do they need to know
+	# to do the next thing they should focus on?"*
+	#
+	# What they need here is: which one is me, how do I move, and where do I go. Nothing else.
+	# The Warden is a real tile in this post now (see npc_post_database), so "walk to him" names
+	# something they can actually see, and walking to him teaches movement by using it.
+	_send_hint(peer_id,
+		"[color=#9ACD32]Welcome, %s[/color]" % char_name,
+		("You are the figure in the middle of the map.\n\n"
+			+ "[color=#9ACD32]Move with the NUMPAD[/color] - 8 up, 2 down, 4 left, 6 right, corners for diagonals. Arrow keys work too.\n\n"
+			+ "Find the [color=#9ACD32]W[/color] standing nearby and walk into him. That is the Warden, and he is expecting you."))
 
 	# Check if spawning at a Trading Post and trigger the encounter
 	if world_system.is_trading_post_tile(character.x, character.y):
@@ -5516,6 +5518,9 @@ func handle_move(peer_id: int, message: Dictionary):
 				if bump_type in CraftingDatabaseScript.STATION_SKILL_MAP:
 					var skill = CraftingDatabaseScript.STATION_SKILL_MAP[bump_type]
 					send_to_peer(peer_id, {"type": "station_interact", "station": bump_type, "skill": skill})
+					return
+				elif bump_type == "warden":
+					_handle_warden_interact(peer_id, character)
 					return
 				elif bump_type == "quest_board":
 					send_to_peer(peer_id, {"type": "quest_board_interact"})
@@ -42942,6 +42947,42 @@ const GUIDE_PEER_ID := -9001
 ## log and the victory card, and a name that disagrees with itself across four surfaces is the
 ## "one value, two places" defect wearing a hat.
 const GUIDE_NAME := "Warden Hollis"
+
+
+func _handle_warden_interact(peer_id: int, character) -> void:
+	"""Walk into the Warden and he tells you the ONE thing you need next.
+
+	Owner 2026-09-14 set the standard for this whole opening: *"We should be approaching every
+	part of this beginning for new players in a way that we ask what do they need to know to do
+	the next thing they should focus on?"*
+
+	So this is not a speech. It is a lookup on where the player actually IS in the chain, and it
+	says the next action and nothing else. A player who has already finished gets a short line
+	rather than silence, because walking up to someone and being ignored reads as a bug."""
+	var stage := 0            # 0 = not started, 1..3 = on that stage, 4 = done
+	for q in character.active_quests:
+		var qid := String(q.get("quest_id", q.get("id", "")))
+		if qid.begins_with("wardens_watch_"):
+			stage = int(qid.substr(14))
+			break
+	if stage == 0:
+		for qid in character.completed_quests:
+			if String(qid).begins_with("wardens_watch_"):
+				stage = 4
+
+	match stage:
+		1:
+			_guide_say(peer_id, "One kill. Anything out past the gate will do. Step off the stone and something will find you.")
+			_guide_teach(peer_id, "combat")
+		2:
+			_guide_say(peer_id, "Three more. You have a blade now, so this should go faster than the first one did.")
+			_guide_teach(peer_id, "equipment")
+		3:
+			_guide_say(peer_id, "The hole in the ground, then. Find the [color=#FFD700]D[/color] on your map and walk onto it. I am coming with you.")
+		4:
+			_guide_say(peer_id, "You came back. Most of the ones I send out there do not. Go on, then — it is a big world.")
+		_:
+			_guide_say(peer_id, "You look new. Check your quest log — I have already written you down for the Watch.")
 
 
 func _guide_say(peer_id: int, line: String) -> void:

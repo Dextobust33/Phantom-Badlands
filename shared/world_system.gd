@@ -96,6 +96,10 @@ const TILE_RENDER = {
 	"inn":           {"char": "I", "color": "#FFAA44", "blocks_move": true, "blocks_los": false},
 	"quest_board":   {"char": "Q", "color": "#C4A882", "blocks_move": true, "blocks_los": false},
 	"throne":        {"char": "T", "color": "#FFD700", "blocks_move": true, "blocks_los": false},
+	# The onboarding guide, standing in the starter post. Blocks movement so you BUMP into him -
+	# which is the whole point: the first instruction a new player gets is "walk to the Warden",
+	# and walking into something is how every other interaction in this game already works.
+	"warden":        {"char": "W", "color": "#9ACD32", "blocks_move": true, "blocks_los": false},
 	"blacksmith":    {"char": "B", "color": "#DAA520", "blocks_move": true, "blocks_los": false},
 	"healer":        {"char": "H", "color": "#00FF88", "blocks_move": true, "blocks_los": false},
 	# Audit #4 Slice 1A — Companion Stable. Live access to Sanctuary kennel

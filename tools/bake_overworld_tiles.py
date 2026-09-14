@@ -250,6 +250,33 @@ TREE_CELL = (0, 1)      # (row, col) into the 3x4 grid - green row, broadleaf wi
 TREE_SPAN = (3, 2)      # rows, cols of 32px cells
 
 
+
+# The WARDEN tile: the onboarding guide, standing in the starter post.
+#
+# He is a PERSON, so his tile is a person - taken from the same overworld sprite set the players
+# use rather than drawn as a piece of furniture. A new player's first instruction is "walk to the
+# Warden", and that only works if he looks like someone you could walk to.
+WARDEN_SRC = 'client/sprites/overworld_pad32/m1_1/down_stand.png'
+
+
+def bake_warden(dest):
+    from PIL import Image as _I
+    if not os.path.exists(WARDEN_SRC):
+        raise SystemExit('warden source sprite missing: %s' % WARDEN_SRC)
+    src = _I.open(WARDEN_SRC).convert('RGBA')
+    out = _I.new('RGBA', (TILE, TILE), (0, 0, 0, 0))
+    bb = src.getbbox()
+    if bb is None:
+        raise SystemExit('warden source sprite is EMPTY')
+    fig = src.crop(bb)
+    w0, h0 = fig.size
+    scale = min(TILE / float(w0), TILE / float(h0))
+    nw, nh = max(1, int(w0 * scale)), max(1, int(h0 * scale))
+    fig = fig.resize((nw, nh), _I.NEAREST)
+    out.paste(fig, ((TILE - nw) // 2, TILE - nh), fig)
+    out.save(dest)
+
+
 def _tree_cells():
     """The tree sheet's cells, MEASURED from its transparent gutters rather than assumed.
 
@@ -583,6 +610,8 @@ def main():
                                   os.path.join(OUT, 'big', name + '.png'))
                 big_manifest[name] = [sr, sc]
         cut += 1
+    bake_warden(os.path.join(OUT, 'tile', 'warden.png'))
+    cut += 1
     print('cut %d tiles from real art' % cut)
     with open(os.path.join(OUT, 'big', 'big_tiles.json'), 'w', encoding='utf-8') as f:
         json.dump(big_manifest, f, indent='	', sort_keys=True)
