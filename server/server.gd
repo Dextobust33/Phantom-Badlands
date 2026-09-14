@@ -35262,21 +35262,11 @@ func _complete_dungeon(peer_id: int):
 			bonus_material_msgs.append("[color=#00FFCC]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
 
 	# Give GUARANTEED boss egg (inherits dungeon rank)!
-	var boss_egg_given = false
-	var boss_egg_name = ""
-	var boss_egg_lost_to_full = false
 	var boss_egg_monster = rewards.get("boss_egg", "")
-	if boss_egg_monster != "":
-		var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _boss_egg_rank(inst_sub_tier))
-		if not egg_data.is_empty():
-			var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
-			var egg_result = character.add_egg(egg_data, _egg_cap)
-			if egg_result.success:
-				boss_egg_given = true
-				boss_egg_name = egg_data.get("name", boss_egg_monster + " Egg")
-			else:
-				boss_egg_lost_to_full = true
-				boss_egg_name = egg_data.get("name", boss_egg_monster + " Egg")
+	var _lead_egg := _grant_boss_egg(peer_id, character, String(boss_egg_monster), inst_sub_tier)
+	var boss_egg_given: bool = bool(_lead_egg.get("given", false))
+	var boss_egg_name: String = String(_lead_egg.get("name", ""))
+	var boss_egg_lost_to_full: bool = bool(_lead_egg.get("lost", false))
 
 	# Hard mode: +50% boss material drops
 	if is_hard_completion:
@@ -35472,20 +35462,10 @@ func _complete_dungeon(peer_id: int):
 			var f_xp_result = follower.add_experience(f_rewards.xp)
 
 			# Boss egg for each member
-			var f_egg_given = false
-			var f_egg_name = ""
-			var f_egg_lost = false
-			if boss_egg_monster != "":
-				var f_egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, inst_sub_tier)
-				if not f_egg_data.is_empty():
-					var f_egg_cap = persistence.get_egg_capacity(peers[pid].account_id) if peers.has(pid) else Character.MAX_INCUBATING_EGGS
-					var f_egg_result = follower.add_egg(f_egg_data, f_egg_cap)
-					if f_egg_result.success:
-						f_egg_given = true
-						f_egg_name = f_egg_data.get("name", boss_egg_monster + " Egg")
-					else:
-						f_egg_lost = true
-						f_egg_name = f_egg_data.get("name", boss_egg_monster + " Egg")
+			var _fol_egg := _grant_boss_egg(pid, follower, String(boss_egg_monster), inst_sub_tier)
+			var f_egg_given: bool = bool(_fol_egg.get("given", false))
+			var f_egg_name: String = String(_fol_egg.get("name", ""))
+			var f_egg_lost: bool = bool(_fol_egg.get("lost", false))
 
 			# C0 (party rewards) — each member rolls their OWN boss materials + card
 			# (randomized independently per player, not a shared/split pool), matching
@@ -44023,6 +44003,32 @@ func _best_kennel_level(kennel: Array, indices: Array) -> int:
 ## dungeons, but rare". Both routes to the top of the ladder stay alive - a clear can reach it,
 ## and fusion is not obsoleted by being the slow way round to something a dungeon gives freely.
 const BOSS_EGG_RANK9_CHANCE := 0.15
+
+
+func _grant_boss_egg(pid: int, ch, boss_egg_monster: String, inst_sub_tier: int) -> Dictionary:
+	"""The guaranteed boss egg for ONE person who cleared the dungeon. Returns {given, lost, name}.
+
+	⛑ ONE definition, because there are two callers - the leader and each follower - and they
+	DRIFTED. Until 2026-09-13 the follower path passed the dungeon's raw rank while the leader
+	passed it through `_boss_egg_rank`, so a follower clearing a rank-9 dungeon took home a
+	GUARANTEED rank-9 egg while the leader rolled 15% for one. Bringing a friend was the cheapest
+	route to the rank the fusion chain exists to gate - the exact door `_boss_egg_rank` was
+	written to close, standing open in the room next to it.
+
+	Called once per player, so each gets their own independent roll at the top rank."""
+	var out := {"given": false, "lost": false, "name": ""}
+	if boss_egg_monster == "":
+		return out
+	var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _boss_egg_rank(inst_sub_tier))
+	if egg_data.is_empty():
+		return out
+	out["name"] = String(egg_data.get("name", boss_egg_monster + " Egg"))
+	var cap = persistence.get_egg_capacity(peers[pid].account_id) if peers.has(pid) else Character.MAX_INCUBATING_EGGS
+	if ch.add_egg(egg_data, cap).success:
+		out["given"] = true
+	else:
+		out["lost"] = true
+	return out
 
 
 func _boss_egg_rank(dungeon_rank: int) -> int:

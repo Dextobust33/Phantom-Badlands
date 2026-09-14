@@ -160,5 +160,35 @@ func _init() -> void:
 		"a rank-9 clear reaches rank 9 %.1f%% of the time - rare, but reachable" % pct9)
 	ck(srv._boss_egg_rank(9) <= 9, "and never exceeds the ladder")
 
+	print("")
+	print("----- EVERY clearer rolls, not just the leader -----")
+	# 2026-09-13: the follower path passed the dungeon's RAW rank while the leader passed it
+	# through _boss_egg_rank, so a follower clearing a rank-9 dungeon took home a GUARANTEED
+	# rank-9 egg while the leader rolled for one. Bringing a friend was the cheapest route to the
+	# rank the fusion chain exists to gate. Both now go through _grant_boss_egg, and this drives
+	# that ONE function for a whole party to prove the roll is per person and still rare.
+	srv.drop_tables = load("res://shared/drop_tables.gd").new()
+	var CharacterScript = load("res://shared/character.gd")
+	var _pty_nines := 0
+	var _pty_granted := 0
+	var _pty_trials := 1500
+	for i in range(_pty_trials):
+		var ch = CharacterScript.new()
+		ch.name = "Clearer"
+		ch.class_type = "warrior"
+		ch.level = 40
+		var res: Dictionary = srv._grant_boss_egg(9000 + i, ch, "Wolf", 9)
+		if bool(res.get("given", false)):
+			_pty_granted += 1
+			for e in ch.incubating_eggs:
+				if int(e.get("sub_tier", 1)) >= 9:
+					_pty_nines += 1
+				break
+	ck(_pty_granted > 0, "the shared grant actually hands out eggs (%d of %d)" % [_pty_granted, _pty_trials])
+	var _pty_share := float(_pty_nines) / float(maxi(1, _pty_granted))
+	print("  a party member clearing a rank-9 dungeon gets a rank-9 egg %.1f%% of the time" % (_pty_share * 100.0))
+	ck(_pty_share > 0.05 and _pty_share < 0.30,
+		"rare for everyone, not guaranteed for followers (%.1f%%, want ~15%%)" % (_pty_share * 100.0))
+
 	print("\n[FLOOREGGRANK] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)
