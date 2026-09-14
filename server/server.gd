@@ -34274,6 +34274,134 @@ func _find_any_walkable_tile(grid: Array) -> Vector2i:
 				return Vector2i(x, y)
 	return Vector2i(grid.size() / 2, grid.size() / 2)
 
+func _try_start_dungeon_coop(peer_id: int, character, monster: Dictionary, is_boss: bool, monster_entity_id: int) -> bool:
+	"""Share a dungeon fight across the party. Returns true when a co-op fight started, in which
+	case the caller must NOT also start a solo one.
+
+	Why this did not exist: v0.9.732 disabled the pre-card "legacy shared party combat", and the
+	#64/#76 simultaneous rebuild that replaced it was only ever wired into `trigger_encounter` —
+	the overworld random encounter. Both dungeon combat starters kept the disabled-legacy comment
+	and called `start_combat` solo. So a party entered a dungeon together (that half works), walked
+	it together (that half works too), and then fought every single monster in separate private
+	combats. Owner, 2026-09-13, on what "party play isn't working properly" meant: *"likely
+	regarding no support for it in dungeons."*
+
+	Gating differs from the overworld in one way that matters: a teammate must be in THIS instance
+	on THIS floor. Party members can be a floor apart — followers only track the leader while the
+	leader is moving — and a fight on floor 3 must not conscript someone standing on floor 1."""
+	if not _is_party_leader(peer_id) or not active_parties.has(peer_id):
+		return false
+	if not characters.has(peer_id) or not character.in_dungeon:
+		return false
+
+	var members: Array = [peer_id]                      # leader first — becomes leader_id
+	var chars_map: Dictionary = {peer_id: character}
+	var skipped: Array = []
+	for mpid in active_parties[peer_id].get("members", []):
+		if mpid == peer_id or not characters.has(mpid):
+			continue
+		var ch = characters[mpid]
+		# Never skip a teammate silently — v0.9.739 learned that the hard way on the overworld,
+		# where a stuck in_combat flag dropped someone from the fight with no message on either
+		# client and looked exactly like co-op being broken.
+		if combat_mgr.is_in_combat(mpid) or ch.in_combat:
+			skipped.append("%s (already fighting)" % ch.name)
+			continue
+		if not ch.in_dungeon or String(ch.current_dungeon_id) != String(character.current_dungeon_id):
+			skipped.append("%s (not in this dungeon)" % ch.name)
+			continue
+		if int(ch.dungeon_floor) != int(character.dungeon_floor):
+			skipped.append("%s (on floor %d)" % [ch.name, int(ch.dungeon_floor) + 1])
+			continue
+		members.append(mpid)
+		chars_map[mpid] = ch
+
+	if not skipped.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#FFA500]%s could not join the fight.[/color]" % ", ".join(skipped)})
+	if members.size() < 2:
+		return false
+
+	var started = combat_mgr.start_party_combat_simul(members, chars_map, monster)
+	if not started.get("success", false):
+		return false
+
+	# The dungeon context travels WITH the fight. The solo path stamps these onto the per-peer
+	# combat state and reads them back at victory; a co-op fight has ONE shared state, so it
+	# carries one shared copy. The instance and floor are pinned HERE rather than re-read from
+	# the leader when the fight ends, because completing a boss teleports everyone out — by then
+	# the leader no longer knows which floor the monster was standing on.
+	var pc: Dictionary = combat_mgr.active_party_combats[peer_id]
+	pc["is_dungeon_combat"] = true
+	pc["is_boss_fight"] = is_boss
+	pc["dungeon_monster_id"] = monster_entity_id
+	pc["dungeon_instance_id"] = String(character.current_dungeon_id)
+	pc["dungeon_floor"] = int(character.dungeon_floor)
+	for mpid in members:
+		dungeon_combat_monster_id[mpid] = monster_entity_id
+
+	_send_party_combat_start(peer_id, members, monster, [])
+	log_message("Dungeon co-op: %d heroes vs %s on floor %d of %s" % [
+		members.size(), String(monster.get("name", "?")), int(character.dungeon_floor) + 1,
+		String(character.current_dungeon_id)])
+	return true
+
+
+func _party_dungeon_after_combat(leader_id: int, survivors: Array, ctx: Dictionary, victory: bool) -> void:
+	"""Dungeon bookkeeping after a co-op fight — the party mirror of the `is_dungeon_combat`
+	block in handle_combat_command.
+
+	Two different scopes, and mixing them up is how this goes wrong: the monster ENTITY is one
+	thing on one shared grid and is killed ONCE, while the cleared-count and the breather are
+	per character. `_complete_dungeon` is likewise called for ONE player, not each — it already
+	rewards and exits every follower itself (see the follower loop inside it), so calling it per
+	member would pay the whole party out once per person.
+
+	`survivors` excludes members who died or fled, so a fallen teammate is not handed dungeon
+	progress on the way to permadeath."""
+	var inst_id := String(ctx.get("dungeon_instance_id", ""))
+	var floor_num := int(ctx.get("dungeon_floor", 0))
+	var mon_id := int(ctx.get("dungeon_monster_id", -1))
+	for pid in ctx.get("all_members", []):
+		dungeon_combat_monster_id.erase(pid)
+
+	if not victory:
+		for pid in survivors:
+			if characters.has(pid) and characters[pid].in_dungeon:
+				_send_dungeon_state(pid)
+		return
+
+	if mon_id >= 0:
+		_kill_dungeon_monster(inst_id, floor_num, mon_id)
+	elif characters.has(leader_id):
+		_clear_dungeon_tile(leader_id)   # legacy tile encounter — no entity to kill
+
+	for pid in survivors:
+		if not characters.has(pid) or not characters[pid].in_dungeon:
+			continue
+		characters[pid].dungeon_encounters_cleared += 1
+		dungeon_combat_breather[pid] = true   # skip monster movement on their next step
+
+	if bool(ctx.get("is_boss_fight", false)):
+		# Completion runs for whoever is still standing and still inside — normally the leader.
+		# A party that wins the boss fight but loses its leader must still be let out.
+		var completer: int = -1
+		if survivors.has(leader_id) and characters.has(leader_id) and characters[leader_id].in_dungeon:
+			completer = leader_id
+		else:
+			for pid in survivors:
+				if characters.has(pid) and characters[pid].in_dungeon:
+					completer = pid
+					break
+		if completer != -1:
+			_complete_dungeon(completer)
+		return
+
+	for pid in survivors:
+		if characters.has(pid) and characters[pid].in_dungeon:
+			_send_dungeon_state(pid)
+
+
 func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 	"""Start a dungeon combat encounter"""
 	if not characters.has(peer_id):
@@ -34421,8 +34549,11 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			if mapped != "" and mapped not in monster.abilities:
 				monster.abilities.append(mapped)
 
-	# v0.9.732 — legacy shared party combat disabled pending rebuild (see
-	# trigger_encounter). In dungeons the leader just fights solo (card-based).
+	# Party first: if the leader has teammates on this floor, everyone fights ONE monster.
+	# (This is the wiring v0.9.732 left undone — see _try_start_dungeon_coop.)
+	if _try_start_dungeon_coop(peer_id, character, monster, is_boss, -1):
+		return
+
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
@@ -36782,8 +36913,11 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		monster.is_boss = true
 		monster.name = boss_info.get("name", monster.name)
 
-	# v0.9.732 — legacy shared party combat disabled pending rebuild (see
-	# trigger_encounter). In dungeons the leader just fights solo (card-based).
+
+	# Party first: if the leader has teammates on this floor, everyone fights ONE monster.
+	if _try_start_dungeon_coop(peer_id, character, monster, is_boss, int(monster_entity.id)):
+		return
+
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
@@ -42887,6 +43021,22 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 	var combat = combat_mgr.active_party_combats[leader_id]
 	var monster = combat.get("monster", {})
 	var members = combat.get("members", []).duplicate()
+	# Dungeon context, read off the fight BEFORE it is torn down below. `survivors` is the list
+	# the dungeon bookkeeping runs on — a member who died or fled gets no floor progress.
+	var _dctx: Dictionary = {}
+	if bool(combat.get("is_dungeon_combat", false)):
+		_dctx = {
+			"is_boss_fight": bool(combat.get("is_boss_fight", false)),
+			"dungeon_monster_id": int(combat.get("dungeon_monster_id", -1)),
+			"dungeon_instance_id": String(combat.get("dungeon_instance_id", "")),
+			"dungeon_floor": int(combat.get("dungeon_floor", 0)),
+			"all_members": members.duplicate(),
+		}
+	var _survivors: Array = []
+	for _spid in members:
+		var _sst = combat.get("member_states", {}).get(_spid, {})
+		if not _sst.get("dead", false) and not _sst.get("fled", false):
+			_survivors.append(_spid)
 	# #76 — per-member victory payload so each client shows the SAME victory card as solo
 	# (xp / level-up / loot list / gear banner). Built here where we know each member's
 	# own XP + independent loot roll; keyed by pid, sent on their party_combat_end below.
@@ -42958,10 +43108,17 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 			# v0.9.740 - and redraw where they ARE. Without this the client keeps showing
 			# whatever screen it had before the fight, so a player who fought next to a post
 			# was left staring at the post interior while standing outside it.
-			send_location_update(pid)
+			# In a dungeon "where they are" is the floor grid, not the overworld — the dungeon
+			# state goes out from _party_dungeon_after_combat once the kill is recorded, so
+			# the grid it draws is the one WITHOUT the monster they just killed.
+			if _dctx.is_empty():
+				send_location_update(pid)
 			save_character(pid)
 		combat_mgr.party_combat_membership.erase(pid)
 	combat_mgr.active_party_combats.erase(leader_id)
+
+	if not _dctx.is_empty():
+		_party_dungeon_after_combat(leader_id, _survivors, _dctx, victory)
 
 func _party_award_drop(pid: int, item: Dictionary, player_level: int) -> Dictionary:
 	"""#76 — award ONE combat drop to a party member and return {line, gear_drop?} for the

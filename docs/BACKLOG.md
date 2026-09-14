@@ -199,20 +199,29 @@ Asked because the arc had run out of defects and into design. All four answered.
       way to handle a party member joining the combat etc)."* It was filed as a bug for a year;
       it is two pieces of design. Re-filed as such.
 
-      **Half one - dungeons have NO party support. Confirmed in code, not inferred:**
-        * the co-op branch lives in ONE function, `trigger_encounter`, the overworld random
-          encounter. `_start_dungeon_encounter`, `_start_dungeon_monster_combat` and
-          `trigger_flock_encounter` all call `combat_mgr.start_combat(peer_id, character, monster)`
-          solo. There is no party branch on any dungeon path.
-        * `handle_dungeon_enter` moves only the player who entered. `in_dungeon = true` is never
-          assigned for anyone else, so the party does not come along.
-        * `_move_party_followers_dungeon` EXISTS and snakes followers behind the leader - and is
-          unreachable, because nothing ever puts a follower `in_dungeon`. Someone built the
-          movement half and the entry half was never wired.
-        * `_send_dungeon_state` carries no other players, so even co-located members cannot see
-          each other.
-      So a party that walks to a dungeon together dissolves at the door: one person goes in, the
-      rest stand outside. That is the whole of the reported symptom.
+      **Half one - dungeon party COMBAT is missing. (Corrected 2026-09-13 - see below; the
+      first version of this item said dungeons had no party support at all, and that was wrong.)**
+        * Entry WORKS. `handle_dungeon_enter` has an `if _is_party_leader(peer_id)` branch that
+          validates every member, enters the leader, then places each follower on an adjacent
+          tile and appends them to `instance.active_players`.
+        * Movement WORKS. `_move_party_followers_dungeon` snakes followers behind the leader and
+          is reached from `handle_dungeon_move`.
+        * **COMBAT does not.** Both dungeon combat paths carry the same comment -
+          *"v0.9.732 - legacy shared party combat disabled pending rebuild (see
+          trigger_encounter). In dungeons the leader just fights solo (card-based)."* - and call
+          `combat_mgr.start_combat(peer_id, character, monster)`. The #64/#76 co-op rebuild that
+          replaced it was only ever wired into `trigger_encounter`, the overworld random
+          encounter. The dungeon paths were left on the disabled-legacy note and never revisited.
+      So a party walks into a dungeon together, moves through it together, and then fights every
+      monster in separate solo combats. That is the reported symptom, and it is one wire, not a
+      subsystem.
+
+      **How I got it wrong, because the shape recurs:** I grepped a 158-line window from the top
+      of `handle_dungeon_enter` and the party branch sits at line ~30011, just past it - then read
+      "no match" as "not implemented". A bounded search that finds nothing proves nothing about
+      what lies outside the bound. Compounding it, I searched for `in_dungeon = true` when entry
+      goes through `character.enter_dungeon(...)`, which sets the flag inside `Character`.
+      See [[feedback_verify_before_building]] - this is the same failure it was written for.
 
       **Half two - independent movement, then join the fight.** Today the party is
       MOVEMENT-LOCKED: `_party_follower_locked` blocks a follower from moving, hunting, resting,
