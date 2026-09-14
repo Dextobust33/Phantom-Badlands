@@ -191,6 +191,50 @@ Asked because the arc had run out of defects and into design. All four answered.
       left in the arc; build it in that order - loot scaling first (it rides existing code),
       modifiers second (the new surface), monsters/unique third.
 
+- [ ] **PARTY PLAY IN DUNGEONS + JOIN-IN-PROGRESS COMBAT. ⚑ BLOCKS the onboarding guide NPC.**
+      This is what *"party play isn't working properly"* (2026-08-26, never reproduced) actually
+      meant. Owner 2026-09-13: *"likely regarding no support for it in dungeons and possibly
+      making it where players can navigate themselves but then join each other when they are in
+      battle (would need a visual indicator on the map to show a party member is in battle and a
+      way to handle a party member joining the combat etc)."* It was filed as a bug for a year;
+      it is two pieces of design. Re-filed as such.
+
+      **Half one - dungeons have NO party support. Confirmed in code, not inferred:**
+        * the co-op branch lives in ONE function, `trigger_encounter`, the overworld random
+          encounter. `_start_dungeon_encounter`, `_start_dungeon_monster_combat` and
+          `trigger_flock_encounter` all call `combat_mgr.start_combat(peer_id, character, monster)`
+          solo. There is no party branch on any dungeon path.
+        * `handle_dungeon_enter` moves only the player who entered. `in_dungeon = true` is never
+          assigned for anyone else, so the party does not come along.
+        * `_move_party_followers_dungeon` EXISTS and snakes followers behind the leader - and is
+          unreachable, because nothing ever puts a follower `in_dungeon`. Someone built the
+          movement half and the entry half was never wired.
+        * `_send_dungeon_state` carries no other players, so even co-located members cannot see
+          each other.
+      So a party that walks to a dungeon together dissolves at the door: one person goes in, the
+      rest stand outside. That is the whole of the reported symptom.
+
+      **Half two - independent movement, then join the fight.** Today the party is
+      MOVEMENT-LOCKED: `_party_follower_locked` blocks a follower from moving, hunting, resting,
+      gathering or crafting anywhere except inside a post, and `_move_party_followers` drags them
+      in formation. Co-op combat only fires when the LEADER hits a monster with 2+ members free.
+      The owner wants the opposite shape: everyone walks their own path, and combat is what pulls
+      them together. That needs three new things:
+        1. **a map indicator** that a party member is in battle, and where;
+        2. **join-in-progress** - adding a member to a fight already running. Nothing supports
+           this today; `start_party_combat_simul` builds `member_states` once at the start and
+           `_party_all_submitted` gates the round on the member list as it stood then. A joiner
+           has to enter between rounds, not mid-round, and the monster's HP was already
+           multiplied by the party size at start - a late joiner must not silently double it.
+        3. **travel distance rules** - who is close enough to join, and what happens to someone
+           who is half a map away.
+
+      Build order: dungeons first (it is the blocker, and it is the smaller piece - the co-op
+      branch already exists and wants lifting out of `trigger_encounter` into something both
+      paths call), then join-in-progress. Unlocking independent movement BEFORE join-in-progress
+      exists would make parties worse, not better: everyone would scatter with no way to regroup
+      in a fight.
+
 - [ ] **ONBOARDING: a tutorial + a starter chain that reaches level 1. ⚑ DEPENDENCY of the
       questing replacement - build this FIRST.** Owner 2026-09-13: *"There should be a tutorial or
       early game dungeon quest in our to do list that will help alleviate your concerns."*
@@ -220,13 +264,17 @@ Asked because the arc had run out of defects and into design. All four answered.
       starter dungeon on the EXISTING co-op machinery, which means a first dungeon is survivable
       because someone competent is in it with you, not because the monsters were made limp.
 
-      Checked against the live code before writing this down, because it decides the size:
-        * `start_party_combat(members, characters, monster)` is handed its OWN character map and
-          stores it as `combat.characters`; every resolution site reads that, never the server's
-          global `characters`. So the guide can exist as a `Character` INSIDE one fight, under a
-          synthetic (negative) peer id, and never enter the global registry - which is what keeps
-          it out of the 31 sites that iterate `characters` (chat broadcast, the who-is-online
-          feed, geo events, the map figure payload, persistence).
+      Checked against the live code before writing this down, because it decides the size.
+      (Corrected: the LIVE entry point is `start_party_combat_simul`, the simultaneous #64 model.
+      The turn-based `start_party_combat` and its server wrapper `_start_party_combat_encounter`
+      are the superseded path and `_start_party_combat_encounter` has NO callers - dead code.
+      The structural finding below was re-checked against the simul function and holds.)
+        * `start_party_combat_simul(members, characters, monster)` is handed its OWN character map
+          and stores it as `combat.characters`; every resolution site reads that, never the
+          server's global `characters`. So the guide can exist as a `Character` INSIDE one fight,
+          under a synthetic (negative) peer id, and never enter the global registry - which is
+          what keeps it out of the 31 sites that iterate `characters` (chat broadcast, the
+          who-is-online feed, geo events, the map figure payload, persistence).
         * `send_to_peer` returns immediately for an unknown peer, so every broadcast-to-members
           loop is already safe against a member with no socket.
         * `submit_party_action(leader, pid, action)` is pure state - no networking, no client ack.
@@ -242,10 +290,14 @@ Asked because the arc had run out of defects and into design. All four answered.
       starter dungeon tuned for one must be re-tuned for two, or the guide makes the fight longer
       rather than safer.
 
-      Two known risks, both already on this list: *"party play isn't working properly"* (no repro
-      captured) and *"party flocks are not wired"*. Reproduce the first before building on top of
-      party combat - an escort that inherits a live party bug hits every new player on their first
-      fight, which is the worst possible place for it.
+      **⚑ HARD BLOCKER, found 2026-09-13: there is no party combat in dungeons at all.** The
+      co-op branch exists in exactly one function, `trigger_encounter` (the overworld random
+      encounter). Every dungeon path - `_start_dungeon_encounter`, `_start_dungeon_monster_combat`,
+      `trigger_flock_encounter` - calls `combat_mgr.start_combat(peer_id, character, monster)`
+      solo, with no party branch. The guide is supposed to fight beside you in the STARTER
+      DUNGEON, so the item below has to land first. See "PARTY PLAY IN DUNGEONS".
+
+      Also still on this list: *"party flocks are not wired"*.
 
 - [ ] **DUNGEON QUESTING REPLACES THE OVERWORLD QUESTS ENTIRELY.** Not a supplement. ⚑ The risk
       named when the choice was offered still stands and has to be designed around: a brand-new
@@ -741,7 +793,11 @@ confirmation. They can now accumulate real data instead of waiting.
       launcher CAN self-update, so Linux players get the fixed one without reinstalling. See the
       v0.9.772 entry below.
 
-## ⚑ THE ORDER — 50 open items, sequenced so nothing gets built twice (recounted 2026-09-11)
+## ⚑ THE ORDER — sequenced so nothing gets built twice (recounted 2026-09-11)
+
+**Live count 2026-09-13: 44 open, 122 done** (counted off the `- [ ]` boxes, which is the only
+count that cannot drift). The prose figures below are the 2026-09-11 snapshot and are kept for
+the reasoning, not the arithmetic.
 
 Owner: *"How many items do we have left? Let's tackle them in an efficient order so we avoid
 recreating work."* Counted after ticking 11 items that were resolved but never checked off:
@@ -751,6 +807,9 @@ every "before" below is a case where doing it the other way means redoing the fi
 **0. CUT THE RELEASE. — ✅ DONE 2026-09-11, shipped as v0.9.771 then v0.9.772.** Was a gate, not
    an item. **Five open items could not progress without live data** — watch the five characters at L25+, feel-check the rest change, the "party play isn't
    working" repro, the dungeon-level mismatch second example, and the dungeon-depth confirmation.
+   **The "party play isn't working" repro is CLOSED (2026-09-13) and never needed live data:** the
+   owner named it as no dungeon support plus a wish for independent movement, and the code
+   confirmed the first half outright. It is now the "PARTY PLAY IN DUNGEONS" design item.
    All five were waiting on a build in players' hands, and ~60 commits of player-facing work was
    sitting unplayed. That is now released, so they can accumulate real data. **Start the next
    session at 0b.**
