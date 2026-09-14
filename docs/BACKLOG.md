@@ -403,6 +403,21 @@ Asked because the arc had run out of defects and into design. All four answered.
       this very item, so the first thing a new player reads points at an empty quest log. The
       definitions still exist (so anyone mid-chain can finish) but nothing offers it.
 
+      **✅ THE ESCORT IS BUILT 2026-09-14, unreleased.** `Warden Hollis` (`GUIDE_NAME`,
+      `GUIDE_PEER_ID` -9001) joins a LONE player in the starter dungeon as a real party member:
+        * listed in `npc_members`, so it does not scale the monster
+        * holds aggro on any hit the player might not survive, and lets through the ones they
+          certainly will (`CombatManager._guide_shield_targets`)
+        * acts for itself each round via `_guide_fill_action`, on both the command and the
+          item-use submit paths - the second was needed or spending your turn on an item would
+          stall the round forever waiting for a member with no client
+        * appears only in the STARTER dungeon and only when the player has no party
+      Probes: `guide_aggro.gd`, plus section 6 of `dungeon_party_combat.gd`.
+      **Still to build: the teaching script, the controlled first fight outside the dungeon, and
+      the quest chain that hands over the gear kit and the egg.** The guide's turn AI is
+      deliberately a plain attack - its job is tanking, and something clever would make the
+      tutorial about watching.
+
       **A GUIDE NPC carries the new player through it, as a party member.** Owner 2026-09-13:
       *"an NPC should help introduce the player to mechanics, Items, equipment, combat etc. and
       help carry the charaacter through the dungeon using the party combat."* So the guide is not

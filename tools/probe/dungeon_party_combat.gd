@@ -276,6 +276,65 @@ func _init() -> void:
 		"  ...though without a final chest, since only the leader can place one")
 
 	print("")
+	print("===== 6. A LONE NEW PLAYER IN THE STARTER DUNGEON IS ESCORTED =====")
+	# The onboarding guide rides this same party machinery. A brand-new character walking into
+	# the starter dungeon alone should end up in a TWO-member fight, with the guide listed as an
+	# NPC so it neither scales the monster nor leaves the player to take every hit.
+	var sg1 = _srv()
+	var newbie := _mk("Newbie", "warrior")
+	newbie.level = 1
+	newbie.in_dungeon = true
+	newbie.current_dungeon_id = "starter1"
+	newbie.current_dungeon_type = "goblin_caves"
+	newbie.dungeon_floor = 0
+	newbie.dungeon_x = 4
+	newbie.dungeon_y = 4
+	sg1.characters = {1: newbie}
+	sg1.active_dungeons = {"starter1": {"dungeon_type": "goblin_caves", "dungeon_level": 2,
+										"sub_tier": 1, "tier": 1, "starter": true,
+										"active_players": [1], "modifiers": []}}
+	var ent2 := {"id": 5, "monster_type": "Goblin", "level": 2, "alive": true,
+				 "x": 5, "y": 4, "is_boss": false, "boss_data": {}, "is_elite": false}
+	sg1._start_dungeon_monster_combat(1, ent2)
+	ck(sg1.combat_mgr.active_party_combats.has(1),
+		"a lone level-1 in the starter dungeon gets a PARTY fight, not a solo one")
+	var gc: Dictionary = sg1.combat_mgr.active_party_combats.get(1, {})
+	ck((gc.get("members", []) as Array).size() == 2, "  ...with two members in it")
+	ck((gc.get("npc_members", []) as Array).size() == 1,
+		"  ...one of whom is flagged as an NPC, so it will not inflate the monster")
+	ck(int((gc.get("npc_members", []) as Array)[0]) == ServerScript.GUIDE_PEER_ID,
+		"  ...and that NPC is the guide")
+
+	print("")
+	print("----- the guide acts on its own each round -----")
+	# submit_party_action is pure state, so the server can act for a member with no socket.
+	# Without this the round would wait forever for a client that does not exist.
+	var before_sub: bool = bool(gc.get("member_states", {}).get(ServerScript.GUIDE_PEER_ID, {}).get("submitted_this_round", false))
+	sg1._guide_fill_action(1)
+	var after_sub: bool = bool(gc.get("member_states", {}).get(ServerScript.GUIDE_PEER_ID, {}).get("submitted_this_round", false))
+	ck(not before_sub and after_sub, "the guide submits an action when asked to")
+
+	print("")
+	print("----- and an ORDINARY dungeon gets no escort -----")
+	var sg2 = _srv()
+	var vet := _mk("Veteran", "warrior")
+	vet.level = 40
+	vet.in_dungeon = true
+	vet.current_dungeon_id = "normal1"
+	vet.current_dungeon_type = "goblin_caves"
+	vet.dungeon_floor = 0
+	vet.dungeon_x = 4
+	vet.dungeon_y = 4
+	sg2.characters = {1: vet}
+	sg2.active_dungeons = {"normal1": {"dungeon_type": "goblin_caves", "dungeon_level": 20,
+									   "sub_tier": 3, "tier": 1, "active_players": [1],
+									   "modifiers": []}}
+	sg2._start_dungeon_monster_combat(1, ent2.duplicate(true))
+	ck(not sg2.combat_mgr.active_party_combats.has(1),
+		"no guide outside the starter dungeon - it is tutorial content, not a permanent ally")
+	ck(sg2.combat_mgr.active_combats.has(1), "  ...they get their normal solo fight")
+
+	print("")
 	if fails == 0:
 		print("PASS - a dungeon party fights one monster together, and only the right people join")
 	else:

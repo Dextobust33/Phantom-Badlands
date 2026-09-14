@@ -34448,6 +34448,37 @@ func _find_any_walkable_tile(grid: Array) -> Vector2i:
 				return Vector2i(x, y)
 	return Vector2i(grid.size() / 2, grid.size() / 2)
 
+func _start_guided_dungeon_combat(peer_id: int, character, monster: Dictionary, is_boss: bool,
+		monster_entity_id: int) -> bool:
+	"""A lone player in the starter dungeon fights alongside the guide.
+
+	This is a PARTY fight with one player and one NPC, which is why the party work had to land
+	first. The guide is listed in `npc_members`, so the engine knows two things about it: it does
+	not scale the monster, and it is the one that takes hits the player might not survive.
+
+	Returns true when the guided fight started, so the caller skips the solo path."""
+	var guide = _make_guide_character(int(character.level))
+	var members: Array = [peer_id, GUIDE_PEER_ID]
+	var chars: Dictionary = {peer_id: character, GUIDE_PEER_ID: guide}
+	var started = combat_mgr.start_party_combat_simul(members, chars, monster, [GUIDE_PEER_ID])
+	if not started.get("success", false):
+		return false
+
+	var pc: Dictionary = combat_mgr.active_party_combats[peer_id]
+	pc["is_dungeon_combat"] = true
+	pc["is_boss_fight"] = is_boss
+	pc["dungeon_monster_id"] = monster_entity_id
+	pc["dungeon_instance_id"] = String(character.current_dungeon_id)
+	pc["dungeon_floor"] = int(character.dungeon_floor)
+	dungeon_combat_monster_id[peer_id] = monster_entity_id
+
+	_send_party_combat_start(peer_id, members, monster, [
+		"[color=#9ACD32]%s steps in front of you. Stay behind him, and hit it while it is looking at him.[/color]" % GUIDE_NAME])
+	log_message("Guided starter fight: %s + %s vs %s" % [
+		character.name, GUIDE_NAME, String(monster.get("name", "?"))])
+	return true
+
+
 func _try_start_dungeon_coop(peer_id: int, character, monster: Dictionary, is_boss: bool, monster_entity_id: int) -> bool:
 	"""Share a dungeon fight across the party. Returns true when a co-op fight started, in which
 	case the caller must NOT also start a solo one.
@@ -34726,6 +34757,15 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 	# Party first: if the leader has teammates on this floor, everyone fights ONE monster.
 	# (This is the wiring v0.9.732 left undone — see _try_start_dungeon_coop.)
 	_apply_dungeon_modifiers_to_monster(monster, instance_id)
+
+	# THE GUIDE. A player ALONE in the starter dungeon is escorted. Checked before the party
+	# attempt below, not inside it: _try_start_dungeon_coop returns immediately for anyone
+	# who is not a party leader, so a guide branch in there could never fire for the solo
+	# new player it exists for. It was written there first and was dead on arrival.
+	if _is_starter_dungeon(instance_id) and not _is_party_leader(peer_id):
+		if _start_guided_dungeon_combat(peer_id, character, monster, is_boss, -1):
+			return
+
 	if _try_start_dungeon_coop(peer_id, character, monster, is_boss, -1):
 		return
 
@@ -37085,6 +37125,14 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 	# The PLACE, on top of what is already here: elite and boss multipliers are applied above,
 	# so a modified dungeon scales them rather than replacing them.
 	_apply_dungeon_modifiers_to_monster(monster, instance_id)
+
+	# THE GUIDE. A player ALONE in the starter dungeon is escorted. Checked before the party
+	# attempt below, not inside it: _try_start_dungeon_coop returns immediately for anyone
+	# who is not a party leader, so a guide branch in there could never fire for the solo
+	# new player it exists for. It was written there first and was dead on arrival.
+	if _is_starter_dungeon(instance_id) and not _is_party_leader(peer_id):
+		if _start_guided_dungeon_combat(peer_id, character, monster, is_boss, int(monster_entity.id)):
+			return
 
 	# Party first: if the leader has teammates on this floor, everyone fights ONE monster.
 	if _try_start_dungeon_coop(peer_id, character, monster, is_boss, int(monster_entity.id)):
@@ -42814,6 +42862,59 @@ func _party_drop_member_after_death(peer_id: int, dead_name: String) -> void:
 			_remove_party_member(leader_id, peer_id)
 
 
+## The onboarding guide's peer id. NEGATIVE and far from zero, because it has to be a key in the
+## same dictionaries real peers use without ever colliding with one, and because -1 is already
+## overloaded as a "not found" sentinel in several places - which is exactly the collision that
+## broke the aggro rule on first write (see CombatManager._guide_shield_targets).
+const GUIDE_PEER_ID := -9001
+## The guide's name. One constant, because it will end up in dialogue, the party panel, the combat
+## log and the victory card, and a name that disagrees with itself across four surfaces is the
+## "one value, two places" defect wearing a hat.
+const GUIDE_NAME := "Warden Hollis"
+
+
+func _make_guide_character(player_level: int):
+	"""Build the guide as a real Character, because party combat is built entirely around
+	Characters and faking a lighter object would mean special-casing every resolution site.
+
+	Sized to be COMPETENT, not heroic. Its job is to hold aggro and contribute, not to clear the
+	dungeon while the new player watches - a tutorial the guide wins by itself teaches nothing.
+	Its HP is generous because it is deliberately taking the hits that would have killed the
+	player; its damage is ordinary."""
+	var g = Character.new()
+	g.initialize(GUIDE_NAME, "Warrior", "Human")
+	g.level = maxi(3, player_level + 2)
+	g.strength = 12 + g.level
+	g.constitution = 14 + g.level
+	g.dexterity = 8
+	g.current_hp = g.get_total_max_hp()
+	g.current_stamina = g.get_total_max_stamina()
+	return g
+
+
+func _guide_fill_action(leader_id: int) -> void:
+	"""Act for the guide when it has not submitted yet.
+
+	The mechanism is the one `_dev_autoact_fill` proved: `submit_party_action` is pure state with
+	no networking and no client ack, so the server can act for a member that has no socket. That
+	one is `--autoact` gated and for testing; this is the production path and fires only for
+	members listed as NPCs on the fight.
+
+	The AI is deliberately plain - a basic attack every round. The guide's contribution is meant
+	to be TANKING (see the aggro rule), not out-playing the person being taught. Something richer
+	can come later; something clever now would make the tutorial about watching."""
+	if not combat_mgr.active_party_combats.has(leader_id):
+		return
+	var c: Dictionary = combat_mgr.active_party_combats[leader_id]
+	for pid in c.get("npc_members", []):
+		var st: Dictionary = c.get("member_states", {}).get(pid, {})
+		if st.is_empty() or st.get("dead", false) or st.get("fled", false):
+			continue
+		if st.get("submitted_this_round", false):
+			continue
+		combat_mgr.submit_party_action(leader_id, int(pid), {"kind": "attack"})
+
+
 func _dev_autoparty_enabled() -> bool:
 	if not OS.has_feature("editor"):
 		return false
@@ -42947,9 +43048,16 @@ func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
 		_broadcast_party_update(leader_id, [], false)
 		return
 	if not sres.get("all_submitted", false):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#66D0C0]That second item cost you your turn — waiting for the rest of your party...[/color]"})
-		_broadcast_party_update(leader_id, [], false)
-		return
+		# The guide acts here too. Without this, spending your turn on an item would stall
+		# the round forever waiting for a member that has no client to wait on.
+		_guide_fill_action(leader_id)
+		_dev_autoact_fill(leader_id, peer_id)
+		if combat_mgr.party_round_ready(leader_id):
+			pass   # fall through and resolve below
+		else:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#66D0C0]That second item cost you your turn — waiting for the rest of your party...[/color]"})
+			_broadcast_party_update(leader_id, [], false)
+			return
 	var rres = combat_mgr.resolve_party_round(leader_id)
 	# Party rank-ups queue on the character but nothing used to forward them.
 	for _pid in _party_member_ids(leader_id):
@@ -43021,6 +43129,8 @@ func _handle_party_combat_command(peer_id: int, command: String, target: String 
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s[/color]" % sres.get("reason", "Can't submit that.")})
 		return
 	if not sres.get("all_submitted", false):
+			# The guide acts for itself first - it is a real member of this fight, not a prop.
+		_guide_fill_action(leader_id)
 		# Dev harness: fill in the other members so one person can test a party fight.
 		_dev_autoact_fill(leader_id, peer_id)
 		if not combat_mgr.party_round_ready(leader_id):
