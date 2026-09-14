@@ -198,6 +198,22 @@ Asked because the arc had run out of defects and into design. All four answered.
       left in the arc; build it in that order - loot scaling first (it rides existing code),
       modifiers second (the new surface), monsters/unique third.
 
+      **✅ AXIS ONE (loot quality) BUILT 2026-09-13, unreleased.** `_dungeon_loot_rarity_upgrade`
+      on the server feeds the `rarity_upgrade` ladder bump that already existed for the Plunder
+      card, wired into every live dungeon equipment source (final chest x2, floor loot x2).
+      Rank 1 never upgrades; rank 9 upgrades 40% of drops, a quarter of those by two steps.
+      Measured, not guessed - `tools/probe/dungeon_rank_loot.gd`:
+        * tier 1: rare-or-better 10% -> 23%
+        * tier 5: rare-or-better 23% -> 53%
+        * tier 9: epic 89% -> 54%, legendary 8% -> 37%, artifact 3% -> 10%
+        * the drop RATE is unchanged - rank buys quality, not quantity
+      **The first cut was too strong and measuring is what caught it.** At 0.55 it put
+      legendary-or-better at 59% of tier-9 rank-9 drops, making legendary the ordinary outcome.
+      Tiers 8-9 already floor every drop at epic (`TIER_MIN_RARITY`), so the same knob bites far
+      harder at the top than the bottom. `RANK_LOOT_UPGRADE_MAX` / `RANK_LOOT_DOUBLE_SHARE` are
+      the dials if the owner wants it moved.
+      **Still open here: axis two (modifiers) and axis three (monsters / guaranteed unique).**
+
 - [ ] **PARTY PLAY IN DUNGEONS + JOIN-IN-PROGRESS COMBAT. ⚑ BLOCKS the onboarding guide NPC.**
       This is what *"party play isn't working properly"* (2026-08-26, never reproduced) actually
       meant. Owner 2026-09-13: *"likely regarding no support for it in dungeons and possibly

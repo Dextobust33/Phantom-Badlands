@@ -4386,9 +4386,15 @@ const DUNGEON_CHEST_CONSUMABLES_BY_TIER = {
 	9: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
 }
 
-func roll_dungeon_chest_equipment(tier: int, item_level: int) -> Dictionary:
+func roll_dungeon_chest_equipment(tier: int, item_level: int, rarity_upgrade: int = 0) -> Dictionary:
 	"""Roll a tier-appropriate equipment piece for a dungeon chest. Returns {}
-	if the chance fails or no base item is available."""
+	if the chance fails or no base item is available.
+
+	`rarity_upgrade` bumps the rolled rarity up the ladder, the same mechanism the Plunder
+	companion card uses. A dungeon's RANK feeds this - see `_dungeon_loot_rarity_upgrade` on the
+	server. Until 2026-09-13 rank bought xp, valor, material quantity and egg rank but had no
+	effect whatsoever on the QUALITY of what you found, which was the first of the three axes the
+	owner asked for."""
 	if tier < 1 or tier > 9:
 		return {}
 	if (randi() % 100) >= DUNGEON_CHEST_EQUIPMENT_CHANCE:
@@ -4399,6 +4405,8 @@ func roll_dungeon_chest_equipment(tier: int, item_level: int) -> Dictionary:
 	if base_item.is_empty():
 		return {}
 	var rolled_rarity = _roll_rarity_for_tier(tier)
+	if rarity_upgrade > 0:
+		rolled_rarity = upgrade_rarity(rolled_rarity, rarity_upgrade)
 	return _generate_item(base_item, item_level, rolled_rarity)
 
 func roll_dungeon_chest_consumable(tier: int, item_level: int) -> Dictionary:

@@ -35000,7 +35000,7 @@ func _open_final_chest(peer_id: int):
 	# Guaranteed equipment piece — bias toward better-than-tier rarity by
 	# rolling twice and keeping the better outcome (existing helper rolls
 	# rarity internally).
-	var best_eq = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level)
+	var best_eq = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier))
 	if best_eq.is_empty():
 		# roll_dungeon_chest_equipment can fail its 55% gate; force a roll
 		# here since the final chest must always yield equipment.
@@ -35010,7 +35010,7 @@ func _open_final_chest(peer_id: int):
 			if not pick.is_empty():
 				best_eq = drop_tables._generate_item(pick, item_level, drop_tables._roll_rarity_for_tier(dungeon_tier))
 	# Roll a second time and keep whichever has a "better" rarity.
-	var alt = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level)
+	var alt = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier))
 	if not alt.is_empty() and not best_eq.is_empty():
 		if _rarity_rank(str(alt.get("rarity", "common"))) > _rarity_rank(str(best_eq.get("rarity", "common"))):
 			best_eq = alt
@@ -36230,7 +36230,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 	# leave; the escape scroll above is deliberately on floor 0 for the opposite reason.
 	if floor_count > 0:
 		var _geq_floor: int = randi() % floor_count
-		var _geq = drop_tables.roll_dungeon_chest_equipment(tier, maxi(1, dungeon_level))
+		var _geq = drop_tables.roll_dungeon_chest_equipment(tier, maxi(1, dungeon_level), _dungeon_loot_rarity_upgrade(sub_tier))
 		if _geq is Dictionary and not _geq.is_empty():
 			_place_floor_item_random(instance_id, _geq_floor, floor_grids[_geq_floor], {
 				"kind": "equipment", "char": "◆",
@@ -36324,7 +36324,7 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		var v := randi_range(tier * 2, tier * 6)
 		return {"kind": "valor", "char": "¢", "color": "#FFD700", "item_data": {"valor": v}}
 	elif roll < 82:  # equipment
-		var eq = drop_tables.roll_dungeon_chest_equipment(tier, lvl)
+		var eq = drop_tables.roll_dungeon_chest_equipment(tier, lvl, _dungeon_loot_rarity_upgrade(sub_tier))
 		if eq.is_empty():
 			return {}
 		return {"kind": "equipment", "char": "◆", "color": _get_rarity_color(eq.get("rarity", "common")), "item_data": eq}
@@ -44029,6 +44029,40 @@ func _grant_boss_egg(pid: int, ch, boss_egg_monster: String, inst_sub_tier: int)
 	else:
 		out["lost"] = true
 	return out
+
+
+## Rank-9 chance that a dungeon drop is bumped up the rarity ladder. Tuned by MEASUREMENT, not
+## by feel: the first cut used 0.55 and put legendary-or-better at 59% of tier-9 rank-9 drops,
+## which makes legendary the ordinary outcome and collapses the top of the ladder this is meant to
+## stretch. Tier 8-9 already floor every drop at epic, so every upgrade there lands in the
+## legendary/artifact band - the same knob bites far harder at the top than the bottom.
+const RANK_LOOT_UPGRADE_MAX := 0.40
+## Of the drops that do upgrade, the share that go TWO steps instead of one.
+const RANK_LOOT_DOUBLE_SHARE := 0.25
+
+
+func _dungeon_loot_rarity_upgrade(dungeon_rank: int) -> int:
+	"""How much better the GEAR is in a higher-ranked dungeon. Axis one of dungeon rarity.
+
+	Owner 2026-09-13 picked all three axes - better loot quality, rolled modifiers, and rarer
+	monsters - and chose this one first because it rides machinery that already exists: the
+	`rarity_upgrade` ladder bump the Plunder companion card uses.
+
+	Until now, rank bought xp, valor, material quantity and egg rank, and had NO effect on the
+	quality of what you picked up off the floor. A rank-9 dungeon and a rank-1 dungeon of the
+	same tier dropped gear from an identical table.
+
+	A CHANCE, not a guarantee, and that is deliberate. Tiers 8-9 already floor every drop at epic
+	(`TIER_MIN_RARITY`), so a flat bump would turn the whole endgame artifact and flatten the
+	ladder it is meant to stretch. Rank 1 never upgrades; rank 9 upgrades a bit over half the
+	time, and a fraction of those go two steps. Measured in tools/probe/dungeon_rank_loot.gd."""
+	var r: int = clampi(dungeon_rank, 1, 9)
+	if r <= 1:
+		return 0
+	var p1: float = float(r - 1) / 8.0 * RANK_LOOT_UPGRADE_MAX
+	if randf() >= p1:
+		return 0
+	return 2 if randf() < p1 * RANK_LOOT_DOUBLE_SHARE else 1
 
 
 func _boss_egg_rank(dungeon_rank: int) -> int:
