@@ -336,6 +336,33 @@ Asked because the arc had run out of defects and into design. All four answered.
       character can actually clear - which is also the thing that stops "replace the overworld
       quests" leaving an empty first hour. Scope the two together.
 
+      **✓ MEASURED 2026-09-13, before building anything - and it moved the design.**
+      The open question was whether a level-1 gearless character can clear a starter dungeon at
+      all. `-- newplayer`, 60 fights a cell, against what actually spawns:
+
+      | level | gearless | +kit | +kit/unc | +kit/comp | reference |
+      |---|---|---|---|---|---|
+      | 1 | **76%** | 83% | 96% | 90% | 91% |
+      | 3 | 71% | 88% | 93% | 90% | 95% |
+      | 5 | 53% | 85% | 90% | 86% | 80% |
+      | 10 | **16%** | 76% | 86% | 80% | 71% |
+
+      **Per FIGHT, a naked level-1 is fine** - 76% against a 60% design target. The starter
+      dungeon does not need to be made soft. Three other things decide whether it is survivable,
+      and none of them is the fight:
+        1. **ATTRITION, which is the real killer.** In a dungeon you recover **0.5% of max HP per
+           step**, half the overworld rate. A tier-1 dungeon is 3 floors and the per-floor count
+           scales with floor AREA up to **14** - so a bad roll is ~40 fights at 76% each with
+           almost no healing between them. The starter dungeon has to be a BESPOKE SMALL
+           instance (1-2 floors, a handful of monsters), not a stock tier-1 roll.
+        2. **A new character cannot rest.** `handle_dungeon_rest` consumes a food material and
+           `handle_create_character` grants NO inventory at all - a character created today walks
+           in with nothing. The chain must hand over food before the dungeon, or the one recovery
+           mechanic in the building is locked.
+        3. **Gearless falls off a cliff by L5-L10** (53%, then 16%). The chain has to produce real
+           gear inside the L1-L3 window, which is exactly what the 2026-05-17 memo already said -
+           now with a number attached to why.
+
       **A GUIDE NPC carries the new player through it, as a party member.** Owner 2026-09-13:
       *"an NPC should help introduce the player to mechanics, Items, equipment, combat etc. and
       help carry the charaacter through the dungeon using the party combat."* So the guide is not
