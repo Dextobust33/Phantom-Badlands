@@ -497,6 +497,28 @@ Asked because the arc had run out of defects and into design. All four answered.
       `gold_hoarder` is deliberately left out: its constant marks it legacy with no effect since
       gold was removed, and a chip promising something the game no longer does is worse than none.
 
+- [ ] **THE ABILITY CARD YOU PLAY SHOULD LOOK LIKE IT DID SOMETHING.** Owner 2026-09-14:
+      *"I want to add in a little more visuals to the ability card that a player select in combat.
+      It would be nice for it to have a cool animation showing it is being used and then possibly
+      an animation that shoots over to the combat log and lands exactly where its effects are
+      populated in the log."*
+      Two halves, and the second is the interesting one:
+        * **the card reacts when played** - a flourish on the card itself, so the click has weight
+        * **the card's effect TRAVELS to the line it wrote.** The card flies from the hand to the
+          combat log and lands on the exact row its result is printed in. That ties cause to
+          effect visually, which is the thing a text combat log is worst at: right now a number
+          appears in a scrolling list and nothing connects it to the button you pressed.
+      Notes for whoever builds it:
+        * the log is a RichTextLabel; landing "exactly where its effects are populated" means
+          knowing the pixel offset of the paragraph that is about to be appended.
+          `get_paragraph_offset` exists and is already used by the map-sprite overlay, which had
+          to `await process_frame` before reading it because layout is deferred - that await is
+          the same trap here.
+        * combat playback is already paced (`project_coop_playback_pacing`); an animation that
+          outruns or lags the line it belongs to will read as a bug rather than a flourish.
+        * it must degrade: a player who has turned effects down, or a round resolving several
+          cards at once, must not end up with a screen full of flying cards.
+
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 
 *"We've got some live players now so we want to limit our releases."* A release restarts the
