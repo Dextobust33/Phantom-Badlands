@@ -3234,63 +3234,23 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	battler_rng.randomize()
 	character.battler_id = BattlerPools.pick_expanded(char_class, battler_rng)
 
-	# === STARTER EQUIPMENT (2026-09-04) ===
-	# Reported from live: two players on new characters, "they can't really make much of any
-	# progress, just death after death."
+	# === NO STARTER KIT. THE WARDEN ARMS YOU. ===
 	#
-	# MEASURED before acting, against the live curve, 60 fights per cell:
+	# A full common kit in all seven slots was granted here from 2026-09-04, as an explicit
+	# stopgap: the Pathfinder chain had been retired and the tutorial meant to replace it did not
+	# exist, which left a measured 5-28% win rate against a 60% target. Its own comment said what
+	# to do when that changed - *"item 7 should supersede this grant, not sit alongside it"*.
 	#
-	#     level   gearless   full common kit   the reference player
-	#     L1          23%              48%                     68%
-	#     L5          10%              45%                     73%
-	#     L10          5%              46%                     66%
+	# Item 7 is Warden's Watch, and it is built. Owner 2026-09-14: *"you're still giving them a
+	# bunch of starter gear (which they should be getting a piece or two from the warden, another
+	# one from the first fights loot, and the rest in the dungeon)."*
 	#
-	# A character created today has NO equipment: the Pathfinder starter chain was retired
-	# 2026-09-03 and the tutorial meant to replace it (backlog item 7) is not built. That leaves
-	# a 5-28% win rate against a 60% design target, which with permadeath is four deaths in five
-	# fights. The L1-5 question was declined on 2026-09-03 on the explicit premise that "the
-	# tutorial we are adding will fill that gap" — true eventually, not true now.
-	#
-	# One COMMON piece per slot at the character's level: the cheapest thing the drop system can
-	# produce, so it is superseded by the first real drop and worth almost nothing on the
-	# market. It closes the gap from unplayable to playable, not to the reference player — a new
-	# character still has everything to earn.
-	#
-	# Same reasoning that kept the starter egg when the chain was retired: do not take the last
-	# thing away before its replacement exists. Item 7 should supersede this grant, not sit
-	# alongside it.
+	# So the cadence is the chain's: the Warden hands over a WEAPON when you first speak to him,
+	# ARMOUR at stage two and a TRINKET at stage three, the first fight's loot fills a slot, and
+	# the dungeon pays the rest. He also walks the first two fights with you and takes any hit
+	# that would kill you, which is what makes an under-equipped level 1 survivable at all - the
+	# thing that did not exist when the blanket kit was added.
 	if drop_tables:
-		for starter_slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-			var starter_base := ""
-			# Search UPWARD for the lowest tier that carries this slot. Tier 1 has no amulet at
-			# all - amulets first appear at tier 3 - so a tier-1-only lookup silently left the
-			# slot empty. Reported: "we are missing the top right slot. For my Orc Ranger that is
-			# a Locket." Generalised rather than special-casing the amulet, so any slot the early
-			# tiers happen not to carry is still filled.
-			for tier_try in range(1, 10):
-				for entry in drop_tables.EQUIPMENT_BASES.get(tier_try, []):
-					if String(entry.get("item_type", "")).begins_with(starter_slot):
-						starter_base = String(entry["item_type"])
-						break
-				if starter_base != "":
-					break
-			if starter_base == "":
-				continue
-			var starter_piece = drop_tables._generate_item({"item_type": starter_base}, 1, "common")
-			if starter_piece is Dictionary and not starter_piece.is_empty():
-				# ⛑ AN EMPTY SLOT IS `null`, NOT `{}`. `Character.equipped` initialises every slot to
-				# null (see its declaration), so `equipped[slot].is_empty()` calls a method on null and
-				# ABORTS handle_create_character mid-way - which the client sees as "Creating
-				# character..." forever, because the reply it is waiting for never gets sent.
-				# Reported 2026-09-14 making a Trickster ranger; the crash is on the FIRST slot, so it
-				# was never class-specific.
-				var _cur = character.equipped.get(starter_slot, null)
-				var _slot_free: bool = _cur == null or (_cur is Dictionary and (_cur as Dictionary).is_empty())
-				if character.equipped.has(starter_slot) and _slot_free:
-					character.equipped[starter_slot] = starter_piece
-				else:
-					character.add_item(starter_piece)
-
 		# A HOME STONE (COMPANION) with the kit. Owner 2026-09-04: "Players should also get a
 		# Home Stone (Companion) when they get their starter equipment to help them get started
 		# until we get the tutorial stuff implemented."
@@ -3368,6 +3328,21 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# Crossroads" on its first login - from the Crossroads.
 	character.world_reshape_relocated = true
 
+	# ⛑ NOBODY IS BORN WOUNDED.
+	#
+	# `Character.initialize` sets current_hp from the BASE max, and everything above this line -
+	# equipment, tools, house bonuses, mastery headstarts - can raise `get_total_max_hp()`
+	# afterwards, through equipment HP, equipment CON x5 and the house hp_bonus percentage.
+	# Nothing topped the player up, so a new character arrived below full: the owner's first
+	# screenshot of one reads **HP 129/142** - a level 1 who has never been hit, at 91% health.
+	#
+	# Done HERE, after every grant and before the save, rather than inside any one of them. That
+	# is what stops the next thing added to character creation from quietly re-opening it.
+	character.current_hp = character.get_total_max_hp()
+	character.current_mana = character.get_total_max_mana()
+	character.current_stamina = character.get_total_max_stamina()
+	character.current_energy = character.get_total_max_energy()
+
 	# Save character to persistence
 	persistence.save_character(account_id, character)
 	persistence.add_character_to_account(account_id, char_name)
@@ -3433,7 +3408,8 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		"[color=#9ACD32]Welcome, %s[/color]" % char_name,
 		("You are the figure in the middle of the map.\n\n"
 			+ "[color=#9ACD32]Move with the NUMPAD[/color] - 8 up, 2 down, 4 left, 6 right, corners for diagonals. Arrow keys work too.\n\n"
-			+ "Find the [color=#9ACD32]W[/color] standing nearby and walk into him. That is the Warden, and he is expecting you."))
+			+ "Someone is waiting for you a few steps away — walk into him. That is "
+			+ "[color=#9ACD32]Warden Hollis[/color], and he is expecting you."))
 
 	# Check if spawning at a Trading Post and trigger the encounter
 	if world_system.is_trading_post_tile(character.x, character.y):
@@ -8504,6 +8480,15 @@ func send_location_update(peer_id: int):
 		"type": "location",
 		"x": character.x,
 		"y": character.y,
+		# Is the Warden walking with you right now? Owner 2026-09-14: *"He still doesn't follow
+		# you on the map or lead the way so the player may think they are alone still."* He only
+		# ever existed at combat start, so an escort the player had been promised was invisible
+		# for the whole walk to the fight.
+		#
+		# It rides the LOCATION message rather than a message of its own because it has to be
+		# true of the frame being drawn: escort state changes when a quest stage turns over, and
+		# a separate push would arrive a frame late and draw him beside a player he had left.
+		"escort": "warden" if _guide_escorts_overworld(peer_id, character) else "",
 		"description": map_display,
 		"map": map_payload if peer_reads_payload else {},
 		"at_water": is_at_water,

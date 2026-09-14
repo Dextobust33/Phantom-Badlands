@@ -1670,6 +1670,8 @@ var _post_loot_victory_persists: bool = false
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
 # The Warden draws from the PLAYER sprite pool, at player size - see _overworld_display.
 const WARDEN_FIGURE_SPRITE := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
+# "warden" while he is escorting you, "" otherwise. Set from the location message.
+var _escort_kind: String = ""
 const UiSpotlightScript = preload("res://client/ui_spotlight.gd")
 
 # v0.9.490 — global re-openable HelpPanel for topic-based help (Home Stone
@@ -24441,6 +24443,9 @@ func handle_server_message(message: Dictionary):
 				display_examine_result(message)
 
 		"location":
+			# Who is walking with you. Read before anything draws, so the escort appears on the
+			# same frame as the move rather than one behind it.
+			_escort_kind = String(message.get("escort", ""))
 			# Surfaced HERE rather than at _ready, because at startup there is no game output to
 			# print into yet. Fires once, on the first location message after entering the world.
 			if _duplicate_instance_warned:
@@ -46446,6 +46451,26 @@ func _overworld_figure_path() -> String:
 	return path if ResourceLoader.exists(path) else ""
 
 
+func _escort_offset(facing: String) -> Vector2i:
+	"""Which cell the Warden walks in: the one BESIDE you, never the one behind.
+
+	Behind is the companion's cell (`_trail_offset`), and two figures in one square means one of
+	them is not drawn - the composer refuses to overwrite an occupied cell. Putting the escort on
+	the flank means a player with a companion sees both of them, which is the whole point of
+	showing him at all."""
+	#
+	# The DEFAULT arm matters as much as the named ones. `_trail_offset` falls back to (-1,0), so
+	# an escort that also fell back to (-1,0) put both figures in one square for any facing
+	# outside the four names - including the empty string this starts as. One of them then simply
+	# does not appear, with no error. Caught by comparing the two tables arm for arm rather than
+	# by reading them.
+	match facing:
+		"up", "down":
+			return Vector2i(-1, 0)      # walking north or south, he is on your west side
+		_:
+			return Vector2i(0, -1)      # east, west, or not yet known: on your north side
+
+
 func _trail_offset(facing: String) -> Vector2i:
 	"""Which cell a companion walks in, given where its owner is facing: the one BEHIND them.
 
@@ -46608,6 +46633,17 @@ func _overworld_display(payload: Dictionary) -> String:
 		var mt := _trail_offset(_local_map_facing)
 		pending_companions.append([mid + mt.x, mid + mt.y, my_comp,
 			character_data.get("active_companion", {})])
+	# The Warden, walking with you. He is placed BEFORE companions and after you, so he cannot
+	# be displaced by a companion and cannot displace a person.
+	if _escort_kind == "warden":
+		var _eo := _escort_offset(_local_map_facing)
+		var _ex: int = mid + _eo.x
+		var _ey: int = mid + _eo.y
+		var _ek := "%d,%d" % [_ex, _ey]
+		if _ex >= 0 and _ey >= 0 and _ex < cols_n and _ey < rows_n and not figures.has(_ek):
+			figures[_ek] = {"main": WARDEN_FIGURE_SPRITE}
+			_overworld_figure_meta[_ek] = {"kind": "npc", "is_local": false,
+				"data": {"name": "Warden Hollis", "class": "Fighter"}}
 	# Companions are placed LAST and never over a person: two players standing a square apart
 	# must not have one's companion delete the other.
 	for pc in pending_companions:

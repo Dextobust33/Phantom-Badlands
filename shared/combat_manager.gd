@@ -13852,6 +13852,22 @@ func _guide_shield_targets(combat: Dictionary, targets: Array, active_members: A
 
 	var worst: int = _worst_case_hit(combat)
 	var out: Array = []
+	# ⛑ THE WHOLE ROUND, NOT ONE HIT AT A TIME.
+	#
+	# Owner 2026-09-14: *"I did a test fight and died to the skeleton, the warden didn't prevent
+	# that from happening like I thought we were planning?"*
+	#
+	# The monster gets one action per ALIVE member (`num_actions = active_members.size()`), so a
+	# player escorted by the Warden faces TWO attacks a round - and every target for the round is
+	# chosen up front, from the same HP snapshot, before any of them lands. Judging each hit
+	# against the player's CURRENT hp therefore cleared the first one as survivable and then let
+	# the second one land on whatever was left. The lethal window is exactly
+	# `1.35*worst < hp <= 2*worst`, which is an ordinary amount of health, and permadeath makes
+	# it the last thing that happens to that character.
+	#
+	# Carrying the projected hp forward closes it, and closes it for any number of attackers
+	# rather than for two.
+	var projected: Dictionary = {}
 	for t in targets:
 		var pid: int = int(t)
 		if pid == shield_pid or pid in npcs:
@@ -13861,10 +13877,12 @@ func _guide_shield_targets(combat: Dictionary, targets: Array, active_members: A
 		if ch == null:
 			out.append(pid)
 			continue
-		if float(ch.current_hp) > float(worst) * GUIDE_SAFE_MARGIN:
-			out.append(pid)          # they can for sure survive this - let them feel it
+		var hp: float = float(projected.get(pid, ch.current_hp))
+		if hp > float(worst) * GUIDE_SAFE_MARGIN:
+			out.append(pid)                       # survivable even now - let them feel it
+			projected[pid] = hp - float(worst)    # ...and remember that it cost them
 		else:
-			out.append(shield_pid)   # the guide takes it
+			out.append(shield_pid)                # the guide takes it
 	return out
 
 

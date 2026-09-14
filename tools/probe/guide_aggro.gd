@@ -118,6 +118,57 @@ func _init() -> void:
 	ck(int(mon_solo["max_hp"]) == 2000, "  ...while a second PLAYER still does")
 
 	print("")
+	print("===== AND IT SURVIVES A WHOLE ROUND, NOT ONE HIT =====")
+	# Owner 2026-09-14: *"I did a test fight and died to the skeleton, the warden didn't prevent
+	# that from happening like I thought we were planning?"*
+	#
+	# The monster gets one action per ALIVE member, so an escorted player faces TWO attacks a
+	# round, and all targets are chosen up front from the same hp snapshot. Judging each hit
+	# against current hp cleared the first as survivable and let the second land on the remainder.
+	var W := 50
+	var mon := {"strength": W, "abilities": []}
+	# hp inside the lethal window: above the 1.35x line, at or below two hits.
+	var hp := int(W * 1.6)
+	var pl = CharacterScript.new()
+	pl.initialize("Newbie", "Fighter", "Human")
+	pl.current_hp = hp
+	var gd = CharacterScript.new()
+	gd.initialize("Warden Hollis", "Fighter", "Human")
+	gd.current_hp = 400
+	var combat := {
+		"monster": mon, "npc_members": [-9001], "enrage_stacks": 0,
+		"characters": {1: pl, -9001: gd},
+	}
+	var rworst: int = cm._worst_case_hit(combat)
+	print("  worst single hit %d, player on %d hp, two attacks this round" % [rworst, hp])
+	print("  (unshielded that is %d damage against %d hp)" % [rworst * 2, hp])
+	ck(float(hp) > float(rworst) * cm.GUIDE_SAFE_MARGIN,
+		"  the player looks survivable on the FIRST hit - which is what fooled it")
+	ck(rworst * 2 >= hp, "  but two of them kill (this is the window that took the character)")
+	var res: Array = cm._guide_shield_targets(combat, [1, 1], [1, -9001])
+	print("  targets after shielding: %s" % str(res))
+	var to_player := 0
+	for t in res:
+		if int(t) == 1:
+			to_player += 1
+	ck(to_player * rworst < hp,
+		"the Warden takes enough of the round that the player lives (%d hit(s) = %d dmg vs %d hp)"
+			% [to_player, to_player * rworst, hp])
+
+	print("")
+	print("  ----- and he still does NOT wrap them in cotton wool -----")
+	# The control. A healthy player must still take both hits, or the tutorial has taught that
+	# combat is free.
+	pl.current_hp = rworst * 6
+	var res2: Array = cm._guide_shield_targets(combat, [1, 1], [1, -9001])
+	var to_player2 := 0
+	for t in res2:
+		if int(t) == 1:
+			to_player2 += 1
+	print("  on %d hp the player receives %d of 2 hits" % [pl.current_hp, to_player2])
+	ck(to_player2 == 2, "  a healthy player still takes the whole round themselves")
+
+	print("")
 	if fails == 0:
 		print("PASS - the guide shields what would kill you and nothing else")
 	else:

@@ -21,8 +21,14 @@ func ck(ok: bool, msg: String) -> void:
 	print(("  PASS  " if ok else "  FAIL  ") + msg)
 
 
+func csrc_has(needle: String) -> bool:
+	return FileAccess.get_file_as_string("res://client/client.gd").contains(needle)
+
+
 func _init() -> void:
 	var src := FileAccess.get_file_as_string("res://server/server.gd")
+	var i_w := src.find("Welcome, %s[/color]")
+	var body := src.substr(i_w, 900) if i_w != -1 else ""
 
 	print("===== THE WARDEN IS SOMEWHERE =====")
 	# The whole "what gate?" problem: the welcome named a person who existed only as a party
@@ -31,7 +37,14 @@ func _init() -> void:
 	var wt: Dictionary = WorldSystemScript.TILE_RENDER.get("warden", {})
 	ck(bool(wt.get("blocks_move", false)),
 		"he blocks movement, so you BUMP into him - the same verb every other station uses")
-	ck(String(wt.get("char", "")) == "W", "and he draws as W, which is what the welcome text says")
+	# The letter is only the fallback for a checkout without art. He is drawn as a FIGURE now
+	# (see _overworld_display), at player scale - so the welcome no longer tells anyone to look
+	# for a "W", which would have them hunting a letter that is not on the screen.
+	ck(String(wt.get("char", "")) == "W", "he keeps a letter as the no-art fallback")
+	ck(not body.contains("Find the [color=#9ACD32]W[/color]"),
+		"but the welcome does NOT tell the player to look for a letter")
+	ck(csrc_has("WARDEN_FIGURE_SPRITE"),
+		"because he is composed as a figure at player scale, not as a tile")
 	var art := "res://client/sprites/overworld32/tile/warden.png"
 	var srcart := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
 	ck(ResourceLoader.exists(art), "the file is there")
@@ -73,9 +86,7 @@ func _init() -> void:
 
 	print("")
 	print("===== THE WELCOME NAMES ONLY THINGS THAT EXIST =====")
-	var i_welcome := src.find("Welcome, %s[/color]")
-	ck(i_welcome != -1, "there is a welcome message")
-	var body := src.substr(i_welcome, 900)
+	ck(i_w != -1, "there is a welcome message")
 	ck(not body.contains("at the gate"), "it no longer mentions a gate that does not exist")
 	ck(not body.contains("quest log"),
 		"nor a quest log, which a player has not seen and cannot find yet")
