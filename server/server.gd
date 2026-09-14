@@ -9434,6 +9434,11 @@ func trigger_encounter(peer_id: int):
 			debuff_messages.append("[color=#FFD700]Scroll of Finding: %d encounters remaining[/color]" % character.target_farm_remaining)
 		save_character(peer_id)
 
+	# The apex frontier, on the fight you PICKED. Until 2026-09-13 this only happened for flock
+	# members, so standing in an apex zone bought you an ordinary monster and apex pack-mates -
+	# and the zone's +10% XP with it, since the reward path reads the flag stamped here.
+	_apply_apex_frontier(monster, character, false)
+
 	# v0.9.732 — legacy shared party combat (pre-card-system) is DISABLED pending a
 	# proper rebuild. It routed through the old ability-command path, so cards never
 	# rendered and the two combat systems collided (separate monsters / cross-ending).
@@ -10798,6 +10803,40 @@ func _flock_engine_carry(peer_id: int) -> Dictionary:
 	# always captured 0. combat_mgr now stashes them in last_combat_engines pre-erase.
 	return combat_mgr.get_last_combat_engines(peer_id)
 
+func _apply_apex_frontier(monster: Dictionary, character, is_dungeon_combat: bool) -> void:
+	"""Stamp the apex-frontier overlay onto a monster: +25% HP, +10% damage, the "Apex " name,
+	the purple name colour, and the zone flags the XP bonus is paid from.
+
+	⛑ 2026-09-13 - THIS ONLY EVER RAN FOR FLOCK MEMBERS. It lived inline in
+	`trigger_flock_encounter` and nothing else called it, so in an apex frontier the fight you
+	PICKED was an ordinary monster and only its pack-mates were apex. The +10% XP goes with it:
+	the reward path reads `is_apex_frontier` off the monster, and that field was stamped in the
+	same block - so the zone paid its bonus only on links 2+ of a chain, and paid nothing at all
+	for the species that do not flock. Found while working out the odds on a summoned Elder Lich,
+	which has `flock_chance: 0` and therefore could never have been apex at all.
+
+	Not in dungeons - they have their own tier scaling and do not need a frontier overlay."""
+	if world_system == null or character == null:
+		return
+	var in_apex: bool = world_system.is_apex_frontier(character.x, character.y)
+	monster["is_apex_frontier"] = in_apex
+	# Audit #10 v0.9.522 - stamp the apex zone NAME too so the combat reward message can use it
+	# (Burning Reach / Frostbound Verge / etc.) instead of a generic "Apex Frontier" label.
+	monster["apex_zone_name"] = world_system.get_apex_zone_name(character.x, character.y) if in_apex else ""
+	if not in_apex or is_dungeon_combat:
+		return
+	monster["max_hp"] = int(monster.get("max_hp", 1) * 1.25)
+	monster["hp"] = monster["max_hp"]
+	monster["current_hp"] = monster["max_hp"]
+	monster["damage"] = int(monster.get("damage", 1) * 1.10)
+	# Prefix only if not already prefixed (defensive against a double stamp).
+	var existing_name := String(monster.get("name", ""))
+	if not existing_name.begins_with("Apex "):
+		monster["name"] = "Apex " + existing_name
+	monster["name_color"] = "#9F70FF"   # purple, matching the v0.9.512 HUD tag
+	monster["is_apex_variant"] = true
+
+
 func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false, dungeon_monster_id: int = -1, variant_type: String = "", engine_carry: Dictionary = {}, empowered_mods: Array = []):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
@@ -10818,33 +10857,7 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 	# Audit #10 v0.9.512 — stamp apex frontier flag based on the character's
 	# position at engagement time. Combat reward calc reads this to apply the
 	# +10% XP bonus.
-	var in_apex = world_system.is_apex_frontier(character.x, character.y)
-	monster["is_apex_frontier"] = in_apex
-	# Audit #10 v0.9.522 — stamp the apex zone NAME too so the combat reward
-	# message can use it (Burning Reach / Frostbound Verge / etc.) instead of
-	# a generic "Apex Frontier" label.
-	monster["apex_zone_name"] = world_system.get_apex_zone_name(character.x, character.y) if in_apex else ""
-
-	# Audit #10 v0.9.513 — Apex monsters. When in the apex frontier zone,
-	# monsters spawn as "Apex" variants: +25% HP, +10% damage, "Apex "
-	# prefix on the name (so the player knows what they're fighting), and
-	# purple name color in combat. The flat XP bonus from v0.9.512 carries
-	# through unchanged (the buffed monster takes longer to kill, so the
-	# bonus rewards the extra effort). Doesn't apply in dungeon combat —
-	# dungeons have their own tier scaling and don't need a frontier overlay.
-	if in_apex and not is_dungeon_combat:
-		var apex_hp_mult = 1.25
-		var apex_dmg_mult = 1.10
-		monster["max_hp"] = int(monster.get("max_hp", 1) * apex_hp_mult)
-		monster["hp"] = monster["max_hp"]
-		monster["damage"] = int(monster.get("damage", 1) * apex_dmg_mult)
-		# Prefix name only if not already prefixed (defensive against double-stamp).
-		var existing_name = String(monster.get("name", ""))
-		if not existing_name.begins_with("Apex "):
-			monster["name"] = "Apex " + existing_name
-		# Mark for color rendering (purple, matches the v0.9.512 HUD tag).
-		monster["name_color"] = "#9F70FF"
-		monster["is_apex_variant"] = true
+	_apply_apex_frontier(monster, character, is_dungeon_combat)
 
 	# (v0.9.634 [FLOCK-BUFF-DIAG] print stripped in v0.9.642.)
 
