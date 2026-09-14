@@ -626,34 +626,20 @@ Fixed this pass (`bdd7060c`, `adef56ab`, and the party-kill/import commit):
 
 Still open from that same report, in the order they block a new player:
 
-- [ ] **▶ The Warden does not follow you on the map or lead the way.** Owner: *"He still doesn't
-      follow you on the map or lead the way so the player may think they are alone still."* He
-      only materialises at combat start. Needs an escort flag threaded to the client; the
-      companion already takes the trailing cell via `_trail_offset`, so the flank is free.
-- [ ] **No sprite for the Warden in party combat — just a `?`.** See `shot_340381`. The party
-      card resolves art by battler id; the guide Character is built in `_make_guide_character`
-      and never gets one.
-- [ ] **Combat must be taught step by step.** Owner: *"When it mentions read what the thing in
-      front of you does it's not clear what the player should do, not all monsters have something
-      to see or hover. Attack is flashing and bordered but not the cards. We should also mention
-      the player should hover the cards with their mouse to see what they do. We should also tell
-      them to click on a card to use it or press the 1, 2, 3 keys ... as well as highlight/border
-      those."* The wolf in that screenshot has NO traits, so the current line points at nothing.
-- [ ] **Party lock-in should not require confirming.** Owner: *"players shouldn't have to confirm
-      all of their actions, they should just have a way to pick something different if they change
-      their mind while their party members are still deciding."* Replace the confirm step with a
-      change/cancel affordance while the round is still open.
+- [x] **The Warden follows you on the map.** Drawn as a FIGURE at player scale in the cell behind you, and hidden from the post while he escorts (per-player `pass_through`).
+- [x] **Warden sprite in party combat.** The `?` was an empty name from resolving NPCs out of the peer map; underneath, he was class "Warrior", which does not exist.
+- [x] **Combat taught step by step.** Hover, click or number key, Space as the free fallback; rings the cards AND their hotkeys; no longer promises traits a wolf does not have.
+- [x] **Party lock-in removed entirely.** Picking a card submits; "Change action" withdraws until the last member picks.
 - [x] **Nothing makes the player equip the sword** — the Warden now refuses the step out of
       the post while the blade is still in the pack, and only while it IS in the pack, so nobody
       can be stranded behind a door waiting for an item they do not have.
 - [x] **The "+ is the door" line is wrong** — the overworld is all sprites now, there is no `+`.
-- [ ] **"Stand on something that lights up"** reads as "stand on a lamp" in the Sanctuary.
+- [x] **Sanctuary wording fixed** — names the real stations and the Door.
 - [x] **Player sprite draws water under it on a cleared tile** — `_marker_with_tile` reported the
       raw tile type and never consulted the depleted set, so the ONE cell that could show the
       fault was the one always under the player. Probe: `standing_on_a_spent_node.gd`.
-- [ ] **After the victory screen there is no next step** — `shot_645113`.
-- [ ] **Can the tutorial fight roll a flock?** Owner asked; unverified. If it can, a new player's
-      first fight can chain into a second one with the Warden's help already spent.
+- [x] **Victory now teaches recovery** — Rest, food cost, where monsters are met, travel stances.
+- [x] **Tutorial fight cannot flock.** Gated on the guide being present.
 
 
 ### ⚑ ONBOARDING — fixed 2026-09-14, UNRELEASED, and one piece still open
