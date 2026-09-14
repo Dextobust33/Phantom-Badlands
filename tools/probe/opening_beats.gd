@@ -60,8 +60,14 @@ func _init() -> void:
 	# A guide who says the same thing forever is a signpost. This one is a lookup on chain
 	# progress, so the next action is always the CURRENT next action.
 	ck(src.contains("func _handle_warden_interact"), "bumping him runs a handler")
+	# The function BODY, not a fixed byte window. The first version took 2000 characters and
+	# started failing the moment the stage-1 branch grew - which reported "he has no line for
+	# stage 2" when he plainly did. A probe that breaks when the code it watches gets longer
+	# is a probe that will be ignored.
 	var i_h := src.find("func _handle_warden_interact")
-	var h := src.substr(i_h, 2000)
+	var i_end := src.find("
+func ", i_h + 10)
+	var h := src.substr(i_h, (i_end - i_h) if i_end > i_h else 4000)
 	for stage in ["1:", "2:", "3:", "4:"]:
 		ck(h.contains("\t\t" + stage), "  he has a line for stage %s" % stage.rstrip(":"))
 	ck(h.contains("_:"),

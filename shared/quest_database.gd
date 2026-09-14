@@ -1597,11 +1597,11 @@ const QUESTS = {
 	"wardens_watch_1": {
 		"id": "wardens_watch_1",
 		"name": "Warden's Watch I — Something To Hit It With",
-		"description": "A Warden finds you at the gate. \"You came out here with nothing in your hands. That is how most of them arrive, and it is how most of them leave.\"
+		"description": "\"You came out here with nothing in your hands. That is how most of them arrive, and it is how most of them leave.\"
 
-Kill one thing. Anything. He will watch.
+He gave you a blade. Now go and use it on something - he is coming with you.
 
-[color=#9ACD32]STARTER CHAIN: 3 stages | This stage rewards a weapon[/color]",
+[color=#9ACD32]The Warden fights at your side for this step and the next.[/color]",
 		"type": QuestType.KILL_ANY,
 		"trading_post": "crossroads",
 		"target": 1,
@@ -1613,7 +1613,7 @@ Kill one thing. Anything. He will watch.
 		"chain_total": 3,
 		"next_in_chain": "wardens_watch_2",
 		"chain_bonus": {},
-		"starter_kit_slot": "weapon"
+		"starter_kit_slot": ""
 	},
 	"wardens_watch_2": {
 		"id": "wardens_watch_2",

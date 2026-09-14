@@ -48,12 +48,24 @@ func _init() -> void:
 	var slots: Array = []
 	for qid in ids:
 		slots.append(String(db.get_quest(qid).get("starter_kit_slot", "")))
-	print("  cadence: %s" % " -> ".join(slots))
-	ck(slots == ["weapon", "armor", "accessory"], "weapon, then armour, then trinket")
+	print("  quest-stage cadence: %s" % " -> ".join(slots))
+	# The WEAPON is not a quest reward any more. 2026-09-14, owner: *"I'm not sure I like
+	# that he has you go out and kill something alone ... it's likely players will die before
+	# even completing his introduction."* Right - and the weapon being the PRIZE for that
+	# first fight meant a new character took their most dangerous fight with empty hands to
+	# earn the thing that would have made it safe. The Warden hands it over when you talk to
+	# him, before anything is asked of you.
+	ck(slots[0] == "", "stage 1 grants no kit - the Warden arms you in person, up front")
+	ck(slots[1] == "armor" and slots[2] == "accessory",
+		"and the later stages still pay armour then trinket")
+
+	var src0 := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(src0.contains('drop_tables.get_starter_kit_item("weapon")'),
+		"the Warden really hands over a weapon rather than merely promising one")
 
 	var dt = DropTablesScript.new()
 	get_root().add_child(dt)
-	for sl in slots:
+	for sl in ["weapon", "armor", "accessory"]:
 		var item: Dictionary = dt.get_starter_kit_item(sl)
 		ck(not item.is_empty(), "  the '%s' slot resolves to a real item (%s)"
 			% [sl, String(item.get("name", "NOTHING"))])
@@ -74,12 +86,15 @@ func _init() -> void:
 	# For eleven days it named Pathfinder's Trial, which nothing granted. That is the failure this
 	# check is here to stop repeating: the very first thing a new player reads must be true.
 	var src := FileAccess.get_file_as_string("res://server/server.gd")
-	var named_in_overlay := src.contains("Warden's Watch[/color]")
-	ck(named_in_overlay, "the overlay names Warden's Watch")
+	# The welcome no longer names the CHAIN at all - a quest name means nothing to someone who
+	# has not seen a quest log. It names the Warden, who is standing in front of them.
+	ck(src.contains("walk into him"), "the overlay points at the Warden, who is a real tile")
 	ck(not src.contains("Pathfinder's Trial[/color]"),
 		"and no longer names the retired Pathfinder chain")
 	ck(src.contains('accept_quest(character, "wardens_watch_1"'),
-		"creation actually GRANTS the chain it names")
+		"creation still GRANTS the chain, whether or not the popup names it")
+	ck(src.contains("func _guide_escorts_overworld"),
+		"and the Warden escorts the early steps, so the first fight is not taken alone")
 
 	print("")
 	print("----- and the free creation egg is gone, as decided -----")

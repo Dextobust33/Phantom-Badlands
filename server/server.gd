@@ -9454,6 +9454,14 @@ func trigger_encounter(peer_id: int):
 	_guide_teach(peer_id, "combat")
 	_apply_apex_frontier(monster, character, false)
 
+	# The Warden comes along while the player is still on his first two steps. See
+	# _guide_escorts_overworld - the first fight of a new character is the one they are most
+	# likely to die in, and it used to be the one he sent them out to take alone.
+	if _guide_escorts_overworld(peer_id, character):
+		if _start_guided_overworld_combat(peer_id, character, monster):
+			return
+
+
 	# v0.9.732 — legacy shared party combat (pre-card-system) is DISABLED pending a
 	# proper rebuild. It routed through the old ability-command path, so cards never
 	# rendered and the two combat systems collided (separate monsters / cross-ending).
@@ -42949,6 +42957,57 @@ const GUIDE_PEER_ID := -9001
 const GUIDE_NAME := "Warden Hollis"
 
 
+func _wardens_watch_stage(character) -> int:
+	"""Which step of Warden's Watch this character is on. 0 = not on it, 4 = finished."""
+	for q in character.active_quests:
+		var qid := String(q.get("quest_id", q.get("id", "")))
+		if qid.begins_with("wardens_watch_"):
+			return int(qid.substr(14))
+	for qid in character.completed_quests:
+		if String(qid).begins_with("wardens_watch_"):
+			return 4
+	return 0
+
+
+func _guide_escorts_overworld(peer_id: int, character) -> bool:
+	"""Does the Warden come along for THIS fight?
+
+	⛑ Owner 2026-09-14: *"I'm not sure I like that he has you go out and kill something alone.
+	The world is dangerous and isn't easy to survive especially with no equipment on at the
+	start. It's likely players will die before even completing his introduction."*
+
+	They were right, and the numbers say so plainly. `-- newplayer` puts a gearless level-1 at a
+	76% win rate - which is ANOTHER WAY OF SAYING one fight in four is a loss, under permadeath,
+	before the player owns a single item. Sending them out alone to fetch their first weapon was
+	the most dangerous fight they would ever be asked to take, and it was the first one.
+
+	So he escorts the early steps too, not only the dungeon. Same machinery as the dungeon
+	escort: he holds aggro on anything that might kill them and leaves them the hits they can
+	certainly survive.
+
+	Ends when step 3 does - by then they are armoured, they have fought a dungeon, and a guard
+	who never leaves is a crutch rather than a teacher."""
+	if character == null or _is_party_leader(peer_id):
+		return false
+	if character.in_dungeon:
+		return false          # the dungeon has its own escort path
+	var st := _wardens_watch_stage(character)
+	return st == 1 or st == 2
+
+
+func _start_guided_overworld_combat(peer_id: int, character, monster: Dictionary) -> bool:
+	"""The Warden steps in for an ordinary encounter while the player is still finding their feet."""
+	var guide = _make_guide_character(int(character.level))
+	var members: Array = [peer_id, GUIDE_PEER_ID]
+	var chars: Dictionary = {peer_id: character, GUIDE_PEER_ID: guide}
+	var started = combat_mgr.start_party_combat_simul(members, chars, monster, [GUIDE_PEER_ID])
+	if not started.get("success", false):
+		return false
+	_send_party_combat_start(peer_id, members, monster, [
+		"[color=#9ACD32]%s puts himself between you and it. \"Go on. I have this end.\"[/color]" % GUIDE_NAME])
+	return true
+
+
 func _handle_warden_interact(peer_id: int, character) -> void:
 	"""Walk into the Warden and he tells you the ONE thing you need next.
 
@@ -42972,8 +43031,22 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 
 	match stage:
 		1:
-			_guide_say(peer_id, "One kill. Anything out past the gate will do. Step off the stone and something will find you.")
-			_guide_teach(peer_id, "combat")
+			# THE WEAPON COMES FIRST. It used to be the reward for the first kill, which meant a
+			# brand-new character fought their most dangerous fight with empty hands to earn the
+			# thing that would have made it safe. Handing it over here costs nothing and inverts
+			# that: you are armed before you are asked to use it.
+			if not character.seen_guide_items_hint and drop_tables:
+				var _kit = drop_tables.get_starter_kit_item("weapon")
+				if not _kit.is_empty() and character.can_add_item():
+					character.add_item(_kit)
+					send_to_peer(peer_id, {"type": "text", "message":
+						"[color=#9ACD32]%s hands you a %s.[/color]" % [GUIDE_NAME, String(_kit.get("name", "blade"))]})
+					send_character_update(peer_id)
+					save_character(peer_id)
+			_guide_say(peer_id, "Take this. It is not much, but it is more than your hands.")
+			_guide_teach(peer_id, "items")
+			_guide_teach(peer_id, "equipment")
+			_guide_say(peer_id, "Now put it on, and we will go and find something. I am coming with you - stay behind me.")
 		2:
 			_guide_say(peer_id, "Three more. You have a blade now, so this should go faster than the first one did.")
 			_guide_teach(peer_id, "equipment")
