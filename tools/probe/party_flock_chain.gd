@@ -6,6 +6,11 @@ extends SceneTree
 ## one - a fight that conjures an unseen second monster contradicts the floor grid the player is
 ## reading - so it is asserted here at a flock chance of 100, where any leak shows up every run
 ## rather than one time in four.
+##
+## Harness note: the overworld sections print a SCRIPT ERROR from send_location_update, which
+## wants a corpse_manager this probe does not build. It fires AFTER the state under test is
+## settled - every assertion below still reads real post-fight state. Do not read those lines as
+## failures.
 const ServerScript = preload("res://server/server.gd")
 const CharacterScript = preload("res://shared/character.gd")
 const CombatMgr = preload("res://shared/combat_manager.gd")
@@ -13,11 +18,6 @@ const MonsterDB = preload("res://shared/monster_database.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
 const QuestDB = preload("res://shared/quest_database.gd")
 const QuestMgr = preload("res://shared/quest_manager.gd")
-##
-## Harness note: the overworld sections print a SCRIPT ERROR from send_location_update, which
-## wants a corpse_manager this probe does not build. It fires AFTER the state under test is
-## settled - every assertion below still reads real post-fight state. Do not read those lines as
-## failures.
 const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
 const WorldSystemScript = preload("res://shared/world_system.gd")
 
