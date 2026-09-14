@@ -457,27 +457,17 @@ Asked because the arc had run out of defects and into design. All four answered.
      them: auto-resolve grants FULL rewards, not token ones; road travel costs time and
      resources rather than being free. -->
 
-- [ ] **THE MONSTER TRAIT TABLE IS MISSING MOST OF THE ABILITIES IT IS SUPPOSED TO COVER.**
-      Found 2026-09-13 while fixing the Glass Cannon report. `MONSTER_TRAITS` in
-      `combat_manager.gd` carries **20 entries against 95 ability constants**. Its own header says
-      it exists because "a list you have to remember to add to is a list that will be incomplete"
-      - and it is, in the same way, for the same reason.
-      Most of the 75 missing are `boss_*` signatures, which are announced in combat and are
-      arguably fine to leave out. But roughly twenty are ordinary combat abilities a player would
-      want to see before choosing an action, and several are outright lethal:
-        * **ambusher** - the first attack is a guaranteed crit
-        * **multi_strike**, **berserker**, **enrage** - all damage multipliers
-        * **armored**, **ethereal**, **thorns**, **damage_reflect**
-        * **mana_drain / energy_drain / stamina_drain** - resource denial, which decides whether
-          you can cast at all
-        * **curse**, **death_curse**, **weakness**, **blind**, **disarm**, **slow_aura**, **bleed**
-        * **summoner** (forces a follow-up fight), **pack_leader** (raises flock chance)
-      The client's own legacy list (`client.gd` ~37520) covers berserker / enrage / multi_strike /
-      ambusher, which the shared table does NOT - so the two disagree and the encounter text is
-      the poorer of the two. That is the exact drift the table was built to end.
-      **Descriptions must be READ OFF the behaviour, not written from memory** - the table's
-      header says so and the existing entries were done that way. That is what makes this a real
-      piece of work rather than twenty lines of typing.
+- [x] **DONE 2026-09-13 — the monster trait table now covers every ability a monster carries.**
+      23 entries added, each number read off the combat path rather than written from memory. Was
+      20 entries against 95 constants; the carried, non-boss set is 39 and all 39 now have a
+      description. `tools/probe/monster_trait_coverage.gd` fails if that ever stops being true,
+      so the list cannot quietly fall behind a third time.
+      **One claim in the original write-up was WRONG and is corrected here:** I said ambusher was
+      "a guaranteed crit". It is not - that is `boss_treasure_decoy` (always, 2x). Ambusher is a
+      75% chance of 1.75x on the first attack, plus +8 initiative. I had read the neighbouring
+      comment rather than the code, which is the exact habit this table's rule exists to stop.
+      `gold_hoarder` is deliberately left out: its constant marks it legacy with no effect since
+      gold was removed, and a chip promising something the game no longer does is worse than none.
 
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 

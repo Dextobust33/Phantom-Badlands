@@ -11415,6 +11415,34 @@ const MONSTER_TRAITS := {
 	"item_steal":     {"label": "! PICKPOCKET !", "color": "#FF0000", "desc": "5% chance to steal a random EQUIPPED item."},
 	"disguise":       {"label": "Deceptive",      "color": "#808080", "desc": "Looks like a weaker monster. Shows its true form after 2 rounds."},
 	"flee_attack":    {"label": "Skirmisher",     "color": "#FFA500", "desc": "Strikes once and runs. No loot if it escapes."},
+	# Added 2026-09-13 after a player died to a Glass Cannon they could not see. Every number
+	# below was read off the combat path, not written from memory - see this table's header.
+	# `gold_hoarder` is deliberately absent: its own constant marks it legacy with no effect
+	# since gold was removed, and a chip promising something the game no longer does is worse
+	# than no chip at all.
+	"ambusher": {"label": "Ambusher", "color": "#FF00FF", "desc": "Its first attack has a 75% chance to land at 1.75x damage, and it is likelier to move first."},
+	"multi_strike": {"label": "Multi-Strike", "color": "#FF8800", "desc": "Attacks 2-3 times in a round instead of once."},
+	"berserker": {"label": "Berserker", "color": "#FF6600", "desc": "Deals +50% damage once it drops below half HP."},
+	"enrage": {"label": "Enrages", "color": "#FF4444", "desc": "Grows +10% stronger every round, up to +100%."},
+	"armored": {"label": "Armored", "color": "#AAAAAA", "desc": "Carries 50% more defence than its kind normally would."},
+	"ethereal": {"label": "Ethereal", "color": "#CC99FF", "desc": "A third of your attacks pass straight through it - though it is less accurate in return."},
+	"thorns": {"label": "Thorns", "color": "#9ACD32", "desc": "Reflects a quarter of the damage you deal back at you. It cannot take you below 1 HP."},
+	"damage_reflect": {"label": "Reflects Damage", "color": "#FF00FF", "desc": "Sends a quarter of the damage you deal back at you. It cannot take you below 1 HP."},
+	"mana_drain": {"label": "Mana Drain", "color": "#4DA6FF", "desc": "Drains 5-20 of your primary resource on hit, more at higher levels. Wisdom resists up to half."},
+	"stamina_drain": {"label": "Stamina Drain", "color": "#FFAA66", "desc": "Drains 5-15 stamina on hit, more at higher levels."},
+	"energy_drain": {"label": "Energy Drain", "color": "#FFA500", "desc": "Drains 5-15 energy on hit, more at higher levels."},
+	"bleed": {"label": "Causes Bleeding", "color": "#FF4444", "desc": "40% chance on hit to stack a bleed, up to 3, each worth 15% of its strength a turn."},
+	"curse": {"label": "Curse", "color": "#BA55D3", "desc": "30% chance to cut your defence by 25 for the rest of the fight. Wisdom resists up to half."},
+	"death_curse": {"label": "Death Curse", "color": "#FF0000", "desc": "When it dies it strikes you for 10% of its own maximum HP. Wisdom resists up to half; undead forms are immune."},
+	"weakness": {"label": "Weakening", "color": "#FFA500", "desc": "30% chance to cut your attack damage by 25% for 20 turns - which outlasts the fight."},
+	"blind": {"label": "Blinding", "color": "#808080", "desc": "40% chance to blind you: -30% hit chance and reduced vision for 15 turns."},
+	"disarm": {"label": "Disarming", "color": "#FF8800", "desc": "25% chance to disarm you: -30% damage for 3 rounds."},
+	"slow_aura": {"label": "Slowing Aura", "color": "#808080", "desc": "Its aura cuts your chance to flee by 25%."},
+	"summoner": {"label": "Summoner", "color": "#FF00FF", "desc": "20% chance to call in a high-tier reinforcement mid-fight."},
+	"pack_leader": {"label": "Pack Leader", "color": "#FF8C00", "desc": "Adds 25 points to the chance this kill chains into another fight, capped at 75%."},
+	"coward": {"label": "Coward", "color": "#FFD700", "desc": "Flees with its loot once it drops below 20% HP."},
+	"unpredictable": {"label": "Unpredictable", "color": "#FF0000", "desc": "Its damage swings wildly - anywhere from half to two and a half times normal."},
+	"easy_prey": {"label": "Easy Prey", "color": "#88B8FF", "desc": "Worth half the usual XP.", "loot": true},
 }
 
 static func combat_trait_tags(abilities: Array) -> String:
