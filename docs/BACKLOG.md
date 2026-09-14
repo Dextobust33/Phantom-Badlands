@@ -578,6 +578,26 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
+### ⚑ THE SANCTUARY MENUS ARE DATED — owner 2026-09-14
+
+Owner: *"We will need to revamp all of the sanctuary menus and systems at some point. Those
+menu's and their controls are dated."*
+
+Not started. Notes for whoever picks it up:
+
+- The Sanctuary is the one screen EVERY player sees before they can play at all, and it is the
+  last text-and-number-keys surface left in a game whose overworld, dungeon and combat are all
+  sprite-rendered. `display_house_storage` paginates five at a time and drives everything off
+  number keys, which is the shape the rest of the game moved away from.
+- It crosses several systems, not one panel: storage, upgrades, the kennel, mastery headstarts,
+  and the Door. A revamp wants a plan before code.
+- Precedent to follow: the Sanctuary ROOM itself was already redone as sprites
+  (`_render_house_room` / `_SanctuaryRoom`), so the visual half exists and the menus are what
+  did not keep up.
+- Equipment inspection landed 2026-09-14 as a stopgap (an Inspect toggle on the storage row,
+  reusing `display_item_details`), because deciding what to withdraw meant withdrawing it to
+  find out. That does not close this item.
+
 ### ⚑ COMPANION TYPES ARE NOT A CHOICE — owner 2026-09-14
 
 Owner: *"we need to look at companion types and likely balance their power. Currently Tanks seem

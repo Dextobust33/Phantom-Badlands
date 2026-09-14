@@ -876,6 +876,8 @@ var house_data: Dictionary = {}
 var house_mode: String = ""  # "", "main", "storage", "companions", "upgrades"
 var pending_house_action: String = ""  # For sub-menus like withdraw_select, checkout_select, etc.
 var house_storage_page: int = 0
+# Sanctuary storage: number keys LOOK at an item rather than marking it for withdrawal.
+var house_storage_inspect: bool = false
 var house_upgrades_page: int = 0  # Index into SANCTUARY_UPGRADE_TABS (Storage/Combat/Stats/Discovery/Economy)
 var house_mastery_page: int = 0  # Slice 3 — pagination for mastery headstart panel (5 abilities per page)
 var house_storage_withdraw_items: Array = []  # Items to withdraw on character creation
@@ -8719,9 +8721,15 @@ func update_action_bar():
 					{"label": "Next", "action_type": "local", "action_data": "house_storage_next", "enabled": true},
 					{"label": "Confirm", "action_type": "local", "action_data": "house_withdraw_confirm", "enabled": house_storage_withdraw_items.size() > 0},
 					{"label": "Clear", "action_type": "local", "action_data": "house_withdraw_clear", "enabled": house_storage_withdraw_items.size() > 0},
-					{"label": "1-5=Mark", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					# Owner 2026-09-14: *"lets ensure we have equipment inspection while in the
+					# sanctuary."* Storage listed a name, a level and a rarity colour and nothing
+					# else, so deciding what to take out meant withdrawing it to find out.
+					{"label": "Inspect" if not house_storage_inspect else "Marking",
+						"action_type": "local", "action_data": "house_storage_inspect_toggle",
+						"enabled": true},
+					{"label": "1-5=Look" if house_storage_inspect else "1-5=Mark",
+						"action_type": "none", "action_data": "", "enabled": false},
+										{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
@@ -16502,8 +16510,19 @@ func execute_local_action(action: String):
 			house_storage_page = min(total_pages - 1, house_storage_page + 1)
 			display_house_storage()
 			update_action_bar()
+		"house_storage_inspect_toggle":
+			# Flip the number keys between marking an item and LOOKING at it. Marks are kept
+			# across the flip: a player comparing two pieces should not lose their selection to
+			# having read one of them.
+			house_storage_inspect = not house_storage_inspect
+			display_house_storage()
+			display_game("[color=#9ACD32]%s[/color]"
+				% ("Press 1-5 to inspect an item." if house_storage_inspect
+					else "Press 1-5 to mark items for withdrawal."))
+			update_action_bar()
 		"house_storage_back":
 			pending_house_action = ""
+			house_storage_inspect = false
 			house_storage_discard_index = -1
 			house_storage_register_index = -1
 			display_house_storage()
@@ -52093,12 +52112,18 @@ func _purchase_house_upgrade(index: int):
 	send_to_server({"type": "house_upgrade", "upgrade_id": current_page_upgrades[index]})
 
 func _toggle_storage_withdraw_item(display_index: int):
-	"""Toggle an item for withdrawal from house storage"""
+	"""Toggle an item for withdrawal from house storage - or LOOK at it, in inspect mode."""
 	var items = house_data.get("storage", {}).get("items", [])
 	var page_size = 5
 	var actual_index = house_storage_page * page_size + display_index
 
 	if actual_index < 0 or actual_index >= items.size():
+		return
+
+	if house_storage_inspect:
+		# The SAME renderer the inventory and the market use, rather than a second description
+		# of an item that would drift from them. It already takes a source label.
+		display_item_details(items[actual_index], "sanctuary storage")
 		return
 
 	# Toggle selection

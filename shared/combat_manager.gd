@@ -9329,6 +9329,25 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 					comp_hits += 1
 				else:
 					_remaining.append(_d)
+			# ⛑ A BURST NEVER LANDS ENTIRELY ON THE PLAYER.
+			#
+			# Owner 2026-09-14: *"for swift enemies can we make sure the hits can be divided up
+			# ... Maybe it targets you with 2 of the 3 hits it did that round and 1 to your
+			# companion."*
+			#
+			# Rolling each hit independently at the default 25% aggro means all three land on the
+			# player 0.75^3 = 42% of the time - and THAT is the round that reads as a one-shot,
+			# because a Swift monster's three hits are three FULL hits. The per-hit roll was
+			# already here and it is not enough on its own: independent rolls have no memory, so
+			# nothing stops the worst case coming up two fights in a row.
+			#
+			# So when a multi-hit round would otherwise all land on the player, one hit goes to
+			# the companion. The aggro weighting still decides everything else; this only removes
+			# the tail. A single-hit round is untouched - there is nothing to divide.
+			if comp_hits == 0 and _remaining.size() >= 2:
+				comp_raw_damage += int(_remaining[0])
+				comp_hits += 1
+				_remaining.remove_at(0)
 			hit_damages = _remaining
 			total_damage = 0
 			for _d in hit_damages:
