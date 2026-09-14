@@ -3010,7 +3010,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       asserted "G1 > H9" and passed, because `power_index` was called by nothing in the game.
       **Re-calibration:** run after this, since it changes player power.
 
-- [ ] **A WORLD DUNGEON BUILDS ITS WHOLE INTERIOR AND NOBODY EVER LOOKS AT IT.** Found 2026-09-11
+- [x] **A WORLD DUNGEON BUILDS ITS WHOLE INTERIOR AND NOBODY EVER LOOKS AT IT.** Found 2026-09-11  **DONE and VERIFIED 2026-09-13** - `tools/probe/lazy_dungeon_interior.gd` PASSES: a dungeon nobody has entered builds no rooms.
       while costing the owner's *"massively increase the amount of dungeons"*. This is the reason
       dungeons are capped, and the cap is the reason the world is empty.
 
@@ -3080,7 +3080,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
            should be per-character anyway, and is already implicated in a re-farm bug),
            the despawn/threat lifecycle, and the post threat-cap pacing.
 
-- [ ] **PERSONAL dungeons are never cleaned up on logout or death. Owner 2026-09-11:** *"we need
+- [x] **PERSONAL dungeons are never cleaned up on logout or death. **DONE and VERIFIED 2026-09-13** - disconnect starts a 30-min grace, permadeath drops them at once, 24h age cap, swept every 120s from `_check_dungeon_spawns`. Guarded by `tools/probe/personal_dungeon_cleanup.gd`, which checks the reaper is CALLED - three things in this repo have been written and never invoked. ~~Original:~~ Owner 2026-09-11:** *"we need
       to ensure we have proper cleanup of those after players logout for so long or their
       character dies so they don't just linger on the map."* **Confirmed, and it is worse than
       lingering on the map.**
@@ -3113,7 +3113,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       cleaning up there is the opposite mistake and would break reconnect. Stopping the sweep
       from running fails it.
 
-- [ ] **A DUNGEON TYPE STOPS OWNING ITS GRADE. Owner direction 2026-09-11, and it is the biggest
+- [x] **A DUNGEON TYPE STOPS OWNING ITS GRADE. Owner direction 2026-09-11, and it is the biggest  **DONE and VERIFIED 2026-09-13** - `tools/probe/dungeon_grade_truth.gd` PASSES; grade lives on the INSTANCE and `force_tier` carries it into the run you enter.
       of the four.** Owner: *"We do want lower types of monster dungeons to be possible in high
       level areas (example an A5 Goblin Dungeon, or a S2 Kelpie one etc)."*
 
@@ -3152,7 +3152,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Owner probably means both. Worth confirming which, because (1) alone leaves every grade
       equally common and the climb the owner described has no scarcity in it.
 
-- [ ] **A DUNGEON CONTAINS EXACTLY ONE SPECIES, and the Atlas advertises otherwise.** Found
+- [x] **A DUNGEON CONTAINS EXACTLY ONE SPECIES, and the Atlas advertises otherwise.** Found  **DONE and VERIFIED 2026-09-13** - `tools/probe/dungeon_species_mix.gd` PASSES: a dungeon holds a mix, and its floor eggs follow what actually spawned.
       2026-09-11 answering the owner's question about how monster tiers work in dungeons.
       Every regular monster on every floor is generated from `boss.monster_type` - one string. A
       Goblin Caves is 100% Goblins, and even the map letter is that species' first character.
@@ -3240,7 +3240,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       player's level rather than the dungeon's, and valor/boss materials/cards not scaling with
       rank at all.
 
-- [ ] **A DUNGEON'S LEVEL AND THE LAND AROUND IT ARE UNRELATED. Owner report 2026-09-11, and it
+- [x] **A DUNGEON'S LEVEL AND THE LAND AROUND IT ARE UNRELATED. Owner report 2026-09-11, and it  **DONE and VERIFIED 2026-09-13** - `tools/probe/dungeon_grade_from_land.gd` PASSES: a dungeon's grade is a fact about the land it stands in, and the owner's asked-for exception (a low-type dungeon at a high grade) still works.
       is exactly as reported.** Owner: *"I just did a G2 Kelpie Marsh at -23, -64 where the
       monsters are Lv ~16 on the overworld. Do dungeons spawn in similar level to the overworld
       area you find them? Ideally they should."* **They do not, and nothing in the code tries to.**
@@ -3355,7 +3355,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       this is a polish item rather than a gap — and it is the natural companion to the Raven room
       work, which will settle what a themed floor should look like anyway.
 
-- [ ] **Zoom the map inside NPC posts** (owner 2026-09-08) — **now part of Phase 2.95 PHASE 2, do
+- [x] **Zoom the map inside NPC posts** (owner 2026-09-08) — **now part of Phase 2.95 PHASE 2, do  **SUPERSEDED 2026-09-12** - the zoom was REMOVED, measured: a post is 17-20 tiles across in a 23-tile view, so there was nothing spare to crop and the crop was cutting off the doors.
       not plan it twice.** *"We may also want to zoom in the map when players are in a post for
       the same type of functionality in the future."* Re-pointed 2026-09-11: this used to say
       Phase 3.45 (sprite interiors), on the belief that a post interior was its own screen. It is

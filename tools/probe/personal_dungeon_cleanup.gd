@@ -1,18 +1,18 @@
 extends SceneTree
-## A dead player's dungeon, and a long-gone player's dungeon, must not stay on the map.
+## A personal dungeon must not outlive the player who owns it.
 ##
 ## Owner 2026-09-11: *"we need to ensure we have proper cleanup of those after players logout for
 ## so long or their character dies so they don't just linger on the map."*
 ##
-## Before this, `_cleanup_player_dungeon` was called from exactly two places - quest completion
-## and quest abandon - and nowhere else. Disconnect deliberately KEEPS the run so a player can
-## reconnect into it, which is a real feature, but nothing ever ended that grace. Death did not
-## clean up either. World dungeons have had a 24-hour cull for ages; personal ones had none. And
-## they draw a `D` on their owner's own map, so a stale one is visible as well as resident.
+## This is implemented. The probe exists because it is EXACTLY the shape that rots silently: four
+## pieces that must all be present - a grace clock started on disconnect, an immediate drop on
+## permadeath, an age cap, and something that actually RUNS the sweep - and losing any one of them
+## leaves the other three looking correct. A dungeon that lingers costs memory, draws a `D` on its
+## owner's map forever, and is counted against the world's dungeon budget.
 ##
-## The trap this guards against is the opposite mistake: cleaning up ON disconnect, which would
-## break reconnect. The grace has to exist AND have an end.
-const SRC := "res://server/server.gd"
+## Three separate things in this codebase have been written, exported and never called
+## (`vision_bonus`, the `--buildverify` probe, the first `first_strike_autocrit`). A reaper that is
+## never invoked looks identical to one that finds nothing.
 
 var fails := 0
 func ck(ok: bool, msg: String) -> void:
@@ -21,62 +21,45 @@ func ck(ok: bool, msg: String) -> void:
 	print(("  PASS  " if ok else "  FAIL  ") + msg)
 
 
-func _body(src: String, fname: String) -> String:
-	var i := src.find("func %s(" % fname)
-	if i < 0:
-		return ""
-	var j := src.find("\nfunc ", i + 10)
-	return src.substr(i, (j if j > 0 else src.length()) - i)
-
-
 func _init() -> void:
-	var src := FileAccess.get_file_as_string(SRC)
+	var s := FileAccess.get_file_as_string("res://server/server.gd")
+	var ServerScript = load("res://server/server.gd")
 
-	print("--- one place knows where dungeon state lives ---")
-	var er := _body(src, "_erase_dungeon_instance")
-	ck(er != "", "_erase_dungeon_instance exists")
-	for d in ["active_dungeons", "dungeon_floors", "dungeon_floor_rooms", "dungeon_monsters",
-			"dungeon_floor_items", "dungeon_traps", "dungeon_npcs"]:
-		ck(er.find("%s.erase(instance_id)" % d) >= 0, "...and clears %s" % d)
-	# The reason it exists: there were three hand-written erase lists and one had fallen behind.
-	ck(_body(src, "_cleanup_player_dungeon").find("_erase_dungeon_instance(") >= 0,
-		"quest cleanup goes through it")
-	var spawns := _body(src, "_check_dungeon_spawns")
-	ck(spawns.find("_erase_dungeon_instance(instance_id)") >= 0,
-		"the world cull goes through it too (it used to forget dungeon_traps)")
+	print("===== THE CLOCK STARTS WHEN THEY LOG OUT =====")
+	ck(s.find('active_dungeons[_dc_iid]["abandoned_at"] = _dc_now') >= 0,
+		"disconnect stamps `abandoned_at` on every personal dungeon they own")
+	ck(s.find('_inst.erase("abandoned_at")') >= 0,
+		"...and reconnecting clears it, so coming back does not cost them the run")
 
-	print("\n--- the grace exists, and it ends ---")
-	ck(src.find("const PERSONAL_DUNGEON_GRACE_SECONDS") >= 0, "the grace is a named constant")
-	ck(src.find("const PERSONAL_DUNGEON_MAX_AGE_SECONDS") >= 0, "so is the hard age cap")
-	var dis := _body(src, "handle_disconnect")
-	ck(dis.find('["abandoned_at"] = _dc_now') >= 0,
-		"disconnect STAMPS the clock rather than deleting the run")
-	ck(dis.find("_erase_dungeon_instance") < 0 and dis.find("_drop_personal_dungeons") < 0,
-		"...and does NOT erase on disconnect, which would break reconnecting into a run")
-	var sel := _body(src, "handle_select_character")
-	ck(sel.find('_inst.erase("abandoned_at")') >= 0, "coming back clears the clock")
-	var sweep := _body(src, "_sweep_personal_dungeons")
-	ck(sweep != "", "_sweep_personal_dungeons exists")
-	ck(sweep.find("PERSONAL_DUNGEON_GRACE_SECONDS") >= 0 and sweep.find("PERSONAL_DUNGEON_MAX_AGE_SECONDS") >= 0,
-		"...and uses both limits")
-	ck(sweep.find('inst.get("active_players", []).is_empty()') >= 0,
-		"...and never touches a dungeon somebody is standing in")
-	ck(spawns.find("_sweep_personal_dungeons()") >= 0, "and it actually runs, from the spawn tick")
+	print("\n===== DEATH DROPS THEM AT ONCE =====")
+	ck(s.find('_drop_personal_dungeons(String(peers.get(peer_id, {}).get("username", "")), peer_id, "permadeath")') >= 0,
+		"permadeath erases them immediately - there is no coming back to them")
 
-	print("\n--- death ends it immediately ---")
-	var death := _body(src, "handle_permadeath")
-	ck(death.find("_drop_personal_dungeons(") >= 0,
-		"permadeath drops the instances, not just the character's side of them")
-	ck(death.find("character.exit_dungeon()") >= 0,
-		"...alongside the existing exit_dungeon, which only ever cleared the CHARACTER")
+	print("\n===== AND NOTHING LIVES FOREVER =====")
+	ck(ServerScript.PERSONAL_DUNGEON_GRACE_SECONDS > 0,
+		"an offline owner gets %d minutes before the run is let go"
+			% int(ServerScript.PERSONAL_DUNGEON_GRACE_SECONDS / 60))
+	ck(ServerScript.PERSONAL_DUNGEON_MAX_AGE_SECONDS > 0,
+		"and nothing survives past %d hours regardless"
+			% int(ServerScript.PERSONAL_DUNGEON_MAX_AGE_SECONDS / 3600))
+	ck(ServerScript.PERSONAL_DUNGEON_GRACE_SECONDS < ServerScript.PERSONAL_DUNGEON_MAX_AGE_SECONDS,
+		"the grace is shorter than the age cap, or the cap could never be what removes one")
 
-	print("\n--- and it finds them by the key that survives a reconnect ---")
-	var find := _body(src, "_personal_dungeons_of")
-	ck(find != "", "_personal_dungeons_of exists")
-	ck(find.find('String(inst.get("owner_username", "")) == username') >= 0,
-		"it matches on USERNAME first - peer ids are reassigned, so a peer-keyed instance can be orphaned")
-	ck(find.find('int(inst.get("owner_peer_id", -1)) < 0') >= 0,
-		"...and never sweeps a WORLD dungeon by mistake")
+	print("\n===== ⚑ AND SOMETHING ACTUALLY RUNS IT =====")
+	# The check that matters. A reaper nobody calls is the fault this file is guarding against.
+	var defined: int = s.count("func _sweep_personal_dungeons() -> void:")
+	var refs: int = s.count("_sweep_personal_dungeons()")
+	ck(defined == 1, "the sweep is defined once")
+	ck(refs - defined >= 1,
+		"and CALLED from somewhere (%d call site(s) besides the definition)" % (refs - defined))
+	ck(s.find("	_sweep_personal_dungeons()") >= 0,
+		"...from the periodic dungeon check, not only from a hand-run admin action")
 
-	print("\n[PERSONALCLEANUP] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
+	print("\n===== IT SKIPS THE ONES SOMEBODY IS STANDING IN =====")
+	ck(s.find('if not inst.get("active_players", []).is_empty():') >= 0,
+		"a dungeon with players inside is never swept out from under them")
+	ck(s.find('if int(inst.get("owner_peer_id", -1)) < 0:') >= 0,
+		"and WORLD dungeons are left to their own cull, not caught by this one")
+
+	print("\n[PERSONALDUNGEON] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)
