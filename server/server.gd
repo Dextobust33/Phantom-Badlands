@@ -16075,7 +16075,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 			var bt = int(kennel[int(idx)].get("border_tier", 0))
 			if bt > best_border:
 				best_border = bt
-		var output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited, best_border)
+		var output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited, best_border, _best_kennel_level(kennel, indices))
 		if output.is_empty():
 			send_to_peer(peer_id, {"type": "error", "message": "Fusion failed — unknown monster type!"})
 			return
@@ -16109,7 +16109,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 			var bt = int(kennel[int(idx)].get("border_tier", 0))
 			if bt > mixed_best_border:
 				mixed_best_border = bt
-		var output = drop_tables.create_fusion_companion(random_type, 9, inherited, mixed_best_border)
+		var output = drop_tables.create_fusion_companion(random_type, 9, inherited, mixed_best_border, _best_kennel_level(kennel, indices))
 		if output.is_empty():
 			send_to_peer(peer_id, {"type": "error", "message": "Fusion failed!"})
 			return
@@ -16343,7 +16343,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 			var bt = int(c.get("border_tier", 0))
 			if bt > best_border:
 				best_border = bt
-		output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited, best_border)
+		output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited, best_border, _best_companion_level(companions))
 	elif fusion_type == "mixed":
 		if companions.size() != 8:
 			send_to_peer(peer_id, {"type": "error", "message": "Mixed A9 fusion requires exactly 8 companions!"})
@@ -43639,3 +43639,28 @@ func handle_gm_perf_report(peer_id: int) -> void:
 			.replace("[color=#888888]", "").replace("[color=#FF4444]", "")
 			.replace("[color=#FFAA00]", "").replace("[color=#88FF88]", "")
 			.replace("[color=#FF8800]", ""))
+
+
+
+func _best_companion_level(companions: Array) -> int:
+	"""The highest level among the companions being fused.
+
+	Fusion and ascension both used to hand back a LEVEL 1 companion whatever went in, which made
+	combining things a downgrade at every scale - x0.47 for a level-20 input, x0.25 at level 40.
+	The level carries now; the two consumed companions and the progress within the level do not."""
+	var best: int = 1
+	for c in companions:
+		if c is Dictionary:
+			best = maxi(best, int(c.get("level", 1)))
+	return best
+
+
+func _best_kennel_level(kennel: Array, indices: Array) -> int:
+	"""The highest level among the kennel entries being fused - same rule as
+	`_best_companion_level`, for the house path, which addresses its inputs by index."""
+	var best: int = 1
+	for idx in indices:
+		var i: int = int(idx)
+		if i >= 0 and i < kennel.size() and kennel[i] is Dictionary:
+			best = maxi(best, int(kennel[i].get("level", 1)))
+	return best

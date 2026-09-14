@@ -2293,13 +2293,21 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 		"border_tier": roll_border_tier(),
 	}
 
-func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_variant: Dictionary = {}, inherited_border_tier: int = -1) -> Dictionary:
+func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_variant: Dictionary = {}, inherited_border_tier: int = -1, inherited_level: int = 1) -> Dictionary:
 	"""Create a companion directly from fusion (not an egg).
 	Uses the egg variant system for proper variant rolling.
 	inherited_variant: If all inputs share a variant, pass it to inherit.
 	v0.9.570 — inherited_border_tier: pass the HIGHEST border_tier from inputs
 	to preserve it; pass -1 to roll fresh. Memo design: rare borders shouldn't
-	wash out via fusion."""
+	wash out via fusion.
+
+	⚑ `inherited_level` - THE LEVEL CARRIES. This returned a level-1 companion whatever went in,
+	so fusing three level-20 rank-3s gave back a level-1 rank-4: 152 hp for 72, x0.47. At level
+	40 it was x0.25. Players meet this long before they ever see an Ascension Catalyst, so it is
+	the first time the game teaches that combining things makes them worse.
+
+	The costs that remain are the real ones - two of the three companions are gone, and any
+	progress WITHIN the level is gone. What a player cannot buy back with luck is the grind."""
 	var companion_data = COMPANION_DATA.get(monster_name, {})
 	if companion_data.is_empty():
 		return {}
@@ -2320,7 +2328,7 @@ func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_
 		"tier": companion_data.get("tier", 1),
 		"sub_tier": new_sub_tier,
 		"bonuses": companion_data.get("bonuses", {}).duplicate(),
-		"level": 1,
+		"level": maxi(1, inherited_level),
 		"xp": 0,
 		"battles_fought": 0,
 		"variant": variant.get("name", "MISSING_VARIANT"),
@@ -2442,6 +2450,23 @@ func create_ascended_companion(parents: Array, inherited_variant: Dictionary = {
 
 	var new_tier = current_tier + 1
 
+	# ⚑ IT KEEPS THE BEST PARENT'S LEVEL. Ascension used to return a LEVEL 1 companion whatever
+	# you fed it, and that alone made the whole feature a trap.
+	#
+	# Owner 2026-09-11 asked whether an H9 beats a G1. Measured 2026-09-13: the GRADE ladder is
+	# fine - one tier is worth x1.30 in HP and a G1 now edges an H9, which is the right answer.
+	# The level reset was doing the damage. Feeding in a level-20 H9 (181 hp) returned a level-1
+	# G1 (86 hp): x0.48. At level 40 it was x0.25. A player spent three companions, a Catalyst
+	# and every level they had earned to get something less than half as strong as one of the
+	# things they destroyed.
+	#
+	# The costs that REMAIN are the real ones: two of the three companions are gone, the Catalyst
+	# is gone, and rank resets to 1 so the eight ranks have to be climbed again. Levels were never
+	# meant to be part of that bill - they are the part a player cannot buy back with luck.
+	var inherited_level: int = 1
+	for p in parents:
+		inherited_level = maxi(inherited_level, int(p.get("level", 1)))
+
 	return {
 		"id": "ascended_" + monster_type.to_lower().replace(" ", "_") + "_" + str(randi()) + "_" + str(int(Time.get_unix_time_from_system())),
 		"monster_type": monster_type,
@@ -2449,7 +2474,7 @@ func create_ascended_companion(parents: Array, inherited_variant: Dictionary = {
 		"tier": new_tier,
 		"sub_tier": 1,
 		"bonuses": companion_data.get("bonuses", {}).duplicate(),
-		"level": 1,
+		"level": inherited_level,
 		"xp": 0,
 		"battles_fought": 0,
 		"ascended_from_tier": current_tier,

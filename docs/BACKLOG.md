@@ -2949,7 +2949,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
-- [ ] **AN H9 COMPANION BEATS A G1 BY ~3x, AND ASCENDING IS A DOWNGRADE. Owner asked for this
+- [x] **AN H9 COMPANION BEATS A G1 BY ~3x, AND ASCENDING IS A DOWNGRADE. Owner asked for this  **DONE 2026-09-13.** The GRADE half was already fixed - one tier is worth x1.30 in HP and a G1 now edges an H9 (0.97x), ladder monotonic over all 81 cells. The trap was the LEVEL RESET: ascension and rank fusion both returned a level-1 companion whatever went in (x0.48 at level 20, x0.25 at level 40). Both carry the best input level now; measured x1.03 and rising ceiling. ~~Original:~~
       comparison 2026-09-11 and the answer is the bad one.** Owner: *"we may need to compare power
       of companion tier and rank to see if an H9 is weaker or stronger than a G1."*
 
