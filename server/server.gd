@@ -15570,9 +15570,14 @@ func _maybe_send_sanctuary_intro(peer_id: int) -> void:
 		+ "corners for diagonals. Arrow keys work too.
 
 "
-		+ "Stand on something that [color=#FFD700]lights up[/color] and press "
-		+ "[color=#9ACD32]SPACE[/color] to use it — that is how you open every station in "
-		+ "here, and how you talk to people out in the world.
+		+ "Walk ONTO a thing to use it, then press [color=#9ACD32]SPACE[/color]. In here that is "
+		+ "your [color=#FFD700]Storage Chest[/color], your [color=#FFD700]Upgrades[/color], and "
+		+ "your [color=#FFD700]Companion Slot[/color]. Whenever you are standing on one, the "
+		+ "panel tells you which.
+
+"
+		+ "When you want to play, stand on the [color=#FF6600]Door[/color] and press "
+		+ "[color=#9ACD32]SPACE[/color].
 
 "
 		+ "The control card is next."),
@@ -20496,6 +20501,21 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 			"completed": update.completed,
 			"message": update.message
 		})
+
+	# The Warden reacts to the step he set. Owner 2026-09-14, after winning the first fight:
+	# *"After the victory screen I'm once again unsure what to do."* Finishing a step and being
+	# told nothing is the same dead end as his dialogue ending without a next action - so the
+	# beat that COMPLETES a stage names the next one, in his voice, at the moment it happens.
+	for update in updates:
+		if not bool(update.get("completed", false)):
+			continue
+		match String(update.get("quest_id", "")):
+			"wardens_watch_1":
+				_guide_say(peer_id, "That is one. Take the armour off my hands before the next — "
+					+ "walk back to me at the Crossroads and I will hand it over.")
+			"wardens_watch_2":
+				_guide_say(peer_id, "Enough practice. Come back to me and we will go down "
+					+ "into the dark together.")
 
 	if not updates.is_empty():
 		save_character(peer_id)
@@ -43150,8 +43170,8 @@ func _maybe_warden_next_step(peer_id: int, character) -> void:
 		("\"Good. Now it is a weapon and not luggage.\"
 
 "
-			+ "This post is walled. The way out is a [color=#FFD700]+[/color] on the map — a "
-			+ "[color=#FFD700]door[/color] — %s. Walk onto it and keep going.
+			+ "This post is walled. The way out is a [color=#FFD700]gateway[/color] in that wall "
+			+ "— a brick arch with an orange opening, %s. Walk onto it and keep going.
 
 " % way
 			+ "The first thing you meet out there is the one he wants. "
@@ -43210,13 +43230,34 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				return
 			ch.seen_guide_combat_hint = true
 			title = "[color=#9ACD32]How A Fight Goes[/color]"
-			body = ("You act, then it acts. That is the whole of it.\n\n"
-				+ "Your [color=#FFD700]cards[/color] sit along the bottom — each costs a resource, and you draw a "
-				+ "fresh hand every round. [color=#FFAA66]Space[/color] is an ordinary attack and always works.\n\n"
-				+ "Read what the thing in front of you DOES — its traits sit beside its name. "
-				+ "[color=#FF4444]Glass Cannon[/color] means it hits three times as hard as it looks.\n\n"
-				+ "[color=#FFAA00]You can always flee. Dying here is permanent.[/color]")
-			ring = ["action_bar"]
+			# ⛑ ONE ACTION, SPELLED OUT. Owner 2026-09-14, looking at their first fight:
+			# *"When it mentions read what the thing in front of you does it's not clear what the
+			# player should do, not all monsters have something to see or hover. Attack is flashing
+			# and bordered but not the cards. We should also mention the player should hover the
+			# cards with their mouse to see what they do. We should also tell them to click on a
+			# card to use it or press the 1, 2, 3 keys ... Remember we should be taking them
+			# through combat step by step."*
+			#
+			# The old version opened with a maxim and then told them to read traits that the wolf in
+			# front of them did not have. It now says what to DO, in the order they do it.
+			body = ("You act, then it acts. Nothing moves until you choose.
+
+"
+				+ "Those [color=#FFD700]cards[/color] along the bottom are your hand. "
+				+ "[color=#9ACD32]Hover one with your mouse[/color] to read what it does and what it costs.
+
+"
+				+ "To play one: [color=#9ACD32]click the card[/color], or press its number — "
+				+ "[color=#FFD700]1[/color], [color=#FFD700]2[/color], [color=#FFD700]3[/color]. "
+				+ "The same names sit on your action bar under those numbers.
+
+"
+				+ "If you cannot afford any of them, [color=#FFAA66]Space[/color] is a plain attack that "
+				+ "costs nothing and always works.
+
+"
+				+ "[color=#FFAA00]Flee is on W. Dying out here is permanent.[/color]")
+			ring = ["cards", "action_bar"]
 		_:
 			return
 	_send_hint(peer_id, title, body, "", ring)
@@ -43232,13 +43273,28 @@ func _make_guide_character(player_level: int):
 	Its HP is generous because it is deliberately taking the hits that would have killed the
 	player; its damage is ordinary."""
 	var g = Character.new()
-	g.initialize(GUIDE_NAME, "Warrior", "Human")
+	# "Fighter", not "Warrior". Warrior is the PATH; the CLASS is Fighter. Built as a "Warrior"
+	# he fell through to the empty class passive (the one literally named "None") and resolved no
+	# battler sprite at all - which is why his party card had no face. His hit points were always
+	# fine, because those come from the path and the race, which is why nothing looked broken.
+	# Found by CALLING pick_expanded and getting an empty string back.
+	g.initialize(GUIDE_NAME, "Fighter", "Human")
 	g.level = maxi(3, player_level + 2)
 	g.strength = 12 + g.level
 	g.constitution = 14 + g.level
 	g.dexterity = 8
 	g.current_hp = g.get_total_max_hp()
 	g.current_stamina = g.get_total_max_stamina()
+	# He needs a FACE. The party card renders from battler_id, which is assigned during character
+	# creation - a path the guide never walks - so he arrived in every fight as a blank card.
+	# Seeded off his name rather than randomized: the Warden should look like the Warden in every
+	# fight, for every player, not like a different person each time.
+	# Pinned, not rolled: "m1_1" is the very sprite his overworld tile is cut from
+	# (tools/bake_overworld_tiles.py::bake_warden reads overworld_pad32/m1_1/down_stand.png), so
+	# the man on the map and the man on the party card are the same man. It is in the Fighter
+	# pool, so it is a legal id.
+	g.battler_id = "m1_1"
+	g.appearance_color = "#9ACD32"
 	return g
 
 
@@ -43517,6 +43573,13 @@ func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	for pid in c.get("members", []):
 		var st = c.member_states.get(pid, {})
 		var ch = characters.get(pid, null)
+		# NPC members (the Warden) are not in the server's peer->Character map - they only exist
+		# inside the fight. Resolving from the combat's OWN map is what gives them a name, a
+		# class and a sprite instead of a bare "?". Owner 2026-09-14: *"still no sprite for the
+		# Warden in party combat, just a ? mark."* Fixed HERE, at the lookup, rather than by
+		# special-casing each of the eight fields below.
+		if ch == null:
+			ch = c.get("characters", {}).get(pid, null)
 		# Companion sub-dict for the party card (art + name + HP). Combat HP falls
 		# back to the computed max when the fight isn't tracking it separately.
 		var _comp_out := {}
@@ -43712,7 +43775,15 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 	# flocks should happen in party play on the overworld but not in dungeons as those encounters
 	# are visible on the map."*
 	var _flock_incoming: bool = false
-	if victory and _dctx.is_empty() and not _survivors.is_empty() and characters.has(leader_id):
+	# ...and NEVER out of the Warden's tutorial fight. Owner 2026-09-14 asked directly: *"I
+	# defeated the wolf (does anything prevent this from being a flock encounter?)"* Nothing did.
+	# A brand-new character's FIRST fight could chain straight into a second one, on a gearless
+	# level 1, under permadeath - and the escort exists precisely because `-- newplayer` puts
+	# that character at a 76% win rate. Being made to fight twice is the one thing the tutorial
+	# must not do. Keyed on the guide being IN the fight rather than on quest state, so it holds
+	# for every path that puts him there.
+	var _guide_here: bool = GUIDE_PEER_ID in members
+	if victory and _dctx.is_empty() and not _survivors.is_empty() 			and not _guide_here and characters.has(leader_id):
 		var _fc: int = combat_mgr.compute_flock_chance(monster, characters[leader_id].level)
 		_flock_incoming = _fc > 0 and (randi() % 100) < _fc
 	if victory:

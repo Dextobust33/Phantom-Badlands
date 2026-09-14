@@ -4437,6 +4437,14 @@ func _on_hand_cell_input(event: InputEvent, index: int) -> void:
 		emit_signal("card_played", card_name)
 
 
+func get_hand_strip() -> Control:
+	"""The row of ability cards, so the tutorial spotlight can ring it.
+
+	Owner 2026-09-14: *"Attack is flashing and bordered but not the cards."* - the combat lesson
+	talks about cards and the only thing lit up was the plain attack button."""
+	return _hand_strip
+
+
 func update_hand(hand: Array, deck_count: int, discard_count: int) -> void:
 	"""Replace current hand state and rerender the strip. `hand` is an array
 	of canonical ability names (e.g. 'magic_bolt'). Cell metadata reads

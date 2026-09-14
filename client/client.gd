@@ -42864,6 +42864,12 @@ func _resolve_ui_target(key: String) -> Control:
 			return action_bar
 		"shortcuts":
 			return shortcut_buttons_container
+		"cards", "hand":
+			# The row of ability cards in a fight. Owner 2026-09-14: *"Attack is flashing and
+			# bordered but not the cards."*
+			if combat_scene_panel and combat_scene_panel.has_method("get_hand_strip"):
+				return combat_scene_panel.get_hand_strip()
+			return null
 	# Anything else is a shortcut button, which is named for its action id.
 	if shortcut_buttons_container and is_instance_valid(shortcut_buttons_container):
 		var b = shortcut_buttons_container.get_node_or_null(NodePath(key))
