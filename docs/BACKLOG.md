@@ -578,6 +578,35 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
+### ⚑ SCROLLBACK — players cannot see what they just missed (owner 2026-09-14)
+
+Owner: *"a chatlog or last menu history. Players often miss what was on the screen and don't have
+anyway to go back to see what they missed on prior screens."*
+
+**This is bigger than a convenience, and it retires a whole class of bug.** Measured:
+`game_output.clear()` is called from **229 places**, against 3485 `display_game()` calls. Every
+one of those 229 is a chance for something the player needed to read to vanish before they read
+it — which is exactly why CLAUDE.md carries the **Player-Visible Output Rule** and its five-step
+mandatory checklist (set a pending flag, add an action-bar state, add a bypass in the message
+handlers, add an exit handler, add to the item-selection exclusion list). That checklist exists
+because there is nowhere to look afterwards.
+
+A scrollback buffer makes the checklist unnecessary for anything whose only requirement is "the
+player must be able to read this". It does not replace it for things that must be read *at the
+time* (a confirm prompt, a targeting step) — but those are a small minority of the 229.
+
+Notes for whoever picks it up:
+
+- The obvious shape is a ring buffer fed by `display_game()` itself, so nothing has to opt in and
+  the 229 clears become harmless. Anything that has to opt in will be forgotten by the next
+  feature, which is the failure mode the checklist already has.
+- Combat already has a partial precedent: `_round_message_buffer` collects a round's lines for the
+  condensed log. That is one surface doing locally what this would do globally.
+- Chat is a separate panel (`chat_output`) and already persists; this is about the GAME output
+  panel, which is the one that gets wiped.
+- Worth deciding whether it is scrollback (scroll up in place) or a history panel (a shortcut that
+  opens the last N screens). The owner said "chatlog or last menu history", which leaves it open.
+
 ### ⚑ THE SANCTUARY MENUS ARE DATED — owner 2026-09-14
 
 Owner: *"We will need to revamp all of the sanctuary menus and systems at some point. Those
