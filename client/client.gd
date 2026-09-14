@@ -46636,7 +46636,16 @@ func _overworld_display(payload: Dictionary) -> String:
 	# The Warden, walking with you. He is placed BEFORE companions and after you, so he cannot
 	# be displaced by a companion and cannot displace a person.
 	if _escort_kind == "warden":
-		var _eo := _escort_offset(_local_map_facing)
+		# BEHIND you by preference, because behind is what reads as following - owner's actual
+		# words were *"He still doesn't follow you on the map or lead the way."* A figure level
+		# with you reads as one standing next to you.
+		#
+		# Behind is normally the companion's cell, but a character being escorted does not have
+		# one: the Warden walks stages 1-2 and the egg is not paid until the end of stage 3. The
+		# flank is the fallback for the case that is left - a veteran who rolled a new character
+		# and withdrew a companion from the kennel.
+		var _has_comp: bool = (character_data.get("active_companion", {}) is Dictionary) 			and not (character_data.get("active_companion", {}) as Dictionary).is_empty()
+		var _eo := _escort_offset(_local_map_facing) if _has_comp 			else _trail_offset(_local_map_facing)
 		var _ex: int = mid + _eo.x
 		var _ey: int = mid + _eo.y
 		var _ek := "%d,%d" % [_ex, _ey]

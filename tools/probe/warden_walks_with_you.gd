@@ -54,7 +54,25 @@ func _init() -> void:
 	ck(src.contains('_escort_kind = String(message.get("escort", ""))'), "and the client reads it")
 
 	print("")
-	print("===== HE NEVER STANDS IN THE COMPANION'S CELL =====")
+	print("===== HE WALKS BEHIND YOU, WHICH IS WHAT 'FOLLOWING' LOOKS LIKE =====")
+	# A figure level with you reads as one STANDING BESIDE you. The owner asked for a follower.
+	# Behind is normally the companion's square - but a character being escorted has no
+	# companion: the Warden walks stages 1 and 2, and the egg is not paid until the end of
+	# stage 3. So for every player this actually happens to, the cell behind is empty.
+	ck(src.contains("else _trail_offset(_local_map_facing)"),
+		"with no companion he takes the cell BEHIND you, like a follower")
+	ck(src.contains("_escort_offset(_local_map_facing) if _has_comp"),
+		"and only steps to the flank when a companion already has that square")
+	var qsrc := FileAccess.get_file_as_string("res://shared/quest_database.gd")
+	var i3 := qsrc.find("\"wardens_watch_3\"")
+	var q3 := qsrc.substr(i3, 1400) if i3 != -1 else ""
+	ck(q3.contains("companion egg"),
+		"  (the egg really is paid at stage 3, after the escort has gone)")
+	ck(FileAccess.get_file_as_string("res://server/server.gd").contains("return st == 1 or st == 2"),
+		"  (and the escort really is stages 1-2 only)")
+
+	print("")
+	print("===== AND WHEN THERE IS A COMPANION, THEY DO NOT SHARE A SQUARE =====")
 	# This is the one that would have shipped silently: the composer skips a cell that already
 	# holds a figure, so a collision does not error, it just deletes somebody.
 	var trail := _offsets("_trail_offset")

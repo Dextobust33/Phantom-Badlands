@@ -5478,6 +5478,10 @@ func handle_move(peer_id: int, message: Dictionary):
 	# so it must not break a trade, cancel anything, or have any other consequence.
 	if new_pos != Vector2i(old_x, old_y) and not _confirm_dangerous_step(peer_id, character, new_pos.x, new_pos.y):
 		return
+	# ...and the Warden will not let a new character walk out with the blade still in the pack.
+	# Same contract as the line above: a refused step is a step that did not happen.
+	if new_pos != Vector2i(old_x, old_y) and not _warden_lets_you_go(peer_id, character, new_pos.x, new_pos.y):
+		return
 
 	# Cancel any active trade (moving breaks trade)
 	if active_trades.has(peer_id):
@@ -44505,6 +44509,52 @@ func _danger_band(ratio: float) -> int:
 	if ratio >= DANGER_STEP_RATIO:
 		return 1
 	return 0
+
+
+func _warden_lets_you_go(peer_id: int, character, nx: int, ny: int) -> bool:
+	"""Whether the player may walk OUT of the post carrying an unequipped blade.
+
+	Owner 2026-09-14: *"After bumping into him there is nothing to enforce the player having to
+	put on the sword, they can just walk off."* Right - he hands it over, says to put it on, and
+	then the only thing between a level 1 and their first fight is a door.
+
+	Shaped like `_confirm_dangerous_step`: one refused step, no side effects, and it cannot
+	strand anybody. The block only exists while the REMEDY is in their pack - if the weapon is
+	not there to equip, nothing is held back, so a player who sold or lost it is never stuck
+	behind a door waiting for an item they do not have."""
+	if character == null or world_system == null:
+		return true
+	if _wardens_watch_stage(character) != 1:
+		return true
+	var cur = character.equipped.get("weapon", null)
+	var armed: bool = cur != null and (not (cur is Dictionary) or not (cur as Dictionary).is_empty())
+	if armed:
+		return true
+	# Is a weapon actually sitting in the pack?
+	var have_blade := false
+	for it in character.inventory:
+		if it is Dictionary and Character.get_item_slot_from_type(String(it.get("type", ""))) == "weapon":
+			have_blade = true
+			break
+	if not have_blade:
+		return true
+	# Only at the threshold: inside the post now, outside after this step.
+	if not world_system._is_npc_post_interior(int(character.x), int(character.y)):
+		return true
+	if world_system._is_npc_post_interior(nx, ny):
+		return true
+	_send_hint(peer_id,
+		"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
+		("He puts an arm across the gateway.
+
+"
+			+ "\"That blade is in your pack. In your PACK. It will not swing itself.\"
+
+"
+			+ "Open it — the [color=#FFD700]Inventory[/color] button on your action bar, or press "
+			+ "[color=#9ACD32]Q[/color] — pick the weapon and equip it. Then we go."),
+		"", ["action_1", "inventory_shortcut"])
+	return false
 
 
 func _confirm_dangerous_step(peer_id: int, character, nx: int, ny: int) -> bool:

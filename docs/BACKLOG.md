@@ -597,6 +597,14 @@ Not to be worked immediately, but do not lose it. Notes for whoever picks it up:
 
 ### ⚑ ONBOARDING ROUND 2 — owner test 2026-09-14, second pass
 
+- [ ] **The Warden's handout is named like endgame loot.** `get_starter_kit_item("weapon")` runs
+      the full affix generator, so the first item a new player is ever given came out as
+      *"Blurred Rusty Weapon of the Elder Lich"*. A tutorial handout should read as a plain
+      starter weapon. NOT a one-line fix: `_generate_item` has no affix-suppression flag, and
+      renaming without changing the roll would put a name on the item that its stats contradict
+      — the affixes carry real bonuses. Needs a proper "plain base item" path in drop_tables.
+
+
 Fixed this pass (`bdd7060c`, `adef56ab`, and the party-kill/import commit):
 - [x] **Party kills never credited a kill quest.** `_end_party_combat_all` never called
       `check_kill_quest_progress` / `record_monster_kill` / the bestiary. Affected ALL co-op, not
@@ -623,8 +631,10 @@ Still open from that same report, in the order they block a new player:
       all of their actions, they should just have a way to pick something different if they change
       their mind while their party members are still deciding."* Replace the confirm step with a
       change/cancel affordance while the round is still open.
-- [ ] **Nothing makes the player equip the sword** before walking off.
-- [ ] **The "+ is the door" line is wrong** — the overworld is all sprites now, there is no `+`.
+- [x] **Nothing makes the player equip the sword** — the Warden now refuses the step out of
+      the post while the blade is still in the pack, and only while it IS in the pack, so nobody
+      can be stranded behind a door waiting for an item they do not have.
+- [x] **The "+ is the door" line is wrong** — the overworld is all sprites now, there is no `+`.
 - [ ] **"Stand on something that lights up"** reads as "stand on a lamp" in the Sanctuary.
 - [ ] **Player sprite draws water under it on a cleared tile** — `shot_295941`.
 - [ ] **After the victory screen there is no next step** — `shot_645113`.
