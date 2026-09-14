@@ -2701,6 +2701,40 @@ func set_clan_description(account_id: String, text: String) -> Dictionary:
 	save_clans()
 	return {"success": true, "description": trimmed}
 
+func tutorials_enabled(account_id: String) -> bool:
+	"""Does this account still want the teaching pop-ups? Defaults to YES.
+
+	ACCOUNT level, deliberately. Under permadeath a player rolls character after character, and
+	being taught the numpad again on every one of them is how a tutorial becomes an irritation
+	rather than a help. Owner 2026-09-14: *"with an option to turn it off for the future of their
+	account."*"""
+	if not houses_data.has("houses") or not houses_data["houses"].has(account_id):
+		return true
+	return bool(houses_data["houses"][account_id].get("tutorials_enabled", true))
+
+
+func set_tutorials_enabled(account_id: String, enabled: bool) -> void:
+	if not houses_data.has("houses") or not houses_data["houses"].has(account_id):
+		return
+	houses_data["houses"][account_id]["tutorials_enabled"] = enabled
+	save_houses()
+
+
+func mark_account_flag(account_id: String, flag: String) -> bool:
+	"""Flip a one-shot ACCOUNT flag. Returns true if it was newly set, i.e. the thing should fire.
+
+	One function instead of a `mark_x_seen` per flag - the existing pair proved that shape does
+	not scale, and a one-shot that nobody can add to without writing a function is a one-shot
+	that gets skipped."""
+	if not houses_data.has("houses") or not houses_data["houses"].has(account_id):
+		return false
+	if bool(houses_data["houses"][account_id].get(flag, false)):
+		return false
+	houses_data["houses"][account_id][flag] = true
+	save_houses()
+	return true
+
+
 func mark_sanctuary_hint_seen(account_id: String) -> bool:
 	"""Audit #3 Slice 6 — flip the account-level flag so the Sanctuary
 	tutorial overlay only fires once. Returns true if the flag was newly

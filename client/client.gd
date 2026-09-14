@@ -2785,6 +2785,11 @@ func _ready():
 	# marked the seen flag at send time).
 	tutorial_hint_panel = TutorialHintPanelScript.new()
 	add_child(tutorial_hint_panel)
+	# Turning the lessons off is an ACCOUNT decision, not a per-character one: a player who
+	# already knows the game should not be taught it again every time they roll a character.
+	tutorial_hint_panel.opted_out.connect(func():
+		send_to_server({"type": "set_tutorials", "enabled": false})
+		display_game("[color=#808080]Tutorial pop-ups are off for this account. Turn them back on in Settings.[/color]"))
 	tutorial_hint_panel.dismissed.connect(_drain_new_player_modals)
 
 	# Phase 2 — guided spotlight tour for brand-new players.
@@ -24829,7 +24834,8 @@ func handle_server_message(message: Dictionary):
 			# the numpad popup, and never pop over combat (drained when it ends).
 			_enqueue_tutorial_hint(
 				String(message.get("title", "Tip")),
-				String(message.get("body", ""))
+				String(message.get("body", "")),
+				String(message.get("opt_out", ""))
 			)
 
 		"companion_stable_open":
@@ -42803,8 +42809,8 @@ func _on_numpad_help_dismissed() -> void:
 	_save_keybinds()
 	_drain_new_player_modals()
 
-func _enqueue_tutorial_hint(title: String, body: String) -> void:
-	_hint_queue.append({"title": title, "body": body})
+func _enqueue_tutorial_hint(title: String, body: String, opt_out: String = "") -> void:
+	_hint_queue.append({"title": title, "body": body, "opt_out": opt_out})
 	_drain_new_player_modals()
 
 func _drain_new_player_modals() -> void:
@@ -42824,7 +42830,8 @@ func _drain_new_player_modals() -> void:
 		_awaiting_welcome_hint = false  # the Welcome hint has arrived; show it first
 		var h = _hint_queue.pop_front()
 		if tutorial_hint_panel:
-			tutorial_hint_panel.show_hint(String(h.get("title", "Tip")), String(h.get("body", "")))
+			tutorial_hint_panel.show_hint(String(h.get("title", "Tip")), String(h.get("body", "")),
+			String(h.get("opt_out", "")))
 		return
 	# Hold the numpad/tour until the Welcome hint has had its turn.
 	if _awaiting_welcome_hint:

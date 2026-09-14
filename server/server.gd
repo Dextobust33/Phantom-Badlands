@@ -2350,6 +2350,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# House (Sanctuary) system handlers
 		"house_request":
 			handle_house_request(peer_id)
+		"set_tutorials":
+			handle_set_tutorials(peer_id, message)
 		"bestiary_request":
 			handle_bestiary_request(peer_id)
 		"dungeon_atlas_request":
@@ -10541,17 +10543,15 @@ func _handle_companion_stable_station(peer_id: int, character) -> void:
 	if not character.seen_companion_stable_hint:
 		character.seen_companion_stable_hint = true
 		save_character(peer_id)
-		send_to_peer(peer_id, {
-			"type": "tutorial_hint",
-			"title": "[color=#FFD700]Companion Stable[/color]",
-			"body": (
+		_send_hint(peer_id, "[color=#FFD700]Companion Stable[/color]",
+			(
 				"You have found a [color=#FFD700]Companion Stable[/color] — a living link to your Sanctuary's companion storage.\n\n"
 				+ "[color=#FFD700]Manage tab:[/color] Deposit / Withdraw / Return to Slot.\n"
 				+ "[color=#FFD700]Fuse tab:[/color] Same-type fusion (3 companions of the same type + rank → 1 of the next rank). Inputs can come from the kennel or registered slots. If any input is registered, the output is auto-registered.\n\n"
 				+ "Deposit and registration are independent — depositing never changes a companion's registered status.\n\n"
 				+ "Companion Stables appear at [color=#87CEEB]Outer+ trading posts[/color] (Outer, Extreme, World’s Edge)."
 			),
-		})
+		)
 
 func handle_companion_stable_checkout(peer_id: int, message: Dictionary) -> void:
 	"""v0.9.493 — Check out a registered companion as the player's active.
@@ -14136,7 +14136,7 @@ func _maybe_send_progression_hint(peer_id: int) -> void:
 		+ "just above Players Online) to spend them — the same screen shows every "
 		+ "progression track you're advancing (XP, jobs, Sanctuary, Bestiary, Compass, Atlas)."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _maybe_send_sanctuary_hint(peer_id: int) -> void:
@@ -14172,7 +14172,7 @@ func _maybe_send_sanctuary_hint(peer_id: int) -> void:
 		+ "• [color=#FFAA70]Economy[/color] — starting Valor, XP & gathering bonuses.\n\n"
 		+ "Each tab shows an [color=#88FF88]✓ AFFORDABLE[/color] badge on rows you can buy right now."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 
 func _maybe_send_quest_board_hint(peer_id: int) -> void:
 	if _hint_deferred_for_newbie(peer_id): return
@@ -14196,7 +14196,7 @@ func _maybe_send_quest_board_hint(peer_id: int) -> void:
 		+ "pointing at the threatening dungeon — clear it to lift the post's "
 		+ "+50% service / +20% market markup and earn the tier-scaled reward."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _maybe_send_dungeon_hint(peer_id: int) -> void:
@@ -14218,7 +14218,7 @@ func _maybe_send_dungeon_hint(peer_id: int) -> void:
 		+ "themed [color=#CCAAFF]theme tiles[/color] add environmental hazards/buffs, "
 		+ "and the [color=#FF7F50]Combat Loot Scratch-Off[/color] adds bonus rewards each fight."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _check_apex_frontier_entry(peer_id: int, x: int, y: int) -> bool:
@@ -14278,7 +14278,7 @@ func _maybe_send_apex_frontier_hint(peer_id: int) -> void:
 		+ "Want to PvP without the apex risk? Use [color=#FFD700]/duel <player>[/color] anywhere — both players must consent and agree on stakes (which can be nothing, valor only, or full apex stakes).\n\n"
 		+ "Apex content is the first beat of endgame frontier rewards — future updates will stack named zones, unique drops, and tier S encounter pools on top of this geometric definition."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _maybe_send_signpost_hint(peer_id: int) -> void:
@@ -14303,7 +14303,7 @@ func _maybe_send_signpost_hint(peer_id: int) -> void:
 		+ "Signpost text persists across server restarts. Demolishing the signpost "
 		+ "clears its text."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _maybe_send_crafting_hint(peer_id: int) -> void:
@@ -14325,7 +14325,7 @@ func _maybe_send_crafting_hint(peer_id: int) -> void:
 		+ "Pick ONE specialty per character (Blacksmith / Alchemy / Enchant / Scribe / "
 		+ "Construction). Use the bench's recipes to gain skill XP."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _send_character_update_immediate(peer_id: int, force_full: bool):
@@ -15487,6 +15487,62 @@ func _send_house_update(peer_id: int) -> void:
 		"headstart_max_rank": persistence.MASTERY_HEADSTART_MAX_RANK,
 	})
 
+func handle_set_tutorials(peer_id: int, message: Dictionary) -> void:
+	"""Turn the teaching pop-ups off (or back on) for this ACCOUNT."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var account_id := String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	persistence.set_tutorials_enabled(account_id, bool(message.get("enabled", true)))
+
+
+func _send_hint(peer_id: int, title: String, body: String, opt_out: String = "") -> void:
+	"""Every teaching pop-up goes through here, so ONE check decides whether they are wanted.
+
+	Before this each hint sent itself, which means turning them off would have meant finding all
+	of them - and the next one added would have missed the switch. The character-level `seen_*`
+	flags still gate WHICH hint fires; this gates whether any of them do."""
+	if not peers.has(peer_id):
+		return
+	var account_id := String(peers[peer_id].get("account_id", ""))
+	if account_id != "" and not persistence.tutorials_enabled(account_id):
+		return
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body, "opt_out": opt_out})
+
+
+func _maybe_send_sanctuary_intro(peer_id: int) -> void:
+	"""The FIRST thing a new account ever sees, and the first thing it needs: where am I, and how
+	do I move?
+
+	Owner 2026-09-14, after making a fresh account: *"When the player logs into their Sanctuary
+	they should get the movement tutorial popup."* The existing Sanctuary hint waits for baddie
+	points, which only exist after your first death - so a brand-new account got nothing at all
+	and was left standing in a room it had not been told it was in.
+
+	Movement is the NUMPAD, arrow keys second. That order matters: the numpad is the one that
+	does diagonals, and telling a new player about arrows first teaches them the lesser control."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var account_id := String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	if not persistence.mark_account_flag(account_id, "seen_sanctuary_intro"):
+		return
+	_send_hint(peer_id,
+		"[color=#FFD700]Your Sanctuary[/color]",
+		("This room is yours, and it is the only thing that survives when a character dies.
+
+"
+		+ "[color=#9ACD32]Move with the NUMPAD[/color] — 8 up, 2 down, 4 left, 6 right, and the "
+		+ "corners for diagonals. Arrow keys work too.
+
+"
+		+ "Walk onto something to use it. That is the whole control scheme, out here and in the "
+		+ "world."),
+		"Don't show me tips  (account)")
+
+
 func handle_house_request(peer_id: int):
 	"""Send house data to authenticated user"""
 	if not peers.has(peer_id) or not peers[peer_id].authenticated:
@@ -15507,6 +15563,9 @@ func handle_house_request(peer_id: int):
 		"headstart_costs": persistence.MASTERY_HEADSTART_BP_PER_RANK,
 		"headstart_max_rank": persistence.MASTERY_HEADSTART_MAX_RANK
 	})
+	# The first thing a NEW account sees: where it is and how to move. Fires before the
+	# upgrade hint below, which waits for baddie points and so never fires for a new player.
+	_maybe_send_sanctuary_intro(peer_id)
 	# Audit #3 Slice 6 — first Sanctuary open (with BP to spend) teaches the
 	# upgrade screen via the modal overlay.
 	_maybe_send_sanctuary_hint(peer_id)
@@ -16877,7 +16936,7 @@ func trigger_trading_post_encounter(peer_id: int):
 			+ ("[color=#FF2020]⚠⚠ This post is SEVERELY THREATENED — %d Tier-2+ dungeons share the corridor. Markups and bubble erosion stack harder.[/color]\n\n" % _t_count) if _t_severe else ""
 			+ "[color=#888888]This message only shows the first time you enter a threatened post.[/color]"
 		)
-		send_to_peer(peer_id, {"type": "tutorial_hint", "title": _hint_title, "body": _hint_body})
+		_send_hint(peer_id, _hint_title, _hint_body)
 		save_character(peer_id)
 
 	send_to_peer(peer_id, {
@@ -17413,7 +17472,7 @@ func _maybe_send_market_hint(peer_id: int) -> void:
 		+ "supply per post per category — restocking a flooded category becomes cheaper for the buyer.\n\n"
 		+ "[color=#9ACD32]Curiosity Trader[/color] (exotic posts) rotates 4 rare items daily."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
@@ -17446,7 +17505,7 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 		+ "[color=#FFD700]── Fusion ──[/color]\n"
 		+ "At a [color=#FF80FF]Companion Stable[/color] (Outer+ NPC posts, or build one) you can fuse companions: Same Type (3→1 next rank), Mixed A9 (8 A8s → 1 A9), Hybrid (2 different types + Hybrid Catalyst), or Tier Ascend (3 same type + Ascension Catalyst → tier+1)."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _maybe_send_gather_hint(peer_id: int, gather_type: String) -> void:
@@ -17479,7 +17538,7 @@ func _maybe_send_gather_hint(peer_id: int, gather_type: String) -> void:
 		+ "  • Nodes are tiered by distance from the origin. Further out = better finds.\n\n"
 		+ "Materials feed Crafting, Salvage Essence and Sanctuary projects."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _maybe_send_equip_hint(peer_id: int, item: Dictionary) -> void:
@@ -17511,7 +17570,7 @@ func _maybe_send_equip_hint(peer_id: int, item: Dictionary) -> void:
 		+ "  • Don't sell low-tier gear — [color=#88FF88]Salvage[/color] it for [color=#FFD700]Salvage Essence[/color] used to upgrade tools and craft consumables.\n\n"
 		+ "[color=#FFD700]Home Stone (Equipment)[/color] (gear tier 5+ loot) lets one equipped piece survive permadeath by stashing it in your Sanctuary storage."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _maybe_send_chain_hint(peer_id: int, quest: Dictionary) -> void:
@@ -17540,7 +17599,7 @@ func _maybe_send_chain_hint(peer_id: int, quest: Dictionary) -> void:
 		+ "[color=#FFD700]── Repeatable starter chains ──[/color]\n"
 		+ "Chain tiers 1, 2 and 3 are [color=#9ACD32]immediately repeatable[/color] — they reappear on the quest board after completion, so you can run them as many times as you like. Great for valor / egg / title farming. Higher chain tiers (4+) stay one-shot."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func handle_market_browse(peer_id: int, message: Dictionary):
@@ -33996,7 +34055,7 @@ func _maybe_send_clan_post_hint(peer_id: int, x: int, y: int) -> void:
 		+ "Type [color=#9ACD32]/clanposts[/color] anywhere to list every post shared with your clan (sorted by freshness — abandoned shared posts float to the bottom).\n\n"
 		+ "Only the owner can revert the post to private."
 	)
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 func _find_post_at_current_tile(x: int, y: int) -> Dictionary:
@@ -42936,7 +42995,7 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				+ "[color=#FFAA00]You can always flee. Dying here is permanent.[/color]")
 		_:
 			return
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
 

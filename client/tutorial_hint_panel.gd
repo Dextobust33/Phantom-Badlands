@@ -9,11 +9,15 @@ class_name TutorialHintPanel
 # Player dismisses via the "Got it" button or Esc.
 
 signal dismissed
+## Emitted when the player asks not to be shown these again. Account-level, not per character:
+## someone who knows the game should not be taught it once per character they roll.
+signal opted_out
 
 var _root_panel: PanelContainer
 var _title_label: RichTextLabel
 var _body_label: RichTextLabel
 var _dismiss_button: Button
+var _opt_out_button: Button
 
 
 func _ready() -> void:
@@ -28,7 +32,7 @@ func _ready() -> void:
 	visible = false
 
 
-func show_hint(title: String, body: String) -> void:
+func show_hint(title: String, body: String, opt_out_text: String = "") -> void:
 	if _title_label:
 		_title_label.clear()
 		_title_label.append_text(title)
@@ -40,6 +44,13 @@ func show_hint(title: String, body: String) -> void:
 	# message burst as the first-time tutorial hint).
 	move_to_front()
 	visible = true
+	# The opt-out is offered only where it is asked for - the very first hint an account
+	# ever sees. Putting it on every hint turns every lesson into a chance to switch the
+	# lessons off by accident.
+	if _opt_out_button:
+		_opt_out_button.visible = opt_out_text != ""
+		if opt_out_text != "":
+			_opt_out_button.text = opt_out_text
 	if _dismiss_button:
 		_dismiss_button.grab_focus()
 
@@ -124,7 +135,20 @@ func _build_layout() -> void:
 	_dismiss_button.pressed.connect(_on_dismiss)
 	btn_row.add_child(_dismiss_button)
 
+	_opt_out_button = Button.new()
+	_opt_out_button.custom_minimum_size = Vector2(220, 32)
+	_opt_out_button.focus_mode = Control.FOCUS_ALL
+	_opt_out_button.visible = false
+	_opt_out_button.pressed.connect(_on_opt_out)
+	btn_row.add_child(_opt_out_button)
+
 
 func _on_dismiss() -> void:
 	visible = false
+	dismissed.emit()
+
+
+func _on_opt_out() -> void:
+	visible = false
+	opted_out.emit()
 	dismissed.emit()
