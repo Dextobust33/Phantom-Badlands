@@ -37459,6 +37459,7 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 		# for the legacy health-bar label; the scene just never received them.
 		"monster_is_apex": current_enemy_is_apex_species,
 		"monster_is_elite": current_enemy_is_elite,
+		"monster_traits_bbcode": CombatManager.combat_trait_tags(current_enemy_abilities),
 	})
 
 func _update_combat_scene_hp() -> void:

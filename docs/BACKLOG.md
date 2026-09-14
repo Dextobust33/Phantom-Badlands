@@ -457,6 +457,28 @@ Asked because the arc had run out of defects and into design. All four answered.
      them: auto-resolve grants FULL rewards, not token ones; road travel costs time and
      resources rather than being free. -->
 
+- [ ] **THE MONSTER TRAIT TABLE IS MISSING MOST OF THE ABILITIES IT IS SUPPOSED TO COVER.**
+      Found 2026-09-13 while fixing the Glass Cannon report. `MONSTER_TRAITS` in
+      `combat_manager.gd` carries **20 entries against 95 ability constants**. Its own header says
+      it exists because "a list you have to remember to add to is a list that will be incomplete"
+      - and it is, in the same way, for the same reason.
+      Most of the 75 missing are `boss_*` signatures, which are announced in combat and are
+      arguably fine to leave out. But roughly twenty are ordinary combat abilities a player would
+      want to see before choosing an action, and several are outright lethal:
+        * **ambusher** - the first attack is a guaranteed crit
+        * **multi_strike**, **berserker**, **enrage** - all damage multipliers
+        * **armored**, **ethereal**, **thorns**, **damage_reflect**
+        * **mana_drain / energy_drain / stamina_drain** - resource denial, which decides whether
+          you can cast at all
+        * **curse**, **death_curse**, **weakness**, **blind**, **disarm**, **slow_aura**, **bleed**
+        * **summoner** (forces a follow-up fight), **pack_leader** (raises flock chance)
+      The client's own legacy list (`client.gd` ~37520) covers berserker / enrage / multi_strike /
+      ambusher, which the shared table does NOT - so the two disagree and the encounter text is
+      the poorer of the two. That is the exact drift the table was built to end.
+      **Descriptions must be READ OFF the behaviour, not written from memory** - the table's
+      header says so and the existing entries were done that way. That is what makes this a real
+      piece of work rather than twenty lines of typing.
+
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 
 *"We've got some live players now so we want to limit our releases."* A release restarts the

@@ -11399,13 +11399,13 @@ const MONSTER_TRAITS := {
 	"regeneration":   {"label": "Regenerates",    "color": "#00FF00", "desc": "Heals 10% of its own maximum HP every turn."},
 	"poison":         {"label": "Venomous",       "color": "#FF00FF", "desc": "40% chance to poison you on hit. Wisdom reduces it, up to 50% resistance."},
 	"life_steal":     {"label": "Life Stealer",   "color": "#FF4444", "desc": "Heals itself for half the damage it deals you."},
-	"gem_bearer":     {"label": "Gem Bearer",     "color": "#00FFFF", "desc": "Drops Monster Gems, more of them the higher its level."},
-	"wish_granter":   {"label": "Wish Granter",   "color": "#FFD700", "desc": "10% chance to offer you a wish when you kill it."},
-	"weapon_master":  {"label": "* WEAPON MASTER *", "color": "#FF8000", "desc": "50% chance to drop a weapon."},
-	"shield_bearer":  {"label": "* SHIELD GUARDIAN *", "color": "#00FFFF", "desc": "50% chance to drop a shield."},
-	"warrior_hoarder": {"label": "* WARRIOR HOARDER *", "color": "#FF6600", "desc": "Drops WARRIOR gear — 35%, or guaranteed if a Scroll of Finding marked it."},
-	"arcane_hoarder": {"label": "* ARCANE HOARDER *", "color": "#9F70FF", "desc": "Drops MAGE gear — 35%, or guaranteed if a Scroll of Finding marked it."},
-	"cunning_prey":   {"label": "* CUNNING PREY *", "color": "#1EFF00", "desc": "Drops TRICKSTER gear — 35%, or guaranteed if a Scroll of Finding marked it."},
+	"gem_bearer":     {"label": "Gem Bearer",     "color": "#00FFFF", "desc": "Drops Monster Gems, more of them the higher its level.", "loot": true},
+	"wish_granter":   {"label": "Wish Granter",   "color": "#FFD700", "desc": "10% chance to offer you a wish when you kill it.", "loot": true},
+	"weapon_master":  {"label": "* WEAPON MASTER *", "color": "#FF8000", "desc": "50% chance to drop a weapon.", "loot": true},
+	"shield_bearer":  {"label": "* SHIELD GUARDIAN *", "color": "#00FFFF", "desc": "50% chance to drop a shield.", "loot": true},
+	"warrior_hoarder": {"label": "* WARRIOR HOARDER *", "color": "#FF6600", "desc": "Drops WARRIOR gear — 35%, or guaranteed if a Scroll of Finding marked it.", "loot": true},
+	"arcane_hoarder": {"label": "* ARCANE HOARDER *", "color": "#9F70FF", "desc": "Drops MAGE gear — 35%, or guaranteed if a Scroll of Finding marked it.", "loot": true},
+	"cunning_prey":   {"label": "* CUNNING PREY *", "color": "#1EFF00", "desc": "Drops TRICKSTER gear — 35%, or guaranteed if a Scroll of Finding marked it.", "loot": true},
 	"corrosive":      {"label": "! CORROSIVE !",  "color": "#FFFF00", "desc": "Can damage your equipment when it hits you."},
 	"sunder":         {"label": "! SUNDERING !",  "color": "#FF4444", "desc": "Damages your weapon or shield specifically."},
 	"charm":          {"label": "Enchanting",     "color": "#FF00FF", "desc": "Can turn you on yourself — you attack yourself for a turn."},
@@ -11416,6 +11416,39 @@ const MONSTER_TRAITS := {
 	"disguise":       {"label": "Deceptive",      "color": "#808080", "desc": "Looks like a weaker monster. Shows its true form after 2 rounds."},
 	"flee_attack":    {"label": "Skirmisher",     "color": "#FFA500", "desc": "Strikes once and runs. No loot if it escapes."},
 }
+
+static func combat_trait_tags(abilities: Array) -> String:
+	"""Hoverable chips for the traits that decide how DANGEROUS a fight is, for a surface that
+	stays on screen.
+
+	⛑ Owner 2026-09-13, after dying at leaderboard position 14: *"I just died ... to a silver
+	Titan I guess it had glass cannon, is that not something that should appear in its
+	traits/name? It was able to kill me in one hit."* It was in its traits - in
+	`generate_encounter_text`, which prints ONCE and then scrolls away behind the fight. Glass
+	Cannon is triple damage. A player has to be able to see that while deciding what to do, not
+	only in a line that has since left the screen.
+
+	This is the same lesson the Scroll of Finding already learned: its granted trait was promoted
+	into the monster NAME precisely because "the name persists through every combat log line
+	while a line at the start of the fight scrolls away".
+
+	Everything in MONSTER_TRAITS is shown EXCEPT entries flagged `loot`, rather than a hand-kept
+	list of dangerous ones. A trait added later is therefore visible by default - and given a
+	player has already died to an invisible one, defaulting to visible is the side to fail on."""
+	var out: Array = []
+	for _tk in MONSTER_TRAITS:
+		if not (_tk in abilities):
+			continue
+		var _tr: Dictionary = MONSTER_TRAITS[_tk]
+		if bool(_tr.get("loot", false)):
+			continue
+		out.append("[url=%s — %s][color=%s]%s[/color][/url]" % [
+			_tr.get("label", _tk), _tr.get("desc", ""),
+			_tr.get("color", "#FFFFFF"), _tr.get("label", _tk)])
+	if out.is_empty():
+		return ""
+	return " ".join(out)
+
 
 
 func _hoarder_drop_chance(monster: Dictionary) -> float:

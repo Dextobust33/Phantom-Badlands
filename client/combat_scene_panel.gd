@@ -177,6 +177,7 @@ var _monster_col: VBoxContainer
 var _monster_name_label: RichTextLabel
 var _monster_is_apex: bool = false
 var _monster_is_elite: bool = false
+var _monster_traits_bbcode: String = ""
 var _monster_art_label: RichTextLabel
 var _monster_hp_bar: ProgressBar
 # Co-op (#64 Slice 2) — right-side party column showing OTHER party members
@@ -5551,6 +5552,8 @@ func populate(payload: Dictionary) -> void:
 		_monster_is_apex = bool(payload["monster_is_apex"])
 	if payload.has("monster_is_elite"):
 		_monster_is_elite = bool(payload["monster_is_elite"])
+	if payload.has("monster_traits_bbcode"):
+		_monster_traits_bbcode = str(payload["monster_traits_bbcode"])
 	if payload.has("monster_art_bbcode"):
 		_monster_art_bbcode = str(payload["monster_art_bbcode"])
 	if payload.has("monster_hp_known"):
@@ -6705,7 +6708,13 @@ func _refresh_monster() -> void:
 		danger_tag += "[url=%s][color=#FFD700][b][ELITE][/b][/color][/url] " % _APEX_HELP_ELITE
 	if _monster_is_apex:
 		danger_tag += "[url=%s][color=#FF3B3B][b]☠ APEX[/b][/color][/url] " % _APEX_HELP_APEX
-	_monster_name_label.text = "%s[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]%s" % [danger_tag, _monster_name_color, _monster_name, _monster_level, niche_tag]
+	# Traits that decide how dangerous this is, ON the screen rather than only in the
+	# encounter line that has already scrolled away. A player died to an unseen Glass
+	# Cannon (triple damage) on 2026-09-13; see CombatManager.combat_trait_tags.
+	var traits_tag := ""
+	if _monster_traits_bbcode != "":
+		traits_tag = "  [font_size=10]%s[/font_size]" % _monster_traits_bbcode
+	_monster_name_label.text = "%s[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]%s%s" % [danger_tag, _monster_name_color, _monster_name, _monster_level, niche_tag, traits_tag]
 	# v0.9.650 — apply the per-element user scale by rewriting the font_size
 	# tag in the stored BBCode. Source BBCode looks like
 	# `[right][font_size=N]...[/font_size][/right]`; we multiply N by the
