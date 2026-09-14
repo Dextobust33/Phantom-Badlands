@@ -576,8 +576,11 @@ def main():
     os.makedirs(os.path.join(OUT, 'big'), exist_ok=True)
     cut = 0
     big_manifest = {}
+    baked_tiles = set()          # every tile name this run wrote real art for
     for key, spec in sorted(CUTS.items()):
         kind, name = key.split(':', 1)
+        if kind == 'tile':
+            baked_tiles.add(name)
         pack, row, col = spec[0], spec[1], spec[2]
         span = spec[3] if len(spec) > 3 else None
         # The tree comes from the TimeFantasy expansion, not a Raven pack - different sheet,
@@ -611,6 +614,7 @@ def main():
                 big_manifest[name] = [sr, sc]
         cut += 1
     bake_warden(os.path.join(OUT, 'tile', 'warden.png'))
+    baked_tiles.add('warden')
     cut += 1
     print('cut %d tiles from real art' % cut)
     with open(os.path.join(OUT, 'big', 'big_tiles.json'), 'w', encoding='utf-8') as f:
@@ -624,7 +628,12 @@ def main():
     # and nothing else. Giving either one a tile put something on top of every bare square in the
     # world. They are listed here so a future reader sees the decision rather than a gap.
     NO_TILE = ('empty', 'void')
-    have_art = set(k.split(':', 1)[1] for k in CUTS if k.startswith('tile:')) | set(NO_TILE)
+    # Derived from what this run actually WROTE, not from CUTS. The Warden is baked by his own
+    # function rather than cut from a pack, so he was absent from a CUTS-derived list and the
+    # glyph pass below cheerfully overwrote his sprite with a picture of the letter W - art that
+    # existed, imported and loaded, and was a letter. Any future hand-baked tile now protects
+    # itself by being in this set.
+    have_art = baked_tiles | set(NO_TILE)
     n = 0
     for name, (ch, col) in sorted(tiles.items()):
         if name in have_art:

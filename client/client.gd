@@ -1668,6 +1668,7 @@ var _loot_agg_stack: Dictionary = {}  # base_name -> {"qty": int, "color": Strin
 var _post_loot_victory_persists: bool = false
 
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
+const UiSpotlightScript = preload("res://client/ui_spotlight.gd")
 
 # v0.9.490 — global re-openable HelpPanel for topic-based help (Home Stone
 # choice, etc.). Distinct from the one-shot tutorial_hint_panel. Topics live
@@ -1675,6 +1676,8 @@ const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
 const GlobalHelpPanelScript = preload("res://client/help_panel.gd")
 var global_help_panel = null
 var numpad_help_panel = null
+# Draws a pulsing ring around whatever the game has just NAMED in a sentence.
+var ui_spotlight = null
 # v0.9.568 — Bounty Board panel (Slice 3 of v0.9.568 polish batch). Lifts the
 # v0.9.556 chat-only bounty system into UI per the "UI over chat" direction.
 const BountyBoardPanelScript = preload("res://client/bounty_board_panel.gd")
@@ -1720,6 +1723,8 @@ var _pending_guided_intro: bool = false
 # The Welcome hint arrives as a server push shortly AFTER character_created, so
 # hold the numpad/tour until it has shown (fallback timer clears this).
 var _awaiting_welcome_hint: bool = false
+# UI keys the hint currently on screen wants ringed once the player closes it.
+var _hint_highlight_pending: Array = []
 
 # Audit #4 Slice 1A (v0.9.485) — visual panel for the Companion Stable at T5+
 # NPC posts. Live Sanctuary kennel access mid-character.
@@ -2790,7 +2795,12 @@ func _ready():
 	tutorial_hint_panel.opted_out.connect(func():
 		send_to_server({"type": "set_tutorials", "enabled": false})
 		display_game("[color=#808080]Tutorial pop-ups are off for this account. Turn them back on in Settings.[/color]"))
-	tutorial_hint_panel.dismissed.connect(_drain_new_player_modals)
+	tutorial_hint_panel.dismissed.connect(_on_tutorial_hint_dismissed)
+
+	# Added LAST of the overlays so it draws above them: a ring around a button is useless
+	# underneath the popup that just told you about the button.
+	ui_spotlight = UiSpotlightScript.new()
+	add_child(ui_spotlight)
 
 	# Phase 2 — guided spotlight tour for brand-new players.
 	guided_intro_overlay = GuidedIntroOverlayScript.new()
@@ -11873,6 +11883,9 @@ func _create_shortcut_buttons():
 		btn.add_theme_color_override("font_color", THEME_TEXT_ACCENT)
 		btn.add_theme_color_override("font_hover_color", THEME_BORDER_GOLD)
 		btn.pressed.connect(_on_shortcut_button_pressed.bind(shortcut[1]))
+		# Named by ACTION ID so the spotlight can be told "flash inventory_shortcut" without
+		# anybody having to hold an index or match on the visible label, which is "Inv".
+		btn.name = shortcut[1]
 		shortcut_buttons_container.add_child(btn)
 		# v0.9.401 — capture the Stats button so update_stats_reminder can
 		# update its label + pulse when there are unspent points to spend.
@@ -24200,12 +24213,15 @@ func handle_server_message(message: Dictionary):
 			# persistent setting is on). Shown BEFORE the tutorial prompt so
 			# the controls are visible while the tutorial text suggests
 			# pressing keys.
-			if show_numpad_popup and numpad_help_panel:
-				# Order: Welcome hint → Controls popup → guided tour, one at a time.
-				# The Welcome hint is a server push that lands a moment after this,
-				# so hold the numpad/tour until it shows (fallback: 2.5s) rather
-				# than opening the numpad first and stacking the Welcome on top.
-				_pending_numpad_open = true
+			# The CONTROLS popup no longer opens here. Movement is taught in the Sanctuary,
+			# which every account passes through before it can create a character - see the
+			# server's _maybe_send_sanctuary_intro and the "show_movement_help" push. Opening it
+			# here meant the movement lesson arrived after creation, in the world, long after the
+			# player first needed to walk across a room. Owner 2026-09-14: *"Movement still
+			# showing after creating a character instead of in the Sanctuary."*
+			# The guided tour still belongs here - it points at the action bar and the map, which
+			# do not exist until a character is in the world.
+			if show_numpad_popup:
 				_pending_guided_intro = true
 				_awaiting_welcome_hint = true
 				get_tree().create_timer(2.5).timeout.connect(_on_welcome_hint_timeout)
@@ -24845,8 +24861,18 @@ func handle_server_message(message: Dictionary):
 			_enqueue_tutorial_hint(
 				String(message.get("title", "Tip")),
 				String(message.get("body", "")),
-				String(message.get("opt_out", ""))
+				String(message.get("opt_out", "")),
+				message.get("highlight", []) as Array
 			)
+
+		"show_movement_help":
+			# The keypad diagram, queued behind the Sanctuary hint that announces it.
+			# It used to auto-open on character entry, which put the movement lesson after
+			# creation instead of in the room where you first have to walk somewhere.
+			# Still honour the panel's own "don't show again" box, which is per install.
+			if show_numpad_popup:
+				_pending_numpad_open = true
+				_drain_new_player_modals()
 
 		"companion_stable_open":
 			# Audit #4 Slice 1A (v0.9.485) — Companion Stable bump-interaction
@@ -42819,8 +42845,70 @@ func _on_numpad_help_dismissed() -> void:
 	_save_keybinds()
 	_drain_new_player_modals()
 
-func _enqueue_tutorial_hint(title: String, body: String, opt_out: String = "") -> void:
-	_hint_queue.append({"title": title, "body": body, "opt_out": opt_out})
+func _resolve_ui_target(key: String) -> Control:
+	"""Turn a name the SERVER used into the Control the player is looking at.
+
+	The server knows the game, not the scene tree, so it names things the way the hint text does:
+	"inventory_shortcut", "action_1", "map". Everything resolvable lives here, in one place, so a
+	hint that points at something we cannot find fails loudly in one spot rather than silently
+	flashing nothing."""
+	if key.begins_with("action_"):
+		var slot := int(key.substr(7))
+		if slot >= 0 and slot < action_buttons.size():
+			return action_buttons[slot]
+		return null
+	match key:
+		"map", "map_display":
+			return map_display
+		"action_bar":
+			return action_bar
+		"shortcuts":
+			return shortcut_buttons_container
+	# Anything else is a shortcut button, which is named for its action id.
+	if shortcut_buttons_container and is_instance_valid(shortcut_buttons_container):
+		var b = shortcut_buttons_container.get_node_or_null(NodePath(key))
+		if b is Control:
+			return b
+	return null
+
+
+func _spotlight_ui(keys: Array, seconds: float = 8.0) -> void:
+	if ui_spotlight == null:
+		return
+	var controls: Array = []
+	var missed: Array = []
+	for k in keys:
+		var c := _resolve_ui_target(String(k))
+		if c == null:
+			missed.append(String(k))
+		else:
+			controls.append(c)
+	if not missed.is_empty():
+		# Loud on purpose. A hint that names a button and then rings nothing is the exact
+		# failure this whole mechanism exists to prevent, and it is invisible in play.
+		push_warning("ui spotlight: no such target(s): %s" % ", ".join(missed))
+	_spotlight_ui_controls(controls, seconds)
+
+
+func _spotlight_ui_controls(controls: Array, seconds: float = 8.0) -> void:
+	if ui_spotlight == null or controls.is_empty():
+		return
+	ui_spotlight.spotlight(controls, seconds)
+
+
+func _enqueue_tutorial_hint(title: String, body: String, opt_out: String = "",
+		highlight: Array = []) -> void:
+	_hint_queue.append({"title": title, "body": body, "opt_out": opt_out,
+		"highlight": highlight})
+	_drain_new_player_modals()
+
+
+func _on_tutorial_hint_dismissed() -> void:
+	"""Ring the buttons the hint just named - AFTER it closes, not under it."""
+	if not _hint_highlight_pending.is_empty():
+		var keys := _hint_highlight_pending.duplicate()
+		_hint_highlight_pending.clear()
+		_spotlight_ui(keys, 9.0)
 	_drain_new_player_modals()
 
 func _drain_new_player_modals() -> void:
@@ -42839,6 +42927,7 @@ func _drain_new_player_modals() -> void:
 	if not _hint_queue.is_empty():
 		_awaiting_welcome_hint = false  # the Welcome hint has arrived; show it first
 		var h = _hint_queue.pop_front()
+		_hint_highlight_pending = (h.get("highlight", []) as Array).duplicate()
 		if tutorial_hint_panel:
 			tutorial_hint_panel.show_hint(String(h.get("title", "Tip")), String(h.get("body", "")),
 			String(h.get("opt_out", "")))

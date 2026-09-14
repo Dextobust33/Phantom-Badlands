@@ -33,7 +33,27 @@ func _init() -> void:
 		"he blocks movement, so you BUMP into him - the same verb every other station uses")
 	ck(String(wt.get("char", "")) == "W", "and he draws as W, which is what the welcome text says")
 	var art := "res://client/sprites/overworld32/tile/warden.png"
-	ck(ResourceLoader.exists(art), "he has a sprite, so he reads as a person and not a letter")
+	ck(ResourceLoader.exists(art), "he has a sprite file")
+	# ...and it is a PERSON. The first version of this check stopped at `exists()` and passed for
+	# a full day while the map drew a green letter W, because the bake script wrote his sprite and
+	# then a glyph-fallback pass overwrote it with a rendering of the character "W". That file
+	# existed, imported and loaded. Owner: *"341658 shows the W that is on the map."*
+	# A glyph is one colour stamped in one shape; real art is not. Count the colours.
+	var wimg: Image = null
+	var wtex = load(art)
+	if wtex != null and wtex is Texture2D:
+		wimg = (wtex as Texture2D).get_image()
+	ck(wimg != null, "  and it loads as an image")
+	if wimg != null:
+		var seen := {}
+		for y in range(wimg.get_height()):
+			for x in range(wimg.get_width()):
+				var c: Color = wimg.get_pixel(x, y)
+				if c.a > 0.03:
+					seen[Vector3i(int(c.r * 255), int(c.g * 255), int(c.b * 255))] = true
+		print("    %d distinct opaque colours in his sprite" % seen.size())
+		ck(seen.size() >= 4,
+			"  and it is ART, not a glyph - a letter stamp carries one colour, a person carries many")
 
 	var post_src := FileAccess.get_file_as_string("res://shared/npc_post_database.gd")
 	ck(post_src.contains('stations.append("warden")'), "he is placed as a station")

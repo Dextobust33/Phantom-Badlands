@@ -13470,6 +13470,10 @@ func handle_inventory_equip(peer_id: int, message: Dictionary):
 	# Audit #3 v0.9.528 — first equip teaches slot mapping, comparison view,
 	# salvage, and Home Stone (Equipment) permadeath protection.
 	_maybe_send_equip_hint(peer_id, equip_item)
+	# ...and the Warden's next instruction, because putting the blade on is the moment his
+	# last one is finished. Owner 2026-09-14: *"I pressed got it on his dialogue and now I'm
+	# just standing here."* Every beat of the opening now ends by naming the next one.
+	_maybe_warden_next_step(peer_id, character)
 
 	send_character_update(peer_id)
 
@@ -15518,18 +15522,25 @@ func handle_set_tutorials(peer_id: int, message: Dictionary) -> void:
 	persistence.set_tutorials_enabled(account_id, bool(message.get("enabled", true)))
 
 
-func _send_hint(peer_id: int, title: String, body: String, opt_out: String = "") -> void:
+func _send_hint(peer_id: int, title: String, body: String, opt_out: String = "",
+		highlight: Array = []) -> bool:
 	"""Every teaching pop-up goes through here, so ONE check decides whether they are wanted.
 
 	Before this each hint sent itself, which means turning them off would have meant finding all
 	of them - and the next one added would have missed the switch. The character-level `seen_*`
 	flags still gate WHICH hint fires; this gates whether any of them do."""
 	if not peers.has(peer_id):
-		return
+		return false
 	var account_id := String(peers[peer_id].get("account_id", ""))
 	if account_id != "" and not persistence.tutorials_enabled(account_id):
-		return
-	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body, "opt_out": opt_out})
+		return false
+	# `highlight` names UI the body TALKS about. The client rings each one once the player
+	# closes the popup. Owner 2026-09-14: *"There is nothing to draw the players attention to
+	# any of the buttons or things he is referencing."* Naming a button in prose and expecting
+	# someone to find it among forty others is not teaching.
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body,
+		"opt_out": opt_out, "highlight": highlight})
+	return true
 
 
 func _maybe_send_sanctuary_intro(peer_id: int) -> void:
@@ -15550,7 +15561,7 @@ func _maybe_send_sanctuary_intro(peer_id: int) -> void:
 		return
 	if not persistence.mark_account_flag(account_id, "seen_sanctuary_intro"):
 		return
-	_send_hint(peer_id,
+	var sent := _send_hint(peer_id,
 		"[color=#FFD700]Your Sanctuary[/color]",
 		("This room is yours, and it is the only thing that survives when a character dies.
 
@@ -15559,9 +15570,21 @@ func _maybe_send_sanctuary_intro(peer_id: int) -> void:
 		+ "corners for diagonals. Arrow keys work too.
 
 "
-		+ "Stand on something that lights up and press [color=#9ACD32]SPACE[/color] to use it. "
-		+ "That is the whole control scheme, in here and out in the world."),
+		+ "Stand on something that [color=#FFD700]lights up[/color] and press "
+		+ "[color=#9ACD32]SPACE[/color] to use it — that is how you open every station in "
+		+ "here, and how you talk to people out in the world.
+
+"
+		+ "The control card is next."),
 		"Don't show me tips  (account)")
+	# ...and then the keypad diagram itself, which is the thing the owner actually missed.
+	#
+	# 2026-09-14: *"not sure why we took away the one that showed people how to move since they
+	# will likely want/need to do that there."* It was never taken away - it fired on CHARACTER
+	# ENTRY, so it arrived after creation, in the world, minutes after the player first needed to
+	# walk across this room. There is one movement lesson now and it lands where movement starts.
+	if sent:
+		send_to_peer(peer_id, {"type": "show_movement_help"})
 
 
 func handle_house_request(peer_id: int):
@@ -43066,7 +43089,8 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 					+ "\n\nOpen your pack and put it on: the [color=#FFD700]Inventory[/color] button on your "
 					+ "action bar, or press [color=#9ACD32]Q[/color]. There is an [color=#FFD700]Inv[/color] button "
 					+ "in the row at the bottom right too.\n\n"
-					+ "[color=#9ACD32]\"Then we go and find something to hit. I am coming with you - stay behind me.\"[/color]"))
+					+ "[color=#9ACD32]\"Then we go and find something to hit. I am coming with you - stay behind me.\"[/color]"),
+				"", ["action_1", "inventory_shortcut"])
 		2:
 			_guide_say(peer_id, "Three more. You have a blade now, so this should go faster than the first one did.")
 			_guide_teach(peer_id, "equipment")
@@ -43076,6 +43100,67 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 			_guide_say(peer_id, "You came back. Most of the ones I send out there do not. Go on, then — it is a big world.")
 		_:
 			_guide_say(peer_id, "You look new. Check your quest log — I have already written you down for the Watch.")
+
+
+func _nearest_door_dir(character) -> String:
+	"""Which way is the way OUT? Posts are walled, and the door is a `+` somewhere on that wall.
+
+	A new player standing inside one has been told to go and find a monster and has no idea the
+	wall even has a gap in it - owner 2026-09-14: *"I got in a fight after having to fish to get
+	out of the post."* Fishing your way out of the tutorial is not a control scheme."""
+	if world_system == null or world_system.chunk_manager == null:
+		return ""
+	var cx := int(character.x)
+	var cy := int(character.y)
+	for radius in range(1, 14):
+		for dx in range(-radius, radius + 1):
+			for dy in range(-radius, radius + 1):
+				if absi(dx) != radius and absi(dy) != radius:
+					continue
+				var tile = world_system.chunk_manager.get_tile(cx + dx, cy + dy)
+				if tile.get("type", "") == "door":
+					return _compass_direction(cx, cy, cx + dx, cy + dy)
+	return ""
+
+
+func _maybe_warden_next_step(peer_id: int, character) -> void:
+	"""The beat AFTER the blade goes on: where to walk, and what happens when you get there.
+
+	Owner 2026-09-14: *"I pressed got it on his dialogue and now I'm just standing here."* A
+	lesson that ends without naming the next action has taught the player a fact and left them
+	stuck, which is the opposite of the standard they set for this opening: *"what do they need
+	to know to do the next thing they should focus on?"*"""
+	if character.seen_guide_leave_post_hint:
+		return
+	# Only during the first stage of the Watch - after that the chain's own steps are the guide.
+	var on_stage_1 := false
+	for q in character.active_quests:
+		if String(q.get("quest_id", q.get("id", ""))) == "wardens_watch_1":
+			on_stage_1 = true
+			break
+	if not on_stage_1:
+		return
+	if character.equipped.get("weapon", null) == null:
+		return
+	character.seen_guide_leave_post_hint = true
+	var dir := _nearest_door_dir(character)
+	var way := ("to the [color=#FFD700]%s[/color]" % dir) if dir != "" else "in the post wall"
+	_send_hint(peer_id,
+		"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
+		("\"Good. Now it is a weapon and not luggage.\"
+
+"
+			+ "This post is walled. The way out is a [color=#FFD700]+[/color] on the map — a "
+			+ "[color=#FFD700]door[/color] — %s. Walk onto it and keep going.
+
+" % way
+			+ "The first thing you meet out there is the one he wants. "
+			+ "[color=#9ACD32]He walks out with you and takes the hits you cannot.[/color]
+
+"
+			+ "[color=#808080]Your progress is on the tracker at the top of the map.[/color]"),
+		"", ["map", "quests_shortcut"])
+	save_character(peer_id)
 
 
 func _guide_say(peer_id: int, line: String) -> void:
@@ -43097,6 +43182,9 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 	var ch = characters[peer_id]
 	var title := ""
 	var body := ""
+	# UI this lesson NAMES. The client rings each one when the popup closes, so "the second
+	# button on your action bar" stops being a puzzle.
+	var ring: Array = []
 	match topic:
 		"items":
 			if ch.seen_guide_items_hint:
@@ -43107,6 +43195,7 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				+ "Open it with the [color=#FFD700]Inventory[/color] button on your action bar - it is the second one, and its key is [color=#9ACD32]Q[/color]. There is also an [color=#FFD700]Inv[/color] button in the row at the bottom right you can click.\n\n"
 				+ "Food is used from there, and food is what lets you [color=#FFD700]rest[/color] inside a dungeon.\n\n"
 				+ "[color=#9ACD32]You were given three Healing Herb when you arrived. Do not spend them on nothing.[/color]")
+			ring = ["action_1", "inventory_shortcut"]
 		"equipment":
 			if ch.seen_guide_equipment_hint:
 				return
@@ -43115,6 +43204,7 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			body = ("Carrying a blade is not the same as holding one.\n\n"
 				+ "Open your pack - [color=#FFD700]Inventory[/color] on the action bar, key [color=#9ACD32]Q[/color] - pick the piece, and equip it. A weapon in a [color=#FFD700]slot[/color] changes what you hit for; armour changes what you survive.\n\n"
 				+ "[color=#9ACD32]The Warden pays you one piece at a time. Put each on as it comes.[/color]")
+			ring = ["action_1", "inventory_shortcut"]
 		"combat":
 			if ch.seen_guide_combat_hint:
 				return
@@ -43126,9 +43216,10 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				+ "Read what the thing in front of you DOES — its traits sit beside its name. "
 				+ "[color=#FF4444]Glass Cannon[/color] means it hits three times as hard as it looks.\n\n"
 				+ "[color=#FFAA00]You can always flee. Dying here is permanent.[/color]")
+			ring = ["action_bar"]
 		_:
 			return
-	_send_hint(peer_id, title, body)
+	_send_hint(peer_id, title, body, "", ring)
 	save_character(peer_id)
 
 
