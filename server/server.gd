@@ -6902,9 +6902,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# on boss kills (3-mod elite ≈ 2.5%, boss ≈ 2.75%+). The drop
 				# is equipment, so the combat scratch-off auto-pins it into
 				# the banner row — the unique moment is loud for free.
-				var _unique_chance: float = 0.25 + 0.75 * float(_empowered_kill_mods.size())
-				if result.get("is_boss_fight", false):
-					_unique_chance += 2.5
+				var _unique_chance: float = _unique_drop_chance(
+					_empowered_kill_mods.size(), bool(result.get("is_boss_fight", false)),
+					_dungeon_rank_of(characters.get(peer_id, null)))
 				if randf() * 100.0 < _unique_chance:
 					var _unique_item: Dictionary = drop_tables.generate_unique(UniqueDatabaseScript.random_named_drop_id(), max(1, killed_monster_level))
 					if not _unique_item.is_empty():
@@ -43137,6 +43137,8 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 			"dungeon_monster_id": int(combat.get("dungeon_monster_id", -1)),
 			"dungeon_instance_id": String(combat.get("dungeon_instance_id", "")),
 			"dungeon_floor": int(combat.get("dungeon_floor", 0)),
+			"dungeon_rank": int(active_dungeons.get(
+				String(combat.get("dungeon_instance_id", "")), {}).get("sub_tier", 1)),
 			"all_members": members.duplicate(),
 		}
 	var _survivors: Array = []
@@ -43199,6 +43201,21 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 				pending_flock_drops.erase(pid)
 				var _all: Array = _banked.duplicate()
 				_all.append_array(drops)
+				# Uniques, which co-op had NEVER rolled. Per member and independently, exactly
+				# like the loot beside it - a shared roll would mean the party either all got one
+				# or none did, and the hand-authored named item is a personal moment.
+				var _uc: float = _unique_drop_chance(
+					int(monster.get("empowered_mods", []).size()),
+					bool(_dctx.get("is_boss_fight", false)),
+					int(_dctx.get("dungeon_rank", 1)))
+				if randf() * 100.0 < _uc:
+					var _uq: Dictionary = drop_tables.generate_unique(
+						UniqueDatabaseScript.random_named_drop_id(),
+						maxi(1, int(monster.get("level", 1))))
+					if not _uq.is_empty():
+						_all.append(_uq)
+						log_message("UNIQUE DROP (co-op): %s for %s (chance was %.2f%%)" % [
+							String(_uq.get("name", "?")), ch.name, _uc])
 				for item in _all:
 					var awarded := _party_award_drop(pid, item, _old_level)
 					if String(awarded.get("line", "")) != "":
@@ -44074,6 +44091,67 @@ const RANK_LOOT_UPGRADE_MAX := 0.40
 const RANK_LOOT_DOUBLE_SHARE := 0.25
 
 
+## Axis three, the other half: how much RARER the things living in a high-rank dungeon are. This
+## is the chance an ordinary dungeon monster that rolled no Empowered modifier of its own is given
+## one anyway because of where it lives. It compounds with the unique table above by design -
+## every Empowered modifier is +0.75% on the unique roll, so a rarer dungeon is populated by
+## rarer monsters which are themselves likelier to hand something back.
+const DUNGEON_RANK_EMPOWER_CHANCE := {
+	1: 0.0, 2: 0.0, 3: 0.05, 4: 0.08, 5: 0.12, 6: 0.18, 7: 0.25, 8: 0.33, 9: 0.45,
+}
+
+
+func _empower_for_dungeon_rank(monster: Dictionary, rank: int) -> void:
+	"""Give a dungeon monster an Empowered modifier it did not roll, because of the rank of the
+	place it lives in. Never stacks onto one that is ALREADY Empowered - the base roll and this
+	one are two routes to the same state, and applying both would compound a monster the
+	calibration never saw. Bosses are left alone: they carry their own multipliers."""
+	if bool(monster.get("is_boss", false)):
+		return
+	if not (monster.get("empowered_mods", []) as Array).is_empty():
+		return
+	var p: float = float(DUNGEON_RANK_EMPOWER_CHANCE.get(clampi(rank, 1, 9), 0.0))
+	if p <= 0.0 or randf() >= p:
+		return
+	var pool: Array = MonsterDatabase.EMPOWERED_MODIFIERS.keys()
+	pool.shuffle()
+	monster_db.reapply_empowered(monster, [String(pool[0])])
+
+
+## Axis three of dungeon rarity: how often a dungeon BOSS hands back a hand-authored named item.
+## A table rather than a curve, because the owner should be able to retune any single step without
+## solving for an exponent. Rank 9 is deliberately GUARANTEED - that is the reward the owner chose
+## for the rarest grade in the game, and the jump from 40 to 100 is the point, not an accident.
+const DUNGEON_BOSS_UNIQUE_CHANCE := {
+	1: 2.5, 2: 3.0, 3: 4.0, 4: 6.0, 5: 9.0, 6: 14.0, 7: 22.0, 8: 40.0, 9: 100.0,
+}
+
+
+func _unique_drop_chance(empowered_count: int, is_boss: bool, dungeon_rank: int) -> float:
+	"""Percent chance this kill yields a unique. THE one definition.
+
+	Pulled out on 2026-09-13 because axis three needed it in two places and the second place did
+	not exist yet: co-op party combat rolled NO uniques at all. A party could clear a rank-9
+	dungeon boss and the rarest reward in the game would simply not be checked for. That was
+	already true of every party fight in the world; enabling party dungeon combat the same day
+	would have made it the normal way to play.
+
+	Base 0.25%, +0.75% per Empowered modifier on the final kill. A boss adds its rank's row from
+	DUNGEON_BOSS_UNIQUE_CHANCE - outside a dungeon there is no rank, so it takes rank 1's 2.5%,
+	which is what the world boss bonus has always been."""
+	var chance: float = 0.25 + 0.75 * float(maxi(0, empowered_count))
+	if is_boss:
+		chance += float(DUNGEON_BOSS_UNIQUE_CHANCE.get(clampi(dungeon_rank, 1, 9), 2.5))
+	return chance
+
+
+func _dungeon_rank_of(character) -> int:
+	"""The rank of the dungeon this character is standing in, or 1 when they are not in one."""
+	if character == null or not character.in_dungeon:
+		return 1
+	return int(active_dungeons.get(character.current_dungeon_id, {}).get("sub_tier", 1))
+
+
 func _dungeon_mods(instance_id: String) -> Dictionary:
 	"""This dungeon's folded modifier effects, or the neutral set when it has none."""
 	return DungeonDatabaseScript.modifier_effects(
@@ -44084,6 +44162,9 @@ func _apply_dungeon_modifiers_to_monster(monster: Dictionary, instance_id: Strin
 	"""Stamp the dungeon's modifiers onto a monster about to be fought. Applied AFTER the elite
 	and boss multipliers so a modified dungeon scales what is already there rather than replacing
 	it - the modifier describes the PLACE, and the place contains elites and a boss."""
+	# Rarer monsters first, so the dungeon-wide multipliers below scale what the place actually
+	# put in front of the player rather than a plain base it then empowers.
+	_empower_for_dungeon_rank(monster, int(active_dungeons.get(instance_id, {}).get("sub_tier", 1)))
 	var e := _dungeon_mods(instance_id)
 	if float(e.get("hp_mult", 1.0)) == 1.0 and float(e.get("str_mult", 1.0)) == 1.0 and float(e.get("def_mult", 1.0)) == 1.0:
 		return

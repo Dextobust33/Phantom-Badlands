@@ -230,7 +230,26 @@ Asked because the arc had run out of defects and into design. All four answered.
       shape that let the v0.9.774 figure fix ship twice under a dead branch. Needs a live check:
       walk onto a rank 6+ dungeon and read the prompt.
 
-      **Still open here: axis three (rarer monsters / guaranteed unique).**
+      **✅ AXIS THREE (rarer monsters / guaranteed unique) BUILT 2026-09-13, unreleased.**
+      `DUNGEON_BOSS_UNIQUE_CHANCE` - a table, not a curve, so any single step can be retuned
+      without solving for an exponent. 2.5% at rank 1 climbing to 40% at rank 8 and **100% at
+      rank 9**; the jump is the point, it is the reward the owner chose for the rarest grade.
+      `DUNGEON_RANK_EMPOWER_CHANCE` is the "rarer monsters" half: 0% at rank 1-2 rising to 45% at
+      rank 9. The two compound on purpose - every Empowered modifier is +0.75% on the unique roll,
+      so a rarer place holds rarer monsters that are themselves likelier to pay.
+      Probe: `tools/probe/dungeon_rank_uniques.gd`.
+
+      **⛑ It also closed a hole that was already open and that party dungeon combat would have
+      widened: CO-OP ROLLED NO UNIQUES AT ALL.** Not reduced - absent. `_end_party_combat_all`
+      never checked. Every party fight in the world had this, so "bring a friend" was the way to
+      guarantee you never saw the rarest reward in the game, and shipping party dungeon combat the
+      same day would have made that the normal way to play. `_unique_drop_chance` is now one
+      definition both paths call, rolled per member so the named item stays a personal moment.
+      Verified by driving the real `_end_party_combat_all`, not by reading the call site.
+
+      **The whole three-axis item is now DONE, but NONE of it is playtested,** and two call sites
+      are proven only by their helpers: the entry-warning display (axis two) and the dungeon
+      completion/teleport path around the co-op unique roll. Live checks owed.
 
 - [ ] **PARTY PLAY IN DUNGEONS + JOIN-IN-PROGRESS COMBAT. ⚑ BLOCKS the onboarding guide NPC.**
       This is what *"party play isn't working properly"* (2026-08-26, never reproduced) actually
