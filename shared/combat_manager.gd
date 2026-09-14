@@ -12536,7 +12536,8 @@ func start_party_combat(party_members: Array, characters: Dictionary, monster: D
 # gating (this block). Slice 2 = the card-view resolution + monster phase (stubbed here).
 # =========================================================================
 
-func start_party_combat_simul(party_members: Array, characters: Dictionary, monster: Dictionary) -> Dictionary:
+func start_party_combat_simul(party_members: Array, characters: Dictionary, monster: Dictionary,
+		npc_members: Array = []) -> Dictionary:
 	"""#64 Slice 1 — set up a SIMULTANEOUS party combat. Mirrors start_party_combat's
 	shared-monster + member_states setup, and adds per-member submission tracking
 	(submitted_this_round / queued_action) + a drawn hand each. Returns {success, combat}."""
@@ -12545,9 +12546,14 @@ func start_party_combat_simul(party_members: Array, characters: Dictionary, mons
 	var leader_id: int = party_members[0]
 	var party_size: int = party_members.size()
 
-	# Shared monster, HP scaled by party size (one monster everyone fights).
+	# Shared monster, HP scaled by the number of PLAYERS (one monster everyone fights).
+	#
+	# `npc_members` are members who are not players - today, the onboarding guide. They fight
+	# but do NOT inflate the monster: a boss with doubled HP that an escort is tanking is a
+	# longer walkover, not a better lesson. See ONBOARDING in docs/BACKLOG.md.
+	var player_count: int = maxi(1, party_size - npc_members.size())
 	monster["original_max_hp"] = monster.get("max_hp", 100)
-	monster["max_hp"] = int(monster.get("max_hp", 100) * party_size)
+	monster["max_hp"] = int(monster.get("max_hp", 100) * player_count)
 	monster["current_hp"] = monster["max_hp"]
 
 	var member_states: Dictionary = {}
@@ -12583,6 +12589,7 @@ func start_party_combat_simul(party_members: Array, characters: Dictionary, mons
 		"mode": "party_simul",
 		"leader_peer_id": leader_id,
 		"members": party_members.duplicate(),
+		"npc_members": npc_members.duplicate(),
 		"characters": characters,
 		"monster": monster,
 		"round": 1,
@@ -13697,6 +13704,76 @@ func _process_party_monster_phase(combat: Dictionary, max_actions: int = 0) -> D
 
 	return {"messages": messages}
 
+## How much bigger than the worst possible hit a player's HP must be before the guide lets that
+## hit through. 1.0 would be "survives by exactly one point"; the margin is there because the
+## estimate below deliberately ignores several things that could make a hit bigger.
+const GUIDE_SAFE_MARGIN := 1.35
+
+
+func _worst_case_hit(combat: Dictionary) -> int:
+	"""The largest damage a single monster attack could plausibly do this round.
+
+	Deliberately PESSIMISTIC, and every simplification errs upward:
+	  * defence reduction is ignored (it only ever lowers the number)
+	  * dodge is ignored (it only ever removes the hit)
+	  * variance is taken at its ceiling, +15%
+	Being wrong here is only allowed in one direction. Over-estimating means the guide steps in
+	when it did not strictly have to; under-estimating means the tutorial kills the player it
+	exists to protect."""
+	var monster: Dictionary = combat.get("monster", {})
+	var base_str: float = float(monster.get("strength", 10))
+	var enrage: float = 1.0 + float(combat.get("enrage_stacks", 0)) * 0.1
+	return maxi(1, int(ceil(base_str * enrage * 1.15)))
+
+
+func _guide_shield_targets(combat: Dictionary, targets: Array, active_members: Array) -> Array:
+	"""The onboarding guide holds aggro.
+
+	Owner 2026-09-13: *"Guide should have all aggro to ensure player survives unless its a hit
+	that the player can for sure survive."*
+
+	So this is not a flat taunt. A hit the player can certainly live through is LEFT ALONE - the
+	point of the tutorial is that combat is real and costs you something. A hit that might not be
+	survivable is taken by the guide instead. The player can be hurt; they cannot be killed by
+	the fight that is supposed to teach them.
+
+	No-op when there is no guide, which is every fight in the game except this one."""
+	var npcs: Array = combat.get("npc_members", [])
+	if npcs.is_empty():
+		return targets
+	# A guide who is dead or fled cannot shield anybody.
+	#
+	# A separate `found` flag rather than a -1 sentinel, because NPC members ARE negative
+	# peer ids - the guide is literally -1. The first cut used -1 to mean "no guide" and so
+	# bailed out every single time, silently, on the exact case the feature exists for.
+	var shield_pid: int = 0
+	var found_shield: bool = false
+	for n in npcs:
+		if n in active_members:
+			shield_pid = int(n)
+			found_shield = true
+			break
+	if not found_shield:
+		return targets
+
+	var worst: int = _worst_case_hit(combat)
+	var out: Array = []
+	for t in targets:
+		var pid: int = int(t)
+		if pid == shield_pid or pid in npcs:
+			out.append(pid)
+			continue
+		var ch = combat.get("characters", {}).get(pid, null)
+		if ch == null:
+			out.append(pid)
+			continue
+		if float(ch.current_hp) > float(worst) * GUIDE_SAFE_MARGIN:
+			out.append(pid)          # they can for sure survive this - let them feel it
+		else:
+			out.append(shield_pid)   # the guide takes it
+	return out
+
+
 func _select_monster_targets(combat: Dictionary, active_members: Array, num_actions: int) -> Array:
 	"""Select targets for monster actions using weighted random."""
 	var targets = []
@@ -13736,7 +13813,7 @@ func _select_monster_targets(combat: Dictionary, active_members: Array, num_acti
 
 	# Save updated weights
 	combat.target_weights = weights
-	return targets
+	return _guide_shield_targets(combat, targets, active_members)
 
 func _check_party_deaths(combat: Dictionary):
 	"""Check for newly dead party members."""
