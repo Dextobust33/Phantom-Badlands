@@ -379,6 +379,30 @@ Asked because the arc had run out of defects and into design. All four answered.
       is measured at 76%, but whether a gearless level-1 survives nine fights on one health bar
       is a playtest, not a calculation.
 
+      **⛑ OWNER DECISIONS 2026-09-13 (asked before building, answered in one batch):**
+        1. **The guide holds AGGRO.** Owner: *"Guide should have all aggro to ensure player
+           survives unless its a hit that the player can for sure survive."* This replaces the
+           question I asked, which was about HP scaling, with a better mechanism: survival is
+           guaranteed by TARGETING, not by softening the monster. The player still takes hits -
+           the ones they can certainly live through - so they learn combat is real while never
+           being killed by the tutorial. **My reading, stated so it can be corrected:** the guide
+           is therefore excluded from the party HP multiplier as well, because a 2x-HP boss that
+           the guide is tanking is only a longer walkover, not a better lesson.
+        2. **The guide LEAVES for good** when the dungeon is cleared. One-off content; no
+           persistence, no NPC-ally system, no balance implications past L3.
+        3. **Structure: a controlled first fight, then the dungeon** - owner: *"with a bit of
+           option 2"*, so the guide keeps teaching INSIDE the dungeon rather than falling silent
+           at the door. Floor one is still part of the lesson.
+        4. **The tutorial grants the companion egg**; creation no longer does. The egg becomes a
+           reward rather than a handout, and a player who skips the tutorial gets one from the
+           first dungeon they clear.
+
+      **⛑ AND IT HAS TO FILL A SLOT THAT IS CURRENTLY ADVERTISED AND EMPTY.** The welcome
+      overlay every new character sees still names *"Pathfinder's Trial - a starter quest in your
+      log that rewards gear as you complete it."* The GRANT was retired 2026-09-03 in favour of
+      this very item, so the first thing a new player reads points at an empty quest log. The
+      definitions still exist (so anyone mid-chain can finish) but nothing offers it.
+
       **A GUIDE NPC carries the new player through it, as a party member.** Owner 2026-09-13:
       *"an NPC should help introduce the player to mechanics, Items, equipment, combat etc. and
       help carry the charaacter through the dungeon using the party combat."* So the guide is not

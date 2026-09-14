@@ -3420,8 +3420,8 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		"body": (
 			"You're at [color=#FFD700]Crossroads[/color] — the safest post in the world.\n\n"
 			+ "Two things are waiting for you:\n"
-			+ "  • [color=#9ACD32]Pathfinder's Trial[/color] — a starter quest in your log that rewards gear as you complete it.\n"
-			+ "  • A [color=#FF80FF]monster egg[/color] — just walk around to hatch your first companion.\n\n"
+			+ "  • A [color=#FF80FF]monster egg[/color] — just walk around to hatch your first companion.\n"
+			+ "  • A [color=#9ACD32]dungeon[/color] within a short walk — look for the [color=#FFD700]D[/color] on your map.\n\n"
 			+ "Press [color=#FFAA66]?[/color] on any panel whenever you want help. Good luck out there."
 		),
 	})
