@@ -435,6 +435,23 @@ ssh -i "$SSH_KEY" ubuntu@5.78.217.135   "echo 60 > ~/.local/share/godot/app_user
 The file is consumed and deleted when read, so wait for it to disappear (that means the countdown
 started), then wait out the countdown before swapping the binary. Bounded to [5s, 600s].
 
+**⛑ WAIT ON THE PID CHANGING, NOT ON THE SERVICE GOING INACTIVE.** The unit has
+`Restart=always`, so systemd brings the server straight back up — on the OLD binary — a few
+seconds after the countdown fires. `systemctl is-active` never returns anything but `active`, so a
+loop waiting for it to go inactive waits forever and sails past the swap window. That happened on
+v0.9.787: the countdown ran, players were disconnected, systemd restarted the old binary, and the
+swap had to be done afterwards with a second restart — so the one player online took two
+disconnects instead of one. Poll this instead:
+
+```bash
+BEFORE=$(ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "systemctl show -p MainPID --value phantom-badlands")
+# ...write the countdown, then:
+until [ "$(ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "systemctl show -p MainPID --value phantom-badlands")" != "$BEFORE" ]; do sleep 5; done
+```
+
+Recovering is cheap (swap + `systemctl restart` again, as below) and costs players a second
+disconnect they were not warned about — which is the whole thing the countdown exists to avoid.
+
 **Verify the swap took** by hashing the running process, not the file on disk — a failed swap and a
 successful one look identical in `systemctl status`:
 
