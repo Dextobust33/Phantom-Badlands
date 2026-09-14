@@ -122,6 +122,49 @@ func _init() -> void:
 		"an unguided character really does fall (so the guide is what saved the other one)")
 
 	print("")
+	print("===== A MONSTER GAINS NOTHING FROM HITTING HIM =====")
+	# Owner 2026-09-14, round nine of an escorted fight: *"this Wight fight is pretty crazy, it
+	# gets a ton of health back so I don't know that we can even kill it."* Life steal heals 50%
+	# of damage dealt, and the guide is BUILT to be hit - so the escort had turned him into a
+	# battery, and every point of HP added to him made the fight last longer.
+	# The player is put on LOW hp on purpose, so every hit this round is shielded onto the guide
+	# and any healing at all must have come off him. At a comfortable hp the player takes some of
+	# the hits themselves and draining off a PLAYER is legitimate - the first cut of this check
+	# measured that and reported a false failure.
+	var drain := _mk(cm, 25, 60)
+	drain["monster"]["abilities"] = [cm.ABILITY_LIFE_STEAL]
+	drain["monster"]["current_hp"] = 200
+	drain["monster"]["max_hp"] = 400
+	var before_hp: int = int(drain["monster"]["current_hp"])
+	for r in range(4):
+		drain["round"] = r + 1
+		cm._party_process_monster_phase(drain)
+	var after_hp: int = int(drain["monster"]["current_hp"])
+	print("  four rounds against a life-stealer, every hit shielded: monster %d -> %d hp"
+		% [before_hp, after_hp])
+	ck(after_hp <= before_hp,
+		"it heals NOTHING off the guide - the fight can still be won")
+
+	print("")
+	print("===== AND A GUIDE LEFT ALONE ENDS THE FIGHT =====")
+	# *"I fled from that fight since it is unwinnable and now I'm stuck out of this fight and can
+	# only watch so I'm effectively soft locked."* He cannot die - held at 1 HP - so a fight with
+	# only him left had no way to finish.
+	var fled := _mk(cm, 100, 20)
+	fled["member_states"][PLAYER]["fled"] = true
+	ck(cm._only_npcs_left(fled, cm._party_alive_members(fled)),
+		"with the player gone, only the guide is left and that counts as nobody")
+	var both := _mk(cm, 100, 20)
+	ck(not cm._only_npcs_left(both, cm._party_alive_members(both)),
+		"  and while the player IS in it, the fight continues (control)")
+	# The rule has to answer for BOTH resolvers, which keep member state in different places.
+	var csrc := FileAccess.get_file_as_string("res://shared/combat_manager.gd")
+	ck(csrc.contains("_only_npcs_left(combat, _party_alive_members(combat))"),
+		"  the simultaneous resolver asks it")
+	ck(csrc.contains("_only_npcs_left(combat, _get_active_members(combat))"),
+		"  and so does the sequential one - fixing only one is how the tutorial stayed locked")
+
+	print("")
 	print("----- NOT COVERED HERE -----")
 	print("  Whether the fight still FEELS dangerous with him there. He leaves you every hit you")
 	print("  can certainly survive, so you should still finish bloodied - but that is a playtest.")

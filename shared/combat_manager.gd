@@ -9263,7 +9263,19 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			hits += 1
 
 			# Life steal ability: heal for 50% of damage dealt
-			if ABILITY_LIFE_STEAL in abilities:
+			#
+			# ⛑ BUT NOT OFF THE GUIDE. He is a teaching device, not a food source.
+			#
+			# Owner 2026-09-14, round 9 of an escorted fight: *"this Wight fight is pretty crazy,
+			# it gets a ton of health back so I don't know that we can even kill it."* It was
+			# draining 61 twice a round - 50% of two 123-damage hits - and every one of those
+			# hits was landing on the Warden, because the Warden is built to absorb them. The
+			# escort had turned him into a battery: the tankier he is, the longer the monster
+			# lives, so raising his HP to fix one complaint made the other one worse.
+			#
+			# A monster gains nothing from hitting him. That ends the feedback loop at its
+			# source, leaves ordinary play untouched, and is what makes his HP free to raise.
+			if ABILITY_LIFE_STEAL in abilities and not bool(combat.get("guide_target", false)):
 				var heal = int(damage * 0.5)
 				monster.current_hp = min(monster.max_hp, monster.current_hp + heal)
 				messages.append("[color=#FF4444]The %s drains %d life from you![/color]" % [monster.name, heal])
@@ -12748,6 +12760,27 @@ func _party_all_submitted(combat: Dictionary) -> bool:
 			return false
 	return true
 
+func _only_npcs_left(combat: Dictionary, active: Array) -> bool:
+	"""True when every remaining fighter is an NPC guide - i.e. nobody real is in this any more.
+
+	⛑ Owner 2026-09-14: *"I fled from that fight since it is unwinnable and now I'm stuck out of
+	this fight and can only watch so I'm effectively soft locked."* The player fled, the Warden
+	stayed, and the Warden CANNOT die - he is held at 1 HP by design - so the fight had no way to
+	end and the player could only spectate it for ever.
+
+	He exists to escort somebody; with nobody left to escort there is nothing for him to do.
+
+	Takes the active list as an ARGUMENT because the two resolvers keep their member state in
+	different places - the simultaneous one in `member_states`, the sequential one in
+	`dead_members`/`fled_members` - so each asks with its own list and the RULE lives in one
+	place. Writing it against one of those structures is how the sequential path would have been
+	fixed and the tutorial, which uses the other one, left soft-locked."""
+	for pid in active:
+		if not (int(pid) in combat.get("npc_members", [])):
+			return false
+	return true
+
+
 func _party_alive_members(combat: Dictionary) -> Array:
 	"""Peer ids of members still in the fight (not dead, not fled)."""
 	var out: Array = []
@@ -13328,6 +13361,9 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 		if st.get("dead", false) or st.get("fled", false):
 			continue   # dropped earlier in this same phase
 		var view := _party_member_view(combat, target_pid)
+		# Is this action aimed at the guide? Read by the life-steal branch in
+		# _process_monster_turn_inner - a monster heals nothing off a teaching device.
+		view["guide_target"] = int(target_pid) in combat.get("npc_members", [])
 		view["suppress_monster_turn"] = false
 		view["party_single_strike"] = true   # v0.9.739 — one hit per card (see process_monster_turn)
 		if upkeep_done:
@@ -13453,7 +13489,7 @@ func resolve_party_round(leader_id: int) -> Dictionary:
 		entries.append(_party_neutral("[color=#FFD700]The %s is defeated![/color]" % combat.monster.get("name", "monster")))
 		return {"combat_ended": true, "victory": true, "messages": party_flatten_log(entries), "message_entries": entries}
 	_party_check_deaths(combat)
-	if _party_alive_members(combat).is_empty():
+	if _only_npcs_left(combat, _party_alive_members(combat)):
 		return {"combat_ended": true, "victory": false, "wipe": true, "messages": party_flatten_log(entries), "message_entries": entries}
 	combat["round"] = int(combat.get("round", 1)) + 1
 	_party_redraw_hands(combat)
@@ -13988,8 +14024,19 @@ func _get_active_members(combat: Dictionary) -> Array:
 	return active
 
 func _all_members_inactive(combat: Dictionary) -> bool:
-	"""Check if all party members have fled or died."""
-	return _get_active_members(combat).is_empty()
+	"""Check if all party members have fled or died.
+
+	⛑ AN NPC GUIDE LEFT ALONE COUNTS AS NOBODY.
+
+	Owner 2026-09-14: *"I fled from that fight since it is unwinnable and now I'm stuck out of
+	this fight and can only watch so I'm effectively soft locked."* Exactly that: the player fled,
+	the Warden stayed, and the Warden CANNOT die - he is held at 1 HP by design - so the fight
+	had no way to end and the player could only spectate it forever.
+
+	He exists to escort somebody. With nobody left to escort there is nothing for him to do, so
+	the fight is over. This is the only place that needed to know, because every caller already
+	routes a wipe through here."""
+	return _only_npcs_left(combat, _get_active_members(combat))
 
 func _get_current_turn_peer_id(combat: Dictionary) -> int:
 	"""Get the peer_id of the member whose turn it is, or -1 if none."""

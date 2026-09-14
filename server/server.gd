@@ -43094,9 +43094,17 @@ const GUIDE_PEER_ID := -9001
 ## log and the victory card, and a name that disagrees with itself across four surfaces is the
 ## "one value, two places" defect wearing a hat.
 const GUIDE_NAME := "Warden Hollis"
-# How much tougher the guide is than his level implies. He soaks the round every round; at 1x
-# his bar was empty by round three.
-const GUIDE_HP_MULT := 8.0
+# How much tougher the guide is than his level implies.
+#
+# 1x emptied his bar by round three. 8x got him to round nine of a drain fight and the owner said
+# it plainly: *"When I said the Warden should have a lot of health I didn't mean just a tiny bit,
+# He should have enough that this can't happen."* So this is sized to make it not happen rather
+# than to make it take longer - forty rounds of the worst thing a tutorial-range monster can do.
+#
+# Raising it used to make fights WORSE, because a life-steal monster healed 50% of everything it
+# hit him with and he is built to be hit. That loop is closed (see the guide_target check in
+# _process_monster_turn_inner), which is what makes the number free to set here.
+const GUIDE_HP_MULT := 40.0
 # What he looks like, for the welcome - the same sprite the map draws him with.
 const WARDEN_PORTRAIT := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
 
