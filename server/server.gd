@@ -20536,31 +20536,33 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 		})
 
 	# The Warden reacts to the step he set. Owner 2026-09-14, after winning the first fight:
-	# *"After the victory screen I'm once again unsure what to do."* Finishing a step and being
-	# told nothing is the same dead end as his dialogue ending without a next action - so the
-	# beat that COMPLETES a stage names the next one, in his voice, at the moment it happens.
+	# *"After the victory screen I'm once again unsure what to do."*
+	#
+	# ⛑ AND HE SETTLES IT HIMSELF, FOR EVERY STEP.
+	#
+	# Owner again, after the third kill: *"I killed the three enemies and now it's complete but
+	# I don't know what to do next, he didn't tell me anything."* Step one turned itself in and
+	# step two did not, so the chain stopped dead at a quest marked complete with no way to
+	# advance it except walking back to a man standing beside them. Written as a LOOP over the
+	# chain rather than a branch per step, so step three cannot be forgotten the same way.
 	for update in updates:
 		if not bool(update.get("completed", false)):
 			continue
-		match String(update.get("quest_id", "")):
+		var _qid := String(update.get("quest_id", ""))
+		if not _qid.begins_with("wardens_watch_"):
+			continue
+		# The teaching beat for THIS step, before the turn-in hands over the next one.
+		match _qid:
 			"wardens_watch_1":
-				# ⛑ A WON FIGHT IS A TEACHING MOMENT, NOT A FULL STOP.
-				#
-				# Owner 2026-09-14: *"The tracker did go to 1/1 but after the victory screen I
-				# didn't get a popup or any instructions. He also needs to guide players on how
-				# to Rest and get their resources back as well as let them know where and how
-				# monsters can be found and where is safe. Probably how to hunt as well."*
-				#
-				# This is the first moment a player has ever been hurt, so it is the first moment
-				# any of it means anything - which is why it is here and not at the gate.
+				# The first moment a player has ever been hurt, so the first moment any of this
+				# means anything - which is why it is here and not at the gate.
 				_guide_teach(peer_id, "recovery")
-				# He settles it where you stand - see the _warden_here bypass in
-				# handle_quest_turn_in. No walking back to a man who is beside you.
-				handle_quest_turn_in(peer_id, {"quest_id": "wardens_watch_1"})
 			"wardens_watch_2":
 				# Fight taught, world taught, THEN the dungeon - the order the owner set out.
 				_guide_teach(peer_id, "world")
-				_guide_say(peer_id, "Enough practice. The hole in the ground next — and mind the floor down there. People drop things.")
+		# He is the quest giver and he is with you: the step settles where you stand. See the
+		# _warden_here bypass in handle_quest_turn_in.
+		handle_quest_turn_in(peer_id, {"quest_id": _qid})
 
 	if not updates.is_empty():
 		save_character(peer_id)
@@ -43327,9 +43329,8 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				return
 			ch.seen_guide_equipment_hint = true
 			title = "[color=#9ACD32]What You Wear[/color]"
-			body = ("Carrying a blade is not the same as holding one.\n\n"
-				+ "Open your pack - [color=#FFD700]Inventory[/color] on the action bar, key [color=#9ACD32]Q[/color] - pick the piece, and equip it. A weapon in a [color=#FFD700]slot[/color] changes what you hit for; armour changes what you survive.\n\n"
-				+ "[color=#9ACD32]The Warden pays you one piece at a time. Put each on as it comes.[/color]")
+			body = ("Armour is no use in a bag. Open your inventory and put it on.\n\n"
+				+ "[color=#9ACD32]\"That's both pieces I carry. The rest of your kit is lying on the floor of that dungeon.\"[/color]")
 			ring = ["action_1", "inventory_shortcut"]
 		"combat":
 			if ch.seen_guide_combat_hint:
@@ -43419,7 +43420,8 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 
 "
 				+ "[color=#9ACD32]\"Rest when you are hurt — it costs nothing but time. And when you die "
-				+ "out here you stay dead — only the Sanctuary carries over.\"[/color]")
+				+ "out here you stay dead — only the Sanctuary carries over.\"[/color]\n\n"
+				+ "[color=#FFD700]Next:[/color] find the [color=#FFD700]D[/color] on your map and walk onto it. He is coming with you.")
 			ring = ["map"]
 		_:
 			return

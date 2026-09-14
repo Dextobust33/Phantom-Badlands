@@ -168,8 +168,36 @@ func _init() -> void:
 	# is whether completion is actually reported, and whether the lesson had already been spent.
 	ck(ch.seen_guide_recovery_hint,
 		"the recovery lesson fired when the step completed (Rest, danger, stances)")
+	# ⛑ AND THE CHAIN MOVES ON BY ITSELF.
+	#
+	# Owner 2026-09-14: *"I killed the three enemies and now it's complete but I don't know what
+	# to do next, he didn't tell me anything."* Step one turned itself in and step two did not,
+	# so the chain stopped at a quest marked complete with nothing to advance it. Checking only
+	# step one would have missed that, which is exactly what happened - so walk the WHOLE chain.
+	var stage_now: int = sv._wardens_watch_stage(ch)
+	print("  after step one settles, the player is on stage %d" % stage_now)
+	ck(stage_now == 2, "step one turned itself in and step TWO is live")
+	ck(ch.equipped.get("armor", null) != null or _has_armor(ch),
+		"  and the armour he owes arrived with it")
+
+	print("")
+	print("===== 8. AND SO DOES EVERY STEP AFTER IT =====")
+	for _k in range(3):
+		sv.check_kill_quest_progress(PEER, 1, String(mon.get("name", "Wolf")))
+		await process_frame
+	var stage_after: int = sv._wardens_watch_stage(ch)
+	print("  three more kills later, the player is on stage %d" % stage_after)
+	ck(stage_after == 3, "step two settled itself too - the chain did not stall")
+	ck(ch.seen_guide_world_hint, "  and the world lesson fired on the way past")
 
 	_finish()
+
+
+func _has_armor(ch) -> bool:
+	for it in ch.inventory:
+		if it is Dictionary and ch.get_item_slot_from_type(String(it.get("type", ""))) == "armor":
+			return true
+	return false
 
 
 func _stage1_progress(ch) -> int:

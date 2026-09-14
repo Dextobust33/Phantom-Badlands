@@ -40,8 +40,11 @@ func _init() -> void:
 	ck(src.contains("var _warden_here: bool"),
 		"  and his steps settle WHERE YOU STAND while he escorts - no walking back to a man "
 		+ "who is beside you")
-	ck(src.contains('handle_quest_turn_in(peer_id, {"quest_id": "wardens_watch_1"})'),
-		"  which he does himself when the step completes")
+	# Was a hardcoded step-one call; it is a loop over the chain now, because a per-step branch
+	# is exactly how step TWO ended up with no turn-in while step one had one.
+	# `no_stage_leaves_you_hanging.gd` is what checks that loop covers every step.
+	ck(src.contains('handle_quest_turn_in(peer_id, {"quest_id": _qid})'),
+		"  which he does himself, for whichever step just completed")
 
 	print("")
 	print("===== THE DUNGEON FLOOR HAS THE REST =====")
