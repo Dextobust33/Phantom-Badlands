@@ -9869,6 +9869,32 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	# ⛑ THIS BRANCH MUST COME BEFORE `in_combat`.
+	#
+	# `in_combat` is true during a PARTY fight as well as a solo one - _handle_party_combat_start
+	# sets it - so while this sat below it the confirm row was unreachable and every co-op fight
+	# was unwinnable: pressing Space ran the normal Attack button, which asked "lock in Attack?"
+	# again, forever. Owner 2026-09-14, twelve identical lines in the log: *"I can't actually
+	# Lock in my attack just keeps telling me innacurate instructions."*
+	#
+	# It reads like a cosmetic ordering detail and it is the difference between co-op working
+	# and co-op being impossible to play.
+	elif party_confirm_pending:
+		# 2026-09-11 — "lock in X?" Space confirms, Q goes back to the hand. The card's OWN key
+		# also confirms (same idiom as the buff picker: press the key twice to commit), so the
+		# fast path is two taps of one key and nobody has to find Space.
+		var _confirm := {"label": "Confirm", "action_type": "local", "action_data": "party_confirm_yes", "enabled": true}
+		current_actions = [
+			_confirm,
+			{"label": "Pick again", "action_type": "local", "action_data": "party_confirm_no", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+		for _ci in range(4, 10):
+			if _ci == party_confirm_slot:
+				current_actions.append(_confirm)
+			else:
+				current_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
 	elif in_combat:
 		# Combat mode: Space=Attack, Q=Use Item, W=Flee, E/R/1-5=Path abilities
 		var ability_actions = _get_combat_ability_actions()
@@ -9909,22 +9935,6 @@ func update_action_bar():
 			# Add all ability slots
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
-	elif party_confirm_pending:
-		# 2026-09-11 — "lock in X?" Space confirms, Q goes back to the hand. The card's OWN key
-		# also confirms (same idiom as the buff picker: press the key twice to commit), so the
-		# fast path is two taps of one key and nobody has to find Space.
-		var _confirm := {"label": "Confirm", "action_type": "local", "action_data": "party_confirm_yes", "enabled": true}
-		current_actions = [
-			_confirm,
-			{"label": "Pick again", "action_type": "local", "action_data": "party_confirm_no", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-		]
-		for _ci in range(4, 10):
-			if _ci == party_confirm_slot:
-				current_actions.append(_confirm)
-			else:
-				current_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
 	elif party_combat_active:
 		# Party combat: our turn — same layout as solo combat.
 		# v0.9.739 — items ARE available in co-op now (they used to be a dead "---" slot).

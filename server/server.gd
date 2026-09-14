@@ -43039,22 +43039,34 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 
 	match stage:
 		1:
-			# THE WEAPON COMES FIRST. It used to be the reward for the first kill, which meant a
-			# brand-new character fought their most dangerous fight with empty hands to earn the
-			# thing that would have made it safe. Handing it over here costs nothing and inverts
-			# that: you are armed before you are asked to use it.
+			# ONE popup, in his voice, and it is the only thing on screen.
+			#
+			# Owner 2026-09-14: *"After clicking through those popups I'm met with information
+			# overload, I'm looking at a Crossroads screen with a bunch of text and I guess I'm
+			# supposed to notice that Warden Hollis said something at the bottom of this."*
+			#
+			# It used to be two impersonal panels back to back - both telling you to open your pack -
+			# and then his actual words as a line of chat, competing with a wall of post text. His
+			# first meeting is now one modal that says who he is, hands the weapon over, names the
+			# real control, and gives one instruction. The equipment lesson waits for the armour,
+			# which is the moment it is about.
+			var _blade := ""
 			if not character.seen_guide_items_hint and drop_tables:
 				var _kit = drop_tables.get_starter_kit_item("weapon")
 				if not _kit.is_empty() and character.can_add_item():
 					character.add_item(_kit)
-					send_to_peer(peer_id, {"type": "text", "message":
-						"[color=#9ACD32]%s hands you a %s.[/color]" % [GUIDE_NAME, String(_kit.get("name", "blade"))]})
+					_blade = String(_kit.get("name", "blade"))
 					send_character_update(peer_id)
 					save_character(peer_id)
-			_guide_say(peer_id, "Take this. It is not much, but it is more than your hands.")
-			_guide_teach(peer_id, "items")
-			_guide_teach(peer_id, "equipment")
-			_guide_say(peer_id, "Now put it on, and we will go and find something. I am coming with you - stay behind me.")
+			character.seen_guide_items_hint = true
+			_send_hint(peer_id,
+				"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
+				("\"You came out here with nothing in your hands. Most of them do.\"\n\n"
+					+ ("He puts a [color=#FFD700]%s[/color] in them." % _blade if _blade != "" else "")
+					+ "\n\nOpen your pack and put it on: the [color=#FFD700]Inventory[/color] button on your "
+					+ "action bar, or press [color=#9ACD32]Q[/color]. There is an [color=#FFD700]Inv[/color] button "
+					+ "in the row at the bottom right too.\n\n"
+					+ "[color=#9ACD32]\"Then we go and find something to hit. I am coming with you - stay behind me.\"[/color]"))
 		2:
 			_guide_say(peer_id, "Three more. You have a blade now, so this should go faster than the first one did.")
 			_guide_teach(peer_id, "equipment")
@@ -43092,8 +43104,8 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			ch.seen_guide_items_hint = true
 			title = "[color=#9ACD32]What You Carry[/color]"
 			body = ("Everything you pick up goes in your pack.\n\n"
-				+ "Open it with [color=#FFAA66]I[/color]. Anything you can use — food, a potion — is used from there, "
-				+ "and food is what lets you [color=#FFD700]rest[/color] inside a dungeon.\n\n"
+				+ "Open it with the [color=#FFD700]Inventory[/color] button on your action bar - it is the second one, and its key is [color=#9ACD32]Q[/color]. There is also an [color=#FFD700]Inv[/color] button in the row at the bottom right you can click.\n\n"
+				+ "Food is used from there, and food is what lets you [color=#FFD700]rest[/color] inside a dungeon.\n\n"
 				+ "[color=#9ACD32]You were given three Healing Herb when you arrived. Do not spend them on nothing.[/color]")
 		"equipment":
 			if ch.seen_guide_equipment_hint:
@@ -43101,9 +43113,8 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			ch.seen_guide_equipment_hint = true
 			title = "[color=#9ACD32]What You Wear[/color]"
 			body = ("Carrying a blade is not the same as holding one.\n\n"
-				+ "Open your pack with [color=#FFAA66]I[/color], pick the item, and equip it. A weapon in a "
-				+ "[color=#FFD700]slot[/color] changes what you hit for; armour changes what you survive.\n\n"
-				+ "[color=#9ACD32]Warden's Watch pays you one piece at a time. Put each on as it comes.[/color]")
+				+ "Open your pack - [color=#FFD700]Inventory[/color] on the action bar, key [color=#9ACD32]Q[/color] - pick the piece, and equip it. A weapon in a [color=#FFD700]slot[/color] changes what you hit for; armour changes what you survive.\n\n"
+				+ "[color=#9ACD32]The Warden pays you one piece at a time. Put each on as it comes.[/color]")
 		"combat":
 			if ch.seen_guide_combat_hint:
 				return
