@@ -244,6 +244,16 @@ Asked because the arc had run out of defects and into design. All four answered.
       exists would make parties worse, not better: everyone would scatter with no way to regroup
       in a fight.
 
+      **✅ HALF ONE IS BUILT (2026-09-13, unreleased).** `_try_start_dungeon_coop` +
+      `_party_dungeon_after_combat` in `server/server.gd`, wired into BOTH dungeon combat
+      starters. Gated on same instance AND same floor, which the overworld has no equivalent of.
+      Probe: `tools/probe/dungeon_party_combat.gd`, 30 checks, run against real functions on a
+      real `CombatManager` and proven to fire by deleting the call site. The onboarding guide NPC
+      is unblocked. **Still open here: half two (independent movement + join-in-progress), and
+      two gaps this did not close** - flock follow-up fights still only come out of the SOLO
+      victory path, so a party fight never chains into one (the same gap the overworld has, and
+      the standing *"party flocks are not wired"* item), and none of this is playtested.
+
 - [ ] **ONBOARDING: a tutorial + a starter chain that reaches level 1. ⚑ DEPENDENCY of the
       questing replacement - build this FIRST.** Owner 2026-09-13: *"There should be a tutorial or
       early game dungeon quest in our to do list that will help alleviate your concerns."*

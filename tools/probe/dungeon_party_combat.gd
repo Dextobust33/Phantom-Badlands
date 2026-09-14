@@ -14,6 +14,10 @@ extends SceneTree
 const ServerScript = preload("res://server/server.gd")
 const CharacterScript = preload("res://shared/character.gd")
 const MonsterDB = preload("res://shared/monster_database.gd")
+const DungeonDB = preload("res://shared/dungeon_database.gd")
+const DropTablesScript = preload("res://shared/drop_tables.gd")
+const QuestDB = preload("res://shared/quest_database.gd")
+const QuestMgr = preload("res://shared/quest_manager.gd")
 
 var fails := 0
 func ck(ok: bool, msg: String) -> void:
@@ -36,6 +40,12 @@ func _srv() -> Node:
 	## open a TCP port), so combat_mgr is constructed here exactly as server.gd line 741 does.
 	var s = ServerScript.new()
 	s.combat_mgr = CombatManager.new()
+	s.monster_db = MonsterDB.new()
+	s.drop_tables = DropTablesScript.new()
+	s.quest_db = QuestDB.new()
+	s.quest_mgr = QuestMgr.new()
+	s.combat_mgr.set_drop_tables(s.drop_tables)
+	s.combat_mgr.set_monster_database(s.monster_db)
 	return s
 
 
@@ -171,7 +181,6 @@ func _init() -> void:
 	# a branch that could not run. So this drives the REAL entry point,
 	# _start_dungeon_monster_combat, the same function a player's step into a monster reaches.
 	var s9 = _srv()
-	s9.monster_db = MonsterDB.new()
 	var pc9 := _party(s9, 0, 0, "inst_A")
 	pc9[0].dungeon_x = 4
 	pc9[0].dungeon_y = 4
@@ -192,7 +201,6 @@ func _init() -> void:
 	# The counterpart check. If this one also produced a party combat, the gate would be broken
 	# open rather than wired, and every solo dungeon run would be affected.
 	var s10 = _srv()
-	s10.monster_db = MonsterDB.new()
 	var solo := _mk("Alone", "warrior")
 	solo.in_dungeon = true
 	solo.current_dungeon_id = "inst_A"
@@ -206,6 +214,66 @@ func _init() -> void:
 	s10._start_dungeon_monster_combat(1, entity.duplicate(true))
 	ck(not s10.combat_mgr.active_party_combats.has(1), "no party combat for a lone player")
 	ck(s10.combat_mgr.active_combats.has(1), "  ...they get their own solo combat as before")
+
+	print("")
+	print("===== 5. THE BOSS: completion runs ONCE, not once per member =====")
+	# The expensive mistake available here. _complete_dungeon already rewards and exits every
+	# follower itself, so calling it per member would pay the whole party out once per person -
+	# each follower collecting the clear rewards two, three, five times over. It is called for
+	# ONE player, and this proves which one.
+	var s11 = _srv()
+	var pc11 := _party(s11, 0, 0, "inst_A")
+	for ch in pc11:
+		ch.dungeon_x = 3
+		ch.dungeon_y = 3
+	s11.active_dungeons = {"inst_A": {"dungeon_type": "goblin_caves", "dungeon_level": 10,
+									  "sub_tier": 1, "active_players": [1, 2]}}
+	var grid: Array = []
+	for _y in range(7):
+		var row: Array = []
+		for _x in range(7):
+			row.append(DungeonDB.TileType.EMPTY)
+		grid.append(row)
+	s11.dungeon_floors = {"inst_A": [grid]}
+	s11.dungeon_monsters = {"inst_A": {0: [{"id": 99, "alive": true, "x": 3, "y": 4, "is_boss": true}]}}
+	var bctx := {"is_boss_fight": true, "dungeon_monster_id": 99,
+				 "dungeon_instance_id": "inst_A", "dungeon_floor": 0, "all_members": [1, 2]}
+	s11._party_dungeon_after_combat(1, [1, 2], bctx, true)
+	ck(not s11.dungeon_monsters["inst_A"][0][0].alive, "the boss is dead on the shared grid")
+	ck(s11.pending_final_chest.size() == 1,
+		"completion ran for exactly ONE player, not once each (got %d)" % s11.pending_final_chest.size())
+	ck(s11.pending_final_chest.has(1), "  ...and it was the leader")
+
+	print("")
+	print("----- and if the leader fell in the boss fight, the survivors still get out -----")
+	# A party that wins but loses its leader must not be sealed in.
+	var s12 = _srv()
+	var pc12 := _party(s12, 0, 0, "inst_A")
+	for ch in pc12:
+		ch.dungeon_x = 3
+		ch.dungeon_y = 3
+	s12.active_dungeons = {"inst_A": {"dungeon_type": "goblin_caves", "dungeon_level": 10,
+									  "sub_tier": 1, "active_players": [1, 2]}}
+	var grid2: Array = []
+	for _y in range(7):
+		var row2: Array = []
+		for _x in range(7):
+			row2.append(DungeonDB.TileType.EMPTY)
+		grid2.append(row2)
+	s12.dungeon_floors = {"inst_A": [grid2]}
+	s12.dungeon_monsters = {"inst_A": {0: [{"id": 99, "alive": true, "x": 3, "y": 4, "is_boss": true}]}}
+	# NOTE: this one prints a SCRIPT ERROR from send_location_update, which wants a world_system
+	# the harness has no cheap way to build. It fires AFTER the exit, so the assertion below is
+	# still meaningful - but do not read that line as a failure.
+	s12._party_dungeon_after_combat(1, [2], bctx, true)   # only the follower survived
+	ck(not s12.characters[2].in_dungeon,
+		"the surviving member is let out rather than sealed in")
+	# And the difference worth knowing about: a survivor who is not the leader gets an IMMEDIATE
+	# completion, no final chest, because _try_spawn_final_chest refuses non-leaders on the
+	# grounds that "the leader's chest covers the party". When the leader is dead there is no
+	# such chest. Pre-existing, recorded rather than quietly changed.
+	ck(s12.pending_final_chest.is_empty(),
+		"  ...though without a final chest, since only the leader can place one")
 
 	print("")
 	if fails == 0:
