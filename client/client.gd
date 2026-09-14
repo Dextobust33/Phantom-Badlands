@@ -674,6 +674,10 @@ var _local_battler_flip: bool = true
 # _process cycles the frame and rewrites just the .texture (no full re-sync).
 const WALK_ANIM_FRAME_SEC := 0.16       # seconds per walk-cycle frame
 const WALK_MOVING_WINDOW_MS := 320      # treat as "moving" for this long after a step
+## The idle breath. Slow on purpose: a figure standing still should settle, not vibrate, and every
+## tick costs one map recompose (~1ms). At this rate that is under 4ms a second, client-side only -
+## the server sends tile data and never sees any of this.
+const IDLE_BOB_FRAME_SEC := 0.45
 var _walk_anim_accum: float = 0.0
 var _local_last_move_ms: int = 0
 var _remote_last_move_ms: Dictionary = {}   # name -> Time.get_ticks_msec() of last step
@@ -40886,10 +40890,12 @@ func _tick_overworld_walk_anim(delta: float) -> void:
 	show anyway - stand, walk1, walk2 is the whole set."""
 	if game_state != GameState.PLAYING or in_combat or dungeon_mode or not has_character:
 		return
-	if (Time.get_ticks_msec() - _local_last_move_ms) > WALK_MOVING_WINDOW_MS:
-		return
+	# Two speeds. WALKING drives the stride, which has to keep up with the feet. STANDING STILL
+	# drives the idle bob, which is a slow breath - running it at stride speed would look like
+	# a panic attack, and redrawing the map eight times a second to achieve that would be worse.
+	var moving := (Time.get_ticks_msec() - _local_last_move_ms) <= WALK_MOVING_WINDOW_MS
 	_ow_anim_accum += delta
-	if _ow_anim_accum < WALK_ANIM_FRAME_SEC:
+	if _ow_anim_accum < (WALK_ANIM_FRAME_SEC if moving else IDLE_BOB_FRAME_SEC):
 		return
 	_ow_anim_accum = 0.0
 	_ow_anim_tick += 1
@@ -46432,7 +46438,7 @@ func _overworld_display(payload: Dictionary) -> String:
 	# down, after this call, so using it here would compose the map from the PREVIOUS step's
 	# dungeons. Correct on every frame but the one where a dungeon appears, which is the only
 	# frame that matters.
-	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {})):
+	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}), _ow_anim_tick):
 		return MapPayload.inflate(payload)
 	# NO CROP INSIDE A POST, and the reason is a measurement rather than a preference. The zoom
 	# shipped as "crop to the middle 11 and draw them twice as big", on the assumption that you

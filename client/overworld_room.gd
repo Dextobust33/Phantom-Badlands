@@ -166,8 +166,19 @@ static func _under_tile(meaning: String) -> String:
 
 
 static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = {},
-		dungeons: Dictionary = {}) -> bool:
-	"""Compose the map. Cheap when nothing has changed, which is most redraws that are not moves."""
+		dungeons: Dictionary = {}, anim_tick: int = 0) -> bool:
+	"""Compose the map. Cheap when nothing has changed, which is most redraws that are not moves.
+
+	`anim_tick` is the IDLE heartbeat. Every figure on the map - you, your companion, other
+	players, their companions - rises and settles by a pixel on a slow cycle, so the world
+	does not read as a diorama of statues. Owner 2026-09-14: *"ideally we want the player and
+	their companion to seem more alive rather than just having art where they just stand
+	still."*
+
+	A one-pixel offset rather than new art is the whole point: it costs nothing, and it works
+	for every figure regardless of what its sprite is. Half our 80 player sprites have no
+	alternate poses at all, and companions are monster art with no walk frames whatsoever -
+	any solution built on extra frames would have covered some of the map and not the rest."""
 	if meaning_rows.is_empty() or not available():
 		return false
 	var rows := meaning_rows.size()
@@ -187,6 +198,9 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 	for dk in dungeons:
 		var _di = dungeons[dk]
 		key += "d%s=%s;" % [dk, String(_di.get("family", "")) if _di is Dictionary else ""]
+	# The idle beat is part of the key, or the cache would hand back the previous frame and
+	# nothing would ever move.
+	key += "a%d;" % anim_tick
 	if key == _key and _grid != null:
 		return true
 	_key = key
@@ -317,8 +331,12 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 			continue
 		# Centred on its cell and anchored to the BOTTOM of it, so a figure taller than its
 		# square stands ON the tile and overflows into the one above rather than floating.
+		# The idle bob. Phase is offset by the figure's own cell so a crowd does not breathe in
+		# unison, which reads as a glitch rather than as life.
+		var _phase: int = (anim_tick + int(fr["x"]) * 3 + int(fr["y"]) * 5) % 6
+		var _bob: int = -1 if _phase < 3 else 0
 		_blend_clipped(grid, fi, int(fr["x"]) * CELL + (CELL - fi.get_width()) / 2,
-			(int(fr["y"]) + 1) * CELL - fi.get_height())
+			(int(fr["y"]) + 1) * CELL - fi.get_height() + _bob)
 
 	_grid = grid
 	return true
