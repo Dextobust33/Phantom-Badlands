@@ -16726,14 +16726,23 @@ func _checkout_companion_for_character(account_id: String, character: Character,
 	# Store house_slot on companion dict for per-companion registration tracking
 	companion["house_slot"] = slot
 	character.active_companion = companion
-	# Only add to collected_companions if not already there (prevent duplicates)
+	# Only add to collected_companions if not already there (prevent duplicates).
+	#
+	# 2026-09-13 - REPLACE the existing row, do not just stamp house_slot on it. An older record
+	# of the same companion is stale by definition: the Sanctuary copy has been out with other
+	# characters since. Stamping a slot onto a level-5 memory of a level-40 companion left the
+	# character holding two different answers, and add_companion_xp used to believe the archive
+	# one - demoting the companion on its first kill. See
+	# tools/probe/companion_level_survives_death.gd. Matching only ever happens on a REAL id;
+	# legacy companions carry "" and `"" == ""` would have matched an unrelated creature.
+	var _cid := String(companion.get("id", ""))
 	var already_has = false
-	for comp in character.collected_companions:
-		if comp.get("id", "") == companion.get("id", ""):
-			# Update the existing entry with house_slot
-			comp["house_slot"] = slot
-			already_has = true
-			break
+	if _cid != "":
+		for i in range(character.collected_companions.size()):
+			if String(character.collected_companions[i].get("id", "")) == _cid:
+				character.collected_companions[i] = companion
+				already_has = true
+				break
 	if not already_has:
 		character.collected_companions.append(companion)
 	character.using_registered_companion = true

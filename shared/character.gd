@@ -5287,17 +5287,30 @@ func add_companion_xp(xp_amount: int) -> Dictionary:
 
 	var companion_id = active_companion.get("id", "")
 	var companion_index = -1
-	for i in range(collected_companions.size()):
-		if collected_companions[i].get("id") == companion_id:
-			companion_index = i
-			break
+	# Only match on a REAL id. Legacy companions can carry "", and `"" == ""` matched whichever
+	# unnamed creature happened to sit first in the list - then the block below read ITS level.
+	if companion_id != "":
+		for i in range(collected_companions.size()):
+			if String(collected_companions[i].get("id", "")) == companion_id:
+				companion_index = i
+				break
 
-	if companion_index == -1:
-		return {"leveled_up": false, "new_level": 0, "xp": 0, "xp_to_next": 0, "abilities_unlocked": []}
-
-	var companion = collected_companions[companion_index]
-	var current_level = companion.get("level", 1)
-	var current_xp = companion.get("xp", 0)
+	# 2026-09-13 - THE BASELINE COMES FROM active_companion, NOT THE ARCHIVE COPY.
+	#
+	# Live report: *"their companion show as one thing on their character then don't retain their
+	# level once they die."* Measured in tools/probe/companion_level_survives_death.gd: a Sanctuary
+	# companion checked out at level 40 onto a character still holding an older level-5 record of
+	# it showed 40 on the character sheet, and the FIRST XP grant read the level from that level-5
+	# archive entry and wrote 5 back over both copies. The companion was demoted 40 -> 5 mid-fight
+	# and the Sanctuary kept the 5 when the character died. Not a save bug - a live overwrite.
+	#
+	# active_companion is the one in play, the one the player is looking at, and the one the
+	# Sanctuary just handed over. collected_companions is the archive and follows it.
+	#
+	# The old early-return here also meant a companion missing from the archive earned NOTHING,
+	# silently, forever. It now earns normally and simply has no archive row to update.
+	var current_level = active_companion.get("level", 1)
+	var current_xp = active_companion.get("xp", 0)
 
 	if current_level >= COMPANION_MAX_LEVEL:
 		return {"leveled_up": false, "new_level": current_level, "xp": current_xp, "xp_to_next": 0, "abilities_unlocked": []}
@@ -5320,13 +5333,12 @@ func add_companion_xp(xp_amount: int) -> Dictionary:
 			abilities_unlocked.append(50)
 		xp_needed = get_companion_xp_to_next_level(current_level)
 
-	# Update the companion data
-	collected_companions[companion_index]["level"] = current_level
-	collected_companions[companion_index]["xp"] = current_xp
-
-	# Also update active_companion
+	# The companion in play is the record; the archive row follows it when there is one.
 	active_companion["level"] = current_level
 	active_companion["xp"] = current_xp
+	if companion_index != -1:
+		collected_companions[companion_index]["level"] = current_level
+		collected_companions[companion_index]["xp"] = current_xp
 
 	return {
 		"leveled_up": leveled_up,
