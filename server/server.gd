@@ -35042,7 +35042,7 @@ func _complete_dungeon(peer_id: int):
 	var boss_egg_lost_to_full = false
 	var boss_egg_monster = rewards.get("boss_egg", "")
 	if boss_egg_monster != "":
-		var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, inst_sub_tier)
+		var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _boss_egg_rank(inst_sub_tier))
 		if not egg_data.is_empty():
 			var _egg_cap = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
 			var egg_result = character.add_egg(egg_data, _egg_cap)
@@ -43702,3 +43702,28 @@ func _best_kennel_level(kennel: Array, indices: Array) -> int:
 		if i >= 0 and i < kennel.size() and kennel[i] is Dictionary:
 			best = maxi(best, int(kennel[i].get("level", 1)))
 	return best
+
+
+## How often a rank-9 dungeon actually hands back a rank-9 boss egg.
+##
+## Owner decision 2026-09-13, offered three ways and this is the one chosen: "rank 9 from
+## dungeons, but rare". Both routes to the top of the ladder stay alive - a clear can reach it,
+## and fusion is not obsoleted by being the slow way round to something a dungeon gives freely.
+const BOSS_EGG_RANK9_CHANCE := 0.15
+
+
+func _boss_egg_rank(dungeon_rank: int) -> int:
+	"""The rank of the guaranteed boss egg.
+
+	⚑ RANK 9 IS RARE HERE, NOT AUTOMATIC. Dungeons used to hand back an egg of exactly their own
+	rank, so every rank-9 clear produced a rank-9 egg - the 2.0x stat / 1.75x ability tier the
+	companion tables still label "Fusion-only". Raising dungeons from 8 ranks to 9 opened that
+	door by accident: it made a dungeon clear strictly better than the fusion chain that was
+	built to be the only way there.
+
+	Below rank 9 nothing changes - a rank-5 dungeon still gives a rank-5 egg. Only the top step
+	is a roll."""
+	var r: int = clampi(dungeon_rank, 1, 9)
+	if r < 9:
+		return r
+	return 9 if randf() < BOSS_EGG_RANK9_CHANCE else 8

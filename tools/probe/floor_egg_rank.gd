@@ -127,5 +127,38 @@ func _init() -> void:
 	ck(ssrc3.find("## ⚑ UNREACHABLE IN PRACTICE, AND THAT IS DELIBERATE") >= 0,
 		"and the dead function SAYS it is dead, so nobody debugs it for an hour")
 
+	print("\n===== THE BOSS EGG: RANK 9 IS A RARE ROLL, NOT AUTOMATIC =====")
+	# Owner decision 2026-09-13. A rank-9 clear used to ALWAYS return a rank-9 egg - the
+	# 2.0x/1.75x tier the companion tables still call "Fusion-only" - which made a dungeon clear
+	# strictly better than the fusion chain built to be the only route there.
+	print("  %-10s %10s %10s" % ["dungeon", "egg rank", "share"])
+	for r in [1, 5, 8, 9]:
+		var hist: Dictionary = {}
+		var n2 := 4000
+		for i in range(n2):
+			var e: int = srv._boss_egg_rank(r)
+			hist[e] = int(hist.get(e, 0)) + 1
+		var parts: Array = []
+		var ks: Array = hist.keys()
+		ks.sort()
+		for k in ks:
+			parts.append("rank %d: %.0f%%" % [k, 100.0 * float(hist[k]) / float(n2)])
+		print("  rank %-5d %s" % [r, "   ".join(parts)])
+	# Below 9 nothing changed: the egg is exactly the dungeon's rank.
+	var exact := true
+	for r in [1, 3, 5, 8]:
+		for i in range(200):
+			if srv._boss_egg_rank(r) != r:
+				exact = false
+	ck(exact, "below the top step a dungeon still gives an egg of its own rank")
+	var nines := 0
+	for i in range(4000):
+		if srv._boss_egg_rank(9) == 9:
+			nines += 1
+	var pct9: float = 100.0 * float(nines) / 4000.0
+	ck(pct9 > 5.0 and pct9 < 30.0,
+		"a rank-9 clear reaches rank 9 %.1f%% of the time - rare, but reachable" % pct9)
+	ck(srv._boss_egg_rank(9) <= 9, "and never exceeds the ladder")
+
 	print("\n[FLOOREGGRANK] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)
