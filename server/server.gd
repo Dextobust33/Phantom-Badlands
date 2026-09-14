@@ -34882,14 +34882,22 @@ func _get_party_id(peer_id: int) -> int:
 			return party_id
 	return -1
 
-func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "", force: bool = false) -> Dictionary:
+func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "", force: bool = false, rank: int = 1) -> Dictionary:
 	"""#38 (2026-08-27) — dungeon CARD DROP. A tier-scaled chance to earn the dungeon's
 	themed DUNGEON-EXCLUSIVE card (universal, permanent, found ONLY here). If the dungeon
 	has no themed card, or you already own the max (3) copies, it FALLS BACK to the legacy
 	'copy-drop' (+1 copy of an ability you use). Returns {granted, ability, display,
 	new_count, exclusive}."""
 	var out := {"granted": false, "ability": "", "display": "", "new_count": 0, "exclusive": false}
-	var chance: float = min(0.30, 0.05 + float(tier) * 0.02)
+	# ⚑ RANK COUNTS HERE TOO. This was tier-only, so a rank-1 and a rank-9 dungeon of the same
+	# tier had identical card odds - the last completion reward that ignored the ladder, after xp,
+	# materials, the chest's gear and valor were all made to follow it. Same `1.0 + (rank-1)*0.1`
+	# curve as the rest, so a rank-9 run is 1.8x as likely to pay a card as a rank-1.
+	#
+	# The 30% ceiling is unchanged and still binds: it is what stops a top-grade run turning into
+	# a card faucet.
+	var _rank_mult: float = 1.0 + float(clampi(rank, 1, 9) - 1) * 0.1
+	var chance: float = min(0.30, (0.05 + float(tier) * 0.02) * _rank_mult)
 	if not force and randf() >= chance:
 		return out
 	# Prefer the themed dungeon-exclusive card for this dungeon type.
@@ -35059,7 +35067,7 @@ func _complete_dungeon(peer_id: int):
 	var _forced: bool = bool(_gm_force_dungeon_card.get(peer_id, false))
 	if _forced:
 		_gm_force_dungeon_card.erase(peer_id)
-	var _card_reward = _roll_dungeon_card_reward(character, int(tier), dungeon_type, _forced)
+	var _card_reward = _roll_dungeon_card_reward(character, int(tier), dungeon_type, _forced, int(inst_sub_tier))
 
 	# Record completion (cooldowns removed)
 	character.record_dungeon_completion(dungeon_type)
@@ -35273,7 +35281,7 @@ func _complete_dungeon(peer_id: int):
 					follower.add_crafting_material(mat.id, mat.quantity)
 					var _fq2 = " x%d" % mat.quantity if mat.quantity > 1 else ""
 					f_bonus_material_msgs.append("[color=#00FFCC]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), _fq2])
-			var f_card_reward = _roll_dungeon_card_reward(follower, int(tier), dungeon_type)
+			var f_card_reward = _roll_dungeon_card_reward(follower, int(tier), dungeon_type, false, int(inst_sub_tier))
 
 			follower.record_dungeon_completion(dungeon_type)
 

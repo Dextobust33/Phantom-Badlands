@@ -48,6 +48,27 @@ func _init() -> void:
 		var chance: float = min(0.30, 0.05 + float(tier) * 0.02)
 		print("  tier %d: %.0f%% per clear" % [tier, chance * 100.0])
 
+	print("\n===== AND RANK RAISES THEM, LIKE EVERY OTHER COMPLETION REWARD =====")
+	# The last one that ignored the ladder. xp, materials, the chest's gear and valor all apply
+	# `1.0 + (rank-1)*0.1`; the card chance was tier-only, so a rank-1 and a rank-9 dungeon of the
+	# same tier had identical odds.
+	print("  %-6s %10s %10s   %s" % ["tier", "rank 1", "rank 9", "note"])
+	var rank_helps := 0
+	for tier in [1, 3, 5, 7, 9]:
+		var c1: float = min(0.30, (0.05 + float(tier) * 0.02) * 1.0)
+		var c9: float = min(0.30, (0.05 + float(tier) * 0.02) * 1.8)
+		var note := "capped" if c9 >= 0.2999 else ""
+		print("  %-6d %9.0f%% %9.0f%%   %s" % [tier, c1 * 100.0, c9 * 100.0, note])
+		if c9 > c1:
+			rank_helps += 1
+	ck(rank_helps >= 4, "a rank-9 run beats a rank-1 at %d of 5 tiers (the rest are at the cap)" % rank_helps)
+	var ssrc4 := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(ssrc4.find("var chance: float = min(0.30, (0.05 + float(tier) * 0.02) * _rank_mult)") >= 0,
+		"the roll applies the rank multiplier")
+	ck(ssrc4.count("_roll_dungeon_card_reward(character, int(tier), dungeon_type, _forced, int(inst_sub_tier))") == 1
+		and ssrc4.count("_roll_dungeon_card_reward(follower, int(tier), dungeon_type, false, int(inst_sub_tier))") == 1,
+		"and BOTH call sites pass the dungeon's rank - a defaulted parameter is how this regresses")
+
 	print("\n===== AND WHAT A PLAYER ACTUALLY WALKS AWAY WITH =====")
 	# Force the roll so the CHANCE is not what is being measured - what is being measured is
 	# whether a forced roll ever fails to produce a card, which is the silent-failure case.
