@@ -6248,9 +6248,14 @@ func _dev_run_shots() -> void:
 				# at the same cell. That silently broke the companion-follower check, because the
 				# companion stands on the player's PREVIOUS cell and there had never been one.
 				# The shot looked completely normal, which is what made it cost a session.
-				for _d in ["e", "e", "s"]:
+				# ⚑ WALK ENOUGH TO HAVE SOMETHING TO SHOW. Three steps revealed a few tiles and
+				# left the rest of the frame black, which is fine for checking a sprite and
+				# useless as a picture of the game - the website shot came out two-thirds empty.
+				# A longer route opens corridors and rooms, so the floor reads as a place.
+				for _d in ["e", "e", "e", "s", "s", "e", "e", "n", "e", "e", "s", "s", "s",
+						"w", "w", "s", "e", "e"]:
 					send_to_server({"type": "dungeon_move", "direction": _d})
-					await get_tree().create_timer(0.7).timeout
+					await get_tree().create_timer(0.42).timeout
 				# Put loot on the floor so the egg and item sprites are actually IN the capture.
 				# Floor loot is rare enough that a shot rarely contains any, which meant the art
 				# could not be reviewed without waiting for luck.

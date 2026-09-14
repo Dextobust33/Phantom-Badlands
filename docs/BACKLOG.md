@@ -3406,7 +3406,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 - [ ] **Dungeon Atlas** as hub + quest board.
 - [ ] **Dungeon-centred questing** to replace the disliked overworld quests: clear / rescue /
       boss-hunt / gather.
-- [ ] **Presentation pass — mostly SHIPPED, one piece left.** The map, minimap and in-dungeon
+- [x] **Presentation pass — mostly SHIPPED, one piece left.** The map, minimap and in-dungeon  **DONE 2026-09-13** - `docs/img/dungeon.jpg` is live on the features page under the Dungeons section. The capture scene now walks an 18-step route instead of 3, because the short one left two-thirds of the frame black: fine for checking a sprite, useless as a picture of the game.
       GUI all landed across v0.9.760-767. What remains is narrow: **real in-game dungeon
       screenshots for the website**, which now show something worth showing.
 
