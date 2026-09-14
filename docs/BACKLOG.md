@@ -80,18 +80,25 @@ All of this came out of the distribution work. Recorded before starting any of i
       FLOORED AT 10%. That floor is the real complaint - at +18 levels a player still rolls
       encounters at a tenth of base, which over a 500-tile walk is many interruptions.
 
-- [ ] **TRIVIAL-ENCOUNTER AUTO-RESOLVE (my suggestion, needs the owner's call).** When the ground
+- [ ] **TRIVIAL-ENCOUNTER AUTO-RESOLVE — ACCEPTED by the owner 2026-09-13.** When the ground
       is far below the player (say area level under a third of theirs), do not open combat at
       all - print one line ("you scatter a pack of rats") and grant token XP. This removes the
       INTERRUPTION without removing the world, and it targets the owner's exact words: *"low
       level meaningless encounters"*. Complements stances rather than replacing them: stances are
       a choice the player makes, this is the game not wasting their time.
+      **Owner's acceptance changed one thing: FULL rewards, not token XP.** A resolved encounter
+      pays what fighting it would have paid - otherwise the feature quietly taxes anyone who
+      out-levels their surroundings, which is precisely the player it is meant to help.
 
-- [ ] **POST-TO-POST ROAD TRAVEL (my suggestion, deliberately held as a SEPARATE decision).**
+- [ ] **POST-TO-POST ROAD TRAVEL — ACCEPTED by the owner 2026-09-13** (held as a separate
+      decision, and answered separately).
       Standing on a road at a discovered post, offer travel to another discovered post along it,
       fast-forwarded with a chance of interruption. It is the most direct answer to "travel is
       long" and it is also the one that could most easily devalue exploration, which is why it
       should be decided on its own rather than bundled.
+      **Owner's acceptance set the price: it costs TIME AND RESOURCES, not nothing.** That is what
+      keeps it from devaluing the walk - arriving with a drained bar is a different arrival than
+      teleporting in fresh.
 
 - [x] **DONE 2026-09-13 — Roads: three tiles wide, and ten times quieter.** Measured: 6.7
       encounters per 200 steps on the road against 67.2 beside it. Deliberately NOT zero - a
@@ -323,10 +330,12 @@ Asked because the arc had run out of defects and into design. All four answered.
       character needs a dungeon it can clear immediately, or the first hour empties out. Whatever
       replaces the overworld quests must reach down to level 1.
 
-- [ ] **BOTH PROPOSALS ACCEPTED: trivial-encounter auto-resolve AND post-to-post road travel.**
-      Auto-resolve: ground far below your level resolves instantly with a one-line summary and
-      full rewards. Road travel: fast travel between visited posts along roads, costing time and
-      resources rather than free.
+<!-- The owner's acceptance of both proposals is recorded ON the two items themselves, higher up
+     in this file, where their design detail already lived. A third copy stood here until
+     2026-09-13; the Dungeon Atlas was once tracked as three separate tasks in three places and
+     this is the same shape. What the acceptance ADDED to those items, and is now folded into
+     them: auto-resolve grants FULL rewards, not token ones; road travel costs time and
+     resources rather than being free. -->
 
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 
@@ -334,6 +343,12 @@ Asked because the arc had run out of defects and into design. All four answered.
 server and disconnects everyone. **Batch the work; deploy rarely.** Ship immediately only for data
 loss, a crash, something that permanently breaks a character, or a live regression we caused.
 Building and gating is free - do that as often as you like. Creating the release is not.
+
+**⛑ 2026-09-13 — THE HELD BATCH NOW CONTAINS A CHARACTER-BREAKING FIX, which meets the owner's
+own bar above.** Sanctuary companions were being DEMOTED to a stale level on their first kill and
+the Sanctuary then kept the lower number (see `tools/probe/companion_level_survives_death.gd`).
+That is permanent loss of earned progress, happening to live players every time they check a
+companion out. The rest of the batch is still not urgent; this one is. **Owner's call to deploy.**
 
 **HELD, built and gated, not deployed:** v0.9.786 - the tile audit (well/fountain were the same
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
