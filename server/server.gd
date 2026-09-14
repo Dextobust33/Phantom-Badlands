@@ -16700,19 +16700,22 @@ func _return_registered_companions(account_id: String, character: Character) -> 
 
 	One helper called from both paths rather than a second copy: a character leaving play is a
 	character leaving play, however it happens."""
+	# The ACTIVE companion goes back first, deliberately. It is the copy that has been out
+	# earning levels, and `_return_registered_companions` used to walk collected_companions first
+	# and mark the slot done - so a stale archive row could win and the Sanctuary kept the older
+	# numbers. The companion in play is the record; see the same rule in `add_companion_xp`.
 	var returned_slots = {}
+	var active_slot := int(character.active_companion.get("house_slot", -1))
+	if active_slot < 0 and _is_registered_companion(character, character.active_companion):
+		active_slot = int(character.registered_companion_slot)   # legacy pair
+	if active_slot >= 0:
+		persistence.return_companion_to_house(account_id, active_slot, character.active_companion)
+		returned_slots[active_slot] = true
 	for comp in character.collected_companions:
-		var house_slot = comp.get("house_slot", -1)
+		var house_slot = int(comp.get("house_slot", -1))
 		if house_slot >= 0 and not returned_slots.has(house_slot):
 			persistence.return_companion_to_house(account_id, house_slot, comp)
 			returned_slots[house_slot] = true
-	# Also check active companion (may have newer data than collected_companions entry)
-	var active_slot = character.active_companion.get("house_slot", -1)
-	if active_slot >= 0 and not returned_slots.has(active_slot):
-		persistence.return_companion_to_house(account_id, active_slot, character.active_companion)
-	# Legacy fallback: if old character has flag but no house_slot on companions
-	if returned_slots.is_empty() and character.using_registered_companion and character.registered_companion_slot >= 0:
-		persistence.return_companion_to_house(account_id, character.registered_companion_slot, character.active_companion)
 
 func _checkout_companion_for_character(account_id: String, character: Character, slot: int, char_name: String) -> String:
 	"""Checkout a registered companion from house kennel and assign to character.
@@ -39440,6 +39443,32 @@ func handle_trade_cancel(peer_id: int):
 
 # ===== CORPSE SYSTEM =====
 
+func _is_registered_companion(character, comp: Dictionary) -> bool:
+	"""Is this companion owned by the SANCTUARY rather than by the character?
+
+	⛑ THE ONE DEFINITION, and it exists because there were two and they disagreed. A registered
+	companion returns to its house slot on death - so if the corpse also drops a copy, the player
+	gets BOTH. That is a dupe, and it was live: reported by the owner 2026-09-13.
+
+	The corpse path tested only `house_slot >= 0`. The RETURN path tested that too, and then fell
+	back to `using_registered_companion` + `registered_companion_slot` for legacy characters whose
+	companions predate the per-companion `house_slot` field. So for exactly those characters the
+	return fired and the corpse guard did not, and the companion existed twice.
+
+	Both paths ask this now. The legacy pair is checked against the ACTIVE companion only, which
+	is what those fields have ever described."""
+	if comp.is_empty():
+		return false
+	if int(comp.get("house_slot", -1)) >= 0:
+		return true
+	# Legacy: one registered companion, tracked on the character rather than on the companion.
+	if character != null and bool(character.using_registered_companion) and int(character.registered_companion_slot) >= 0:
+		var active_id := String(character.active_companion.get("id", ""))
+		if active_id != "" and String(comp.get("id", "")) == active_id:
+			return true
+	return false
+
+
 func _create_corpse_from_character(character: Character, cause_of_death: String) -> Dictionary:
 	"""Create a corpse from a dead character's possessions."""
 	# Determine death location
@@ -39497,14 +39526,15 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 	for i in range(mini(2, equipped_slots.size())):
 		contents["items"].append(character.equipped[equipped_slots[i]].duplicate(true))
 
-	# Copy active companion (full persistence) - skip registered companions (they return to house)
-	if not character.active_companion.is_empty() and character.active_companion.get("house_slot", -1) < 0:
+	# Copy active companion (full persistence) - skip registered companions (they return to house,
+	# and dropping a copy here as well is how they got DUPED).
+	if not character.active_companion.is_empty() and not _is_registered_companion(character, character.active_companion):
 		contents["active_companion"] = character.active_companion.duplicate(true)
 
 	# Select one random OTHER owned companion (not the active one, not registered to house)
 	var other_companions = []
 	for comp in character.collected_companions:
-		if comp.get("id", "") != character.active_companion.get("id", "") and comp.get("house_slot", -1) < 0:
+		if comp.get("id", "") != character.active_companion.get("id", "") and not _is_registered_companion(character, comp):
 			other_companions.append(comp)
 	if not other_companions.is_empty():
 		var random_idx = randi() % other_companions.size()
