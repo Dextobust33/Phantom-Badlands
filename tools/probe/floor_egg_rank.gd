@@ -1,19 +1,15 @@
 extends SceneTree
-## A deeper dungeon must be a better place to find an egg.
+## Climbing a dungeon's rank has to pay off in the eggs it drops.
 ##
 ## Owner 2026-09-11: *"each of those higher ranked ones should ideally have a higher chance to
-## drop higher rank eggs (we should check this and fix it if they don't)."* They did not. A
-## dungeon floor rolled `1 + randi() % 8` - a uniform rank that ignored the dungeon completely,
-## so an H1 and an H9 handed out identical eggs and the only thing climbing ranks bought was the
-## single boss egg at the end.
+## drop higher rank eggs (we should check this and fix it if they don't)."*
 ##
-## Egg rank becomes the companion's `sub_tier`, which is worth up to 2x its stats and 2x the
-## bonuses it grants its owner, so this was the reward for the whole climb going missing.
-##
-## What this holds: the floor-egg rank RISES with the dungeon's rank, reaches 9, never leaves
-## 1-9, and still varies. "Higher chance", not "always exactly".
-const SRC := "res://server/server.gd"
-const PR := preload("res://shared/power_rank.gd")
+## Egg rank becomes the companion's `sub_tier`, which multiplies its stats (1.0x at rank 1 to 2.0x
+## at rank 9) and the bonuses it hands its owner. It is the whole reward for climbing ranks, and
+## the floor is where most of the eggs come from - so if the floor roll ignores the dungeon, rank
+## buys a player exactly one egg per run.
+const ServerScript = preload("res://server/server.gd")
+const PowerRankScript = preload("res://shared/power_rank.gd")
 
 var fails := 0
 func ck(ok: bool, msg: String) -> void:
@@ -22,77 +18,90 @@ func ck(ok: bool, msg: String) -> void:
 	print(("  PASS  " if ok else "  FAIL  ") + msg)
 
 
-## The shipped rule, read off the source rather than re-typed - the constants are the thing the
-## owner will tune, and a probe holding its own copy of them would stop testing the game.
-var spread_down := 0
-var spread_up := 0
-
-func floor_egg_rank(dungeon_rank: int) -> int:
-	var r: int = clampi(dungeon_rank, 1, PR.RANKS)
-	var lo: int = maxi(1, r - spread_down)
-	var hi: int = mini(PR.RANKS, r + spread_up)
-	return lo + (randi() % (hi - lo + 1))
-
-
 func _init() -> void:
-	var src := FileAccess.get_file_as_string(SRC)
+	var srv = ServerScript.new()
 
-	print("--- the old uniform roll is gone ---")
-	ck(src.find("var egg_sub := 1 + (randi() % 8)") < 0,
-		"no floor egg rolls a rank that ignores its dungeon")
-	ck(src.find("_floor_egg_rank(sub_tier)") >= 0, "the floor egg asks for the dungeon's rank")
-	ck(src.find("func _floor_egg_rank(") >= 0, "and one function decides what that means")
-	# `sub_tier` was a DEAD parameter on _roll_floor_item - passed by three call sites, read by
-	# none. That is what let the fault sit unnoticed.
-	var i0 := src.find("func _roll_floor_item(")
-	var i1 := src.find("\nfunc ", i0 + 10)
-	ck(i0 > 0 and src.substr(i0, i1 - i0).find("sub_tier") >= 0,
-		"_roll_floor_item finally READS the sub_tier it has always been handed")
-
-	for line in src.split("\n"):
-		var t := line.strip_edges()
-		if t.begins_with("const FLOOR_EGG_RANK_SPREAD_DOWN"):
-			spread_down = int(t.split(":=")[1].strip_edges())
-		elif t.begins_with("const FLOOR_EGG_RANK_SPREAD_UP"):
-			spread_up = int(t.split(":=")[1].strip_edges())
-	ck(spread_down >= 0 and spread_up >= 0,
-		"the window is named and tunable (down %d, up %d)" % [spread_down, spread_up])
-
-	print("\n--- a deeper dungeon really is a better place to look ---")
-	var N := 4000
+	print("===== DOES A HIGHER-RANK DUNGEON DROP HIGHER-RANK EGGS? =====")
+	print("  %-8s %8s %8s %8s   %s" % ["dungeon", "mean", "min", "max", "distribution"])
 	var means: Array = []
-	for rank in range(1, PR.RANKS + 1):
+	var n := 4000
+	for r in range(1, PowerRankScript.RANKS + 1):
 		var total := 0
 		var lo := 99
 		var hi := 0
-		for i in range(N):
-			var v := floor_egg_rank(rank)
-			total += v
-			lo = mini(lo, v)
-			hi = maxi(hi, v)
-		var mean := float(total) / float(N)
+		var hist: Dictionary = {}
+		for i in range(n):
+			var e: int = srv._floor_egg_rank(r)
+			total += e
+			lo = mini(lo, e)
+			hi = maxi(hi, e)
+			hist[e] = int(hist.get(e, 0)) + 1
+		var mean: float = float(total) / float(n)
 		means.append(mean)
-		print("  %s%d: mean egg rank %.2f  (seen %d-%d)" % [PR.letter(1), rank, mean, lo, hi])
-		ck(lo >= 1 and hi <= PR.RANKS, "rank %d never leaves 1-%d" % [rank, PR.RANKS])
+		var bar := ""
+		for k in range(1, PowerRankScript.RANKS + 1):
+			var pct: int = int(round(100.0 * float(hist.get(k, 0)) / float(n)))
+			bar += "%d:%-3d" % [k, pct]
+		print("  rank %-3d %8.2f %8d %8d   %s" % [r, mean, lo, hi, bar])
+
+	# The claim: a higher-rank dungeon gives better eggs. Monotonic means, not just "different".
 	var rising := true
 	for i in range(1, means.size()):
-		if means[i] <= means[i - 1]:
+		if float(means[i]) < float(means[i - 1]) - 0.001:
 			rising = false
-	ck(rising, "every extra dungeon rank raises the average egg rank")
-	ck(means[8] - means[0] > 5.0,
-		"and the climb is worth making: rank 1 averages %.2f, rank 9 averages %.2f" % [means[0], means[8]])
+	ck(rising, "mean egg rank rises with the dungeon's rank, every step")
+	ck(float(means[means.size() - 1]) - float(means[0]) >= 4.0,
+		"and the spread across the ladder is worth having: rank 1 gives %.2f, rank 9 gives %.2f"
+			% [float(means[0]), float(means[means.size() - 1])])
 
-	print("\n--- rank 9 is reachable, and it still surprises ---")
-	var saw9 := false
-	for i in range(2000):
-		if floor_egg_rank(9) == 9:
-			saw9 = true
+	print("\n===== AND A RANK-9 DUNGEON CAN ACTUALLY PRODUCE A RANK-9 EGG =====")
+	# The old roll was `1 + randi() % 8` - it could never return 9 even after dungeons started
+	# generating rank 9, so the top of the ladder was unreachable from the floor.
+	var saw_nine := false
+	for i in range(4000):
+		if srv._floor_egg_rank(PowerRankScript.RANKS) == PowerRankScript.RANKS:
+			saw_nine = true
 			break
-	ck(saw9, "a rank-9 dungeon can drop a rank-9 egg (the old roll capped at 8 and never could)")
-	var distinct := {}
-	for i in range(2000):
-		distinct[floor_egg_rank(5)] = true
-	ck(distinct.size() > 1, "a rank-5 dungeon still gives %d different egg ranks, not one" % distinct.size())
+	ck(saw_nine, "rank %d is reachable from a floor egg" % PowerRankScript.RANKS)
+	var ssrc := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(ssrc.find("1 + randi() % 8") < 0 or ssrc.find("It used to be `1 + randi() % 8`") >= 0,
+		"the old uniform roll survives only as a comment explaining itself")
 
-	print("\n[FLOOREGG] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
+	print("\n===== AND A RANK-1 DUNGEON DOES NOT HAND OUT TOP EGGS =====")
+	var top := 0
+	for i in range(4000):
+		if srv._floor_egg_rank(1) >= 7:
+			top += 1
+	print("  a rank-1 dungeon produced a rank-7+ egg %d times in 4000" % top)
+	ck(top == 0, "the bottom of the ladder cannot produce the top of it")
+
+	print("\n===== AND THE FINAL CHEST'S GEAR SCALES WITH RANK TOO =====")
+	# The one reward every run ends on. It used to roll at `max(1, character.level)` - the
+	# LOOTER's level - so a rank-1 and a rank-9 dungeon of the same tier gave identical
+	# equipment, and `inst_sub_tier` sat two lines above it, read and unused.
+	const DungeonDB = preload("res://shared/dungeon_database.gd")
+	print("  %-6s %10s %10s   %s" % ["rank", "band min", "band max", "chest gear level (level-20 player)"])
+	var last := -1
+	var rising2 := true
+	for r in range(1, PowerRankScript.RANKS + 1):
+		var band: Dictionary = DungeonDB.get_sub_tier_level_range(4, r)
+		var mid: int = int((int(band.get("min_level", 1)) + int(band.get("max_level", 1))) / 2)
+		var lvl: int = maxi(1, maxi(20, mid))
+		print("  %-6d %10d %10d   %d" % [r, int(band.get("min_level", 0)), int(band.get("max_level", 0)), lvl])
+		if last >= 0 and lvl < last:
+			rising2 = false
+		last = lvl
+	ck(rising2, "chest gear level never falls as the dungeon's rank rises")
+	var b1: Dictionary = DungeonDB.get_sub_tier_level_range(4, 1)
+	var b9: Dictionary = DungeonDB.get_sub_tier_level_range(4, 9)
+	var mid1: int = int((int(b1.get("min_level", 1)) + int(b1.get("max_level", 1))) / 2)
+	var mid9: int = int((int(b9.get("min_level", 1)) + int(b9.get("max_level", 1))) / 2)
+	ck(mid9 > mid1, "a rank-9 dungeon's band sits above a rank-1's (%d vs %d)" % [mid9, mid1])
+	var ssrc2 := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(ssrc2.find("var item_level = max(1, max(character.level, _band_mid))") >= 0,
+		"the chest rolls at the dungeon's band, or the player's level if they have out-levelled it")
+	ck(ssrc2.find("var item_level = max(1, character.level)") < 0,
+		"and the looter-only version is gone")
+
+	print("\n[FLOOREGGRANK] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)

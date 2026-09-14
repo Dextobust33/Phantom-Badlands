@@ -34744,7 +34744,20 @@ func _open_final_chest(peer_id: int):
 	var inst_sub_tier = 1
 	if active_dungeons.has(character.current_dungeon_id):
 		inst_sub_tier = int(active_dungeons[character.current_dungeon_id].get("sub_tier", 1))
-	var item_level = max(1, character.level)
+	# ⚑ THE LOOT MATCHES THE DANGER, NOT THE LOOTER.
+	#
+	# This was `max(1, character.level)`, so a rank-1 and a rank-9 dungeon of the same tier gave
+	# IDENTICAL equipment - `inst_sub_tier` was read two lines up and never used for it. Owner
+	# 2026-09-11 asked whether climbing rank pays off; for the final chest's gear it did not at
+	# all, which is the one reward every run ends on.
+	#
+	# The dungeon's own band is what it should scale to: a rank-9 run holds higher-level monsters
+	# by construction, so its chest should hold gear worth the fight. Taking the MAX with the
+	# player's level means nobody who has out-levelled a dungeon gets worse loot than before -
+	# this can only raise it.
+	var _band: Dictionary = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_tier, inst_sub_tier)
+	var _band_mid: int = int((int(_band.get("min_level", 1)) + int(_band.get("max_level", 1))) / 2)
+	var item_level = max(1, max(character.level, _band_mid))
 
 	var reward_lines: Array = []
 
