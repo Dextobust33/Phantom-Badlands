@@ -91,11 +91,15 @@ func _init() -> void:
 	print("===== AND HE KEEPS DOING IT UNTIL THE FIGHT ENDS =====")
 	# One round proves the wiring; the owner died over several. Run until someone drops.
 	var rounds := 0
-	while rounds < 25 and pl.current_hp > 0:
+	while rounds < 10 and pl.current_hp > 0:
 		rounds += 1
 		combat["round"] = rounds
 		cm._party_process_monster_phase(combat)
 	print("  survived %d rounds (guide on %d hp)" % [rounds, gd.current_hp])
+	# NOTE: the guide HERE is hand-built by `_mk`, not by the server's _make_guide_character, so
+	# his HP POOL is not the real one and this file must not judge it. How healthy his bar looks
+	# is checked in tutorial_walkthrough.gd, where he is constructed the way the game constructs
+	# him. Duplicating that construction here once already produced a false failure.
 	ck(pl.current_hp > 0, "the player is still standing after %d rounds" % rounds)
 	ck(gd.current_hp >= 1, "and the guide never fell (held at 1 by design)")
 

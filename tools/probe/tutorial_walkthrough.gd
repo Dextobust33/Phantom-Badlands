@@ -141,7 +141,14 @@ func _init() -> void:
 				% [max(0, ch.current_hp), ch.get_total_max_hp()])
 			ck(ch.current_hp > 0, "THE PLAYER IS ALIVE — the Warden did his job")
 			var gd = c["characters"][sv.GUIDE_PEER_ID]
-			ck(gd.current_hp >= 1, "  and the Warden is still standing (held at 1)")
+			ck(gd.current_hp >= 1, "  and the Warden is still standing")
+			# Owner 2026-09-14: *"the warden should have a bunch more HP so he's not sitting
+			# missing pretty much all of his HP during some fights."* A protector whose bar is
+			# empty reads as about to die, which is the opposite of the reassurance he is for.
+			var gpct: float = 100.0 * gd.current_hp / maxf(1.0, float(gd.get_total_max_hp()))
+			print("  Warden on %d/%d hp (%.0f%%) after taking the round six times"
+				% [gd.current_hp, gd.get_total_max_hp(), gpct])
+			ck(gpct > 40.0, "  and he still LOOKS like a protector, not a casualty")
 			ck(ch.current_hp < hp0, "  but the player was still hurt - the fight is real")
 
 	print("")
@@ -153,6 +160,14 @@ func _init() -> void:
 	print("  Warden's Watch I: %d -> %d" % [before, after])
 	ck(after > before or _stage_done(ch),
 		"the kill counts (co-op never credited a kill quest at all before today)")
+
+	print("")
+	print("===== 7. AND FINISHING THE STEP TELLS YOU THE NEXT ONE =====")
+	# Owner 2026-09-14: *"Once again I completed the first fight and it shows my quest is done
+	# but hasn't told me what to do now."* The hook is on the COMPLETED update - so the question
+	# is whether completion is actually reported, and whether the lesson had already been spent.
+	ck(ch.seen_guide_recovery_hint,
+		"the recovery lesson fired when the step completed (Rest, danger, stances)")
 
 	_finish()
 

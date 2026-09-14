@@ -43077,6 +43077,9 @@ const GUIDE_PEER_ID := -9001
 ## log and the victory card, and a name that disagrees with itself across four surfaces is the
 ## "one value, two places" defect wearing a hat.
 const GUIDE_NAME := "Warden Hollis"
+# How much tougher the guide is than his level implies. He soaks the round every round; at 1x
+# his bar was empty by round three.
+const GUIDE_HP_MULT := 8.0
 # What he looks like, for the welcome - the same sprite the map draws him with.
 const WARDEN_PORTRAIT := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
 
@@ -43267,19 +43270,10 @@ func _maybe_warden_next_step(peer_id: int, character) -> void:
 	var way := ("to the [color=#FFD700]%s[/color]" % dir) if dir != "" else "in the post wall"
 	_send_hint(peer_id,
 		"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
-		("\"Good. Now it is a weapon and not luggage.\"
-
-"
-			+ "This post is walled. The way out is a [color=#FFD700]gateway[/color] in that wall "
-			+ "— a brick arch with an orange opening, %s. Walk onto it and keep going.
-
-" % way
-			+ "The first thing you meet out there is the one he wants. "
-			+ "[color=#9ACD32]He walks out with you and takes the hits you cannot.[/color]
-
-"
-			+ "[color=#808080]Your progress is on the tracker at the top of the map.[/color]"),
-		"", ["quests_shortcut"])
+		("\"Good. That's a weapon now, not luggage.\"\n\n"
+			+ "\"Out through the arch I've marked. Kill the first thing that finds us — "
+			+ "I'm coming with you.\""),
+		"", [])
 	save_character(peer_id)
 
 
@@ -43375,19 +43369,11 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			body = ("\"You are bleeding. That is what winning looks like out here.\"
 
 "
-				+ "[color=#FFD700]Rest[/color] — the first button on your bar, or [color=#9ACD32]SPACE"
-				+ "[/color] — heals you and brings your stamina back. It costs [color=#FFD700]food[/color], "
-				+ "and you were given three Healing Herb. Resting takes time, and time out here is when "
-				+ "things find you — so rest INSIDE a post when you can.
-
-"
-				+ "Monsters are not placed on the map out in the open; you meet them by WALKING. The "
-				+ "further from a post, the more often. Inside the walls, never.
-
-"
-				+ "[color=#9ACD32]\"See those words under the map — Wary, Scouting, Hunting? That is how "
-				+ "you travel. Hunting finds you fights faster. Wary finds you fewer. Pick the one that "
-				+ "matches how much blood you have left.\"[/color]")
+				+ "[color=#FFD700]Rest[/color] — the first button on your bar, or [color=#9ACD32]SPACE[/color] — heals you and brings your stamina back.\n\n"
+				+ "Out here it costs you nothing but TIME, and time is when things find you. Rest inside a post and nothing can.\n\n"
+				+ "Monsters are not drawn on the map out in the open — you meet them by walking. The further from a post, the more often. Inside the walls, never.\n\n"
+				+ "[color=#9ACD32]\"Those words under the map — Wary, Scouting, Hunting. Hunting finds you fights faster, Wary finds you fewer. Pick the one that matches how much blood you have left.\"[/color]\n\n"
+				+ "[color=#FFD700]Next:[/color] walk back to [color=#9ACD32]Warden Hollis[/color] at the Crossroads. He owes you armour.")
 			ring = ["action_0", "travel_stance"]
 		"world":
 			# ⛑ THE BEAT BETWEEN THE FIGHT AND THE DUNGEON.
@@ -43447,6 +43433,18 @@ func _make_guide_character(player_level: int):
 	# as the level-1 player he is protecting. Owner 2026-09-14: *"it looks like the Warden's
 	# health isn't very high and he could possibly die in this fight."* Measured: identical.
 	g.calculate_derived_stats()
+	# ⛑ AND A POOL DEEP ENOUGH THAT HE DOES NOT LOOK DYING.
+	#
+	# Owner 2026-09-14: *"the warden should have a bunch more HP so he's not sitting missing
+	# pretty much all of his HP during some fights."* He is taking the biggest hit of nearly
+	# every round by design, so on a level-3 Fighter's 150 he was down to a sliver within three
+	# of them - and a protector whose bar is empty reads as about to die, which is the opposite
+	# of the reassurance he exists to give.
+	#
+	# The 1-HP floor below him stays as the guarantee; this is what stops the guarantee from
+	# being VISIBLE. A multiplier rather than a fixed number so it tracks the curve: he is sized
+	# against the player he is escorting, not against a monster damage figure that moves.
+	g.max_hp = int(g.max_hp * GUIDE_HP_MULT)
 	g.current_hp = g.get_total_max_hp()
 	g.current_stamina = g.get_total_max_stamina()
 	# He needs a FACE. The party card renders from battler_id, which is assigned during character
