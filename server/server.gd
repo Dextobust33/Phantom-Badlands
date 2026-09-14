@@ -43205,9 +43205,7 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 				"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
 				("\"Another Phantom! Hold the questions, take this.\"\n\n"
 					+ ("He puts a [color=#FFD700]%s[/color] in your hands." % _blade if _blade != "" else "")
-					+ "\n\nOpen your pack and put it on: the [color=#FFD700]Inventory[/color] button on your "
-					+ "action bar, or press [color=#9ACD32]Q[/color]. There is an [color=#FFD700]Inv[/color] button "
-					+ "in the row at the bottom right too.\n\n"
+					+ "\n\nTo get to your inventory use the button on your action bar, or press [color=#9ACD32]Q[/color]. There is even a clickable button in the row at the bottom right labeled [color=#FFD700]Inv[/color].\n\n"
 					+ "[color=#9ACD32]\"Then we go and find something to hit. I am coming with you - stay behind me.\"[/color]"),
 				"", ["action_1", "inventory_shortcut"])
 		2:
