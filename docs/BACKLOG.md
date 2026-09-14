@@ -578,6 +578,60 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
+### ⚑ COMPANION TYPES ARE NOT A CHOICE — owner 2026-09-14
+
+Owner: *"we need to look at companion types and likely balance their power. Currently Tanks seem
+to be the clear choice for everyone, we want some variety and real reason to choose."*
+
+Not to be worked immediately, but do not lose it. Notes for whoever picks it up:
+
+- **Measure before designing.** Get the actual pick rate and the actual contribution per type off
+  live data or the simulator before touching a number. "Tanks seem to be the clear choice" is the
+  symptom; whether it is HP scaling, the damage share, or the bonuses table is not yet known.
+- This is a **player-power change**, so it invalidates `reference_monster_curve.json` — the
+  speciescal → refcal → rolecal chain must run after it. See the top of CLAUDE.md.
+- A global companion buff cannot fix a per-type gap: the chain holds win rate at target, so any
+  across-the-board change is cancelled on the next refit. Only PER-TYPE changes survive.
+- Tune to absolute targets, not to whichever type is currently weakest — see
+  [[feedback_tune_to_targets_not_to_each_other]].
+
+### ⚑ ONBOARDING ROUND 2 — owner test 2026-09-14, second pass
+
+Fixed this pass (`bdd7060c`, `adef56ab`, and the party-kill/import commit):
+- [x] **Party kills never credited a kill quest.** `_end_party_combat_all` never called
+      `check_kill_quest_progress` / `record_monster_kill` / the bestiary. Affected ALL co-op, not
+      just the tutorial — the tracker sat at 0/1 after the wolf died.
+- [x] **A re-bake never reached the screen.** Godot only re-imports on an editor pass; the bake
+      script now reports which files the game will still draw stale.
+
+Still open from that same report, in the order they block a new player:
+
+- [ ] **▶ The Warden does not follow you on the map or lead the way.** Owner: *"He still doesn't
+      follow you on the map or lead the way so the player may think they are alone still."* He
+      only materialises at combat start. Needs an escort flag threaded to the client; the
+      companion already takes the trailing cell via `_trail_offset`, so the flank is free.
+- [ ] **No sprite for the Warden in party combat — just a `?`.** See `shot_340381`. The party
+      card resolves art by battler id; the guide Character is built in `_make_guide_character`
+      and never gets one.
+- [ ] **Combat must be taught step by step.** Owner: *"When it mentions read what the thing in
+      front of you does it's not clear what the player should do, not all monsters have something
+      to see or hover. Attack is flashing and bordered but not the cards. We should also mention
+      the player should hover the cards with their mouse to see what they do. We should also tell
+      them to click on a card to use it or press the 1, 2, 3 keys ... as well as highlight/border
+      those."* The wolf in that screenshot has NO traits, so the current line points at nothing.
+- [ ] **Party lock-in should not require confirming.** Owner: *"players shouldn't have to confirm
+      all of their actions, they should just have a way to pick something different if they change
+      their mind while their party members are still deciding."* Replace the confirm step with a
+      change/cancel affordance while the round is still open.
+- [ ] **Nothing makes the player equip the sword** before walking off.
+- [ ] **The "+ is the door" line is wrong** — the overworld is all sprites now, there is no `+`.
+- [ ] **"Stand on something that lights up"** reads as "stand on a lamp" in the Sanctuary.
+- [ ] **Player sprite draws water under it on a cleared tile** — `shot_295941`.
+- [ ] **After the victory screen there is no next step** — `shot_645113`.
+- [ ] **Can the tutorial fight roll a flock?** Owner asked; unverified. If it can, a new player's
+      first fight can chain into a second one with the Warden's help already spent.
+
+
 ### ⚑ ONBOARDING — fixed 2026-09-14, UNRELEASED, and one piece still open
 
 Owner tested a fresh account locally and reported five things. Four are fixed on master
