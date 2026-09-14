@@ -48,19 +48,38 @@ func _init() -> void:
 	# `exists()` passed for a full day while the map drew a letter: the bake script wrote his
 	# sprite, then a glyph-fallback pass overwrote it with a picture of "W".
 	var art := "res://client/sprites/overworld32/tile/warden.png"
+	var srcart := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
 	ck(ResourceLoader.exists(art), "the file is there")
-	var tex = load(art)
-	var img: Image = (tex as Texture2D).get_image() if tex is Texture2D else null
-	ck(img != null, "and it loads")
-	if img != null:
-		var seen := {}
-		for y in range(img.get_height()):
-			for x in range(img.get_width()):
-				var c: Color = img.get_pixel(x, y)
-				if c.a > 0.03:
-					seen[Vector3i(int(c.r * 255), int(c.g * 255), int(c.b * 255))] = true
-		print("    %d distinct opaque colours" % seen.size())
-		ck(seen.size() >= 4, "and it is ART - a glyph carries one colour, a person carries many")
+	# ...and it is a PERSON, which took three tries to check soundly:
+	#
+	#   `exists()`        passed for a full day while the map drew a green letter W. The bake
+	#                     script writes his sprite, then a glyph-fallback pass overwrote it.
+	#   colour count      a glyph is anti-aliased and drop-shadowed, so it carries 67 distinct
+	#                     colours against the pixel-art sprite's 16. "Lots of colours" passes
+	#                     for the WRONG one.
+	#   load()            cannot see a re-bake at all: Godot serves .godot/imported, so injecting
+	#                     the fault produced byte-identical numbers - the tell that a check is
+	#                     not running. Image.load_from_file reads the PNG off disk.
+	#
+	# What separates them is the SILHOUETTE. Measured: the real tile overlaps the sprite it was
+	# cut from by 83%, a "W" glyph by 39%.
+	var a := Image.load_from_file(art)
+	var b := Image.load_from_file(srcart)
+	ck(a != null and b != null, "and it reads off disk, along with the sprite it was cut from")
+	if a != null and b != null:
+		var inter := 0
+		var uni := 0
+		for y in range(mini(a.get_height(), b.get_height())):
+			for x in range(mini(a.get_width(), b.get_width())):
+				var oa: bool = a.get_pixel(x, y).a > 0.3
+				var ob: bool = b.get_pixel(x, y).a > 0.3
+				if oa and ob:
+					inter += 1
+				if oa or ob:
+					uni += 1
+		var iou: float = 100.0 * inter / maxi(1, uni)
+		print("    his tile overlaps that sprite's silhouette by %.0f%%" % iou)
+		ck(iou >= 65.0, "and he is shaped like a PERSON, not like the letter W")
 
 	# And the cause, so it cannot come back the next time someone hand-bakes a tile.
 	var bake := FileAccess.get_file_as_string("res://tools/bake_overworld_tiles.py")
@@ -120,3 +139,4 @@ func _init() -> void:
 	else:
 		print("FAIL - %d check(s) failed" % fails)
 	quit(1 if fails > 0 else 0)
+
