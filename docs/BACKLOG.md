@@ -177,6 +177,30 @@ Nothing else has 16 items. Two of the three "owner direction" entries are propos
 have never had a yes or no - trivial-encounter auto-resolve and post-to-post road travel - so they
 are the cheapest things on the list to retire, in either direction.
 
+## ⚑ OWNER DECISIONS 2026-09-13 (third batch) — the dungeon arc, unblocked
+
+Asked because the arc had run out of defects and into design. All four answered.
+
+- [ ] **RANK 9 FROM DUNGEONS, BUT RARE.** A rank-9 clear can hand back a rank-9 boss egg only on
+      a low roll; otherwise it caps at 8. Both routes to the top rank stay alive and fusion is not
+      obsoleted. *(Replaces the "decide" item below.)*
+
+- [ ] **DUNGEON RARITY = ALL THREE AXES.** The owner picked better loot quality **and** rolled
+      modifiers **and** rarer monsters / a guaranteed unique. So a rarer dungeon pays more, reads
+      differently before you enter it, and holds different things. This is the biggest single item
+      left in the arc; build it in that order - loot scaling first (it rides existing code),
+      modifiers second (the new surface), monsters/unique third.
+
+- [ ] **DUNGEON QUESTING REPLACES THE OVERWORLD QUESTS ENTIRELY.** Not a supplement. ⚑ The risk
+      named when the choice was offered still stands and has to be designed around: a brand-new
+      character needs a dungeon it can clear immediately, or the first hour empties out. Whatever
+      replaces the overworld quests must reach down to level 1.
+
+- [ ] **BOTH PROPOSALS ACCEPTED: trivial-encounter auto-resolve AND post-to-post road travel.**
+      Auto-resolve: ground far below your level resolves instantly with a one-line summary and
+      full rewards. Road travel: fast travel between visited posts along roads, costing time and
+      resources rather than free.
+
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 
 *"We've got some live players now so we want to limit our releases."* A release restarts the
