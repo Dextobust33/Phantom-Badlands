@@ -250,47 +250,88 @@ TREE_CELL = (0, 1)      # (row, col) into the 3x4 grid - green row, broadleaf wi
 TREE_SPAN = (3, 2)      # rows, cols of 32px cells
 
 
-def bake_tree_big(dest):
-    """The multi-cell tree, scaled to fit its span with the aspect ratio kept.
+def _tree_cells():
+    """The tree sheet's cells, MEASURED from its transparent gutters rather than assumed.
 
-    Bottom-anchored and horizontally centred, because that is how the renderer places big art:
-    it stands ON its base cell and grows upward. Squashing it to fill the box would give a fat
-    tree; fitting it leaves transparent air at the top, which is correct."""
+    ⛑ This is why the first bake was wrong. The sheet is 480x576 with 4 trees across and 3 down,
+    so dividing by 4 and 3 looks obviously right - and slices a strip off each neighbour, because
+    the trees are NOT on a uniform grid. The real gutters sit at x 132-158, 264-287 and 384-392:
+    27, 24 and 9 pixels wide. Owner saw it immediately: *"part of the right side of it is being
+    cutoff and added in the left side of the frame."*
+
+    Finding the fully-transparent column and row runs gives the true cell boundaries, and works
+    whatever the next sheet's spacing happens to be."""
     from PIL import Image as _I
     sheet = _I.open(TREE_SRC).convert('RGBA')
-    cw, ch = sheet.size[0] // 4, sheet.size[1] // 3
+    W, H = sheet.size
+    px = sheet.load()
+
+    def spans(n, other, is_col):
+        empty = []
+        for i in range(n):
+            blank = True
+            for j in range(other):
+                if (px[i, j][3] if is_col else px[j, i][3]) != 0:
+                    blank = False
+                    break
+            if blank:
+                empty.append(i)
+        out = []
+        start = None
+        for i in range(n):
+            if i in empty:
+                if start is not None:
+                    out.append((start, i - 1))
+                    start = None
+            else:
+                if start is None:
+                    start = i
+        if start is not None:
+            out.append((start, n - 1))
+        return out
+
+    return sheet, spans(W, H, True), spans(H, W, False)
+
+
+def _tree_cell_image():
+    sheet, cols, rows = _tree_cells()
     r, c = TREE_CELL
-    cell = sheet.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch))
+    if r >= len(rows) or c >= len(cols):
+        raise SystemExit('tree sheet has %d cols x %d rows; wanted (%d,%d)'
+                         % (len(cols), len(rows), r, c))
+    x0, x1 = cols[c]
+    y0, y1 = rows[r]
+    cell = sheet.crop((x0, y0, x1 + 1, y1 + 1))
     bb = cell.getbbox()
     if bb is None:
         raise SystemExit('tree source cell is EMPTY')
-    cell = cell.crop(bb)
-    sr, sc = TREE_SPAN
-    W, H = sc * TILE, sr * TILE
+    return cell.crop(bb)
+
+
+def _fit_bottom(cell, W, H):
+    """Scale to fit, keep the aspect, centre horizontally, anchor to the bottom.
+
+    Bottom-anchored because that is how the renderer places big art: it stands ON its base cell
+    and grows upward. Squashing to fill the box would give a fat tree."""
+    from PIL import Image as _I
     w0, h0 = cell.size
     scale = min(W / float(w0), H / float(h0))
     nw, nh = max(1, int(w0 * scale)), max(1, int(h0 * scale))
     t = cell.resize((nw, nh), _I.NEAREST)
     out = _I.new('RGBA', (W, H), (0, 0, 0, 0))
     out.paste(t, ((W - nw) // 2, H - nh), t)
-    out.save(dest)
+    return out
+
+
+def bake_tree_big(dest):
+    sr, sc = TREE_SPAN
+    _fit_bottom(_tree_cell_image(), sc * TILE, sr * TILE).save(dest)
     return TREE_SPAN
 
 
 def bake_tree_small(dest):
     """The single-cell fallback the minimap and any non-big renderer still want."""
-    from PIL import Image as _I
-    sheet = _I.open(TREE_SRC).convert('RGBA')
-    cw, ch = sheet.size[0] // 4, sheet.size[1] // 3
-    r, c = TREE_CELL
-    cell = sheet.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch))
-    cell = cell.crop(cell.getbbox())
-    w0, h0 = cell.size
-    scale = min(TILE / float(w0), TILE / float(h0))
-    t = cell.resize((max(1, int(w0 * scale)), max(1, int(h0 * scale))), _I.NEAREST)
-    out = _I.new('RGBA', (TILE, TILE), (0, 0, 0, 0))
-    out.paste(t, ((TILE - t.size[0]) // 2, TILE - t.size[1]), t)
-    out.save(dest)
+    _fit_bottom(_tree_cell_image(), TILE, TILE).save(dest)
 
 
 def cut_from_pack(pack, row, col, dest, span=None, opaque=False):
