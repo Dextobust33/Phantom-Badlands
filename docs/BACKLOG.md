@@ -536,6 +536,29 @@ Asked because the arc had run out of defects and into design. All four answered.
       `military1-3` (24) have pose only; `npc1-2` (16) have nothing but walk frames.
       Worth doing as authored art when there is appetite. Not worth generating.
 
+- [ ] **⛑ INSTANCED CARDS ARE NOT WORKING. Live, reported 2026-09-14.** Owner:
+      *"They aren't working properly. Players aren't seeing or understanding what cards they are
+      getting for completing dungeons. Sometimes they notice that two upgrade screens pop up back
+      to back for the same card but it's nowhere to be found in their deck. They also have no way
+      to differentiate between them even if it was."*
+      Three separate complaints, and they may not share a cause:
+        1. **The award is invisible.** Clearing a dungeon can hand back a card and the player does
+           not register that it happened, or what they got. `_roll_dungeon_card_reward` exists and
+           was confirmed to fire (`tools/probe/dungeon_card_reward.gd`) - so this is presentation,
+           not the roll.
+        2. **Two upgrade screens for the same card, and then no card.** Two popups back to back
+           for one card is the symptom of a DOUBLE GRANT or a double-prompt; the card then being
+           absent from the deck says the grant did not land at all. Both halves point at the
+           rank-up / instance path rather than the drop.
+        3. **Two copies are indistinguishable.** The whole point of per-INSTANCE cards is that
+           duplicates level independently and can be re-rolled or sold
+           (`project_card_instances_chase_loop`). If the deck screen cannot tell one copy from
+           another, that feature is invisible even when it works.
+      **Start by reproducing 2** - it is the one that sounds like a real defect rather than a
+      presentation gap, and a double grant that loses the card is the sort of thing that also
+      loses a player's upgrade choice. `tools/probe/card_instances.gd` already exists; check
+      whether it covers the grant path or only the market/merge rules.
+
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 
 *"We've got some live players now so we want to limit our releases."* A release restarts the
