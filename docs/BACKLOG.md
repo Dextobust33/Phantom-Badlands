@@ -191,6 +191,28 @@ Asked because the arc had run out of defects and into design. All four answered.
       left in the arc; build it in that order - loot scaling first (it rides existing code),
       modifiers second (the new surface), monsters/unique third.
 
+- [ ] **ONBOARDING: a tutorial + a starter chain that reaches level 1. ⚑ DEPENDENCY of the
+      questing replacement - build this FIRST.** Owner 2026-09-13: *"There should be a tutorial or
+      early game dungeon quest in our to do list that will help alleviate your concerns."*
+
+      **It was not in this list.** The design exists and has since 2026-05-17, but only in the
+      memory file `project_tutorial_starter_quests.md` - it had never been written into the repo
+      backlog, which is the precise way work gets lost between arcs that this file exists to stop.
+      Recorded now.
+
+      What that memo already settles, and is still right:
+        * a zero-gear character is led through a SAFE loop that ends with one starter item in each
+          empty slot - earned through the first few steps, not handed over at creation
+        * it stays inside the starter post's bubble geometry, which already exists, so no
+          threat-corridor monsters and no apex spawns can reach it
+        * gear matches the class (weapon -> armour -> trinket cadence, tier 1)
+        * skippable but obvious, so a returning player can walk past it
+
+      What the 2026-09-13 decision CHANGES about it: the memo describes a GATHERING chain, and
+      questing is now dungeon-centred. The starter chain should end in a dungeon a level-1
+      character can actually clear - which is also the thing that stops "replace the overworld
+      quests" leaving an empty first hour. Scope the two together.
+
 - [ ] **DUNGEON QUESTING REPLACES THE OVERWORLD QUESTS ENTIRELY.** Not a supplement. ⚑ The risk
       named when the choice was offered still stands and has to be designed around: a brand-new
       character needs a dungeon it can clear immediately, or the first hour empties out. Whatever
