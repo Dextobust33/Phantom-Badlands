@@ -420,8 +420,14 @@ Asked because the arc had run out of defects and into design. All four answered.
       DUNGEON_CLEAR that the guide escorts, and it pays the companion egg — creation no longer
       hands one out, so the egg reads as earned. Probe: `tools/probe/starter_chain.gd`, 33 checks,
       including that the overlay names something that is actually granted.
-      **Still to build: the teaching script** — the guide currently speaks one line when a fight
-      starts. Introducing items, equipment and combat is the half that is still missing. The guide's turn AI is
+      **✅ THE TEACHING LAYER IS BUILT 2026-09-14, unreleased.** Owner chose panel-then-voice.
+      One `tutorial_hint` panel per system - items, equipment, combat - fired the first time that
+      system MATTERS rather than all at once at the gate, plus `_guide_say` for the guide's own
+      voice as each reward lands. Three flags on the character, serialised, so a reconnect does
+      not replay the tutorial. Probe: `tools/probe/guide_teaching.gd`.
+      **ONBOARDING IS NOW FEATURE-COMPLETE AND ENTIRELY UNPLAYED.** Everything left on it is a
+      playtest: whether nine fights on one health bar is survivable gearless, whether three stages
+      land before the L5 cliff, and whether the writing works. The guide's turn AI is
       deliberately a plain attack - its job is tanking, and something clever would make the
       tutorial about watching.
 

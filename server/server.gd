@@ -9444,6 +9444,7 @@ func trigger_encounter(peer_id: int):
 	# The apex frontier, on the fight you PICKED. Until 2026-09-13 this only happened for flock
 	# members, so standing in an apex zone bought you an ordinary monster and apex pack-mates -
 	# and the zone's +10% XP with it, since the reward path reads the flag stamped here.
+	_guide_teach(peer_id, "combat")
 	_apply_apex_frontier(monster, character, false)
 
 	# v0.9.732 — legacy shared party combat (pre-card-system) is DISABLED pending a
@@ -20072,6 +20073,18 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 			if not kit_item.is_empty():
 				character.add_item(kit_item)
 				starter_kit_msg = "[color=#9ACD32]Starter kit reward: %s acquired![/color]\n" % kit_item.get("name", "starter item")
+				# The teaching beat fires HERE, when the player first actually holds something, rather
+				# than at the gate when they own nothing to apply it to.
+				_guide_teach(peer_id, "items")
+				_guide_teach(peer_id, "equipment")
+				if String(quest.get("chain_id", "")) == "wardens_watch":
+					match String(quest.get("starter_kit_slot", "")):
+						"weapon":
+							_guide_say(peer_id, "Rust is fine. Rust still opens things. Put it in your hand before the next one finds you.")
+						"armor":
+							_guide_say(peer_id, "Now the half that matters. Anyone can swing. Staying up is the trick.")
+						"accessory":
+							_guide_say(peer_id, "Keep it. You earned that in the dark, which is the only place anything is earned.")
 
 		# Audit #6 Slice 1 — chain bonus on final-stage turn-in
 		var chain_id = String(quest.get("chain_id", ""))
@@ -34454,6 +34467,8 @@ func _start_guided_dungeon_combat(peer_id: int, character, monster: Dictionary, 
 	not scale the monster, and it is the one that takes hits the player might not survive.
 
 	Returns true when the guided fight started, so the caller skips the solo path."""
+	# The combat lesson, on the first fight the guide is actually standing in.
+	_guide_teach(peer_id, "combat")
 	var guide = _make_guide_character(int(character.level))
 	var members: Array = [peer_id, GUIDE_PEER_ID]
 	var chars: Dictionary = {peer_id: character, GUIDE_PEER_ID: guide}
@@ -42868,6 +42883,61 @@ const GUIDE_PEER_ID := -9001
 ## log and the victory card, and a name that disagrees with itself across four surfaces is the
 ## "one value, two places" defect wearing a hat.
 const GUIDE_NAME := "Warden Hollis"
+
+
+func _guide_say(peer_id: int, line: String) -> void:
+	"""The guide's in-world voice. Ordinary game text, in his colour, at the moment the thing
+	he is talking about is happening - not a panel, and not a wall of it at the gate."""
+	send_to_peer(peer_id, {"type": "text", "message":
+		"[color=#9ACD32]%s:[/color] [color=#CFE8B0]\"%s\"[/color]" % [GUIDE_NAME, line]})
+
+
+func _guide_teach(peer_id: int, topic: String) -> void:
+	"""One overlay per system, the FIRST time that system matters to this character.
+
+	Owner 2026-09-14 chose panel-then-voice: a panel for each major system so the lesson cannot
+	be missed, and the guide's voice for everything after so he still reads as a person. The
+	panels fire on the beat rather than all at once at creation - being told about equipment
+	before you own any is how a tutorial becomes noise."""
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var title := ""
+	var body := ""
+	match topic:
+		"items":
+			if ch.seen_guide_items_hint:
+				return
+			ch.seen_guide_items_hint = true
+			title = "[color=#9ACD32]What You Carry[/color]"
+			body = ("Everything you pick up goes in your pack.\n\n"
+				+ "Open it with [color=#FFAA66]I[/color]. Anything you can use — food, a potion — is used from there, "
+				+ "and food is what lets you [color=#FFD700]rest[/color] inside a dungeon.\n\n"
+				+ "[color=#9ACD32]You were given three Healing Herb when you arrived. Do not spend them on nothing.[/color]")
+		"equipment":
+			if ch.seen_guide_equipment_hint:
+				return
+			ch.seen_guide_equipment_hint = true
+			title = "[color=#9ACD32]What You Wear[/color]"
+			body = ("Carrying a blade is not the same as holding one.\n\n"
+				+ "Open your pack with [color=#FFAA66]I[/color], pick the item, and equip it. A weapon in a "
+				+ "[color=#FFD700]slot[/color] changes what you hit for; armour changes what you survive.\n\n"
+				+ "[color=#9ACD32]Warden's Watch pays you one piece at a time. Put each on as it comes.[/color]")
+		"combat":
+			if ch.seen_guide_combat_hint:
+				return
+			ch.seen_guide_combat_hint = true
+			title = "[color=#9ACD32]How A Fight Goes[/color]"
+			body = ("You act, then it acts. That is the whole of it.\n\n"
+				+ "Your [color=#FFD700]cards[/color] sit along the bottom — each costs a resource, and you draw a "
+				+ "fresh hand every round. [color=#FFAA66]Space[/color] is an ordinary attack and always works.\n\n"
+				+ "Read what the thing in front of you DOES — its traits sit beside its name. "
+				+ "[color=#FF4444]Glass Cannon[/color] means it hits three times as hard as it looks.\n\n"
+				+ "[color=#FFAA00]You can always flee. Dying here is permanent.[/color]")
+		_:
+			return
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
 
 
 func _make_guide_character(player_level: int):

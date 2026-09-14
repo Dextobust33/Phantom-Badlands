@@ -66,6 +66,13 @@ extends Resource
 @export var seen_quest_board_hint: bool = false
 @export var seen_dungeon_hint: bool = false
 @export var seen_crafting_hint: bool = false
+
+# ONBOARDING 2026-09-14 - Warden's Watch teaching beats. One panel per system, fired the first
+# time that system actually matters to this character rather than all at once at creation, and
+# then never again. The guide's in-world voice carries everything after.
+@export var seen_guide_items_hint: bool = false
+@export var seen_guide_equipment_hint: bool = false
+@export var seen_guide_combat_hint: bool = false
 # v0.9.582 — fires once on first entry to a threatened post. Closes user
 # feedback "the ! at 0,0 doesn't say what it is when you go there" — the
 # v0.9.580 entry banner scrolls past in game_output, but this modal won't.
@@ -2008,6 +2015,9 @@ func to_dict() -> Dictionary:
 		"seen_quest_board_hint": seen_quest_board_hint,
 		"seen_dungeon_hint": seen_dungeon_hint,
 		"seen_crafting_hint": seen_crafting_hint,
+		"seen_guide_items_hint": seen_guide_items_hint,
+		"seen_guide_equipment_hint": seen_guide_equipment_hint,
+		"seen_guide_combat_hint": seen_guide_combat_hint,
 		"seen_threatened_post_hint": seen_threatened_post_hint,
 		"seen_signpost_hint": seen_signpost_hint,
 		"seen_apex_frontier_hint": seen_apex_frontier_hint,
@@ -2224,6 +2234,9 @@ func from_dict(data: Dictionary):
 	seen_quest_board_hint = bool(data.get("seen_quest_board_hint", false))
 	seen_dungeon_hint = bool(data.get("seen_dungeon_hint", false))
 	seen_crafting_hint = bool(data.get("seen_crafting_hint", false))
+	seen_guide_items_hint = bool(data.get("seen_guide_items_hint", false))
+	seen_guide_equipment_hint = bool(data.get("seen_guide_equipment_hint", false))
+	seen_guide_combat_hint = bool(data.get("seen_guide_combat_hint", false))
 	seen_threatened_post_hint = bool(data.get("seen_threatened_post_hint", false))
 	seen_signpost_hint = bool(data.get("seen_signpost_hint", false))
 	seen_apex_frontier_hint = bool(data.get("seen_apex_frontier_hint", false))
