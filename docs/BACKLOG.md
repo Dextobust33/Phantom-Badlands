@@ -363,6 +363,22 @@ Asked because the arc had run out of defects and into design. All four answered.
            gear inside the L1-L3 window, which is exactly what the 2026-05-17 memo already said -
            now with a number attached to why.
 
+      **✅ THE TWO STRUCTURAL BLOCKERS ARE FIXED 2026-09-13, unreleased.**
+        * **The starter dungeon is now SHORT.** A `starter` flag is set on the origin dungeon by
+          `_ensure_starter_dungeon_exists`, inherited into the personal instance on entry (the
+          marker on the map is not what you fight in), and caps the run to
+          `STARTER_DUNGEON_FLOORS` 2 and `STARTER_DUNGEON_MONSTERS_PER_FLOOR` 4 - about nine
+          fights including the boss. **A stock one is FIVE floors of up to fourteen, so up to 70
+          fights.** Note five, not the three the table says: `get_dungeon` size-scales what it
+          serves, so reading `DUNGEON_TYPES` directly gives the wrong number.
+        * **A created character now carries 3 Healing Herb** (`STARTER_RATIONS`). The in-dungeon
+          Rest button consumes a food material and `handle_create_character` granted no inventory
+          at all, so the one recovery mechanic in the building was inert for precisely the players
+          who need it.
+      Probe: `tools/probe/starter_dungeon_size.gd`. **Still owed: a live run.** Per-fight win rate
+      is measured at 76%, but whether a gearless level-1 survives nine fights on one health bar
+      is a playtest, not a calculation.
+
       **A GUIDE NPC carries the new player through it, as a party member.** Owner 2026-09-13:
       *"an NPC should help introduce the player to mechanics, Items, equipment, combat etc. and
       help carry the charaacter through the dungeon using the party combat."* So the guide is not

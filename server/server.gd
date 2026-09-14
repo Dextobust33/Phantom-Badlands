@@ -3179,6 +3179,16 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# letting it fire (and re-save) on this character's first load.
 	character.deck_repair_version = Character.DECK_REPAIR_VERSION
 
+	# RATIONS. The one recovery mechanic inside a dungeon is `handle_dungeon_rest`, which eats a
+	# food material - and a character created today walked in carrying NOTHING, so the Rest
+	# button was inert for exactly the players who need it most. Measured 2026-09-13 alongside
+	# `-- newplayer`: a gearless level-1 wins 76% of fights, so it is attrition that kills them,
+	# and attrition is the thing rest answers.
+	#
+	# Healing Herb is a tier-1 herb, which is what the rest handler accepts, and three is enough
+	# to finish a starter dungeon without being a stockpile.
+	character.add_crafting_material("healing_herb", STARTER_RATIONS)
+
 	# Slice 5 — spawn-at-post. If the create message specifies a spawn post
 	# (owner + index), validate the post belongs to this account and place
 	# the character there. Otherwise default to whatever character.initialize
@@ -30069,8 +30079,12 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		# BOTH halves of the grade, not just the rank. `_instance_tier` rather than a raw read,
 		# so a dungeon saved before the grade moved onto the instance still resolves.
 		var _inherit_tier: int = _instance_tier(_tile_dungeon) if not _tile_dungeon.is_empty() else -1
+		# Inherit the STARTER flag from the tile, the same way rank and tier are inherited. A
+		# starter dungeon that forgot it was one would hand a brand-new character the full
+		# three-floor run - the exact attrition the sizing exists to avoid.
+		var _inherit_starter: bool = bool(_tile_dungeon.get("starter", false))
 		instance_id = _create_player_dungeon_instance(peer_id, "", dungeon_type, character.level,
-			"", "", 0, _inherit_sub, _inherit_tier)
+			"", "", 0, _inherit_sub, _inherit_tier, _inherit_starter)
 		# 2026-09-10 - this is the SECOND report of "the tile said T1-2 and it opened a T1-7",
 		# after the 2026-09-08 inherit was supposed to end it. The inherit reads correctly, so a
 		# third theory is worth less than one measurement: log what the tile actually resolved to
@@ -31053,7 +31067,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	log_message("Created dungeon instance: %s (%s) [%s] (tier=%d sub=%d)" % [instance_id, dungeon_data.name, PowerRank.label(dungeon_data.tier, sub_tier), dungeon_data.tier, sub_tier])
 	return instance_id
 
-func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0, force_sub_tier: int = -1, force_tier: int = -1) -> String:
+func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0, force_sub_tier: int = -1, force_tier: int = -1, force_starter: bool = false) -> String:
 	"""Create a personal dungeon instance for a player's quest. Returns instance ID.
 	fabled_boss_name (P2 Slice 2): if set, the dungeon's boss spawns renamed + buffed.
 	gather_relic_name/count (P2 Slice 3): if set, N themed relics spawn as floor loot for a
@@ -31167,14 +31181,21 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"quest_id": quest_id,  # Track which quest this is for
 		"fabled_boss_name": fabled_boss_name,  # P2 Slice 2 — non-empty → boss renamed + buffed
 		"gather_relic_name": gather_relic_name,  # P2 Slice 3 — dungeon-gather relic
-		"gather_relic_count": gather_relic_count
+		"gather_relic_count": gather_relic_count,
+		"starter": force_starter
 	})
 
 	# Generate all floor grids (BSP rooms + corridors)
+	#
+	# A STARTER run is SHORTER, and the cap has to live here: entering a world dungeon spins up
+	# this personal instance, so marking the marker on the map does nothing by itself.
+	var _floor_count: int = int(dungeon_data.floors)
+	if force_starter:
+		_floor_count = mini(_floor_count, STARTER_DUNGEON_FLOORS)
 	var floor_grids = []
 	var floor_rooms = []
-	for floor_num in range(dungeon_data.floors):
-		var is_boss_floor = floor_num == dungeon_data.floors - 1
+	for floor_num in range(_floor_count):
+		var is_boss_floor = floor_num == _floor_count - 1
 		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, is_boss_floor)
 		floor_grids.append(floor_data.grid)
 		floor_rooms.append(floor_data.rooms)
@@ -31435,6 +31456,27 @@ func _cleanup_player_dungeon(peer_id: int, quest_id: String):
 
 	log_message("Cleaned up player dungeon %s for peer %d quest %s" % [instance_id, peer_id, quest_id])
 
+## The STARTER dungeon is deliberately small, and the reason is measured rather than felt.
+##
+## `-- newplayer` (2026-09-13): a gearless level-1 wins 76% of normal fights against a 60% design
+## target, so the FIGHTS are fine and softening them would be the wrong fix. What kills a new
+## character is ATTRITION - in a dungeon you recover 0.5% of max HP per step, half the overworld
+## rate, and a stock tier-1 is 3 floors whose population scales with floor AREA up to 14 each. A
+## bad roll is ~40 fights at 76% with almost no healing between them, and a new character carries
+## no food, so `handle_dungeon_rest` is inert for them.
+##
+## Two floors and four monsters a floor is ~9 encounters including the boss. Short enough to
+## finish on one health bar, long enough to be a dungeon.
+const STARTER_DUNGEON_FLOORS := 2
+## Food a brand-new character is created with, so the in-dungeon Rest button is not inert.
+const STARTER_RATIONS := 3
+const STARTER_DUNGEON_MONSTERS_PER_FLOOR := 4
+
+
+func _is_starter_dungeon(instance_id: String) -> bool:
+	return bool(active_dungeons.get(instance_id, {}).get("starter", false))
+
+
 func _ensure_starter_dungeon_exists():
 	"""Ensure a tier 1 dungeon exists near the starting area for new players"""
 	var STARTER_AREA_RADIUS = 40  # Check within this distance of origin
@@ -31485,6 +31527,7 @@ func _ensure_starter_dungeon_exists():
 		"dungeon_level": dungeon_level,
 		"sub_tier": 1,
 		"tier": int(dungeon_data.get("tier", 1)),
+		"starter": true,
 	})
 
 	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
@@ -36524,6 +36567,12 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 	var _area: int = grid.size() * (grid[0].size() if grid.size() > 0 else 0)
 	var _by_area: int = int(round(float(_area) / 330.0))     # 165 tiles/monster, halved
 	var monsters_count = clampi(maxi(_base_count, _by_area), _base_count, 14)
+	# A STARTER run is thinner on the ground. Applied BEFORE the modifier multiplier below, so a
+	# rank-1 starter dungeon cannot roll Teeming and undo it - starter dungeons are rank 1 and
+	# rank 1-2 never roll modifiers, but the ordering should not depend on that staying true.
+	if _is_starter_dungeon(instance_id):
+		monsters_count = mini(monsters_count, STARTER_DUNGEON_MONSTERS_PER_FLOOR)
+
 	# Teeming and friends. The cap rises with the modifier too, or the multiplier would do
 	# nothing at all on the bigger floors already sitting on 14.
 	var _mod_count_mult := float(_dungeon_mods(instance_id).get("count_mult", 1.0))
