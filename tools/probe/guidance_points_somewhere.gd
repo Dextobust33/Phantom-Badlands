@@ -174,6 +174,35 @@ func _init() -> void:
 		"  and the mark is in the cache key, so the map redraws when he starts pointing")
 
 	print("")
+	print("  ----- and it lands on the DOOR, not near it -----")
+	# Owner 2026-09-14: *"The highlight on the map when I equip the sword is out of the post,
+	# it's not actually highlighting a door at all."* The cell was computed as
+	#   mid + (door - payload.x)
+	# and the MAP PAYLOAD HAS NO x. So `payload.get("x", 0)` returned 0 and the ring landed
+	# exactly the player's own distance-from-origin away from the door - at (2,0) that is two
+	# cells, which put it through the wall.
+	var wsrc := FileAccess.get_file_as_string("res://shared/world_system.gd")
+	var i_ret := wsrc.find('return {"f": MapPayload.FORMAT')
+	var ret := wsrc.substr(i_ret, 400) if i_ret != -1 else ""
+	ck(i_ret != -1, "the map payload's shape was located")
+	ck(not ret.contains('"x":'), "and it really carries NO x - so the old read could only be wrong")
+	ck(csrc.contains("_last_map_center = Vector2i(int(message.get(\"x\", 0))"),
+		"the centre is taken from the LOCATION message, which does carry it")
+	ck(csrc.contains("mid + (_mark_tile.x - _last_map_center.x)"),
+		"  and the cell is offset from that centre")
+	ck(not csrc.contains('Vector2i(int(payload.get("x", 0)), int(payload.get("y", 0)))'),
+		"  with the payload read gone entirely")
+	# The arithmetic itself, executed.
+	var mid_t := 11
+	var centre := Vector2i(2, 0)
+	var door := Vector2i(5, -3)
+	var cell := Vector2i(mid_t + (door.x - centre.x), mid_t + (door.y - centre.y))
+	print("    centre %v, door %v, grid mid %d -> cell %v" % [centre, door, mid_t, cell])
+	ck(cell == Vector2i(14, 8), "  a door 3 east and 3 north of you lands 3 east and 3 north of centre")
+	var wrong := Vector2i(mid_t + door.x, mid_t + door.y)
+	ck(wrong != cell, "  and the old formula really gave a different cell (%v)" % wrong)
+
+	print("")
 	print("===== AND A WON FIGHT TEACHES RECOVERY =====")
 	# *"He also needs to guide players on how to Rest and get their resources back as well as
 	# let them know where and how monsters can be found and where is safe."*

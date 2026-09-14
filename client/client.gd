@@ -1675,6 +1675,8 @@ var _escort_kind: String = ""
 # A single world tile the guide is pointing at, and when the pointing stops. See "mark_tile".
 var _mark_tile: Vector2i = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 var _mark_until_ms: int = 0
+# World coords of the cell at the centre of the last map payload.
+var _last_map_center: Vector2i = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 const UiSpotlightScript = preload("res://client/ui_spotlight.gd")
 
 # v0.9.490 — global re-openable HelpPanel for topic-based help (Home Stone
@@ -24533,6 +24535,12 @@ func handle_server_message(message: Dictionary):
 					# Kept so a walk-animation frame can re-render the SAME view without a round
 					# trip. The composed map bakes the player in, so a new frame means a new image.
 					_last_map_payload = map_payload
+					# The world coords this grid is CENTRED on. They ride the location message,
+					# not the map payload - which has no x/y at all, so reading one out of it
+					# silently yielded (0,0) and put the guide's door ring exactly your own
+					# distance from origin away from the door. Captured here so the centre and
+					# the grid can never disagree: they arrive in the same packet.
+					_last_map_center = Vector2i(int(message.get("x", 0)), int(message.get("y", 0)))
 					desc = _overworld_display(map_payload)
 				if desc == "":
 					desc = message.get("description", "")
@@ -46698,9 +46706,9 @@ func _overworld_display(payload: Dictionary) -> String:
 	# recentred on the player every step, so the conversion has to happen per draw and not once
 	# when the mark arrives.
 	var mark_cell := Vector2i(-1, -1)
-	if _mark_tile.x != 0x7FFFFFFF and Time.get_ticks_msec() < _mark_until_ms:
-		var _pc := Vector2i(int(payload.get("x", 0)), int(payload.get("y", 0)))
-		mark_cell = Vector2i(mid + (_mark_tile.x - _pc.x), mid + (_mark_tile.y - _pc.y))
+	if _mark_tile.x != 0x7FFFFFFF and Time.get_ticks_msec() < _mark_until_ms 			and _last_map_center.x != 0x7FFFFFFF:
+		mark_cell = Vector2i(mid + (_mark_tile.x - _last_map_center.x),
+			mid + (_mark_tile.y - _last_map_center.y))
 		if mark_cell.x < 0 or mark_cell.y < 0 or mark_cell.x >= cols_n or mark_cell.y >= rows_n:
 			mark_cell = Vector2i(-1, -1)      # off screen this step; nothing to draw
 	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}), _ow_anim_tick, mark_cell):
