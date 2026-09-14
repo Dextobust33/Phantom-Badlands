@@ -3730,22 +3730,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			item.get("name", "Unknown Item")
 		])
 
-	# Pack leader: higher flock chance
-	var flock = monster.get("flock_chance", 0)
-	if ABILITY_PACK_LEADER in abilities:
-		flock = min(75, flock + 25)
-	# 2026-09-07 — FLOCKS RAMP WITH LEVEL, like everything else about difficulty now.
-	#
-	# `flock_chance` is a flat per-species number (25-45%) and rolls again on every link, so a
-	# level-1 character faced the same chain a level-5000 one does: 1.85 fights back to back with
-	# no rest between them. Measured in a real climb, that is where the deaths land — on flock
-	# link 1.85, entering at 71% HP — and it is why three classes still fail a career while
-	# winning 100% of isolated fights at the same level. The chain, not the fight, is the killer.
-	#
-	# Same principle as DIFFICULTY_RAMP: the early game is where a player is learning their class,
-	# so it should not open with the mechanic that punishes a slow kill hardest. Full strength by
-	# L25, which is where the ramp also expects play to start mattering.
-	flock = int(round(float(flock) * flock_scale_for_level(character.level)))
+	# Pack leader + the level ramp. One copy, in compute_flock_chance — the co-op path needs the
+	# same number and a hand-copied second version is the "two copies of one value" defect.
+	var flock := compute_flock_chance(monster, character.level)
 
 	# Combine regular drops with extra drops from abilities
 	var all_drops = dropped_items.duplicate()
@@ -4414,6 +4401,30 @@ static func con_damage_reduction(character) -> float:
 # How much of a species' flock chance actually applies, by player level. A flock is consecutive
 # fights with NO rest between them, which is the harshest thing in the early game for any class
 # that kills slowly — and it was flat from L1 to L10000.
+static func compute_flock_chance(monster: Dictionary, player_level: int) -> int:
+	"""How likely this kill is to chain into another fight. The ONE definition.
+
+	Pulled out of the solo victory block on 2026-09-13 so co-op party combat could ask the same
+	question. It is not the monster's raw `flock_chance`: Pack Leader adds 25 (capped at 75), and
+	the whole thing is scaled by the level ramp below — so reading the species number alone gives
+	an answer that is wrong twice over, and wrong differently at every level.
+
+	2026-09-07 — FLOCKS RAMP WITH LEVEL, like everything else about difficulty now.
+	`flock_chance` is a flat per-species number (25-45%) and rolls again on every link, so a
+	level-1 character faced the same chain a level-5000 one does: 1.85 fights back to back with
+	no rest between them. Measured in a real climb, that is where the deaths land — on flock
+	link 1.85, entering at 71% HP — and it is why three classes still fail a career while
+	winning 100% of isolated fights at the same level. The chain, not the fight, is the killer.
+
+	Same principle as DIFFICULTY_RAMP: the early game is where a player is learning their class,
+	so it should not open with the mechanic that punishes a slow kill hardest. Full strength by
+	L25, which is where the ramp also expects play to start mattering."""
+	var flock: int = int(monster.get("flock_chance", 0))
+	if ABILITY_PACK_LEADER in monster.get("abilities", []):
+		flock = min(75, flock + 25)
+	return int(round(float(flock) * flock_scale_for_level(player_level)))
+
+
 static func flock_scale_for_level(level: int) -> float:
 	if level <= 3:
 		return 0.35

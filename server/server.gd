@@ -10903,6 +10903,86 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 		if result.get("combat_ended", false):
 			_handle_instant_death_at_combat_start(peer_id, monster.name)
 
+func _start_party_flock(leader_id: int, flock_data: Dictionary) -> void:
+	"""Next link of a co-op flock chain: one fresh monster, the whole surviving party.
+
+	The roster is re-checked rather than trusted. The banked drops sit in pending_flock_drops
+	keyed per member, and a member who has since disconnected or died would strand theirs — so
+	anyone who cannot come is paid out here instead of being carried silently into a fight they
+	are not in."""
+	var members: Array = []
+	var chars_map: Dictionary = {}
+	for pid in flock_data.get("members", []):
+		if not characters.has(pid) or combat_mgr.is_in_combat(pid) or characters[pid].in_combat:
+			_flush_banked_flock_drops(pid)
+			continue
+		members.append(pid)
+		chars_map[pid] = characters[pid]
+	if members.is_empty():
+		return
+	# Leader first — start_party_combat_simul keys the fight on members[0].
+	if members.has(leader_id) and members[0] != leader_id:
+		members.erase(leader_id)
+		members.insert(0, leader_id)
+	var new_leader: int = members[0]
+
+	# Same generation rule as the solo chain: a PLAIN base with the killed monster's inherited
+	# state stamped back on, so a chain cannot compound rarity link after link.
+	var monster = monster_db.generate_monster_by_name(
+		String(flock_data.get("monster_name", "")), int(flock_data.get("monster_level", 1)), true)
+	if monster.is_empty():
+		_flush_all_banked_flock_drops(members)
+		return
+	var _em: Array = flock_data.get("empowered_mods", [])
+	var _vt := String(flock_data.get("variant_type", ""))
+	if not _em.is_empty():
+		monster_db.reapply_empowered(monster, _em)
+	elif _vt != "":
+		monster_db.reapply_variant(monster, _vt)
+
+	if members.size() < 2:
+		# The party fell apart mid-chain. One person left is a solo fight, not a co-op one.
+		_start_solo_combat_for(new_leader, characters[new_leader], monster, [])
+		return
+
+	var started = combat_mgr.start_party_combat_simul(members, chars_map, monster)
+	if not started.get("success", false):
+		_flush_all_banked_flock_drops(members)
+		return
+	var _fc: int = int(flock_data.get("flock_count", 1))
+	_send_party_combat_start(new_leader, members, monster, [
+		"[color=#FF4444]Another %s falls in beside it! (Pack #%d)[/color]" % [
+			String(monster.get("name", "Monster")), _fc + 1]])
+
+
+func _flush_banked_flock_drops(pid: int) -> void:
+	"""Hand a member the loot a broken chain was holding for them. Silence here is how a player
+	loses a fight's drops to a disconnect and never learns why."""
+	if not pending_flock_drops.has(pid):
+		return
+	var banked: Array = pending_flock_drops[pid]
+	pending_flock_drops.erase(pid)
+	if not characters.has(pid) or banked.is_empty():
+		return
+	var lines: Array = []
+	for item in banked:
+		var awarded := _party_award_drop(pid, item, characters[pid].level)
+		if String(awarded.get("line", "")) != "":
+			lines.append(awarded["line"])
+	if not lines.is_empty():
+		send_to_peer(pid, {"type": "text", "message":
+			"[color=#FFD700]The pack scatters — you collect what you earned:[/color]
+" + "
+".join(lines)})
+		send_character_update(pid)
+		save_character(pid)
+
+
+func _flush_all_banked_flock_drops(pids: Array) -> void:
+	for pid in pids:
+		_flush_banked_flock_drops(pid)
+
+
 func handle_continue_flock(peer_id: int):
 	"""Handle player continuing into a flock encounter"""
 	if not pending_flocks.has(peer_id):
@@ -10910,6 +10990,11 @@ func handle_continue_flock(peer_id: int):
 
 	var flock_data = pending_flocks[peer_id]
 	pending_flocks.erase(peer_id)
+
+	# Party chain: the leader pressed Continue, so everyone who survived the last link goes in.
+	if bool(flock_data.get("party", false)):
+		_start_party_flock(peer_id, flock_data)
+		return
 
 	# Pass analyze bonus, flock count, and dungeon combat flags
 	var analyze_bonus = flock_data.get("analyze_bonus", 0)
@@ -43041,6 +43126,19 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 	# (xp / level-up / loot list / gear banner). Built here where we know each member's
 	# own XP + independent loot roll; keyed by pid, sent on their party_combat_end below.
 	var member_payloads: Dictionary = {}
+	# Does this kill chain into another fight? Rolled ONCE for the party, because they killed one
+	# monster between them — rolling per member would fork the party into different next-fights.
+	#
+	# NOT in dungeons, and that is a deliberate rule rather than an oversight: every dungeon
+	# monster is a visible entity on the floor grid, so a fight that conjured an unseen second
+	# monster would contradict the map the player is reading. Owner 2026-08-25 set that for solo
+	# (the C3 note in handle_combat_command) and restated it for parties on 2026-09-13: *"Party
+	# flocks should happen in party play on the overworld but not in dungeons as those encounters
+	# are visible on the map."*
+	var _flock_incoming: bool = false
+	if victory and _dctx.is_empty() and not _survivors.is_empty() and characters.has(leader_id):
+		var _fc: int = combat_mgr.compute_flock_chance(monster, characters[leader_id].level)
+		_flock_incoming = _fc > 0 and (randi() % 100) < _fc
 	if victory:
 		var xp: int = int(monster.get("experience_reward", monster.get("xp_reward", 10)))
 		for pid in members:
@@ -43064,12 +43162,27 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 			var drops = combat_mgr.roll_combat_drops(monster, ch)
 			var _loot_lines: Array = []
 			var _gear_drops: Array = []
-			for item in drops:
-				var awarded := _party_award_drop(pid, item, _old_level)
-				if String(awarded.get("line", "")) != "":
-					_loot_lines.append(awarded["line"])
-				if awarded.has("gear_drop"):
-					_gear_drops.append(awarded["gear_drop"])
+			if _flock_incoming:
+				# Held, not awarded — the chain pays out once at the end, exactly as solo does,
+				# and fleeing mid-chain forfeits the lot. Per member, because in co-op each
+				# person rolls their own loot. `pending_flock_drops` is already keyed by peer id,
+				# so the solo dict carries this with no new state.
+				if not pending_flock_drops.has(pid):
+					pending_flock_drops[pid] = []
+				pending_flock_drops[pid].append_array(drops)
+			else:
+				# Chain over (or there never was one): pay out everything banked along the way
+				# plus this fight's own roll.
+				var _banked: Array = pending_flock_drops.get(pid, [])
+				pending_flock_drops.erase(pid)
+				var _all: Array = _banked.duplicate()
+				_all.append_array(drops)
+				for item in _all:
+					var awarded := _party_award_drop(pid, item, _old_level)
+					if String(awarded.get("line", "")) != "":
+						_loot_lines.append(awarded["line"])
+					if awarded.has("gear_drop"):
+						_gear_drops.append(awarded["gear_drop"])
 			member_payloads[pid] = {
 				"xp_gain": xp,
 				"old_level": _old_level,
@@ -43079,12 +43192,37 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 				"gear_drops": _gear_drops,
 			}
 			var earned := "[color=#1EFF00]%s: +%d XP" % [ch.name, xp]
-			if not drops.is_empty():
-				earned += ", +%d item(s)" % drops.size()
+			if _flock_incoming:
+				var _held: int = (pending_flock_drops.get(pid, []) as Array).size()
+				if _held > 0:
+					earned += ", %d item(s) held" % _held
+			elif not _loot_lines.is_empty():
+				earned += ", +%d item(s)" % _loot_lines.size()
 			if typeof(lvl_res) == TYPE_DICTIONARY and lvl_res.get("leveled_up", false):
 				earned += " — [color=#FFFF00]LEVEL UP![/color]"
 			msgs.append(earned + "[/color]")
-	msgs.append("[color=#FFD700]★ Party victory![/color]" if victory else "[color=#FF4444]The party has fallen...[/color]")
+	if _flock_incoming:
+		msgs.append("[color=#FFD700]★ Party victory — but more are coming.[/color]")
+	else:
+		msgs.append("[color=#FFD700]★ Party victory![/color]" if victory else "[color=#FF4444]The party has fallen...[/color]")
+
+	# Queue the chain. Keyed on the LEADER, who is the one holding the Continue button: followers
+	# are movement-locked out in the world, so the leader already drives where the party goes and
+	# whether it presses on. Everyone still in the fight gets pulled into the next link.
+	if _flock_incoming:
+		if not flock_counts.has(leader_id):
+			flock_counts[leader_id] = 1
+		else:
+			flock_counts[leader_id] += 1
+		pending_flocks[leader_id] = {
+			"party": true,
+			"members": _survivors.duplicate(),
+			"monster_name": String(monster.get("base_name", monster.get("name", ""))),
+			"monster_level": int(monster.get("level", 1)),
+			"variant_type": String(monster.get("variant_type", "")),
+			"empowered_mods": monster.get("empowered_mods", []),
+			"flock_count": flock_counts[leader_id],
+		}
 	var snap = _party_combat_snapshot(leader_id)
 	for pid in members:
 		if characters.has(pid):
@@ -43103,6 +43241,15 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 			}
 			if member_payloads.has(pid):
 				_end_msg["victory_payload"] = member_payloads[pid]
+			if _flock_incoming:
+				_end_msg["flock_incoming"] = true
+				_end_msg["flock_monster"] = String(monster.get("name", "Monster"))
+				_end_msg["drops_pending"] = true
+				# Only the leader is offered the choice; everyone else is told who is deciding,
+				# so a follower is never left staring at a dead action bar wondering what is next.
+				_end_msg["flock_leader"] = (pid == leader_id)
+				if pid != leader_id and characters.has(leader_id):
+					_end_msg["flock_leader_name"] = String(characters[leader_id].name)
 			send_to_peer(pid, _end_msg)
 			send_character_update(pid)
 			# v0.9.740 - and redraw where they ARE. Without this the client keeps showing

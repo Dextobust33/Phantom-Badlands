@@ -30824,6 +30824,17 @@ func _handle_party_combat_end(message: Dictionary):
 	_party_confirm_clear()
 	stop_low_hp_pulse()
 
+	# Co-op flock chain. The server offers the choice to the LEADER only - followers are told who
+	# is deciding rather than being left with a dead action bar, and get pulled in automatically.
+	if message.get("flock_incoming", false):
+		flock_monster_name = String(message.get("flock_monster", "more"))
+		if bool(message.get("flock_leader", false)):
+			flock_pending = true
+		else:
+			flock_pending = false
+			var _fl := String(message.get("flock_leader_name", "your leader"))
+			display_game("[color=#FFAA00]More %s are closing in - %s is deciding whether to press on.[/color]" % [flock_monster_name, _fl])
+
 	if victory and not your_death:
 		# v0.9.591 — record server-authoritative HP truth for the defeated monster
 		# so cross-fight discovery stays accurate in party combat too.
