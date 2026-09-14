@@ -213,6 +213,40 @@ Asked because the arc had run out of defects and into design. All four answered.
       character can actually clear - which is also the thing that stops "replace the overworld
       quests" leaving an empty first hour. Scope the two together.
 
+      **A GUIDE NPC carries the new player through it, as a party member.** Owner 2026-09-13:
+      *"an NPC should help introduce the player to mechanics, Items, equipment, combat etc. and
+      help carry the charaacter through the dungeon using the party combat."* So the guide is not
+      a wall of text at a signpost - it teaches by standing next to you, and it fights in the
+      starter dungeon on the EXISTING co-op machinery, which means a first dungeon is survivable
+      because someone competent is in it with you, not because the monsters were made limp.
+
+      Checked against the live code before writing this down, because it decides the size:
+        * `start_party_combat(members, characters, monster)` is handed its OWN character map and
+          stores it as `combat.characters`; every resolution site reads that, never the server's
+          global `characters`. So the guide can exist as a `Character` INSIDE one fight, under a
+          synthetic (negative) peer id, and never enter the global registry - which is what keeps
+          it out of the 31 sites that iterate `characters` (chat broadcast, the who-is-online
+          feed, geo events, the map figure payload, persistence).
+        * `send_to_peer` returns immediately for an unknown peer, so every broadcast-to-members
+          loop is already safe against a member with no socket.
+        * `submit_party_action(leader, pid, action)` is pure state - no networking, no client ack.
+          The server can act for the guide. `_dev_autoact_fill` already does exactly this for
+          every non-leader member; it is dev-gated (`--autoact`), so the production path is new
+          but the mechanism is proven.
+        * `_party_award_drop` and `_party_collect_fallen` both open with `if not characters.has(pid)`,
+          so the guide silently takes no loot and cannot permadie. That is the behaviour we want
+          and it is already there.
+      So this rides existing machinery. The REAL work is: turn AI for the guide (which card, when),
+      the teaching script itself, the client showing a non-player member, and **sizing** - party
+      combat multiplies monster HP by member count, so adding the guide doubles the boss's HP. A
+      starter dungeon tuned for one must be re-tuned for two, or the guide makes the fight longer
+      rather than safer.
+
+      Two known risks, both already on this list: *"party play isn't working properly"* (no repro
+      captured) and *"party flocks are not wired"*. Reproduce the first before building on top of
+      party combat - an escort that inherits a live party bug hits every new player on their first
+      fight, which is the worst possible place for it.
+
 - [ ] **DUNGEON QUESTING REPLACES THE OVERWORLD QUESTS ENTIRELY.** Not a supplement. ⚑ The risk
       named when the choice was offered still stands and has to be designed around: a brand-new
       character needs a dungeon it can clear immediately, or the first hour empties out. Whatever
