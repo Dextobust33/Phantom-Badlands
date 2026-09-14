@@ -413,8 +413,15 @@ Asked because the arc had run out of defects and into design. All four answered.
           stall the round forever waiting for a member with no client
         * appears only in the STARTER dungeon and only when the player has no party
       Probes: `guide_aggro.gd`, plus section 6 of `dungeon_party_combat.gd`.
-      **Still to build: the teaching script, the controlled first fight outside the dungeon, and
-      the quest chain that hands over the gear kit and the egg.** The guide's turn AI is
+      **✅ THE CHAIN IS BUILT 2026-09-14, unreleased — `Warden's Watch`, three stages.**
+      Granted at creation (the slot Pathfinder's Trial left empty on 2026-09-03), named by the
+      welcome overlay, and it arms in the order the measurement demands: weapon, then armour, then
+      trinket, all inside the L1-L3 window before the gearless curve turns at L5. Stage three is a
+      DUNGEON_CLEAR that the guide escorts, and it pays the companion egg — creation no longer
+      hands one out, so the egg reads as earned. Probe: `tools/probe/starter_chain.gd`, 33 checks,
+      including that the overlay names something that is actually granted.
+      **Still to build: the teaching script** — the guide currently speaks one line when a fight
+      starts. Introducing items, equipment and combat is the half that is still missing. The guide's turn AI is
       deliberately a plain attack - its job is tanking, and something clever would make the
       tutorial about watching.
 

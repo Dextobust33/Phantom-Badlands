@@ -144,6 +144,7 @@ const CHAIN_TITLES = {
 	"end_walker":         {"name": "End Walker",         "color": "#C5B358"},
 	# Audit #3 Tutorial Initiative (v0.9.562) — Pathfinder's Trial starter chain.
 	"pathfinder":         {"name": "Pathfinder",         "color": "#9ACD32"},
+	"wardens_watch":      {"name": "Warden's Watch",   "color": "#9ACD32"},
 }
 
 static func get_chain_title(title_id: String) -> Dictionary:
@@ -1581,6 +1582,79 @@ const QUESTS = {
 		"chain_total": 4,
 		"next_in_chain": "",
 		"chain_bonus": {"valor": 100, "egg": "Goblin", "chain_title": "pathfinder"},
+		"starter_kit_slot": "accessory"
+	},
+
+	# ===== ONBOARDING 2026-09-14 — Warden's Watch =====
+	# Replaces the retired Pathfinder chain, which was a GATHERING errand; the owner's direction
+	# is that onboarding should teach the loop the game is actually built on, and end in a dungeon
+	# a level-1 character can clear. Three stages, because the measurement said a new character
+	# needs real gear inside the L1-L3 window and four stages is slower than that.
+	#
+	# The guide (server.gd GUIDE_NAME) escorts the dungeon stage - see _start_guided_dungeon_combat.
+	# Gear cadence weapon -> armour -> accessory via `starter_kit_slot`, which the Pathfinder chain
+	# already proved and which is resolved server-side by drop_tables.get_starter_kit_item.
+	"wardens_watch_1": {
+		"id": "wardens_watch_1",
+		"name": "Warden's Watch I — Something To Hit It With",
+		"description": "A Warden finds you at the gate. \"You came out here with nothing in your hands. That is how most of them arrive, and it is how most of them leave.\"
+
+Kill one thing. Anything. He will watch.
+
+[color=#9ACD32]STARTER CHAIN: 3 stages | This stage rewards a weapon[/color]",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "crossroads",
+		"target": 1,
+		"rewards": {"xp": 60, "valor": 10},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "wardens_watch",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "wardens_watch_2",
+		"chain_bonus": {},
+		"starter_kit_slot": "weapon"
+	},
+	"wardens_watch_2": {
+		"id": "wardens_watch_2",
+		"name": "Warden's Watch II — Something To Take A Hit",
+		"description": "\"Good. Now the other half.\" He taps your chest, where armour would be if you had any.
+
+Three more. You will feel the difference by the third.
+
+[color=#9ACD32]STARTER CHAIN: 3 stages | This stage rewards armour[/color]",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "crossroads",
+		"target": 3,
+		"rewards": {"xp": 110, "valor": 15},
+		"is_daily": false,
+		"prerequisite": "wardens_watch_1",
+		"chain_id": "wardens_watch",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "wardens_watch_3",
+		"chain_bonus": {},
+		"starter_kit_slot": "armor"
+	},
+	"wardens_watch_3": {
+		"id": "wardens_watch_3",
+		"name": "Warden's Watch III — Into The Dark",
+		"description": "\"There is a hole in the ground a short walk from here. I have been in it. You have not.\"
+
+Clear it. He is coming with you, and he will take what you cannot.
+
+[color=#9ACD32]STARTER CHAIN: 3 stages | Final reward: a trinket, a companion egg and 100 valor[/color]",
+		"type": QuestType.DUNGEON_CLEAR,
+		"trading_post": "crossroads",
+		"target": 1,
+		"rewards": {"xp": 200, "valor": 25},
+		"is_daily": false,
+		"prerequisite": "wardens_watch_2",
+		"chain_id": "wardens_watch",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 100, "egg": "Wolf"},
 		"starter_kit_slot": "accessory"
 	}
 }

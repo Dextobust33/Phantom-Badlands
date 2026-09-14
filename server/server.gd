@@ -3379,20 +3379,18 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# character partway through the chain can still finish and claim it. Nothing offers it to a
 	# new character any more; the quest board has been dungeon-only since v0.9.727.
 	#
-	# NOTE the deliberate asymmetry: the starter EGG below is intentionally still granted. It is
-	# also slated for removal with item 7 (the tutorial Phantom hands out an egg and a
-	# registration item instead), but removing it before that exists would leave a brand-new
-	# character with nothing at all. Egg goes in the same change that replaces it.
-	# Tutorial companion gift — random T1 monster egg ready to hatch in
-	# incubator. Randomized so two friends creating characters at the same
-	# time don't both get a Goblin (v0.9.566 fix — was hardcoded Goblin).
-	if drop_tables:
-		var t1_pool = ["Goblin", "Giant Rat", "Kobold", "Skeleton", "Wolf"]
-		var picked_monster = t1_pool[randi() % t1_pool.size()]
-		var tutorial_egg = drop_tables.get_egg_for_monster(picked_monster)
-		if not tutorial_egg.is_empty():
-			tutorial_egg["tutorial_gift"] = true
-			character.incubating_eggs.append(tutorial_egg)
+	# ONBOARDING 2026-09-14 — the replacement the note above was waiting for. Warden's Watch is
+	# granted here, and it is what carries the egg now: the owner chose that the tutorial should
+	# hand it over rather than creation, so it reads as earned instead of issued. A player who
+	# skips the chain still gets one from the first dungeon they clear.
+	#
+	# The free creation egg is therefore GONE. It was explicitly kept alive only until something
+	# replaced it, and this is that something.
+	if quest_mgr:
+		var _sq = quest_mgr.accept_quest(character, "wardens_watch_1", character.x, character.y,
+			"", character.level, 0)
+		if not _sq.get("success", false):
+			log_message("Starter chain NOT granted to %s: %s" % [char_name, str(_sq.get("message", "?"))])
 	# Mark backfill flag so the welcome overlay only fires for fresh chars
 	# (not retroactively for legacy characters on next login).
 	character.seen_welcome_overlay = true
@@ -3419,9 +3417,8 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		"title": "[color=#9ACD32]Welcome, %s![/color]" % char_name,
 		"body": (
 			"You're at [color=#FFD700]Crossroads[/color] — the safest post in the world.\n\n"
-			+ "Two things are waiting for you:\n"
-			+ "  • A [color=#FF80FF]monster egg[/color] — just walk around to hatch your first companion.\n"
-			+ "  • A [color=#9ACD32]dungeon[/color] within a short walk — look for the [color=#FFD700]D[/color] on your map.\n\n"
+			+ "A Warden is waiting at the gate:\n"
+			+ "  • [color=#9ACD32]Warden's Watch[/color] — three steps, in your quest log now. Each one arms you, and the last one he walks with you.\n\n"
 			+ "Press [color=#FFAA66]?[/color] on any panel whenever you want help. Good luck out there."
 		),
 	})
