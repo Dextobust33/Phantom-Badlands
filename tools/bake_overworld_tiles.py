@@ -28,6 +28,7 @@ USAGE
     python tools/bake_overworld_tiles.py --check    # report coverage, write nothing
 """
 import json
+import re
 import os
 import re
 import sys
@@ -545,6 +546,45 @@ def bake_ground(hexcol, dest):
     im.save(dest)
 
 
+
+def warn_stale_imports(root='.'):
+    """Godot does NOT re-import art on a plain game run - only an editor pass or --import does.
+
+    2026-09-14: the Warden's sprite was fixed, re-baked, verified on disk, and the running client
+    still drew a letter for another twenty minutes, because .godot/imported held the glyph from
+    the previous bake. "The file is correct" and "the game shows it" are different claims, and
+    every bake can break the second one silently.
+
+    Godot names each cache entry `<basename>-<md5 of the res:// path>.md5`, and that sidecar
+    records the md5 of the source it was built from. Address entries by the PATH hash, not the
+    basename: the first version of this matched on basename alone, so tile/x.png and overlay/x.png
+    collided and it reported 25 files permanently stale no matter how many import passes ran - a
+    detector that always fires being exactly as useless as one that never does.
+    """
+    import hashlib
+    imported = os.path.join(root, '.godot', 'imported')
+    if not os.path.isdir(imported):
+        return []
+    stale = []
+    for dirpath, _dirs, files in os.walk(os.path.join(root, OUT)):
+        for name in files:
+            if not name.endswith('.png'):
+                continue
+            full = os.path.join(dirpath, name)
+            res = 'res://' + os.path.relpath(full, root).replace(os.sep, '/')
+            side = os.path.join(imported, '%s-%s.md5'
+                                % (name, hashlib.md5(res.encode()).hexdigest()))
+            with open(full, 'rb') as fh:
+                have = hashlib.md5(fh.read()).hexdigest()
+            if not os.path.exists(side):
+                stale.append(full)         # never imported at all
+                continue
+            m = re.search(r'source_md5="([0-9a-f]+)"',
+                          open(side, encoding='utf-8').read())
+            if m and m.group(1) != have:
+                stale.append(full)
+    return stale
+
 def main():
     check_only = '--check' in sys.argv
     src = open(SRC, encoding='utf-8').read()
@@ -655,6 +695,22 @@ def main():
     _assert_no_twins(OUT)
     _warn_adjacent_sources()
     print('no two tiles baked to the same picture')
+
+    stale = warn_stale_imports()
+    if stale:
+        print('')
+        print('=' * 72)
+        print('STALE IMPORTS - the GAME will keep drawing the OLD art for %d file(s):' % len(stale))
+        for f in stale[:12]:
+            print('   %s' % f)
+        if len(stale) > 12:
+            print('   ... and %d more' % (len(stale) - 12))
+        print('')
+        print('Godot only re-imports on an editor pass. Run this before launching or exporting:')
+        print('   godot --headless --editor --quit --path .')
+        print('=' * 72)
+    else:
+        print('imports are current - the game will draw what was just baked')
 
 
 

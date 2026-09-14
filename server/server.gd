@@ -43735,6 +43735,28 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 			if _comp_lvl_res.get("leveled_up", false):
 				send_to_peer(pid, {"type": "text", "message":
 					"[color=#00FFFF]Your companion reached level %d![/color]" % int(_comp_lvl_res.get("new_level", 0))})
+			# ⛑ THE KILL COUNTS. It never did in a party.
+			#
+			# Owner 2026-09-14, after the Warden-escorted tutorial fight: *"I defeated the wolf...
+			# After the victory screen I'm once again unsure what to do"* - and the tracker still
+			# read "Something To Hit It With 0/1". It was not a tutorial fault: this function
+			# awarded XP, companion XP and loot and never once told the quest system, the monster
+			# knowledge table or the bestiary that anything had died. EVERY co-op kill has been
+			# invisible to kill quests for as long as party combat has existed, not just this one.
+			#
+			# Exactly the shape of the companion-XP bug logged ten lines above: the party path was
+			# written beside the solo path instead of through it, so each thing solo does had to be
+			# remembered separately, and these three were not.
+			var _kname := String(monster.get("name", ""))
+			var _kbase := String(monster.get("base_name", _kname))
+			var _klvl := int(monster.get("level", 1))
+			if _kbase != "":
+				ch.record_monster_kill(_kbase, _klvl)
+				if peers.has(pid):
+					var _bacct := String(peers[pid].get("account_id", ""))
+					if _bacct != "":
+						persistence.record_bestiary_kill(_bacct, _kbase, _klvl)
+			check_kill_quest_progress(pid, _klvl, _kname)
 			var drops = combat_mgr.roll_combat_drops(monster, ch)
 			var _loot_lines: Array = []
 			var _gear_drops: Array = []
