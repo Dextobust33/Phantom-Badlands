@@ -276,7 +276,9 @@ day (the dungeon grade lie, the world reshape, the lag, the one-time relocation)
   signature resource. ~~Original:~~
   Yield per tile WALKED falls with it. That is the intent, but the gathering JOBS have not been
   re-checked against it and may now be slow to level.
-- **DEATH RATE at L2500/L5000** read 1.7% against a ~0.3% design target in the last refcal, 0.0%
+- [x] **DEATH RATE — MEASURED 2026-09-13, and it is worse than the old note suggested.** Two
+  read-only audits agree. Written up in full at the END of this file; the fix is deliberately
+  scheduled LAST (owner's call). ~~Original note:~~
   elsewhere. Two deaths at that sample size, so not yet a signal - but the chain steers by WIN
   rate and is structurally blind to deaths. Watch it in play.
 
@@ -3462,3 +3464,66 @@ down, and these are the ones it keeps sending back — which is what extra lives
 - **Judge at +/-10pp, not +/-5pp.** At n=60 a win rate carries ~4.5pp of sampling error.
 - **Archive with discussion.** Removing game elements is fine, but discuss first; improving beats
   removing.
+
+
+---
+
+## ⚑ LAST ON THE LIST — the death curve runs the wrong way (measured 2026-09-13)
+
+**Scheduled deliberately last, at the owner's direction.** It is documented here rather than
+acted on, because acting on it means a per-class balance pass plus the full calibration chain,
+and there are live players.
+
+### What was measured
+
+Two independent READ-ONLY audits, both against ordinary same-level monsters - not over-level
+gambles, not elites. `run_fight(level, gear, "normal", ...)`.
+
+`riskcurve` - death per encounter, 216 fights a cell, all nine classes:
+
+    level      gearless      under    average        bis
+    3             14.8%       0.0%       3.7%       0.0%
+    10            37.0%      14.8%       7.4%       0.0%
+    30            88.9%       7.4%       0.0%       0.0%
+    100           96.3%      18.5%      11.1%       3.7%
+    500          100.0%      29.6%      22.2%      11.1%
+
+`endgame` - best-in-slot survival, 450 fights a level (50 per class):
+
+    level     won   retreated    DIED   survived
+    100       49%        46%     5.3%      94.7%   below the 95% target
+    250       30%        60%     9.6%      90.4%   below
+    500       38%        54%     8.0%      92.0%   below
+    1000      48%        47%     5.1%      94.9%   below
+
+### What it means
+
+1. **Risk RISES with progression instead of falling.** A best-in-slot player goes 0% at L30 to
+   3.7% at L100 to 11.1% at L500. `project_what_balanced_means` says the opposite: *death risk
+   must FALL with progression*.
+2. **A well-geared endgame player dies about one fight in ten.** Under permadeath that ends
+   characters who did everything right, which is the one outcome the pillar rules out.
+3. **Gear does pay** - 100% to 11.1% at L500 - so the careful player's route up exists. It just
+   does not reach far enough.
+
+### What it is NOT
+
+Not sampling noise: n=216 a cell for riskcurve (±5.5pp at p=0.22) and n=450 a level for endgame,
+and the trend is monotonic across five levels and two separate harnesses.
+
+Not the retreat model hiding losses: `endgame` counts survival as *won OR retreated in time*, so
+these are deaths after every escape has been allowed for.
+
+### What fixing it costs, and the trap
+
+`CLAUDE.md`: **a global player buff cannot fix a per-class gap** - the chain holds win rate at
+target, so any across-the-board buff is cancelled by monsters getting stronger on the next refit.
+Only PER-CLASS changes survive. And **the chain optimises WIN rate and is blind to DEATH rate**,
+so a refit can hit its win target while this column climbs.
+
+So the order is: `forensics` (read-only) to find WHICH classes and WHAT is killing them, then a
+per-class change, then `speciescal` -> `refcal` -> `rolecal` once each (~25 min), then re-run
+`riskcurve` and `endgame` to confirm the column moved. Treat every balance number measured
+between the change and the re-calibration as stale.
+
+Related: [[project_what_balanced_means]], [[feedback_orthogonal_calibration]].
