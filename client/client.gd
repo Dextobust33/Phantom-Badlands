@@ -46705,6 +46705,20 @@ func _overworld_display(payload: Dictionary) -> String:
 	# The guide's pointer, converted from world coords to a cell in THIS grid. The grid is
 	# recentred on the player every step, so the conversion has to happen per draw and not once
 	# when the mark arrives.
+	# ⛑ AND IT STOPS THE MOMENT ITS JOB IS DONE.
+	#
+	# Owner 2026-09-14: *"The highlight for the door seems to stay on the map and keep moving as
+	# I do."* Measured from two screenshots: the player moved (3,1) -> (4,5) and the ring moved
+	# -1 cell in x and -4 in y on screen, which is exactly right for a fixed world tile under a
+	# map that recentres every step. It was never following anybody.
+	#
+	# It just never STOPPED. A pointer that outlives its purpose reads as a bug even when it is
+	# pointing at the right square - and the purpose here is "this is the way out", which is
+	# finished the moment you are out. So leaving the post clears it, and the 45-second timer is
+	# only the fallback for a player who never goes.
+	if _mark_tile.x != 0x7FFFFFFF and not bool(payload.get("post", false)):
+		_mark_tile = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
+		_mark_until_ms = 0
 	var mark_cell := Vector2i(-1, -1)
 	if _mark_tile.x != 0x7FFFFFFF and Time.get_ticks_msec() < _mark_until_ms 			and _last_map_center.x != 0x7FFFFFFF:
 		mark_cell = Vector2i(mid + (_mark_tile.x - _last_map_center.x),

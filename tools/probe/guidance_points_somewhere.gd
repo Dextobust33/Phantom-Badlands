@@ -192,6 +192,18 @@ func _init() -> void:
 		"  and the cell is offset from that centre")
 	ck(not csrc.contains('Vector2i(int(payload.get("x", 0)), int(payload.get("y", 0)))'),
 		"  with the payload read gone entirely")
+	# ...and it STOPS. Owner 2026-09-14: *"The highlight for the door seems to stay on the map
+	# and keep moving as I do."* Measured from two screenshots - the player moved (3,1)->(4,5)
+	# and the ring moved -1 cell in x, -4 in y, which is exactly right for a fixed world tile
+	# under a map that recentres each step. It was anchored correctly the whole time; it simply
+	# never ended, and a pointer that outlives its purpose reads as a bug even when it is right.
+	ck(csrc.contains('if _mark_tile.x != 0x7FFFFFFF and not bool(payload.get("post", false)):'),
+		"and leaving the post clears the mark - its job was 'here is the way out'")
+	var wsrc2 := FileAccess.get_file_as_string("res://shared/world_system.gd")
+	ck(wsrc2.contains('"post": _inside_post'),
+		"  reading a flag the payload really carries")
+	ck(wsrc2.contains("var post = chunk_manager.get_npc_post_at(center_x, center_y)"),
+		"  and which means STANDING INSIDE one, not merely near one")
 	# The arithmetic itself, executed.
 	var mid_t := 11
 	var centre := Vector2i(2, 0)
