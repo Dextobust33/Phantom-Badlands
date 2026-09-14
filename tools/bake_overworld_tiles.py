@@ -233,6 +233,66 @@ def cut_region_native(pack, row, col, span, dest):
     reg.save(dest)
 
 
+
+# The overworld TREE does not come from a Raven pack.
+#
+# Owner 2026-09-14: *"Our trees on the overworld are pretty large, did we consider the trees in
+# ... /expansion"*. They were right twice over. The old tree was a 3x3 block (96x96) cut from
+# green_forest_v2 whose ink filled the ENTIRE block edge to edge - no trunk, no margin, a solid
+# green mass three cells square. That is why it dominated the map rather than decorating it.
+#
+# The TimeFantasy expansion sheet has proper trees: trunk, roots, and transparent air around
+# them. Baked at 3 rows x 2 cols (64x96) instead of 3x3, so a tree keeps its height but takes a
+# third less width - and reads as a tree at a glance, which the old one never did.
+TREE_SRC = ('client/sprites/battlers/timefantasy_characters/timefantasy_characters/'
+            'RPGMAKERMV/expansion/bonus_trees.png')
+TREE_CELL = (0, 1)      # (row, col) into the 3x4 grid - green row, broadleaf with the clearest trunk
+TREE_SPAN = (3, 2)      # rows, cols of 32px cells
+
+
+def bake_tree_big(dest):
+    """The multi-cell tree, scaled to fit its span with the aspect ratio kept.
+
+    Bottom-anchored and horizontally centred, because that is how the renderer places big art:
+    it stands ON its base cell and grows upward. Squashing it to fill the box would give a fat
+    tree; fitting it leaves transparent air at the top, which is correct."""
+    from PIL import Image as _I
+    sheet = _I.open(TREE_SRC).convert('RGBA')
+    cw, ch = sheet.size[0] // 4, sheet.size[1] // 3
+    r, c = TREE_CELL
+    cell = sheet.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch))
+    bb = cell.getbbox()
+    if bb is None:
+        raise SystemExit('tree source cell is EMPTY')
+    cell = cell.crop(bb)
+    sr, sc = TREE_SPAN
+    W, H = sc * TILE, sr * TILE
+    w0, h0 = cell.size
+    scale = min(W / float(w0), H / float(h0))
+    nw, nh = max(1, int(w0 * scale)), max(1, int(h0 * scale))
+    t = cell.resize((nw, nh), _I.NEAREST)
+    out = _I.new('RGBA', (W, H), (0, 0, 0, 0))
+    out.paste(t, ((W - nw) // 2, H - nh), t)
+    out.save(dest)
+    return TREE_SPAN
+
+
+def bake_tree_small(dest):
+    """The single-cell fallback the minimap and any non-big renderer still want."""
+    from PIL import Image as _I
+    sheet = _I.open(TREE_SRC).convert('RGBA')
+    cw, ch = sheet.size[0] // 4, sheet.size[1] // 3
+    r, c = TREE_CELL
+    cell = sheet.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch))
+    cell = cell.crop(cell.getbbox())
+    w0, h0 = cell.size
+    scale = min(TILE / float(w0), TILE / float(h0))
+    t = cell.resize((max(1, int(w0 * scale)), max(1, int(h0 * scale))), _I.NEAREST)
+    out = _I.new('RGBA', (TILE, TILE), (0, 0, 0, 0))
+    out.paste(t, ((TILE - t.size[0]) // 2, TILE - t.size[1]), t)
+    out.save(dest)
+
+
 def cut_from_pack(pack, row, col, dest, span=None, opaque=False):
     """One cell, or a REGION of cells shrunk to one.
 
@@ -452,6 +512,14 @@ def main():
         kind, name = key.split(':', 1)
         pack, row, col = spec[0], spec[1], spec[2]
         span = spec[3] if len(spec) > 3 else None
+        # The tree comes from the TimeFantasy expansion, not a Raven pack - different sheet,
+        # different cell size, and a silhouette with a trunk instead of a solid canopy block.
+        if name == 'tree' and kind == 'tile':
+            bake_tree_small(os.path.join(OUT, 'tile', 'tree.png'))
+            sr, sc = bake_tree_big(os.path.join(OUT, 'big', 'tree.png'))
+            big_manifest['tree'] = [sr, sc]
+            cut += 1
+            continue
         # ground-class tiles must not let the biome show through - see cut_from_pack
         opaque = kind == 'ground' or name in ('water', 'deep_water', 'path', 'floor', 'wall')
         cut_from_pack(pack, row, col, os.path.join(OUT, kind, name + '.png'), span, opaque)

@@ -519,6 +519,23 @@ Asked because the arc had run out of defects and into design. All four answered.
         * it must degrade: a player who has turned effects down, or a round resolving several
           cards at once, must not end up with a screen full of flying cards.
 
+- [ ] **ACTION POSES FOR THE 40 SPRITES THAT LACK THEM — this is ART, not generation.** Owner
+      2026-09-14 asked whether a pose could be copied from a character with similar equipment.
+      Measured before answering, because the instinct is half right:
+        * `$tf_template.png` is a blank base body, so every character IS built on one skeleton.
+          Two different characters in the same stand frame agree on **89% of their silhouette**,
+          and 73% of the shared pixels differ only in COLOUR.
+        * But the template carries **walk cycles only** — 12 frames, four directions, three steps.
+          There is no template action pose to copy from; the sword-raises and casts in
+          `expansion/animation1.png` were drawn per character on top of that skeleton.
+        * So a transfer is not a copy. The 11% that does NOT match between two characters is
+          exactly the part that moves: hair, cape, sleeve, weapon. When the arm goes up the
+          sleeve goes with it, and that sleeve belongs to the TARGET character. Doing it properly
+          means segmenting clothing from body per sprite and redrawing it in the new pose.
+      **Coverage today:** `chara1-5` (40 sprites) have laugh / nod / pose / shake / surprise;
+      `military1-3` (24) have pose only; `npc1-2` (16) have nothing but walk frames.
+      Worth doing as authored art when there is appetite. Not worth generating.
+
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 
 *"We've got some live players now so we want to limit our releases."* A release restarts the
