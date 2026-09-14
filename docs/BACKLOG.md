@@ -578,6 +578,42 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
+### ⚑ ONBOARDING — fixed 2026-09-14, UNRELEASED, and one piece still open
+
+Owner tested a fresh account locally and reported five things. Four are fixed on master
+(`bdd7060c`, `adef56ab`), proven by `tools/probe/guidance_points_somewhere.gd` — every section of
+which was verified by injecting its own fault.
+
+- [x] **The Warden drew as a letter.** `bake_overworld_tiles.py` writes his art from its own
+      function, then derived "which tiles still need a glyph" from the `CUTS` table, which he is
+      not in — so the fallback pass overwrote his sprite with a rendering of "W". `have_art` is
+      now derived from what the run actually WROTE. Three probe versions were needed before the
+      check was sound; see the commit message, it is a compact catalogue of instrument defect.
+- [x] **The movement lesson fired after character creation.** It was never moved: the keypad
+      diagram opens on character ENTRY and always had. The Sanctuary intro now asks for it
+      (`show_movement_help`), and character entry no longer does.
+- [x] **Nothing pointed at a named button.** `client/ui_spotlight.gd` rings any Control the game
+      has just named, once the popup closes rather than underneath it. Hints carry a `highlight`
+      list; shortcut buttons are named for their action id so they can be addressed at all.
+- [x] **His dialogue ended with no next action** — *"I pressed got it on his dialogue and now I'm
+      just standing here."* Equipping the blade now fires `_maybe_warden_next_step`, which says
+      the post is walled and which compass direction the door is.
+
+- [ ] **▶ NEXT: the Warden is still invisible when he escorts you.** Owner: *"I walked out of the
+      post, the Warden didn't follow me, there was no indication he actually joined me or where I
+      should go."* He only materialises at combat start (`_start_guided_overworld_combat`); he is
+      not a map figure and not in the party panel. The map payload is built in `world_system.gd`
+      (three `"figures"` return sites) which knows nothing about the escort, so this needs an
+      escort flag threaded to the client. The companion already takes the trailing cell via
+      `_trail_offset`, so the flank cell beside the player is free for him.
+
+- [ ] **`party_combat_active` still sits after `elif in_combat:`** in the client action bar
+      (~9938). The sibling branch `party_confirm_pending` was moved above `in_combat` to fix
+      co-op lock-in; this one was left and is likely unreachable for the same reason. Check
+      before the next release — it is the same defect that made every new player's first fight
+      impossible to lock in.
+
+
 **v0.9.783 IS LIVE** (server hash-verified `074c338c`) - hunting grounds, and the danger guard
 taught to read what actually spawns. **v0.9.782 IS LIVE** (server hash-verified `6def650b`, seven assets on the tag, Windows gate
 passed, no script errors). It carries the blindsiding guard, the map level hover, and the
