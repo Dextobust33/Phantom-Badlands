@@ -2680,7 +2680,7 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				# one cell they look at most.
 				#
 				# Same `overlay:tile` form `!hot:tree` already uses.
-				sem_parts.append(_marker_with_tile("!player", x, y, tile_cache))
+				sem_parts.append(_marker_with_tile("!player", x, y, tile_cache, depleted_set))
 				biome_parts.append(_cell_biome(x, y))
 				continue
 
@@ -2724,7 +2724,7 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 				var player_color = "#00FF00" if first_player.get("in_my_party", false) else "#00FFFF"
 				line_parts.append("[color=%s] %s[/color]" % [player_color, player_char])
 				# Another player stands on real ground too - same fault, same fix.
-				sem_parts.append(_marker_with_tile("!other", x, y, tile_cache))
+				sem_parts.append(_marker_with_tile("!other", x, y, tile_cache, depleted_set))
 				biome_parts.append(_cell_biome(x, y))
 				# Their LOOK, so the sprite map draws them as themselves rather than as a marker.
 				# A stack of players already collapses to one glyph, so only a lone player gets a
@@ -4312,16 +4312,32 @@ func danger_level_at(x: int, y: int) -> int:
 	return int(get_monster_level_range(x, y).get("base_level", get_post_anchored_level(x, y)))
 
 
-func _marker_with_tile(marker: String, x: int, y: int, tile_cache: Dictionary) -> String:
+func _marker_with_tile(marker: String, x: int, y: int, tile_cache: Dictionary,
+		depleted_set: Dictionary = {}) -> String:
 	"""`marker` with the tile at (x, y) appended, so whatever is standing there is drawn ON it.
 
 	A marker with no tile draws the bare biome ground, which is how a player walking a road came
 	out standing on grass. `empty` is left off deliberately - empty IS the ground, and naming it
-	would put a second copy of the ground over the first."""
+	would put a second copy of the ground over the first.
+
+	⛑ A DEPLETED NODE IS GROUND, NOT THE NODE.
+
+	`move_player` lets you walk onto a gatherable once its node is spent - that is the ONLY way
+	to stand on water, which blocks movement otherwise. The main render path already knows this
+	and clears a spent node to `empty`. This function did not, and it is the path that draws the
+	cell you are STANDING on - so the one tile in the world that could show the fault was the one
+	tile guaranteed to be under the player.
+
+	Owner 2026-09-14: *"my player sprite is still showing water under it even though I already
+	cleared the water on this space ... you can't walk on a water tile, it would have to be a
+	bridge tile or fished before the sprite can stand on it."* Exactly so, and the second half of
+	that sentence is what identified it: standing there at all proves the node was spent."""
 	var tile = tile_cache.get("%d,%d" % [x, y], null)
 	if tile == null and chunk_manager:
 		tile = chunk_manager.get_tile(x, y)
 	var t := String(tile.get("type", "")) if tile != null else ""
+	if t in GATHERABLE_TYPES and depleted_set.has("%d,%d" % [x, y]):
+		return marker
 	if t == "" or t == "empty":
 		return marker
 	return "%s:%s" % [marker, t]

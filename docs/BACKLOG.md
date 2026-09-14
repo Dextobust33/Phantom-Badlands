@@ -636,7 +636,9 @@ Still open from that same report, in the order they block a new player:
       can be stranded behind a door waiting for an item they do not have.
 - [x] **The "+ is the door" line is wrong** — the overworld is all sprites now, there is no `+`.
 - [ ] **"Stand on something that lights up"** reads as "stand on a lamp" in the Sanctuary.
-- [ ] **Player sprite draws water under it on a cleared tile** — `shot_295941`.
+- [x] **Player sprite draws water under it on a cleared tile** — `_marker_with_tile` reported the
+      raw tile type and never consulted the depleted set, so the ONE cell that could show the
+      fault was the one always under the player. Probe: `standing_on_a_spent_node.gd`.
 - [ ] **After the victory screen there is no next step** — `shot_645113`.
 - [ ] **Can the tutorial fight roll a flock?** Owner asked; unverified. If it can, a new player's
       first fight can chain into a second one with the Warden's help already spent.
