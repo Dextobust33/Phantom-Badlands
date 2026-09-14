@@ -45710,6 +45710,7 @@ func handle_egg_hatched(message: Dictionary):
 	# legible on the dark background instead of near-invisible.
 	var variant_color = _ensure_readable_color(companion.get("variant_color", "#FFFFFF"))
 	var tier = companion.get("tier", 1)
+	var sub_tier = companion.get("sub_tier", 1)
 	var bonuses = companion.get("bonuses", {})
 
 	# Play celebration sound
@@ -45728,8 +45729,10 @@ func handle_egg_hatched(message: Dictionary):
 		var _bits: Array = []
 		for _b in bonuses.keys():
 			_bits.append("%s +%s" % [String(_b).capitalize(), str(bonuses[_b])])
-		_dungeon_log_add("[color=#FFD700]✦ EGG HATCHED ✦[/color] [color=%s]%s[/color] (%s, T%d)%s"
-			% [variant_color, companion_name, variant, int(tier),
+		# Grade, not "T<tier>" - see the note in combat_scene_panel.gd. This line printed the
+		# TIER behind the same "T" that the combat panel used for the RANK.
+		_dungeon_log_add("[color=#FFD700]✦ EGG HATCHED ✦[/color] [color=%s]%s[/color] (%s, %s)%s"
+			% [variant_color, companion_name, variant, PowerRank.tag(int(tier), int(sub_tier)),
 				("  " + ", ".join(_bits)) if not _bits.is_empty() else ""])
 		display_dungeon_floor()
 		return

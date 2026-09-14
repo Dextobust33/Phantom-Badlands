@@ -667,9 +667,12 @@ func _refresh_fuse_selection_state() -> void:
 				else:
 					fuse_ready = true
 					var new_tier = int(first_asc.get("tier", 1)) + 1
-					preview = "[color=#88FF88]→ %s T%d.1 will be added to %s (consumes 1 catalyst).[/color]" % [
+					# The GRADE, not "T<n>.1" - see combat_scene_panel.gd. This was the third
+					# surface still speaking the pre-ladder dialect, and it invented a third
+					# spelling of it.
+					preview = "[color=#88FF88]→ %s %s will be added to %s (consumes 1 catalyst).[/color]" % [
 						str(first_asc.get("monster_type", "?")),
-						new_tier,
+						PowerRank.label(new_tier, 1),
 						dest_str,
 					]
 			elif count > 0:

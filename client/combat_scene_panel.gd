@@ -6528,10 +6528,20 @@ func _refresh_companion() -> void:
 	var name := str(_companion_data.get("name", "Companion"))
 	var variant := str(_companion_data.get("variant", "Normal"))
 	var level := int(_companion_data.get("level", 1))
-	var sub_tier := int(_companion_data.get("sub_tier", _companion_data.get("tier", 1)))
+	var sub_tier := int(_companion_data.get("sub_tier", 1))
+	var comp_tier := int(_companion_data.get("tier", 1))
 	var variant_color := str(_companion_data.get("variant_color", "#FFFFFF"))
-	# Tier badge inline with the name — gives players a quick "T2 Crimson"
-	# read on the companion's stat presence. v0.9.508 — aggro role tag.
+	# GRADE badge inline with the name. v0.9.508 - aggro role tag.
+	#
+	# 2026-09-13, owner: *"one of the players has a Titan Spawn Lv 28 that says T1 Jailbird. Why
+	# is it saying T1?"* Because this line predated the grade ladder and printed a literal "T"
+	# against `sub_tier` - so a tier-5 Titan Spawn at rank 1 read "T1", which every other surface
+	# in the game calls **D1**. Two things wrong at once: the letter said "tier" while the number
+	# was the RANK, and the actual tier was not shown anywhere. `PowerRank.tag` is the shared
+	# form, coloured, for a BBCode surface with no hover meta wired.
+	#
+	# The default also used to fall back to `tier` when `sub_tier` was missing, which would print
+	# a companion's TIER in the rank position - two different quantities behind one label.
 	var role_tag := ""
 	if client_ref != null and client_ref.has_method("_get_aggro_role_info"):
 		var bonuses_for_aggro: Dictionary = _companion_data.get("bonuses", {})
@@ -6544,7 +6554,8 @@ func _refresh_companion() -> void:
 			# no bold, so it reads as a quiet stance label rather than shouting over
 			# the companion's name.
 			role_tag = "  [font_size=9][color=%s]%s[/color][/font_size]" % [role_color, role_label.capitalize()]
-	_companion_name_label.text = "[color=%s]%s[/color] [color=#888888]Lv %d T%d %s[/color]%s" % [variant_color, name, level, sub_tier, variant, role_tag]
+	_companion_name_label.text = "[color=%s]%s[/color] [color=#888888]Lv %d[/color] %s [color=#888888]%s[/color]%s" % [
+		variant_color, name, level, PowerRank.tag(comp_tier, sub_tier), variant, role_tag]
 
 	# XP bar shows progress to next companion level. Formula matches
 	# character.gd:get_companion_xp_to_next_level (pow(level+1, 2.0) * 15).
