@@ -9489,6 +9489,7 @@ func trigger_encounter(peer_id: int):
 	# _guide_escorts_overworld - the first fight of a new character is the one they are most
 	# likely to die in, and it used to be the one he sent them out to take alone.
 	if _guide_escorts_overworld(peer_id, character):
+		monster = _tutorial_safe_monster(monster, character)
 		if _start_guided_overworld_combat(peer_id, character, monster):
 			return
 
@@ -43151,6 +43152,39 @@ func _guide_escorts_overworld(peer_id: int, character) -> bool:
 		return false
 	var st := _wardens_watch_stage(character)
 	return st == 1 or st == 2
+
+
+func _tutorial_safe_monster(monster: Dictionary, character) -> Dictionary:
+	"""Keep the escorted fights to creatures the early game is actually made of.
+
+	⛑ Owner 2026-09-14, on a Wight met at level 2: *"this Wight fight is pretty crazy, it gets a
+	ton of health back so I don't know that we can even kill it."*
+
+	MEASURED, not assumed: a Wight's `base_level` is 12, and generate_monster will produce one at
+	level 1-2 about 4 times in 600. Rare - and the tutorial is the one fight in the game that
+	must never be a wall, so a 0.7% chance of an unteachable one is 0.7% too many. It carries
+	LIFE_STEAL and BLIND together: blind means you cannot land a hit, life steal means it heals
+	off the ones you do.
+
+	The rule is the species' own band rather than a blacklist of abilities, because a blacklist
+	goes stale the moment somebody adds an ability and nobody remembers this function exists.
+	Anything whose home is more than five levels above the player is swapped for something that
+	belongs here. World spawns are untouched: meeting a Wight at level 2 out in the open is a
+	story, and the player can run. During the tutorial it is a dead end."""
+	if monster.is_empty() or monster_db == null or character == null:
+		return monster
+	var lvl := int(character.level)
+	var band := lvl + 5
+	for _try in range(8):
+		var base_name := String(monster.get("base_name", monster.get("name", "")))
+		var home := monster_db.base_level_for_name(base_name) if monster_db.has_method("base_level_for_name") else 0
+		if home <= 0 or home <= band:
+			return monster
+		var swap: Dictionary = monster_db.generate_monster(lvl, lvl)
+		if swap.is_empty():
+			return monster
+		monster = swap
+	return monster
 
 
 func _start_guided_overworld_combat(peer_id: int, character, monster: Dictionary) -> bool:

@@ -544,6 +544,25 @@ func _get_tier_monsters(tier: int) -> Array:
 				MonsterType.ENTROPY
 			]
 
+func base_level_for_name(base_name: String) -> int:
+	"""The level a species BELONGS at, looked up by its plain name.
+
+	Used to keep the tutorial's escorted fights inside the early game's own roster: a Wight's
+	home is level 12 and it can be generated at level 1-2 about 4 times in 600, which is fine
+	out in the world and a dead end in the one fight that has to teach somebody how to fight.
+
+	Returns 0 when the name is not a known species, which callers read as "no opinion" - a
+	variant prefix the table does not carry must not silently become level zero and pass a band
+	check it was never asked about."""
+	if base_name == "":
+		return 0
+	for t in MonsterType.values():
+		var d: Dictionary = get_monster_base_stats(t)
+		if String(d.get("name", "")) == base_name:
+			return int(d.get("base_level", 0))
+	return 0
+
+
 func get_monster_base_stats(type: MonsterType) -> Dictionary:
 	"""Get base statistics for a monster type"""
 	match type:
