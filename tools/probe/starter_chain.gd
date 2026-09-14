@@ -56,8 +56,17 @@ func _init() -> void:
 	# earn the thing that would have made it safe. The Warden hands it over when you talk to
 	# him, before anything is asked of you.
 	ck(slots[0] == "", "stage 1 grants no kit - the Warden arms you in person, up front")
-	ck(slots[1] == "armor" and slots[2] == "accessory",
-		"and the later stages still pay armour then trinket")
+	# Stage 3 pays NO gear either, as of 2026-09-14. Owner: *"You should get a couple of pieces
+	# of gear from the Warden ... He should take you to a starter dungeon that has all of the
+	# rest of your starter equipment as floor loot in the dungeon."* So the trinket is not a
+	# turn-in reward any more - it is lying on the floor down there with the helm, boots and
+	# shield. `starter_kit_cadence.gd` is what checks the two halves still add up to a whole kit.
+	ck(slots[1] == "armor", "stage 2 pays the armour - the Warden's second and last piece")
+	ck(slots[2] == "",
+		"and stage 3 pays NO gear: the rest is floor loot in the dungeon, found not issued")
+	ck(FileAccess.get_file_as_string("res://server/server.gd").contains(
+			"if _is_starter_dungeon(instance_id) and floor_count > 0"),
+		"  which the starter dungeon really does place")
 
 	var src0 := FileAccess.get_file_as_string("res://server/server.gd")
 	ck(src0.contains('drop_tables.get_starter_kit_item("weapon")'),

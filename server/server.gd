@@ -20517,8 +20517,10 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 				_guide_say(peer_id, "That is one. Take the armour off my hands before the next — "
 					+ "walk back to me at the Crossroads and I will hand it over.")
 			"wardens_watch_2":
+				# Fight taught, world taught, THEN the dungeon - the order the owner set out.
+				_guide_teach(peer_id, "world")
 				_guide_say(peer_id, "Enough practice. Come back to me and we will go down "
-					+ "into the dark together.")
+					+ "into the dark together — and mind the floor down there. People drop things.")
 
 	if not updates.is_empty():
 		save_character(peer_id)
@@ -36471,6 +36473,42 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 			var egg_it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, true)
 			if not egg_it.is_empty():
 				_place_floor_item_random(instance_id, floor_num, grid, egg_it)
+	# (c2) ⛑ THE STARTER DUNGEON IS WHERE THE REST OF YOUR KIT IS LYING.
+	#
+	# Owner 2026-09-14, correcting me: *"You should get a couple of pieces of gear from the
+	# Warden, he teaches you how to fight then teaches you about the world. He should take you to
+	# a starter dungeon that has all of the rest of your starter equipment as floor loot in the
+	# dungeon."*
+	#
+	# So the cadence is: the Warden hands over the WEAPON when you first speak to him and the
+	# ARMOUR after the second step - the two pieces that decide whether you can hurt anything and
+	# whether anything can hurt you - and the remaining four are ON THE FLOOR down here, found
+	# rather than issued. That is the difference between being equipped and equipping yourself,
+	# and it is why this is placed loot and not a turn-in reward.
+	#
+	# GUARANTEED, one per slot, spread across the floors: this is the kit a new character needs
+	# to survive the next ten levels, so it cannot be left to a roll. Nothing else in the game
+	# places loot this way, which is correct - no other dungeon owes anybody a wardrobe.
+	if _is_starter_dungeon(instance_id) and floor_count > 0 and drop_tables:
+		var _kit_slots: Array = ["helm", "boots", "shield", "accessory"]
+		var _kit_n := 0
+		for _slot in _kit_slots:
+			var _kit = drop_tables.get_starter_kit_item(String(_slot))
+			if _kit is Dictionary and not (_kit as Dictionary).is_empty():
+				# Spread them so the run is not front-loaded and the last floor still pays.
+				var _kf: int = _kit_n % floor_count
+				# Drawn exactly like any other equipment on the floor - the same glyph, and the
+				# colour that encodes its RARITY. A special marker would teach a vocabulary that
+				# is only true inside the tutorial.
+				_place_floor_item_random(instance_id, _kf, floor_grids[_kf], {
+					"kind": "equipment", "char": "◆",
+					"color": _get_rarity_color(String(_kit.get("rarity", "common"))),
+					"item_data": _kit})
+				_kit_n += 1
+				_dbg_placed += 1
+		log_message("Starter dungeon %s: placed %d starter kit pieces as floor loot"
+			% [instance_id, _kit_n])
+
 	# (d) Guarantee one Escape Scroll as floor loot on the first floor.
 	if floor_count > 0:
 		var scroll_drop = DungeonDatabaseScript.make_escape_scroll(tier)
@@ -43119,6 +43157,7 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 			_guide_teach(peer_id, "equipment")
 		3:
 			_guide_say(peer_id, "The hole in the ground, then. Find the [color=#FFD700]D[/color] on your map and walk onto it. I am coming with you.")
+			_guide_say(peer_id, "Whatever is lying on the floor down there is yours. Walk over it and it is picked up — that is where the rest of your kit is coming from, so do not run for the stairs.")
 		4:
 			_guide_say(peer_id, "You came back. Most of the ones I send out there do not. Go on, then — it is a big world.")
 		_:
@@ -43264,6 +43303,31 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			# halves lit. Ringing the whole bar to reach three of its buttons points at forty
 			# things in order to teach three.
 			ring = ["cards", "card_keys"]
+		"world":
+			# ⛑ THE BEAT BETWEEN THE FIGHT AND THE DUNGEON.
+			#
+			# Owner 2026-09-14: *"he teaches you how to fight then teaches you about the world. He
+			# should take you to a starter dungeon."* Fighting was taught and the dungeon was taught;
+			# the WORLD between them was not, so a player who had just won their second fight knew
+			# how to swing and nothing about the place they were standing in.
+			if ch.seen_guide_world_hint:
+				return
+			ch.seen_guide_world_hint = true
+			title = "[color=#9ACD32]Where You Are[/color]"
+			body = ("\"Now look up. This is the Badlands, and it does not care about you.\"
+
+"
+				+ "[color=#FFD700]Posts[/color] like the one behind us are safe — nothing attacks you "
+				+ "inside the walls. Everything between them is not.
+
+"
+				+ "The ground has a [color=#FFD700]level[/color], and it does not rise evenly with "
+				+ "distance any more — hover a part of the map to read it BEFORE you walk into it.
+
+"
+				+ "[color=#9ACD32]\"Rest when you are hurt; food is what pays for it. And when you die "
+				+ "out here you stay dead — only the Sanctuary carries over.\"[/color]")
+			ring = ["map"]
 		_:
 			return
 	_send_hint(peer_id, title, body, "", ring)

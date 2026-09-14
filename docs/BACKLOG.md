@@ -597,6 +597,18 @@ Not to be worked immediately, but do not lose it. Notes for whoever picks it up:
 
 ### ⚑ ONBOARDING ROUND 2 — owner test 2026-09-14, second pass
 
+**Gear cadence, corrected by the owner 2026-09-14** (I had built it as three quest rewards):
+*"You should get a couple of pieces of gear from the Warden, he teaches you how to fight then
+teaches you about the world. He should take you to a starter dungeon that has all of the rest of
+your starter equipment as floor loot in the dungeon."*
+
+Built that way now — weapon + armour from him, helm/boots/shield/accessory placed on the starter
+dungeon's floors, and a `world` lesson between the fighting and the dungeon.
+`tools/probe/starter_kit_cadence.gd` executes the real slot map and fails if the two halves stop
+adding up to a whole kit, so adding a gear slot to the game forces a decision about where it
+comes from.
+
+
 - [ ] **The Warden's handout is named like endgame loot.** `get_starter_kit_item("weapon")` runs
       the full affix generator, so the first item a new player is ever given came out as
       *"Blurred Rusty Weapon of the Elder Lich"*. A tutorial handout should read as a plain
