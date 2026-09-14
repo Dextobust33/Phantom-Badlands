@@ -211,7 +211,14 @@ func _init() -> void:
 	var i_r := src.find('"recovery":')
 	var r_body := src.substr(i_r, 1800)
 	ck(r_body.contains("Rest"), "  it names Rest")
-	ck(r_body.contains("food"), "  says what resting costs")
+	# Owner 2026-09-14: *"One of the dialogs he mentions resting takes food, this is true but
+	# only in dungeons."* Confirmed in the handlers - handle_dungeon_rest eats a tier-1 herb and
+	# the overworld handle_rest takes nothing. This lesson fires OUT IN THE WORLD, so it must
+	# name the real cost there, which is time and the risk that comes with it.
+	ck(r_body.contains("TIME"), "  says what resting really costs out here")
+	ck(not r_body.contains("food"),
+		"  and does NOT claim it costs food, which is true only inside a dungeon")
+	ck(r_body.contains("Next:"), "  and ends by naming the next action, not leaving it to chat")
 	ck(r_body.contains("Hunting"), "  and covers travel stances, as asked")
 	ck(r_body.contains('ring = ["action_0", "travel_stance"]'),
 		"  and rings the Rest button and the stance row")

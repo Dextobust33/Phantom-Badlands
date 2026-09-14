@@ -17174,7 +17174,7 @@ func handle_trading_post_quests(peer_id: int):
 		elif quest_data.quest_id.begins_with("progression_to_"):
 			# Progression quests can also be turned in at their destination
 			var dest_post_id = quest_data.quest_id.replace("progression_to_", "")
-			if tp.id == dest_post_id:
+			if String(tp.get("id", "")) == dest_post_id:
 				can_turn_in = true
 		elif (String(quest.get("chain_id", "")) == "pathfinder" or String(quest_data.quest_id).begins_with("pathfinder_")) and String(tp.id).trim_prefix("npc_") in STARTER_TRADING_POSTS:
 			# v0.9.585 — ROOT CAUSE FOUND. Procedural NPC posts (chunk_manager's
@@ -20122,12 +20122,24 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Quest not found"})
 		return
 
-	if at_trading_post.has(peer_id):
-		var tp = at_trading_post[peer_id]
-		var can_turn_in = false
+	# ⛑ THE WARDEN IS THE QUEST GIVER, AND HE IS STANDING NEXT TO YOU.
+	#
+	# Owner 2026-09-14: *"why would we walk back to Warden Hollis in the post if he's already
+	# following you?"* No reason at all - it was an incoherence I introduced by writing the
+	# reward text as if he were still at the gate. While he escorts you he IS the post: the step
+	# settles wherever you are standing, and nobody walks anywhere.
+	#
+	# Narrow on purpose: only his chain, and only while he is actually with you. The moment the
+	# escort ends the ordinary rule applies again.
+	var _warden_here: bool = String(quest.get("chain_id", "")) == "wardens_watch" 		and _guide_escorts_overworld(peer_id, character)
+	if at_trading_post.has(peer_id) or _warden_here:
+		var tp = at_trading_post.get(peer_id, {})
+		var can_turn_in = _warden_here
 
 		# Check if quest can be turned in at current location
-		if quest.trading_post == tp.id:
+		if can_turn_in:
+			pass                       # the Warden settled it in the field
+		elif quest.trading_post == String(tp.get("id", "")):
 			# Normal case: at the origin trading post
 			can_turn_in = true
 		elif quest_id.begins_with("progression_to_"):
@@ -20138,14 +20150,14 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		elif quest.get("type") == quest_db.QuestType.EXPLORATION:
 			# Exploration quests can be turned in at their destination too
 			var destinations = quest.get("destinations", [])
-			if tp.id in destinations:
+			if String(tp.get("id", "")) in destinations:
 				can_turn_in = true
 		elif String(quest.get("chain_id", "")) == "pathfinder" or String(quest_id).begins_with("pathfinder_"):
 			# v0.9.582 — Pathfinder's Trial (starter chain) is turn-in-able at
 			# ANY starter post. v0.9.585 — strip "npc_" prefix because procedural
 			# NPC posts are normalized to ids like "npc_crossroads" not bare
 			# "crossroads". Was the root cause of the bug user kept reporting.
-			if String(tp.id).trim_prefix("npc_") in STARTER_TRADING_POSTS:
+			if String(tp.get("id", "")).trim_prefix("npc_") in STARTER_TRADING_POSTS:
 				can_turn_in = true
 
 		if not can_turn_in:
@@ -20211,11 +20223,9 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 				if String(quest.get("chain_id", "")) == "wardens_watch":
 					match String(quest.get("starter_kit_slot", "")):
 						"weapon":
-							_guide_say(peer_id, "Rust is fine. Rust still opens things. Put it in your hand before the next one finds you.")
+							_guide_say(peer_id, "It's rusty. It still works. Put it on.")
 						"armor":
 							_guide_say(peer_id, "Now the half that matters. Anyone can swing. Staying up is the trick.")
-						"accessory":
-							_guide_say(peer_id, "Keep it. You earned that in the dark, which is the only place anything is earned.")
 
 		# Audit #6 Slice 1 — chain bonus on final-stage turn-in
 		var chain_id = String(quest.get("chain_id", ""))
@@ -20544,13 +20554,13 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 				# This is the first moment a player has ever been hurt, so it is the first moment
 				# any of it means anything - which is why it is here and not at the gate.
 				_guide_teach(peer_id, "recovery")
-				_guide_say(peer_id, "That is one. Walk back to me at the Crossroads and I will "
-					+ "hand over the armour before we look for the next.")
+				# He settles it where you stand - see the _warden_here bypass in
+				# handle_quest_turn_in. No walking back to a man who is beside you.
+				handle_quest_turn_in(peer_id, {"quest_id": "wardens_watch_1"})
 			"wardens_watch_2":
 				# Fight taught, world taught, THEN the dungeon - the order the owner set out.
 				_guide_teach(peer_id, "world")
-				_guide_say(peer_id, "Enough practice. Come back to me and we will go down "
-					+ "into the dark together — and mind the floor down there. People drop things.")
+				_guide_say(peer_id, "Enough practice. The hole in the ground next — and mind the floor down there. People drop things.")
 
 	if not updates.is_empty():
 		save_character(peer_id)
@@ -30360,6 +30370,11 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		if not instance.active_players.has(peer_id):
 			instance.active_players.append(peer_id)
 		_send_dungeon_state(peer_id)
+		# Food and rest belong HERE, not in the pack lesson at the gate. Owner 2026-09-14:
+		# *"What you carry doesn't need to mention the food, it would be better taught to
+		# them when they are in the tutorial dungeon."* Resting only costs food down here,
+		# so down here is the only place the lesson is both true and useful.
+		_guide_teach(peer_id, "rations")
 		save_character(peer_id)
 		log_message("Player %s entered dungeon %s (instance %s)" % [character.name, dungeon_data.name, instance_id])
 
@@ -43188,8 +43203,8 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 			save_character(peer_id)
 			_send_hint(peer_id,
 				"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
-				("\"You came out here with nothing in your hands. Most of them do.\"\n\n"
-					+ ("He puts a [color=#FFD700]%s[/color] in them." % _blade if _blade != "" else "")
+				("\"Another Phantom! Hold the questions, take this.\"\n\n"
+					+ ("He puts a [color=#FFD700]%s[/color] in your hands." % _blade if _blade != "" else "")
 					+ "\n\nOpen your pack and put it on: the [color=#FFD700]Inventory[/color] button on your "
 					+ "action bar, or press [color=#9ACD32]Q[/color]. There is an [color=#FFD700]Inv[/color] button "
 					+ "in the row at the bottom right too.\n\n"
@@ -43202,7 +43217,7 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 			_guide_say(peer_id, "The hole in the ground, then. Find the [color=#FFD700]D[/color] on your map and walk onto it. I am coming with you.")
 			_guide_say(peer_id, "Whatever is lying on the floor down there is yours. Walk over it and it is picked up — that is where the rest of your kit is coming from, so do not run for the stairs.")
 		4:
-			_guide_say(peer_id, "You came back. Most of the ones I send out there do not. Go on, then — it is a big world.")
+			_guide_say(peer_id, "You've got what you need to survive. Keep an eye on the Area Level and see what you can recover out there.")
 		_:
 			_guide_say(peer_id, "You look new. Check your quest log — I have already written you down for the Watch.")
 
@@ -43307,8 +43322,7 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			title = "[color=#9ACD32]What You Carry[/color]"
 			body = ("Everything you pick up goes in your pack.\n\n"
 				+ "Open it with the [color=#FFD700]Inventory[/color] button on your action bar - it is the second one, and its key is [color=#9ACD32]Q[/color]. There is also an [color=#FFD700]Inv[/color] button in the row at the bottom right you can click.\n\n"
-				+ "Food is used from there, and food is what lets you [color=#FFD700]rest[/color] inside a dungeon.\n\n"
-				+ "[color=#9ACD32]You were given three Healing Herb when you arrived. Do not spend them on nothing.[/color]")
+				+ "Anything in there can be equipped, used, or sold.")
 			ring = ["action_1", "inventory_shortcut"]
 		"equipment":
 			if ch.seen_guide_equipment_hint:
@@ -43355,6 +43369,15 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			# halves lit. Ringing the whole bar to reach three of its buttons points at forty
 			# things in order to teach three.
 			ring = ["cards", "card_keys"]
+		"rations":
+			if ch.seen_guide_rations_hint:
+				return
+			ch.seen_guide_rations_hint = true
+			title = "[color=#9ACD32]Down Here, Rest Costs[/color]"
+			body = ("Out in the world resting is free. In a dungeon it eats [color=#FFD700]food[/color].\n\n"
+				+ "You were given [color=#9ACD32]three Healing Herb[/color] when you arrived. That is three rests, and there is no shop down here.\n\n"
+				+ "[color=#FFAA00]Spend them on a wound that matters, not on a scratch.[/color]")
+			ring = ["action_0"]
 		"recovery":
 			# ⛑ THE FIRST TIME THEY HAVE EVER BEEN HURT.
 			#
@@ -43373,7 +43396,7 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				+ "Out here it costs you nothing but TIME, and time is when things find you. Rest inside a post and nothing can.\n\n"
 				+ "Monsters are not drawn on the map out in the open — you meet them by walking. The further from a post, the more often. Inside the walls, never.\n\n"
 				+ "[color=#9ACD32]\"Those words under the map — Wary, Scouting, Hunting. Hunting finds you fights faster, Wary finds you fewer. Pick the one that matches how much blood you have left.\"[/color]\n\n"
-				+ "[color=#FFD700]Next:[/color] walk back to [color=#9ACD32]Warden Hollis[/color] at the Crossroads. He owes you armour.")
+				+ "[color=#FFD700]Next:[/color] he is handing you armour now. Put it on, then find the next one.")
 			ring = ["action_0", "travel_stance"]
 		"world":
 			# ⛑ THE BEAT BETWEEN THE FIGHT AND THE DUNGEON.
@@ -43397,7 +43420,7 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				+ "distance any more — hover a part of the map to read it BEFORE you walk into it.
 
 "
-				+ "[color=#9ACD32]\"Rest when you are hurt; food is what pays for it. And when you die "
+				+ "[color=#9ACD32]\"Rest when you are hurt — it costs nothing but time. And when you die "
 				+ "out here you stay dead — only the Sanctuary carries over.\"[/color]")
 			ring = ["map"]
 		_:

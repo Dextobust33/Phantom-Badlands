@@ -1613,7 +1613,7 @@ He gave you a blade. Now go and use it on something - he is coming with you.
 		"chain_total": 3,
 		"next_in_chain": "wardens_watch_2",
 		"chain_bonus": {},
-		"starter_kit_slot": ""
+		"starter_kit_slot": "armor"
 	},
 	"wardens_watch_2": {
 		"id": "wardens_watch_2",
@@ -1634,7 +1634,7 @@ Three more. You will feel the difference by the third.
 		"chain_total": 3,
 		"next_in_chain": "wardens_watch_3",
 		"chain_bonus": {},
-		"starter_kit_slot": "armor"
+		"starter_kit_slot": ""
 	},
 	"wardens_watch_3": {
 		"id": "wardens_watch_3",

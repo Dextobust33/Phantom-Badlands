@@ -35,7 +35,13 @@ func _init() -> void:
 	print("  from the Warden: %s" % str(from_warden))
 	ck(from_warden.size() == 2, "a couple of pieces, not a wardrobe (%d)" % from_warden.size())
 	ck("weapon" in from_warden, "  the weapon, in person, before anything is asked of you")
-	ck("armor" in from_warden, "  and the armour after the second step")
+	ck("armor" in from_warden, "  and the armour when the first fight ends, in the field")
+
+	ck(src.contains("var _warden_here: bool"),
+		"  and his steps settle WHERE YOU STAND while he escorts - no walking back to a man "
+		+ "who is beside you")
+	ck(src.contains('handle_quest_turn_in(peer_id, {"quest_id": "wardens_watch_1"})'),
+		"  which he does himself when the step completes")
 
 	print("")
 	print("===== THE DUNGEON FLOOR HAS THE REST =====")
