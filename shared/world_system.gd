@@ -2745,12 +2745,21 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 					# and the renderer stands it behind them, as the dungeon already does.
 					var _oc: Dictionary = first_player.get("companion", {})
 					if _oc is Dictionary and String(_oc.get("monster_type", "")) != "":
-						_fig["companion"] = {
-							"monster_type": String(_oc.get("monster_type", "")),
-							"variant_color": String(_oc.get("variant_color", "")),
-							"variant_color2": String(_oc.get("variant_color2", "")),
-							"variant_pattern": String(_oc.get("variant_pattern", "solid")),
-						}
+						# ⚑ THE WHOLE COMPANION, not four hand-copied fields.
+						#
+						# This rebuilt a minimal dict of the four values the SPRITE needs -
+						# species and three colours - and dropped tier, sub_tier, level, name,
+						# variant and bonuses, all of which `get_nearby_players` had already put
+						# in the payload. Clicking someone's companion then opened an inspect
+						# screen that fell back to defaults for everything missing, so a D1 Titan
+						# was shown as an H1. Owner 2026-09-13, and it is the same shape as every
+						# other wrong-text bug here: a hand-copied SUBSET that drifted from what
+						# the consumer needed, with nothing to notice it had.
+						#
+						# Passing the dict through means the sprite keeps working and the inspect
+						# gets the truth, and a field added to the companion tomorrow arrives
+						# here without anybody remembering to widen this list.
+						_fig["companion"] = _oc.duplicate(true)
 					figure_ids["%d,%d" % [dx + radius, radius - dy]] = _fig
 			elif dungeon_positions.has(pos_key):
 				var dungeon = dungeon_positions[pos_key]

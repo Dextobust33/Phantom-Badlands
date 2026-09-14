@@ -41105,10 +41105,13 @@ func _on_map_sprite_input(event: InputEvent, node: Control) -> void:
 
 
 func _open_map_companion_inspect(companion: Dictionary) -> void:
-	"""Open the companions visual panel with the inspect view active for
-	the clicked companion. Works for both your own active companion and
-	for a remote player's companion (server doesn't ship full data — the
-	inspect view falls back to defaults for missing fields)."""
+	"""Open the companions visual panel with the inspect view active for the clicked companion.
+
+	Works for your own and for a remote player's. This used to say the server "doesn't ship full
+	data — the inspect view falls back to defaults for missing fields", and that was the bug
+	rather than a limitation: the server sent everything, and the MAP dropped it on the way,
+	rebuilding a four-field dict for the sprite. Falling back to defaults then invented an H1 for
+	a D1 Titan. The whole companion travels now; see `world_system._map_cells`."""
 	if companions_panel == null:
 		return
 	# Switch into companions_mode + inspect state. Make sure other modes are
