@@ -212,7 +212,25 @@ Asked because the arc had run out of defects and into design. All four answered.
       Tiers 8-9 already floor every drop at epic (`TIER_MIN_RARITY`), so the same knob bites far
       harder at the top than the bottom. `RANK_LOOT_UPGRADE_MAX` / `RANK_LOOT_DOUBLE_SHARE` are
       the dials if the owner wants it moved.
-      **Still open here: axis two (modifiers) and axis three (monsters / guaranteed unique).**
+      **✅ AXIS TWO (rolled modifiers) BUILT 2026-09-13, unreleased.** `DUNGEON_MODIFIERS` in
+      `shared/dungeon_database.gd` - six ARPG map affixes, each of which makes the place harder
+      AND pays for it in the same line, so it reads as a trade rather than a punishment.
+      Rolled ONCE at `_register_dungeon`, the documented single chokepoint, rather than in the
+      four instance literals - that is exactly the condition the rank-9 egg drifted under.
+      `modifier_effects()` is the one place they are folded into numbers; every consumer asks it.
+      Measured (`tools/probe/dungeon_modifiers.gd`, 30 checks):
+        * rank 1-2 always plain (you have to see an ordinary dungeon before a modified one means
+          anything); rank 9 averages 2.1 modifiers, and 2.7% of rank-9 dungeons still roll none
+        * compounded worst case over every 3-modifier combination: HP x1.77, damage x1.38,
+          armour x1.35, floor population x1.40 - and the least-paying triple still pays 1.51
+        * shown on the ENTRY WARNING before you commit, which under permadeath is the whole cost
+          of the feature
+      **Known gap, deliberately recorded:** the probe proves `modifier_lines` and the effects, but
+      does NOT execute `handle_dungeon_enter`, so the warning CALL SITE is unverified - the same
+      shape that let the v0.9.774 figure fix ship twice under a dead branch. Needs a live check:
+      walk onto a rank 6+ dungeon and read the prompt.
+
+      **Still open here: axis three (rarer monsters / guaranteed unique).**
 
 - [ ] **PARTY PLAY IN DUNGEONS + JOIN-IN-PROGRESS COMBAT. ⚑ BLOCKS the onboarding guide NPC.**
       This is what *"party play isn't working properly"* (2026-08-26, never reproduced) actually

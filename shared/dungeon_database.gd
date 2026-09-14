@@ -3011,6 +3011,117 @@ static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int
 ## would sit in H country, which is no use to a new player who has to clear H1-3 before G. A flat
 ## quota does the opposite and makes the rim empty. `GRADE_AREA_BIAS` blends the two: 0 gives
 ## every grade the same number, 1 distributes purely by area.
+## ============================================================================
+## DUNGEON MODIFIERS - axis two of dungeon rarity (owner direction 2026-09-13)
+## ============================================================================
+##
+## ARPG map affixes. A rarer dungeon does not just pay more (axis one) - it READS DIFFERENTLY
+## BEFORE YOU ENTER, which is the half that makes rank a decision rather than a number. Every
+## modifier makes the place harder AND pays for it in the same line, so the player is choosing a
+## trade, not reading a punishment.
+##
+## These sit ABOVE the calibrated curve, like elites do. They are opt-in, telegraphed content and
+## must NOT be folded into `speciescal`/`refcal`/`rolecal` - those measure the baseline a
+## reference player faces, and a dungeon the player chose to enter is not the baseline.
+##
+## COUNTERPLAY RULE, inherited from EMPOWERED_MODIFIERS and non-negotiable under permadeath:
+## nothing here may reduce flee chance or block escape. A player who misjudged a dungeon must
+## always be able to walk out of it.
+const DUNGEON_MODIFIERS := {
+	"bloodgorged": {
+		"name": "Bloodgorged", "color": "#C71585",
+		"blurb": "What died here did not finish dying. Everything is far harder to put down.",
+		"hp_mult": 1.40, "xp_mult": 1.20,
+	},
+	"feverish": {
+		"name": "Feverish", "color": "#FF5555",
+		"blurb": "They move with a sickening urgency, and hit like it.",
+		"str_mult": 1.25, "xp_mult": 1.20,
+	},
+	"ironbound": {
+		"name": "Ironbound", "color": "#B8860B",
+		"blurb": "Grave-iron grew through their hides. Blades find less to bite.",
+		"def_mult": 1.35, "xp_mult": 1.15,
+	},
+	"teeming": {
+		"name": "Teeming", "color": "#FF8C00",
+		"blurb": "The halls are crowded. There are far more of them than there should be.",
+		"count_mult": 1.40, "xp_mult": 1.10,
+	},
+	"gilded_rot": {
+		"name": "Gilded Rot", "color": "#FFD700",
+		"blurb": "The dead here were buried rich, and something kept the hoard.",
+		"hp_mult": 1.15, "loot_bonus": 0.25,
+	},
+	"restless": {
+		"name": "Restless", "color": "#7B68EE",
+		"blurb": "Nothing here settles. It is all a little stronger, and it all wants you gone.",
+		"hp_mult": 1.10, "str_mult": 1.10, "xp_mult": 1.10, "loot_bonus": 0.15,
+	},
+}
+
+## How many modifiers a dungeon of each rank can roll. Rank 1-2 is the plain baseline on purpose:
+## a player has to SEE an unmodified dungeon before a modified one means anything.
+const MODIFIER_COUNT_BY_RANK := {
+	1: 0, 2: 0, 3: 1, 4: 1, 5: 1, 6: 2, 7: 2, 8: 2, 9: 3,
+}
+## Each slot is a CHANCE, not a guarantee, so two rank-9 dungeons differ from each other.
+const MODIFIER_SLOT_CHANCE := 0.70
+
+
+static func roll_dungeon_modifiers(rank: int) -> Array:
+	"""Pick this dungeon's modifiers. Called once, when the instance is created."""
+	var slots: int = int(MODIFIER_COUNT_BY_RANK.get(clampi(rank, 1, 9), 0))
+	if slots <= 0:
+		return []
+	var pool: Array = DUNGEON_MODIFIERS.keys()
+	pool.shuffle()
+	var out: Array = []
+	for i in range(slots):
+		if i >= pool.size():
+			break
+		if randf() < MODIFIER_SLOT_CHANCE:
+			out.append(String(pool[i]))
+	return out
+
+
+static func modifier_effects(mods: Array) -> Dictionary:
+	"""Fold a dungeon's modifiers into ONE set of numbers.
+
+	⛑ The single place modifier effects are combined. Every consumer - monster stats, floor
+	population, xp, loot quality - asks this rather than walking the table itself, because a
+	second walk is a second copy and they drift. That has already cost this codebase twice in one
+	day (the rank-9 egg, the companion level)."""
+	var out := {
+		"hp_mult": 1.0, "str_mult": 1.0, "def_mult": 1.0,
+		"count_mult": 1.0, "xp_mult": 1.0, "loot_bonus": 0.0,
+	}
+	for m in mods:
+		var d: Dictionary = DUNGEON_MODIFIERS.get(String(m), {})
+		if d.is_empty():
+			continue
+		out["hp_mult"] = float(out["hp_mult"]) * float(d.get("hp_mult", 1.0))
+		out["str_mult"] = float(out["str_mult"]) * float(d.get("str_mult", 1.0))
+		out["def_mult"] = float(out["def_mult"]) * float(d.get("def_mult", 1.0))
+		out["count_mult"] = float(out["count_mult"]) * float(d.get("count_mult", 1.0))
+		out["xp_mult"] = float(out["xp_mult"]) * float(d.get("xp_mult", 1.0))
+		out["loot_bonus"] = float(out["loot_bonus"]) + float(d.get("loot_bonus", 0.0))
+	return out
+
+
+static func modifier_lines(mods: Array) -> Array:
+	"""Player-facing description of each modifier, for the entry screen and the dungeon list.
+	A modifier nobody can see before entering is just an unexplained death."""
+	var out: Array = []
+	for m in mods:
+		var d: Dictionary = DUNGEON_MODIFIERS.get(String(m), {})
+		if d.is_empty():
+			continue
+		out.append("[color=%s]%s[/color] - %s" % [
+			String(d.get("color", "#FFFFFF")), String(d.get("name", m)), String(d.get("blurb", ""))])
+	return out
+
+
 const GRADE_AREA_BIAS := 0.35
 ## And rarity WITHIN a tier. Owner 2026-09-11: *"Dungeons should have a rarity moving forward."*
 ## Area works against this on its own, because a tier's higher ranks sit in its outer, larger

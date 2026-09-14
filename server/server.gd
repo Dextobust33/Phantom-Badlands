@@ -29959,6 +29959,20 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 			warning_text += "\n[color=#FFAA00]Monsters here: level %d.[/color]\n" % _entry_level
 		if character.level < _entry_level:
 			warning_text += "[color=#FF4444]That is %d level(s) above you on the very first floor.[/color]\n" % (_entry_level - character.level)
+		# Axis two: the modifiers, BEFORE the door. A modifier nobody can see before entering is
+		# just an unexplained death - and under permadeath that is the whole cost of the feature.
+		# Read off the instance the player is actually about to enter, never re-rolled here.
+		var _mod_inst: String = String(provided_instance_id)
+		if _mod_inst == "" or not active_dungeons.has(_mod_inst):
+			var _tile_d: Dictionary = _get_dungeon_at_location(character.x, character.y, peer_id)
+			_mod_inst = String(_tile_d.get("instance_id", ""))
+		var _mod_lines: Array = DungeonDatabaseScript.modifier_lines(
+			active_dungeons.get(_mod_inst, {}).get("modifiers", []))
+		if not _mod_lines.is_empty():
+			warning_text += "\n[color=#FFD700]This place is not ordinary:[/color]\n"
+			for _ml in _mod_lines:
+				warning_text += "  " + String(_ml) + "\n"
+			warning_text += "[color=#808080]Harder, and it pays for it.[/color]\n"
 		warning_text += "\nAre you sure you want to enter?"
 		send_to_peer(peer_id, {
 			"type": "dungeon_level_warning",
@@ -31228,6 +31242,13 @@ func _register_dungeon(instance_id: String, instance: Dictionary) -> void:
 	"""The ONE way a dungeon comes into existence. Writing `active_dungeons[id] = {...}` directly
 	would leave it out of the index, which shows up as a dungeon you cannot walk into or a `D`
 	that will not go away - both silent."""
+	# Axis two of dungeon rarity: this dungeon's MODIFIERS, rolled once, here. Done at the single
+	# chokepoint rather than in the four separate instance literals - those are exactly the
+	# conditions the rank-9 egg drifted under, four hundred lines apart and identical until one
+	# was updated.
+	if not instance.has("modifiers"):
+		instance["modifiers"] = DungeonDatabaseScript.roll_dungeon_modifiers(
+			int(instance.get("sub_tier", 1)))
 	active_dungeons[instance_id] = instance
 	_index_dungeon(instance_id)
 
@@ -34645,6 +34666,7 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 
 	# Party first: if the leader has teammates on this floor, everyone fights ONE monster.
 	# (This is the wiring v0.9.732 left undone — see _try_start_dungeon_coop.)
+	_apply_dungeon_modifiers_to_monster(monster, instance_id)
 	if _try_start_dungeon_coop(peer_id, character, monster, is_boss, -1):
 		return
 
@@ -35000,7 +35022,8 @@ func _open_final_chest(peer_id: int):
 	# Guaranteed equipment piece — bias toward better-than-tier rarity by
 	# rolling twice and keeping the better outcome (existing helper rolls
 	# rarity internally).
-	var best_eq = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier))
+	var _lbonus: float = float(_dungeon_mods(character.current_dungeon_id).get("loot_bonus", 0.0))
+	var best_eq = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier, _lbonus))
 	if best_eq.is_empty():
 		# roll_dungeon_chest_equipment can fail its 55% gate; force a roll
 		# here since the final chest must always yield equipment.
@@ -35010,7 +35033,7 @@ func _open_final_chest(peer_id: int):
 			if not pick.is_empty():
 				best_eq = drop_tables._generate_item(pick, item_level, drop_tables._roll_rarity_for_tier(dungeon_tier))
 	# Roll a second time and keep whichever has a "better" rarity.
-	var alt = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier))
+	var alt = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier, _lbonus))
 	if not alt.is_empty() and not best_eq.is_empty():
 		if _rarity_rank(str(alt.get("rarity", "common"))) > _rarity_rank(str(best_eq.get("rarity", "common"))):
 			best_eq = alt
@@ -36230,7 +36253,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 	# leave; the escape scroll above is deliberately on floor 0 for the opposite reason.
 	if floor_count > 0:
 		var _geq_floor: int = randi() % floor_count
-		var _geq = drop_tables.roll_dungeon_chest_equipment(tier, maxi(1, dungeon_level), _dungeon_loot_rarity_upgrade(sub_tier))
+		var _geq = drop_tables.roll_dungeon_chest_equipment(tier, maxi(1, dungeon_level), _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
 		if _geq is Dictionary and not _geq.is_empty():
 			_place_floor_item_random(instance_id, _geq_floor, floor_grids[_geq_floor], {
 				"kind": "equipment", "char": "◆",
@@ -36324,7 +36347,7 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		var v := randi_range(tier * 2, tier * 6)
 		return {"kind": "valor", "char": "¢", "color": "#FFD700", "item_data": {"valor": v}}
 	elif roll < 82:  # equipment
-		var eq = drop_tables.roll_dungeon_chest_equipment(tier, lvl, _dungeon_loot_rarity_upgrade(sub_tier))
+		var eq = drop_tables.roll_dungeon_chest_equipment(tier, lvl, _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
 		if eq.is_empty():
 			return {}
 		return {"kind": "equipment", "char": "◆", "color": _get_rarity_color(eq.get("rarity", "common")), "item_data": eq}
@@ -36488,6 +36511,12 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 	var _area: int = grid.size() * (grid[0].size() if grid.size() > 0 else 0)
 	var _by_area: int = int(round(float(_area) / 330.0))     # 165 tiles/monster, halved
 	var monsters_count = clampi(maxi(_base_count, _by_area), _base_count, 14)
+	# Teeming and friends. The cap rises with the modifier too, or the multiplier would do
+	# nothing at all on the bigger floors already sitting on 14.
+	var _mod_count_mult := float(_dungeon_mods(instance_id).get("count_mult", 1.0))
+	if _mod_count_mult != 1.0:
+		monsters_count = clampi(int(round(float(monsters_count) * _mod_count_mult)),
+			_base_count, int(round(14.0 * _mod_count_mult)))
 	var tier = dungeon_data.tier
 	var boss_data = dungeon_data.get("boss", {})
 	var monster_type = boss_data.get("monster_type", "Goblin")
@@ -36987,6 +37016,10 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		monster.is_boss = true
 		monster.name = boss_info.get("name", monster.name)
 
+
+	# The PLACE, on top of what is already here: elite and boss multipliers are applied above,
+	# so a modified dungeon scales them rather than replacing them.
+	_apply_dungeon_modifiers_to_monster(monster, instance_id)
 
 	# Party first: if the leader has teammates on this floor, everyone fights ONE monster.
 	if _try_start_dungeon_coop(peer_id, character, monster, is_boss, int(monster_entity.id)):
@@ -44041,7 +44074,30 @@ const RANK_LOOT_UPGRADE_MAX := 0.40
 const RANK_LOOT_DOUBLE_SHARE := 0.25
 
 
-func _dungeon_loot_rarity_upgrade(dungeon_rank: int) -> int:
+func _dungeon_mods(instance_id: String) -> Dictionary:
+	"""This dungeon's folded modifier effects, or the neutral set when it has none."""
+	return DungeonDatabaseScript.modifier_effects(
+		active_dungeons.get(instance_id, {}).get("modifiers", []))
+
+
+func _apply_dungeon_modifiers_to_monster(monster: Dictionary, instance_id: String) -> void:
+	"""Stamp the dungeon's modifiers onto a monster about to be fought. Applied AFTER the elite
+	and boss multipliers so a modified dungeon scales what is already there rather than replacing
+	it - the modifier describes the PLACE, and the place contains elites and a boss."""
+	var e := _dungeon_mods(instance_id)
+	if float(e.get("hp_mult", 1.0)) == 1.0 and float(e.get("str_mult", 1.0)) == 1.0 and float(e.get("def_mult", 1.0)) == 1.0:
+		return
+	monster["max_hp"] = maxi(10, int(float(monster.get("max_hp", 10)) * float(e.get("hp_mult", 1.0))))
+	monster["current_hp"] = monster["max_hp"]
+	monster["strength"] = maxi(1, int(float(monster.get("strength", 1)) * float(e.get("str_mult", 1.0))))
+	monster["defense"] = maxi(0, int(float(monster.get("defense", 0)) * float(e.get("def_mult", 1.0))))
+	# The reward rides along at generation time, the same way elite's 1.5x does.
+	var xm := float(e.get("xp_mult", 1.0))
+	if xm != 1.0:
+		monster["experience_reward"] = maxi(1, int(float(monster.get("experience_reward", 1)) * xm))
+
+
+func _dungeon_loot_rarity_upgrade(dungeon_rank: int, loot_bonus: float = 0.0) -> int:
 	"""How much better the GEAR is in a higher-ranked dungeon. Axis one of dungeon rarity.
 
 	Owner 2026-09-13 picked all three axes - better loot quality, rolled modifiers, and rarer
@@ -44059,7 +44115,7 @@ func _dungeon_loot_rarity_upgrade(dungeon_rank: int) -> int:
 	var r: int = clampi(dungeon_rank, 1, 9)
 	if r <= 1:
 		return 0
-	var p1: float = float(r - 1) / 8.0 * RANK_LOOT_UPGRADE_MAX
+	var p1: float = float(r - 1) / 8.0 * RANK_LOOT_UPGRADE_MAX + loot_bonus
 	if randf() >= p1:
 		return 0
 	return 2 if randf() < p1 * RANK_LOOT_DOUBLE_SHARE else 1
