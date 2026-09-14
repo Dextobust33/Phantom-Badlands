@@ -166,7 +166,7 @@ static func _under_tile(meaning: String) -> String:
 
 
 static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = {},
-		dungeons: Dictionary = {}, anim_tick: int = 0) -> bool:
+		dungeons: Dictionary = {}, anim_tick: int = 0, mark_cell: Vector2i = Vector2i(-1, -1)) -> bool:
 	"""Compose the map. Cheap when nothing has changed, which is most redraws that are not moves.
 
 	`anim_tick` is the IDLE heartbeat. Every figure on the map - you, your companion, other
@@ -193,6 +193,9 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 	# Figures are part of the key: the map has to recompose when you walk, and you are a figure.
 	for fk in figures:
 		key += "%s=%s;" % [fk, str(figures[fk])]
+	# The marked cell too - the guide points at ONE door, and the map has to redraw when he
+	# starts and stops pointing.
+	key += "m%d,%d;" % [mark_cell.x, mark_cell.y]
 	# Dungeon families are part of the picture now, so they are part of what decides whether it
 	# has to be redrawn.
 	for dk in dungeons:
@@ -338,8 +341,32 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 		_blend_clipped(grid, fi, int(fr["x"]) * CELL + (CELL - fi.get_width()) / 2,
 			(int(fr["y"]) + 1) * CELL - fi.get_height() + _bob)
 
+	# PASS 4 - the guide's pointer. ONE cell, ringed, drawn over everything so it is not hidden
+	# behind a tower or a figure.
+	#
+	# Owner 2026-09-14: *"the highlight for the map should only highlight the door he's wanting
+	# you to leave out of."* A post has several doors; ringing the map display pointed at all of
+	# them and therefore at none. Drawn INTO the map rather than as an overlay Control because a
+	# map cell is not a Control - the grid is one composited image.
+	if mark_cell.x >= 0 and mark_cell.y >= 0 and mark_cell.x < cols and mark_cell.y < rows:
+		var mx: int = mark_cell.x * CELL
+		var my: int = mark_cell.y * CELL
+		var gold := Color(1.0, 0.84, 0.25, 1.0)
+		for t in range(3):                       # a 3px ring, inset so it frames the tile
+			for i in range(CELL):
+				_px(grid, mx + i, my + t, gold)
+				_px(grid, mx + i, my + CELL - 1 - t, gold)
+				_px(grid, mx + t, my + i, gold)
+				_px(grid, mx + CELL - 1 - t, my + i, gold)
+
 	_grid = grid
 	return true
+
+
+static func _px(img: Image, x: int, y: int, c: Color) -> void:
+	if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
+		return
+	img.set_pixel(x, y, c)
 
 
 static func _blend_clipped(grid: Image, src: Image, dx: int, dy: int) -> void:

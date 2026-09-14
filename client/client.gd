@@ -1672,6 +1672,9 @@ const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
 const WARDEN_FIGURE_SPRITE := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
 # "warden" while he is escorting you, "" otherwise. Set from the location message.
 var _escort_kind: String = ""
+# A single world tile the guide is pointing at, and when the pointing stops. See "mark_tile".
+var _mark_tile: Vector2i = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
+var _mark_until_ms: int = 0
 const UiSpotlightScript = preload("res://client/ui_spotlight.gd")
 
 # v0.9.490 — global re-openable HelpPanel for topic-based help (Home Stone
@@ -24870,6 +24873,16 @@ func handle_server_message(message: Dictionary):
 				message.get("highlight", []) as Array
 			)
 
+		"mark_tile":
+			# The guide points at ONE tile (the door he means). Stored in WORLD coords and
+			# converted to a grid cell at draw time, because the grid is recentred every step.
+			_mark_tile = Vector2i(int(message.get("x", 0)), int(message.get("y", 0)))
+			_mark_until_ms = Time.get_ticks_msec() + int(message.get("seconds", 30)) * 1000
+			# Redraw from the payload we already hold, so the ring appears immediately rather
+			# than on the player's next step.
+			if not _last_map_payload.is_empty():
+				update_map(_overworld_display(_last_map_payload))
+
 		"party_action_withdrawn":
 			# The server handed the choice back: re-open the hand.
 			party_round_submitted = false
@@ -42890,6 +42903,9 @@ func _resolve_ui_target(key: String) -> Control:
 			return action_bar
 		"shortcuts":
 			return shortcut_buttons_container
+		"travel_stance":
+			# The Wary / Scouting / Hunting row under the map.
+			return _stance_bar
 		"cards", "hand":
 			# The row of ability cards in a fight. Owner 2026-09-14: *"Attack is flashing and
 			# bordered but not the cards."*
@@ -46670,7 +46686,16 @@ func _overworld_display(payload: Dictionary) -> String:
 	# down, after this call, so using it here would compose the map from the PREVIOUS step's
 	# dungeons. Correct on every frame but the one where a dungeon appears, which is the only
 	# frame that matters.
-	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}), _ow_anim_tick):
+	# The guide's pointer, converted from world coords to a cell in THIS grid. The grid is
+	# recentred on the player every step, so the conversion has to happen per draw and not once
+	# when the mark arrives.
+	var mark_cell := Vector2i(-1, -1)
+	if _mark_tile.x != 0x7FFFFFFF and Time.get_ticks_msec() < _mark_until_ms:
+		var _pc := Vector2i(int(payload.get("x", 0)), int(payload.get("y", 0)))
+		mark_cell = Vector2i(mid + (_mark_tile.x - _pc.x), mid + (_mark_tile.y - _pc.y))
+		if mark_cell.x < 0 or mark_cell.y < 0 or mark_cell.x >= cols_n or mark_cell.y >= rows_n:
+			mark_cell = Vector2i(-1, -1)      # off screen this step; nothing to draw
+	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}), _ow_anim_tick, mark_cell):
 		return MapPayload.inflate(payload)
 	# NO CROP INSIDE A POST, and the reason is a measurement rather than a preference. The zoom
 	# shipped as "crop to the middle 11 and draw them twice as big", on the assumption that you

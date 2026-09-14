@@ -75,6 +75,10 @@ extends Resource
 @export var seen_guide_combat_hint: bool = false
 @export var seen_guide_leave_post_hint: bool = false
 @export var seen_guide_world_hint: bool = false
+# Has this character actually SPOKEN to the Warden? He does not escort, and the post does not
+# open, until they have - see _handle_warden_interact.
+@export var met_warden: bool = false
+@export var seen_guide_recovery_hint: bool = false
 # v0.9.582 — fires once on first entry to a threatened post. Closes user
 # feedback "the ! at 0,0 doesn't say what it is when you go there" — the
 # v0.9.580 entry banner scrolls past in game_output, but this modal won't.
@@ -2022,6 +2026,8 @@ func to_dict() -> Dictionary:
 		"seen_guide_combat_hint": seen_guide_combat_hint,
 		"seen_guide_leave_post_hint": seen_guide_leave_post_hint,
 		"seen_guide_world_hint": seen_guide_world_hint,
+		"met_warden": met_warden,
+		"seen_guide_recovery_hint": seen_guide_recovery_hint,
 		"seen_threatened_post_hint": seen_threatened_post_hint,
 		"seen_signpost_hint": seen_signpost_hint,
 		"seen_apex_frontier_hint": seen_apex_frontier_hint,
@@ -2243,6 +2249,8 @@ func from_dict(data: Dictionary):
 	seen_guide_combat_hint = bool(data.get("seen_guide_combat_hint", false))
 	seen_guide_leave_post_hint = bool(data.get("seen_guide_leave_post_hint", false))
 	seen_guide_world_hint = bool(data.get("seen_guide_world_hint", false))
+	met_warden = bool(data.get("met_warden", false))
+	seen_guide_recovery_hint = bool(data.get("seen_guide_recovery_hint", false))
 	seen_threatened_post_hint = bool(data.get("seen_threatened_post_hint", false))
 	seen_signpost_hint = bool(data.get("seen_signpost_hint", false))
 	seen_apex_frontier_hint = bool(data.get("seen_apex_frontier_hint", false))

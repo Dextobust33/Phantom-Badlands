@@ -20514,8 +20514,18 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 			continue
 		match String(update.get("quest_id", "")):
 			"wardens_watch_1":
-				_guide_say(peer_id, "That is one. Take the armour off my hands before the next — "
-					+ "walk back to me at the Crossroads and I will hand it over.")
+				# ⛑ A WON FIGHT IS A TEACHING MOMENT, NOT A FULL STOP.
+				#
+				# Owner 2026-09-14: *"The tracker did go to 1/1 but after the victory screen I
+				# didn't get a popup or any instructions. He also needs to guide players on how
+				# to Rest and get their resources back as well as let them know where and how
+				# monsters can be found and where is safe. Probably how to hunt as well."*
+				#
+				# This is the first moment a player has ever been hurt, so it is the first moment
+				# any of it means anything - which is why it is here and not at the gate.
+				_guide_teach(peer_id, "recovery")
+				_guide_say(peer_id, "That is one. Walk back to me at the Crossroads and I will "
+					+ "hand over the armour before we look for the next.")
 			"wardens_watch_2":
 				# Fight taught, world taught, THEN the dungeon - the order the owner set out.
 				_guide_teach(peer_id, "world")
@@ -43083,6 +43093,12 @@ func _guide_escorts_overworld(peer_id: int, character) -> bool:
 		return false
 	if character.in_dungeon:
 		return false          # the dungeon has its own escort path
+	# ...and only once you have actually SPOKEN to him. Owner 2026-09-14: *"The Warden is already
+	# following me before I've even talked to him."* Stage 1 begins at character creation, so
+	# keying the escort on the stage alone had him trailing a stranger out of the gate before the
+	# introduction that explains who he is.
+	if not character.met_warden:
+		return false
 	var st := _wardens_watch_stage(character)
 	return st == 1 or st == 2
 
@@ -43143,6 +43159,8 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 					send_character_update(peer_id)
 					save_character(peer_id)
 			character.seen_guide_items_hint = true
+			character.met_warden = true
+			save_character(peer_id)
 			_send_hint(peer_id,
 				"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
 				("\"You came out here with nothing in your hands. Most of them do.\"\n\n"
@@ -43170,8 +43188,20 @@ func _nearest_door_dir(character) -> String:
 	A new player standing inside one has been told to go and find a monster and has no idea the
 	wall even has a gap in it - owner 2026-09-14: *"I got in a fight after having to fish to get
 	out of the post."* Fishing your way out of the tutorial is not a control scheme."""
-	if world_system == null or world_system.chunk_manager == null:
+	var d := _nearest_door(character)
+	if d.x == 0x7FFFFFFF:
 		return ""
+	return _compass_direction(int(character.x), int(character.y), d.x, d.y)
+
+
+func _nearest_door(character) -> Vector2i:
+	"""The door tile itself, so the map can MARK it rather than gesture at a compass point.
+
+	Owner 2026-09-14: *"the highlight for the map should only highlight the door he's wanting
+	you to leave out of."* Ringing the whole map display points at everything, which points at
+	nothing - and a post has several doors, so "north" is still a search."""
+	if character == null or world_system == null or world_system.chunk_manager == null:
+		return Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 	var cx := int(character.x)
 	var cy := int(character.y)
 	for radius in range(1, 14):
@@ -43181,8 +43211,8 @@ func _nearest_door_dir(character) -> String:
 					continue
 				var tile = world_system.chunk_manager.get_tile(cx + dx, cy + dy)
 				if tile.get("type", "") == "door":
-					return _compass_direction(cx, cy, cx + dx, cy + dy)
-	return ""
+					return Vector2i(cx + dx, cy + dy)
+	return Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 
 
 func _maybe_warden_next_step(peer_id: int, character) -> void:
@@ -43205,6 +43235,12 @@ func _maybe_warden_next_step(peer_id: int, character) -> void:
 	if character.equipped.get("weapon", null) == null:
 		return
 	character.seen_guide_leave_post_hint = true
+	var door := _nearest_door(character)
+	if door.x != 0x7FFFFFFF:
+		# Mark the actual tile. A post has several doors, so a compass direction is still a
+		# search - this is the one he means.
+		send_to_peer(peer_id, {"type": "mark_tile", "x": door.x, "y": door.y,
+			"label": "the way out", "seconds": 45})
 	var dir := _nearest_door_dir(character)
 	var way := ("to the [color=#FFD700]%s[/color]" % dir) if dir != "" else "in the post wall"
 	_send_hint(peer_id,
@@ -43221,7 +43257,7 @@ func _maybe_warden_next_step(peer_id: int, character) -> void:
 
 "
 			+ "[color=#808080]Your progress is on the tracker at the top of the map.[/color]"),
-		"", ["map", "quests_shortcut"])
+		"", ["quests_shortcut"])
 	save_character(peer_id)
 
 
@@ -43303,6 +43339,34 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			# halves lit. Ringing the whole bar to reach three of its buttons points at forty
 			# things in order to teach three.
 			ring = ["cards", "card_keys"]
+		"recovery":
+			# ⛑ THE FIRST TIME THEY HAVE EVER BEEN HURT.
+			#
+			# Owner 2026-09-14: *"He also needs to guide players on how to Rest and get their
+			# resources back as well as let them know where and how monsters can be found and where
+			# is safe. Probably how to hunt as well."* Fires after the FIRST kill, because that is
+			# the first moment a player has a wound to heal and any of it means anything.
+			if ch.seen_guide_recovery_hint:
+				return
+			ch.seen_guide_recovery_hint = true
+			title = "[color=#9ACD32]Catching Your Breath[/color]"
+			body = ("\"You are bleeding. That is what winning looks like out here.\"
+
+"
+				+ "[color=#FFD700]Rest[/color] — the first button on your bar, or [color=#9ACD32]SPACE"
+				+ "[/color] — heals you and brings your stamina back. It costs [color=#FFD700]food[/color], "
+				+ "and you were given three Healing Herb. Resting takes time, and time out here is when "
+				+ "things find you — so rest INSIDE a post when you can.
+
+"
+				+ "Monsters are not placed on the map out in the open; you meet them by WALKING. The "
+				+ "further from a post, the more often. Inside the walls, never.
+
+"
+				+ "[color=#9ACD32]\"See those words under the map — Wary, Scouting, Hunting? That is how "
+				+ "you travel. Hunting finds you fights faster. Wary finds you fewer. Pick the one that "
+				+ "matches how much blood you have left.\"[/color]")
+			ring = ["action_0", "travel_stance"]
 		"world":
 			# ⛑ THE BEAT BETWEEN THE FIGHT AND THE DUNGEON.
 			#
@@ -43353,6 +43417,14 @@ func _make_guide_character(player_level: int):
 	g.strength = 12 + g.level
 	g.constitution = 14 + g.level
 	g.dexterity = 8
+	# ⛑ THE STATS ABOVE DID NOTHING UNTIL THIS LINE.
+	#
+	# `initialize` computes max_hp from the attributes it was given; assigning strength and
+	# constitution afterwards does not recompute anything. So the guide's "generous HP" - which
+	# the comment above has claimed since the day he shipped - was the base 129, exactly the same
+	# as the level-1 player he is protecting. Owner 2026-09-14: *"it looks like the Warden's
+	# health isn't very high and he could possibly die in this fight."* Measured: identical.
+	g.calculate_derived_stats()
 	g.current_hp = g.get_total_max_hp()
 	g.current_stamina = g.get_total_max_stamina()
 	# He needs a FACE. The party card renders from battler_id, which is assigned during character
@@ -44590,6 +44662,37 @@ func _warden_lets_you_go(peer_id: int, character, nx: int, ny: int) -> bool:
 		return true
 	if _wardens_watch_stage(character) != 1:
 		return true
+	# Tutorials off (now or on a previous character) means the post is simply open. Owner
+	# 2026-09-14: *"players shouldn't be able to leave the post unless they opt out of the
+	# tutorial or have done so previously."*
+	var _acct := String(peers[peer_id].get("account_id", "")) if peers.has(peer_id) else ""
+	if _acct != "" and not persistence.tutorials_enabled(_acct):
+		return true
+	# Only at the threshold: inside the post now, outside after this step.
+	if not world_system._is_npc_post_interior(int(character.x), int(character.y)):
+		return true
+	if world_system._is_npc_post_interior(nx, ny):
+		return true
+	# ⛑ YOU HAVE NOT MET HIM YET.
+	#
+	# Owner 2026-09-14: *"I was able to walk out of the post (after fishing because this one is
+	# surrounded by water) before talking to the warden."* The introduction is the whole tutorial
+	# - a player who leaves before it has skipped the game's only explanation of itself, and will
+	# meet their first monster with empty hands.
+	if not character.met_warden:
+		_send_hint(peer_id,
+			"[color=#9ACD32]Not Yet[/color]",
+			("Someone in this post is waiting to speak to you before you go out there.
+
+"
+				+ "[color=#9ACD32]Warden Hollis[/color] — walk into him. He has something for you, "
+				+ "and he is coming with you.
+
+"
+				+ "[color=#808080]You can switch these lessons off from any tip, and the gate "
+				+ "opens.[/color]"),
+			"Don't show me tips  (account)", ["map"])
+		return false
 	var cur = character.equipped.get("weapon", null)
 	var armed: bool = cur != null and (not (cur is Dictionary) or not (cur as Dictionary).is_empty())
 	if armed:
@@ -44601,11 +44704,6 @@ func _warden_lets_you_go(peer_id: int, character, nx: int, ny: int) -> bool:
 			have_blade = true
 			break
 	if not have_blade:
-		return true
-	# Only at the threshold: inside the post now, outside after this step.
-	if not world_system._is_npc_post_interior(int(character.x), int(character.y)):
-		return true
-	if world_system._is_npc_post_interior(nx, ny):
 		return true
 	_send_hint(peer_id,
 		"[color=#9ACD32]%s[/color]" % GUIDE_NAME,

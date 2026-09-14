@@ -1450,12 +1450,25 @@ func _monster_attack_line(combat: Dictionary, monster_name: String, amount: int)
 		if detail == "":
 			detail = "%d damage, nothing reduced this hit." % amount
 		var num := "[url=%s][color=#FF8800]%d[/color][/url]" % [detail, amount]
+		# ⛑ SECOND PERSON, SO A PARTY FIGHT CAN NAME WHO WAS HIT.
+		#
+		# Owner 2026-09-14, on the tutorial fight: *"it says the wolf attacked twice but didn't
+		# mention who it attacked."* The party phase runs THIS solo line once per target and
+		# relies on `_party_thirdperson` to swap "you" for the member's name. A line with no
+		# pronoun in it has nothing to swap, so both hits read identically and the player could
+		# not tell that the Warden had taken one of them.
+		#
+		# The header that used to say it ("▶ The Wolf turns on X!") was removed on 2026-09-04 as
+		# redundant, on the reasoning that *"its body line already does"* name the target. True
+		# of the line that prompted that change, not true of this one - so the removal quietly
+		# took the information away on every path that reaches here. Fixing the body line is
+		# what that change assumed had already happened.
 		if _ff_ate > 0:
-			return "[color=#FF4444]The %s attacks — [/color][color=#7AA8FF]shield eats %d[/color][color=#FF4444] — and deals %s damage![/color]" % [monster_name, _ff_ate, num]
-		return "[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster_name, num]
+			return "[color=#FF4444]The %s hits you — [/color][color=#7AA8FF]shield eats %d[/color][color=#FF4444] — for %s damage![/color]" % [monster_name, _ff_ate, num]
+		return "[color=#FF4444]The %s hits you for %s damage![/color]" % [monster_name, num]
 	if detail != "":
-		return "[color=#FF4444]The %s attacks — [/color][color=#7AA8FF]%s[/color][color=#FF4444] — no damage taken![/color]" % [monster_name, detail]
-	return "[color=#FF4444]The %s attacks and deals [color=#FF8800]0[/color] damage![/color]" % monster_name
+		return "[color=#FF4444]The %s attacks you — [/color][color=#7AA8FF]%s[/color][color=#FF4444] — no damage taken![/color]" % [monster_name, detail]
+	return "[color=#FF4444]The %s attacks you and deals [color=#FF8800]0[/color] damage![/color]" % monster_name
 
 
 func _incoming_with_detail(combat: Dictionary, amount: int) -> String:
@@ -9459,7 +9472,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 				character.remove_buff("resurrect")
 				var revive_hp = max(1, int(character.get_total_max_hp() * resurrect_percent / 100.0))
 				character.current_hp = revive_hp
-				messages.append("[color=#FF4444]The %s attacks and deals a lethal blow![/color]" % monster.name)
+				messages.append("[color=#FF4444]The %s deals you a lethal blow![/color]" % monster.name)
 				messages.append("[color=#FFD700][b]RESURRECTION![/b] Divine magic pulls you back from death![/color]")
 				messages.append("[color=#00FF00]You are revived with %d HP![/color]" % revive_hp)
 				return {"success": true, "message": "\n".join(messages), "resurrected": true}
@@ -9473,7 +9486,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 				character.current_hp = revive_hp
 				var companion = character.get_active_companion()
 				var comp_name = companion.get("name", "Your companion") if companion else "Your companion"
-				messages.append("[color=#FF4444]The %s attacks and deals a lethal blow![/color]" % monster.name)
+				messages.append("[color=#FF4444]The %s deals you a lethal blow![/color]" % monster.name)
 				messages.append("[color=#FFD700][b]COMPANION REVIVE![/b] %s pulls you back from death![/color]" % comp_name)
 				messages.append("[color=#00FF00]You are revived with %d HP![/color]" % revive_hp)
 				return {"success": true, "message": "\n".join(messages), "companion_revived": true}
@@ -13310,6 +13323,22 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 		active_combats[target_pid] = view
 		var mres = process_monster_turn(view)
 		_party_sync_view_back(combat, target_pid, view)
+		# ⛑ THE GUIDE DOES NOT FALL.
+		#
+		# He exists to take the hits that would kill a new character, which means he takes the
+		# biggest hit of nearly every round - and his HP is a level-3 Fighter's. Owner
+		# 2026-09-14: *"it looks like the Warden's health isn't very high and he could possibly
+		# die in this fight."* He could: measured at 150 against ~38 a round.
+		#
+		# Raising his HP to survive it would be a number that needs re-tuning every time monster
+		# damage moves. Holding him at 1 is the property we actually want and it cannot go stale:
+		# a tutorial whose teacher dies half way through has handed a gearless level 1 the fight
+		# it was protecting them from. He is a teaching device, not a party member, and this
+		# applies ONLY to npc_members - a real player in a real party is never protected.
+		if int(target_pid) in combat.get("npc_members", []):
+			var _npc = combat.get("characters", {}).get(target_pid, null)
+			if _npc != null and _npc.current_hp < 1:
+				_npc.current_hp = 1
 		if not upkeep_done:
 			for k in _PARTY_DOT_KEYS:
 				dot_after_upkeep[k] = int(combat.get(k, 0))

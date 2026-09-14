@@ -129,6 +129,65 @@ func _init() -> void:
 		"and it says WHICH WAY the door is - the post is walled, and nothing said so")
 
 	print("")
+	print("===== HE DOES NOT FOLLOW A STRANGER, AND THE GATE HOLDS =====")
+	# Owner 2026-09-14: *"The Warden is already following me before I've even talked to him."*
+	# Stage 1 begins at CHARACTER CREATION, so keying the escort on the stage alone had him
+	# trailing someone who had never met him.
+	ck(src.contains("if not character.met_warden:
+		return false"),
+		"the escort requires having actually spoken to him")
+	ck(src.contains("character.met_warden = true"), "  which the conversation sets")
+	ck(src.contains("if not character.met_warden:") and src.contains('"[color=#9ACD32]Not Yet[/color]"'),
+		"and the post will not let you leave before that conversation")
+	ck(src.contains("not persistence.tutorials_enabled(_acct)"),
+		"  unless the tutorials are switched off, as the owner specified")
+
+	print("")
+	print("===== THE MONSTER SAYS WHO IT HIT =====")
+	# *"it says the wolf attacked twice but didn't mention who it attacked."*
+	var cm := FileAccess.get_file_as_string("res://shared/combat_manager.gd")
+	ck(cm.contains('The %s hits you for %s damage!'),
+		"the attack line is SECOND PERSON, so _party_thirdperson can name the target")
+	ck(not cm.contains('The %s attacks and deals %s damage!'),
+		"  and the pronoun-less version that named nobody is gone")
+
+	print("")
+	print("===== THE GUIDE CANNOT FALL =====")
+	# *"it looks like the Warden's health isn't very high and he could possibly die."* He could:
+	# his stats were assigned after initialize() and never recomputed, so his "generous" HP was
+	# the base 129 - identical to the level-1 player he is protecting.
+	ck(src.contains("g.calculate_derived_stats()"),
+		"his attributes are actually applied now (they were assigned and discarded)")
+	ck(cm.contains('if int(target_pid) in combat.get("npc_members", [])'),
+		"and an NPC guide is held at 1 HP rather than dying mid-lesson")
+	ck(cm.contains("_npc.current_hp = 1"), "  held, not healed")
+
+	print("")
+	print("===== HE POINTS AT ONE DOOR =====")
+	# *"the highlight for the map should only highlight the door he's wanting you to leave out of."*
+	ck(src.contains('"type": "mark_tile"'), "the server names the exact door tile")
+	ck(src.contains("func _nearest_door("), "  which it locates rather than gesturing at a compass point")
+	ck(csrc.contains('"mark_tile":'), "the client receives it")
+	var room := FileAccess.get_file_as_string("res://client/overworld_room.gd")
+	ck(room.contains("mark_cell: Vector2i"), "and the composer rings that ONE cell")
+	ck(room.contains('key += "m%d,%d;" % [mark_cell.x, mark_cell.y]'),
+		"  and the mark is in the cache key, so the map redraws when he starts pointing")
+
+	print("")
+	print("===== AND A WON FIGHT TEACHES RECOVERY =====")
+	# *"He also needs to guide players on how to Rest and get their resources back as well as
+	# let them know where and how monsters can be found and where is safe."*
+	ck(src.contains('"recovery":'), "there is a lesson about resting and where danger is")
+	ck(src.contains('_guide_teach(peer_id, "recovery")'), "  fired after the first kill")
+	var i_r := src.find('"recovery":')
+	var r_body := src.substr(i_r, 1800)
+	ck(r_body.contains("Rest"), "  it names Rest")
+	ck(r_body.contains("food"), "  says what resting costs")
+	ck(r_body.contains("Hunting"), "  and covers travel stances, as asked")
+	ck(r_body.contains('ring = ["action_0", "travel_stance"]'),
+		"  and rings the Rest button and the stance row")
+
+	print("")
 	print("----- NOT COVERED HERE -----")
 	print("  Whether a pulsing gold ring is actually noticeable on a 4K screen, and whether the")
 	print("  Warden reads as a person at 32px. Both are looks, and looks are a playtest.")
