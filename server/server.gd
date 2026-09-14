@@ -3278,7 +3278,15 @@ func handle_create_character(peer_id: int, message: Dictionary):
 				continue
 			var starter_piece = drop_tables._generate_item({"item_type": starter_base}, 1, "common")
 			if starter_piece is Dictionary and not starter_piece.is_empty():
-				if character.equipped.has(starter_slot) and character.equipped[starter_slot].is_empty():
+				# ⛑ AN EMPTY SLOT IS `null`, NOT `{}`. `Character.equipped` initialises every slot to
+				# null (see its declaration), so `equipped[slot].is_empty()` calls a method on null and
+				# ABORTS handle_create_character mid-way - which the client sees as "Creating
+				# character..." forever, because the reply it is waiting for never gets sent.
+				# Reported 2026-09-14 making a Trickster ranger; the crash is on the FIRST slot, so it
+				# was never class-specific.
+				var _cur = character.equipped.get(starter_slot, null)
+				var _slot_free: bool = _cur == null or (_cur is Dictionary and (_cur as Dictionary).is_empty())
+				if character.equipped.has(starter_slot) and _slot_free:
 					character.equipped[starter_slot] = starter_piece
 				else:
 					character.add_item(starter_piece)
@@ -15551,8 +15559,8 @@ func _maybe_send_sanctuary_intro(peer_id: int) -> void:
 		+ "corners for diagonals. Arrow keys work too.
 
 "
-		+ "Walk onto something to use it. That is the whole control scheme, out here and in the "
-		+ "world."),
+		+ "Stand on something that lights up and press [color=#9ACD32]SPACE[/color] to use it. "
+		+ "That is the whole control scheme, in here and out in the world."),
 		"Don't show me tips  (account)")
 
 
