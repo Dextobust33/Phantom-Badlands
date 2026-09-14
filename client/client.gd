@@ -3773,6 +3773,7 @@ func _process(delta):
 		_drain_new_player_modals()
 	# World-map walk animation (cheap; only touches overworld-anim slots).
 	_animate_map_walk(delta)
+	_tick_overworld_walk_anim(delta)
 	# Clear action triggers from previous frame
 	action_triggered_this_frame.clear()
 	item_selection_consumed_this_frame.clear()
@@ -24486,6 +24487,9 @@ func handle_server_message(message: Dictionary):
 				var desc = ""
 				var map_payload = message.get("map", null)
 				if map_payload is Dictionary and not map_payload.is_empty():
+					# Kept so a walk-animation frame can re-render the SAME view without a round
+					# trip. The composed map bakes the player in, so a new frame means a new image.
+					_last_map_payload = map_payload
 					desc = _overworld_display(map_payload)
 				if desc == "":
 					desc = message.get("description", "")
@@ -40869,6 +40873,29 @@ func _update_remote_facings() -> void:
 			_remote_facings.erase(k)
 
 
+
+func _tick_overworld_walk_anim(delta: float) -> void:
+	"""Advance the overworld walk cycle and redraw the map when the frame changes.
+
+	The composed map bakes the player INTO the image, so unlike the old overlay there is nothing
+	to animate in place - the frame only changes when the map is rebuilt, and the map was only
+	rebuilt when the player moved. The result was a sprite frozen on its stand frame forever.
+
+	Only ticks while actually WALKING. Redrawing the map four times a second while a player stands
+	in a post reading their inventory would be pure waste, and the sprite has no idle frames to
+	show anyway - stand, walk1, walk2 is the whole set."""
+	if game_state != GameState.PLAYING or in_combat or dungeon_mode or not has_character:
+		return
+	if (Time.get_ticks_msec() - _local_last_move_ms) > WALK_MOVING_WINDOW_MS:
+		return
+	_ow_anim_accum += delta
+	if _ow_anim_accum < WALK_ANIM_FRAME_SEC:
+		return
+	_ow_anim_accum = 0.0
+	_ow_anim_tick += 1
+	if not _last_map_payload.is_empty():
+		update_map(_overworld_display(_last_map_payload))
+
 func _animate_map_walk(delta: float) -> void:
 	"""Cycle overworld map avatars through their walk frames while moving, resting
 	on the stand frame when idle. Cheap: only touches slots flagged ow_anim, and
@@ -45926,6 +45953,14 @@ const _DUNGEON_FACING_BY_DIR := {
 var _dungeon_walk_frame: int = 0
 # Advances on every dungeon redraw so monsters and the companion cycle their walk frames.
 var _dungeon_anim_tick: int = 0
+## The OVERWORLD walk tick. Separate from `_dungeon_anim_tick`, which is incremented inside the
+## dungeon renderer and therefore never advances while you are outside - so the composed overworld
+## figure picked frame 0 forever and the player sprite did not animate at all. Owner 2026-09-14:
+## *"my sprite no longer has an idle animation on the overworld or any animations while moving."*
+var _ow_anim_tick: int = 0
+var _ow_anim_accum: float = 0.0
+## The last overworld map payload, so a walk frame can be re-composed without the server.
+var _last_map_payload: Dictionary = {}
 # Wall-clock accumulator for the IDLE animation. Owner: "The continuous idle animations would
 # help the dungeon feel more alive." Without this the floor only redraws when the server sends
 # state - on your step, or when a wanderer moves - so a still player sees a still dungeon.
@@ -46229,7 +46264,11 @@ func _overworld_figure_path() -> String:
 	var bid := BattlerSprite.id_from_data(character_data)
 	if bid == "":
 		return ""
-	var frame: String = ["_stand", "_walk1", "_walk2"][clampi(posmod(_dungeon_anim_tick, 3), 0, 2)]
+	# Rest on the stand frame unless the player has actually stepped recently. A three-frame
+	# cycle running while standing still reads as walking on the spot, not as idling.
+	var moving := (Time.get_ticks_msec() - _local_last_move_ms) <= WALK_MOVING_WINDOW_MS
+	var fidx: int = [0, 1, 0, 2][posmod(_ow_anim_tick, 4)] if moving else 0
+	var frame: String = ["_stand", "_walk1", "_walk2"][fidx]
 	var path := "res://client/sprites/overworld_pad32/%s/%s%s.png" % [bid, _local_map_facing, frame]
 	return path if ResourceLoader.exists(path) else ""
 
