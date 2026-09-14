@@ -3408,8 +3408,16 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		"[color=#9ACD32]Welcome, %s[/color]" % char_name,
 		("You are the figure in the middle of the map.\n\n"
 			+ "[color=#9ACD32]Move with the NUMPAD[/color] - 8 up, 2 down, 4 left, 6 right, corners for diagonals. Arrow keys work too.\n\n"
-			+ "Someone is waiting for you a few steps away — walk into him. That is "
-			+ "[color=#9ACD32]Warden Hollis[/color], and he is expecting you."))
+			+ "Walk into [color=#9ACD32]this man[/color]. He is a few steps away, and he is "
+			+ "expecting you.
+
+"
+			# His actual sprite, at 3x. Owner 2026-09-14: *"It doesn't highlight the warden or show
+			# you what he looks like."* Telling someone to go and find a person, without showing them
+			# the person, is asking them to search a map they have never read before.
+			+ "[center][img=96x96]%s[/img]
+[color=#9ACD32]Warden Hollis[/color][/center]"
+				% WARDEN_PORTRAIT))
 
 	# Check if spawning at a Trading Post and trigger the encounter
 	if world_system.is_trading_post_tile(character.x, character.y):
@@ -5459,7 +5467,17 @@ func handle_move(peer_id: int, message: Dictionary):
 
 	# Calculate new position. `move_player` is pure - it reads terrain and returns where you
 	# would land - so it is safe to ask before anything is committed or cancelled.
-	var new_pos = world_system.move_player(old_x, old_y, direction)
+	# Once the Warden is walking WITH you, he is not also standing in the post. Owner 2026-09-14:
+	# *"Once he is following you he shouldn't be in the post for you anymore... hiding his
+	# stationary sprite and making it where that player doesn't interact with that spot and can
+	# walk through it from then on."* Per player: his tile is untouched, so he is still solidly
+	# there for anyone who has not met him.
+	# Keyed on the ESCORT being active, not merely on having met him: he stops escorting when
+	# step three starts, and he has things to say at the mouth of the dungeon and after it. So
+	# his post tile comes BACK when he is no longer at your shoulder, which is also the only
+	# reading under which both facts stay true at once - he is in exactly one place at a time.
+	var _walk_through: Array = ["warden"] if _guide_escorts_overworld(peer_id, character) else []
+	var new_pos = world_system.move_player(old_x, old_y, direction, _walk_through)
 
 	# ⚑ DO NOT WALK BLIND INTO COUNTRY THAT WILL KILL YOU.
 	#
@@ -5508,6 +5526,8 @@ func handle_move(peer_id: int, message: Dictionary):
 					send_to_peer(peer_id, {"type": "station_interact", "station": bump_type, "skill": skill})
 					return
 				elif bump_type == "warden":
+					# Only reachable before you have met him - afterwards the tile is walked
+					# through, above, and he is at your shoulder instead.
 					_handle_warden_interact(peer_id, character)
 					return
 				elif bump_type == "quest_board":
@@ -43057,6 +43077,8 @@ const GUIDE_PEER_ID := -9001
 ## log and the victory card, and a name that disagrees with itself across four surfaces is the
 ## "one value, two places" defect wearing a hat.
 const GUIDE_NAME := "Warden Hollis"
+# What he looks like, for the welcome - the same sprite the map draws him with.
+const WARDEN_PORTRAIT := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
 
 
 func _wardens_watch_stage(character) -> int:

@@ -97,7 +97,8 @@ func _init() -> void:
 	var src := FileAccess.get_file_as_string("res://server/server.gd")
 	# The welcome no longer names the CHAIN at all - a quest name means nothing to someone who
 	# has not seen a quest log. It names the Warden, who is standing in front of them.
-	ck(src.contains("walk into him"), "the overlay points at the Warden, who is a real tile")
+	ck(src.to_lower().contains("walk into"),
+		"the overlay points at the Warden, who is a real figure on the map")
 	ck(not src.contains("Pathfinder's Trial[/color]"),
 		"and no longer names the retired Pathfinder chain")
 	ck(src.contains('accept_quest(character, "wardens_watch_1"'),

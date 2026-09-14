@@ -1,4 +1,17 @@
 extends SceneTree
+## ⚠ THIS PROBE TESTS THE HELPER IN ISOLATION. It passed for days while the feature did nothing.
+##
+## Everything below calls `_guide_shield_targets` directly and asserts it remaps targets
+## correctly. It always did. What it could not see is that NOTHING CALLED IT on the path the
+## tutorial actually runs: the shield was reached only from `_select_monster_targets`, which
+## belongs to the SEQUENTIAL party resolver, while the tutorial uses the SIMULTANEOUS one, which
+## lands one action on every alive member. So the Warden had never taken a hit for anybody, and
+## the owner died to a skeleton twice with a green tick sitting on this file.
+##
+## `guide_shields_on_the_real_path.gd` drives `_party_process_monster_phase` - the function the
+## server really calls - and checks the PLAYER's hit points. Keep both: this one localises a
+## fault in the rule, that one proves the rule is consulted. A unit test of an unreachable
+## function is indistinguishable from a passing feature.
 ## The onboarding guide holds aggro — but not blindly.
 ##
 ## Owner 2026-09-13: *"Guide should have all aggro to ensure player survives unless its a hit that

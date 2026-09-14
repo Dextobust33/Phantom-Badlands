@@ -93,9 +93,19 @@ func _init() -> void:
 	ck(not body.contains("three steps"),
 		"nor a step count, which is not something they need in order to act")
 	ck(body.contains("NUMPAD"), "it names the numpad")
-	ck(body.contains("walk into him"), "and gives exactly one next action: walk to the Warden")
+	ck(body.to_lower().contains("walk into"),
+		"and gives exactly one next action: walk into the Warden")
 	ck(body.contains("figure in the middle of the map"),
 		"and first tells them which figure is theirs, which nothing did before")
+	# Owner 2026-09-14: *"It doesn't highlight the warden or show you what he looks like."*
+	ck(body.contains("[img=96x96]"), "and SHOWS the Warden rather than describing him")
+	var portrait := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
+	ck(src.contains('WARDEN_PORTRAIT := "%s"' % portrait),
+		"  using the very sprite the map draws him with - one man, one face")
+	ck(ResourceLoader.exists(portrait), "  which exists")
+	var panel2 := FileAccess.get_file_as_string("res://client/tutorial_hint_panel.gd")
+	ck(panel2.contains("TEXTURE_FILTER_NEAREST"),
+		"  and the panel renders pixel art crisply rather than smearing it")
 
 	print("")
 	print("===== HE ANSWERS DIFFERENTLY DEPENDING ON WHERE YOU ARE =====")

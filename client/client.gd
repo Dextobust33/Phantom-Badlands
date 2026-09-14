@@ -46574,16 +46574,24 @@ func _overworld_display(payload: Dictionary) -> String:
 	# Promoting him to a figure - drawn from the very sprite the player pool uses - makes him the
 	# same size, the same art, and alive, with no new rendering path. The tile beneath him is
 	# blanked so a 32px copy does not sit under the 43px one.
+	#
+	# ...and he is only in ONE place at a time. While he is escorting you he is the figure at
+	# your shoulder, not a second copy standing in the post. Owner 2026-09-14: *"Once he is
+	# following you he shouldn't be in the post for you anymore."* The tile is blanked either
+	# way, so the square reads as empty for you and the server lets you walk through it - while
+	# staying solidly occupied for every other player who has not met him.
 	for _wy in range(rows_n):
 		var _wrow: Array = meaning[_wy]
 		for _wx in range(_wrow.size()):
 			if String(_wrow[_wx]) != "warden":
 				continue
+			_wrow[_wx] = "empty"
+			if _escort_kind == "warden":
+				continue          # he is walking with you; nobody is standing here
 			figures["%d,%d" % [_wx, _wy]] = {"main": WARDEN_FIGURE_SPRITE}
 			_overworld_figure_meta["%d,%d" % [_wx, _wy]] = {
 				"kind": "npc", "is_local": false,
 				"data": {"name": "Warden Hollis", "class": "Fighter"}}
-			_wrow[_wx] = "empty"
 	# OTHER players, and the companions travelling with them. The client cannot know who is out
 	# there - it is sent resolved cells, not a roster - so the server names them in the payload.
 	var pending_companions: Array = []

@@ -113,6 +113,9 @@ func _build_layout() -> void:
 	# Body (wraps inside panel width).
 	_body_label = RichTextLabel.new()
 	_body_label.bbcode_enabled = true
+	# Hints can embed a 32px sprite (the Warden's portrait, so a new player knows what they are
+	# looking for). Scaled up with the default filter it is a smear; pixel art needs NEAREST.
+	_body_label.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_body_label.fit_content = true
 	_body_label.scroll_active = false
 	_body_label.add_theme_font_size_override("normal_font_size", 14)

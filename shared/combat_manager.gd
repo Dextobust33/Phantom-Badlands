@@ -13302,6 +13302,19 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 	var msgs: Array = []
 	var order := _party_alive_members(combat)
 	order.shuffle()   # vary who the monster opens on each round
+	# ⛑ AND THE GUIDE TAKES WHAT WOULD KILL YOU - ON THIS PATH TOO.
+	#
+	# `_guide_shield_targets` was only ever reached from `_select_monster_targets`, which belongs
+	# to the SEQUENTIAL party resolver. The tutorial uses the SIMULTANEOUS one, which lands one
+	# action on every alive member and never asked. So the guide had never shielded a single hit
+	# in the fight he exists for, and a new character took a full hit every round.
+	#
+	# Owner 2026-09-14, twice: *"I did a test fight and died to the skeleton, the warden didn't
+	# prevent that"* and then *"I also just tried to fight a skeleton outside the post and died to
+	# it again. The warden still isn't doing his job."* He was not doing it; nothing was calling
+	# him. The probe that covered this called the helper directly, which is exactly how a fix can
+	# pass its test and change nothing.
+	order = _guide_shield_targets(combat, order, _party_alive_members(combat))
 	# A stunned monster loses the WHOLE round, not one action per member: resolve the stun
 	# once (which also ticks its countdown once) and end the phase there.
 	if int(combat.get("monster_stunned", 0)) > 0 and not order.is_empty():

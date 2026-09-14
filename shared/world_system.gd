@@ -2342,7 +2342,8 @@ func _get_hotspot_intensity(x: int, y: int) -> float:
 	var intensity = 1.0 - (min_dist / (radius + 0.1))
 	return clamp(intensity, 0.0, 1.0)
 
-func move_player(current_x: int, current_y: int, direction: int) -> Vector2i:
+func move_player(current_x: int, current_y: int, direction: int,
+		pass_through: Array = []) -> Vector2i:
 	"""Move player based on numpad direction (P4 style)
 	7=NW, 8=N, 9=NE
 	4=W,  5=stay, 6=E
@@ -2388,6 +2389,15 @@ func move_player(current_x: int, current_y: int, direction: int) -> Vector2i:
 			var tile_type = tile.get("type", "")
 			if tile_type in GATHERABLE_TYPES and chunk_manager.is_node_depleted(new_x, new_y):
 				pass  # Allow movement through depleted node
+			elif tile_type in pass_through:
+				# ⛑ PER-PLAYER PASS-THROUGH.
+				#
+				# Some blockers stop being blockers for ONE person. The Warden is the case this
+				# exists for: once he is walking beside you he is not also standing in the post,
+				# so for you that square is empty - while he is still solidly there for every
+				# other player who has not met him yet. The caller decides; the world does not
+				# change, which is what keeps it per-player.
+				pass
 			else:
 				return Vector2i(current_x, current_y)  # Can't move there
 
