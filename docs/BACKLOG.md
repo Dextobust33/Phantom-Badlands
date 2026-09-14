@@ -115,7 +115,7 @@ All of this came out of the distribution work. Recorded before starting any of i
       sufficient number of posts for people to navigate to while exploring."* 60 posts over a
       4000x4000 world is one per ~267,000 tiles. Measure mean distance from a random point to the
       nearest post before deciding a number.
-- [ ] **HOTZONES serve no purpose - revamp or replace.** Owner: *"hotzones don't serve much of a
+- [x] **HOTZONES serve no purpose - revamp or replace.** Owner: *"hotzones don't serve much of a  **DONE v0.9.783 - rich hunting grounds that relocate every 3 hours.**
       purpose anymore. I've been thinking we either need to revamp or replace them."* Needs a
       design conversation, not a patch. What were they for, what does regional menace now do
       instead, and what is the gap that remains?
@@ -160,6 +160,22 @@ All of this came out of the distribution work. Recorded before starting any of i
       Was: **Audit the gatherable ART piece by piece.** Owner: *"some of the art we may want to use an
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
+
+## ⚑ WHERE THE LIST STANDS — 50 open, 114 done (counted 2026-09-13)
+
+    Phase 5 - the dungeon arc            16   the big content direction
+    Phase 3 - combat UX debt              6
+    Phase 8 - later / unscheduled         5
+    Owner direction (world reshape)       2   both are MY suggestions awaiting a yes/no
+    Phase 4 - party                       3
+    Phase 6 - realm meta and sinks        3
+    Phase 3.45 - sprite interiors         3
+    everything else (7 sections)         12
+
+**The dungeon arc is the bulk of what remains, and it is the owner's stated big direction.**
+Nothing else has 16 items. Two of the three "owner direction" entries are proposals of mine that
+have never had a yes or no - trivial-encounter auto-resolve and post-to-post road travel - so they
+are the cheapest things on the list to retire, in either direction.
 
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 
@@ -226,19 +242,26 @@ day (the dungeon grade lie, the world reshape, the lag, the one-time relocation)
       are a static 1.5-2.5x LEVEL bump - a thing players route around, which is why they stopped
       serving a purpose once regional menace covered "dangerous country".
 
-- [ ] **ART AUDIT — overworld terrain tiles (67) and dungeon floor art.** Owner picked both.
+- [x] **ART AUDIT — DONE.** Measured, not browsed: every tile composed on its real ground at the
+      26px the map draws, compared pairwise. Four faults found and fixed (well/fountain were the
+      SAME image; post_marker 4.4 from quest_board; blacksmith 13.0 from healer and the same job;
+      pylon drew nothing at 0.8% ink). Nothing is closer than 22 now. Dungeon floors: no faults -
+      the one that looked serious was my own tool not performing the game's composite.
+      ~~Original:~~
       Same procedure as the gatherables: render everything on the background it really sits on,
       look, and bring alternatives back for the owner to choose between. Owner: *"For art show me
       alternatives for each and I can choose the better one."*
 
 ### The two things left from the owner's 2026-09-13 list
 
-1. **HOTZONES — revamp or replace. NOT STARTED, and it wants a conversation first.** Owner:
+1. [x] **HOTZONES — DONE, shipped v0.9.783.** Rich hunting grounds that relocate every 3 hours.
+   ~~Original:~~
    *"hotzones don't serve much of a purpose anymore."* They were built when danger was uniform by
    distance; REGIONAL MENACE now does a lot of what they were for (dangerous country in
    unexpected places). The question to answer before writing code: what were they for, what does
    menace now cover, and what gap actually remains?
-2. **GATHERABLE ART — audited, replacements NOT chosen.** Four pieces fail and they share one
+2. [x] **GATHERABLE ART — superseded.** The owner's multi-tile point reframed it: those pieces
+   were 3x3 art squeezed into one cell, not bad art. Fixed at the cause. ~~Original:~~
    cause: `tree`, `bush`, `dense_brush`, `reed` and `mountain_herb` are all cut from
    `green_forest_v2`, so they are all the same green. tree vs bush is the worst - different JOBS,
    near-identical art. An automated search was tried and abandoned (alpha cannot tell a herb from
@@ -246,7 +269,11 @@ day (the dungeon grade lie, the world reshape, the lag, the one-time relocation)
 
 ### Owed measurements, recorded rather than assumed away
 
-- **GATHERING ECONOMY.** Gatherable coverage fell ~5x (30% -> 6.1%) when nodes became patches.
+- [x] **GATHERING ECONOMY — MEASURED.** Common resources are fine (tree 19 tiles from a post,
+  stone 25, ore 31). The damage was to BIOME-LOCKED types: a weight is a share of NODES when
+  nodes roll per tile but a share of STANDS once each stand is one type, so `mountain_herb` came
+  to ONE node in 48,521 tiles. Every fourth stand in a biome is now guaranteed to be its
+  signature resource. ~~Original:~~
   Yield per tile WALKED falls with it. That is the intent, but the gathering JOBS have not been
   re-checked against it and may now be slow to level.
 - **DEATH RATE at L2500/L5000** read 1.7% against a ~0.3% design target in the last refcal, 0.0%
