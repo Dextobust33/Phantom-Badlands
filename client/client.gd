@@ -13259,46 +13259,13 @@ func _has_usable_combat_items() -> bool:
 	return false
 
 func _is_combat_usable_item(item: Dictionary) -> bool:
-	"""True iff this consumable should be offered in the combat 'Use Item' menu.
-	Filters out out-of-combat utilities (home stones, treasure chests, building
-	kits, monster-select scrolls) that pass the broad consumable check but have
-	no combat effect."""
-	var base_type := str(item.get("type", ""))
-	var sub_type := str(item.get("item_type", ""))
-	var is_consumable: bool = bool(item.get("is_consumable", false))
+	"""True iff this item should be offered in the combat 'Use Item' menu.
 
-	# Broad allow gate (matches the legacy filter)
-	var passes_consumable_gate: bool = is_consumable \
-		or "potion" in base_type \
-		or "elixir" in base_type \
-		or base_type.begins_with("gold_") \
-		or base_type.begins_with("gem_") \
-		or base_type.begins_with("scroll_") \
-		or base_type.begins_with("mana_") \
-		or base_type.begins_with("stamina_") \
-		or base_type.begins_with("energy_")
-	if not passes_consumable_gate:
-		return false
-
-	# Out-of-combat utilities — deny even though they're "consumable"
-	if sub_type.begins_with("home_stone_") or base_type.begins_with("home_stone_"):
-		return false
-	if base_type == "treasure_chest" or sub_type == "treasure_chest":
-		return false
-	if sub_type == "scroll_monster_select" or base_type == "scroll_monster_select":
-		return false
-	# Audit #5 — Dungeon Compass is an overworld discovery tool, not a combat item
-	if sub_type == "dungeon_compass" or base_type == "dungeon_compass":
-		return false
-	# Audit #1 Slice 4c — Ability Tomes change your deck composition. Mutating
-	# the deck mid-fight would be chaotic; deny in combat.
-	if sub_type == "ability_tome" or base_type == "ability_tome":
-		return false
-	if base_type == "tool" or base_type == "rune" or base_type == "structure":
-		return false
-	if "kit" in sub_type or "kit" in base_type:
-		return false
-	return true
+	⛑ 2026-09-15 - the SAME answer the server gives (drop_tables.combat_use_effect). This used to be
+	a local allow-list with a few exclusions, so it offered tomes, bane potions, resurrect scrolls,
+	debuff scrolls and more that the server then removed for no effect (items_in_combat.gd). Owner:
+	"It should refuse if it doesn't have a combat effect." Not offered, not spent."""
+	return not preload("res://shared/drop_tables.gd").combat_use_effect(item).is_empty()
 
 # Abilities marked non_combat in shared/character.gd. Mirrored here so the
 # combat action bar can hide them — equip slots can hold them, but they only

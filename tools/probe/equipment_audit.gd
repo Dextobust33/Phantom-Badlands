@@ -140,6 +140,45 @@ func _buffed(stat: String, value: int) -> Dictionary:
 	return r
 
 
+## Mean rarity step and item count of roll_combat_drops over N kills, with the named buff at 100.
+func _loot(buff: String, dungeon: bool) -> Dictionary:
+	seed(737373)
+	var steps := 0.0
+	var count := 0.0
+	var n := 0
+	for i in range(N):
+		var ch = sim.make_char(60, "none", "Fighter", "Human")
+		ch.in_dungeon = dungeon
+		if buff != "":
+			ch.add_persistent_buff(buff, 100, 3)
+		var mon: Dictionary = sim.make_monster(60, "normal", 50.0)
+		mon["drop_chance"] = 100
+		for it in cm.roll_combat_drops(mon, ch):
+			count += 1
+			if it is Dictionary and it.has("rarity"):
+				steps += DT.RARITY_ORDER.find(String(it.rarity))
+				n += 1
+	return {"rarity": steps / maxf(1.0, n), "count": count / N}
+
+
+## XP one solo kill pays, with an xp_bonus buff of the given percent.
+func _kill_xp(pct: int) -> int:
+	seed(848484)
+	var ch = sim.make_char(60, "none", "Fighter", "Human")
+	if pct > 0:
+		ch.add_persistent_buff("xp_bonus", pct, 3)
+	var mon: Dictionary = sim.make_monster(60, "normal", 50.0)
+	mon["current_hp"] = 1
+	mon["abilities"] = []
+	cm.start_combat(0, ch, mon)
+	var c = cm.active_combats[0]
+	c["player_can_act"] = true
+	var total0: int = int(ch.experience) + int(ch.level) * 1000000
+	cm.process_attack(c)
+	cm.active_combats.erase(0)
+	return int(ch.experience) + int(ch.level) * 1000000 - total0
+
+
 func _row(tag: String, verdict: String, detail: String) -> void:
 	print("[AUDIT] %-44s %-11s %s" % [tag, verdict, detail])
 
@@ -297,6 +336,19 @@ func _init() -> void:
 		var moved: float = float(m[key]) - float(b_none[key])
 		var pct: float = 100.0 * moved / maxf(1.0, absf(float(b_none[key])))
 		_row(String(br[0]), "READ" if absf(pct) >= 3.0 else "IGNORED", "%s %.0f -> %.0f (%+.0f%%) with value %d" % [key, float(b_none[key]), float(m[key]), pct, int(br[2])])
+
+	# The three buffs that had no reader until 2026-09-15, measured through the real functions.
+	var luck0 := _loot("", false)
+	var luck1 := _loot("rare_drop", false)
+	_row("rare_drop 100 (Elixir of Luck)", "READ" if luck1.rarity > luck0.rarity + 0.3 else "IGNORED", "mean rarity step %.2f -> %.2f" % [luck0.rarity, luck1.rarity])
+	var lan_out := _loot("reclaimer_lantern", false)
+	var lan0 := _loot("", true)
+	var lan1 := _loot("reclaimer_lantern", true)
+	_row("reclaimer_lantern 100 (Reclaimer's Lantern)", "READ" if lan1.count > lan0.count * 1.5 and absf(lan_out.count - luck0.count) < 0.3 else "IGNORED",
+		"drops per dungeon kill %.2f -> %.2f; outside a dungeon %.2f -> %.2f" % [lan0.count, lan1.count, luck0.count, lan_out.count])
+	var xp0 := _kill_xp(0)
+	var xp1 := _kill_xp(50)
+	_row("xp_bonus 50 (Potion of Insight)", "READ" if xp1 > xp0 * 1.4 else "IGNORED", "XP from one kill %d -> %d" % [xp0, xp1])
 
 	print("[AUDIT] ================= SOURCE-ONLY FACTS (could not execute cheaply) =================")
 	var ssrc := FileAccess.get_file_as_string("res://server/server.gd")

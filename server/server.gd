@@ -11214,30 +11214,47 @@ func _get_chest_material_pool(tier: int) -> Array:
 			pool = ["copper_ore", "coal", "oak_log", "small_fish"]
 	return pool
 
-func _refund_used_item(peer_id: int, character, item: Dictionary) -> void:
-	"""Give back ONE use of an item that `handle_inventory_use` already spent, when its effect then
-	refuses to run.
+func _inventory_use_refusal(character, item: Dictionary, effect: Dictionary, message: Dictionary) -> String:
+	"""Why using `item` must be refused, or "" to go ahead. Checked BEFORE the item is spent.
 
-	⛑ 2026-09-15 - this handler consumes the item BEFORE dispatching to its effect, so a refusal
-	inside an effect branch ("only works inside a dungeon", "already on the boss floor") still ate
-	the item. Measured with a Floor Skip Charm (tools/probe/instance_floor_count.gd). One branch had
-	already worked around it with an inline re-insert; this is the shared form. The wider class -
-	every refusal branch in this handler - is logged for the equipment/item audit."""
-	if character == null or item.is_empty():
-		return
-	if int(item.get("remaining_uses", 0)) >= 1 and character.inventory.has(item):
-		item["remaining_uses"] = int(item["remaining_uses"]) + 1   # a multi-use item kept its slot
-	else:
-		var back: Dictionary = item.duplicate(true)
-		if back.get("is_consumable", false):
-			back["quantity"] = 1
-		character.add_item(back)
-	send_character_update(peer_id)
+	⛑ 2026-09-15 - handle_inventory_use removes the item and THEN runs its effect, so every refusal
+	written inside an effect branch still ate the item. Measured (tools/probe/items_in_combat.gd): a
+	Revive Potion with no companion or a healthy one, a Taunt Charm, a potion aimed at a knocked-out
+	companion, a Travel Stone, a Floor Skip Charm off the dungeon or on its boss floor. The charm had
+	grown a refund; the rest just lost the item. Every such rule lives here now, ahead of the spend."""
+	if effect.has("heal") and str(message.get("target", "self")) == "companion" \
+			and character.has_active_companion() and character.is_companion_ko():
+		return CombatManager.COMPANION_KO_HEAL_REFUSAL
+	if effect.has("companion_taunt"):
+		return "Taunt Charm only works during combat — use it when a fight starts."
+	if effect.has("revive_companion"):
+		if not character.has_active_companion():
+			return "You have no active companion to revive."
+		if not character.is_companion_ko():
+			return "Your companion isn't knocked out — no need to use this."
+	if effect.has("floor_skip"):
+		if not character.in_dungeon:
+			return "The Floor Skip Charm only works inside a dungeon."
+		if character.dungeon_floor >= _instance_floor_count(character) - 1:
+			return "You're already on the boss floor — nothing to skip to."
+	if effect.has("travel_stone"):
+		return "A Travel Stone is spent at a market board, to buy from another post's listings."
+	if effect.has("mystery_box") and int(item.get("quantity", 1)) > 1 and not character.can_add_item():
+		return "Your pack is full — make room before opening the box, or what is inside is lost."
+	return ""
 
 
 func handle_inventory_use(peer_id: int, message: Dictionary):
 	"""Handle using an item from inventory"""
 	if not characters.has(peer_id):
+		return
+
+	# ⛑ 2026-09-15 - an item used while a fight is running goes through the FIGHT's rules: one free
+	# item a round, no effect without a combat effect. This handler has no combat gate of its own, so a
+	# potion sent here mid-fight skipped the free-action rule and a Floor Skip Charm moved the player a
+	# floor down with the fight still running (items_in_combat.gd, "inventory_use in fight").
+	if combat_mgr.is_in_combat(peer_id) or combat_mgr.party_combat_membership.has(peer_id):
+		handle_combat_use_item(peer_id, message)
 		return
 
 	var character = characters[peer_id]
@@ -11267,32 +11284,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	if item_tier == 0 and _is_tier_based_consumable(item_type):
 		item_tier = _infer_tier_from_name(item_name)
 
-	# Get potion effect from drop tables
-	var effect = drop_tables.get_potion_effect(item_type)
-
-	# For crafted consumables, effect is stored in the item itself
-	if effect.is_empty() and item.has("effect"):
-		var crafted_effect = item.get("effect", {})
-		# Convert crafted format to expected format
-		var effect_type = crafted_effect.get("type", "")
-		match effect_type:
-			"heal":
-				effect = {"heal": true, "base": crafted_effect.get("amount", 50), "per_level": 0}
-			"restore_mana":
-				effect = {"mana": true, "base": crafted_effect.get("amount", 30), "per_level": 0}
-			"restore_stamina":
-				effect = {"stamina": true, "base": crafted_effect.get("amount", 30), "per_level": 0}
-			"restore_energy":
-				effect = {"energy": true, "base": crafted_effect.get("amount", 30), "per_level": 0}
-			"buff":
-				# Crafted buff format: {"type": "buff", "stat": "attack", "amount": 15, "duration": 10}
-				var buff_stat = crafted_effect.get("stat", "attack")
-				var buff_amount = crafted_effect.get("amount", 10)
-				var buff_duration = crafted_effect.get("duration", 5)
-				effect = {"buff": buff_stat, "base": buff_amount, "per_level": 0, "base_duration": buff_duration, "duration_per_10_levels": 0}
-				# Crafted buffs are round-based (single combat) by default
-				if crafted_effect.get("battles", false):
-					effect["battles"] = true
+	# ONE reading of what the item does, shared with the combat path (drop_tables.consumable_effect).
+	# It used to be POTION_EFFECTS plus a local crafted-format match that knew heal/restore/buff only,
+	# so crafted maps, spell tomes, bestiary pages, debuff, bane and heal-percent items all came back
+	# empty and were refused as "cannot be used directly" before their own branches were reached.
+	var effect: Dictionary = drop_tables.consumable_effect(item)
 
 	# Escape scroll — safe dungeon exit
 	if item_type == "escape_scroll" or item.get("item_type", "") == "escape_scroll":
@@ -11547,51 +11543,10 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			})
 			return
 
-	# Handle new scribing item types (scroll, map, tome, bestiary)
-	if item_type == "scroll":
-		# Scroll: apply buff effect
-		var scroll_effect = item.get("effect", {})
-		var eff_type = scroll_effect.get("type", "buff")
-		var stat = scroll_effect.get("stat", "attack")
-		var bonus_pct = scroll_effect.get("bonus_pct", 0)
-		var dur = scroll_effect.get("duration_battles", 3)
-		var amount = scroll_effect.get("amount", 0)
-
-		# Remove item
-		if is_consumable:
-			character.use_consumable_stack(index)
-		else:
-			character.remove_item(index)
-
-		if stat == "time_stop":
-			character.add_persistent_buff("time_stop", 1, 1)
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#9932CC]You read the %s![/color]\n[color=#FFD700]Time bends to your will! Next enemy frozen for one turn![/color]" % item_name
-			})
-		elif eff_type == "debuff":
-			var penalty = scroll_effect.get("penalty_pct", 20)
-			character.pending_monster_debuffs.append({"type": "weakness", "value": penalty})
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#9932CC]You read the %s![/color]\n[color=#FFD700]Next enemy's %s reduced by %d%%![/color]" % [item_name, stat.replace("_", " "), penalty]
-			})
-		elif bonus_pct > 0:
-			character.add_persistent_buff(stat, bonus_pct, dur)
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#87CEEB]You read the %s![/color]\n[color=#00FF00]+%d%% %s for %d battles![/color]" % [item_name, bonus_pct, stat.replace("_", " "), dur]
-			})
-		elif amount > 0:
-			character.add_persistent_buff(stat, amount, dur)
-			send_to_peer(peer_id, {
-				"type": "text",
-				"message": "[color=#87CEEB]You read the %s![/color]\n[color=#00FF00]+%d %s for %d battles![/color]" % [item_name, amount, stat.replace("_", " "), dur]
-			})
-		send_character_update(peer_id)
-		save_character(peer_id)
-		return
-
+	# Scribing types. A crafted "scroll" is no longer special-cased: its effect resolves to the same
+	# buff / time stop / debuff / resurrect effects as the drop scrolls and takes the shared branches
+	# below. Its old branch wrote the recipe's stat name straight into persistent_buffs, which is how
+	# Rage ("attack") and Forcefield ("shield") ended up doing nothing.
 	if item_type == "area_map":
 		# Area map: reveal tiles around player
 		var radius = int(item.get("reveal_radius", 50))
@@ -11599,17 +11554,15 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			character.use_consumable_stack(index)
 		else:
 			character.remove_item(index)
-		# Mark tiles as discovered (client side will re-request location data)
+		# Mark the tiles as EXPLORED - the same memory walking writes (world_system's LOS pass keys
+		# character.explored_tiles by "x,y"), so the map draws them. ⛑ 2026-09-15 - this loop only
+		# COUNTED tiles and marked none, so a map was used up and revealed nothing (items_in_combat.gd).
 		var px = character.x
 		var py = character.y
-		var revealed = 0
-		if world_system and world_system.chunk_manager:
-			for dx in range(-radius, radius + 1):
-				for dy in range(-radius, radius + 1):
-					if dx * dx + dy * dy <= radius * radius:
-						var tile = world_system.chunk_manager.get_tile(px + dx, py + dy)
-						if not tile.is_empty():
-							revealed += 1
+		for dx in range(-radius, radius + 1):
+			for dy in range(-radius, radius + 1):
+				if dx * dx + dy * dy <= radius * radius:
+					character.explored_tiles["%d,%d" % [px + dx, py + dy]] = true
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#87CEEB]You study the %s![/color]\n[color=#00FF00]Revealed the area within %d tiles![/color]" % [item_name, radius]
@@ -11674,6 +11627,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		save_character(peer_id)
 		return
 
+	var refusal := _inventory_use_refusal(character, item, effect, message)
+	if refusal != "":
+		send_to_peer(peer_id, {"type": "error", "message": refusal})
+		return
+
 	# For consumables with stacking, use the stack function
 	var used_item: Dictionary = {}
 	if is_consumable:
@@ -11700,46 +11658,16 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	if item_tier > 0 and drop_tables.CONSUMABLE_TIERS.has(item_tier):
 		tier_data = drop_tables.CONSUMABLE_TIERS[item_tier]
 
-	# Apply rarity potency multiplier to consumable effects
-	var potency_mult = 1.0
-	var item_rb = item.get("rarity_bonuses", {})
-	if item_rb.has("potency_mult"):
-		potency_mult = float(item_rb["potency_mult"])
-
-	# Apply effect
+	# Apply effect. Amounts, the rarity potency multiplier and buff names come from drop_tables so
+	# the inventory and the combat menu give the same result for the same item.
 	if effect.has("heal"):
-		# Healing potion - hybrid flat + % max HP. Phase B1: when target is
-		# 'companion', heal lands on the active companion's persistent
-		# combat HP using the companion's max HP for the percentage portion.
+		# Phase B1: target 'companion' heals the active companion, the percentage portion against the
+		# companion's max HP. (A knocked-out one was refused before the spend.)
 		var target: String = str(message.get("target", "self"))
-		# Phase B1 — KO'd companions can only be revived by a healer / NPC.
-		# Reject the potion-on-companion attempt with a clear message so the
-		# player knows where to go.
-		if target == "companion" and character.has_active_companion() and character.is_companion_ko():
-			send_to_peer(peer_id, {
-				"type": "error",
-				"message": "Your companion is knocked out and can only be revived by a healer."
-			})
-			return
 		var heal_max_hp: int = character.get_total_max_hp()
 		if target == "companion" and character.has_active_companion():
 			heal_max_hp = character.get_companion_max_hp()
-		var heal_amount: int
-		var item_effect: Dictionary = item.get("effect", {})
-		if item.get("crafted", false) and item_effect.get("type", "") == "heal" and item_effect.has("amount"):
-			# Crafted potion: use the item's own quality-scaled amount so the
-			# heal matches the inspect/hover description.
-			heal_amount = int(item_effect.get("amount", 0))
-		elif effect.get("heal_pct_only", false):
-			# Elixir: pure % max HP heal
-			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
-			heal_amount = int(heal_max_hp * elixir_pct / 100.0)
-		elif tier_data.has("healing"):
-			# Tier-based: flat + % max HP
-			heal_amount = tier_data.healing + int(heal_max_hp * tier_data.get("heal_pct", 0) / 100.0)
-		else:
-			heal_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
-		heal_amount = int(heal_amount * potency_mult)
+		var heal_amount: int = drop_tables.consumable_heal_amount(item, effect, heal_max_hp, item_tier)
 		if target == "companion" and character.has_active_companion():
 			var actual_heal: int = character.heal_companion(heal_amount)
 			var comp_name: String = str(character.active_companion.get("name", "your companion"))
@@ -11758,138 +11686,47 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		var primary_resource = character.get_primary_resource()
 		var max_resource: int
 		match primary_resource:
-			"mana": max_resource = character.get_total_max_mana()
 			"stamina": max_resource = character.get_total_max_stamina()
 			"energy": max_resource = character.get_total_max_energy()
-			_: max_resource = character.get_total_max_mana()
-
-		# Hybrid flat + % max resource
-		var resource_amount: int
-		var item_eff_resource: Dictionary = item.get("effect", {})
-		var item_eff_type_resource: String = str(item_eff_resource.get("type", ""))
-		if item.get("crafted", false) and item_eff_type_resource in ["restore_mana", "restore_stamina", "restore_energy"] and item_eff_resource.has("amount"):
-			# Crafted potion: use item's own quality-scaled amount so the
-			# restore matches the inspect/hover description.
-			resource_amount = int(item_eff_resource.get("amount", 0))
-		elif tier_data.has("resource"):
-			resource_amount = tier_data.resource + int(max_resource * tier_data.get("resource_pct", 0) / 100.0)
-		elif tier_data.has("healing"):
-			resource_amount = int(tier_data.healing * 0.6)
-		else:
-			resource_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
-		resource_amount = int(resource_amount * potency_mult)
-
+			_:
+				max_resource = character.get_total_max_mana()
+				primary_resource = "mana"
+		var resource_amount: int = drop_tables.consumable_resource_amount(item, effect, max_resource, item_tier)
 		var old_value: int
 		var actual_restore: int
 		var color: String
-
 		match primary_resource:
-			"mana":
-				old_value = character.current_mana
-				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
-				actual_restore = character.current_mana - old_value
-				color = "#00FFFF"
 			"stamina":
 				old_value = character.current_stamina
-				character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + resource_amount)
+				character.current_stamina = min(max_resource, character.current_stamina + resource_amount)
 				actual_restore = character.current_stamina - old_value
 				color = "#FFCC00"
 			"energy":
 				old_value = character.current_energy
-				character.current_energy = min(character.get_total_max_energy(), character.current_energy + resource_amount)
+				character.current_energy = min(max_resource, character.current_energy + resource_amount)
 				actual_restore = character.current_energy - old_value
 				color = "#66FF66"
 			_:
 				old_value = character.current_mana
-				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
+				character.current_mana = min(max_resource, character.current_mana + resource_amount)
 				actual_restore = character.current_mana - old_value
 				color = "#00FFFF"
-				primary_resource = "mana"
-
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=%s]You use %s and restore %d %s![/color]" % [color, item_name, actual_restore, primary_resource]
 		})
 	elif effect.has("buff"):
-		# Buff scroll - tier-based values
-		var buff_type = effect.buff
-		var buff_value: int = 0
-		var duration: int = 0
-		var crafted_buff_handled: bool = false
-
-		# Crafted buff scrolls: bypass tier formulas and apply the exact
-		# values shown on inspect. Mirrors the same fix applied in
-		# combat_manager.gd:process_use_item.
-		var item_effect_buff: Dictionary = item.get("effect", {})
-		if item.get("crafted", false) and item_effect_buff.get("type", "") == "buff":
-			buff_type = str(item_effect_buff.get("stat", buff_type))
-			if item_effect_buff.has("bonus_pct"):
-				buff_value = int(item_effect_buff.get("bonus_pct", 0))
+		var writes: Array = drop_tables.consumable_buff_writes(item, effect, character, item_tier)
+		for w in writes:
+			if bool(w.battles):
+				character.add_persistent_buff(String(w.type), int(w.value), int(w.duration))
 			else:
-				buff_value = int(item_effect_buff.get("amount", 0))
-			var is_battles_buff: bool = item_effect_buff.has("duration_battles")
-			if is_battles_buff:
-				duration = int(item_effect_buff.get("duration_battles", 1))
-			else:
-				duration = int(item_effect_buff.get("duration", 5))
-			var crafted_value_suffix: String = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] or item_effect_buff.has("bonus_pct") else ""
-			if is_battles_buff:
-				character.add_persistent_buff(buff_type, buff_value, duration)
-				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]You use %s! +%d%s %s for %d battle%s![/color]" % [item_name, buff_value, crafted_value_suffix, buff_type, duration, "s" if duration != 1 else ""]
-				})
-			else:
-				character.add_buff(buff_type, buff_value, duration)
-				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]You use %s! +%d%s %s for %d rounds (in combat)![/color]" % [item_name, buff_value, crafted_value_suffix, buff_type, duration]
-				})
-			crafted_buff_handled = true
-		elif effect.get("tier_forcefield", false):
-			buff_value = tier_data.get("forcefield_value", 1500)
-			duration = tier_data.get("scroll_duration", 1)
-		elif effect.get("stat_pct", false):
-			var stat_pct = tier_data.get("scroll_stat_pct", 10)
-			var equip_bonuses = character.get_equipment_bonuses()
-			match buff_type:
-				"strength": buff_value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
-				"defense": buff_value = maxi(1, int(character.get_total_defense() * stat_pct / 100.0))
-				"speed": buff_value = maxi(1, int((character.dexterity + equip_bonuses.speed) * stat_pct / 100.0))
-				_: buff_value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
-			duration = tier_data.get("scroll_duration", 1)
-		elif effect.get("tier_value", false):
-			buff_value = tier_data.get("buff_value", 3)
-			duration = tier_data.get("scroll_duration", 1)
-		elif tier_data.has("buff_value"):
-			if buff_type == "forcefield" and tier_data.has("forcefield_value"):
-				buff_value = tier_data.forcefield_value
-			else:
-				buff_value = tier_data.buff_value
-			var base_duration = effect.get("base_duration", 5)
-			var duration_per_10 = effect.get("duration_per_10_levels", 1)
-			duration = base_duration + (item_level / 10) * duration_per_10
-		else:
-			buff_value = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
-			var base_duration = effect.get("base_duration", 5)
-			var duration_per_10 = effect.get("duration_per_10_levels", 1)
-			duration = base_duration + (item_level / 10) * duration_per_10
-
-		if not crafted_buff_handled:
-			var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
-
-			if effect.get("battles", false):
-				character.add_persistent_buff(buff_type, buff_value, duration)
-				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]You use %s! +%d%s %s for %d battle%s![/color]" % [item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""]
-				})
-			else:
-				character.add_buff(buff_type, buff_value, duration)
-				send_to_peer(peer_id, {
-					"type": "text",
-					"message": "[color=#00FFFF]You use %s! +%d%s %s for %d rounds (in combat)![/color]" % [item_name, buff_value, value_suffix, buff_type, duration]
-				})
+				character.add_buff(String(w.type), int(w.value), int(w.duration))
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#00FFFF]You use %s! %s%s![/color]" % [item_name, drop_tables.consumable_buff_line(writes),
+				"" if writes.is_empty() or bool(writes[0].battles) else " (in combat)"]
+		})
 	elif effect.has("essence") or effect.has("gold"):
 		# Material Pouch — grants random tier-appropriate materials
 		var tier = clampi(int(item_level / 15), 0, 8)
@@ -11929,7 +11766,9 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		# Debuff scroll - apply to next monster encountered
 		var debuff_type = effect.monster_debuff
 		var debuff_value: int
-		if effect.get("debuff_pct", false) and tier_data.has("scroll_debuff_pct"):
+		if effect.has("value"):
+			debuff_value = int(effect.value)   # a crafted scroll carries its own number
+		elif effect.get("debuff_pct", false) and tier_data.has("scroll_debuff_pct"):
 			debuff_value = tier_data.scroll_debuff_pct
 		else:
 			debuff_value = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
@@ -11992,14 +11831,6 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"type": "text",
 			"message": "[color=#FF4500]You drink the %s![/color]\n[color=#FFD700]For the next %d battles, you deal +%d%% damage to %s creatures![/color]" % [item_name, battles, damage_bonus, type_display]
 		})
-	elif effect.has("companion_taunt"):
-		# Taunt Charm — combat-only. Out of combat there's no aggro to
-		# manipulate, so reject the use cleanly instead of consuming.
-		send_to_peer(peer_id, {
-			"type": "error",
-			"message": "Taunt Charm only works during combat — use it when a fight starts."
-		})
-		return
 	elif effect.has("boss_damage"):
 		# Boss-Slayer Tonic — +damage_bonus% damage vs boss-tagged monsters
 		# for the next N battles. Fires-and-persists like a monster bane.
@@ -12013,32 +11844,18 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	elif effect.has("reclaimer_lantern"):
 		# Reclaimer's Lantern — +X% chance for an extra item drop on next N
 		# dungeon monster kills. Persistent buff; combat-victory loot path
-		# checks for it via character.get_buff_value("reclaimer_lantern").
+		# checks for it via character.get_buff_value("reclaimer_lantern") in roll_combat_drops.
+		# The buff counts down per FIGHT, anywhere, so the text says fights rather than kills.
 		var rl_pct = int(effect.get("extra_drop_pct", 25))
 		var rl_battles = int(effect.get("battles", 5))
 		character.add_persistent_buff("reclaimer_lantern", rl_pct, rl_battles)
 		send_to_peer(peer_id, {
 			"type": "text",
-			"message": "[color=#FFD700]You light the %s![/color]\n[color=#FFD700]Its glow guides your hand — +%d%% chance for bonus loot on the next %d dungeon kills.[/color]" % [item_name, rl_pct, rl_battles]
+			"message": "[color=#FFD700]You light the %s![/color]\n[color=#FFD700]Its glow guides your hand — each dungeon kill has a %d%% chance of a second drop, for your next %d fights.[/color]" % [item_name, rl_pct, rl_battles]
 		})
 	elif effect.has("floor_skip"):
-		# Floor Skip Charm — only valid in a dungeon, on a non-boss floor,
-		# out of combat. Triggers _advance_dungeon_floor immediately.
-		if not character.in_dungeon:
-			_refund_used_item(peer_id, character, item)
-			send_to_peer(peer_id, {
-				"type": "error",
-				"message": "The Floor Skip Charm only works inside a dungeon."
-			})
-			return
-		var total_floors = _instance_floor_count(character)
-		if character.dungeon_floor >= total_floors - 1:
-			_refund_used_item(peer_id, character, item)
-			send_to_peer(peer_id, {
-				"type": "error",
-				"message": "You're already on the boss floor — nothing to skip to."
-			})
-			return
+		# Floor Skip Charm — in a dungeon, not on its boss floor (checked before the spend, in
+		# _inventory_use_refusal), out of combat (a fight routes to the combat path first).
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#FFD700]You shatter the %s![/color]\n[color=#9ACD32]A shimmering rift carries you deeper.[/color]" % item_name
@@ -12047,20 +11864,8 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		# Floor Skip Charm consumes through the standard inventory removal at
 		# the end of handle_use_item; no early return needed.
 	elif effect.has("revive_companion"):
-		# Companion Revive Potion — instantly revives a KO'd companion at
-		# revive_pct% of max HP. Works in or out of combat.
-		if not character.has_active_companion():
-			send_to_peer(peer_id, {
-				"type": "error",
-				"message": "You have no active companion to revive."
-			})
-			return
-		if not character.is_companion_ko():
-			send_to_peer(peer_id, {
-				"type": "error",
-				"message": "Your companion isn't knocked out — no need to use this."
-			})
-			return
+		# Companion Revive Potion — instantly revives a KO'd companion at revive_pct% of max HP.
+		# Works in or out of combat; "no companion" / "not knocked out" are refused before the spend.
 		var revive_pct: int = int(effect.get("revive_pct", 50))
 		var comp_max: int = character.get_companion_max_hp()
 		var revive_hp: int = maxi(1, int(comp_max * revive_pct / 100.0))

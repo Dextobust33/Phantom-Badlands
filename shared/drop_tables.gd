@@ -4437,7 +4437,7 @@ func roll_dungeon_chest_consumable(tier: int, item_level: int) -> Dictionary:
 	var entry = {"item_type": picked_type, "rarity": "uncommon"}
 	return _generate_item(entry, item_level)
 
-func _normalize_consumable_type(item_type: String) -> String:
+static func _normalize_consumable_type(item_type: String) -> String:
 	"""Normalize consumable type for stacking (e.g., potion_minor -> health_potion)"""
 	# Health potions
 	if item_type in ["potion_minor", "potion_lesser", "potion_standard", "potion_greater", "potion_superior", "potion_master"]:
@@ -5906,6 +5906,214 @@ func get_potion_effect(item_type: String) -> Dictionary:
 func is_usable_in_combat(item_type: String) -> bool:
 	"""Check if an item can be used during combat."""
 	return POTION_EFFECTS.has(item_type)
+
+
+# ===== ONE READING OF WHAT A CONSUMABLE DOES =====
+#
+# ⛑ 2026-09-15 - the item audit (tools/probe/items_in_combat.gd, equipment_audit.gd). A consumable
+# comes in three formats - a POTION_EFFECTS type, a crafted `effect` dictionary, or a scribing type -
+# and the combat path (combat_manager.process_use_item) and the inventory path
+# (server.handle_inventory_use) each interpreted them on their own. The copies had drifted:
+#   - the combat menu took items it had no branch for (tomes, bane potions, resurrect scrolls...) and
+#     removed them for nothing;
+#   - crafted scribing output (maps, spell tomes, debuff scrolls...) was rejected as "cannot be used
+#     directly" before its own branch was reached;
+#   - crafted buffs wrote stat names nothing in combat reads ("attack", "shield", "attack_defense");
+#   - the rarity potency multiplier applied on one path and not the other.
+# Both paths now ask these functions, so an item means one thing wherever it is used.
+
+## Effect keys process_use_item can resolve mid-fight. An item with none of them has no combat effect
+## and is refused WITHOUT being spent - owner 2026-09-15: *"It should refuse if it doesn't have a
+## combat effect."* The client's combat menu filter reads `combat_use_effect` too.
+const COMBAT_EFFECT_KEYS := ["heal", "mana", "stamina", "energy", "resource", "buff", "companion_taunt", "revive_companion"]
+
+## A crafted debuff scroll's stat -> the pending_monster_debuffs type the next encounter applies.
+const CRAFTED_DEBUFF_TYPES := {"monster_attack": "weakness", "monster_defense": "vulnerability",
+	"monster_speed": "slow", "doom": "doom"}
+
+
+static func consumable_effect(item: Dictionary) -> Dictionary:
+	"""What using `item` does, as one POTION_EFFECTS-shaped dictionary, whatever format it arrived in.
+	Empty means it is not a usable consumable here (equipment, materials, and the items with their own
+	handlers - escape scrolls, sigils, compasses, ability tomes, chests, enhancement scrolls).
+
+	A crafted item's own `effect` is authoritative: it is what the recipe and the inspect text promise,
+	and a crafted Scroll of Rage is typed `scroll_rage` only so it stacks and sorts with the drop."""
+	var crafted = item.get("effect", {})
+	if crafted is Dictionary and not (crafted as Dictionary).is_empty():
+		var e: Dictionary = crafted
+		var amount := int(e.get("amount", 0))
+		var pct := int(e.get("bonus_pct", 0))
+		var battles := e.has("duration_battles")
+		var dur := int(e.get("duration_battles", e.get("duration", 0)))
+		match String(e.get("type", "")):
+			"heal":
+				return {"heal": true, "crafted_amount": amount}
+			"heal_pct":
+				return {"heal": true, "heal_pct_only": true, "elixir_pct": amount}
+			"restore_mana":
+				return {"mana": true, "crafted_amount": amount}
+			"restore_stamina":
+				return {"stamina": true, "crafted_amount": amount}
+			"restore_energy":
+				return {"energy": true, "crafted_amount": amount}
+			"buff":
+				var stat := String(e.get("stat", ""))
+				if stat == "time_stop":
+					return {"time_stop": true, "battles": maxi(1, dur)}
+				if stat == "resurrect":
+					return {"resurrect": true, "revive_percent": amount if amount > 0 else pct, "battles": dur if dur != 0 else 1}
+				return {"buff": stat, "crafted_buff": true, "bonus_pct": pct, "amount": amount,
+					"duration": maxi(1, dur), "battles": battles}
+			"bane":
+				return {"monster_bane": String(e.get("monster_type", "")), "damage_bonus": pct, "battles": maxi(1, dur)}
+			"debuff":
+				var dv := int(e.get("penalty_pct", e.get("debuff_pct", amount)))
+				return {"monster_debuff": String(CRAFTED_DEBUFF_TYPES.get(String(e.get("stat", "")), "weakness")), "value": dv}
+			"special":
+				match String(e.get("stat", "")):
+					"monster_select":
+						return {"monster_select": true}
+					"target_farm":
+						return {"target_farm": true, "encounters": maxi(1, dur)}
+	for key in [String(item.get("type", "")), String(item.get("item_type", ""))]:
+		var norm := _normalize_consumable_type(key)
+		if POTION_EFFECTS.has(norm):
+			return POTION_EFFECTS[norm]
+	# Scribing output with no effect dictionary - read by their own branches in handle_inventory_use.
+	match String(item.get("type", "")):
+		"area_map":
+			return {"area_map": true}
+		"spell_tome":
+			return {"spell_tome": true}
+		"bestiary_page":
+			return {"bestiary_page": true}
+	return {}
+
+
+static func combat_use_effect(item: Dictionary) -> Dictionary:
+	"""`consumable_effect`, but only when process_use_item has a branch for it. Empty = refuse, keep."""
+	var e := consumable_effect(item)
+	for k in COMBAT_EFFECT_KEYS:
+		if e.has(k):
+			return e
+	return {}
+
+
+static func consumable_potency(item: Dictionary) -> float:
+	"""The rarity potency multiplier a crafted consumable rolled (apply_rarity_bonuses), else 1."""
+	var rb = item.get("rarity_bonuses", {})
+	return float(rb.get("potency_mult", 1.0)) if rb is Dictionary else 1.0
+
+
+static func consumable_heal_amount(item: Dictionary, effect: Dictionary, heal_max_hp: int, tier: int) -> int:
+	"""HP a heal effect restores against a pool of `heal_max_hp` (the player's, or a companion's)."""
+	var amount: int
+	if effect.get("heal_pct_only", false):
+		amount = int(heal_max_hp * float(effect.get("elixir_pct", ELIXIR_HEAL_PCT.get(tier, 50))) / 100.0)
+	elif effect.has("crafted_amount"):
+		amount = int(effect.crafted_amount)
+	elif tier > 0 and CONSUMABLE_TIERS.has(tier):
+		var td: Dictionary = CONSUMABLE_TIERS[tier]
+		amount = int(td.healing) + int(heal_max_hp * float(td.get("heal_pct", 0)) / 100.0)
+	else:
+		amount = int(effect.get("base", 0)) + int(effect.get("per_level", 0)) * int(item.get("level", 1))
+	return int(amount * consumable_potency(item))
+
+
+static func consumable_resource_amount(item: Dictionary, effect: Dictionary, max_resource: int, tier: int) -> int:
+	"""Primary resource a mana/stamina/energy effect restores against a pool of `max_resource`."""
+	var amount: int
+	if effect.has("crafted_amount"):
+		amount = int(effect.crafted_amount)
+	elif tier > 0 and CONSUMABLE_TIERS.has(tier) and CONSUMABLE_TIERS[tier].has("resource"):
+		var td: Dictionary = CONSUMABLE_TIERS[tier]
+		amount = int(td.resource) + int(max_resource * float(td.get("resource_pct", 0)) / 100.0)
+	elif tier > 0 and CONSUMABLE_TIERS.has(tier):
+		amount = int(int(CONSUMABLE_TIERS[tier].healing) * 0.6)
+	else:
+		amount = int(effect.get("base", 0)) + int(effect.get("per_level", 0)) * int(item.get("level", 1))
+	return int(amount * consumable_potency(item))
+
+
+static func consumable_buff_writes(item: Dictionary, effect: Dictionary, character, tier: int) -> Array:
+	"""The buffs a buff effect actually writes, under the names combat READS, as
+	[{type, value, duration, battles}]. `battles` true = a persistent buff counted in fights, false = a
+	buff counted in rounds of the current fight.
+
+	Crafted recipes name stats freely; each is translated here to what combat reads (measured in
+	equipment_audit.gd's "BUFF NAMES" block - "strength" and "forcefield" move the numbers, "attack" and
+	"shield" do not). A percent of attack/defense/speed is converted the way the tier scrolls always
+	have: that percent of the character's own total, as a flat buff."""
+	var out: Array = []
+	var td: Dictionary = CONSUMABLE_TIERS.get(tier, {}) if tier > 0 else {}
+	var potency := consumable_potency(item)
+	if effect.get("crafted_buff", false):
+		var pct := int(effect.get("bonus_pct", 0))
+		var amt := int(effect.get("amount", 0))
+		var dur := int(effect.get("duration", 1))
+		var bat := bool(effect.get("battles", false))
+		var eq: Dictionary = character.get_equipment_bonuses()
+		var pools := {
+			"strength": int(character.get_total_attack()),
+			"defense": int(character.get_total_defense()),
+			"speed": int(character.dexterity) + int(eq.get("speed", 0)),
+		}
+		var names: Array = []
+		match String(effect.buff):
+			"attack", "strength": names = ["strength"]
+			"defense": names = ["defense"]
+			"speed": names = ["speed"]
+			"attack_defense": names = ["strength", "defense"]
+			"all_stats": names = ["strength", "defense", "speed"]
+			"shield", "forcefield": names = ["forcefield"]
+			_: names = [String(effect.buff)]
+		for n in names:
+			var v: int
+			if pools.has(n) and pct > 0:
+				v = maxi(1, int(pools[n] * pct / 100.0))
+			else:
+				v = amt if amt > 0 else pct
+			out.append({"type": n, "value": int(v * potency), "duration": dur, "battles": bat})
+		return out
+	var buff_type := String(effect.buff)
+	var value := 0
+	var duration := 0
+	if effect.get("tier_forcefield", false):
+		value = int(td.get("forcefield_value", 1500))
+		duration = int(td.get("scroll_duration", 1))
+	elif effect.get("stat_pct", false):
+		var stat_pct := float(td.get("scroll_stat_pct", 10))
+		var eqb: Dictionary = character.get_equipment_bonuses()
+		match buff_type:
+			"defense": value = maxi(1, int(character.get_total_defense() * stat_pct / 100.0))
+			"speed": value = maxi(1, int((int(character.dexterity) + int(eqb.get("speed", 0))) * stat_pct / 100.0))
+			_: value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
+		duration = int(td.get("scroll_duration", 1))
+	elif effect.get("tier_value", false):
+		value = int(td.get("buff_value", 3))
+		duration = int(td.get("scroll_duration", 1))
+	elif td.has("buff_value"):
+		value = int(td.forcefield_value) if buff_type == "forcefield" and td.has("forcefield_value") else int(td.buff_value)
+		duration = int(effect.get("base_duration", 5)) + (int(item.get("level", 1)) / 10) * int(effect.get("duration_per_10_levels", 1))
+	else:
+		value = int(effect.get("base", 0)) + int(effect.get("per_level", 0)) * int(item.get("level", 1))
+		duration = int(effect.get("base_duration", 5)) + (int(item.get("level", 1)) / 10) * int(effect.get("duration_per_10_levels", 1))
+	out.append({"type": buff_type, "value": int(value * potency), "duration": duration, "battles": bool(effect.get("battles", false))})
+	return out
+
+
+static func consumable_buff_line(writes: Array) -> String:
+	"""'+45 strength, +30 defense for 3 battles' - what the buffs really are, not the recipe's wording."""
+	if writes.is_empty():
+		return ""
+	var parts: Array = []
+	for w in writes:
+		var suffix := "%" if String(w.type) in ["lifesteal", "thorns", "crit_chance", "xp_bonus", "rare_drop"] else ""
+		parts.append("+%d%s %s" % [int(w.value), suffix, String(w.type).replace("_", " ")])
+	var d := int(writes[0].duration)
+	var unit := ("battle" if bool(writes[0].battles) else "round") + ("" if d == 1 else "s")
+	return "%s for %d %s" % [", ".join(parts), d, unit]
 
 func to_dict() -> Dictionary:
 	return {"initialized": true}

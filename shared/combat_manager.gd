@@ -3463,6 +3463,13 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if path_xp_pct != 0.0:
 		final_xp = max(1, int(final_xp * (1.0 + path_xp_pct / 100.0)))
 
+	# Potion of Insight / Elixir of the Ancients. ⛑ 2026-09-15 - they wrote an "xp_bonus" buff for N
+	# battles that nothing read (equipment_audit.gd, BUFF NAMES), so both potions did nothing.
+	var buff_xp_pct: int = character.get_buff_value("xp_bonus")
+	if buff_xp_pct > 0:
+		final_xp = max(1, int(final_xp * (1.0 + buff_xp_pct / 100.0)))
+		messages.append("[color=#87CEEB]Insight: +%d%% XP![/color]" % buff_xp_pct)
+
 	var effective_bonus_pct = int((xp_multiplier - 1.0) * 100)
 	if effective_bonus_pct > 0:
 		messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus)[/color][/color]" % [final_xp, effective_bonus_pct])
@@ -8419,6 +8426,10 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 				combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + 6 * n
 				msgs.append("[color=%s]✦ %s — +%d damage absorption.[/color]" % [t_color, t_name, 6 * n])
 
+## One wording for "a knocked-out companion is not healed by potions", shared with the inventory path.
+## It used to say "can only be revived by a healer" - Companion Revive Potions exist and work.
+const COMPANION_KO_HEAL_REFUSAL := "Your companion is knocked out - a Companion Revive Potion or a post's Healer brings it back."
+
 func process_use_item(peer_id: int, item_index: int, target: String = "self") -> Dictionary:
 	"""Process using an item during combat. Returns result with messages.
 	target: 'self' (default) or 'companion' — when 'companion' and the item is
@@ -8444,38 +8455,30 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		return {"success": false, "message": "Invalid item!"}
 
 	var item = inventory[item_index]
-	var item_type = item.get("type", "")
+	var item_type = drop_tables._normalize_consumable_type(String(item.get("type", "")))
 
-	# Normalize item type for consumables (e.g., mana_minor -> mana_potion)
-	var normalized_type = drop_tables._normalize_consumable_type(item_type)
-	if normalized_type != item_type:
-		item_type = normalized_type
-
-	# Check if item is usable in combat
 	if drop_tables == null:
 		return {"success": false, "message": "Item system not available!"}
 
-	var effect = drop_tables.get_potion_effect(item_type)
+	# ⛑ 2026-09-15 - ONE reading of the item, shared with the inventory path
+	# (drop_tables.combat_use_effect). This used to accept anything in POTION_EFFECTS and then handle
+	# only heal/resource/buff/taunt/revive, so a tome, bane potion or resurrect scroll used from the
+	# combat menu was removed with nothing but "Free action" to show for it (items_in_combat.gd).
+	# Owner: "It should refuse if it doesn't have a combat effect." Refused here, before anything is spent.
+	var effect: Dictionary = drop_tables.combat_use_effect(item)
 	if effect.is_empty():
-		return {"success": false, "message": "This item cannot be used in combat!"}
+		return {"success": false, "message": "%s has no use in the middle of a fight - it stays in your pack." % str(item.get("name", "That item"))}
 
 	var messages = []
 	var item_name = item.get("name", "item")
-	var item_level = item.get("level", 1)
 	var item_tier = int(item.get("tier", 0))  # int() ensures proper dict key lookup (JSON may store as float)
 
 	# Infer tier from item name for legacy tier-based consumables
 	if item_tier == 0 and _is_tier_based_consumable(item_type):
 		item_tier = _infer_tier_from_name(item_name)
-
-	# Get tier data for proper healing values
-	var tier_data = {}
-	if item_tier > 0 and drop_tables.CONSUMABLE_TIERS.has(item_tier):
-		tier_data = drop_tables.CONSUMABLE_TIERS[item_tier]
+	var use_verb: String = "use" if "scroll" in item_type else "drink"
 
 	# Apply effect
-	# Check for crafted item's own effect data (quality-scaled amounts from recipe)
-	var item_effect = item.get("effect", {})
 	if effect.has("companion_taunt"):
 		# Taunt Charm — companion draws extra aggro for next N monster turns.
 		# Validate: companion must exist and not be KO'd (no aggro to draw).
@@ -8507,168 +8510,64 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		messages.append("[color=#FFD700]You use the %s![/color]" % item_name)
 		messages.append("[color=#00FF00]Your %s rises with %d/%d HP![/color]" % [comp_name, revive_hp, comp_max])
 	elif effect.has("heal"):
-		# Phase B1 — KO'd companion can only be revived by a healer / NPC,
-		# never by potions or natural regen. Reject here with a clear msg
-		# instead of silently consuming the potion.
+		# Phase B1 — a KO'd companion is brought back by a Revive Potion or a Healer, never by a
+		# healing potion. Reject here with a clear msg instead of silently consuming the potion.
 		if target == "companion" and recipient.has_active_companion() and recipient.is_companion_ko():
-			return {"success": false, "message": "Your companion is knocked out and can only be revived by a healer."}
-		# Healing potion - hybrid flat + % max HP
-		var heal_amount: int
-		# When targeting a companion, use the companion's max HP for the
-		# percentage-based portion so a tier-3 potion heals roughly the same
-		# fraction of the companion as it would the player.
+			return {"success": false, "message": COMPANION_KO_HEAL_REFUSAL}
+		# Hybrid flat + % max HP. When targeting a companion the percentage portion is of the
+		# companion's max HP, so a tier-3 potion heals roughly the same fraction of either.
 		var heal_max_hp: int = recipient.get_total_max_hp()
 		if target == "companion" and recipient.has_active_companion():
 			heal_max_hp = recipient.get_companion_max_hp()
-		if effect.get("heal_pct_only", false):
-			# Elixir: pure % max HP heal
-			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
-			heal_amount = int(heal_max_hp * elixir_pct / 100.0)
-		elif item_effect.get("type", "") == "heal" and item_effect.has("amount"):
-			# Crafted potion: use item's own quality-scaled amount
-			heal_amount = int(item_effect.get("amount", 0))
-		elif tier_data.has("healing"):
-			# Tier-based: flat + % max HP
-			heal_amount = tier_data.healing + int(heal_max_hp * tier_data.get("heal_pct", 0) / 100.0)
-		else:
-			heal_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
-		var heal_verb = "use" if "scroll" in item_type else "drink"
+		var heal_amount: int = drop_tables.consumable_heal_amount(item, effect, heal_max_hp, item_tier)
 		if target == "companion" and recipient.has_active_companion():
 			var actual_heal: int = recipient.heal_companion(heal_amount)
 			var comp_name: String = str(recipient.active_companion.get("name", "your companion"))
-			messages.append("[color=#00FF00]You %s %s and your %s recovers %d HP![/color]" % [heal_verb, item_name, comp_name, actual_heal])
+			messages.append("[color=#00FF00]You %s %s and your %s recovers %d HP![/color]" % [use_verb, item_name, comp_name, actual_heal])
 		else:
 			var actual_heal = recipient.heal(heal_amount)
-			messages.append("[color=#00FF00]You %s %s and restore %d HP![/color]" % [heal_verb, item_name, actual_heal])
+			messages.append("[color=#00FF00]You %s %s and restore %d HP![/color]" % [use_verb, item_name, actual_heal])
 	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
 		# Resource potion - restores the player's PRIMARY resource based on class path
 		var primary_resource = recipient.get_primary_resource()
 		var max_resource: int
 		match primary_resource:
-			"mana": max_resource = recipient.get_total_max_mana()
 			"stamina": max_resource = recipient.get_total_max_stamina()
 			"energy": max_resource = recipient.get_total_max_energy()
-			_: max_resource = recipient.get_total_max_mana()
-
-		# Hybrid flat + % max resource
-		var resource_amount: int
-		var item_effect_type = item_effect.get("type", "")
-		if item_effect_type in ["restore_mana", "restore_stamina", "restore_energy"] and item_effect.has("amount"):
-			# Crafted potion: use item's own quality-scaled amount
-			resource_amount = int(item_effect.get("amount", 0))
-		elif tier_data.has("resource"):
-			resource_amount = tier_data.resource + int(max_resource * tier_data.get("resource_pct", 0) / 100.0)
-		elif tier_data.has("healing"):
-			resource_amount = int(tier_data.healing * 0.6)
-		else:
-			resource_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
-
+			_:
+				max_resource = recipient.get_total_max_mana()
+				primary_resource = "mana"
+		var resource_amount: int = drop_tables.consumable_resource_amount(item, effect, max_resource, item_tier)
 		var old_value: int
 		var actual_restore: int
 		var color: String
-
 		match primary_resource:
-			"mana":
-				old_value = recipient.current_mana
-				recipient.current_mana = min(recipient.get_total_max_mana(), recipient.current_mana + resource_amount)
-				actual_restore = recipient.current_mana - old_value
-				color = "#00FFFF"
 			"stamina":
 				old_value = recipient.current_stamina
-				recipient.current_stamina = min(recipient.get_total_max_stamina(), recipient.current_stamina + resource_amount)
+				recipient.current_stamina = min(max_resource, recipient.current_stamina + resource_amount)
 				actual_restore = recipient.current_stamina - old_value
 				color = "#FFCC00"
 			"energy":
 				old_value = recipient.current_energy
-				recipient.current_energy = min(recipient.get_total_max_energy(), recipient.current_energy + resource_amount)
+				recipient.current_energy = min(max_resource, recipient.current_energy + resource_amount)
 				actual_restore = recipient.current_energy - old_value
 				color = "#66FF66"
 			_:
 				old_value = recipient.current_mana
-				recipient.current_mana = min(recipient.get_total_max_mana(), recipient.current_mana + resource_amount)
+				recipient.current_mana = min(max_resource, recipient.current_mana + resource_amount)
 				actual_restore = recipient.current_mana - old_value
 				color = "#00FFFF"
-				primary_resource = "mana"
-
-		var resource_verb = "use" if "scroll" in item_type else "drink"
-		messages.append("[color=%s]You %s %s and restore %d %s![/color]" % [color, resource_verb, item_name, actual_restore, primary_resource])
+		messages.append("[color=%s]You %s %s and restore %d %s![/color]" % [color, use_verb, item_name, actual_restore, primary_resource])
 	elif effect.has("buff"):
-		# Buff scroll - tier-based values
-		var buff_type = effect.buff
-		var buff_value: int = 0
-		var duration: int = 0
-		# Set true when the crafted-scroll branch has already applied + emitted
-		# its message — skips the tier-formula apply block at the bottom.
-		var crafted_buff_handled: bool = false
-
-		# Crafted buff scrolls: bypass tier formulas entirely and apply the
-		# exact values shown on inspect (effect.amount or effect.bonus_pct +
-		# effect.duration or effect.duration_battles). The existing
-		# stat_pct / tier_value branches assume tier_data is populated, which
-		# isn't the case for crafted items. This keeps inspect = applied.
-		if item.get("crafted", false) and item_effect.get("type", "") == "buff":
-			buff_type = str(item_effect.get("stat", buff_type))
-			if item_effect.has("bonus_pct"):
-				buff_value = int(item_effect.get("bonus_pct", 0))
+		# The buffs are written under the names combat READS, converted once in drop_tables for both
+		# paths - see consumable_buff_writes for the crafted "attack"/"shield" names that read as nothing.
+		var writes: Array = drop_tables.consumable_buff_writes(item, effect, recipient, item_tier)
+		for w in writes:
+			if bool(w.battles):
+				recipient.add_persistent_buff(String(w.type), int(w.value), int(w.duration))
 			else:
-				buff_value = int(item_effect.get("amount", 0))
-			var is_battles_buff: bool = item_effect.has("duration_battles")
-			if is_battles_buff:
-				duration = int(item_effect.get("duration_battles", 1))
-			else:
-				duration = int(item_effect.get("duration", 5))
-			var crafted_verb: String = "use" if "scroll" in item_type else "drink"
-			var crafted_value_suffix: String = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] or item_effect.has("bonus_pct") else ""
-			if is_battles_buff:
-				recipient.add_persistent_buff(buff_type, buff_value, duration)
-				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d battle%s![/color]" % [crafted_verb, item_name, buff_value, crafted_value_suffix, buff_type, duration, "s" if duration != 1 else ""])
-			else:
-				recipient.add_buff(buff_type, buff_value, duration)
-				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d rounds![/color]" % [crafted_verb, item_name, buff_value, crafted_value_suffix, buff_type, duration])
-			crafted_buff_handled = true
-		elif effect.get("tier_forcefield", false):
-			# Forcefield: use forcefield_value from tier, duration from scroll_duration
-			buff_value = tier_data.get("forcefield_value", 1500)
-			duration = tier_data.get("scroll_duration", 1)
-		elif effect.get("stat_pct", false):
-			# Stat scroll: % of character's base stat
-			var stat_pct = tier_data.get("scroll_stat_pct", 10)
-			var equip_bonuses = recipient.get_equipment_bonuses()
-			match buff_type:
-				"strength": buff_value = maxi(1, int(recipient.get_total_attack() * stat_pct / 100.0))
-				"defense": buff_value = maxi(1, int(recipient.get_total_defense() * stat_pct / 100.0))
-				"speed": buff_value = maxi(1, int((recipient.dexterity + equip_bonuses.speed) * stat_pct / 100.0))
-				_: buff_value = maxi(1, int(recipient.get_total_attack() * stat_pct / 100.0))
-			duration = tier_data.get("scroll_duration", 1)
-		elif effect.get("tier_value", false):
-			# Percentage scroll: use buff_value directly (lifesteal, thorns, crit %)
-			buff_value = tier_data.get("buff_value", 3)
-			duration = tier_data.get("scroll_duration", 1)
-		elif tier_data.has("buff_value"):
-			# Legacy tier-based fallback
-			if buff_type == "forcefield" and tier_data.has("forcefield_value"):
-				buff_value = tier_data.forcefield_value
-			else:
-				buff_value = tier_data.buff_value
-			var base_duration = effect.get("base_duration", 5)
-			var duration_per_10 = effect.get("duration_per_10_levels", 1)
-			duration = base_duration + (item_level / 10) * duration_per_10
-		else:
-			buff_value = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
-			var base_duration = effect.get("base_duration", 5)
-			var duration_per_10 = effect.get("duration_per_10_levels", 1)
-			duration = base_duration + (item_level / 10) * duration_per_10
-
-		if not crafted_buff_handled:
-			var buff_verb = "use" if "scroll" in item_type else "drink"
-			var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
-
-			if effect.get("battles", false):
-				recipient.add_persistent_buff(buff_type, buff_value, duration)
-				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d battle%s![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""])
-			else:
-				recipient.add_buff(buff_type, buff_value, duration)
-				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d rounds![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration])
+				recipient.add_buff(String(w.type), int(w.value), int(w.duration))
+		messages.append("[color=#00FFFF]You %s %s! %s![/color]" % [use_verb, item_name, drop_tables.consumable_buff_line(writes)])
 
 	# Remove item from inventory (use stack method for consumables)
 	if item.get("is_consumable", false) and item.get("quantity", 1) > 0:
@@ -11834,7 +11733,18 @@ func roll_combat_drops(monster: Dictionary, character: Character, bonus_drop_mul
 	# item LEVEL only - not drop chance, not rarity, not affix magnitude.
 	var _floor_level: int = int(float(character.level) * DROP_LEVEL_FLOOR_RATIO)
 	var _item_level: int = maxi(monster_level, _floor_level)
-	return drop_tables.roll_drops(drop_table_id, drop_chance, _item_level, rarity_upgrade)
+	# Elixir of Luck: its percent is the chance this kill's loot rolls one rarity step higher - the
+	# same ladder bump Plunder uses. ⛑ 2026-09-15 - the "rare_drop" buff it writes had no reader.
+	var luck_pct: int = character.get_buff_value("rare_drop")
+	if luck_pct > 0 and randi() % 100 < luck_pct:
+		rarity_upgrade += 1
+	var drops: Array = drop_tables.roll_drops(drop_table_id, drop_chance, _item_level, rarity_upgrade)
+	# Reclaimer's Lantern: its percent is the chance a DUNGEON kill rolls a second, guaranteed drop.
+	# ⛑ 2026-09-15 - the lantern's use text said "the combat-victory loot path checks for it"; nothing did.
+	var lantern_pct: int = character.get_buff_value("reclaimer_lantern")
+	if lantern_pct > 0 and character.in_dungeon and randi() % 100 < lantern_pct:
+		drops.append_array(drop_tables.roll_drops(drop_table_id, 100, _item_level, rarity_upgrade))
+	return drops
 
 func _get_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""
@@ -14380,6 +14290,12 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 		var house_xp_mult = 1.0 + (character.house_bonuses.get("xp_bonus", 0) / 100.0)
 		# Audit #14 v0.9.537 — mentor bonus folded into the XP product.
 		var final_xp = int(base_xp * xp_multiplier * house_xp_mult * mentor_mult)
+		# Potion of Insight / Elixir of the Ancients - same bonus as the solo victory. (This path is a
+		# second copy of the XP sum and also lacks the solo path's hotspot, Ranger and Path terms -
+		# logged in docs/BACKLOG.md; the potion is added here so a Warden fight is not the exception.)
+		var _buff_xp: int = character.get_buff_value("xp_bonus")
+		if _buff_xp > 0:
+			final_xp = max(1, int(final_xp * (1.0 + _buff_xp / 100.0)))
 
 		# Gem drops
 		var gems = 0

@@ -50,6 +50,10 @@ func _item(t: String) -> Dictionary:
 			"map": return sv._craft_map(rec, q)
 			"tome": return sv._craft_tome(rec, q)
 			"bestiary": return sv._craft_bestiary(rec, q)
+			"consumable":
+				var cc: Dictionary = sv._create_crafted_consumable(rec, q)
+				cc["quantity"] = 1
+				return cc
 	match t:
 		"escape_scroll":
 			var e: Dictionary = sv.DungeonDatabaseScript.make_escape_scroll(1)
@@ -251,7 +255,7 @@ func _init() -> void:
 		"enhancement_scroll|gear", "enhancement_scroll|capped", "floor_skip_charm|dgn", "escape_scroll|dgn", "home_stone_supplies|dgn", "scroll_time_stop|dgn"]
 
 	for rid in sv.CraftingDatabaseScript.RECIPES:
-		if String(sv.CraftingDatabaseScript.RECIPES[rid].get("output_type", "")) in ["scroll", "map", "tome", "bestiary"]:
+		if String(sv.CraftingDatabaseScript.RECIPES[rid].get("output_type", "")) in ["scroll", "map", "tome", "bestiary", "consumable"]:
 			types.append("craft:" + String(rid))
 	print("[ITEMS] %-26s %-7s | %-24s | %-24s | %-24s" % ["item", "OFFERED", "COMBAT menu", "inventory_use in fight", "OUTSIDE a fight"])
 	for t in types:
@@ -268,7 +272,33 @@ func _init() -> void:
 		for d in details:
 			print("[ITEMS-D] " + d)
 	client_filter.free()
+	# EVERY BUFF A CONSUMABLE WRITES MUST HAVE A READER. Crafted Rage wrote "attack", Forcefield "shield",
+	# Insight "xp_bonus", Luck "rare_drop" - all read by nothing, so the potions did nothing. The writes
+	# come from the real resolver (drop_tables.consumable_buff_writes) over every drop type and every
+	# crafted recipe; a reader is a get_buff_value/has_buff call naming it. equipment_audit.gd MEASURES
+	# the common names; this catches a new name the day it is added.
+	var src := ""
+	for f in ["res://shared/combat_manager.gd", "res://shared/character.gd", "res://server/server.gd"]:
+		src += FileAccess.get_file_as_string(f)
+	var unread: Array = []
+	var probe_ch = _fresh()
+	var all_items: Array = []
+	for k in sv.drop_tables.POTION_EFFECTS.keys():
+		all_items.append(_item(String(k)))
+	for rid in sv.CraftingDatabaseScript.RECIPES:
+		if String(sv.CraftingDatabaseScript.RECIPES[rid].get("output_type", "")) in ["scroll", "consumable"]:
+			all_items.append(_item("craft:" + String(rid)))
+	for it in all_items:
+		var eff: Dictionary = sv.drop_tables.consumable_effect(it)
+		if not eff.has("buff"):
+			continue
+		for w in sv.drop_tables.consumable_buff_writes(it, eff, probe_ch, int(it.get("tier", 3))):
+			var nm2 := String(w.type)
+			if not (src.contains('get_buff_value("%s")' % nm2) or src.contains('has_buff("%s")' % nm2)):
+				unread.append("%s -> %s" % [String(it.get("name", "?")), nm2])
+	print("[ITEMS] buff names with no reader: %s" % ("none" if unread.is_empty() else ", ".join(unread)))
+
 	# Everything else is classified for the owner; a duplication is a failure outright. Proven to fire:
 	# the Enhancement Scroll at its cap reported DUPLICATED on the code before 2026-09-15's fix.
-	print("RESULT: %s (%d duplicating uses)" % ["PASS" if dupes == 0 else "FAIL", dupes])
-	quit(0 if dupes == 0 else 1)
+	print("RESULT: %s (%d duplicating uses, %d unread buff names)" % ["PASS" if dupes == 0 and unread.is_empty() else "FAIL", dupes, unread.size()])
+	quit(0 if dupes == 0 and unread.is_empty() else 1)
