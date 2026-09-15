@@ -219,6 +219,32 @@ func _init() -> void:
 	ck(_w.count("tiles") == 1, "  said once, not twice (%s)" % _w)
 
 	print("")
+	print("===== 9b. THE DUNGEON KNOWS IT IS THE STARTER ONE =====")
+	# ⛑ Owner 2026-09-14, from inside it: *"I don't have him following me anymore here in the
+	# dungeon and he's also not in the fights."* He could not be: `_get_dungeon_at_location`
+	# never returned the `starter` flag, so `_inherit_starter` was false every single time and
+	# the instance generated as an ordinary dungeon - FIVE floors instead of two, and
+	# `_is_starter_dungeon` false, which is the gate his dungeon escort hangs off.
+	var loc_src := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(loc_src.contains('"starter": bool(instance.get("starter", false)),'),
+		"the tile lookup carries the starter flag that handle_dungeon_enter reads")
+	ck(loc_src.contains("_inherit_starter: bool = bool(_tile_dungeon.get(\"starter\", false))"),
+		"  which is where the instance gets it from")
+	ck(loc_src.contains("if _is_starter_dungeon(instance_id) and not _is_party_leader(peer_id):"),
+		"and the guide's dungeon escort hangs off that same flag")
+
+	print("")
+	print("===== 9c. AND THE KIT CANNOT BE WALKED PAST =====")
+	# *"Seems like I could miss all of it then and just go straight to the boss."* It is placed
+	# on random empty tiles, so yes. Finding it stays; the dungeon settles up on the way out.
+	ck(loc_src.contains("THE STARTER DUNGEON OWES YOU THE KIT"),
+		"anything missed is handed over when the dungeon is cleared")
+	ck(loc_src.contains('for _slot in ["helm", "boots", "shield", "accessory"]:'),
+		"  covering the four pieces the floor was meant to provide")
+	ck(loc_src.contains("if _in_pack:"),
+		"  and skipping what the player already found, so nobody gets two of everything")
+
+	print("")
 	print("===== 10. AND HE SEES THEM HOME =====")
 	# Owner 2026-09-14: *"this is a starter dungeon, the player doesn't even have full equipment
 	# at this point... they have to live to get to it and back from it."* The escort used to end

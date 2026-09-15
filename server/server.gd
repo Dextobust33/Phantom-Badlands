@@ -32396,6 +32396,15 @@ func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 				# Deepest-floor max (deeper floors scale monster level up per floor) so
 				# the readout matches what players meet on lower floors (bug 2026-08-27).
 				"max_level": maxi(sub_range.max_level, int(sub_range.max_level * (1.0 + maxi(0, int(dungeon_data.get("floors", 1)) - 1) * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR))),
+				# ⛑ THE STARTER FLAG. handle_dungeon_enter reads it from HERE to decide whether
+				# the instance it builds is a starter dungeon - and it was never in this dict, so
+				# `_inherit_starter` was false every single time. The starter dungeon therefore
+				# generated as an ordinary one: FIVE floors instead of two, and
+				# `_is_starter_dungeon` false, which is the gate the Warden's dungeon escort
+				# hangs off. Owner 2026-09-14, from inside it: *"I don't have him following me
+				# anymore here in the dungeon and he's also not in the fights."* He could not be:
+				# the dungeon did not know it was the one he comes to.
+				"starter": bool(instance.get("starter", false)),
 				"color": dungeon_data.color
 			}
 	return {}
@@ -35628,6 +35637,42 @@ func _complete_dungeon(peer_id: int):
 			bonus_material_msgs.append("[color=#00FFCC]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
 
 	# Give GUARANTEED boss egg (inherits dungeon rank)!
+	# ⛑ THE STARTER DUNGEON OWES YOU THE KIT, AND PAYS UP ON THE WAY OUT.
+	#
+	# Owner 2026-09-14: *"For my starter gear being floor loot is it just scattered around
+	# randomly? Seems like I could miss all of it then and just go straight to the boss."*
+	# Exactly so - `_place_floor_item_random` drops it on any empty tile, and nothing makes a
+	# player walk over it. Finding gear on the floor is the good version of this and stays; but
+	# the kit is what a new character needs to survive the next ten levels, so it cannot depend
+	# on which way they wandered.
+	#
+	# Anything still missing when the dungeon is cleared is handed over here. Slots they ALREADY
+	# filled - from the floor, or from anywhere else - are left alone, so a player who explored
+	# properly is not handed a second copy of everything.
+	if _is_starter_dungeon(instance_id) and drop_tables:
+		var _missed: Array = []
+		for _slot in ["helm", "boots", "shield", "accessory"]:
+			var _real_slot: String = "ring" if _slot == "accessory" else _slot
+			var _have = character.equipped.get(_real_slot, null)
+			if _have != null and not (_have is Dictionary and (_have as Dictionary).is_empty()):
+				continue
+			var _in_pack := false
+			for _it in character.inventory:
+				if _it is Dictionary and Character.get_item_slot_from_type(String(_it.get("type", ""))) == _real_slot:
+					_in_pack = true
+					break
+			if _in_pack:
+				continue
+			var _kit = drop_tables.get_starter_kit_item(_slot)
+			if _kit is Dictionary and not (_kit as Dictionary).is_empty() and character.can_add_item():
+				character.add_item(_kit)
+				_missed.append(String(_kit.get("name", _slot)))
+		if not _missed.is_empty():
+			_guide_say(peer_id, "You walked past some of it. Here — I picked it up behind you.")
+			send_to_peer(peer_id, {"type": "text", "message":
+				"[color=#9ACD32]Recovered from the floor: %s[/color]" % ", ".join(_missed)})
+
+
 	var boss_egg_monster = rewards.get("boss_egg", "")
 	var _lead_egg := _grant_boss_egg(peer_id, character, String(boss_egg_monster), inst_sub_tier, _current_dungeon_tier(character))
 	var boss_egg_given: bool = bool(_lead_egg.get("given", false))
@@ -43281,7 +43326,14 @@ func _guide_escorts_overworld(peer_id: int, character) -> bool:
 
 func _escort_goal_for(peer_id: int, character) -> Dictionary:
 	"""Where the Warden is taking you, refreshed every step. Empty when he is not leading."""
-	if character == null or not _guide_escorts_overworld(peer_id, character):
+	if character == null:
+		return {}
+	# Not once you are THERE. Owner 2026-09-14, from inside the dungeon: *"Warden Hollis leads
+	# you to: Goblin Caves - 0 tiles southwest"* still sitting in the panel. A guide pointing at
+	# the room you are standing in reads as the game having lost track of you.
+	if character.in_dungeon:
+		return {}
+	if not _guide_escorts_overworld(peer_id, character):
 		return {}
 	if _wardens_watch_stage(character) != 3:
 		return {}          # only step three is a journey; the others are fought where you stand

@@ -46746,6 +46746,22 @@ func _overworld_display(payload: Dictionary) -> String:
 		# and withdrew a companion from the kennel.
 		var _has_comp: bool = (character_data.get("active_companion", {}) is Dictionary) 			and not (character_data.get("active_companion", {}) as Dictionary).is_empty()
 		var _eo := _escort_offset(_local_map_facing) if _has_comp 			else _trail_offset(_local_map_facing)
+		# ⛑ WHEN HE IS LEADING, HE WALKS IN FRONT.
+		#
+		# Owner 2026-09-14: *"He also didn't lead me, I had to walk myself to the dungeon."*
+		# Trailing behind is right while he is guarding your back on the first two steps; on the
+		# journey he is the one who knows the way, so he stands on the side the dungeon is on and
+		# a player can simply follow him. The bearing is already on screen - this is the same
+		# fact said in the place the player is actually looking.
+		if not _escort_goal.is_empty():
+			var _gx := int(_escort_goal.get("x", 0)) - _last_map_center.x
+			var _gy := int(_escort_goal.get("y", 0)) - _last_map_center.y
+			if _gx != 0 or _gy != 0:
+				_eo = Vector2i(signi(_gx), signi(_gy)) if absi(_gx) != absi(_gy) 					else Vector2i(signi(_gx), 0)
+				if absi(_gx) < absi(_gy):
+					_eo = Vector2i(0, signi(_gy))
+				elif absi(_gx) > absi(_gy):
+					_eo = Vector2i(signi(_gx), 0)
 		var _ex: int = mid + _eo.x
 		var _ey: int = mid + _eo.y
 		var _ek := "%d,%d" % [_ex, _ey]
