@@ -772,6 +772,12 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    actually reads. `-- gearsources` and `docs/design/equipment_reference.md` are the starting point,
    not the answer - they already found stats with no reader once. Deliverable: a table of every stat
    and item family with works / broken / misleading, then fixes in order of how many players carry it.
+4b. **Default UI scale at 1080p (owner 2026-09-15).** *"We need to take a look at the initial UI Scale.
+   1080p players ASCII map has to be scrolled to even see the middle of their map. The Tool panel and
+   all of that is too big over there. Ideally they should be able to see their whole ASCII map by
+   default."* Measure first (a 1920x1080 client screenshot: map viewport vs map content, panel sizes),
+   then set the default scale/layout so the whole map fits with no scroll; check the per-element
+   resize system (memory: UI Scale system) so saved user scales are not clobbered.
 5. **Shorter names for stacked affixes (owner 2026-09-15).** *"find a way to shorten those long names
    on items and monsters that have bunches of affixes. Ideally we just create new affixes or names
    for those that have a combination of multiple affixes, for example something that has juggernaut

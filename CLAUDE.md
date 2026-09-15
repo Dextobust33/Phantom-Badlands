@@ -194,7 +194,8 @@ The facts most often got wrong:
   the Trickster bases carrying **`energy_regen`**. These bases are **not in `EQUIPMENT_BASES`** —
   killing the right monster is the only route to them
 - the **CHASE pool is epic-and-above only** (25-50% per bonus roll) — crit, `damage_mult`,
-  `extra_turn_chance`, resource-on-hit and +ability ranks live there and nowhere else
+  `extra_turn_chance`, resource-on-hit and card-specific gear (`shared/card_gear.gd`, which replaced
+  the +ability ranks) live there and nowhere else
 - **an item's class stats come from its BASE TYPE, not its affixes.** Reading the affix pools
   alone will tell you a stat has no source when it plainly does
 

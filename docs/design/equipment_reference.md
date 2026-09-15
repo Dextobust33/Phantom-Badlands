@@ -41,7 +41,9 @@ never by reading the `if/elif` chain in `character.gd`.
   monster is the only route to them, which makes them the game's real "farm this mob" content.
 - **Affix count is fixed by rarity** - common 1 through artifact 6. Rarity buys BREADTH.
 - **The CHASE pool is epic-and-above only**, 25-50% per bonus roll: crit, `damage_mult`,
-  `extra_turn_chance`, resource-on-hit, +ability ranks. Below epic, affixes are plain stats.
+  `extra_turn_chance` (gear total capped at 30%), resource-on-hit, and **card-specific gear** (power /
+  cost / duration for one card, 15/30/45%, only the kinds that card measurably uses - shared/card_gear.gd;
+  it replaced the +ability-rank affixes on 2026-09-15). Below epic, affixes are plain stats.
 - **Uniques (15) and sets (3)** carry fixed blocks and are a separate axis again.
 
 ## Generated inventory
@@ -50,43 +52,85 @@ never by reading the `if/elif` chain in `character.gd`.
 ===== EQUIPMENT: EVERY STAT AND WHERE IT COMES FROM =====
 
 -- by stat --
-   ability_rank_ambush          CHASE (epic+ only), enchanter rune
-   ability_rank_blast           CHASE (epic+ only), enchanter rune
-   ability_rank_cleave          CHASE (epic+ only), enchanter rune
-   ability_rank_devastate       CHASE (epic+ only), enchanter rune
-   ability_rank_exploit         CHASE (epic+ only), enchanter rune
-   ability_rank_mage_dmg        CHASE (epic+ only), enchanter rune
-   ability_rank_magic_bolt      CHASE (epic+ only), enchanter rune
-   ability_rank_meteor          CHASE (epic+ only), enchanter rune
-   ability_rank_power_strike    CHASE (epic+ only), enchanter rune
-   ability_rank_shield_bash     CHASE (epic+ only), enchanter rune
-   ability_rank_trickster_dmg   CHASE (epic+ only), enchanter rune
-   ability_rank_warrior_dmg     CHASE (epic+ only), enchanter rune
-   attack_bonus                 prefix (any rarity), suffix (any rarity), enchanter rune
-   con_bonus                    suffix (any rarity), enchanter rune
-   crit_chance_bonus            CHASE (epic+ only), enchanter rune
-   crit_damage_bonus            CHASE (epic+ only), enchanter rune
-   damage_mult                  CHASE (epic+ only), enchanter rune
-   defense_bonus                prefix (any rarity), suffix (any rarity), enchanter rune
-   dex_bonus                    suffix (any rarity), enchanter rune
-   energy_bonus                 prefix (any rarity), suffix (any rarity), enchanter rune
-   energy_on_hit                CHASE (epic+ only), enchanter rune
-   extra_turn_chance            CHASE (epic+ only), enchanter rune
-   hp_bonus                     prefix (any rarity), suffix (any rarity), enchanter rune
-   hp_on_kill                   CHASE (epic+ only), enchanter rune
-   int_bonus                    suffix (any rarity), enchanter rune
-   mana_bonus                   prefix (any rarity), suffix (any rarity), enchanter rune
-   mana_on_hit                  CHASE (epic+ only), enchanter rune
-   proc:damage_reflect          proc suffix (tier 6+)
-   proc:execute                 proc suffix (tier 6+)
-   proc:lifesteal               proc suffix (tier 6+)
-   proc:shocking                proc suffix (tier 6+)
-   speed_bonus                  prefix (any rarity), enchanter rune
-   stamina_bonus                prefix (any rarity), suffix (any rarity), enchanter rune
-   stamina_on_hit               CHASE (epic+ only), enchanter rune
-   str_bonus                    suffix (any rarity), enchanter rune
-   wis_bonus                    suffix (any rarity), enchanter rune
-   wits_bonus                   suffix (any rarity), enchanter rune
+   attack_bonus                 prefix (any rarity), suffix (any rarity), enchanter rune (weapon)
+   card_cost_ambush             CHASE (epic+ only) card gear, also a card tome
+   card_cost_banish             CHASE (epic+ only) card gear, also a card tome
+   card_cost_berserk            CHASE (epic+ only) card gear, also a card tome
+   card_cost_blast              CHASE (epic+ only) card gear, also a card tome
+   card_cost_cleave             CHASE (epic+ only) card gear, also a card tome
+   card_cost_distract           CHASE (epic+ only) card gear, also a card tome
+   card_cost_exploit            CHASE (epic+ only) card gear, also a card tome
+   card_cost_forcefield         CHASE (epic+ only) card gear, also a card tome
+   card_cost_fortify            CHASE (epic+ only) card gear, also a card tome
+   card_cost_frost_nova         CHASE (epic+ only) card gear, also a card tome
+   card_cost_gambit             CHASE (epic+ only) card gear, also a card tome
+   card_cost_haste              CHASE (epic+ only) card gear, also a card tome
+   card_cost_iron_skin          CHASE (epic+ only) card gear, also a card tome
+   card_cost_meteor             CHASE (epic+ only) card gear, also a card tome
+   card_cost_paralyze           CHASE (epic+ only) card gear, also a card tome
+   card_cost_perfect_heist      CHASE (epic+ only) card gear, also a card tome
+   card_cost_pickpocket         CHASE (epic+ only) card gear, also a card tome
+   card_cost_power_strike       CHASE (epic+ only) card gear, also a card tome
+   card_cost_rally              CHASE (epic+ only) card gear, also a card tome
+   card_cost_sabotage           CHASE (epic+ only) card gear, also a card tome
+   card_cost_shadowstep         CHASE (epic+ only) card gear, also a card tome
+   card_cost_shield_bash        CHASE (epic+ only) card gear, also a card tome
+   card_cost_vanish             CHASE (epic+ only) card gear, also a card tome
+   card_cost_war_cry            CHASE (epic+ only) card gear, also a card tome
+   card_duration_berserk        CHASE (epic+ only) card gear, also a card tome
+   card_duration_fortify        CHASE (epic+ only) card gear, also a card tome
+   card_duration_haste          CHASE (epic+ only) card gear, also a card tome
+   card_duration_iron_skin      CHASE (epic+ only) card gear, also a card tome
+   card_duration_rally          CHASE (epic+ only) card gear, also a card tome
+   card_duration_shadowstep     CHASE (epic+ only) card gear, also a card tome
+   card_power_ambush            CHASE (epic+ only) card gear, also a card tome
+   card_power_analyze           CHASE (epic+ only) card gear, also a card tome
+   card_power_berserk           CHASE (epic+ only) card gear, also a card tome
+   card_power_blast             CHASE (epic+ only) card gear, also a card tome
+   card_power_cleave            CHASE (epic+ only) card gear, also a card tome
+   card_power_devastate         CHASE (epic+ only) card gear, also a card tome
+   card_power_distract          CHASE (epic+ only) card gear, also a card tome
+   card_power_exploit           CHASE (epic+ only) card gear, also a card tome
+   card_power_forcefield        CHASE (epic+ only) card gear, also a card tome
+   card_power_fortify           CHASE (epic+ only) card gear, also a card tome
+   card_power_frost_nova        CHASE (epic+ only) card gear, also a card tome
+   card_power_gambit            CHASE (epic+ only) card gear, also a card tome
+   card_power_haste             CHASE (epic+ only) card gear, also a card tome
+   card_power_iron_skin         CHASE (epic+ only) card gear, also a card tome
+   card_power_magic_bolt        CHASE (epic+ only) card gear, also a card tome
+   card_power_meteor            CHASE (epic+ only) card gear, also a card tome
+   card_power_perfect_heist     CHASE (epic+ only) card gear, also a card tome
+   card_power_power_strike      CHASE (epic+ only) card gear, also a card tome
+   card_power_rally             CHASE (epic+ only) card gear, also a card tome
+   card_power_sabotage          CHASE (epic+ only) card gear, also a card tome
+   card_power_shadowstep        CHASE (epic+ only) card gear, also a card tome
+   card_power_shield_bash       CHASE (epic+ only) card gear, also a card tome
+   card_power_vanish            CHASE (epic+ only) card gear, also a card tome
+   card_power_war_cry           CHASE (epic+ only) card gear, also a card tome
+   con_bonus                    suffix (any rarity), enchanter rune (armor,shield,helm,amulet)
+   crit_chance_bonus            CHASE (epic+ only)
+   crit_damage_bonus            CHASE (epic+ only)
+   damage_mult                  CHASE (epic+ only)
+   defense_bonus                prefix (any rarity), suffix (any rarity), enchanter rune (armor,shield)
+   dex_bonus                    suffix (any rarity), enchanter rune (weapon,boots,ring)
+   energy_bonus                 prefix (any rarity), suffix (any rarity), enchanter rune (boots,ring)
+   energy_on_hit                CHASE (epic+ only)
+   extra_turn_chance            CHASE (epic+ only)
+   hp_bonus                     prefix (any rarity), suffix (any rarity), enchanter rune (helm,armor,shield)
+   hp_on_kill                   CHASE (epic+ only)
+   int_bonus                    suffix (any rarity), enchanter rune (weapon,helm,amulet,ring)
+   mana_bonus                   prefix (any rarity), suffix (any rarity), enchanter rune (amulet,ring)
+   mana_on_hit                  CHASE (epic+ only)
+   proc:damage_reflect          proc suffix (tier 6+), enchanter proc rune (armor,shield)
+   proc:execute                 proc suffix (tier 6+), enchanter proc rune (weapon)
+   proc:lifesteal               proc suffix (tier 6+), enchanter proc rune (weapon)
+   proc:shocking                proc suffix (tier 6+), enchanter proc rune (weapon)
+   speed_bonus                  prefix (any rarity), enchanter rune (boots)
+   stamina_bonus                prefix (any rarity), suffix (any rarity), enchanter rune (armor,shield)
+   stamina_on_hit               CHASE (epic+ only)
+   str_bonus                    suffix (any rarity), enchanter rune (weapon,armor,ring,amulet)
+   wis_bonus                    suffix (any rarity), enchanter rune (helm,amulet,shield,ring)
+   wits_bonus                   suffix (any rarity), enchanter rune (weapon,ring,amulet,boots)
 
 -- rarity gates --
    affixes per rarity: { "common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5, "artifact": 6 }
@@ -100,7 +144,7 @@ never by reading the `if/elif` chain in `character.gd`.
    generate_trickster_gear (Shadow Hoarder)   -> amulet_evasion, boots_swift, ring_shadow
    generate_warrior_gear (Warrior Hoarder)    -> shield_bulwark, weapon_warlord
    roll_dungeon_chest_equipment               -> amulet_silver, armor_magical, boots_magical, helm_magical, ring_elemental, shield_magical, weapon_magical
-   generate_mystery_box_item                  -> amulet_gold, amulet_silver, armor_elemental, armor_magical, boots_elemental, boots_magical, cursed_coin, health_potion, helm_elemental, helm_magical, home_stone_companion, home_stone_egg, home_stone_equipment, home_stone_supplies, mana_potion, mysterious_box, potion_beast_bane, potion_dragon_bane, potion_undead_bane, ring_elemental, scroll_doom, scroll_forcefield, scroll_haste, scroll_monster_select, scroll_precision, scroll_stone_skin, scroll_target_farm, scroll_thorns, scroll_time_stop, scroll_vampirism, shield_elemental, shield_magical, tome_constitution, tome_dexterity, tome_intelligence, tome_strength, weapon_elemental, weapon_magical
+   generate_mystery_box_item                  -> amulet_gold, amulet_silver, armor_elemental, armor_magical, boots_elemental, boots_magical, cursed_coin, health_potion, helm_elemental, helm_magical, home_stone_companion, home_stone_egg, home_stone_equipment, home_stone_supplies, mana_potion, mysterious_box, potion_beast_bane, potion_dragon_bane, potion_undead_bane, ring_elemental, scroll_doom, scroll_forcefield, scroll_haste, scroll_monster_select, scroll_precision, scroll_rage, scroll_slow, scroll_stone_skin, scroll_thorns, scroll_vampirism, shield_elemental, shield_magical, tome_constitution, tome_dexterity, tome_intelligence, tome_strength, weapon_elemental, weapon_magical
 
 -- what each ITEM TYPE grants BEFORE affixes (probed, not read) --
    amulet_evasion         flee_bonus +16
@@ -112,9 +156,9 @@ never by reading the `if/elif` chain in `character.gd`.
    weapon_warlord         stamina_regen +10
 
 -- monsters that drop TARGETED class gear (35% chance on kill) --
-   arcane_hoarder:    Wraith, Lich, Elemental, Sphinx, Elder Lich, Time Weaver
-   warrior_hoarder:   Minotaur, Iron Golem, Death Incarnate
-   cunning_prey:      Goblin, Hobgoblin, Giant Spider, Void Walker
+   arcane_hoarder:    Siren, Wraith, Succubus, Lich, Elemental, Sphinx, Phoenix, Elder Lich, Time Weaver, Entropy
+   warrior_hoarder:   Orc, Minotaur, Titan, Iron Golem, World Serpent, Death Incarnate, God Slayer
+   cunning_prey:      Goblin, Hobgoblin, Giant Spider, Mimic, Vampire, Jabberwock, Nazgul, Void Walker, Cosmic Horror, The Nameless One
    ^ class-targeted drops DO exist - through monster ABILITIES. drop_tables itself
      never reads the player's class; the MONSTER decides.
 

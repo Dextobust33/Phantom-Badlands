@@ -563,6 +563,14 @@ checked %d names, disagreements: %d" % [checked, bad])
 	print("=====================================================================
 ")
 
+var _gs_lines: Array = []
+
+func _gs(text: String) -> void:
+	"""gearsources output: printed AND kept, so the audit can write it into equipment_reference.md."""
+	print(text)
+	_gs_lines.append(text)
+
+
 func run_gear_sources_audit():
 	"""EVERY stat a piece of equipment can carry, where it comes from, and what gates it.
 
@@ -580,7 +588,8 @@ func run_gear_sources_audit():
 	The last section is the one that matters most: character.get_equipment_bonuses() declares a
 	set of stat fields, and this reports any of them that NO item can actually roll. A field that
 	combat reads and nothing grants is invisible unless something enumerates both sides."""
-	print("
+	_gs_lines.clear()
+	_gs("
 ===== EQUIPMENT: EVERY STAT AND WHERE IT COMES FROM =====")
 	var sources := {}   # stat -> [source strings]
 	var _add := func(stat: String, src: String) -> void:
@@ -594,6 +603,13 @@ func run_gear_sources_audit():
 	for entry in drop_tables.SUFFIX_POOL:
 		_add.call(String(entry.get("stat", "?")), "suffix (any rarity)")
 	for entry in drop_tables.CHASE_SUFFIX_POOL:
+		if String(entry.get("stat", "")) == "card_bonus":
+			# A card-gear slot rolls a card and one of its measured kinds (shared/card_gear.gd).
+			var cg = load("res://shared/card_gear.gd")
+			for card in cg.KINDS:
+				for kind in cg.KINDS[card]:
+					_add.call(cg.key(kind, card), "CHASE (epic+ only) card gear, also a card tome")
+			continue
 		_add.call(String(entry.get("stat", "?")), "CHASE (epic+ only)")
 	for entry in drop_tables.PROC_SUFFIX_POOL:
 		_add.call("proc:" + String(entry.get("proc_type", "?")), "proc suffix (tier 6+)")
@@ -601,21 +617,31 @@ func run_gear_sources_audit():
 		var sd = drop_tables.SPECIALTY_AFFIX_STATS[spec]
 		for st in (sd.get("stats", []) if sd is Dictionary else []):
 			_add.call(String(st), "crafted: %s specialty" % spec)
-	for st in drop_tables.RUNE_AFFIX_CAPS.keys():
-		_add.call(String(st), "enchanter rune")
+	# Runes from the RECIPES that craft them. (2026-09-15 - this read RUNE_AFFIX_CAPS, a table only this
+	# simulator uses, and so claimed every +ability-rank affix came from an enchanter rune. No rune
+	# recipe ever granted one.)
+	var craft_db = load("res://shared/crafting_database.gd")
+	for rid in craft_db.RECIPES:
+		var rec: Dictionary = craft_db.RECIPES[rid]
+		if String(rec.get("output_type", "")) != "rune":
+			continue
+		if rec.has("rune_stat"):
+			_add.call(String(rec.rune_stat), "enchanter rune (%s)" % String(rec.get("target_slot", "")))
+		elif rec.has("rune_proc"):
+			_add.call("proc:" + String(rec.rune_proc), "enchanter proc rune (%s)" % String(rec.get("target_slot", "")))
 
-	print("
+	_gs("
 -- by stat --")
 	var keys := sources.keys()
 	keys.sort()
 	for k in keys:
-		print("   %-28s %s" % [k, ", ".join(sources[k])])
+		_gs("   %-28s %s" % [k, ", ".join(sources[k])])
 
-	print("
+	_gs("
 -- rarity gates --")
-	print("   affixes per rarity: %s" % str(drop_tables.AFFIX_COUNTS))
-	print("   chase-roll chance:  %s" % str(drop_tables.CHASE_ROLL_CHANCE_BY_RARITY))
-	print("   drop weights:       %s" % str(drop_tables.RARITY_WEIGHTS))
+	_gs("   affixes per rarity: %s" % str(drop_tables.AFFIX_COUNTS))
+	_gs("   chase-roll chance:  %s" % str(drop_tables.CHASE_ROLL_CHANCE_BY_RARITY))
+	_gs("   drop weights:       %s" % str(drop_tables.RARITY_WEIGHTS))
 
 	# ---- BASE ITEM TYPES ------------------------------------------------------------------------
 	# 2026-09-04 — this section exists because the FIRST version of this audit did not have it,
@@ -627,7 +653,7 @@ func run_gear_sources_audit():
 	# Measured by EXECUTION, not by reading character.gd: equip one bare item of each base type,
 	# with no affixes, and diff get_equipment_bonuses(). An if/elif chain cannot be enumerated
 	# safely any other way, and this cannot drift when a branch is added.
-	print("
+	_gs("
 -- ACQUISITION PATHS: every function in drop_tables that yields equipment --")
 	# 2026-09-04 — this section is the owner's correction, twice over. The first version of this
 	# audit read only the affix pools. The second added base types but enumerated them from
@@ -662,13 +688,13 @@ func run_gear_sources_audit():
 				type_seen[ty] = true
 		var tl := types.keys()
 		tl.sort()
-		print("   %-42s -> %s" % [label, ", ".join(tl) if not tl.is_empty() else "(nothing)"])
+		_gs("   %-42s -> %s" % [label, ", ".join(tl) if not tl.is_empty() else "(nothing)"])
 	# The ordinary drop pool, listed separately because it is table-driven rather than a call.
 	for t in drop_tables.EQUIPMENT_BASES.keys():
 		for e in drop_tables.EQUIPMENT_BASES[t]:
 			type_seen[String(e.get("item_type", ""))] = true
 
-	print("
+	_gs("
 -- what each ITEM TYPE grants BEFORE affixes (probed, not read) --")
 	# Equip one bare item of each type and diff the aggregator. An if/elif chain in character.gd
 	# cannot be enumerated any other way without re-implementing it, which is how it drifts.
@@ -690,9 +716,9 @@ func run_gear_sources_audit():
 				notable.append("%s +%d" % [f, int(b[f])])
 				_add.call(f, "BASE TYPE %s" % it2)
 		if not notable.is_empty():
-			print("   %-22s %s" % [it2, ", ".join(notable)])
+			_gs("   %-22s %s" % [it2, ", ".join(notable)])
 
-	print("
+	_gs("
 -- monsters that drop TARGETED class gear (35% chance on kill) --")
 	for ab in ["arcane_hoarder", "warrior_hoarder", "cunning_prey"]:
 		var who: Array = []
@@ -700,20 +726,36 @@ func run_gear_sources_audit():
 			var md = monster_db.get_monster_base_stats(mt)
 			if md is Dictionary and (ab in (md.get("abilities", []) as Array)):
 				who.append(String(md.get("name", "?")))
-		print("   %-18s %s" % [ab + ":", ", ".join(who) if not who.is_empty() else "(none found)"])
-	print("   ^ class-targeted drops DO exist - through monster ABILITIES. drop_tables itself")
-	print("     never reads the player's class; the MONSTER decides.")
+		_gs("   %-18s %s" % [ab + ":", ", ".join(who) if not who.is_empty() else "(none found)"])
+	_gs("   ^ class-targeted drops DO exist - through monster ABILITIES. drop_tables itself")
+	_gs("     never reads the player's class; the MONSTER decides.")
 
-	print("
+	_gs("
 -- uniques and sets --")
 	var udb = load("res://shared/unique_database.gd")
 	if udb != null:
-		print("   uniques: %d, sets: %d  (FIXED rolls, not from the pools above)" % [
+		_gs("   uniques: %d, sets: %d  (FIXED rolls, not from the pools above)" % [
 			int(udb.UNIQUES.size()), int(udb.SETS.size())])
-		print("   see shared/unique_database.gd. NOTE: they are NOT the only class-shaped gear -")
-		print("   the hoarder bases above are class-shaped and come from ordinary kills.")
-	print("=====================================================================
+		_gs("   see shared/unique_database.gd. NOTE: they are NOT the only class-shaped gear -")
+		_gs("   the hoarder bases above are class-shaped and come from ordinary kills.")
+	_gs("=====================================================================
 ")
+	# WRITE the generated section of the reference, so "generated, do not hand-edit" is true. It used to
+	# print only, and the file was pasted by hand (and went stale: it still listed the retired rank
+	# affixes as enchanter runes on 2026-09-15).
+	var doc_path := "res://docs/design/equipment_reference.md"
+	var doc := FileAccess.get_file_as_string(doc_path)
+	var marker := "## Generated inventory\n\n```\n"
+	var m_at := doc.find(marker)
+	if m_at >= 0:
+		var fence_end := doc.find("\n```", m_at + marker.length())
+		if fence_end >= 0:
+			var rebuilt := doc.substr(0, m_at + marker.length()) + "\n".join(_gs_lines).strip_edges() + doc.substr(fence_end)
+			var f := FileAccess.open(doc_path, FileAccess.WRITE)
+			if f != null:
+				f.store_string(rebuilt)
+				f.close()
+				print("[gearsources] wrote the generated inventory into %s" % doc_path)
 
 func run_focus_gear_audit():
 	"""Does chasing your class's resource affix change the picture?
