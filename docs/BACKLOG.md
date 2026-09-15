@@ -765,7 +765,18 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      (~38 at L60) that read as 38%; it writes its tier percent now (Standard +15%, matching its text).
      NOTE for balance: a Fighter opens every fight AT the 85% mitigation cap (stance DR 60 + defense
      ~69%) - deliberate per the 2026-09-05/06 polytest notes, so not changed.
-   - OPEN, investigate: party victory XP is a second copy of the solo sum missing hotspot / Ranger / Path terms;
+   - ✅ DONE 2026-09-15 (and it was WORSE than logged): a kill's XP had FOUR sums. The live co-op
+     payout (`_end_party_combat_all`) had no sum at all - it paid `experience_reward` and called
+     add_experience. Owner, live: *"I killed a Venomous Hobgoblin Lv 7 in a Hotzone area. I'm
+     level 7 as well. I only got +195 XP"* - 195 was the monster's base, the number Size Them Up
+     had quoted before the kill; solo that kill is worth 361. Missing in a party: the flat +10%,
+     Danger Zone +30-70%, the level-gap curve, apex frontier/variant, Hunter's Mark, Path xp_pct,
+     Insight, Easy Prey, the race/Sanctuary multipliers (it wrote `experience +=`), and the
+     companion's 10% share. Perfect Heist was a third copy, patched twice for missing terms and
+     still holding the coefficient solo left behind (0.7 against 2.0). `combat_manager.kill_xp` is
+     the one sum; probe `tools/probe/xp_one_sum.gd` runs the real payout and was proven red
+     (214 paid against 361 earned, five of five cases).
+   - OPEN, investigate:
      crafting output is handled by two near-identical match blocks (server.gd ~26612 and ~27667).
    Fix order: item-use validation (the class, not per branch) -> crafted scribing / crafted buff names /
    Apex Sigil / proc runes / crafted stats -> skill tomes -> extra-turn cap -> per-card affixes (design
@@ -1229,6 +1240,8 @@ instrument defects found and corrected before anything was believed.
 - "Floors Cleared: 2/5" on a two-floor starter dungeon (fixed just after v0.9.791 was cut).
 
 **Also**
+- A kill in a party paid only the monster's base XP - four separate XP sums, one of which was not
+  a sum at all. Every Warden fight, every co-op kill, and your companion's share with it.
 - Sanctuary kennel: hover a companion for its card and art, Inspect for the rest.
 - Hovering another player on the map shows their equipment tint and glyphs (it composed the portrait
   before their gear arrived and never redrew), and their companion shows the Companions card.
