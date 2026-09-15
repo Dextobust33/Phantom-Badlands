@@ -6920,13 +6920,17 @@ func run_preflight() -> void:
 	# 2. The two measurement paths must agree, or the chain fits the wrong player.
 	print("
 [2] measurement paths agree (refcal's sampler vs the shared fight loop)")
+	# 2026-09-15 - 180 fights a side, not 27. At 27 the difference between two samples has a
+	# standard deviation of ~13pp, so this 15pp gate failed about one run in four on noise alone:
+	# a mitigation fix moved the fight loop 52% -> 81% at L10, which no nerf can do, and it passed
+	# at 14pp one run earlier. At 180 the difference's error is ~5pp, so 15pp is a real divergence.
 	var worst := 0.0
 	for lvl in [10, 250]:
-		var a := _fight_stats_at(lvl, 27)
+		var a := _fight_stats_at(lvl, 180)
 		var wins := 0
 		var tot := 0
 		for row in ALL_CLASSES:
-			for i in range(3):
+			for i in range(20):
 				if run_fight(lvl, "average", "normal", 1.0, 1.0, 1.0, String(row[0])).win:
 					wins += 1
 				tot += 1
@@ -6934,7 +6938,9 @@ func run_preflight() -> void:
 		var wb := 100.0 * float(wins) / float(maxi(1, tot))
 		var gap: float = absf(wa - wb)
 		worst = maxf(worst, gap)
-		print("    L%-6d sampler %3.0f%%   fight loop %3.0f%%   gap %2.0fpp %s" % [lvl, wa, wb, gap, "" if gap <= 15.0 else "<-- FAIL"])
+		var p_mid: float = clampf((wa + wb) / 200.0, 0.05, 0.95)
+		var se_gap: float = 100.0 * sqrt(p_mid * (1.0 - p_mid) * (1.0 / 180.0 + 1.0 / float(maxi(1, tot))))
+		print("    L%-6d sampler %3.0f%%   fight loop %3.0f%%   gap %2.0fpp (sampling error ~%.0fpp) %s" % [lvl, wa, wb, gap, se_gap, "" if gap <= 15.0 else "<-- FAIL"])
 		if gap > 15.0:
 			fail += 1
 	# 3. Nobody is idling: a class that cannot cast is a policy bug, not a balance result.
