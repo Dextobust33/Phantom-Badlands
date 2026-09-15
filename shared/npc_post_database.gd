@@ -45,6 +45,10 @@ const WING_MAX = 7
 # Door placement
 const MIN_DOORS = 8
 const MAX_DOORS = 14
+## The starter post (Crossroads) is the biggest room in the world plus wings, so the 1-in-3-perimeter
+## rule gave it the MOST doors of any post. Owner 2026-09-15: *"reduce the number of doors on the
+## starter post. We don't need so many of them."* Four, spread around it - one to each side.
+const STARTER_MAX_DOORS = 4
 
 # Post name components
 const POST_PREFIXES = [
@@ -457,7 +461,13 @@ static func _compute_wall_tiles(floor_tiles: Dictionary) -> Dictionary:
 				wall_tiles[nkey] = true
 	return wall_tiles
 
-static func _select_doors(wall_tiles: Dictionary, floor_tiles: Dictionary, px: int, py: int) -> Dictionary:
+static func _doors_for_post(post: Dictionary, wall_tiles: Dictionary, floor_tiles: Dictionary) -> Dictionary:
+	"""A post's doors: the ordinary spread, capped at STARTER_MAX_DOORS for the starter post."""
+	var cap: int = STARTER_MAX_DOORS if bool(post.get("is_starter", false)) else -1
+	return _select_doors(wall_tiles, floor_tiles, int(post.get("x", 0)), int(post.get("y", 0)), cap)
+
+
+static func _select_doors(wall_tiles: Dictionary, floor_tiles: Dictionary, px: int, py: int, max_doors: int = -1) -> Dictionary:
 	"""Select door positions from perimeter walls, evenly distributed around the shape."""
 	var offsets = [[-1, 0], [1, 0], [0, -1], [0, 1]]
 
@@ -495,6 +505,8 @@ static func _select_doors(wall_tiles: Dictionary, floor_tiles: Dictionary, px: i
 	var target = clampi(candidates.size() / 3, MIN_DOORS, MAX_DOORS)
 	if candidates.size() <= MIN_DOORS:
 		target = candidates.size()
+	if max_doors > 0:
+		target = mini(target, max_doors)
 
 	var doors = {}
 	var spacing = float(candidates.size()) / float(target)
@@ -529,7 +541,7 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 	var wall_tiles = _compute_wall_tiles(floor_tiles)
 
 	# Step 3: Select doors from perimeter walls
-	var door_tiles = _select_doors(wall_tiles, floor_tiles, px, py)
+	var door_tiles = _doors_for_post(post, wall_tiles, floor_tiles)
 
 	# Step 4: Stamp floor tiles
 	for key in floor_tiles:
