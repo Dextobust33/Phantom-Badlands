@@ -585,7 +585,13 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 ### ⚑ WHERE THINGS STAND RIGHT NOW (2026-09-15, afternoon)
 
 **LIVE: v0.9.790** — the live-tutorial fixes (`e31e1845`) plus the off-map guide arrow below.
-Released from `master`; nothing is held.
+
+**On `master`, UNRELEASED (owner said keep batching, 2026-09-15 afternoon):** everything ticked in the
+"LIVE TEST OF v0.9.790" block below - the Warden's Watch III turn-in blocker, party per-member state,
+skip cards in party, teammate damage numbers, party status strip, Phantom Strike/Exploit text, the
+Warden in the dungeon and pointing home, his level cap, and the egg / home / companion lessons.
+**Next release must add a `display_changelog()` entry for all of it.** Three things need a running
+client to confirm (damage-number placement, party status strip, dungeon Warden sprite).
 
 ### ⚑ THE GOLD RING WAS USUALLY NOT ON THE MAP — fixed in v0.9.790, three gaps left
 
