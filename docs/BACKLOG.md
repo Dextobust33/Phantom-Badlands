@@ -623,8 +623,11 @@ and now says "gold marker". Probe `tools/probe/mark_arrow_offscreen.gd` renders 
 
 **Open, in the order they should be worked** (a blocker first, then the shared party-view cause, then
 the teaching beats that depend on the Warden behaving):
-- [ ] **⛔ Warden's Watch III cannot be turned in.** Owner walked back to the post after clearing the
-      starter dungeon and found no way to hand it in. Blocks every new character's progression.
+- [x] **⛔ Warden's Watch III cannot be turned in.** FIXED on master, not released. Two causes: the
+      Warden's hand-in loop lived in the KILL-progress path and step three is a DUNGEON_CLEAR; and the
+      post's hand-in list compared "crossroads" with the runtime id "npc_crossroads" (third time that
+      prefix has stranded a chain). `_warden_settle_steps` now runs for dungeon progress too, and
+      every quest-vs-post comparison goes through `_same_post`. Probe: tutorial_walkthrough 9d.
 - [ ] **After the dungeon the player is teleported out with no idea what to do.** The Warden should
       show the Quest Log and walk (or point) them back to the post for the turn-in.
 - [ ] **Party per-member state is a WHITELIST, and everything not on it is dropped between rounds.**
@@ -649,6 +652,8 @@ the teaching beats that depend on the Warden behaving):
 - [ ] **Safety net: the Warden must not carry a player into content far above the starter dungeon.**
       Before AND after completing it, while he is in the party, cap how far out (monster level) they
       can take him.
+- [ ] **Teach what to do with spare gear back at the post** - list it on the market or salvage it.
+      Owner: a new player comes home with a pile of extra equipment and no idea what it is for.
 - [ ] **Teach eggs and companions** when the dungeon hands over the first egg: what an egg is, how to
       see/manage/hatch it, what companions are, and how to equip, use and heal them.
 

@@ -375,6 +375,37 @@ func _init() -> void:
 		"  and skipping what the player already found, so nobody gets two of everything")
 
 	print("")
+	print("===== 9d. CLEARING THE DUNGEON FINISHES THE CHAIN =====")
+	# ⛑ Owner 2026-09-15, live on v0.9.790: *"I walked back to the post manually and doesn't seem
+	# like I have a way to turn in the Warden's Watch III Quest at all."* Section 10 below FAKES
+	# completion by editing the quest lists, which is exactly how this hid: nothing ever drove
+	# step three through the dungeon-progress path. Two faults, both measured here -
+	#   1. the Warden's settle loop only ran for KILL updates, and step three is a DUNGEON_CLEAR;
+	#   2. the post compared "crossroads" with the runtime id "npc_crossroads", so its hand-in
+	#      list was empty.
+	ck(sv._wardens_watch_stage(ch) == 3, "the player is on step three going in")
+	ch.in_dungeon = true
+	var _dq: Array = sv.quest_mgr.check_dungeon_progress(ch, "starter")
+	var _dq_done := false
+	for _dqu in _dq:
+		if String(_dqu.get("quest_id", "")) == "wardens_watch_3" and bool(_dqu.get("completed", false)):
+			_dq_done = true
+	ck(_dq_done, "clearing a dungeon completes step three")
+	sv._warden_settle_steps(PEER, ch, _dq)
+	await process_frame
+	ck(sv._wardens_watch_stage(ch) == 4, "and the Warden hands it in on the spot - stage %d" % sv._wardens_watch_stage(ch))
+	ck("wardens_watch_3" in ch.completed_quests, "  so it is in completed_quests, rewards and all")
+	ch.in_dungeon = false
+	# The dungeon-completion path must actually CALL the routine exercised above.
+	var _dsrc := FileAccess.get_file_as_string("res://server/server.gd")
+	var _dcall := _dsrc.find("var quest_updates = quest_mgr.check_dungeon_progress(character, dungeon_type)")
+	ck(_dcall != -1 and _dsrc.substr(_dcall, 600).contains("_warden_settle_steps(peer_id, character, quest_updates)"),
+		"  and dungeon completion calls it, right after reporting the progress")
+	# The post, in case he is not there to settle it: the runtime id carries the npc_ prefix.
+	ck(sv._same_post("crossroads", "npc_crossroads"), "Crossroads counts as Crossroads whatever prefix the runtime id carries")
+	ck(not sv._same_post("crossroads", "npc_haven"), "  and a different post still does not")
+
+	print("")
 	print("===== 10. AND HE SEES THEM HOME =====")
 	# Owner 2026-09-14: *"this is a starter dungeon, the player doesn't even have full equipment
 	# at this point... they have to live to get to it and back from it."* The escort used to end

@@ -17003,7 +17003,7 @@ func trigger_trading_post_encounter(peer_id: int):
 		var quest = quest_db.get_quest(quest_data.quest_id, -1, 0, character.name)
 		if quest.is_empty():
 			continue
-		var _quest_belongs_here: bool = quest.get("trading_post", "") == tp_id
+		var _quest_belongs_here: bool = _same_post(String(quest.get("trading_post", "")), String(tp_id))
 		# v0.9.584 — belt-and-suspenders: match by quest_id prefix too in
 		# case get_quest's returned dict loses chain_id for any reason.
 		var _is_pathfinder: bool = String(quest.get("chain_id", "")) == "pathfinder" or String(quest_data.quest_id).begins_with("pathfinder_")
@@ -17214,7 +17214,7 @@ func handle_trading_post_quests(peer_id: int):
 
 		# Check if quest can be turned in here
 		var can_turn_in = false
-		if quest.trading_post == tp.id:
+		if _same_post(String(quest.trading_post), String(tp.id)):
 			# Normal case: at the origin trading post
 			can_turn_in = true
 		elif quest_data.quest_id.begins_with("progression_to_"):
@@ -20031,7 +20031,7 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 		var tp = at_trading_post[peer_id]
 		# Count static quests completed at this post
 		for qid in quest_db.QUESTS:
-			if quest_db.QUESTS[qid].trading_post == tp.id and qid in character.completed_quests:
+			if _same_post(String(quest_db.QUESTS[qid].trading_post), String(tp.id)) and qid in character.completed_quests:
 				completed_at_post += 1
 		# Count dynamic quests completed at this post
 		for qid in character.completed_quests:
@@ -20150,6 +20150,22 @@ func handle_quest_abandon(peer_id: int, message: Dictionary):
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": "Quest not found in your active quests"})
 
+func _same_post(quest_post_id: String, here_id: String) -> bool:
+	"""Is the post a quest names the post the player is standing in?
+
+	⛑ 2026-09-15 - THE "npc_" PREFIX, THIRD TIME. Posts reached at runtime carry ids normalised
+	with an "npc_" prefix (world_system.gd, `result["id"] = "npc_" + name`), while static quests
+	name the bare id ("crossroads"). The Pathfinder chain hit this in v0.9.582-585 and was patched
+	with a chain-specific exception; the threat quests carry a note about it too. Warden's Watch
+	III then shipped without one: the owner cleared the starter dungeon, walked back to Crossroads
+	and found no way to hand it in, because the post's turn-in list compared "crossroads" with
+	"npc_crossroads". Every quest-vs-post comparison goes through here now, so the prefix cannot
+	strand a chain a fourth time."""
+	if quest_post_id == "" or here_id == "":
+		return false
+	return quest_post_id.trim_prefix("npc_") == here_id.trim_prefix("npc_")
+
+
 func handle_quest_turn_in(peer_id: int, message: Dictionary):
 	"""Handle quest turn-in"""
 	if not characters.has(peer_id):
@@ -20177,7 +20193,11 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 	#
 	# Narrow on purpose: only his chain, and only while he is actually with you. The moment the
 	# escort ends the ordinary rule applies again.
-	var _warden_here: bool = String(quest.get("chain_id", "")) == "wardens_watch" 		and _guide_escorts_overworld(peer_id, character)
+	var _warden_here: bool = String(quest.get("chain_id", "")) == "wardens_watch" 		and (_guide_escorts_overworld(peer_id, character)
+			# ...and in the starter dungeon, where the overworld escort deliberately reports
+			# false because the dungeon has its own guided path. He is still with them, and step
+			# three completes IN there - see _warden_settle_steps.
+			or (character.in_dungeon and character.met_warden and _wardens_watch_stage(character) == 3))
 	if at_trading_post.has(peer_id) or _warden_here:
 		var tp = at_trading_post.get(peer_id, {})
 		var can_turn_in = _warden_here
@@ -20185,7 +20205,7 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		# Check if quest can be turned in at current location
 		if can_turn_in:
 			pass                       # the Warden settled it in the field
-		elif quest.trading_post == String(tp.get("id", "")):
+		elif _same_post(String(quest.trading_post), String(tp.get("id", ""))):
 			# Normal case: at the origin trading post
 			can_turn_in = true
 		elif quest_id.begins_with("progression_to_"):
@@ -20581,6 +20601,24 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 			"message": update.message
 		})
 
+	_warden_settle_steps(peer_id, character, updates)
+
+	if not updates.is_empty():
+		save_character(peer_id)
+
+func _warden_settle_steps(peer_id: int, character, updates: Array) -> void:
+	"""Hand in any Warden's Watch step these quest updates just completed, wherever the player is.
+
+	⛑ 2026-09-15 - ONE ROUTINE FOR EVERY KIND OF PROGRESS. This loop lived inside
+	check_kill_quest_progress, so it only ever saw KILL updates. Steps one and two are kill
+	quests; step three is a DUNGEON_CLEAR, whose update comes from the dungeon-completion path and
+	never passed through here. The owner cleared the starter dungeon and was left holding a
+	finished step with "Return to turn in", no Warden settling it, and (the "npc_" prefix, see
+	_same_post) no way to hand it in at the post either. The loop below already said it was
+	written as a loop "so step three cannot be forgotten the same way" - the loop was right and
+	its CALLER was the thing that forgot."""
+	if character == null:
+		return
 	# The Warden reacts to the step he set. Owner 2026-09-14, after winning the first fight:
 	# *"After the victory screen I'm once again unsure what to do."*
 	#
@@ -20627,8 +20665,6 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 			# ONE panel, and the walk starts when they close it. See `_escort_ask_to_lead`.
 			_escort_ask_to_lead(peer_id, character)
 
-	if not updates.is_empty():
-		save_character(peer_id)
 
 # ===== BOUNTY & RESCUE SYSTEM =====
 
@@ -35750,6 +35786,7 @@ func _complete_dungeon(peer_id: int):
 			"completed": update.completed,
 			"message": update.message
 		})
+	_warden_settle_steps(peer_id, character, quest_updates)
 
 	# Clear any pending flock encounters
 	if pending_flocks.has(peer_id):
