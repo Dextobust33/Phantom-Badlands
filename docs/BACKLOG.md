@@ -738,6 +738,15 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      gear attack over the level's expected stat (class-neutral; a Fighter's cards get ~half its basic
      gain at L60/L300). **⚠ master now carries a player-power rise with NO refit - do not release
      before preflight -> speciescal -> refcal -> rolecal** (after the per-card affixes land, once).
+   - **CARD-SPECIFIC GEAR - owner decisions 2026-09-15:** magnitudes **15/30/45%** (duration +1/+2/+3
+     rounds); old archetype rank items convert to **one random card** of that archetype; they drop
+     where rank affixes drop today (epic+ chase pool); **one tome per eligible card+kind** replaces the
+     14 fixed tomes (old tomes keep working, Efficient Bolt / Swift Analyze stop dropping).
+     Eligibility is MEASURED (tools/probe/card_bonus_fit.gd, identical across every class holding a
+     card): POWER+COST - ambush cleave blast distract exploit forcefield frost_nova gambit meteor
+     perfect_heist power_strike sabotage shield_bash vanish war_cry; POWER+COST+DURATION - berserk
+     fortify haste iron_skin rally shadowstep; POWER only - analyze devastate magic_bolt; COST only -
+     banish paralyze pickpocket.
    - OPEN, small: card_face_truth fails ONE cell, Sage L20 Frost Nova at 4 engine (quote 250, real
      211, 0.85) - present before the gear change too (stash-tested), so an existing over-quote.
    - OPEN, investigate: the "defense" buff is read in two UNITS - as % damage reduction in the
