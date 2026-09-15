@@ -578,9 +578,9 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "tome_intelligence", "rarity": "legendary"},
 		{"weight": 2, "item_type": "tome_wisdom", "rarity": "legendary"},
 		{"weight": 2, "item_type": "tome_wits", "rarity": "legendary"},
-		{"weight": 2, "item_type": "tome_searing_bolt", "rarity": "legendary"},
-		{"weight": 2, "item_type": "tome_brutal_strike", "rarity": "legendary"},
-		{"weight": 2, "item_type": "tome_swift_analyze", "rarity": "legendary"},
+		{"weight": 2, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 2, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 2, "item_type": "card_tome", "rarity": "legendary"},
 		{"weight": 2, "item_type": "mysterious_box", "rarity": "legendary"},
 		{"weight": 4, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 4, "item_type": "home_stone_supplies", "rarity": "uncommon"},
@@ -597,12 +597,12 @@ const CONSUMABLE_DROPS = {
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
 		{"weight": 1, "item_type": "scroll_resurrect_lesser", "rarity": "common"},
 		{"weight": 2, "item_type": "scroll_time_stop", "rarity": "common"},
-		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_greater_cleave", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
 		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
@@ -618,16 +618,16 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "scroll_resurrect_lesser", "rarity": "common"},
 		{"weight": 1, "item_type": "scroll_resurrect_greater", "rarity": "common"},
 		{"weight": 3, "item_type": "scroll_time_stop", "rarity": "common"},
-		{"weight": 3, "item_type": "tome_searing_bolt", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_greater_forcefield", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_brutal_strike", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_efficient_strike", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_swift_analyze", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
 		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
@@ -777,9 +777,9 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "tome_wisdom", "rarity": "legendary"},
 		{"weight": 2, "item_type": "tome_wits", "rarity": "legendary"},
 		# Skill enhancer tomes
-		{"weight": 2, "item_type": "tome_searing_bolt", "rarity": "legendary"},
-		{"weight": 2, "item_type": "tome_brutal_strike", "rarity": "legendary"},
-		{"weight": 2, "item_type": "tome_swift_analyze", "rarity": "legendary"},
+		{"weight": 2, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 2, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 2, "item_type": "card_tome", "rarity": "legendary"},
 		# Mystery items
 		{"weight": 2, "item_type": "mysterious_box", "rarity": "legendary"},
 		# Home Stones
@@ -801,12 +801,12 @@ const DROP_TABLES = {
 		{"weight": 1, "item_type": "scroll_resurrect_lesser", "rarity": "common"},
 		{"weight": 2, "item_type": "scroll_time_stop", "rarity": "common"},
 		# Skill enhancer tomes
-		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_greater_cleave", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "legendary"},
-		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "legendary"},
 		# Home Stones
 		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
@@ -828,16 +828,16 @@ const DROP_TABLES = {
 		{"weight": 1, "item_type": "scroll_resurrect_greater", "rarity": "common"},
 		{"weight": 3, "item_type": "scroll_time_stop", "rarity": "common"},
 		# All skill enhancer tomes with higher drop rates
-		{"weight": 3, "item_type": "tome_searing_bolt", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_efficient_bolt", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_greater_forcefield", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_meteor_mastery", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_brutal_strike", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_efficient_strike", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_devastating_berserk", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_swift_analyze", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_greater_ambush", "rarity": "artifact"},
-		{"weight": 3, "item_type": "tome_perfect_exploit", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
+		{"weight": 3, "item_type": "card_tome", "rarity": "artifact"},
 		# Home Stones
 		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
@@ -4484,6 +4484,11 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 	if item_type == "ability_tome":
 		return _generate_ability_tome(monster_level)
 
+	# Card tomes: one random card and one of its measured kinds (card_gear.gd). They took the drop slots
+	# of the fourteen fixed skill tomes, several of which named something the card cannot use.
+	if item_type == "card_tome":
+		return CardGearScript.random_tome()
+
 	# Special handling for generic "artifact" type - convert to random equipment slot
 	if item_type == "artifact":
 		var artifact_slots = ["weapon_artifact", "armor_artifact", "helm_artifact", "shield_artifact", "boots_artifact", "ring_artifact", "amulet_artifact"]
@@ -4549,6 +4554,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 	return item
 
 const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
+const CardGearScript = preload("res://shared/card_gear.gd")
 
 func generate_unique(unique_id: String, monster_level: int) -> Dictionary:
 	"""Uniques (ARPG pillar 4) — build a named unique at the drop level.
@@ -5023,26 +5029,22 @@ const CHASE_SUFFIX_POOL = [
 	{"name": "of Refresh", "stat": "mana_on_hit", "base": 1, "per_level": 0.10},
 	{"name": "of Replenishment", "stat": "stamina_on_hit", "base": 1, "per_level": 0.10},
 	{"name": "of Energizing", "stat": "energy_on_hit", "base": 1, "per_level": 0.10},
-	# v0.9.606 Phase A — +X to specific damage abilities (D2-style +skills).
-	# `base 1, per_level 0.02` produces +1 at item level 1, +2 around level 50,
-	# +3 around level 100. Stacks across slots additively, no per-item cap.
-	# Specific ability rolls — picked by the player who recognizes the name.
-	{"name": "of Cleaving", "stat": "ability_rank_cleave", "base": 1, "per_level": 0.02},
-	{"name": "of Striking", "stat": "ability_rank_power_strike", "base": 1, "per_level": 0.02},
-	{"name": "of Bashing", "stat": "ability_rank_shield_bash", "base": 1, "per_level": 0.02},
-	{"name": "of Crushing", "stat": "ability_rank_devastate", "base": 1, "per_level": 0.02},
-	{"name": "of Bolting", "stat": "ability_rank_magic_bolt", "base": 1, "per_level": 0.02},
-	{"name": "of the Blast", "stat": "ability_rank_blast", "base": 1, "per_level": 0.02},
-	{"name": "of the Comet", "stat": "ability_rank_meteor", "base": 1, "per_level": 0.02},
-	{"name": "of Stalking", "stat": "ability_rank_ambush", "base": 1, "per_level": 0.02},
-	{"name": "of Plunder", "stat": "ability_rank_exploit", "base": 1, "per_level": 0.02},
-	# Archetype-wide rolls — affects every damage ability in that archetype.
-	# Slightly weaker per-stack (base 1, per_level 0.015 ≈ +1 to +2 range)
-	# since it covers multiple abilities. A Warrior with "of the Warrior +1"
-	# gets +1 to Power Strike, Cleave, Devastate, AND Shield Bash all at once.
-	{"name": "of the Warrior", "stat": "ability_rank_warrior_dmg", "base": 1, "per_level": 0.015},
-	{"name": "of the Mage", "stat": "ability_rank_mage_dmg", "base": 1, "per_level": 0.015},
-	{"name": "of the Trickster", "stat": "ability_rank_trickster_dmg", "base": 1, "per_level": 0.015},
+	# CARD-SPECIFIC GEAR (card_gear.gd), 2026-09-15 - replaces the twelve "+N to <card>" and
+	# "+N to <archetype>" rank rolls that stood here, in the same twelve slots so a chase roll lands on
+	# card gear exactly as often as it landed on ranks. The card and kind are picked when rolled, from
+	# the measured eligibility table.
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
 ]
 # % chance that an epic+ bonus-stat roll picks from CHASE_SUFFIX_POOL instead
 # of the regular combined pool. ~25% on epic, scaling to ~50% on artifact so
@@ -5375,6 +5377,13 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 			if picked == null:
 				# All stats used, just pick any
 				picked = pool_for_roll[randi() % pool_for_roll.size()]
+			if picked.stat == "card_bonus":
+				# Card-specific gear: one card, one of its measured kinds, tiered by item level.
+				var cb: Array = CardGearScript.roll(item_level)
+				affixes[cb[0]] = int(affixes.get(cb[0], 0)) + int(cb[1])
+				total_roll_quality += 50
+				affix_count += 1
+				continue
 			result = _calculate_affix_value(picked, item_level, roll_range)
 			if affixes.has(picked.stat):
 				affixes[picked.stat] += result.value
@@ -5990,6 +5999,11 @@ static func consumable_effect(item: Dictionary) -> Dictionary:
 						return {"monster_select": true}
 					"target_farm":
 						return {"target_farm": true, "encounters": maxi(1, dur)}
+	if String(item.get("type", "")) == "card_tome":
+		var tome_kind := String(item.get("card_kind", ""))
+		return {"skill_enhance": String(item.get("card", "")),
+			"effect": {"power": "damage_bonus", "cost": "cost_reduction", "duration": "duration"}.get(tome_kind, "damage_bonus"),
+			"value": int(item.get("card_value", 0)), "card_kind": tome_kind}
 	for key in [String(item.get("type", "")), String(item.get("item_type", ""))]:
 		var norm := _normalize_consumable_type(key)
 		if POTION_EFFECTS.has(norm):

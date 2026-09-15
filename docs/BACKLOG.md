@@ -747,6 +747,16 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      perfect_heist power_strike sabotage shield_bash vanish war_cry; POWER+COST+DURATION - berserk
      fortify haste iron_skin rally shadowstep; POWER only - analyze devastate magic_bolt; COST only -
      banish paralyze pickpocket.
+   - ✅ DONE (player power - UNCALIBRATED): card-specific gear built. shared/card_gear.gd is the one
+     definition (measured KINDS table, 15/30/45 tiers, legacy conversion, text, tomes). Gear power /
+     cost / duration add into the funnels tomes use; the twelve rank chase entries became card rolls in
+     the same slots; every skill-tome drop became a card tome (38 entries, same weights); old rank items
+     read as +15% power per rank, archetype items as one card picked from the item id (stable across a
+     JSON round trip); gear cost reduction caps at 75%; tomes and gear now apply to every copy of a card
+     (a second copy used to lose its tome bonus). Client item text, compact tokens and comparisons read
+     card_gear. Measured in equipment_audit.gd; items_in_combat.gd uses a card tome; card_bonus_fit.gd
+     FAILS if the table drifts from what cards measurably do (full run ~10 min, not yet run with the
+     guard). Still to do: regenerate docs/design/equipment_reference.md (gearsources).
    - OPEN, small: card_face_truth fails ONE cell, Sage L20 Frost Nova at 4 engine (quote 250, real
      211, 0.85) - present before the gear change too (stash-tested), so an existing over-quote.
    - OPEN, investigate: the "defense" buff is read in two UNITS - as % damage reduction in the

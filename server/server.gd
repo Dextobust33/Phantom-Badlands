@@ -11964,6 +11964,16 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		var enhance_effect = effect.get("effect", "damage_bonus")
 		var value = effect.get("value", 10)
 		var new_total = character.enhance_skill(ability_name, enhance_effect, value)
+		if effect.has("card_kind"):
+			# A card tome (card_gear.gd) - say what it does in the words the item text uses.
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF00FF]You study the %s.[/color]\n[color=#00FF00][b]PERMANENT:[/b] %s.[/color]" % [item_name,
+					preload("res://shared/card_gear.gd").describe(String(ability_name), String(effect.card_kind), float(value), combat_mgr._ability_display_name(character, String(ability_name)))]
+			})
+			send_character_update(peer_id)
+			save_character(peer_id)
+			return
 		# Format effect for display
 		var effect_display = ""
 		match enhance_effect:

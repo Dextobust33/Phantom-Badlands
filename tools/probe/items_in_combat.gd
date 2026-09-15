@@ -259,7 +259,7 @@ func _init() -> void:
 	types += ["escape_scroll", "dungeon_compass", "apex_sigil", "ability_tome", "treasure_chest",
 		"enhancement_scroll",
 		"potion_revive_companion|ko", "charm_taunt|pet", "health_potion|ko|tgt", "health_potion|pet|tgt",
-		"enhancement_scroll|gear", "enhancement_scroll|capped", "health_potion|qty3", "escape_scroll|dgn|qty3",
+		"card_tome", "enhancement_scroll|gear", "enhancement_scroll|capped", "health_potion|qty3", "escape_scroll|dgn|qty3",
 		"dungeon_compass|qty3", "ability_tome|qty3", "apex_sigil|qty3", "tome_strength|qty3", "floor_skip_charm|dgn", "escape_scroll|dgn", "home_stone_supplies|dgn", "scroll_time_stop|dgn"]
 
 	for rid in sv.CraftingDatabaseScript.RECIPES:

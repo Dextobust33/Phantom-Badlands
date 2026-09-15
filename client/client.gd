@@ -17674,7 +17674,7 @@ func format_item_tooltip_bbcode(item: Dictionary) -> String:
 	# on-kill, ability_rank, etc.). These don't slot into the regular stat
 	# bonus list because they have their own combat hooks. Show each as a
 	# separate gold-tinted line so the chase nature reads visually.
-	var chase_lines: Array = _format_chase_affix_lines(item.get("affixes", {}))
+	var chase_lines: Array = _format_chase_affix_lines(item.get("affixes", {}), item)
 	if not chase_lines.is_empty():
 		lines.append("")
 		lines.append("[color=#FFD700]Special:[/color]")
@@ -17772,7 +17772,7 @@ func _format_unique_effect_lines(ufx: Dictionary) -> Array:
 					out.append("[color=#FFD700]%s[/color]" % (_UNIQUE_FX_TEXT[key] % int(ufx[key])))
 	return out
 
-func _format_chase_affix_lines(affixes: Dictionary) -> Array:
+func _format_chase_affix_lines(affixes: Dictionary, item: Dictionary = {}) -> Array:
 	"""v0.9.606 — turn chase-tier affixes into tooltip-ready BBCode lines.
 	Covers both the v0.9.599 chase stat affixes (damage_mult, crit_chance_bonus,
 	etc.) and the v0.9.606 +X to ability affixes. Each entry: 'key in affixes'
@@ -17801,32 +17801,10 @@ func _format_chase_affix_lines(affixes: Dictionary) -> Array:
 		out.append("[color=#FFCC00]+%d Stamina on Hit[/color]" % int(affixes["stamina_on_hit"]))
 	if affixes.has("energy_on_hit"):
 		out.append("[color=#66FF66]+%d Energy on Hit[/color]" % int(affixes["energy_on_hit"]))
-	# v0.9.606 Phase A — +X to specific damage abilities
-	const _ABILITY_DISPLAY := {
-		"cleave": "Cleave",
-		"power_strike": "Power Strike",
-		"shield_bash": "Shield Bash",
-		"devastate": "Devastate",
-		"magic_bolt": "Magic Bolt",
-		"blast": "Blast",
-		"meteor": "Meteor",
-		"ambush": "Ambush",
-		"exploit": "Exploit",
-	}
-	for ability_key in _ABILITY_DISPLAY.keys():
-		var affix_key: String = "ability_rank_%s" % ability_key
-		if affixes.has(affix_key):
-			# 2026-09-06 — resolve through _ability_display_name, which forks by class. A
-			# Barbarian's gear grants "+2 to Rampage", not "+2 to Devastate"; the table above is
-			# only the fallback for ids with no per-class name.
-			out.append("[color=#FFD700]+%d to %s[/color]" % [int(affixes[affix_key]), _ability_display_name(ability_key)])
-	# Archetype-wide rolls
-	if affixes.has("ability_rank_warrior_dmg"):
-		out.append("[color=#FFD700]+%d to Warrior damage abilities[/color]" % int(affixes["ability_rank_warrior_dmg"]))
-	if affixes.has("ability_rank_mage_dmg"):
-		out.append("[color=#FFD700]+%d to Mage damage abilities[/color]" % int(affixes["ability_rank_mage_dmg"]))
-	if affixes.has("ability_rank_trickster_dmg"):
-		out.append("[color=#FFD700]+%d to Trickster damage abilities[/color]" % int(affixes["ability_rank_trickster_dmg"]))
+	# Card-specific gear (shared/card_gear.gd) - the retired "+N to <card>" rank affixes included, shown
+	# as the bonus they now give. Named by THIS player's class ("Rampage", not "Devastate").
+	for b in preload("res://shared/card_gear.gd").item_bonuses(item):
+		out.append("[color=#FFD700]%s[/color]" % preload("res://shared/card_gear.gd").describe(String(b.card), String(b.kind), float(b.value), _ability_display_name(String(b.card))))
 	return out
 
 func _get_player_resource_info() -> Dictionary:
@@ -17871,7 +17849,7 @@ func get_compact_stats_bbcode(item: Dictionary) -> String:
 	var bonuses = _compute_item_bonuses(item)
 	var rb = item.get("rarity_bonuses", {})
 	var base_text: String = _format_stat_totals_bbcode(bonuses, rb)
-	var chase_tokens: Array = _format_chase_affix_tokens(item.get("affixes", {}))
+	var chase_tokens: Array = _format_chase_affix_tokens(item.get("affixes", {}), item)
 	if chase_tokens.is_empty():
 		return base_text
 	if base_text == "":
@@ -17879,7 +17857,7 @@ func get_compact_stats_bbcode(item: Dictionary) -> String:
 	return base_text + " " + " ".join(chase_tokens)
 
 
-func _format_chase_affix_tokens(affixes: Dictionary) -> Array:
+func _format_chase_affix_tokens(affixes: Dictionary, item: Dictionary = {}) -> Array:
 	"""v0.9.608 — short BBCode tokens for chase affixes, matching the
 	'+N STAT' shape used by _format_stat_totals_bbcode. Designed to sit
 	alongside ATK/DEF/HP tokens on the inventory card. Abbreviated names
@@ -17930,32 +17908,21 @@ func _format_chase_affix_tokens(affixes: Dictionary) -> Array:
 		"exploit": {"Ranger": "WkPnt"},
 		"perfect_heist": {"Ninja": "Assn", "Grifter": "DblX", "Ranger": "KShot"},
 	}
-	for ability_key in _ABILITY_SHORT.keys():
-		var affix_key: String = "ability_rank_%s" % ability_key
-		if affixes.has(affix_key):
-			# 2026-09-07 — the hand-tuned per-class table covers 9 of the 18 cards that fork by
-			# class, so gear granting +ranks to the other 9 (iron_skin, war_cry, fortify, rally,
-			# frost_nova, paralyze, forcefield, analyze, sabotage) showed the GENERIC short form:
-			# a Ranger read "+2 Anlz" for a card its hand calls Track. Rather than grow a second
-			# table that has to be remembered on every rename — the thing that has now gone wrong
-			# on four surfaces — anything missing is DERIVED from the resolved display name, so it
-			# cannot fall behind. The hand-tuned entries are kept because they read better.
-			var _short := String(_ABILITY_SHORT[ability_key])
-			var _mine := ""
-			if _ABILITY_SHORT_BY_CLASS.has(ability_key):
-				_mine = String((_ABILITY_SHORT_BY_CLASS[ability_key] as Dictionary).get(String(character_data.get("class", "")), ""))
-			if _mine == "":
-				_mine = _derive_short_name(ability_key)
-			if _mine != "":
-				_short = _mine
-			tokens.append("[color=#FFD700]+%d %s[/color]" % [int(affixes[affix_key]), _short])
-	# Archetype rolls
-	if affixes.has("ability_rank_warrior_dmg"):
-		tokens.append("[color=#FFD700]+%d War[/color]" % int(affixes["ability_rank_warrior_dmg"]))
-	if affixes.has("ability_rank_mage_dmg"):
-		tokens.append("[color=#FFD700]+%d Mag[/color]" % int(affixes["ability_rank_mage_dmg"]))
-	if affixes.has("ability_rank_trickster_dmg"):
-		tokens.append("[color=#FFD700]+%d Trk[/color]" % int(affixes["ability_rank_trickster_dmg"]))
+	# Card-specific gear, compact: "+30% Cleave", "-15% Blast $", "+2r Rally".
+	for b2 in preload("res://shared/card_gear.gd").item_bonuses(item):
+		var _cid := String(b2.card)
+		var _short := String(_ABILITY_SHORT.get(_cid, ""))
+		var _mine := ""
+		if _ABILITY_SHORT_BY_CLASS.has(_cid):
+			_mine = String((_ABILITY_SHORT_BY_CLASS[_cid] as Dictionary).get(String(character_data.get("class", "")), ""))
+		if _mine == "":
+			_mine = _derive_short_name(_cid)
+		if _mine != "":
+			_short = _mine
+		match String(b2.kind):
+			"power": tokens.append("[color=#FFD700]+%d%% %s[/color]" % [int(round(float(b2.value))), _short])
+			"cost": tokens.append("[color=#FFD700]-%d%% %s cost[/color]" % [int(round(float(b2.value))), _short])
+			"duration": tokens.append("[color=#FFD700]+%dr %s[/color]" % [int(round(float(b2.value))), _short])
 	return tokens
 
 func get_equipped_totals_bbcode(equipped: Dictionary) -> String:
@@ -18361,28 +18328,22 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		if ch_diff != 0:
 			var c = ch_color if ch_diff > 0 else "#808080"
 			all_diffs[ch_label] = "[color=%s]%+d%s[/color]" % [c, ch_diff, ch_label]
-	# v0.9.606 ability rank diffs
-	var ability_rank_compare: Array = [
-		["ability_rank_cleave", "Clv"],
-		["ability_rank_power_strike", "PStrk"],
-		["ability_rank_shield_bash", "SBash"],
-		["ability_rank_devastate", "Dvst"],
-		["ability_rank_magic_bolt", "MBolt"],
-		["ability_rank_blast", "Blst"],
-		["ability_rank_meteor", "Mtr"],
-		["ability_rank_ambush", "Amb"],
-		["ability_rank_exploit", "Expl"],
-		["ability_rank_warrior_dmg", "War"],
-		["ability_rank_mage_dmg", "Mag"],
-		["ability_rank_trickster_dmg", "Trk"],
-	]
-	for ab_info in ability_rank_compare:
-		var ab_key: String = ab_info[0]
-		var ab_label: String = ab_info[1]
-		var ab_diff: int = int(new_affixes.get(ab_key, 0)) - int(old_affixes.get(ab_key, 0))
-		if ab_diff != 0:
-			var c = "#FFD700" if ab_diff > 0 else "#808080"
-			all_diffs[ab_label] = "[color=%s]%+d %s[/color]" % [c, ab_diff, ab_label]
+	# Card-specific gear diffs (card_gear.gd), retired rank affixes included as what they now give.
+	var _cg = preload("res://shared/card_gear.gd")
+	var _cg_sum := {}
+	for b3 in _cg.item_bonuses(new_item):
+		var k3 := "%s|%s" % [String(b3.card), String(b3.kind)]
+		_cg_sum[k3] = float(_cg_sum.get(k3, 0.0)) + float(b3.value)
+	if old_item != null and old_item is Dictionary:
+		for b4 in _cg.item_bonuses(old_item):
+			var k4 := "%s|%s" % [String(b4.card), String(b4.kind)]
+			_cg_sum[k4] = float(_cg_sum.get(k4, 0.0)) - float(b4.value)
+	for k5 in _cg_sum:
+		var d5: float = float(_cg_sum[k5])
+		if absf(d5) >= 0.5:
+			var parts5: PackedStringArray = String(k5).split("|")
+			all_diffs["card:" + String(k5)] = "[color=%s]%s%s[/color]" % ["#FFD700" if d5 > 0 else "#808080", "" if d5 > 0 else "(less) ",
+				_cg.describe(parts5[0], parts5[1], absf(d5), _ability_display_name(parts5[0]))]
 
 	# Assemble in priority order: pinned stats first, then remaining
 	var diff_parts: Array = []

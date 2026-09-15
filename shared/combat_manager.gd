@@ -5137,12 +5137,12 @@ func _process_ability_command_inner(peer_id: int, ability_name: String, arg: Str
 		# player in real-time that their +Cleave gear is actually working.
 		# Format mirrors imprint riders: small gold tag, fires once per cast.
 		if imprint_damage_dealt > 0:
-			var gear_rank_bonus: int = combat.character.get_ability_rank_bonus(ability_name)
-			if gear_rank_bonus > 0:
+			var gear_power: float = combat.character.get_gear_card_bonus(ability_name, "power")
+			if gear_power > 0.0:
 				var ability_label_disp: String = _ability_display_name(combat.character, ability_name)
 				if not result.has("messages"):
 					result["messages"] = []
-				result.messages.append("[color=#FFD700]✦ Gear: +%d to %s (effective rank lifted)[/color]" % [gear_rank_bonus, ability_label_disp])
+				result.messages.append("[color=#FFD700]✦ Gear: +%d%% %s damage[/color]" % [int(round(gear_power)), ability_label_disp])
 		# v0.9.599 — chase-affix on-hit procs ride the same damage value so
 		# ability hits also trigger resource regen. result.messages is the
 		# shared sink; reuse it.

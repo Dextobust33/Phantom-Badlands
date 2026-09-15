@@ -396,6 +396,7 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 # MILESTONES that grant a branch pick — "power" / "rider" / "efficiency" — stored
 # per ability. Replaces the old copy/effect/imprint rank-up menu.
 const CardUpgradesScript = preload("res://shared/card_upgrades.gd")
+const CardGearScript = preload("res://shared/card_gear.gd")
 @export var ability_milestone_picks: Dictionary = {}  # ability -> Array["power"/"rider"/"efficiency"]
 @export var pending_rank_choices: Array = []  # [{ability, new_rank, queued_at}]
 @export var deck_collection_initialized: bool = false  # one-shot init guard
@@ -3670,8 +3671,9 @@ func get_ability_damage_mult(ability_name: String) -> float:
 	to get additional power past the normal ability cap from just upgrading
 	the rank of the ability.'"""
 	var base_rank: int = get_ability_effect_rank(ability_name)
-	var gear_bonus: int = get_ability_rank_bonus(ability_name)
-	var effective_rank: int = max(0, base_rank + gear_bonus)
+	# Gear no longer adds ranks - card-specific gear adds POWER through get_skill_damage_bonus
+	# (card_gear.gd). get_ability_rank_bonus is kept for its callers and returns 0.
+	var effective_rank: int = max(0, base_rank)
 	# v0.9.676 — Tier system: continuous tier + 'power' milestone picks scale
 	# damage on top of the (now-frozen) legacy effect-rank baseline + gear chase.
 	return _compute_rank_multiplier(effective_rank) * get_tier_effect_mult(ability_name)
@@ -3699,38 +3701,12 @@ const _WARRIOR_DAMAGE_ABILITIES = ["power_strike", "shield_bash", "cleave", "dev
 const _MAGE_DAMAGE_ABILITIES = ["magic_bolt", "blast", "meteor", "banish"]
 const _TRICKSTER_DAMAGE_ABILITIES = ["ambush", "exploit"]
 
-func get_ability_rank_bonus(ability_name: String) -> int:
-	"""v0.9.606 — sum of gear-granted effective rank bonuses for this ability.
-	Reads two affix categories per equipped item, both wear-affected (they
-	scale damage so they should respect item condition):
-	  ability_rank_<ability_name> — specific ability roll (e.g., +2 to Cleave)
-	  ability_rank_<archetype>_dmg — archetype-wide roll (+1 to all warrior
-		  damage abilities), where archetype maps from the ability's damage
-		  list (_WARRIOR_DAMAGE_ABILITIES / _MAGE_DAMAGE_ABILITIES /
-		  _TRICKSTER_DAMAGE_ABILITIES). Non-damage abilities return 0 —
-		  Phase B will extend the system to cover them."""
-	ability_name = card_base(ability_name)   # gear affixes name the CARD, not a copy of it
-	var specific_key: String = "ability_rank_%s" % ability_name
-	var archetype_key: String = ""
-	if ability_name in _WARRIOR_DAMAGE_ABILITIES:
-		archetype_key = "ability_rank_warrior_dmg"
-	elif ability_name in _MAGE_DAMAGE_ABILITIES:
-		archetype_key = "ability_rank_mage_dmg"
-	elif ability_name in _TRICKSTER_DAMAGE_ABILITIES:
-		archetype_key = "ability_rank_trickster_dmg"
-	var total: int = 0
-	for slot in equipped.keys():
-		var item = equipped[slot]
-		if item == null or not item is Dictionary:
-			continue
-		var affixes: Dictionary = item.get("affixes", {})
-		var wear: int = int(item.get("wear", 0))
-		var wear_penalty: float = 1.0 - (float(wear) / 100.0)
-		if affixes.has(specific_key):
-			total += int(float(affixes[specific_key]) * wear_penalty)
-		if archetype_key != "" and affixes.has(archetype_key):
-			total += int(float(affixes[archetype_key]) * wear_penalty)
-	return total
+func get_ability_rank_bonus(_ability_name: String) -> int:
+	"""RETIRED 2026-09-15 - gear no longer grants ranks. Owner: "We should probably do away with +1 as
+	it isn't clear. There should instead be equipment that increases specific skills." The old
+	ability_rank_* affixes are read as card POWER by card_gear.item_bonuses, so no item loses its
+	bonus. Kept so old callers read 0 rather than error."""
+	return 0
 
 # === Path of the Badlands (ARPG pillar 3) ===
 
@@ -4241,8 +4217,10 @@ func get_ability_rider_level(ability_name: String) -> int:
 	return count_milestone_pick(ability_name, "rider")
 
 func get_ability_duration_bonus(ability_name: String) -> int:
-	"""Extra buff/debuff rounds from 'duration' milestone picks (+2 rounds each)."""
-	return count_milestone_pick(ability_name, "duration") * 2
+	"""Extra buff/debuff rounds: 'duration' milestone picks (+2 rounds each), plus card-specific gear
+	and card tomes (card_gear.gd)."""
+	return count_milestone_pick(ability_name, "duration") * 2 \
+		+ int(round(get_gear_card_bonus(ability_name, "duration") + get_skill_enhancement(ability_name, "duration")))
 
 func apply_milestone_pick(ability_name: String, kind: String) -> Dictionary:
 	"""Apply a milestone branch pick. kind = 'power' | 'rider' | 'efficiency'.
@@ -4862,7 +4840,7 @@ func get_all_permanent_stat_bonuses() -> Dictionary:
 
 func enhance_skill(ability_name: String, effect: String, value: float) -> float:
 	"""Add a skill enhancement. Effects stack additively. Returns new total value."""
-	var lower_ability = ability_name.to_lower()
+	var lower_ability = card_base(ability_name).to_lower()   # a tome improves the CARD, every copy
 	if not skill_enhancements.has(lower_ability):
 		skill_enhancements[lower_ability] = {}
 	if not skill_enhancements[lower_ability].has(effect):
@@ -4872,18 +4850,44 @@ func enhance_skill(ability_name: String, effect: String, value: float) -> float:
 
 func get_skill_enhancement(ability_name: String, effect: String) -> float:
 	"""Get the enhancement value for an ability's effect. Returns 0 if not enhanced."""
-	var lower_ability = ability_name.to_lower()
+	# ⛑ 2026-09-15 - by CARD. A second copy ("cleave#2") looked itself up by its copy key and
+	# silently lost every tome bonus the card had.
+	var lower_ability = card_base(ability_name).to_lower()
 	if not skill_enhancements.has(lower_ability):
 		return 0.0
 	return skill_enhancements[lower_ability].get(effect, 0.0)
 
 func get_skill_cost_reduction(ability_name: String) -> float:
-	"""Get the cost reduction percentage for an ability (0-100)."""
-	return get_skill_enhancement(ability_name, "cost_reduction")
+	"""A card's cost reduction in percent: tome enhancements plus card-specific gear. Gear can only
+	take the total to CardGear.COST_REDUCTION_CAP - stacked Supreme items would otherwise pass 100%,
+	which the cost funnel reads as free. A tome that was already free on its own stays free."""
+	var tome: float = get_skill_enhancement(ability_name, "cost_reduction")
+	if tome >= 100.0:
+		return tome
+	var gear: float = get_gear_card_bonus(ability_name, "cost")
+	if gear <= 0.0:
+		return tome
+	return minf(tome + gear, maxf(tome, CardGearScript.COST_REDUCTION_CAP))
 
 func get_skill_damage_bonus(ability_name: String) -> float:
-	"""Get the damage bonus percentage for an ability."""
-	return get_skill_enhancement(ability_name, "damage_bonus")
+	"""A card's POWER bonus in percent: tome enhancements plus card-specific gear (card_gear.gd).
+	Read by the damage funnel on damaging cards and the buff funnel on shield/buff/debuff cards."""
+	return get_skill_enhancement(ability_name, "damage_bonus") + get_gear_card_bonus(ability_name, "power")
+
+
+func get_gear_card_bonus(ability_name: String, kind: String) -> float:
+	"""The sum of one kind of card-specific bonus across equipped gear, wear applied - retired rank
+	affixes included, as the power they convert to (card_gear.item_bonuses)."""
+	var card := card_base(ability_name)
+	var total := 0.0
+	for slot in equipped.keys():
+		var item = equipped[slot]
+		if item == null or not item is Dictionary:
+			continue
+		for b in CardGearScript.item_bonuses(item):
+			if String(b.card) == card and String(b.kind) == kind:
+				total += float(b.value)
+	return total
 
 func get_all_skill_enhancements() -> Dictionary:
 	"""Get all skill enhancements."""

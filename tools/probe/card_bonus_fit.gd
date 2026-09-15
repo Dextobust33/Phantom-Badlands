@@ -120,6 +120,7 @@ func _init() -> void:
 		"Wizard": "mage", "Sorcerer": "mage", "Sage": "mage",
 		"Grifter": "trickster", "Ranger": "trickster", "Ninja": "trickster"}
 	var only: Array = OS.get_cmdline_user_args()   # e.g. -- Paladin Sage
+	var measured := {}   # card -> {kind: true}, across every class that holds it
 	for klass in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
 		if not only.is_empty() and not klass in only:
 			continue
@@ -139,10 +140,29 @@ func _init() -> void:
 			var cost := _moved(base, _arm(klass, card, "cost"))
 			var dur := _moved(base, _arm(klass, card, "duration"))
 			var in_deck: bool = card in (CharacterScript.CURATED_STARTER_DECKS_BY_CLASS.get(klass, []) as Array)
+			var got: Dictionary = measured.get(card, {})
+			if not power.is_empty(): got["power"] = true
+			if not cost.is_empty(): got["cost"] = true
+			if not dur.is_empty(): got["duration"] = true
+			measured[card] = got
 			print("[FIT] %-9s %-14s %-18s %s dmg=%s paid=%s | POWER: %s | COST: %s | DURATION: %s" % [klass, card, disp, "deck " if in_deck else "extra",
 				_fmt(float(base.get("monster_hp_lost", 0.0))), _fmt(float(base.get("paid", -1.0))),
 				"none" if power.is_empty() else ", ".join(power),
 				"none" if cost.is_empty() else ", ".join(cost),
 				"none" if dur.is_empty() else ", ".join(dur)])
+	# THE GUARD: card_gear.gd's KINDS table must be exactly what was measured - a card must never be
+	# offered a bonus that does nothing for it, nor miss one that works. (Class-filtered runs skip it.)
+	var fails := 0
+	if only.is_empty():
+		var table: Dictionary = load("res://shared/card_gear.gd").KINDS
+		for card in measured:
+			var want: Array = (measured[card] as Dictionary).keys()
+			want.sort()
+			var have: Array = (table.get(card, []) as Array).duplicate()
+			have.sort()
+			if want != have:
+				fails += 1
+				print("[FIT] TABLE DRIFT  %s: measured %s, card_gear.KINDS says %s" % [card, str(want), str(have)])
+		print("RESULT: %s (%d cards differ from card_gear.KINDS)" % ["PASS" if fails == 0 else "FAIL", fails])
 	print("\n[FIT] done")
-	quit(0)
+	quit(0 if fails == 0 else 1)

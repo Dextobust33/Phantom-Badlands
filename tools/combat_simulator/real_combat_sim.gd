@@ -4723,11 +4723,13 @@ static func _focus_stats_for(klass: String) -> Array:
 	"What about the monsters that drop chase items for mages?" - drops are not class-targeted
 	(nothing in drop_tables looks at class), but the chase POOL is rarity-gated, so a focused
 	player reaches them by farming epic+ rather than by farming a particular monster."""
+	# 2026-09-15 - rank affixes retired for card-specific gear (card_gear.gd). A focused player chases
+	# power on the card their class leans on most.
 	if klass in ["Wizard", "Sorcerer", "Sage"]:
-		return ["mana_bonus", "mana_on_hit", "ability_rank_mage_dmg", "ability_rank_magic_bolt"]
+		return ["mana_bonus", "mana_on_hit", "card_power_magic_bolt", "card_power_meteor"]
 	if klass in ["Grifter", "Ranger", "Ninja"]:
-		return ["energy_bonus", "energy_on_hit", "ability_rank_trickster_dmg"]
-	return ["stamina_bonus", "stamina_on_hit", "ability_rank_warrior_dmg"]
+		return ["energy_bonus", "energy_on_hit", "card_power_ambush"]
+	return ["stamina_bonus", "stamina_on_hit", "card_power_power_strike"]
 
 static func _affix_of(item: Dictionary, stat: String) -> int:
 	var aff = item.get("affixes", {})

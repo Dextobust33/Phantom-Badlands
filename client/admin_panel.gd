@@ -295,7 +295,7 @@ func _render_page() -> void:
 			# gear. Kit button covers stacking + multi-slot in one shot;
 			# individual buttons let you bias toward a specific ability.
 			_title_label.text = "ADMIN — +ABILITIES GEAR (v0.9.606)"
-			_subtitle_label.text = "[color=#aaaaaa]Spawn gear with forced [color=#FFD700]ability_rank_*[/color] affixes to test the v0.9.606 +X to ability mechanic without grinding epic+ drops. Each +1 lifts the ability's effective mastery rank; past rank 6 the multiplier keeps growing (+10% per extra rank, uncapped).[/color]"
+			_subtitle_label.text = "[color=#aaaaaa]Spawn gear carrying the RETIRED [color=#FFD700]ability_rank_*[/color] affixes. Since 2026-09-15 gear adds card POWER instead of ranks (shared/card_gear.gd), and these old affixes are read as +15% power per rank - use them to check an old item converts.[/color]"
 			_add_button("Spawn full +abilities test kit (5 items)", "give_ability_kit", Color(1, 0.84, 0))
 			_subtitle_subline("Weapon +3 Cleave / Ring +3 Magic Bolt / Amulet +3 Ambush / Helm +2 Warrior / Boots +1 Warrior. Equip all 5 to test specific + archetype stacking (Cleave ends up at +6).")
 			_add_separator()
@@ -316,7 +316,7 @@ func _render_page() -> void:
 			_add_button("Helm: +2 to Warrior damage", "give_ability_warrior_dmg_2", Color(1, 0.84, 0))
 			_add_button("Helm: +2 to Mage damage", "give_ability_mage_dmg_2", Color(1, 0.84, 0))
 			_add_button("Helm: +2 to Trickster damage", "give_ability_trickster_dmg_2", Color(1, 0.84, 0))
-			_subtitle_subline("Archetype rolls affect every damage ability in that archetype — handy for testing the get_ability_rank_bonus archetype lookup path.")
+			_subtitle_subline("An old archetype roll now converts to ONE card of that archetype, picked from the item's id so it never changes.")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"patreon":

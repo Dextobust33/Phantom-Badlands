@@ -91,7 +91,12 @@ func _init() -> void:
 	var r: Dictionary = ch.apply_milestone_pick("cleave#2", "swift")
 	ck(bool(r.get("ok", false)) and "swift" in ch.ability_milestone_picks["cleave#2"] and not ("swift" in ch.ability_milestone_picks["cleave"]),
 		"a pick applied to 'cleave#2' lands only there")
-	ck(int(ch.get_ability_rank_bonus("cleave#2")) == int(ch.get_ability_rank_bonus("cleave")), "gear rank bonus is per CARD, whichever copy")
+	ch.equipped["ring"] = {"type": "ring_basic", "name": "Probe Ring", "rarity": "epic", "level": 60, "affixes": {"card_power_cleave": 30}}
+	ck(ch.get_gear_card_bonus("cleave#2", "power") == 30.0 and ch.get_gear_card_bonus("cleave", "power") == 30.0,
+		"card gear is per CARD, whichever copy (%s / %s)" % [ch.get_gear_card_bonus("cleave#2", "power"), ch.get_gear_card_bonus("cleave", "power")])
+	ch.enhance_skill("cleave#2", "damage_bonus", 15.0)
+	ck(ch.get_skill_enhancement("cleave", "damage_bonus") == 15.0, "and so is a tome read or written through a copy")
+	ch.equipped.erase("ring")
 
 	print("\n--- previews are per copy, keyed by the hand entry ---")
 	c["combat_hand"] = ["cleave", "cleave#2"]

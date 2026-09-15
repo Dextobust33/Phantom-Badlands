@@ -203,29 +203,52 @@ func _init() -> void:
 	await process_frame
 	cm = sim.combat_mgr
 
-	print("[AUDIT] ================= RANK AFFIXES (the owner's example) =================")
-	var w1 := _weapon({"ability_rank_warrior_dmg": 1})
-	var ch1 = _fighter(w1)
-	_row("+1 Warrior dmg: power_strike rank bonus", "WORKS" if ch1.get_ability_rank_bonus("power_strike") == 1 else "BROKEN", "bonus=%d" % ch1.get_ability_rank_bonus("power_strike"))
-	var base_mult: float = _fighter(null).get_ability_damage_mult("power_strike")
-	_row("  -> ability damage multiplier", "WORKS", "%.2f -> %.2f" % [base_mult, ch1.get_ability_damage_mult("power_strike")])
+	print("[AUDIT] ================= CARD-SPECIFIC GEAR (replaced the +N rank affixes, 2026-09-15) =================")
 	# BASELINE = the same weapon with NO affixes. The first run compared against an empty hand, so
 	# the weapon's own base Strength showed up as a few % of "affix" effect on abilities.
 	var plain_w := _weapon({})
 	var ps0: Dictionary = _mean(plain_w, "power_strike")
-	var ps1: Dictionary = _mean(w1, "power_strike")
-	_row("  -> Power Strike real damage", "WORKS" if ps1.dmg > ps0.dmg * 1.05 else "BROKEN", "%.0f -> %.0f (%+.0f%%)" % [ps0.dmg, ps1.dmg, 100.0 * (ps1.dmg / maxf(1.0, ps0.dmg) - 1.0)])
-	for wear in [1, 10, 49]:
-		var chw = _fighter(_weapon({"ability_rank_warrior_dmg": 1}, wear))
-		_row("  +1 with %d%% wear" % wear, "BROKEN" if chw.get_ability_rank_bonus("power_strike") == 0 else "WORKS", "bonus=%d (int(1 x %.2f))" % [chw.get_ability_rank_bonus("power_strike"), 1.0 - wear / 100.0])
-	var tr = sim.make_char(60, "none", "Ninja", "Human")
-	tr.equipped["weapon"] = _weapon({"ability_rank_trickster_dmg": 3})
-	for card in ["ambush", "exploit", "vanish", "perfect_heist", "gambit"]:
-		_row("+3 Trickster dmg covers %s" % card, "WORKS" if tr.get_ability_rank_bonus(card) == 3 else "MISSING", "bonus=%d" % tr.get_ability_rank_bonus(card))
-	var mg = sim.make_char(60, "none", "Wizard", "Human")
-	mg.equipped["weapon"] = _weapon({"ability_rank_mage_dmg": 3})
-	for card in ["magic_bolt", "blast", "meteor", "frost_nova", "banish"]:
-		_row("+3 Mage dmg covers %s" % card, "WORKS" if mg.get_ability_rank_bonus(card) == 3 else "MISSING", "bonus=%d" % mg.get_ability_rank_bonus(card))
+	var sup: Dictionary = _mean(_weapon({"card_power_power_strike": 45}), "power_strike")
+	var sup_pct: float = 100.0 * (sup.dmg / maxf(1.0, ps0.dmg) - 1.0)
+	_row("Supreme +45% Power Strike damage", "WORKS" if absf(sup_pct - 45.0) < 4.0 else "OFF", "%.0f -> %.0f (%+.0f%%)" % [ps0.dmg, sup.dmg, sup_pct])
+	var old1: Dictionary = _mean(_weapon({"ability_rank_power_strike": 1}), "power_strike")
+	var old_pct: float = 100.0 * (old1.dmg / maxf(1.0, ps0.dmg) - 1.0)
+	_row("  retired '+1 to Power Strike' item", "WORKS" if absf(old_pct - 15.0) < 3.0 else "OFF", "reads as +15%% power: %+.0f%%" % old_pct)
+	var worn = _fighter(_weapon({"card_power_power_strike": 45}, 10))
+	_row("  45% at 10% wear", "WORKS" if absf(worn.get_gear_card_bonus("power_strike", "power") - 40.5) < 0.1 else "OFF",
+		"%.1f%% (scales smoothly; a +1 rank used to truncate to 0 at 1%% wear)" % worn.get_gear_card_bonus("power_strike", "power"))
+	var arch := {"type": "helm_iron", "name": "Old Helm of the Warrior", "rarity": "epic", "level": 60, "id": 3238168405, "affixes": {"ability_rank_warrior_dmg": 2}}
+	var arch_f: Dictionary = arch.duplicate(true)
+	arch_f["id"] = 3238168405.0   # the same item after a JSON round trip
+	var picks: Array = []
+	var picks_f: Array = []
+	var ca = _fighter(null)
+	ca.equipped["helm"] = arch
+	var cf = _fighter(null)
+	cf.equipped["helm"] = arch_f
+	for card in ["power_strike", "shield_bash", "cleave", "devastate"]:
+		if ca.get_gear_card_bonus(card, "power") > 0.0:
+			picks.append("%s +%.0f%%" % [card, ca.get_gear_card_bonus(card, "power")])
+		if cf.get_gear_card_bonus(card, "power") > 0.0:
+			picks_f.append(card)
+	_row("  retired '+2 to Warrior abilities' item", "WORKS" if picks.size() == 1 and picks_f.size() == 1 and String(picks[0]).begins_with(String(picks_f[0])) else "OFF",
+		"one card: %s | same card after a save (float id): %s" % [str(picks), str(picks_f)])
+	var cw = sim.make_char(60, "none", "Wizard", "Human")
+	for sl in ["ring", "amulet", "helm"]:
+		cw.equipped[sl] = {"type": "%s_basic" % sl, "name": "Probe", "rarity": "epic", "level": 60, "affixes": {"card_cost_blast": 45}}
+	_row("three Supreme -45% Blast cost items", "CAPPED" if absf(cw.get_skill_cost_reduction("blast") - 75.0) < 0.1 else "OFF",
+		"%.0f%% (cap %.0f%%, so a card is never free from gear)" % [cw.get_skill_cost_reduction("blast"), load("res://shared/card_gear.gd").COST_REDUCTION_CAP])
+	var cr = sim.make_char(60, "none", "Fighter", "Human")
+	var dur0: int = cr.get_ability_duration_bonus("rally")
+	cr.equipped["ring"] = {"type": "ring_basic", "name": "Probe", "rarity": "epic", "level": 60, "affixes": {"card_duration_rally": 2}}
+	_row("+2 rounds Rally", "WORKS" if cr.get_ability_duration_bonus("rally") - dur0 == 2 else "OFF", "duration bonus %d -> %d" % [dur0, cr.get_ability_duration_bonus("rally")])
+	var bad := 0
+	for i in range(400):
+		var rolled: Array = load("res://shared/card_gear.gd").roll(60)
+		var parsed: Array = load("res://shared/card_gear.gd").parse(String(rolled[0]))
+		if parsed.is_empty() or not String(parsed[0]) in load("res://shared/card_gear.gd").KINDS[parsed[1]]:
+			bad += 1
+	_row("400 rolls land on a measured card+kind", "WORKS" if bad == 0 else "BROKEN", "%d off-table" % bad)
 
 	print("[AUDIT] ================= DAMAGE / CRIT / PROC AFFIXES: basic attack vs ability =================")
 	var crit_only: Dictionary = {}
