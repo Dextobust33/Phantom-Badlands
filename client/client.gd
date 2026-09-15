@@ -46620,8 +46620,18 @@ func _overworld_display(payload: Dictionary) -> String:
 	# following you he shouldn't be in the post for you anymore."* The tile is blanked either
 	# way, so the square reads as empty for you and the server lets you walk through it - while
 	# staying solidly occupied for every other player who has not met him.
+	# ⛑ WRITE THE ROW BACK. `MapPayload.cells` returns PackedStringArray rows, and a
+	# PackedStringArray is a VALUE type in GDScript - `var row = meaning[y]` copies it, so every
+	# `row[x] = ...` here was mutating a copy and throwing it away.
+	#
+	# That is why the Warden stayed in the post through two separate "fixes". The FIGURE
+	# suppression worked, because that writes to a Dictionary - so he stopped being drawn twice
+	# as a figure and the tile underneath carried on regardless, which looked exactly like the
+	# bug still being there. Owner, twice: *"the Warden is still duplicated"* / *"Even though the
+	# Warden is following me I can still see where he was in the post."*
 	for _wy in range(rows_n):
-		var _wrow: Array = meaning[_wy]
+		var _wrow: PackedStringArray = meaning[_wy]
+		var _wtouched := false
 		for _wx in range(_wrow.size()):
 			# CONTAINS, not equals. A cell's meaning carries markers - "!hot:warden" inside a
 			# hotzone, "!other:warden" with somebody standing on him - and an exact match let
@@ -46631,12 +46641,15 @@ func _overworld_display(payload: Dictionary) -> String:
 			if not String(_wrow[_wx]).contains("warden"):
 				continue
 			_wrow[_wx] = "empty"
+			_wtouched = true
 			if _escort_kind == "warden":
 				continue          # he is walking with you; nobody is standing here
 			figures["%d,%d" % [_wx, _wy]] = {"main": WARDEN_FIGURE_SPRITE}
 			_overworld_figure_meta["%d,%d" % [_wx, _wy]] = {
 				"kind": "npc", "is_local": false,
 				"data": {"name": "Warden Hollis", "class": "Fighter"}}
+		if _wtouched:
+			meaning[_wy] = _wrow      # the row is a VALUE - without this the edit is discarded
 	# OTHER players, and the companions travelling with them. The client cannot know who is out
 	# there - it is sent resolved cells, not a roster - so the server names them in the payload.
 	var pending_companions: Array = []

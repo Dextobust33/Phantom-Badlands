@@ -135,6 +135,30 @@ func _init() -> void:
 	# case slipped through and the post copy survived beside the follower.
 	ck(src.contains('if not String(_wrow[_wx]).contains("warden"):'),
 		"the post copy is blanked for ANY warden cell, marked or not")
+	# ⛑ AND THE BLANKING IS ACTUALLY KEPT.
+	#
+	# `MapPayload.cells` returns PackedStringArray rows, and a PackedStringArray is a VALUE type:
+	# `var row = meaning[y]` copies it, so `row[x] = "empty"` edited a copy and threw it away.
+	# The Warden survived two "fixes" that way - the FIGURE suppression worked, because that
+	# writes to a Dictionary, so he stopped being drawn twice as a figure while the tile carried
+	# on underneath. Demonstrated: without the write-back the cell still reads "warden".
+	ck(src.contains("var _wrow: PackedStringArray = meaning[_wy]"),
+		"the row is held as the PackedStringArray it really is")
+	ck(src.contains("meaning[_wy] = _wrow"),
+		"and written BACK - without this every edit to it is discarded")
+	var _g: Array = []
+	var _r := PackedStringArray()
+	_r.append("floor")
+	_r.append("warden")
+	_g.append(_r)
+	var _copy: Array = _g[0]
+	_copy[1] = "empty"
+	ck(_g[0][1] == "warden",
+		"  (proof: editing the row without writing back leaves it unchanged)")
+	var _row2: PackedStringArray = _g[0]
+	_row2[1] = "empty"
+	_g[0] = _row2
+	ck(_g[0][1] == "empty", "  (and writing back is what makes it stick)")
 	for marked in ["warden", "!hot:warden", "!other:warden", "!player:warden"]:
 		ck(marked.contains("warden"), "  '%s' is recognised as his tile" % marked)
 	ck(not "wall".contains("warden"), "  and an unrelated tile is not (control)")
