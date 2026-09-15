@@ -110,6 +110,33 @@ func _init() -> void:
 	ck(_text(cm._party_process_monster_phase(c4)).find("turns on YOU") >= 0,
 		"  and it is for THAT round only - next round it acts again")
 
+	print("\n===== 5. A MONSTER'S HIT ON A TEAMMATE CARRIES ITS OWN NUMBER =====")
+	# Owner: *"When the enemy attacks the warden the damage numbers are showing on the enemy
+	# instead of the warden."* The client read "hits Warden Hollis for 43 damage" as damage TO
+	# the monster. The server now sends the measured HP each side lost on the beat's last line.
+	var c5 := _party(cm, sim, "Fighter")
+	c5.monster["strength"] = int(c5.monster.get("strength", 10)) * 3
+	var taken_total := 0
+	var tagged_to := -99
+	var wrong_side := 0
+	for r5 in range(6):
+		c5["round"] = r5 + 1
+		c5.characters[1].current_hp = c5.characters[1].get_total_max_hp()
+		var hp_before: int = int(c5.characters[1].current_hp)
+		var meta: Array = cm.party_flatten_meta(cm._party_process_monster_phase(c5))
+		var lost: int = hp_before - int(c5.characters[1].current_hp)
+		for m in meta:
+			if (m as Dictionary).has("taken"):
+				taken_total += int(m["taken"])
+				tagged_to = int(m.get("target_pid", -99))
+				if lost > 0 and int(m["taken"]) != lost:
+					wrong_side += 1
+	ck(taken_total > 0, "the monster landed hits and the beat carries 'taken' (%d total)" % taken_total)
+	ck(tagged_to == 1, "  tagged to the member who was struck")
+	ck(wrong_side == 0, "  and the number equals the health that member actually lost")
+	var csrc := FileAccess.get_file_as_string("res://client/client.gd")
+	ck(csrc.contains('if _party_fx_meta.has("taken"):'), "the client pops that number on the member (not parsed from prose)")
+
 	print("")
 	print("RESULT: %s (%d failing)" % ["PASS" if fails == 0 else "FAIL", fails])
 	quit(0 if fails == 0 else 1)

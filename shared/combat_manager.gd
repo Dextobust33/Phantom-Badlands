@@ -13245,6 +13245,9 @@ func party_flatten_meta(entries: Array) -> Array:
 				m["hp"] = e["hp"]
 			if e.has("dmg"):
 				m["dmg"] = int(e["dmg"])
+			if e.has("taken"):
+				m["taken"] = int(e["taken"])
+				m["monster_lost"] = int(e.get("monster_lost", 0))
 			out.append(m)
 		else:
 			out.append({"actor": "neutral", "actor_pid": -1, "target_pid": -1})
@@ -13551,7 +13554,12 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 			for k in _PARTY_DOT_KEYS:
 				view[k] = 0   # already ticked this round — this action is attack-only
 		active_combats[target_pid] = view
+		var _beat_target = combat.characters.get(target_pid, null)
+		var _beat_t_hp0: int = int(_beat_target.current_hp) if _beat_target != null else 0
+		var _beat_m_hp0: int = int(combat.monster.get("current_hp", 0))
 		var mres = process_monster_turn(view)
+		# Measured HERE, before the guide is held at 1 below, so the number matches the log line.
+		var _beat_taken: int = maxi(0, _beat_t_hp0 - int(_beat_target.current_hp)) if _beat_target != null else 0
 		_party_sync_view_back(combat, target_pid, view)
 		# ⛑ THE GUIDE DOES NOT FALL.
 		#
@@ -13595,6 +13603,13 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 			msgs[mi]["actor"] = "monster"
 			msgs[mi]["target_pid"] = target_pid
 		msgs[msgs.size() - 1]["hp"] = _party_hp_snapshot(combat, target_pid)
+		# ⛑ 2026-09-15 - THE NUMBERS, SO THE CLIENT DOES NOT HAVE TO READ THEM OFF THE PROSE.
+		# Owner: *"When the enemy attacks the warden the damage numbers are showing on the enemy
+		# instead of the warden."* A teammate's hit reads "The Goblin hits Warden Hollis for 43
+		# damage!" - no "you" in it - and the client's text parser took that for damage TO the
+		# monster. Every co-op teammate had the same fault. Sent as measured HP deltas instead.
+		msgs[msgs.size() - 1]["taken"] = _beat_taken
+		msgs[msgs.size() - 1]["monster_lost"] = maxi(0, _beat_m_hp0 - int(combat.monster.get("current_hp", 0)))
 		_party_check_deaths(combat, msgs)   # skip a member who just fell — and SAY that they did
 	# #65/#76 — the monster's turn ends the round, so every member's free item use returns
 	# (solo does the same at the top of process_monster_turn, which the member views skip).

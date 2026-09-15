@@ -38279,7 +38279,9 @@ func _display_combat_msg(combat_msg: String):
 	# ability lines were folded into one line each: "I'm no longer seeing damage numbers
 	# show up over the enemy when the player hits them."
 	var damage: int = int(_party_fx_meta.get("dmg", 0)) if not _party_fx_meta.is_empty() else 0
-	if damage <= 0:
+	# A monster-phase line in co-op carries its numbers as metadata (see _dispatch_party_fx); the
+	# prose "hits <teammate> for N damage" is NOT damage to the monster, whatever the parser thinks.
+	if damage <= 0 and String(_party_fx_meta.get("actor", "")) != "monster":
 		damage = parse_damage_dealt(combat_msg)
 	# The AUTHORITATIVE monster HP for this line, when the server sent one. Preferred over
 	# the running `damage_dealt_to_current_enemy` estimate below, which is an accumulation of
@@ -39750,16 +39752,25 @@ func _dispatch_party_fx(combat_msg: String, damage_to_monster: int, is_crit: boo
 			if combat_scene_panel.has_method("play_monster_travel_fx_at"):
 				combat_scene_panel.play_monster_travel_fx_at(target_pid, "physical")
 			return true
-		if damage_to_monster > 0:
-			# Upkeep ticks (poison / burn / bleed) resolve during the monster phase but
-			# damage the MONSTER — pop the number on it rather than on the target member.
-			combat_scene_panel.show_damage_on_monster(damage_to_monster, is_crit, "player")
-			combat_scene_panel.flash_monster(is_crit)
-			return true
-		var dmg := parse_damage_to_player(combat_msg)
-		if dmg > 0:
-			combat_scene_panel.show_damage_on_party_member(target_pid, dmg, is_crit)
-			combat_scene_panel.lunge_monster_forward()
+		# ⛑ 2026-09-15 - THE SERVER'S NUMBERS, NOT THE PROSE. A teammate's hit reads "The Goblin
+		# hits Warden Hollis for 43 damage!", which has no "you" in it, so the text parser took it
+		# for damage TO the monster and popped it over the enemy. Owner: *"When the enemy attacks
+		# the warden the damage numbers are showing on the enemy instead of the warden."* The
+		# beat's last line now carries the measured HP each side lost (see
+		# _party_process_monster_phase); lines without it pop nothing rather than guess.
+		if _party_fx_meta.has("taken"):
+			var _lost := int(_party_fx_meta.get("monster_lost", 0))
+			if _lost > 0:
+				# Upkeep ticks (poison / burn / bleed) resolve in the monster phase but hurt IT.
+				combat_scene_panel.show_damage_on_monster(_lost, false, "player")
+				combat_scene_panel.flash_monster(false)
+			var _taken := int(_party_fx_meta.get("taken", 0))
+			if _taken > 0:
+				combat_scene_panel.show_damage_on_party_member(target_pid, _taken, is_crit)
+				combat_scene_panel.lunge_monster_forward()
+			elif " misses" in lower:
+				combat_scene_panel.show_miss_on_party_member(target_pid)
+				play_combat_miss_sound()
 		elif " misses" in lower:
 			combat_scene_panel.show_miss_on_party_member(target_pid)
 			play_combat_miss_sound()

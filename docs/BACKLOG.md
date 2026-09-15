@@ -646,8 +646,11 @@ the teaching beats that depend on the Warden behaving):
       not released. Nothing on the party path read `skip_monster_turn`. The monster acts once per
       member per round, so a successful skip card now removes the action aimed at the member who
       played it (the exact solo equivalent), with a log line. Probe: party_view_carries_state s4.
-- [ ] **Enemy hits on the Warden pop their damage number over the ENEMY.** Target of the damage mark
-      is wrong for NPC members.
+- [x] **Enemy hits on the Warden popped their damage number over the ENEMY.** FIXED on master, not
+      released - and it was every co-op TEAMMATE, not only the Warden. The client parsed "hits Warden
+      Hollis for 43 damage" (no "you") as damage to the monster. The monster phase now sends measured
+      `taken` / `monster_lost` on each beat and the client pops those. Probe: party_view_carries_state s5.
+      Not verified in a running client - worth a look in the next co-op fight.
 - [ ] **No buff/debuff panel in party combat** (solo has one). Owner: *"While the warden is in the party
       it should work just like party combat does."*
 - [ ] **Phantom Strike's card hides its damage** (WITS x 0.18 of a bar x spend; `preview_ability_effect`
