@@ -602,17 +602,57 @@ Ordered by what players hit first and what the next item depends on. Big-arc wor
 live defects because the arc adds more of exactly the surfaces those defects live in.
 
 1. **⛔ INSTANCED CARDS ARE NOT WORKING — live since 2026-09-14** (full report further down, under
-   the owner decisions block). Players see two upgrade screens for one card and then no card, can
-   not see what a dungeon awarded, and cannot tell copies apart. A double grant that loses the card
-   also loses the upgrade choice, so this costs players progress. Reproduce complaint 2 first.
-2. **A REAL card-face instrument, then fix what it finds.** Card faces lying was the single most
+   the owner decisions block). **Complaints 2 and 3 FIXED on master 2026-09-15, not released**
+   (`d34ea3f0`, probe `card_copies_visible.gd`, proven red on the old code):
+   - measured cause of the back-to-back screens: a level-up in a PARTY fight (every Warden fight)
+     queued its choice and nothing announced it - the flush was missing from the card-command
+     path - so choices piled up and arrived together later. Every resolved party round flushes now.
+   - copies were indistinguishable: the upgrade screen now says "copy N", the deck draws one tile
+     per copy with its own progress and upgrades, and each copy can be thinned/restored by name.
+   - checked and RULED OUT on the way: picks failing on dungeon/companion cards (they land fine),
+     and double-queueing on login reconcile (idempotent). Live saves (18 characters) hold no
+     dungeon card and no second copy of anything, so complaint 1 is still unexplained.
+   **Still open: complaint 1, the dungeon card award being invisible.** Not reproduced; start from
+   the completion screen text and whether a copy-drop is ever rolled for a starter dungeon.
+2. **DEATH CURSE is a flock killer (owner 2026-09-15).** *"It often puts a player to 1 hp meaning it
+   could be death in a flock or if they can't heal."* Read off the code (`combat_manager.gd`, on
+   defeat): damage is **10% of the MONSTER's max HP**, reduced by WIS up to 50%, and clamped to
+   leave the player at 1. Monster HP is not sized to the player's, and elites carry x3.5 of it, so
+   10% of an elite is routinely the player's whole bar - the clamp is doing all of the saving.
+   Carried by Demon, Demon Lord, Balrog, Phoenix, Elder Lich, Death Incarnate, The Nameless One and
+   Entropy. **Measure before changing:** which of those can flock (species `flock_chance`, plus the
+   empowered modifier that grants flocking), and the HP a player is left at across a flock chain
+   (`-- flock` already runs chains). Likely shape of the fix: size the curse to the PLAYER's bar,
+   not the monster's - but that is a per-monster power change, so re-check the curve after.
+3. **A REAL card-face instrument, then fix what it finds.** Card faces lying was the single most
    common fault in the 2026-09-15 test (Assassinate, Phantom Strike, partial casts, Wild Swing).
    `card_vs_server.gd` cannot answer it - it re-implements the client's retired fallback formulas,
    so its "3-8x LIES" table describes a path combat cards no longer use (see "Two stale
    instruments" in Phase 3). Build the instrument that can: for every card of every class, compare
    `_build_ability_effect_info`'s quote with the mean of real casts (defence and variance
    accounted for), solo AND party. Then fix per card. Cheap, and it closes the class.
-3. **First-hour polish, all small, all seen by every new player:**
+4. **FULL EQUIPMENT / ITEM AUDIT (owner 2026-09-15).** *"We need to do a FULL equipment/item audit
+   covering all equipment possible in the game (including hunt equipment and special drops from
+   monsters and dungeons as well as their chests and crafting). We need to see what still works and
+   what is broken or needs revised, for example things that give +1 to warrior abilities (does that
+   work and what does it do, etc.)"* Same class as item 3 - an item promising what the game does
+   not do - and it goes BEFORE the dungeon arc, because dungeon rarity pays out in exactly this loot.
+   Method, per CLAUDE.md's equipment rule: walk ACQUISITION PATHS by calling each generator (drop
+   tables, hunt, monster-ability drops like `warrior_hoarder`, dungeon floor loot and chests,
+   crafting, merchants, uniques/sets), then PROBE each stat by equipping it and diffing what combat
+   actually reads. `-- gearsources` and `docs/design/equipment_reference.md` are the starting point,
+   not the answer - they already found stats with no reader once. Deliverable: a table of every stat
+   and item family with works / broken / misleading, then fixes in order of how many players carry it.
+5. **Shorter names for stacked affixes (owner 2026-09-15).** *"find a way to shorten those long names
+   on items and monsters that have bunches of affixes. Ideally we just create new affixes or names
+   for those that have a combination of multiple affixes, for example something that has juggernaut
+   swift could have a single affix that instead combines those two, or even ones that combine 3 or 4."*
+   Monsters: empowered mods prepend one prefix each (`monster_name = prefix + " " + name`, up to 3,
+   plus variant and elite words). Items: affix prefixes/suffixes plus base and rarity words. Wants a
+   COMBINATION table (two or three modifiers -> one authored word) consulted where the name is
+   built, with the full list still readable on hover/inspect so nothing is hidden. Do it after the
+   equipment audit (4), which may retire some affixes and change what needs a combined name.
+6. **First-hour polish, all small, all seen by every new player:**
    - the Warden's handout is named like endgame loot (needs a plain-base-item path, below);
    - the dungeon completion screen says **"Floors Cleared: 2/5"** for the 2-floor starter dungeon
      (owner screenshot 2026-09-15) - the total comes from the dungeon TYPE, not the instance;
@@ -624,18 +664,26 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      be read off the stone's real flow (`home_stone_select` / `home_stone_companion_response` in
      server.gd), not written from memory. Fold it into the "An Egg" / first-hatch beats rather than
      adding a fourth panel.
-4. **One owner decision, then a small change:** should charm / weakness / slow on the monster be
+7. **One owner decision, then a small change:** should charm / weakness / slow on the monster be
    SHARED in co-op (see the open item below)? Today they protect only the member who cast them.
-5. **The dungeon arc — the owner's big direction, and most of the list** (Phase 5 + the third
+8. **The dungeon arc — the owner's big direction, and most of the list** (Phase 5 + the third
    owner-decision batch): dungeon rarity axes two and three (rolled modifiers, then rarer monsters
    / a guaranteed unique), dungeon-centred questing replacing the overworld quests, the Atlas as
    the hub, the dungeon card content. Onboarding already ends in a dungeon, which was that arc's
    stated prerequisite.
-6. **The two accepted proposals nobody has built** (top of this file): trivial-encounter
+9. **The two accepted proposals nobody has built** (top of this file): trivial-encounter
    auto-resolve (full rewards) and post-to-post road travel (costs time and resources). Both are
    self-contained and good filler between arc pieces.
-7. **Scrollback** (below) - retires the Player-Visible Output Rule's whole class of bug.
-8. **LAST, by the owner's call:** the death curve runs the wrong way (end of file).
+10. **Scrollback** (below) - retires the Player-Visible Output Rule's whole class of bug.
+11. **LAST, by the owner's call:** the death curve runs the wrong way (end of file). Before that
+    refit, answer the owner's 2026-09-15 question in numbers: *"do [the simulators] take into account
+    the types of monsters players are running into where they can have a bunch of traits that stack
+    on top of each other?"* From the code: the sim builds monsters with the game's own
+    `generate_monster`, so species abilities, the +2 elite abilities, empowered mods (1-3) and
+    variants appear at the rates the game rolls them - but its forced empowered/elite/boss cells
+    multiply role stats ON TOP of a monster that may already have rolled its own empowered mods, and
+    every audit reports AVERAGES. Nobody has measured the worst STACKS (e.g. a 3-mod empowered elite
+    with death curse) separately. Add that cell before trusting a death-rate refit.
 
 **Deferred, not forgotten:** Sanctuary menus revamp, companion type balance (needs the calibration
 chain after it), party half two (independent movement + join-in-progress), controller support.
