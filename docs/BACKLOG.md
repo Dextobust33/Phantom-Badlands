@@ -1170,6 +1170,63 @@ Render it, execute it, and make the control differ in ONE thing. See
 [[feedback_indentation_is_invisible_to_a_source_probe]] and
 [[feedback_verify_before_building]].
 
+## v0.9.792 SHIPPED (2026-09-15 night) -- the equipment and item audit, and gear that reaches your cards
+
+The owner's FULL equipment/item audit (backlog item 4), its fixes, and the tutorial faults a live
+two-player session turned up. Everything here was MEASURED by executing the real code - two probes
+were written for it (`tools/probe/items_in_combat.gd` uses every usable item three ways and fails on
+a duplication, an unread buff name or a use that eats a stack; `tools/probe/equipment_audit.gd`
+measures each gear stat against what combat actually reads) - and several first results were
+instrument defects found and corrected before anything was believed.
+
+**Items**
+- An Enhancement Scroll used on gear at its enchantment cap DUPLICATED itself (a refusal re-inserted
+  a scroll that had never been removed). Item duplication, on the market.
+- One consumable resolver for every path (`drop_tables.consumable_effect` and friends). An item with
+  no combat effect is refused and KEPT (owner's call), the client's combat menu asks the same
+  question the server does, `inventory_use` mid-fight goes through the fight's rules, and refusals
+  happen before the item is spent.
+- Crafted Area Maps, Spell Tomes, Bestiary Pages, debuff/bane/heal-percent items became usable at
+  all; crafted Rage / Forcefield / Power / Luck / Insight and the rest write buff names combat reads.
+- Apex Sigil dropped as an affixed non-consumable that did nothing; one use of a stacked Escape
+  Scroll / Compass / Ability Tome / Sigil deleted the whole stack; proc runes never procced; crafted
+  armour and potions lost their rarity bonuses; crafted stats and Tempering were ignored; the three
+  crystal runes could not be crafted. Reclaimer's Lantern, Elixir of Luck and the XP potions had no
+  reader at all. Cursed Coin flips for loot or an elite (owner's pick).
+
+**Gear and cards**
+- Gear damage stats reach CARDS: damage_mult, crit damage, lifesteal/Shocking/Execute procs, and
+  gear attack at ATTACK_CARD_SHARE 0.25 (owner: a reduced share so attacking keeps its place).
+- Card-specific gear (`shared/card_gear.gd`) replaces the +N rank affixes: 15/30/45% power, cost or
+  duration for ONE card, only the kinds that card measurably uses (`tools/probe/card_bonus_fit.gd`
+  measures them and FAILS on drift). Old rank items convert; skill tomes are generated from the same
+  table. Gear cost reduction caps at 75%; gear extra-turn caps at 30%.
+- The "defense" buff was read TWICE per hit, as percent mitigation AND as flat defense, and Stone
+  Skin wrote the wrong unit entirely.
+
+**The live tutorial, with two new players on the server**
+- A second new player's Warden led them to the FIRST player's private copy of the starter dungeon.
+- Card rank-ups earned in a Warden (party) fight were held until the party ended.
+- Fight text filled the dungeon side panel and stayed there.
+- The Warden kept joining the party of a player who ABANDONED the Watch - and of every player who
+  finished it, forever, outside posts.
+- "Floors Cleared: 2/5" on a two-floor starter dungeon (fixed just after v0.9.791 was cut).
+
+**Also**
+- Sanctuary kennel: hover a companion for its card and art, Inspect for the rest.
+- Hovering another player on the map shows their equipment tint and glyphs (it composed the portrait
+  before their gear arrived and never redrew), and their companion shows the Companions card.
+- Roads are two tiles wide, and the live world's existing three-wide roads narrow on boot.
+- The starter post has four doors instead of fourteen.
+- The equipment reference regenerates itself and reads rune sources from the recipes.
+- Preflight's path-agreement gate measures 180 fights a side, not 27 (at 27 it failed one run in
+  four on sampling noise alone).
+- The monster curve was re-calibrated after the player-side changes (speciescal -> refcal -> rolecal).
+
+**Carried forward:** companion sprites that face the way they walk (the source art has all four
+directions; the original bake could not be reproduced pixel-for-pixel, so all four will be baked
+together), the 1080p default UI scale, and the rest of the NEXT SESSION block.
+
 ## v0.9.791 SHIPPED (2026-09-15 evening) -- Warden's Watch can be finished, and party fights stop forgetting
 
 Everything below shipped in v0.9.791 except the unticked items, which are carried forward in the
