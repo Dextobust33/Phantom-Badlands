@@ -45211,22 +45211,39 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 		var _fc: int = combat_mgr.compute_flock_chance(monster, characters[leader_id].level)
 		_flock_incoming = _fc > 0 and (randi() % 100) < _fc
 	if victory:
-		var xp: int = int(monster.get("experience_reward", monster.get("xp_reward", 10)))
+		# ⛑ THE XP SUM. This paid the monster's RAW experience_reward and nothing else.
+		#
+		# Owner 2026-09-15, from the live server: *"I killed a Venomous Hobgoblin Lv 7 in a
+		# Hotzone area. I'm level 7 as well. I only got +195 XP."* 195 was the monster's base -
+		# the Size Them Up card had quoted it before the kill. Solo, that same kill pays the
+		# flat +10% and the Danger Zone +30-70%, so ~280-365.
+		#
+		# This is the FOURTH copy of a kill's XP (solo victory, the old sequential party path,
+		# Perfect Heist, here) and the only one that did not even try: no level-gap scaling, no
+		# hotzone, no apex, no Hunter's Mark, no Path, no Insight potion, no Easy Prey. Every
+		# co-op kill and every Warden fight since party combat existed has paid base XP.
+		# combat_mgr.kill_xp is the one sum now; this asks it PER MEMBER, since the level gap is
+		# measured against each member's own level.
+		var base_xp: int = int(monster.get("experience_reward", monster.get("xp_reward", 10)))
 		for pid in members:
 			var st = combat.member_states.get(pid, {})
 			if st.get("dead", false) or st.get("fled", false) or not characters.has(pid):
 				continue
 			var ch = characters[pid]
 			var _old_level: int = ch.level
+			var _xp_notes: Array = []
+			var xp: int = int(combat_mgr.kill_xp(ch, monster, _xp_notes)["xp"])
 			var lvl_res = ch.add_experience(xp)
 			var _new_level: int = ch.level
+			for _n in _xp_notes:
+				send_to_peer(pid, {"type": "text", "message": String(_n)})
 			# 2026-09-04 — COMPANION XP. Reported from live: "the companions are only getting
 			# like 3 xp a kill or some very low number. Seems to be in both solo and party."
 			# In party it was not low, it was ZERO: this path awarded the member's XP and never
 			# touched their companion, so a companion fighting beside you in co-op never gained
 			# a single point. Solo grants 10% of the kill through _process_victory_with_abilities;
 			# this is the same share, so the two paths finally agree.
-			var _comp_lvl_res = ch.add_companion_xp(maxi(1, int(xp * combat_mgr.COMPANION_XP_SHARE)))
+			var _comp_lvl_res = ch.add_companion_xp(maxi(1, int(base_xp * combat_mgr.COMPANION_XP_SHARE)))
 			if _comp_lvl_res.get("leveled_up", false):
 				send_to_peer(pid, {"type": "text", "message":
 					"[color=#00FFFF]Your companion reached level %d![/color]" % int(_comp_lvl_res.get("new_level", 0))})

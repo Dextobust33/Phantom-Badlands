@@ -3335,83 +3335,13 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			"dmg_taken_gross": int(combat.get("total_damage_taken", 0)),
 		})
 
-	# Calculate XP with smooth level-based scaling (no tier cliffs)
+	# XP is sized in ONE place - kill_xp - shared with the party victory path.
 	var base_xp = monster.experience_reward
-	var xp_level_diff = monster.level - character.level
-	var xp_multiplier = 1.0
-
-	# Tier info for display flavor
-	var xp_player_tier = _get_tier_for_level(character.level)
-	var xp_monster_tier = _get_tier_for_level(monster.level)
-	var xp_tier_diff = xp_monster_tier - xp_player_tier
-
-	# Unified XP scaling: smooth sqrt curve based on level difference
-	# No tier cliffs — bonus grows continuously with level gap
-	# reference_gap scales with player level: 10 at lv1, 15 at lv100, 35 at lv500
-	if xp_level_diff > 0:
-		var reference_gap = 10.0 + float(character.level) * 0.05
-		var gap_ratio = float(xp_level_diff) / reference_gap
-		# 2026-09-05 — coefficient 0.7 -> 2.0. Owner: "We may also want to considerably
-		# increase xp bonus for fighting things above your level."
-		#
-		# At 0.7 a level-1 character fighting FIVE levels up earned +49% XP, and ten levels up
-		# +70%. Against permadeath that is not a gamble anyone should take: the fight is far more
-		# than 70% harder. It also left the only fast route through the ~45-kills-per-level
-		# baseline closed, and undercut the Trickster identity of killing things bigger than the
-		# warrior can. At 2.0 the same fights pay +141% and +200%.
-		#
-		#   gap:      +2     +5    +10    +20   (at level 1, reference_gap 10.05)
-		#   before: 1.31x  1.49x  1.70x  1.99x
-		#   after:  1.89x  2.41x  3.00x  3.83x
-		#
-		# sqrt is kept so the curve still flattens - the reward for a 50-level gap stays within
-		# reach of a 20-level one, and the thing that actually caps this is the win rate, which
-		# falls off a cliff long before the multiplier does.
-		xp_multiplier = 1.0 + sqrt(gap_ratio) * 2.0
-		var bonus_pct = int((xp_multiplier - 1.0) * 100)
-		if xp_tier_diff > 0:
-			messages.append("[color=#FF00FF]* TIER CHALLENGE: +%d%% XP! *[/color]" % bonus_pct)
-		elif bonus_pct >= 5:
-			messages.append("[color=#FFD700]Challenge bonus: +%d%% XP[/color]" % bonus_pct)
-	elif xp_level_diff < 0:
-		# Downlevel penalty — small grace zone, then gradual reduction
-		var under_gap = abs(xp_level_diff)
-		var penalty_threshold = 5.0 + float(character.level) * 0.03  # Grace zone grows with level
-		if under_gap > penalty_threshold:
-			var excess = under_gap - penalty_threshold
-			var penalty = minf(0.6, excess * 0.03)  # -3% per level beyond threshold
-			xp_multiplier = maxf(0.4, 1.0 - penalty)  # Floor at 40% XP
-			var penalty_pct = int((1.0 - xp_multiplier) * 100)
-			if penalty_pct >= 10:
-				messages.append("[color=#808080]Weak foe: -%d%% XP[/color]" % penalty_pct)
-
-	var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
-
-	# Slice 6i — Danger Zone bonus. Hotspot kills give an extra +30-70% XP on
-	# top of the natural level scaling. Edge of a hotspot = +30%, center =
-	# +70%. The monster's level was already 1.5-2.5x larger from the hotspot
-	# multiplier, so total reward for fighting in a hotspot is meaningful.
-	var hotspot_intensity = float(monster.get("hotspot_intensity", 0.0))
-	var hotspot_xp_pct = 0
-	if hotspot_intensity > 0.0:
-		var hotspot_xp_mult = WorldSystemScript.hotzone_reward_multiplier(hotspot_intensity)
-		final_xp = int(final_xp * hotspot_xp_mult)
-		hotspot_xp_pct = int((hotspot_xp_mult - 1.0) * 100)
-
-	# Audit #10 v0.9.512 — Apex frontier bonus. +10% XP when the monster is
-	# killed in the apex frontier zone (distance from origin > 1500 tiles).
-	# Server stamps `is_apex_frontier` on the monster dict at combat-start
-	# from the character's position at engagement time.
-	# v0.9.513 — Apex VARIANT bonus stacks +20% on top, rewarding the +25% HP
-	# / +10% damage the variant carries (so the extra HP isn't a flat XP/effort
-	# downgrade). Apex frontier + apex variant total = +30% XP.
-	var apex_xp_pct = 0
-	if monster.get("is_apex_frontier", false):
-		final_xp = int(final_xp * 1.10)
-		apex_xp_pct = 10
-	if monster.get("is_apex_variant", false):
-		final_xp = int(final_xp * 1.20)
-		apex_xp_pct += 20
+	var _xp = kill_xp(character, monster, messages)
+	var final_xp: int = int(_xp["xp"])
+	var hotspot_xp_pct: int = int(_xp["hotspot_pct"])
+	var apex_xp_pct: int = int(_xp["apex_pct"])
+	var effective_bonus_pct: int = int(_xp["challenge_pct"])
 
 	# Path: on-kill riders. kill_cost_refund_pct refunds part of the killing
 	# cast's cost (marker stamped in apply_variable_cost, zeroed by basic
@@ -3456,32 +3386,6 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	# Gambit kill bonus: +1 gem awarded later
 	var gambit_kill = combat.get("gambit_kill", false)
 
-	# Easy prey: reduced XP
-	if ABILITY_EASY_PREY in abilities:
-		final_xp = int(final_xp * 0.5)
-
-	# === CLASS PASSIVE: Ranger Hunter's Mark ===
-	# +30% XP from kills
-	var passive = character.get_class_passive()
-	var passive_effects = passive.get("effects", {})
-	if passive_effects.has("xp_bonus"):
-		var xp_mult = 1.0 + passive_effects.get("xp_bonus", 0)
-		final_xp = int(final_xp * xp_mult)
-		messages.append("[color=#228B22]Hunter's Mark: +%d%% XP![/color]" % int(passive_effects.get("xp_bonus", 0) * 100))
-
-	# Path: xp_pct (Jackpot keystone -10% / Apex Hunter +10%)
-	var path_xp_pct = character.get_path_effect_total("xp_pct")
-	if path_xp_pct != 0.0:
-		final_xp = max(1, int(final_xp * (1.0 + path_xp_pct / 100.0)))
-
-	# Potion of Insight / Elixir of the Ancients. ⛑ 2026-09-15 - they wrote an "xp_bonus" buff for N
-	# battles that nothing read (equipment_audit.gd, BUFF NAMES), so both potions did nothing.
-	var buff_xp_pct: int = character.get_buff_value("xp_bonus")
-	if buff_xp_pct > 0:
-		final_xp = max(1, int(final_xp * (1.0 + buff_xp_pct / 100.0)))
-		messages.append("[color=#87CEEB]Insight: +%d%% XP![/color]" % buff_xp_pct)
-
-	var effective_bonus_pct = int((xp_multiplier - 1.0) * 100)
 	if effective_bonus_pct > 0:
 		messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus)[/color][/color]" % [final_xp, effective_bonus_pct])
 	else:
@@ -7074,41 +6978,17 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				messages.append("[color=#FFD700][b]%s[/b][/color]" % String(_fl["hit"]))
 				messages.append("[color=#00FF00]%s[/color]" % String(_fl["hit_line"]))
 
-				# Slight bonus XP (1.25x, was 2x)
-				var base_xp = int(monster.experience_reward * 1.25)
-				# 2026-09-04 - the heist bonus now sits ON TOP OF the normal kill's XP, which is
-				# what the card promises. It used its OWN level-difference multiplier capped at
-				# +50%, while an ordinary kill's challenge bonus scales as 1 + sqrt(gap) x 0.7 and
-				# reaches +210%. So against exactly the over-level foe a player would gamble a
-				# Heist on, the instant win paid LESS than simply killing it - at L20 against L40,
-				# normal x2.14 of base against heist x1.93.
-				var xp_multiplier = 1.0
-				if level_diff > 0:
-					var _h_ref_gap: float = 10.0 + float(character.level) * 0.05
-					xp_multiplier = 1.0 + sqrt(float(level_diff) / _h_ref_gap) * 0.7
-				elif level_diff < 0:
-					# The same downlevel penalty a normal kill takes: an instant win on something far
-					# beneath you should not dodge the anti-farming rule.
-					var _h_under: float = absf(float(level_diff))
-					var _h_thresh: float = 5.0 + float(character.level) * 0.03
-					if _h_under > _h_thresh:
-						xp_multiplier = maxf(0.4, 1.0 - minf(0.6, (_h_under - _h_thresh) * 0.03))
-
-				var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
-				# 2026-09-04 - the same HOTSPOT and APEX multipliers a normal kill gets. Owner:
-				# "Heist also doesn't seem like it's giving extra XP, it may be lower than normal
-				# xp kills." It was: the card advertises bonus rewards and pays base x1.375, but the
-				# ordinary victory path stacks a hotspot bonus (+30-70%) and apex bonuses (+10%
-				# frontier, +20% variant) on top of its own. So in a hotspot, or against an apex, a
-				# Perfect Heist paid LESS than simply killing the thing - the opposite of what a
-				# high-risk finisher should do.
-				var _heist_hot: float = float(monster.get("hotspot_intensity", 0.0))
-				if _heist_hot > 0.0:
-					final_xp = int(final_xp * (1.3 + 0.4 * clampf(_heist_hot, 0.0, 1.0)))
-				if monster.get("is_apex_frontier", false):
-					final_xp = int(final_xp * 1.10)
-				if monster.get("is_apex_variant", false):
-					final_xp = int(final_xp * 1.20)
+				# Perfect Heist pays the ORDINARY kill's XP with the card's 1.25x on top.
+				# This branch used to carry its own third copy of the sum, and was patched twice
+				# for terms the copy was missing (2026-09-04: the level-gap bonus, then hotspot
+				# and apex) - and it STILL held the coefficient the solo path left behind on
+				# 2026-09-05 (0.7 against 2.0), so a heist on an over-level foe paid a third of
+				# the challenge bonus a plain kill did. That is the whole argument for one sum.
+				var base_xp = int(monster.experience_reward)
+				var _heist_notes: Array = []
+				var final_xp: int = maxi(1, int(kill_xp(character, monster, _heist_notes)["xp"] * 1.25))
+				for _n in _heist_notes:
+					messages.append(_n)
 				# And the COMPANION's share, which this branch never granted at all. Owner: "he
 				# isn't getting XP when I kill things using Heist." Every other victory path pays
 				# it; an instant win should not quietly cost your companion its cut.
@@ -14305,6 +14185,116 @@ func _has_mentor_mentee_pair(combat: Dictionary) -> bool:
 			has_mentee = true
 	return has_mentor and has_mentee
 
+func kill_xp(character, monster: Dictionary, notes: Array) -> Dictionary:
+	"""The ONE place a kill's XP is sized. Every caller - solo victory and party victory - asks
+	here, because the two used to carry SEPARATE hand-copied sums.
+
+	2026-09-15, reported live: a level-7 player killed a level-7 Venomous Hobgoblin inside a
+	DANGER hotzone beside the Warden and was paid exactly the monster's raw 195 XP. The party
+	copy of this sum was missing NINE terms the solo copy has - the flat +10%, the Danger Zone
+	+30-70%, apex frontier / apex variant, Hunter's Mark, Path xp_pct, Easy Prey, the race and
+	Sanctuary multipliers inside add_experience (it wrote `experience +=` directly), and the
+	companion's 10% share - and it scored fighting ABOVE your level at a third of the solo rate
+	(sqrt coefficient 0.7 against 2.0). So every Warden fight, and every party fight, silently
+	paid base XP. `notes` collects the player-visible callouts; the caller decides where they go.
+
+	Returns the amount BEFORE add_experience (which applies race / Sanctuary / house on top)."""
+	var base_xp: int = int(monster.get("experience_reward", 10))
+	var monster_level: int = int(monster.get("level", 1))
+	var xp_level_diff: int = monster_level - character.level
+	var xp_multiplier := 1.0
+
+	if xp_level_diff > 0:
+		# reference_gap scales with player level: 10 at lv1, 15 at lv100, 35 at lv500.
+		var reference_gap: float = 10.0 + float(character.level) * 0.05
+		var gap_ratio: float = float(xp_level_diff) / reference_gap
+		# 2026-09-05 - coefficient 0.7 -> 2.0. Owner: "We may also want to considerably
+		# increase xp bonus for fighting things above your level."
+		#
+		# At 0.7 a level-1 character fighting FIVE levels up earned +49% XP, and ten levels up
+		# +70%. Against permadeath that is not a gamble anyone should take: the fight is far more
+		# than 70% harder. It also left the only fast route through the ~45-kills-per-level
+		# baseline closed, and undercut the Trickster identity of killing things bigger than the
+		# warrior can. At 2.0 the same fights pay +141% and +200%.
+		#
+		#   gap:      +2     +5    +10    +20   (at level 1, reference_gap 10.05)
+		#   before: 1.31x  1.49x  1.70x  1.99x
+		#   after:  1.89x  2.41x  3.00x  3.83x
+		#
+		# sqrt is kept so the curve still flattens - the reward for a 50-level gap stays within
+		# reach of a 20-level one, and the thing that actually caps this is the win rate, which
+		# falls off a cliff long before the multiplier does.
+		xp_multiplier = 1.0 + sqrt(gap_ratio) * 2.0
+		var bonus_pct := int((xp_multiplier - 1.0) * 100)
+		if _get_tier_for_level(monster_level) > _get_tier_for_level(character.level):
+			notes.append("[color=#FF00FF]* TIER CHALLENGE: +%d%% XP! *[/color]" % bonus_pct)
+		elif bonus_pct >= 5:
+			notes.append("[color=#FFD700]Challenge bonus: +%d%% XP[/color]" % bonus_pct)
+	elif xp_level_diff < 0:
+		# Downlevel penalty - small grace zone, then gradual reduction.
+		var under_gap: int = absi(xp_level_diff)
+		var penalty_threshold: float = 5.0 + float(character.level) * 0.03  # grace grows with level
+		if float(under_gap) > penalty_threshold:
+			var excess: float = float(under_gap) - penalty_threshold
+			var penalty: float = minf(0.6, excess * 0.03)  # -3% per level beyond threshold
+			xp_multiplier = maxf(0.4, 1.0 - penalty)
+			var penalty_pct := int((1.0 - xp_multiplier) * 100)
+			if penalty_pct >= 10:
+				notes.append("[color=#808080]Weak foe: -%d%% XP[/color]" % penalty_pct)
+
+	var final_xp := int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
+
+	# Slice 6i - Danger Zone bonus. Hotspot kills give an extra +30-70% XP on top of the natural
+	# level scaling. Edge of a hotspot = +30%, center = +70%. The monster's level was already
+	# 1.5-2.5x larger from the hotspot multiplier, so the total reward is meaningful.
+	var hotspot_intensity: float = float(monster.get("hotspot_intensity", 0.0))
+	var hotspot_xp_pct := 0
+	if hotspot_intensity > 0.0:
+		var hotspot_xp_mult: float = WorldSystemScript.hotzone_reward_multiplier(hotspot_intensity)
+		final_xp = int(final_xp * hotspot_xp_mult)
+		hotspot_xp_pct = int((hotspot_xp_mult - 1.0) * 100)
+
+	# Audit #10 v0.9.512 - Apex frontier bonus (+10%) when the kill happened past 1500 tiles, and
+	# v0.9.513 - apex VARIANT (+20% on top) paying for the +25% HP / +10% damage it carries.
+	var apex_xp_pct := 0
+	if monster.get("is_apex_frontier", false):
+		final_xp = int(final_xp * 1.10)
+		apex_xp_pct = 10
+	if monster.get("is_apex_variant", false):
+		final_xp = int(final_xp * 1.20)
+		apex_xp_pct += 20
+
+	# Easy prey: reduced XP.
+	if ABILITY_EASY_PREY in monster.get("abilities", []):
+		final_xp = int(final_xp * 0.5)
+
+	# CLASS PASSIVE: Ranger Hunter's Mark, +30% XP from kills.
+	var passive_effects: Dictionary = character.get_class_passive().get("effects", {})
+	if passive_effects.has("xp_bonus"):
+		final_xp = int(final_xp * (1.0 + passive_effects.get("xp_bonus", 0)))
+		notes.append("[color=#228B22]Hunter's Mark: +%d%% XP![/color]" % int(passive_effects.get("xp_bonus", 0) * 100))
+
+	# Path: xp_pct (Jackpot keystone -10% / Apex Hunter +10%).
+	var path_xp_pct: float = character.get_path_effect_total("xp_pct")
+	if path_xp_pct != 0.0:
+		final_xp = maxi(1, int(final_xp * (1.0 + path_xp_pct / 100.0)))
+
+	# Potion of Insight / Elixir of the Ancients. 2026-09-15 - they wrote an "xp_bonus" buff for N
+	# battles that nothing read (equipment_audit.gd, BUFF NAMES), so both potions did nothing.
+	var buff_xp_pct: int = character.get_buff_value("xp_bonus")
+	if buff_xp_pct > 0:
+		final_xp = maxi(1, int(final_xp * (1.0 + buff_xp_pct / 100.0)))
+		notes.append("[color=#87CEEB]Insight: +%d%% XP![/color]" % buff_xp_pct)
+
+	return {
+		"xp": maxi(1, final_xp),
+		"base": base_xp,
+		"challenge_pct": int((xp_multiplier - 1.0) * 100),
+		"hotspot_pct": hotspot_xp_pct,
+		"apex_pct": apex_xp_pct,
+	}
+
+
 func _process_party_victory(combat: Dictionary) -> Dictionary:
 	"""Process victory for all surviving party members."""
 	var monster = combat.monster
@@ -14328,33 +14318,18 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 			continue
 		var character = combat.characters[pid]
 
-		# XP calculation (per member, based on their level)
-		var base_xp = monster.get("experience_reward", 10)
-		var monster_level = monster.get("level", 1)
-		var xp_level_diff = monster_level - character.level
-		var xp_multiplier = 1.0
-		if xp_level_diff > 0:
-			var reference_gap = 10.0 + float(character.level) * 0.05
-			var gap_ratio = float(xp_level_diff) / reference_gap
-			xp_multiplier = 1.0 + sqrt(gap_ratio) * 0.7
-		elif xp_level_diff < 0:
-			var under_gap = abs(xp_level_diff)
-			var penalty_threshold = 5.0 + float(character.level) * 0.03
-			if under_gap > penalty_threshold:
-				var excess = under_gap - penalty_threshold
-				var penalty = minf(0.6, excess * 0.03)
-				xp_multiplier = maxf(0.4, 1.0 - penalty)
-
-		# House XP bonus
-		var house_xp_mult = 1.0 + (character.house_bonuses.get("xp_bonus", 0) / 100.0)
-		# Audit #14 v0.9.537 — mentor bonus folded into the XP product.
-		var final_xp = int(base_xp * xp_multiplier * house_xp_mult * mentor_mult)
-		# Potion of Insight / Elixir of the Ancients - same bonus as the solo victory. (This path is a
-		# second copy of the XP sum and also lacks the solo path's hotspot, Ranger and Path terms -
-		# logged in docs/BACKLOG.md; the potion is added here so a Warden fight is not the exception.)
-		var _buff_xp: int = character.get_buff_value("xp_bonus")
-		if _buff_xp > 0:
-			final_xp = max(1, int(final_xp * (1.0 + _buff_xp / 100.0)))
+		# XP: the SAME sum the solo victory uses, mentor bonus on top. The house / race /
+		# Sanctuary multipliers come from add_experience below, as they do solo.
+		var member_notes: Array = []
+		var _xp = kill_xp(character, monster, member_notes)
+		var base_xp: int = int(_xp["base"])
+		var final_xp: int = maxi(1, int(int(_xp["xp"]) * mentor_mult))
+		for _n in member_notes:
+			messages.append("[color=#00BFFF]%s[/color] - %s" % [character.name, _n])
+		if int(_xp["hotspot_pct"]) > 0:
+			messages.append("[color=#FF6600]Danger Zone Bonus: +%d%% XP and improved drop chance![/color]" % int(_xp["hotspot_pct"]))
+		if int(_xp["apex_pct"]) > 0:
+			messages.append("[color=#9F70FF]⚡ Apex Bonus: +%d%% XP![/color]" % int(_xp["apex_pct"]))
 
 		# Gem drops
 		var gems = 0
@@ -14372,17 +14347,21 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 			var drops = drop_tables.roll_monster_drops(monster, character)
 			member_rewards[pid]["drops"] = drops
 
-		# Apply rewards
-		character.experience += final_xp
+		# Apply rewards. add_experience, NOT `experience +=` - it carries the race, Sanctuary
+		# and house multipliers and the level-up handling the hand-rolled loop here did not.
+		character.add_experience(final_xp)
 		if gems > 0:
 			character.add_crafting_material("monster_gem", gems)
 		# v0.9.634 — Soldier job XP (party combat path, per surviving member).
 		character.add_job_xp("soldier", max(1, int(base_xp * 0.25)))
 
-		# Level up check
-		while character.experience >= character.experience_to_next_level:
-			character.experience -= character.experience_to_next_level
-			character.level_up()
+		# Companions earn their share in a party fight too - solo has always paid it.
+		if character.has_active_companion():
+			var comp_result = character.add_companion_xp(maxi(1, int(base_xp * COMPANION_XP_SHARE)))
+			character.increment_companion_battles()
+			if comp_result.leveled_up:
+				messages.append("[color=#00FFFF]* %s leveled up to %d! *[/color]" % [
+					character.get_active_companion().get("name", "Companion"), comp_result.new_level])
 
 		messages.append("[color=#00BFFF]%s[/color]: +%d XP%s" % [
 			character.name, final_xp,
