@@ -584,14 +584,10 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ### ⚑ WHERE THINGS STAND RIGHT NOW (2026-09-15, afternoon)
 
-**LIVE: v0.9.790** — the live-tutorial fixes (`e31e1845`) plus the off-map guide arrow below.
-
-**On `master`, UNRELEASED (owner said keep batching, 2026-09-15 afternoon):** everything ticked in the
-"LIVE TEST OF v0.9.790" block below - the Warden's Watch III turn-in blocker, party per-member state,
-skip cards in party, teammate damage numbers, party status strip, Phantom Strike/Exploit text, the
-Warden in the dungeon and pointing home, his level cap, and the egg / home / companion lessons.
-**Next release must add a `display_changelog()` entry for all of it.** Three things need a running
-client to confirm (damage-number placement, party status strip, dungeon Warden sprite).
+**LIVE: v0.9.791** (2026-09-15 evening) — the whole "LIVE TEST OF v0.9.790" batch below, plus the
+owner's local test round: the Warden plans a real route (`_escort_path`, BFS over `move_player`),
+walks you home after the dungeon, stands on the real dungeon ground, and leaving a dungeon no longer
+turns the player into a yellow "@". Nothing is held.
 
 ### ⚑ THE GOLD RING WAS USUALLY NOT ON THE MAP — fixed in v0.9.790, three gaps left
 
@@ -616,9 +612,9 @@ and now says "gold marker". Probe `tools/probe/mark_arrow_offscreen.gd` renders 
 - [ ] **Two unfinished starter dungeons could split the ring from the walk:** the mark is chosen
       once, `_escort_goal_for` re-picks every step. Inferred from code, not observed.
 
-### ⚑ LIVE TEST OF v0.9.790 — owner, 2026-09-15 afternoon (the Warden tutorial, start to finish)
+### ⚑ LIVE TEST OF v0.9.790 — owner, 2026-09-15 afternoon — SHIPPED as v0.9.791
 
-**Fixed on master, NOT released** (probe `tools/probe/wild_swing_and_preview.gd`):
+**Shipped in v0.9.791** (probe `tools/probe/wild_swing_and_preview.gd`):
 - [x] Assassinate read "~1 · 3% kill" in the Warden fight. The party payload hand-copied the engine
       fields and lacked 11 of them (finisher kind/damage, read_note, ramp, all three meter LABELS).
       Both paths now read `engine_display_fields`.
