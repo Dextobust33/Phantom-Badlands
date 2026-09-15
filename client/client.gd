@@ -17933,7 +17933,7 @@ func _format_chase_affix_lines(affixes: Dictionary) -> Array:
 		# that entails, can it double any ability?" It is not a double cast: it denies the
 		# MONSTER its turn, so you act again first, and it only rolls on a hit that DEALS DAMAGE
 		# (never on buffs, denial cards, or anything that already skips the monster's turn).
-		out.append("[color=#FF99FF]+%d%% Extra Turn[/color] [color=#808080](on a damaging hit — you act again before it can)[/color]" % int(affixes["extra_turn_chance"]))
+		out.append("[color=#FF99FF]+%d%% Extra Turn[/color] [color=#808080](on a damaging hit — you act again before it can; all gear together caps at %d%%)[/color]" % [int(affixes["extra_turn_chance"]), int(preload("res://shared/character.gd").EXTRA_TURN_GEAR_CAP)])
 	if affixes.has("hp_on_kill"):
 		out.append("[color=#90EE90]+%d HP on Kill[/color]" % int(affixes["hp_on_kill"]))
 	if affixes.has("mana_on_hit"):

@@ -3901,8 +3901,12 @@ const RARITY_BONUSES = {
 
 static func apply_rarity_bonuses(item: Dictionary, rarity: String) -> Dictionary:
 	"""Apply rarity-based bonuses to a crafted item. Modifies and returns the item dict."""
-	var item_type = item.get("type", "")
-	# Map item types to rarity categories
+	# ⛑ 2026-09-15 - match what crafting actually NAMES things. Crafted armour is typed "<slot>_crafted"
+	# ("helm_crafted") and crafted potions take their POTION_EFFECTS type ("health_potion",
+	# "scroll_rage"), so neither matched and every crafted helm, boot, shield, chest piece and potion
+	# silently lost its rarity bonus - damage reduction and dodge on armour, potency and extra uses on
+	# potions (equipment_audit.gd, CRAFTED GEAR). Only crafted weapons ("weapon") ever got theirs.
+	var item_type = String(item.get("type", "")).trim_suffix("_crafted")
 	var rarity_cat = ""
 	match item_type:
 		"weapon": rarity_cat = "weapon"
@@ -3910,7 +3914,10 @@ static func apply_rarity_bonuses(item: Dictionary, rarity: String) -> Dictionary
 		"consumable", "potion", "scroll", "elixir": rarity_cat = "consumable"
 		"structure": rarity_cat = "structure"
 		"enchantment": rarity_cat = "enchantment"
-		_: return item  # No rarity bonuses for this type
+	if rarity_cat == "" and item.get("is_consumable", false):
+		rarity_cat = "consumable"
+	if rarity_cat == "":
+		return item  # No rarity bonuses for this type
 
 	var type_bonuses = RARITY_BONUSES.get(rarity_cat, {})
 	var bonuses = type_bonuses.get(rarity, {})

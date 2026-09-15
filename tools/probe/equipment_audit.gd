@@ -33,11 +33,14 @@ func _fighter(item) -> Object:
 ## Mean damage of `card` ("" = basic attack) over N identical-seeded casts, and the mean HP the
 ## player gained from the hit (for lifesteal-style procs).
 func _mean(item, card: String, klass: String = "Fighter") -> Dictionary:
-	seed(424242)
 	var dmg := 0.0
 	var healed := 0.0
 	var skips := 0
 	for i in range(N):
+		# Seeded per CAST, not per arm: casts draw different amounts of randomness (crits,
+		# procs), so a once-per-arm seed let the two arms build different random characters
+		# from the second cast on. That made a 10% cost tome read as 28% (CLAUDE.md: seed per cell).
+		seed(424242 + i)
 		var ch = sim.make_char(60, "none", klass, "Human")
 		if item != null:
 			ch.equipped["weapon"] = item.duplicate(true)
@@ -69,12 +72,15 @@ func _mean(item, card: String, klass: String = "Fighter") -> Dictionary:
 
 ## One card cast N times on the same seed, with `enh` written into skill_enhancements first.
 func _cast(card: String, klass: String, enh: Dictionary) -> Dictionary:
-	seed(515151)
 	var dmg := 0.0
 	var spent := 0.0
 	var refused := ""
 	var after := ""
 	for i in range(N):
+		# Seeded per CAST, not per arm: casts draw different amounts of randomness (crits,
+		# procs), so a once-per-arm seed let the two arms build different random characters
+		# from the second cast on. That made a 10% cost tome read as 28% (CLAUDE.md: seed per cell).
+		seed(515151 + i)
 		var ch = sim.make_char(60, "none", klass, "Human")
 		ch.equipped["weapon"] = _weapon({})
 		for k in enh:
@@ -98,9 +104,11 @@ func _cast(card: String, klass: String, enh: Dictionary) -> Dictionary:
 		if not bool(res.get("success", true)) and refused == "":
 			refused = String(res.get("message", "?"))
 		dmg += hp0 - int(c["monster"]["current_hp"])
-		spent += pool0 - (ch.current_mana + ch.current_stamina + ch.current_energy)
+		# GROSS cost, as paid - the funnel records it. The pool difference is NET of on-hit refunds
+		# (Power Strike pays ~97 and gets ~64 back), and a fixed refund makes a 10% cut read as 27%.
+		spent += float(ch.get_meta("path_last_ability_cost")) if ch.has_meta("path_last_ability_cost") 			else float(pool0 - (ch.current_mana + ch.current_stamina + ch.current_energy))
 		if i == 0:
-			after = "buffs=%s shield=%s" % [JSON.stringify(ch.active_buffs), str(c.get("forcefield_shield", c.get("player_shield", "")))]
+			after = "buffs=%s shield=%s" % [JSON.stringify(ch.active_buffs.filter(func(b): return String(b.get("type", "")) in ["damage", "defense"])), str(c.get("forcefield_shield", c.get("player_shield", "")))]
 		cm.active_combats.erase(0)
 	return {"dmg": dmg / N, "spent": spent / N, "refused": refused, "after": after}
 
@@ -108,9 +116,12 @@ func _cast(card: String, klass: String, enh: Dictionary) -> Dictionary:
 ## A persistent buff written exactly as the scroll handlers write it, then one player swing and one
 ## monster turn: damage dealt, damage taken, thorns returned, HP healed by the swing.
 func _buffed(stat: String, value: int) -> Dictionary:
-	seed(626262)
 	var r := {"dealt": 0.0, "taken": 0.0, "thorns": 0.0, "healed": 0.0}
 	for i in range(N):
+		# Seeded per CAST, not per arm: casts draw different amounts of randomness (crits,
+		# procs), so a once-per-arm seed let the two arms build different random characters
+		# from the second cast on. That made a 10% cost tome read as 28% (CLAUDE.md: seed per cell).
+		seed(626262 + i)
 		var ch = sim.make_char(60, "none", "Fighter", "Human")
 		ch.equipped["weapon"] = _weapon({})
 		if stat != "":
@@ -142,11 +153,14 @@ func _buffed(stat: String, value: int) -> Dictionary:
 
 ## Mean rarity step and item count of roll_combat_drops over N kills, with the named buff at 100.
 func _loot(buff: String, dungeon: bool) -> Dictionary:
-	seed(737373)
 	var steps := 0.0
 	var count := 0.0
 	var n := 0
 	for i in range(N):
+		# Seeded per CAST, not per arm: casts draw different amounts of randomness (crits,
+		# procs), so a once-per-arm seed let the two arms build different random characters
+		# from the second cast on. That made a 10% cost tome read as 28% (CLAUDE.md: seed per cell).
+		seed(737373 + i)
 		var ch = sim.make_char(60, "none", "Fighter", "Human")
 		ch.in_dungeon = dungeon
 		if buff != "":
@@ -250,14 +264,17 @@ func _init() -> void:
 		_row(String(cs[0]), verdict, "basic %+.0f%%, Power Strike %+.0f%%%s" % [bdelta, adelta, heal_note])
 
 	print("[AUDIT] ================= PROC RUNES (item.proc_effects) =================")
-	var rune_w := _weapon({}, 0, {"proc_effects": [{"type": "lifesteal", "value": 30, "chance": 100}]})
+	# The shape the rune-application handlers really write: a dictionary keyed by proc type, chance
+	# as a 0-1 fraction. (The first version of this row used an array, which nothing writes.)
+	var rune_w := _weapon({}, 0, {"proc_effects": {"lifesteal": {"percent": 30, "proc_chance": 1.0}}})
 	var rb: Dictionary = _mean(rune_w, "")
 	_row("proc rune lifesteal 30% (proc_effects)", "NO EFFECT" if rb.healed <= basic0.healed + 1.0 else "WORKS", "heal on basic attack %.0f vs base %.0f" % [rb.healed, basic0.healed])
 
 	print("[AUDIT] ================= EXTRA TURN (no cap?) =================")
 	var et := _weapon({"extra_turn_chance": 150})
 	var etm: Dictionary = _mean(et, "power_strike")
-	_row("extra_turn_chance 150 on one item", "UNCAPPED" if etm.skips >= N - 1 else "CAPPED", "monster turn skipped on %d/%d damaging casts" % [etm.skips, N])
+	_row("  control: same weapon, no extra-turn affix", "INFO", "monster turn skipped on %d/%d casts by other causes" % [int(ps0.skips), N])
+	_row("extra_turn_chance 150 on one item", "UNCAPPED" if etm.skips >= N - 1 else "CAPPED", "monster turn skipped on %d/%d damaging casts (cap %.0f%% -> expect ~%.0f)" % [etm.skips, N, float(load("res://shared/character.gd").EXTRA_TURN_GEAR_CAP) if "EXTRA_TURN_GEAR_CAP" in load("res://shared/character.gd").get_script_constant_map() else 100.0, N * 0.30])
 	_row("  value one item rolls at item level 900", "INFO", "5 + 0.10 x 900 = %.0f%% (per the chase formula, before the 0.7-1.3 roll)" % (5.0 + 0.10 * 900.0))
 
 	print("[AUDIT] ================= CRAFTED GEAR =================")
@@ -279,6 +296,8 @@ func _init() -> void:
 	# item "<slot>_crafted". Compare exactly those two spellings.
 	var rarity_out: Dictionary = DT.apply_rarity_bonuses({"type": "helm_crafted"}, "legendary")
 	var normal_out: Dictionary = DT.apply_rarity_bonuses({"type": "helm"}, "legendary")
+	var pot_out: Dictionary = DT.apply_rarity_bonuses({"type": "health_potion", "is_consumable": true}, "legendary")
+	_row("crafted potion rarity bonuses", "NONE" if not (pot_out.get("rarity_bonuses", {}) as Dictionary).size() > 0 else "PRESENT", str(pot_out.get("rarity_bonuses", {})))
 	_row("crafted armour rarity bonuses", "NONE" if not (rarity_out.get("rarity_bonuses", {}) as Dictionary).size() > 0 else "PRESENT",
 		"helm_crafted legendary -> %s | bare helm legendary -> %s" % [str(rarity_out.get("rarity_bonuses", {})), str(normal_out.get("rarity_bonuses", {}))])
 
@@ -312,6 +331,9 @@ func _init() -> void:
 			else:
 				_row(String(tk), "WORKS" if absf(d - float(te.value)) < 4.0 else ("NO EFFECT" if absf(d) < 2.0 else "OFF"), moved)
 		else:
+			if a0.spent < 1.0:
+				_row(String(tk), "POINTLESS", "%s already costs %.1f - nothing to reduce" % [card, a0.spent])
+				continue
 			var r: float = 100.0 * (1.0 - a1.spent / maxf(0.01, a0.spent))
 			_row(String(tk), "WORKS" if absf(r - float(te.value)) < 4.0 else ("NO EFFECT" if absf(r) < 2.0 else "OFF"),
 				"%s cost %.1f -> %.1f (%.0f%% cheaper, tome says %d%%)" % [card, a0.spent, a1.spent, r, int(te.value)])

@@ -8130,6 +8130,13 @@ func _buff_duration(character: Character, ability_name: String, base_rounds: int
 func _apply_buff_value_modifiers(character: Character, ability_name: String, base_value: int) -> int:
 	var value: float = float(base_value)
 	value = value * character.get_ability_damage_mult(ability_name)
+	# A skill tome's "damage_bonus" on a card whose power is a buff or shield. ⛑ 2026-09-15 - damage
+	# cards read it in apply_skill_damage_bonus, buff cards never did, so Tome of Greater Forcefield
+	# (+20% shield) and Tome of Devastating Berserk (+25%) were used up for nothing
+	# (equipment_audit.gd, SKILL ENHANCER TOMES).
+	var tome_pct: float = character.get_skill_damage_bonus(ability_name)
+	if tome_pct > 0.0:
+		value = value * (1.0 + tome_pct / 100.0)
 	var bonus_damage_stacks: int = _count_imprint_stacks(character, ability_name, "bonus_damage")
 	if bonus_damage_stacks > 0:
 		var per_stack: float = float(DropTablesScript.VARIANT_TRAIT_CATEGORIES.get("bonus_damage", {}).get("per_stack_pct", 0.0))

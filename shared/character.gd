@@ -1520,10 +1520,15 @@ func get_crit_damage_bonus() -> float:
 	return _sum_affix_across_equipped("crit_damage_bonus")
 
 
+## The most extra-turn chance gear can add up to. Owner 2026-09-15: cap at 30% total across gear.
+## Uncapped, 150 on one item meant the monster never acted, and a single chase roll at item level 900
+## is ~95% (equipment_audit.gd, EXTRA TURN). Card picks (Swift) ride on top of the capped total.
+const EXTRA_TURN_GEAR_CAP := 30.0
+
 func get_extra_turn_chance() -> float:
-	"""Returns % chance (0-100) to act again on the player's turn. Game is
+	"""Returns % chance (0-EXTRA_TURN_GEAR_CAP) to act again on the player's turn. Game is
 	turn-based so this is the equivalent of D2's attack speed. Wear-affected."""
-	return _sum_affix_across_equipped("extra_turn_chance")
+	return minf(EXTRA_TURN_GEAR_CAP, _sum_affix_across_equipped("extra_turn_chance"))
 
 
 func get_on_hit_resource(resource: String) -> int:
@@ -1680,27 +1685,40 @@ func get_equipment_procs() -> Dictionary:
 		if item == null or not item is Dictionary:
 			continue
 
+		# Each item can carry a proc two ways: a rolled PROC affix, and a PROC RUNE applied at a
+		# workbench. ⛑ 2026-09-15 - only the affix was read, so a Lifesteal / Shocking / Reflect /
+		# Execute rune spent its materials and did nothing (equipment_audit.gd, PROC RUNES). The rune
+		# stores {type: {percent|bonus_damage, proc_chance 0-1}}; the affix stores proc_value and a
+		# 0-100 chance. Both are read into the same [type, value, chance%] shape here.
+		var sources: Array = []
 		var affixes = item.get("affixes", {})
-		if not affixes.has("proc_type"):
-			continue
+		if affixes is Dictionary and affixes.has("proc_type"):
+			sources.append([String(affixes.get("proc_type", "")), affixes.get("proc_value", 0), affixes.get("proc_chance", 100)])
+		var runes = item.get("proc_effects", {})
+		if runes is Dictionary:
+			for rune_type in runes:
+				var rd = runes[rune_type]
+				if rd is Dictionary:
+					sources.append([String(rune_type), rd.get("percent", rd.get("bonus_damage", 0)),
+						int(round(float(rd.get("proc_chance", 1.0)) * 100.0))])
 
-		var proc_type = affixes.get("proc_type", "")
-		var proc_value = affixes.get("proc_value", 0)
-		var proc_chance = affixes.get("proc_chance", 100)
-
-		match proc_type:
-			"lifesteal":
-				procs.lifesteal += proc_value
-			"shocking":
-				# Stack damage, take highest chance
-				procs.shocking.value += proc_value
-				procs.shocking.chance = max(procs.shocking.chance, proc_chance)
-			"damage_reflect":
-				procs.damage_reflect += proc_value
-			"execute":
-				# Stack damage, take highest chance
-				procs.execute.value += proc_value
-				procs.execute.chance = max(procs.execute.chance, proc_chance)
+		for src in sources:
+			var proc_type: String = src[0]
+			var proc_value = src[1]
+			var proc_chance = src[2]
+			match proc_type:
+				"lifesteal":
+					procs.lifesteal += proc_value
+				"shocking":
+					# Stack damage, take highest chance
+					procs.shocking.value += proc_value
+					procs.shocking.chance = max(procs.shocking.chance, proc_chance)
+				"damage_reflect":
+					procs.damage_reflect += proc_value
+				"execute":
+					# Stack damage, take highest chance
+					procs.execute.value += proc_value
+					procs.execute.chance = max(procs.execute.chance, proc_chance)
 
 	return procs
 
