@@ -137,6 +137,17 @@ func _init() -> void:
 	var csrc := FileAccess.get_file_as_string("res://client/client.gd")
 	ck(csrc.contains('if _party_fx_meta.has("taken"):'), "the client pops that number on the member (not parsed from prose)")
 
+	print("\n===== 6. A FIGHTER OPENS A PARTY FIGHT IN STANCE, AS IN SOLO =====")
+	var solo_f = sim.make_char(30, "average", "Fighter", "Human")
+	cm.start_combat(0, solo_f, sim.make_monster(30, "normal", 50.0))
+	var solo_dr: int = int(solo_f.get_buff_value("damage_reduction"))
+	cm.active_combats.erase(0)
+	var c6 := _party(cm, sim, "Fighter")
+	var party_dr: int = int(c6.characters[1].get_buff_value("damage_reduction"))
+	print("  opening damage reduction: solo %d, party %d" % [solo_dr, party_dr])
+	ck(solo_dr > 0, "control: a solo Fighter opens with the stance")
+	ck(party_dr == solo_dr, "a party Fighter opens with the same stance")
+
 	print("")
 	print("RESULT: %s (%d failing)" % ["PASS" if fails == 0 else "FAIL", fails])
 	quit(0 if fails == 0 else 1)

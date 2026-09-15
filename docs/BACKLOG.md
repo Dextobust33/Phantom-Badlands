@@ -639,9 +639,11 @@ the teaching beats that depend on the Warden behaving):
       Also found: a non-lethal Assassinate aborted mid-cast in any party (script error reading the
       suppressed monster turn's missing `message`) - the suppressed turn now has the full shape.
       Probe: `tools/probe/party_view_carries_state.gd`, all 5 checks proven red on the old code.
-- [ ] **Keys a SOLO fight sets at start that a party view never gets:** `warrior_stance_def`,
-      `warrior_stance_dr` (Warrior stance may do nothing in co-op), `player_slow`,
-      `slow_aura_applied`. Measured by the same enumeration; not yet examined.
+- [x] **The Fighter's free opening stance never applied in party fights** (the solo start applied it
+      inline). FIXED on master: `_apply_opening_stance`, called by both starts, players only. A
+      party-only power change; the calibration chain measures solo, so it does not move the curve.
+      `player_slow` / `slow_aura_applied` are set in the monster turn, not at start, and are carried
+      per member now - nothing more to do there.
 - [x] **Mark (and every skip-the-enemy-turn card) did nothing in any party fight.** FIXED on master,
       not released. Nothing on the party path read `skip_monster_turn`. The monster acts once per
       member per round, so a successful skip card now removes the action aimed at the member who

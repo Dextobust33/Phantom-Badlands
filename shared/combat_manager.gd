@@ -2331,14 +2331,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# The Barbarian got the loss back through its OWN lever rather than borrowed defence: the Rage
 	# ramp went 0.11 -> 0.16 per stack (+80% at cap), so it survives by killing sooner. That is
 	# the difference between tuning to the target and tuning to the sibling.
-	if character.class_type == "Fighter":
-		var _stance_str: int = character.get_effective_stat("strength")
-		var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO))
-		var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * WARRIOR_STANCE_RATIO))
-		character.add_buff("damage_reduction", _stance_dr, 4)
-		character.add_buff("defense", _stance_def, 5)
-		combat_state["warrior_stance_dr"] = _stance_dr
-		combat_state["warrior_stance_def"] = _stance_def
+	combat_state.merge(_apply_opening_stance(character))
 
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
@@ -12767,6 +12760,23 @@ func start_party_combat(party_members: Array, characters: Dictionary, monster: D
 # gating (this block). Slice 2 = the card-view resolution + monster phase (stubbed here).
 # =========================================================================
 
+func _apply_opening_stance(character) -> Dictionary:
+	"""The Fighter's free opening stance (see the note in start_combat). Returns the record keys.
+
+	2026-09-15 - ONE place, called by BOTH fight starts. It lived inline in the solo start_combat,
+	so a Fighter in any party fight - the Warden's tutorial included - opened without the damage
+	reduction and defence its class identity is built on. Found by enumerating the keys a solo
+	fight sets at start that a party view never gets."""
+	if character == null or String(character.class_type) != "Fighter":
+		return {}
+	var _stance_str: int = character.get_effective_stat("strength")
+	var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO))
+	var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * WARRIOR_STANCE_RATIO))
+	character.add_buff("damage_reduction", _stance_dr, 4)
+	character.add_buff("defense", _stance_def, 5)
+	return {"warrior_stance_dr": _stance_dr, "warrior_stance_def": _stance_def}
+
+
 func start_party_combat_simul(party_members: Array, characters: Dictionary, monster: Dictionary,
 		npc_members: Array = []) -> Dictionary:
 	"""#64 Slice 1 — set up a SIMULTANEOUS party combat. Mirrors start_party_combat's
@@ -12815,6 +12825,9 @@ func start_party_combat_simul(party_members: Array, characters: Dictionary, mons
 		member_states[pid]["deck"] = _dv.get("combat_deck", [])
 		member_states[pid]["discard"] = _dv.get("combat_discard", [])
 		member_states[pid]["hand"] = _dv.get("combat_hand", [])
+		# Players only: the guide is a teaching device with his own tuning, not a Fighter.
+		if not (pid in npc_members):
+			member_states[pid]["view_carry"] = _apply_opening_stance(ch)
 
 	var combat: Dictionary = {
 		"mode": "party_simul",
