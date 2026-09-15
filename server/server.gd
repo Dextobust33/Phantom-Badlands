@@ -44155,6 +44155,13 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 			_guide_say(peer_id, "Three more. You have a blade now, so this should go faster than the first one did.")
 			_guide_teach(peer_id, "equipment")
 		3:
+			# ⛑ A FINISHED STEP THREE THAT NOBODY SETTLED. Until 2026-09-15 a cleared starter
+			# dungeon left the step complete and un-handed-in (see _warden_settle_steps), and live
+			# characters are sitting in exactly that state. Walking into him settles it - the same
+			# thing he now does on the spot for everyone else.
+			if quest_mgr.is_quest_complete(character, "wardens_watch_3"):
+				handle_quest_turn_in(peer_id, {"quest_id": "wardens_watch_3"})
+				return
 			# He is WALKING them there, so "find the D on your map" is the wrong instruction and
 			# always was once the escort shipped. If the walk is still on he simply says so; if
 			# they took the lead, the bearing they already have on screen is the useful thing.

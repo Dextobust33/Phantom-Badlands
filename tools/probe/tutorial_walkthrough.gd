@@ -396,6 +396,16 @@ func _init() -> void:
 	ck(sv._wardens_watch_stage(ch) == 4, "and the Warden hands it in on the spot - stage %d" % sv._wardens_watch_stage(ch))
 	ck("wardens_watch_3" in ch.completed_quests, "  so it is in completed_quests, rewards and all")
 	ch.in_dungeon = false
+	# ...and for a character ALREADY stranded by the old build (step three complete, never
+	# settled): walking into him hands it in. Recreate that state for real and bump him.
+	ch.completed_quests.erase("wardens_watch_3")
+	sv.quest_mgr.accept_quest(ch, "wardens_watch_3", int(ch.x), int(ch.y))
+	ch.update_quest_progress("wardens_watch_3", 1)
+	ck(sv._wardens_watch_stage(ch) == 3 and sv.quest_mgr.is_quest_complete(ch, "wardens_watch_3"),
+		"a stranded character: step three complete and still active")
+	sv._handle_warden_interact(PEER, ch)
+	await process_frame
+	ck(sv._wardens_watch_stage(ch) == 4, "  walking into the Warden settles it (stage %d)" % sv._wardens_watch_stage(ch))
 	# The dungeon-completion path must actually CALL the routine exercised above.
 	var _dsrc := FileAccess.get_file_as_string("res://server/server.gd")
 	var _dcall := _dsrc.find("var quest_updates = quest_mgr.check_dungeon_progress(character, dungeon_type)")
