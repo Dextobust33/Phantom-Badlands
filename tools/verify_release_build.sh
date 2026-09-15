@@ -113,6 +113,8 @@ check "passive_single_source" "true"         "$(field passive_single_source)"
 check "sanctuary_sprites"    "true"          "$(field sanctuary_sprites)"
 # v0.9.790: the off-map guide arrow (OverworldRoom.build's 7th argument).
 check "mark_arrow"           "true"          "$(field mark_arrow)"
+# v0.9.791: the dungeon Warden figure (client._dungeon_warden_img).
+check "dungeon_warden"       "true"          "$(field dungeon_warden)"
 # The multi-cell tile manifest is a raw .json, not an imported resource - if it misses the .pck
 # the map silently falls back to the shrunken 32px tiles and nothing else looks wrong.
 BIG_TILES="$(field big_tiles)"

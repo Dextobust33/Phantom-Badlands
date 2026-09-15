@@ -2512,6 +2512,8 @@ func _ready():
 			if String(_m.get("name", "")) == "build":
 				_mark_arrow_live = _m.get("args", []).size() >= 7
 		print("[BUILDVERIFY] mark_arrow=", _mark_arrow_live)
+		# v0.9.791: the Warden walks the starter dungeon with you.
+		print("[BUILDVERIFY] dungeon_warden=", has_method("_dungeon_warden_img"))
 		# Perf guards for the 4K-laptop thermal-throttling report (v0.9.735). These live in
 		# project.godot, which is baked into the pck — so the only way to know a shipped build
 		# still has them is to ask the running engine.
