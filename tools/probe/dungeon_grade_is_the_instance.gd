@@ -1,0 +1,89 @@
+extends SceneTree
+## Does everything inside a dungeon read the grade the PLAYER is in, or the one its type says?
+##
+## ⛑ Reported live 2026-09-14. A player entered a Phoenix's Nest and could not use a Scroll of
+## Escape. Owner: *"what's the alternative, I wasn't aware the scrolls of escape don't work in
+## high level dungeons, how are they meant to get out?"*
+##
+## They were never in a high level dungeon. The monsters were LEVEL 29, and the bands settle it:
+## F5 covers 26-29, C5 covers 278-322. The instance was F. But `phoenix_nest`'s TYPE says tier 6,
+## and the scroll gate read the type - so it refused a tier-4 scroll on the grounds that Phoenix's
+## Nests are tier 6.
+##
+## Since 2026-09-11 a dungeon's grade belongs to the INSTANCE; the land decides it. Every read of
+## the type's tier from inside a dungeon is therefore wrong for any instance the land regraded,
+## and there were five of them.
+const DDB = preload("res://shared/dungeon_database.gd")
+const PowerRank = preload("res://shared/power_rank.gd")
+
+var fails := 0
+func ck(ok: bool, msg: String) -> void:
+	if not ok:
+		fails += 1
+	print(("  PASS  " if ok else "  FAIL  ") + msg)
+
+
+func _init() -> void:
+	print("===== THE EVIDENCE THAT NAMED THE BUG =====")
+	var f5: Dictionary = DDB.get_sub_tier_level_range(3, 5)
+	var c5: Dictionary = DDB.get_sub_tier_level_range(6, 5)
+	print("  F5 covers levels %d-%d;  C5 covers %d-%d;  the phoenix was level 29"
+		% [int(f5.get("min_level", 0)), int(f5.get("max_level", 0)),
+			int(c5.get("min_level", 0)), int(c5.get("max_level", 0))])
+	ck(29 >= int(f5.get("min_level", 0)) and 29 <= int(f5.get("max_level", 0)),
+		"level 29 sits inside F5 - so the instance really was F")
+	ck(29 < int(c5.get("min_level", 0)),
+		"and nowhere near C5 - the grade it was refused against")
+	ck(PowerRank.letter(3) == "F" and PowerRank.letter(6) == "C",
+		"F is tier 3 and C is tier 6 (three grades apart)")
+	ck(int(DDB.get_dungeon("phoenix_nest").get("tier", 0)) == 6,
+		"and phoenix_nest's TYPE says 6, which is where the C came from")
+
+	print("")
+	print("===== NOTHING INSIDE A DUNGEON READS THE TYPE ANY MORE =====")
+	var src := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(src.contains("func _current_dungeon_tier(character) -> int:"),
+		"there is one resolver for 'the grade this player is standing in'")
+	ck(src.contains("return _instance_tier(inst)"),
+		"  and it answers from the INSTANCE")
+	var n := src.count("_current_dungeon_tier(character)")
+	print("  %d call sites use it" % n)
+	ck(n >= 5, "every site that used to read the type now asks it")
+
+	# The property that matters: no read of the TYPE's tier keyed off the character's current
+	# dungeon survives. This is the check that would catch the sixth one somebody adds.
+	var bad := 0
+	var lines := src.split("\n")
+	for i in range(lines.size()):
+		var ln: String = lines[i]
+		if not ln.contains("get_dungeon(character.current_dungeon_type)"):
+			continue
+		# does this line, or the next, pull a tier out of it?
+		var window: String = ln + (lines[i + 1] if i + 1 < lines.size() else "")
+		if window.contains('"tier"') or window.contains(".tier"):
+			bad += 1
+			print("    still reading the TYPE's tier at line %d" % (i + 1))
+	ck(bad == 0, "no site reads the type's tier for the dungeon a player is inside")
+
+	print("")
+	print("===== AND THE REFUSAL TELLS THEM THE WAY OUT =====")
+	# The old message said only what did not work. Every dungeon places a scroll matching its own
+	# grade on the first floor; a player who walked past it had no way to know it existed.
+	ck(src.contains("A matching scroll is on the FIRST FLOOR of every dungeon"),
+		"it names where a scroll that WILL work can be found")
+	ck(src.contains("or defeat the boss to leave"), "  and the other way out")
+
+	print("")
+	print("----- what this does NOT claim -----")
+	print("  That the overworld label and the entrance panel were wrong. Both resolve through")
+	print("  _dungeon_data_for, which already reads the instance. The live log for that entry")
+	print("  shows rank inheriting correctly (5 -> 5, no mismatch flag), so if a C was shown on")
+	print("  screen it came from a surface not yet found - the entry log now prints tier so the")
+	print("  next report names it.")
+
+	print("")
+	if fails == 0:
+		print("PASS - a dungeon's grade is the one the player is standing in")
+	else:
+		print("FAIL - %d check(s) failed" % fails)
+	quit(1 if fails > 0 else 0)

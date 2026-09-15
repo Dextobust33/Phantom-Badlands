@@ -30301,9 +30301,13 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 				_flag = "  <<< MISMATCH: rank inherit was ignored"
 			elif _inherit_sub <= 0:
 				_flag = "  <<< no tile rank to inherit; depth was rolled from distance"
-			log_message("DUNGEON-ENTER %s at (%d,%d) type=%s tile=[%s] -> instance %s sub_tier=%d%s" % [
+			# TIER is printed too. The 2026-09-14 report was about the GRADE LETTER, and this
+			# line only ever carried the rank - so the one number the report turned on was the
+			# one the log did not have.
+			log_message("DUNGEON-ENTER %s at (%d,%d) type=%s tile=[%s tier=%d] -> instance %s tier=%d(%s) sub_tier=%d%s" % [
 				character.name, character.x, character.y, dungeon_type, _tile_desc,
-				instance_id, _got, _flag])
+				_inherit_tier, instance_id, _got_tier, PowerRankScript.letter(_got_tier),
+				_got, _flag])
 		if instance_id == "":
 			send_to_peer(peer_id, {"type": "error", "message": "Failed to create dungeon instance!"})
 			return
@@ -30619,7 +30623,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFE96A]You pray at a shrine — your next battle is blessed ([color=#FFD700]+15%% damage for 3 rounds[/color]).[/color]"})
 	elif tile == DungeonDatabaseScript.TileType.GAMBLE_CACHE:
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.CLEARED
-		var _gtier := int(DungeonDatabaseScript.get_dungeon(character.current_dungeon_type).get("tier", 1))
+		var _gtier := _current_dungeon_tier(character)
 		var _acct_g: String = peers[peer_id].account_id if peers.has(peer_id) else ""
 		var _groll := randi() % 100
 		if _groll < 40:
@@ -32272,6 +32276,27 @@ func _dungeon_data_for(instance: Dictionary) -> Dictionary:
 		return dd
 	dd["tier"] = _instance_tier(instance)
 	return dd
+
+
+func _current_dungeon_tier(character) -> int:
+	"""The GRADE of the dungeon this character is standing in.
+
+	⛑ A dungeon's grade belongs to the INSTANCE, not the type. Since 2026-09-11 the land decides
+	it, so a Phoenix's Nest - type tier 6 - can properly be an F-grade instance in low country.
+	Reading `get_dungeon(current_dungeon_type).tier` gets the TYPE's number and is wrong for
+	every instance the land regraded.
+
+	Found because a player could not use a Scroll of Escape: the gate read type tier 6 and
+	refused a tier-4 scroll in a dungeon whose monsters were LEVEL 29 - F5 covers 26-29, C5
+	covers 278-322, so it was unambiguously F. Four more sites had the same read: the gamble
+	cache's valor, the escape scroll a dungeon drops, chest loot and gathering tier. All of them
+	paid or gated at the type's grade rather than the one the player was actually in."""
+	if character == null:
+		return 1
+	var inst: Dictionary = active_dungeons.get(character.current_dungeon_id, {})
+	if not inst.is_empty():
+		return _instance_tier(inst)
+	return int(DungeonDatabaseScript.get_dungeon(String(character.current_dungeon_type)).get("tier", 1))
 
 
 func _instance_tier(instance: Dictionary) -> int:
@@ -35053,8 +35078,7 @@ func _open_dungeon_treasure(peer_id: int):
 	# out. GUARANTEE at least one per dungeon run: if the 20% roll misses and this peer
 	# hasn't been granted one yet, force it here. Subsequent treasures keep the 20% chance
 	# for extras.
-	var dungeon_data_t = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
-	var dungeon_tier = dungeon_data_t.get("tier", 1) if not dungeon_data_t.is_empty() else 1
+	var dungeon_tier = _current_dungeon_tier(character)
 	var scroll_drop = DungeonDatabaseScript.roll_escape_scroll_drop(dungeon_tier)
 	if scroll_drop.is_empty() and not bool(_dungeon_scroll_granted.get(peer_id, false)):
 		scroll_drop = DungeonDatabaseScript.make_escape_scroll(dungeon_tier)
@@ -35295,8 +35319,7 @@ func _open_final_chest(peer_id: int):
 			"chest_y": ch.dungeon_y
 		}
 	var character = characters[peer_id]
-	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
-	var dungeon_tier = int(dungeon_data.get("tier", 1))
+	var dungeon_tier = _current_dungeon_tier(character)
 	var inst_sub_tier = 1
 	if active_dungeons.has(character.current_dungeon_id):
 		inst_sub_tier = int(active_dungeons[character.current_dungeon_id].get("sub_tier", 1))
@@ -36114,8 +36137,7 @@ func _prompt_dungeon_gather(peer_id: int):
 		return
 	var character = characters[peer_id]
 	var instance_id = character.current_dungeon_id
-	var dungeon_data_g = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
-	var tier = dungeon_data_g.get("tier", 1) if not dungeon_data_g.is_empty() else 1
+	var tier = _current_dungeon_tier(character)
 	var resource_tier = DungeonDatabaseScript.get_dungeon_resource_tier(tier)
 
 	# Determine node type from seed
@@ -36145,8 +36167,7 @@ func handle_dungeon_gather_confirm(peer_id: int, message: Dictionary):
 	character.dungeon_floor_steps += 5
 
 	var instance_id = character.current_dungeon_id
-	var dungeon_data_g = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
-	var tier = dungeon_data_g.get("tier", 1) if not dungeon_data_g.is_empty() else 1
+	var tier = _current_dungeon_tier(character)
 	var resource_tier = DungeonDatabaseScript.get_dungeon_resource_tier(tier)
 
 	# Determine node type from seed (same seed as prompt)
@@ -36348,11 +36369,29 @@ func _use_escape_scroll(peer_id: int, item_index: int):
 		return
 
 	var tier_max = item.get("tier_max", 4)
-	var dungeon_data_e = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
-	var dungeon_tier = dungeon_data_e.get("tier", 1) if not dungeon_data_e.is_empty() else 1
+	# ⛑ THE INSTANCE'S GRADE, NOT THE TYPE'S.
+	#
+	# Since 2026-09-11 a dungeon's grade belongs to the INSTANCE - the land decides it - so a
+	# Phoenix's Nest whose type says tier 6 can quite properly be an F-grade instance standing in
+	# low country. This gate read the TYPE, so it refused a Scroll of Escape in a tier-3 dungeon
+	# on the grounds that Phoenix's Nests are tier 6.
+	#
+	# Reported live: a player entered a phoenix dungeon whose monsters were LEVEL 29 - F5 covers
+	# 26-29, C5 covers 278-322, so the instance was unambiguously F - and could not use their
+	# scroll. Owner: *"what's the alternative, I wasn't aware the scrolls of escape don't work in
+	# high level dungeons, how are they meant to get out?"* There was no alternative, because the
+	# dungeon was never high level.
+	#
+	# `_instance_tier` is the same resolver the entrance panel and the map already use.
+	var dungeon_tier: int = _current_dungeon_tier(character)
 
 	if dungeon_tier > tier_max:
-		send_to_peer(peer_id, {"type": "error", "message": "This scroll only works in tier %d or lower dungeons!" % tier_max})
+		# And SAY how to get out, rather than only what does not work. Every dungeon places a
+		# scroll that matches its own grade on the first floor - that is the way out, and a
+		# player who walked past it had no way of knowing it existed.
+		send_to_peer(peer_id, {"type": "error", "message":
+			"This scroll only reaches tier %d, and this dungeon is %s. A matching scroll is on the FIRST FLOOR of every dungeon - or defeat the boss to leave."
+				% [tier_max, PowerRankScript.letter(dungeon_tier)]})
 		return
 
 	# Consume scroll
