@@ -111,7 +111,7 @@ func _render_page() -> void:
 	# An unknown page would render as an empty panel with no Back button - which looks
 	# exactly like a crash. Fall back to root rather than stranding the panel.
 	if not _current_page in ["root", "dungeon", "combat", "items", "companions", "player",
-			"world", "loot_lab", "abilities", "patreon", "rescue"]:
+			"world", "loot_lab", "abilities", "patreon", "rescue", "tutorial"]:
 		_current_page = "root"
 	match _current_page:
 		"root":
@@ -132,6 +132,8 @@ func _render_page() -> void:
 			_add_button("World - test posts, guards, cartography", "_page_world", Color(0.6, 1, 0.6))
 			_add_button("Rescue - pull a stuck player back to the Crossroads", "_page_rescue",
 				Color(1.0, 0.68, 0.2))
+			_add_button("Tutorial - jump to a beat in Warden's Watch", "_page_tutorial",
+				Color(0.6, 0.9, 1.0))
 			_add_separator()
 			_add_button("Loot Lab - force minigame + rare cells / affixed tools", "_page_loot_lab", Color(0.4, 0.9, 1.0))
 			_add_button("Abilities - test +X to ability gear", "_page_abilities", Color(0.85, 0.65, 1.0))
@@ -243,6 +245,22 @@ func _render_page() -> void:
 			_subtitle_subline("[color=#FF6666]DANGER.[/color] The map wipe. Accounts, characters, Sanctuary and VALOR all survive; the land, posts, dungeons, market and every built tile do not. Two presses: the first only tells you what it would destroy.")
 			_add_button("WORLD RESET - show me what it would destroy", "gm_world_reset", Color(1.0, 0.7, 0.3))
 			_add_button("...CONFIRM WORLD RESET (no undo)", "gm_world_reset_confirm", Color(1.0, 0.3, 0.3))
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"tutorial":
+			# ⛑ STOP REPLAYING THE FIRST HALF TO REACH THE SECOND.
+			#
+			# Owner 2026-09-14: *"setup a test scenario too where we are about to kill the third
+			# enemy in step 2. You're exhausting me with all these failures and having to repeat
+			# the same steps."* Every fix to the dungeon leg has cost a full run of the opening to
+			# get to, and most of those runs found nothing, because the bug was further on.
+			_title_label.text = "ADMIN - TUTORIAL SCENARIOS"
+			_subtitle_label.text = "[color=#aaaaaa]Puts YOUR character at a beat in Warden's Watch without replaying the opening. Gear and the Warden's escort are set to match how you would really arrive, and the teaching pop-ups are reset so they fire again.[/color]"
+			_add_button("Step 2 - one kill from finishing", "gm_tutorial_step2", Color(0.6, 1, 0.6))
+			_subtitle_subline("[color=#aaaaaa]Walk out and win one fight: that is the world lesson, the dungeon pointer and the walk there, all in one go.[/color]")
+			_add_separator()
+			_add_button("Step 3 - he should start walking you to the dungeon", "gm_tutorial_step3",
+				Color(0.6, 1, 0.6))
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"rescue":

@@ -2453,6 +2453,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_completequest(peer_id, message)
 		"gm_rescue_player":
 			handle_gm_rescue_player(peer_id, message)
+		"gm_tutorial_jump":
+			handle_gm_tutorial_jump(peer_id, message)
 		"gm_world_reset":
 			handle_gm_world_reset(peer_id)
 		"gm_world_reset_confirm":
@@ -41743,6 +41745,70 @@ func handle_gm_hire_test_guard(peer_id: int, _message: Dictionary):
 # window; nothing is touched until the confirm arrives. An irreversible action on live characters
 # should not be one mis-click.
 var _world_reset_armed_at: Dictionary = {}   # peer_id -> ticks_msec
+
+
+func handle_gm_tutorial_jump(peer_id: int, message: Dictionary) -> void:
+	"""Put this character exactly where a tester needs them in Warden's Watch.
+
+	⛑ Owner 2026-09-14: *"setup a test scenario too where we are about to kill the third enemy
+	in step 2. You're exhausting me with all these failures and having to repeat the same steps."*
+
+	Fair. Every fix to the back half of the tutorial has cost a full replay of the front half to
+	reach, and most of those replays found nothing because the bug was further on. `to` picks the
+	beat: "step2_last" leaves them one kill from finishing step two, which is the moment the
+	whole dungeon leg hangs off."""
+	if not _is_admin(peer_id) or not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var to := String(message.get("to", "step2_last"))
+	# Clean slate on the chain, then rebuild it to the requested beat.
+	var keep: Array = []
+	for q in character.active_quests:
+		if not String(q.get("quest_id", q.get("id", ""))).begins_with("wardens_watch_"):
+			keep.append(q)
+	character.active_quests = keep
+	for qid in ["wardens_watch_1", "wardens_watch_2", "wardens_watch_3"]:
+		character.completed_quests.erase(qid)
+	character.met_warden = true
+	# Replay the lessons. Without this the second run of a scenario is silent, and "the popup
+	# did not fire" becomes indistinguishable from "the popup already fired, on the last run".
+	character.seen_guide_world_hint = false
+	character.seen_guide_leave_post_hint = false
+	character.seen_guide_recovery_hint = false
+	character.seen_guide_rations_hint = false
+	# The two pieces he hands over, so the state matches how they would really arrive.
+	if drop_tables:
+		for slot in ["weapon", "armor"]:
+			var cur = character.equipped.get(slot, null)
+			var free: bool = cur == null or (cur is Dictionary and (cur as Dictionary).is_empty())
+			if free:
+				var kit = drop_tables.get_starter_kit_item(slot)
+				if kit is Dictionary and not (kit as Dictionary).is_empty():
+					character.equipped[slot] = kit
+	match to:
+		"step2_last":
+			character.completed_quests.append("wardens_watch_1")
+			if quest_mgr:
+				quest_mgr.accept_quest(character, "wardens_watch_2", int(character.x), int(character.y))
+			for q in character.active_quests:
+				if String(q.get("quest_id", "")) == "wardens_watch_2":
+					q["progress"] = maxi(0, int(q.get("target", 3)) - 1)
+			send_to_peer(peer_id, {"type": "text", "message":
+				"[color=#66FF66]Jumped to Warden's Watch II — one kill from finishing.[/color]"})
+		"step3":
+			character.completed_quests.append("wardens_watch_1")
+			character.completed_quests.append("wardens_watch_2")
+			if quest_mgr:
+				quest_mgr.accept_quest(character, "wardens_watch_3", int(character.x), int(character.y))
+			_escort_released.erase(peer_id)
+			send_to_peer(peer_id, {"type": "text", "message":
+				"[color=#66FF66]Jumped to Warden's Watch III — he should start walking you to the dungeon.[/color]"})
+		_:
+			return
+	character.current_hp = character.get_total_max_hp()
+	save_character(peer_id)
+	send_character_update(peer_id)
+	send_location_update(peer_id)
 
 
 func handle_gm_rescue_player(peer_id: int, message: Dictionary) -> void:

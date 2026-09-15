@@ -36991,6 +36991,10 @@ func _on_admin_panel_action(action_id: String) -> void:
 	commands are gated by _is_admin() server-side."""
 	# The rescue buttons carry their target in the action id, because there is one per online
 	# player and a fixed match statement cannot enumerate people.
+	if action_id == "gm_tutorial_step2" or action_id == "gm_tutorial_step3":
+		send_to_server({"type": "gm_tutorial_jump",
+			"to": "step2_last" if action_id.ends_with("step2") else "step3"})
+		return
 	if action_id.begins_with("gm_rescue:"):
 		var _who := action_id.substr(10)
 		send_to_server({"type": "gm_rescue_player", "player": _who})
