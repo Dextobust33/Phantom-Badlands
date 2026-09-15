@@ -9694,12 +9694,23 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif wish_selection_mode:
-		# Wish granter reward selection - Q/W/E for 3 options
+		# Wish granter reward selection - Q/W/E for 3 options.
+		#
+		# ⛑ THE BUTTON SAYS WHAT THE WISH IS.
+		#
+		# Owner 2026-09-14: *"the Wish reward isn't displaying to the players what each which
+		# grants, they can only see on their action bar Wish 1, Wish 2, or Wish 3 but it doesn't
+		# tell them what the wishes are."*
+		#
+		# The descriptions ARE printed - into game_output, which the next server message wipes.
+		# That is the general fault the scrollback item exists for; this is the local fix, and it
+		# is the right one regardless: a choice of three should be readable from the thing you
+		# click, not from a line that scrolled away.
 		current_actions = [
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			{"label": "Wish 1", "action_type": "local", "action_data": "wish_select_0", "enabled": wish_options.size() > 0},
-			{"label": "Wish 2", "action_type": "local", "action_data": "wish_select_1", "enabled": wish_options.size() > 1},
-			{"label": "Wish 3", "action_type": "local", "action_data": "wish_select_2", "enabled": wish_options.size() > 2},
+			{"label": _wish_button_label(0), "action_type": "local", "action_data": "wish_select_0", "enabled": wish_options.size() > 0},
+			{"label": _wish_button_label(1), "action_type": "local", "action_data": "wish_select_1", "enabled": wish_options.size() > 1},
+			{"label": _wish_button_label(2), "action_type": "local", "action_data": "wish_select_2", "enabled": wish_options.size() > 2},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -49360,6 +49371,28 @@ func _get_quest_tier_tag(quest: Dictionary) -> String:
 			return " [color=#FF8000][LEGENDARY][/color]"
 
 	return ""
+
+func _wish_button_label(idx: int) -> String:
+	"""What wish `idx` actually grants, short enough for an action-bar button.
+
+	Falls back to "Wish N" only when the server sent an option with no label at all - a button
+	reading "Wish 2" is what the owner reported, so it must be the exception and never the rule.
+	BBCode is stripped: action bar buttons are plain Buttons and would print the tags."""
+	if idx < 0 or idx >= wish_options.size():
+		return "Wish %d" % (idx + 1)
+	var w = wish_options[idx]
+	if not (w is Dictionary):
+		return "Wish %d" % (idx + 1)
+	var txt := String((w as Dictionary).get("label", ""))
+	if txt == "":
+		# Build one from the type rather than give up - `_format_wish_description` already knows
+		# how, and its output only needs its colour tags removed.
+		txt = _format_wish_description(w as Dictionary).split(" - ")[0]
+		txt = RegEx.create_from_string("\\[/?[^\\]]+\\]").sub(txt, "", true)
+	if txt.length() > 22:
+		txt = txt.substr(0, 21) + "…"
+	return txt if txt != "" else "Wish %d" % (idx + 1)
+
 
 func _format_wish_description(wish: Dictionary) -> String:
 	"""Format a wish option for display"""
