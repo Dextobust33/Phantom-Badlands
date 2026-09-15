@@ -24309,6 +24309,15 @@ func handle_server_message(message: Dictionary):
 					var _pe_hovered = _map_tooltip_anchor.get_meta("player_data", {})
 					if _pe_hovered is Dictionary and str(_pe_hovered.get("name", "")) == _pe_name:
 						_on_map_sprite_hover(_map_tooltip_anchor)
+				elif is_instance_valid(_map_tooltip) and _map_tooltip.visible and String(_map_hover_player.get("name", "")) == _pe_name:
+					# ⛑ 2026-09-15 - THE COMPOSED MAP'S HOVER. Every map figure is a [url] now, with no
+					# node anchor, so the branch above never ran: the portrait was composed before the
+					# gear arrived and never redrawn - no equipment tint, no glyphs, while the Player
+					# Info screen (which is sent the gear up front) had both. Owner: *"if I hover
+					# another player on the map the sprite doesn't match what I see on the Player Info
+					# screen, it's missing the tinting and glyphs."*
+					var _pe_who: Dictionary = _map_hover_player
+					_show_map_tooltip(_build_map_player_tooltip(_pe_who, false), null, _pe_who)
 
 		"examine_result":
 			# Check if this was triggered by click on player list
@@ -37685,6 +37694,7 @@ func _on_log_meta_hover(meta) -> void:
 		if kind == "player":
 			var body := _build_map_player_tooltip(data, bool(fig.get("is_local", false)))
 			if body != "":
+				_map_hover_player = data
 				_show_map_tooltip(body, null, data)
 		elif kind == "companion":
 			var cbody := _build_map_companion_tooltip(data)
@@ -41297,40 +41307,18 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 
 
 func _build_map_companion_tooltip(companion: Dictionary) -> String:
+	"""Hovering someone's companion on the map shows the SAME card the Companions screen does -
+	name, rank, abilities and its ASCII art - plus how to open it.
+
+	⛑ 2026-09-15 - this was a second, thinner builder that printed the art at font size 4, too
+	small to read, and without the details the Companions card carries. Owner: *"hovering their
+	companions should show their companion ASCII art as well."* One builder, every surface."""
 	if companion == null or companion.is_empty():
 		return ""
-	var lines: Array = []
-	var cname = str(companion.get("name", "?"))
-	var monster_type = str(companion.get("monster_type", ""))
-	var variant = str(companion.get("variant", ""))
-	var v_color_raw = str(companion.get("variant_color", "#FFFFFF"))
-	var v_color2_raw = str(companion.get("variant_color2", ""))
-	var v_pattern = str(companion.get("variant_pattern", "solid"))
-	var v_color = _ensure_readable_color(v_color_raw)
-	var v_color2 = _ensure_readable_color(v_color2_raw) if v_color2_raw != "" else ""
-	var level = int(companion.get("level", 0))
-	# Header
-	var header = "[b][color=%s]%s[/color][/b]" % [v_color, cname]
-	if variant != "" and variant != "Normal":
-		header += "  [color=#888888](%s)[/color]" % variant
-	lines.append(header)
-	if monster_type != "":
-		lines.append("[color=#AAAAAA]%s[/color]" % monster_type)
-	if level > 0:
-		lines.append("[color=#AAAAAA]Level %d[/color]" % level)
-	# Variant-colored ASCII art
-	var art_lines = _get_companion_art_lines(monster_type, cname)
-	if art_lines.size() > 0:
-		var art_str = "\n".join(art_lines)
-		art_str = _recolor_ascii_art_pattern(art_str, v_color, v_color2, v_pattern)
-		# v0.9.572 — map-hover tooltip also picks up border tier.
-		art_str = _apply_companion_border_tier(art_str, int(companion.get("border_tier", 0)))
-		lines.append("")
-		lines.append("[font_size=4]%s[/font_size]" % art_str)
-	lines.append("")
-	lines.append("[color=#808080][i]Click to inspect[/i][/color]")
-	return "\n".join(lines)
-
+	var body := format_companion_tooltip_bbcode(companion)
+	if body == "":
+		return ""
+	return body + "\n\n[color=#808080][i]Click to inspect[/i][/color]"
 
 func _hov_battler_fallback(data: Dictionary) -> String:
 	var p := BattlerSprite.idle_path_resolved(str(data.get("battler_id", "")), str(data.get("class", data.get("class_type", ""))), str(data.get("name", "")))
@@ -41357,10 +41345,13 @@ func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: D
 		if (not (_hp_eq is Dictionary)) or (_hp_eq as Dictionary).is_empty():
 			if _remote_equip_cache.has(_hp_name):
 				_hp_eq = _remote_equip_cache[_hp_name]
-			elif _hp_name != "":
-				if not _remote_equip_requested.has(_hp_name):
-					_remote_equip_requested[_hp_name] = true
-					send_to_server({"type": "get_player_equipped", "name": _hp_name})
+			# ⛑ 2026-09-15 - asked ONCE per session before, so gear changed after the first hover
+			# never showed. Re-asked when the copy is older than REMOTE_EQUIP_STALE_MS.
+			var _hp_age: int = Time.get_ticks_msec() - int(_remote_equip_fetched_ms.get(_hp_name, -REMOTE_EQUIP_STALE_MS))
+			if _hp_name != "" and _hp_age >= REMOTE_EQUIP_STALE_MS:
+				_remote_equip_fetched_ms[_hp_name] = Time.get_ticks_msec()
+				_remote_equip_requested[_hp_name] = true
+				send_to_server({"type": "get_player_equipped", "name": _hp_name})
 		var _hp_tex: Texture2D = await _compose_portrait(
 			str(portrait_data.get("battler_id", "")),
 			str(portrait_data.get("appearance_color", "")),
@@ -41417,7 +41408,16 @@ func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: D
 	_map_tooltip.global_position = pos
 
 
+## The player a POINTER-anchored map hover is showing (every map figure since the composed map: there
+## is no node to ask). Lets the late-arriving gear redraw the portrait - see "player_equipped".
+var _map_hover_player: Dictionary = {}
+## When each remote player's gear was last fetched, so a hover re-asks after they change kit.
+var _remote_equip_fetched_ms: Dictionary = {}
+const REMOTE_EQUIP_STALE_MS := 30000
+
+
 func _hide_map_tooltip() -> void:
+	_map_hover_player = {}
 	_map_tooltip_gen += 1  # abort any in-flight compose/positioning coroutine
 	if _map_tooltip and is_instance_valid(_map_tooltip):
 		_map_tooltip.visible = false
