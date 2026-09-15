@@ -31703,6 +31703,10 @@ func _ensure_starter_dungeon_exists():
 			continue
 		if int(instance.get("completed_at", 0)) > 0:
 			continue
+		# A PERSONAL copy is not an entrance - see _nearest_starter_dungeon. Counting one here would
+		# stop a new entrance spawning once the world tile despawned under a run in progress.
+		if int(instance.get("owner_peer_id", -1)) >= 0:
+			continue
 		var distance = sqrt(instance.world_x * instance.world_x + instance.world_y * instance.world_y)
 		if distance <= STARTER_AREA_RADIUS:
 			return          # a real starter dungeon is already standing near spawn
@@ -44107,6 +44111,14 @@ func _nearest_starter_dungeon(character) -> Dictionary:
 		if not bool(inst.get("starter", false)):
 			continue
 		if int(inst.get("completed_at", 0)) > 0:
+			continue
+		# ⛑ 2026-09-15 - skip PERSONAL copies. Entering a starter dungeon creates the entrant's own
+		# instance, which inherits the starter flag and is registered at a RANDOM point 25-40 tiles
+		# from them. With two new players on the server the second one's Warden and ring picked
+		# the first player's copy when it lay nearer - a spot with no entrance, in a hotzone. Owner,
+		# live: *"the warden led me to a different spot that was in a hotzone ... I walked onto the
+		# spot that was highlighted and can't find a dungeon here."* Only the world tile is enterable.
+		if int(inst.get("owner_peer_id", -1)) >= 0:
 			continue
 		var dx: float = float(int(inst.get("world_x", 0)) - int(character.x))
 		var dy: float = float(int(inst.get("world_y", 0)) - int(character.y))
