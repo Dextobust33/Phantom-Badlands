@@ -3411,13 +3411,20 @@ func _find_post_exit(center_x: int, center_y: int) -> Vector2i:
 ## halved the encounter rate and matters a great deal now that it nearly removes it. Three tiles
 ## is wide enough to walk without threading a needle and narrow enough to still read as a road
 ## rather than a clearing.
-const ROAD_HALF_WIDTH := 1
+const ROAD_HALF_WIDTH := 1   # the RETIRED three-wide plus; kept only so old roads can be narrowed
+
+## ⛑ 2026-09-15 - roads are TWO tiles wide. Owner 2026-09-14: *"the paths being 3 wide is a bit
+## excessive, we should probably drop them down to 2 wide."* An even width cannot be centred on a
+## waypoint with a symmetric plus, so each waypoint stamps a 2x2 block: a road running east-west is
+## two rows, north-south two columns, and a diagonal stays two wide without the blobs a 3x3 square
+## made at every turn. Narrower also narrows the near-encounter-free corridor roads give travellers.
+const ROAD_STAMP_OFFSETS: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]
 
 
 func stamp_paths_into_chunks(paths: Dictionary) -> void:
 	"""Write path tiles into chunks for each waypoint that isn't already a floor/door/post tile.
 
-	Stamps a ROAD_HALF_WIDTH band rather than a single tile - see that constant."""
+	Stamps a ROAD_STAMP_OFFSETS block rather than a single tile - see that constant."""
 	if not chunk_manager:
 		return
 
@@ -3426,13 +3433,38 @@ func stamp_paths_into_chunks(paths: Dictionary) -> void:
 		for wp in waypoints:
 			var cx0 = wp.x if wp is Vector2i else int(wp.get("x", 0))
 			var cy0 = wp.y if wp is Vector2i else int(wp.get("y", 0))
+			for off in ROAD_STAMP_OFFSETS:
+				_stamp_one_path_tile(cx0 + off.x, cy0 + off.y)
+
+
+func narrow_old_roads(paths: Dictionary) -> int:
+	"""Clear the road tiles the old three-wide stamp laid that the two-wide stamp does not, so the
+	ground they were paved over comes back. Roads are SAVED as waypoints and re-stamped each boot,
+	and re-stamping narrower never removes the old edge - without this the live world would keep
+	every existing road three wide. Idempotent: a second run finds nothing to clear. Returns how
+	many tiles it cleared."""
+	if not chunk_manager:
+		return 0
+	var keep := {}
+	var old_band := {}
+	for path_key in paths:
+		for wp in paths[path_key]:
+			var cx0 = wp.x if wp is Vector2i else int(wp.get("x", 0))
+			var cy0 = wp.y if wp is Vector2i else int(wp.get("y", 0))
+			for off in ROAD_STAMP_OFFSETS:
+				keep["%d,%d" % [cx0 + off.x, cy0 + off.y]] = true
 			for _ox in range(-ROAD_HALF_WIDTH, ROAD_HALF_WIDTH + 1):
 				for _oy in range(-ROAD_HALF_WIDTH, ROAD_HALF_WIDTH + 1):
-					# A plus rather than a square: the corners of a square band make a road look
-					# like a series of blobs at every turn.
-					if absi(_ox) + absi(_oy) > ROAD_HALF_WIDTH:
-						continue
-					_stamp_one_path_tile(cx0 + _ox, cy0 + _oy)
+					if absi(_ox) + absi(_oy) <= ROAD_HALF_WIDTH:
+						old_band[Vector2i(cx0 + _ox, cy0 + _oy)] = true
+	var cleared := 0
+	for t in old_band:
+		if keep.has("%d,%d" % [t.x, t.y]):
+			continue
+		if String(chunk_manager.get_tile(t.x, t.y).get("type", "")) == "path":
+			chunk_manager.remove_tile_modification(t.x, t.y)
+			cleared += 1
+	return cleared
 
 
 func _stamp_one_path_tile(x: int, y: int) -> void:

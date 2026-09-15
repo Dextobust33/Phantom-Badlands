@@ -67,8 +67,41 @@ func _init() -> void:
 	for dy in range(-4, 5):
 		if String(cm.get_tile(ox + 15, oy + dy).get("type", "")) == "path":
 			width += 1
-	ck(width >= 3, "a straight run is %d tiles wide" % width)
-	ck(width <= 5, "...and not so wide it stops reading as a road (%d)" % width)
+	# TWO wide since 2026-09-15 (owner: "the paths being 3 wide is a bit excessive").
+	ck(width == 2, "a straight run is %d tiles wide (want 2)" % width)
+	var vwidth := 0
+	var vwps: Array = []
+	for i in range(30):
+		vwps.append(Vector2i(ox + 40, oy - 10 + i))
+	ws.stamp_paths_into_chunks({"vtest": vwps})
+	for dx in range(-4, 5):
+		if String(cm.get_tile(ox + 40 + dx, oy + 5).get("type", "")) == "path":
+			vwidth += 1
+	ck(vwidth == 2, "...and so is a north-south run (%d)" % vwidth)
+
+	print("--- an existing three-wide road is narrowed ---")
+	# The live world's roads were stamped three wide and are re-stamped each boot, which never removes
+	# the old edge. Lay one the old way, then run the boot-time migration.
+	var owps: Array = []
+	for i in range(30):
+		owps.append(Vector2i(ox + i, oy + 60))
+	for wp in owps:
+		for _ox in range(-1, 2):
+			for _oy in range(-1, 2):
+				if absi(_ox) + absi(_oy) <= 1:
+					ws._stamp_one_path_tile(wp.x + _ox, wp.y + _oy)
+	var before := 0
+	for dy in range(-4, 5):
+		if String(cm.get_tile(ox + 15, oy + 60 + dy).get("type", "")) == "path":
+			before += 1
+	var cleared: int = ws.narrow_old_roads({"old": owps})
+	ws.stamp_paths_into_chunks({"old": owps})
+	var after := 0
+	for dy in range(-4, 5):
+		if String(cm.get_tile(ox + 15, oy + 60 + dy).get("type", "")) == "path":
+			after += 1
+	ck(before == 3 and after == 2, "an old road %d wide is %d wide after the migration (%d tiles cleared)" % [before, after, cleared])
+	ck(ws.narrow_old_roads({"old": owps}) == 0, "...and running it again clears nothing")
 
 	print("\n--- the edges are protected, not just the centre ---")
 	# The widening has to respect the same rules the single tile did, or a band paves over the

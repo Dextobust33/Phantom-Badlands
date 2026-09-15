@@ -45605,8 +45605,14 @@ func _initialize_road_paths(npc_posts: Array) -> void:
 			if not world_system._path_post_positions.has(key):
 				world_system._path_post_positions[key] = saved_positions[key]
 		log_message("Loaded %d road path segments from disk" % world_system._path_waypoints.size())
-		# Re-stamp paths (in case chunks were wiped)
+		# Roads went from three wide to two (2026-09-15): clear the old outer edge first, then
+		# re-stamp (which also covers chunks that were wiped).
+		var _narrowed: int = world_system.narrow_old_roads(world_system._path_waypoints)
+		if _narrowed > 0:
+			log_message("Narrowed roads to two wide: cleared %d old edge tiles" % _narrowed)
 		world_system.stamp_paths_into_chunks(world_system._path_waypoints)
+		if _narrowed > 0:
+			chunk_manager.save_dirty_chunks()
 	else:
 		log_message("No existing roads — paths will form as players clear terrain")
 
