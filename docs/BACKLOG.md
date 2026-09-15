@@ -630,12 +630,18 @@ the teaching beats that depend on the Warden behaving):
       every quest-vs-post comparison goes through `_same_post`. Probe: tutorial_walkthrough 9d.
 - [ ] **After the dungeon the player is teleported out with no idea what to do.** The Warden should
       show the Quest Log and walk (or point) them back to the post for the turn-in.
-- [ ] **Party per-member state is a WHITELIST, and everything not on it is dropped between rounds.**
-      `_party_member_view` / `_party_sync_view_back`. Measured by code trace: Phantom Strike's
-      `vanished` (next hit never crits in party), `analyze_bonus`, `crit_escalation_stacks` (Killing
-      Edge), `path_first_strike_done` (the Path keystone probably crits EVERY action in party). Same
-      shape as Arcane Surge in v0.9.740. Structural fix under way: carry by default, exclude declared
-      shared/transient keys, and a probe that enumerates the keys each class writes.
+- [x] **Party per-member state was a WHITELIST, and everything not on it was dropped between rounds.**
+      FIXED on master, not released. Enumerated what every class's cards write onto a party view:
+      `vanished` (Phantom Strike's crit never landed in party), `analyze_bonus`,
+      `crit_escalation_stacks`, `casts_this_fight`, `forcefield_casts`, `guard_open`, and the
+      runtime-named once-per-fight flags (`opener_used_<card>` ...). Now carried by default
+      (`view_carry`), excluding only `_PARTY_VIEW_REBUILT_KEYS` and `_`-prefixed scratch.
+      Also found: a non-lethal Assassinate aborted mid-cast in any party (script error reading the
+      suppressed monster turn's missing `message`) - the suppressed turn now has the full shape.
+      Probe: `tools/probe/party_view_carries_state.gd`, all 5 checks proven red on the old code.
+- [ ] **Keys a SOLO fight sets at start that a party view never gets:** `warrior_stance_def`,
+      `warrior_stance_dr` (Warrior stance may do nothing in co-op), `player_slow`,
+      `slow_aura_applied`. Measured by the same enumeration; not yet examined.
 - [ ] **Mark (and likely every skip-the-enemy-turn card) does not skip the turn in the Warden fight.**
       Probably `skip_monster_turn` ignored by `resolve_party_round`. Check whether it is by design in
       co-op before changing it.

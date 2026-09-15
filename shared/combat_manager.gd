@@ -6814,9 +6814,10 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				messages.append("[color=#808080]The enemy catches you![/color]")
 				# Enemy gets free attack
 				var monster_result = process_monster_turn(combat)
-				messages.append("[color=#444444]─────────────────────────────[/color]")
-				messages.append(_indent_multiline(monster_result.message, "         "))
-				messages.append("[color=#444444]─────────────────────────────[/color]")
+				if String(monster_result.get("message", "")) != "":
+					messages.append("[color=#444444]─────────────────────────────[/color]")
+					messages.append(_indent_multiline(monster_result.message, "         "))
+					messages.append("[color=#444444]─────────────────────────────[/color]")
 				if character.current_hp <= 0:
 					return {
 						"success": true,
@@ -7141,9 +7142,10 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				# landed finisher is exactly as good as it was.
 				# Monster gets a free attack
 				var monster_result = process_monster_turn(combat)
-				messages.append("[color=#444444]─────────────────────────────[/color]")
-				messages.append(_indent_multiline(monster_result.message, "         "))
-				messages.append("[color=#444444]─────────────────────────────[/color]")
+				if String(monster_result.get("message", "")) != "":
+					messages.append("[color=#444444]─────────────────────────────[/color]")
+					messages.append(_indent_multiline(monster_result.message, "         "))
+					messages.append("[color=#444444]─────────────────────────────[/color]")
 				if character.current_hp <= 0:
 					return {
 						"success": true,
@@ -8830,7 +8832,11 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 	# monster phase). This opt-in flag suppresses the per-card retaliation. Solo combats
 	# never set it, so they are completely unaffected.
 	if combat.get("suppress_monster_turn", false):
-		return {"messages": [], "combat_ended": false, "monster_skipped": true}
+		# `message` too: the suppressed turn must be the SAME SHAPE as a real one. Assassinate's
+		# miss and Pickpocket's failure read `monster_result.message` directly, so in a party (the
+		# Warden's fight included) a non-lethal Assassinate hit a script error mid-cast and its
+		# whole log was lost. Found 2026-09-15 by enumerating party casts for every class.
+		return {"message": "", "messages": [], "combat_ended": false, "monster_skipped": true}
 	# #65 — a monster turn ends the round, so the next round's first item is free again.
 	combat["free_item_used"] = false
 	var character = combat.character
@@ -12974,6 +12980,29 @@ const _PARTY_VIEW_SOLO_DEFAULTS := {
 	"pickpocket_max": 3,
 }
 
+# ⛑ 2026-09-15 - PER-MEMBER FIGHT STATE IS CARRIED BY DEFAULT, NOT BY WHITELIST.
+#
+# The view is rebuilt for every action and thrown away after it, and only the keys named in the
+# builder and the sync-back survived to the next round. Every per-fight flag the solo engine
+# grew afterwards was silently dropped in co-op: Arcane Surge (fixed by hand in v0.9.740), then -
+# measured by enumerating what each class writes onto a view - Phantom Strike's `vanished` (the
+# next hit never crit in a party), `analyze_bonus`, the Killing Edge ramp, `casts_this_fight`,
+# `forcefield_casts`, Brittle's `guard_open`, and every once-per-fight upgrade flag whose key is
+# built at runtime (`opener_used_<card>`, `sure_strike_<card>`, `sacrificed_<card>`), which no
+# whitelist could ever have named. Owner, in the Warden's fight: *"My next move was a regular
+# attack and it didn't mention being a Crit at all."*
+#
+# So anything the engine writes is kept for that member unless it is declared here as rebuilt
+# each action. A new solo flag now works in co-op without anybody remembering this file.
+# Underscore-prefixed keys are per-action scratch (damage marks, log notes) by convention.
+const _PARTY_VIEW_REBUILT_KEYS := ["character", "monster", "combat_hand", "combat_deck",
+	"combat_discard", "momentum", "focus", "combo", "forcefield_shield",
+	"arcane_surge_double_cast", "arcane_surge_double_cast_duration", "mastery_uses_this_fight",
+	"player_can_act", "suppress_monster_turn", "suppress_victory", "combat_log", "peer_id",
+	"round", "started_at", "combat_hand_size", "player_hp_at_start",
+	# per-action, not per-fight
+	"monster_turn_resolved"]
+
 func _party_member_speed(combat: Dictionary, pid: int) -> int:
 	var ch = combat.characters[pid]
 	return int(ch.get_effective_stat("dexterity")) + int(ch.get_equipment_bonuses().get("speed", 0))
@@ -13010,6 +13039,11 @@ func _party_member_view(combat: Dictionary, pid: int) -> Dictionary:
 	# #76 — seed the remaining solo combat shape (see _PARTY_VIEW_SOLO_DEFAULTS).
 	for k in _PARTY_VIEW_SOLO_DEFAULTS:
 		view[k] = st.get(k, _PARTY_VIEW_SOLO_DEFAULTS[k])
+	# Everything else this member's own actions left behind - see _PARTY_VIEW_REBUILT_KEYS.
+	var _carry: Dictionary = st.get("view_carry", {})
+	for k in _carry:
+		if not view.has(k):
+			view[k] = _carry[k]
 	view["peer_id"] = pid
 	view["round"] = int(combat.get("round", 1))    # shared — resolve_party_round owns advancing it
 	view["started_at"] = int(combat.get("started_at", 0))
@@ -13049,6 +13083,14 @@ func _party_sync_view_back(combat: Dictionary, pid: int, view: Dictionary) -> vo
 	for k in _PARTY_VIEW_SOLO_DEFAULTS:
 		st[k] = view.get(k, _PARTY_VIEW_SOLO_DEFAULTS[k])
 	st["player_hp_at_start"] = int(view.get("player_hp_at_start", 0))
+	# Carry the rest. See _PARTY_VIEW_REBUILT_KEYS for why this is not a list of names.
+	var _carry := {}
+	for k in view:
+		var ks := String(k)
+		if ks.begins_with("_") or ks in _PARTY_VIEW_REBUILT_KEYS or ks in _PARTY_SHARED_MONSTER_KEYS 				or _PARTY_VIEW_SOLO_DEFAULTS.has(ks):
+			continue
+		_carry[k] = view[k]
+	st["view_carry"] = _carry
 
 # #76 — CO-OP LOG VOICE. Every underlying combat message is written in 2nd person ("you
 # unleash chaos", "Your Kobold attacks", "hits you for 12"). The co-op round log is broadcast

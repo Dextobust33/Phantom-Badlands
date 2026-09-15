@@ -302,16 +302,16 @@ func _init() -> void:
 	ck((gc.get("members", []) as Array).size() == 2, "  ...with two members in it")
 	ck((gc.get("npc_members", []) as Array).size() == 1,
 		"  ...one of whom is flagged as an NPC, so it will not inflate the monster")
-	ck(int((gc.get("npc_members", []) as Array)[0]) == ServerScript.GUIDE_PEER_ID,
+	ck(int((gc.get("npc_members", []) as Array)[0]) == sg1._guide_peer_id(1),
 		"  ...and that NPC is the guide")
 
 	print("")
 	print("----- the guide acts on its own each round -----")
 	# submit_party_action is pure state, so the server can act for a member with no socket.
 	# Without this the round would wait forever for a client that does not exist.
-	var before_sub: bool = bool(gc.get("member_states", {}).get(ServerScript.GUIDE_PEER_ID, {}).get("submitted_this_round", false))
+	var before_sub: bool = bool(gc.get("member_states", {}).get(sg1._guide_peer_id(1), {}).get("submitted_this_round", false))
 	sg1._guide_fill_action(1)
-	var after_sub: bool = bool(gc.get("member_states", {}).get(ServerScript.GUIDE_PEER_ID, {}).get("submitted_this_round", false))
+	var after_sub: bool = bool(gc.get("member_states", {}).get(sg1._guide_peer_id(1), {}).get("submitted_this_round", false))
 	ck(not before_sub and after_sub, "the guide submits an action when asked to")
 
 	print("")
