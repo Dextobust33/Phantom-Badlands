@@ -6082,9 +6082,11 @@ static func consumable_buff_writes(item: Dictionary, effect: Dictionary, charact
 		var dur := int(effect.get("duration", 1))
 		var bat := bool(effect.get("battles", false))
 		var eq: Dictionary = character.get_equipment_bonuses()
+		# "defense" is read as a PERCENT of damage reduction (the cards' "+X% defense"), so a defense
+		# buff writes its percent or amount straight through - never a share of total defense, which
+		# the reader would take as that many percent.
 		var pools := {
 			"strength": int(character.get_total_attack()),
-			"defense": int(character.get_total_defense()),
 			"speed": int(character.dexterity) + int(eq.get("speed", 0)),
 		}
 		var names: Array = []
@@ -6114,7 +6116,9 @@ static func consumable_buff_writes(item: Dictionary, effect: Dictionary, charact
 		var stat_pct := float(td.get("scroll_stat_pct", 10))
 		var eqb: Dictionary = character.get_equipment_bonuses()
 		match buff_type:
-			"defense": value = maxi(1, int(character.get_total_defense() * stat_pct / 100.0))
+			# ⛑ 2026-09-15 - the defense buff is read as percent damage reduction; this wrote a share of
+			# total defense (~38 at L60), which read as 38% - far past what the scroll's tier promises.
+			"defense": value = maxi(1, int(stat_pct))
 			"speed": value = maxi(1, int((int(character.dexterity) + int(eqb.get("speed", 0))) * stat_pct / 100.0))
 			_: value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
 		duration = int(td.get("scroll_duration", 1))
@@ -6137,7 +6141,7 @@ static func consumable_buff_line(writes: Array) -> String:
 		return ""
 	var parts: Array = []
 	for w in writes:
-		var suffix := "%" if String(w.type) in ["lifesteal", "thorns", "crit_chance", "xp_bonus", "rare_drop"] else ""
+		var suffix := "%" if String(w.type) in ["lifesteal", "thorns", "crit_chance", "xp_bonus", "rare_drop", "defense"] else ""
 		parts.append("+%d%s %s" % [int(w.value), suffix, String(w.type).replace("_", " ")])
 	var d := int(writes[0].duration)
 	var unit := ("battle" if bool(writes[0].battles) else "round") + ("" if d == 1 else "s")

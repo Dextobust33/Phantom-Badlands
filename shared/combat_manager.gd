@@ -11010,9 +11010,10 @@ func calculate_monster_damage(monster: Dictionary, character: Character, combat:
 	# Player defense reduces damage by percentage (not flat)
 	var player_defense = character.get_total_defense()
 
-	# Add defense buff bonus
-	var defense_buff = character.get_buff_value("defense")
-	player_defense += defense_buff
+	# The "defense" BUFF is not added here. ⛑ 2026-09-15 - it was read twice on every hit: as flat
+	# defense here AND as a percent of damage reduction in the monster turn's mitigation block, which
+	# is the unit every card that grants it states ("+X% defense"). Measured on a Wizard, a 50 buff cut
+	# damage 52%: 50% from the percent read and ~5% from this one. The percent read is the only one now.
 
 	# Audit #5 Slice 11 — Soul Touch defense erosion (Nazgul Lord). Each
 	# soul stack reduces effective defense by 2%, compounding multiplicatively.

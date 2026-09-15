@@ -759,9 +759,13 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      guard). Still to do: regenerate docs/design/equipment_reference.md (gearsources).
    - OPEN, small: card_face_truth fails ONE cell, Sage L20 Frost Nova at 4 engine (quote 250, real
      211, 0.85) - present before the gear change too (stash-tested), so an existing over-quote.
-   - OPEN, investigate: the "defense" buff is read in two UNITS - as % damage reduction in the
-     monster-hit mitigation and as flat defense in another path - while tier Stone Skin writes a flat
-     value; party victory XP is a second copy of the solo sum missing hotspot / Ranger / Path terms;
+   - ✅ FIXED (player power): the "defense" buff was read TWICE per hit - as % damage reduction (the
+     unit every card states, "+X% defense") and again as flat defense. Measured on a Wizard: a 50
+     buff cut damage 52% (50 + ~5). The flat read is gone. Stone Skin wrote a share of total defense
+     (~38 at L60) that read as 38%; it writes its tier percent now (Standard +15%, matching its text).
+     NOTE for balance: a Fighter opens every fight AT the 85% mitigation cap (stance DR 60 + defense
+     ~69%) - deliberate per the 2026-09-05/06 polytest notes, so not changed.
+   - OPEN, investigate: party victory XP is a second copy of the solo sum missing hotspot / Ranger / Path terms;
      crafting output is handled by two near-identical match blocks (server.gd ~26612 and ~27667).
    Fix order: item-use validation (the class, not per branch) -> crafted scribing / crafted buff names /
    Apex Sigil / proc runes / crafted stats -> skill tomes -> extra-turn cap -> per-card affixes (design

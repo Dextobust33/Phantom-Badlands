@@ -122,7 +122,7 @@ func _buffed(stat: String, value: int) -> Dictionary:
 		# procs), so a once-per-arm seed let the two arms build different random characters
 		# from the second cast on. That made a 10% cost tome read as 28% (CLAUDE.md: seed per cell).
 		seed(626262 + i)
-		var ch = sim.make_char(60, "none", "Fighter", "Human")
+		var ch = sim.make_char(60, "none", "Wizard", "Human")   # NOT a Fighter: its opening stance already sits at the mitigation cap, which hides every defense effect
 		ch.equipped["weapon"] = _weapon({})
 		if stat != "":
 			ch.add_persistent_buff(stat, value, 3)
@@ -369,7 +369,7 @@ func _init() -> void:
 		["strength (tier Rage, control)", "strength", 200, "dealt"],
 		["attack (crafted Rage / Dragon Fury)", "attack", 30, "dealt"],
 		["crit_chance (crafted Precision)", "crit_chance", 50, "dealt"],
-		["defense (tier Stone Skin, control)", "defense", 400, "taken"],
+		["defense (Stone Skin / Fortify, %)", "defense", 30, "taken"],
 		["shield (crafted Forcefield / Sea Ward)", "shield", 500, "taken"],
 		["forcefield (tier Forcefield, control)", "forcefield", 500, "taken"],
 		["thorns (crafted Thorns)", "thorns", 50, "thorns"],
