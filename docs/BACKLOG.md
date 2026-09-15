@@ -578,6 +578,25 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
 
+### ⚑ ROADS ARE TOO WIDE — owner 2026-09-14
+
+Owner, as a sidenote during tutorial testing: *"the paths being 3 wide is a bit excessive, we
+should probably drop them down to 2 wide."*
+
+Not done. Deliberately NOT folded into the tutorial work, because it is world generation and a
+change there moves ground under every existing map while the opening is still being tested.
+
+The lever is `ROAD_HALF_WIDTH` in `shared/world_system.gd`, used by `stamp_paths_into_chunks`.
+Note what the shape actually is before changing the number: it stamps a PLUS, not a square -
+`if absi(_ox) + absi(_oy) > ROAD_HALF_WIDTH: continue` - with a comment saying a square band
+makes a road read as a series of blobs at every turn. So "2 wide" is a question about the
+diamond's radius, not a width in tiles, and it is worth deciding which visual is wanted before
+picking a number.
+
+Also worth checking when it changes: roads carry a **halved encounter rate** (and a tenth, for
+Travelling stance) in `check_encounter`, keyed off the path tile. Narrowing the road narrows
+that safe corridor, which is a balance change and not only a cosmetic one.
+
 ### ⚑ SCROLLBACK — players cannot see what they just missed (owner 2026-09-14)
 
 Owner: *"a chatlog or last menu history. Players often miss what was on the screen and don't have
