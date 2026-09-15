@@ -46358,6 +46358,8 @@ const DUNGEON_IDLE_FRAME_SEC := 0.42
 # dungeon cannot reuse - the grid is inline text - and nothing server-side tracks a companion
 # POSITION underground. Trailing the player's last cell needs neither.
 var _dungeon_prev_pos: Vector2i = Vector2i(-9999, -9999)
+# One step further back: the Warden walks in the footsteps behind your companion.
+var _dungeon_prev2_pos: Vector2i = Vector2i(-9999, -9999)
 var _dungeon_last_pos: Vector2i = Vector2i(-9999, -9999)
 var _sprite_region_cache: Dictionary = {}
 
@@ -47161,6 +47163,36 @@ func _send_dungeon_move(dir: String) -> void:
 	send_to_server({"type": "dungeon_move", "direction": dir})
 
 
+func _dungeon_warden_at(x: int, y: int) -> bool:
+	"""Is the Warden standing here? He follows in the footsteps BEHIND your companion (two steps
+	back), or in your own footsteps when you have none, so the two never share a cell.
+
+	2026-09-15. Owner: *"The warden sprite doesn't draw while walking around in the Dungeon, he
+	should be following you like he does on the overworld."* The dungeon view had no code for him
+	at all; the server now sends `escort: "warden"` on dungeon_state while he is with you."""
+	if String(dungeon_data.get("escort", "")) != "warden":
+		return false
+	var _has_comp := _dungeon_companion_sprite() != "" and not _dungeon_companion_ko()
+	var spot: Vector2i = _dungeon_prev2_pos if _has_comp else _dungeon_prev_pos
+	if spot.x == -9999 or spot == _dungeon_last_pos:
+		return false
+	if _has_comp and spot == _dungeon_prev_pos:
+		return false
+	return spot == Vector2i(x, y)
+
+
+func _dungeon_warden_img() -> String:
+	"""His floor-backed frame, facing the way you are going - the same art set the player uses."""
+	var f := _local_map_facing if _local_map_facing != "" else "down"
+	var frame: String = ["_stand", "_walk1", "_walk2"][clampi(posmod(_dungeon_anim_tick, 3), 0, 2)]
+	var path := "res://client/sprites/overworld_floor32/%s/%s%s.png" % [WARDEN_SPRITE_ID, f, frame]
+	if not ResourceLoader.exists(path):
+		path = "res://client/sprites/overworld_floor32/%s/down_stand.png" % WARDEN_SPRITE_ID
+	if not ResourceLoader.exists(path):
+		return _dungeon_glyph_cell("W", "#9ACD32")
+	return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, path]
+
+
 func _dungeon_companion_at(x: int, y: int) -> bool:
 	"""Is the companion standing here? It walks in the player's footsteps - the cell they were on
 	before this step - which gives it a position without the server having to track one, and
@@ -47733,6 +47765,7 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	var _here := Vector2i(player_x, player_y)
 	if _here != _dungeon_last_pos:
 		if _dungeon_last_pos.x != -9999:
+			_dungeon_prev2_pos = _dungeon_prev_pos
 			_dungeon_prev_pos = _dungeon_last_pos
 		_dungeon_last_pos = _here
 
@@ -47921,6 +47954,10 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					else:
 						line += _dungeon_glyph_cell(String(fi.get("char", "?")),
 							String(fi.get("color", "#FFFFFF")), "loot:%d,%d" % [x, y], _prop)
+				elif _dungeon_warden_at(x, y):
+					# Same rule as the companion below: inferred client-side, so anything the server
+					# placed wins the cell and he yields.
+					line += _dungeon_warden_img()
 				elif _dungeon_companion_at(x, y):
 					# LAST, and deliberately. The companion is the ONLY thing in this grid with no
 					# server-authoritative position - it is inferred client-side from the cell the

@@ -49,6 +49,8 @@ func _chain() -> Array:
 			out.append("item")
 		elif t.begins_with("elif _dungeon_companion_at") or t.begins_with("if _dungeon_companion_at"):
 			out.append("companion")
+		elif t.begins_with("elif _dungeon_warden_at"):
+			out.append("warden")
 	return out
 
 
@@ -66,6 +68,28 @@ func _init() -> void:
 			ck(ri >= 0 and ri < ci,
 				"'%s' is resolved BEFORE the companion (server-placed beats phantom)" % real)
 		ck(order.find("player") < ci, "the player still outranks the companion")
+	# 2026-09-15 - the Warden walks the starter dungeon too, and is just as inferred as the
+	# companion, so the same rule binds him.
+	ck(order.has("warden"), "the Warden is drawn in the dungeon at all")
+	if order.has("warden"):
+		var wi: int = order.find("warden")
+		for real in ["player", "npc", "monster", "trap", "item"]:
+			var rwi: int = order.find(real)
+			ck(rwi >= 0 and rwi < wi, "'%s' is resolved BEFORE the Warden" % real)
+
+	print("
+--- 1b. where the Warden stands, by CALLING the rule ---")
+	var cl = load(CLIENT).new()
+	cl.dungeon_data = {"escort": "warden"}
+	cl.character_data = {}
+	cl._dungeon_last_pos = Vector2i(5, 5)
+	cl._dungeon_prev_pos = Vector2i(4, 5)
+	cl._dungeon_prev2_pos = Vector2i(3, 5)
+	ck(cl._dungeon_warden_at(4, 5), "with no companion he walks in your footsteps")
+	ck(not cl._dungeon_warden_at(5, 5), "  never on your own cell")
+	cl.dungeon_data = {"escort": ""}
+	ck(not cl._dungeon_warden_at(4, 5), "and he is not drawn when the server says he is not with you")
+	cl.free()
 
 	print("\n--- 2. light does not depend on what is standing on the cell ---")
 	var src := FileAccess.get_file_as_string(CLIENT)

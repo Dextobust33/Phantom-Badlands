@@ -34796,6 +34796,12 @@ func _send_dungeon_state(peer_id: int):
 		"color": dungeon_data.color,
 		"monsters": monster_list,
 		"npcs": npc_list,
+		# The Warden walks the starter dungeon with you (owner 2026-09-15: *"The warden sprite
+		# doesn't draw while walking around in the Dungeon, he should be following you like he
+		# does on the overworld."*). The overworld escort reports false in here on purpose, so
+		# this is the dungeon's own answer - the same gate his guided dungeon fights use.
+		"escort": ("warden" if (_is_starter_dungeon(instance_id) and not _is_party_leader(peer_id)
+			and character.met_warden and _wardens_watch_stage(character) == 3) else ""),
 		"floor_items": floor_item_list,
 		"steps_taken": character.dungeon_floor_steps,
 		"step_limit": 0,  # C2 — step budget retired; 0 signals the client to hide the counter

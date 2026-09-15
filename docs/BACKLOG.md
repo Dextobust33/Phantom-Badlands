@@ -668,7 +668,11 @@ the teaching beats that depend on the Warden behaving):
       not released. `preview_ability_effect` now quotes it (probe: wild_swing_and_preview s2b, quoted
       296 / dealt 303); descriptions in client.gd (two), help, and constants.gd corrected off the cast.
 - [x] **Exploit's description was stale** (said 15 + WITS/4, cap 35%; the cast is 10 + WITS/6, cap 22%). FIXED on master in all three client texts.
-- [ ] **The Warden's sprite is not drawn inside the dungeon** - he should follow as on the overworld.
+- [x] **The Warden was not drawn inside the starter dungeon.** FIXED on master, not released. The
+      dungeon view had no code for him and the server sent nothing. dungeon_state now carries
+      `escort: "warden"` (same gate as his guided dungeon fights) and the grid draws his floor-backed
+      frame two steps back (behind a companion) or one (without), yielding to anything server-placed.
+      Probe: dungeon_draw_order 1/1b. Not seen in a running client.
 - [x] **After the starter dungeon his sprite sat NORTH of the player.** FIXED on master, not released.
       Step four had no goal, so the client placed him from a facing left over from the last DUNGEON
       step (leaving a dungeon puts you on the tile you entered from - no position change, so the
