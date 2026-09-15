@@ -151,9 +151,10 @@ func _init() -> void:
 				"none" if cost.is_empty() else ", ".join(cost),
 				"none" if dur.is_empty() else ", ".join(dur)])
 	# THE GUARD: card_gear.gd's KINDS table must be exactly what was measured - a card must never be
-	# offered a bonus that does nothing for it, nor miss one that works. (Class-filtered runs skip it.)
+	# offered a bonus that does nothing for it, nor miss one that works. A class-filtered run checks the
+	# cards it measured (every class holding a card measures it the same).
 	var fails := 0
-	if only.is_empty():
+	if true:
 		var table: Dictionary = load("res://shared/card_gear.gd").KINDS
 		for card in measured:
 			var want: Array = (measured[card] as Dictionary).keys()
