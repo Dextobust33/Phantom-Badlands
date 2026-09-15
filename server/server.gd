@@ -1453,6 +1453,8 @@ func _process(delta):
 	# v0.9.346 — flush at most one throttled character save per tick. Spreads
 	# disk I/O over many frames instead of letting bursts hit synchronously.
 	var _flush_chr_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
+	# The Warden walking somebody to the dungeon. Costs nothing when nobody is being led.
+	_escort_walk_tick()
 	_flush_pending_character_saves()
 	if diag_timing_enabled:
 		_diag_flush_char_saves_us = Time.get_ticks_usec() - _flush_chr_start_us
@@ -5432,6 +5434,11 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Audit #14 v0.9.533 — moving clears AFK status. No-op when not AFK.
 	_clear_afk_on_action(peer_id)
 
+	# A step the PLAYER took cancels the Warden's walk. He is leading, not driving: the moment
+	# somebody wants to go their own way, they do. `escorted` marks the steps he takes himself.
+	if not bool(message.get("escorted", false)) and _escort_walk.has(peer_id):
+		_escort_walk_cancel(peer_id, "You take your own path. Warden Hollis falls in behind you.")
+
 	# Party followers can't move independently
 
 	# Check if in combat
@@ -5496,7 +5503,13 @@ func handle_move(peer_id: int, message: Dictionary):
 	#
 	# THIS SITS ABOVE THE TRADE CANCEL ON PURPOSE. A refused step is a step that did not happen,
 	# so it must not break a trade, cancel anything, or have any other consequence.
-	if new_pos != Vector2i(old_x, old_y) and not _confirm_dangerous_step(peer_id, character, new_pos.x, new_pos.y):
+	# The danger confirm is for a player walking blind into country twice their level. The Warden
+	# is not blind and is not asking - he chose this route and he is taking the hits on it. It
+	# also refuses the FIRST step and allows a REPEAT, which an escorted walk can never satisfy:
+	# each tick tries a different direction, so every step is a first step and every one is
+	# refused. That is why the walk moved nobody.
+	var _escorted_step: bool = bool(message.get("escorted", false))
+	if not _escorted_step and new_pos != Vector2i(old_x, old_y) 			and not _confirm_dangerous_step(peer_id, character, new_pos.x, new_pos.y):
 		return
 	# ...and the Warden will not let a new character walk out with the blade still in the pack.
 	# Same contract as the line above: a refused step is a step that did not happen.
@@ -5954,7 +5967,19 @@ func handle_move(peer_id: int, message: Dictionary):
 			var _area_lvl: int = world_system.get_post_anchored_level(new_pos.x, new_pos.y)
 			if character.level - _area_lvl > THREAT_BYPASS_LEVEL_GAP:
 				_in_threat = false
-		if world_system.check_encounter(new_pos.x, new_pos.y, character.level, _in_threat, TravelStanceScript.encounter_mult(String(character.travel_stance))):
+		# ⛑ NOTHING JUMPS YOU WHILE HE IS WALKING YOU THERE.
+		#
+		# Owner 2026-09-14: *"suppress encounters while we travel there too."* The escorted walk
+		# is a guided beat, not open-world travel - a level-2 with an unfinished kit being
+		# ambushed halfway through the one journey the game takes them on teaches nothing except
+		# that the guide could not be relied upon. It also cannot be steered around, because they
+		# are not steering.
+		#
+		# Only while the walk is actually running: the moment they take a step of their own it is
+		# cancelled, and the world is dangerous again from that step onward.
+		if _escort_walk.has(peer_id):
+			pass
+		elif world_system.check_encounter(new_pos.x, new_pos.y, character.level, _in_threat, TravelStanceScript.encounter_mult(String(character.travel_stance))):
 			# Starter area safety: halve encounters for low-level players near origin
 			var _dist = abs(new_pos.x) + abs(new_pos.y)
 			if _dist <= 20 and character.level < 10 and randf() < 0.5:
@@ -20583,6 +20608,8 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 				# passed this step because it checked that a next action was NAMED; it never
 				# asked whether the player could FIND it.
 				_point_at_the_dungeon(peer_id, character)
+				# ...and then actually take them there.
+				_escort_walk_start(peer_id, character)
 		# He is the quest giver and he is with you: the step settles where you stand. See the
 		# _warden_here bypass in handle_quest_turn_in.
 		handle_quest_turn_in(peer_id, {"quest_id": _qid})
@@ -43353,6 +43380,134 @@ func _guide_escorts_overworld(peer_id: int, character) -> bool:
 	if st == 4:
 		return not world_system._is_npc_post_interior(int(character.x), int(character.y))
 	return st >= 1 and st <= 3
+
+
+## ⛑ HE WALKS THEM THERE. Owner 2026-09-14: *"Are you trying to say I should look at his sprite
+## and then move towards it? I shouldn't have to press anything. He should be leading/moving us
+## too it."*
+##
+## Right - "leading" that requires the player to read a bearing and steer is still the player
+## finding their own way. On step three he takes the reins: one step every ESCORT_STEP_MS along a
+## real path, through the ordinary move handler so encounters, terrain and everything else behave
+## exactly as if the player had pressed the key.
+##
+## It stops the moment anything else wants attention - a fight, a dungeon, arrival - and ANY
+## manual input cancels it, because a tutorial that will not give the controls back is worse than
+## one that never took them.
+const ESCORT_STEP_MS := 450
+var _escort_walk: Dictionary = {}     # peer_id -> {"path": Array[Vector2i], "at": int, "next_ms": int}
+
+
+func _dir_toward(dx: int, dy: int) -> int:
+	"""Numpad direction for a delta - see world_system.get_direction_offset. 5 means nowhere."""
+	var sx := signi(dx)
+	var sy := signi(dy)
+	if sx == 0 and sy == 0:
+		return 5
+	if sx < 0 and sy > 0: return 7
+	if sx == 0 and sy > 0: return 8
+	if sx > 0 and sy > 0: return 9
+	if sx < 0 and sy == 0: return 4
+	if sx > 0 and sy == 0: return 6
+	if sx < 0 and sy < 0: return 1
+	if sx == 0 and sy < 0: return 2
+	return 3
+
+
+func character_or_null(peer_id: int):
+	return characters[peer_id] if characters.has(peer_id) else null
+
+
+func _escort_walk_cancel(peer_id: int, why: String = "") -> void:
+	if not _escort_walk.has(peer_id):
+		return
+	_escort_walk.erase(peer_id)
+	if why != "":
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#808080]%s[/color]" % why})
+
+
+func _escort_walk_tick() -> void:
+	"""Move every escorted player one step along the Warden's route, when it is due."""
+	if _escort_walk.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	for peer_id in _escort_walk.keys():
+		if not characters.has(peer_id):
+			_escort_walk.erase(peer_id)
+			continue
+		var st: Dictionary = _escort_walk[peer_id]
+		if now < int(st.get("next_ms", 0)):
+			continue
+		var ch = characters[peer_id]
+		# Anything that wants the player's attention stops the walk rather than fighting it.
+		if ch.in_dungeon or combat_mgr.is_in_combat(peer_id) or pending_flocks.has(peer_id):
+			_escort_walk.erase(peer_id)
+			continue
+		var gx: int = int(st.get("gx", 0))
+		var gy: int = int(st.get("gy", 0))
+		var dx: int = gx - int(ch.x)
+		var dy: int = gy - int(ch.y)
+		if absi(dx) <= 1 and absi(dy) <= 1:
+			_escort_walk.erase(peer_id)
+			_guide_say(peer_id, "Here it is. Walk in when you are ready - I am right behind you.")
+			continue
+		# Straight at it, then the two next-best directions when the straight one is refused.
+		var want := _dir_toward(dx, dy)
+		var tries: Array = [want, _dir_toward(dx, 0), _dir_toward(0, dy)]
+		var moved := false
+		for d in tries:
+			if int(d) == 5:
+				continue
+			var before := Vector2i(int(ch.x), int(ch.y))
+			handle_move(peer_id, {"direction": int(d), "escorted": true})
+			if Vector2i(int(ch.x), int(ch.y)) != before:
+				moved = true
+				break
+		st["next_ms"] = now + ESCORT_STEP_MS
+		st["stuck"] = 0 if moved else int(st.get("stuck", 0)) + 1
+		if int(st.get("stuck", 0)) >= 6:
+			# Wedged. Hand the controls back rather than jiggle forever.
+			_escort_walk.erase(peer_id)
+			_guide_say(peer_id, "The ground beats me here. Head %s - I am with you."
+				% String(_escort_goal_for(peer_id, character_or_null(peer_id)).get("where", "on")))
+			continue
+		_escort_walk[peer_id] = st
+		# Through the REAL move handler: an escorted step is an ordinary step, so encounters,
+		# terrain, gates and everything else behave exactly as they would under the player's own
+		# hand. Faking the position would make this the one kind of walking the game does not
+		# understand.
+
+
+func _escort_walk_start(peer_id: int, character) -> void:
+	"""Start walking the player to the dungeon."""
+	var goal: Dictionary = _escort_goal_for(peer_id, character)
+	if goal.is_empty() or world_system == null:
+		return
+	# ⛑ NO PRECOMPUTED PATH.
+	#
+	# `compute_path_between` returns nothing for this trip - measured at every time budget from
+	# 40ms to unlimited, so it is the route it cannot find, not the clock. Rather than fail to
+	# set off at all, he STEPS TOWARD the dungeon and tries the neighbouring directions when a
+	# step is refused. The ground between two points in the open world is mostly open; where it
+	# is not, a couple of sidesteps clear it, and if he genuinely wedges the player can walk on
+	# their own - the bearing is on screen the whole time.
+	# ⛑ REST FIRST. Owner 2026-09-14: *"He should probably rest us first before moving."* They
+	# have just taken three fights and are about to walk 30 tiles to a dungeon with an unfinished
+	# kit; setting off hurt is how the escort ends up carrying somebody who did not need to be
+	# carried. Free, and only ever here.
+	var _healed: int = character.get_total_max_hp() - character.current_hp
+	character.current_hp = character.get_total_max_hp()
+	character.current_mana = character.get_total_max_mana()
+	character.current_stamina = character.get_total_max_stamina()
+	character.current_energy = character.get_total_max_energy()
+	if _healed > 0:
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#00FF88]Warden Hollis binds your wounds — %d HP restored.[/color]" % _healed})
+	send_character_update(peer_id)
+	_escort_walk[peer_id] = {"gx": int(goal.get("x", 0)), "gy": int(goal.get("y", 0)),
+		"next_ms": Time.get_ticks_msec(), "stuck": 0}
+	_guide_say(peer_id, "Stay close and keep your hands free. Move on your own and I will let you lead.")
 
 
 func _escort_goal_for(peer_id: int, character) -> Dictionary:

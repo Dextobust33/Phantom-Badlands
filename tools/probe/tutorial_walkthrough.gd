@@ -130,7 +130,10 @@ func _init() -> void:
 		if started:
 			ck(sv.combat_mgr.active_party_combats.has(PEER), "  as a real party combat")
 			var c = sv.combat_mgr.active_party_combats[PEER]
-			ck(sv.GUIDE_PEER_ID in c.get("npc_members", []), "  with the Warden in it as an NPC")
+			# The guide's id is per-player now (two tutorials at once must not share a key), so
+			# ask whether there is an NPC member rather than for a constant that no longer exists.
+			ck(not (c.get("npc_members", []) as Array).is_empty(),
+				"  with the Warden in it as an NPC")
 			var hp0: int = ch.current_hp
 			for r in range(6):
 				c["round"] = r + 1
@@ -140,7 +143,7 @@ func _init() -> void:
 			print("  after 6 monster rounds at 60 strength: player %d/%d hp"
 				% [max(0, ch.current_hp), ch.get_total_max_hp()])
 			ck(ch.current_hp > 0, "THE PLAYER IS ALIVE — the Warden did his job")
-			var gd = c["characters"][sv.GUIDE_PEER_ID]
+			var gd = c["characters"][(c.get("npc_members", []) as Array)[0]]
 			ck(gd.current_hp >= 1, "  and the Warden is still standing")
 			# Owner 2026-09-14: *"the warden should have a bunch more HP so he's not sitting
 			# missing pretty much all of his HP during some fights."* A protector whose bar is
@@ -219,6 +222,61 @@ func _init() -> void:
 	ck(_w.count("tiles") == 1, "  said once, not twice (%s)" % _w)
 
 	print("")
+	print("===== 9a. AND HE WALKS THEM THERE =====")
+	# Owner 2026-09-14: *"I shouldn't have to press anything. He should be leading/moving us too
+	# it."* A bearing the player has to steer by is still the player finding their own way.
+	# ⛑ END THE FIGHT FIRST. Section 5 starts a real party combat and resolves rounds directly,
+	# so the combat is still ACTIVE here - and handle_move refuses every step with "you cannot
+	# move while in combat". That cost three wrong theories about the escort before the guard was
+	# measured: the feature was fine, the probe's state was dirty.
+	if sv.combat_mgr.active_party_combats.has(PEER):
+		sv.combat_mgr.active_party_combats.erase(PEER)
+	sv.combat_mgr.party_combat_membership.erase(PEER)
+	if sv.combat_mgr.is_in_combat(PEER):
+		sv.combat_mgr.end_combat(PEER, false)
+	ck(not sv.combat_mgr.is_in_combat(PEER), "the tutorial fight is over before the walk begins")
+
+	# Stand them in OPEN GROUND, which is where a player actually is at step three. Section 4
+	# left them on a post threshold to test the gate, and a post is walled - the first cut
+	# measured the escort failing to move somebody who was boxed in by the test before it.
+	var _open := _find_open_ground(int(ch.x), int(ch.y))
+	if _open.x != 0x7FFFFFFF:
+		ch.x = _open.x
+		ch.y = _open.y
+	sv._escort_walk_start(PEER, ch)
+	ck(sv._escort_walk.has(PEER), "a route is plotted and the walk begins")
+	if sv._escort_walk.has(PEER):
+		# He STEPS TOWARD the goal rather than following a precomputed path - measured,
+		# compute_path_between returns nothing for this trip at any time budget, so a
+		# path-shaped walk would never have set off at all.
+		var _gx: int = int(sv._escort_walk[PEER].get("gx", 0))
+		var _gy: int = int(sv._escort_walk[PEER].get("gy", 0))
+		print("  heading for (%d,%d) from (%d,%d)" % [_gx, _gy, ch.x, ch.y])
+		ck(_gx != 0 or _gy != 0, "  with a real destination recorded")
+		var _d0: float = Vector2(float(_gx - int(ch.x)), float(_gy - int(ch.y))).length()
+		var _before := Vector2i(int(ch.x), int(ch.y))
+		# Force the step timer and tick a few times.
+		for _t in range(5):
+			# The tick ERASES the entry when the walk ends - arrival, wedged, or the player
+			# entering a dungeon - so it has to be re-checked each pass rather than indexed
+			# blind. The first cut indexed it and crashed on the first tick that finished.
+			if not sv._escort_walk.has(PEER):
+				break
+			sv._escort_walk[PEER]["next_ms"] = 0
+			sv._escort_walk_tick()
+			await process_frame
+		var _after := Vector2i(int(ch.x), int(ch.y))
+		var _d1: float = Vector2(float(_gx - int(ch.x)), float(_gy - int(ch.y))).length()
+		print("  after five ticks: %v -> %v   (distance %.0f -> %.0f)" % [_before, _after, _d0, _d1])
+		ck(_after != _before, "the character actually MOVED without the player pressing anything")
+		ck(_d1 < _d0, "  and moved CLOSER to the dungeon, not merely somewhere")
+	# ...and a step of their own takes the reins back.
+	if sv._escort_walk.has(PEER):
+		sv.handle_move(PEER, {"direction": 6})
+		ck(not sv._escort_walk.has(PEER),
+			"and any manual move cancels it - he leads, he does not drive")
+
+	print("")
 	print("===== 9b. THE DUNGEON KNOWS IT IS THE STARTER ONE =====")
 	# ⛑ Owner 2026-09-14, from inside it: *"I don't have him following me anymore here in the
 	# dungeon and he's also not in the fights."* He could not be: `_get_dungeon_at_location`
@@ -291,6 +349,30 @@ func _stage_done(ch) -> bool:
 		if String(qid) == "wardens_watch_1":
 			return true
 	return _stage1_progress(ch) == -1
+
+
+func _find_open_ground(near_x: int, near_y: int) -> Vector2i:
+	"""A walkable tile outside any post, with walkable neighbours - somewhere a walk can start."""
+	for r in range(2, 30):
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				if absi(dx) != r and absi(dy) != r:
+					continue
+				var x: int = near_x + dx
+				var y: int = near_y + dy
+				if sv.world_system._is_npc_post_interior(x, y):
+					continue
+				var t = sv.world_system.chunk_manager.get_tile(x, y)
+				if bool(t.get("blocks_move", false)):
+					continue
+				var open_neighbours := 0
+				for o in [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]:
+					var n = sv.world_system.chunk_manager.get_tile(x + o.x, y + o.y)
+					if not bool(n.get("blocks_move", false)):
+						open_neighbours += 1
+				if open_neighbours >= 3:
+					return Vector2i(x, y)
+	return Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 
 
 func _find_post_interior() -> Vector2i:
