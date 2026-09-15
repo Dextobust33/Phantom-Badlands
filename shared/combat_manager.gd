@@ -980,9 +980,9 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		# itself before today.
 		if bool(combat.get("vanished", false)):
 			combat.erase("vanished")
-			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
+			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character))
 			_note_crit_escalation(character, combat)
-			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ABILITY_CRIT_DAMAGE - 1.0) * 100.0))
+			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ability_crit_multiplier(character) - 1.0) * 100.0))
 			if messages != null and messages is Array:
 				# ⚑ SAY "CRITICAL", AND SAY WHICH CARD. Owner 2026-09-13: *"I'm not sure Phantom
 				# strike is actually critting with ambush or other damaging abilities like it
@@ -996,9 +996,9 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		var _first_strike: bool = character.has_path_effect("first_strike_autocrit") 			and not combat.get("path_first_strike_done", false)
 		if _first_strike:
 			combat["path_first_strike_done"] = true
-			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
+			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character))
 			_note_crit_escalation(character, combat)
-			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ABILITY_CRIT_DAMAGE - 1.0) * 100.0))
+			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ability_crit_multiplier(character) - 1.0) * 100.0))
 			if messages != null and messages is Array:
 				messages.append("[color=#FF6600]CRITICAL![/color] [color=#9F70FF]Phantom Strike — the first blow lands true.[/color]")
 			return max(1, mod_damage)
@@ -1011,13 +1011,13 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			cc = 0
 		_note_crit_ramp_attempt(character, combat)
 		if cc > 0 and (randi() % 100) < cc:
-			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
+			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character))
 			_note_crit_escalation(character, combat)
 			# 2026-09-05 — buffer it for the damage-number hover. Ambush used to note its own
 			# private crit here; removing that roll left abilities whose ONLY modifier was a crit
 			# with an empty buffer, and _damage_with_detail falls back to a plain number when
 			# nothing is buffered. Reported: "Ambush doesn't seem like you can hover its damage."
-			_note_modifier(combat, "Critical +%d%% (%d%% chance)" % [int((ABILITY_CRIT_DAMAGE - 1.0) * 100.0), cc])
+			_note_modifier(combat, "Critical +%d%% (%d%% chance)" % [int((ability_crit_multiplier(character) - 1.0) * 100.0), cc])
 			if messages != null and messages is Array:
 				messages.append("[color=#FF6600]CRITICAL![/color]")
 		elif not _passive_has_no_glance(character):
@@ -3052,15 +3052,8 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			if actual_heal > 0:
 				messages.append("[color=#00FF00]Lifesteal heals you for %d HP![/color]" % actual_heal)
 
-		# === EQUIPMENT PROC EFFECTS ===
-		var procs = character.get_equipment_procs()
-
-		# Lifesteal from equipment
-		if procs.lifesteal > 0:
-			var proc_heal = max(1, int(damage * procs.lifesteal / 100.0))
-			var actual_proc_heal = character.heal(proc_heal)
-			if actual_proc_heal > 0:
-				messages.append("[color=#FF00FF]Vampiric gear drains %d HP![/color]" % actual_proc_heal)
+		# === EQUIPMENT PROC EFFECTS === lifesteal / shocking / execute: _apply_gear_hit_procs below,
+		# shared with card hits.
 
 		# Lifesteal from companion bonus (Vampire, Death Incarnate, Entropy, etc.)
 		var companion_lifesteal = character.get_companion_bonus("lifesteal")
@@ -3084,24 +3077,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				var comp_name = companion.get("name", "Companion") if companion else "Companion"
 				messages.append("[color=#00FFFF]%s drains %d HP for you![/color]" % [comp_name, actual_companion_heal])
 
-		# Shocking proc (bonus lightning damage on hit)
-		if procs.shocking.chance > 0 and procs.shocking.value > 0:
-			if randi() % 100 < procs.shocking.chance:
-				var lightning_damage = max(1, int(damage * procs.shocking.value / 100.0))
-				monster.current_hp -= lightning_damage
-				monster.current_hp = max(0, monster.current_hp)
-				_note_dmg(combat, messages, lightning_damage)
-				messages.append("[color=#00FFFF]>> Shocking strikes for %d bonus damage![/color]" % lightning_damage)
-
-		# Execute proc (bonus damage when enemy below 30% HP)
-		if procs.execute.chance > 0 and procs.execute.value > 0:
-			var monster_hp_percent = float(monster.current_hp) / float(monster.max_hp)
-			if monster_hp_percent <= 0.30 and randi() % 100 < procs.execute.chance:
-				var execute_damage = max(1, int(damage * procs.execute.value / 100.0))
-				monster.current_hp -= execute_damage
-				monster.current_hp = max(0, monster.current_hp)
-				_note_dmg(combat, messages, execute_damage)
-				messages.append("[color=#FF4444]ðŸ’€ Execute strikes for %d bonus damage![/color]" % execute_damage)
+		_apply_gear_hit_procs(combat, character, damage, messages)
 
 		# Thorns ability: reflect damage back to attacker
 		if ABILITY_THORNS in abilities:
@@ -3153,6 +3129,41 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		"messages": messages,
 		"combat_ended": false
 	})
+
+func _apply_gear_hit_procs(combat: Dictionary, character: Character, damage: int, messages: Array) -> void:
+	"""Equipment lifesteal, Shocking and Execute on a hit that dealt `damage`, basic attack or card.
+
+	⛑ 2026-09-15 - these lived inline in process_attack, so they fired on basic attacks only -
+	about 1% of what a player does (equipment_audit.gd: proc lifesteal healed on a basic attack and
+	never on Power Strike). Owner: gear stats reach cards. Both paths call this now. A proc that
+	finishes the monster is picked up by the caller's own "monster at 0 HP" victory check."""
+	if damage <= 0 or character == null:
+		return
+	var procs: Dictionary = character.get_equipment_procs()
+	var monster: Dictionary = combat.get("monster", {})
+	if procs.lifesteal > 0:
+		var proc_heal = max(1, int(damage * procs.lifesteal / 100.0))
+		var actual_proc_heal = character.heal(proc_heal)
+		if actual_proc_heal > 0:
+			messages.append("[color=#FF00FF]Vampiric gear drains %d HP![/color]" % actual_proc_heal)
+	if monster.is_empty():
+		return
+	# Shocking proc (bonus lightning damage on hit)
+	if procs.shocking.chance > 0 and procs.shocking.value > 0 and int(monster.get("current_hp", 0)) > 0:
+		if randi() % 100 < procs.shocking.chance:
+			var lightning_damage = max(1, int(damage * procs.shocking.value / 100.0))
+			monster.current_hp = max(0, monster.current_hp - lightning_damage)
+			_note_dmg(combat, messages, lightning_damage)
+			messages.append("[color=#00FFFF]>> Shocking strikes for %d bonus damage![/color]" % lightning_damage)
+	# Execute proc (bonus damage when enemy below 30% HP)
+	if procs.execute.chance > 0 and procs.execute.value > 0 and int(monster.get("current_hp", 0)) > 0:
+		var monster_hp_percent = float(monster.current_hp) / float(maxi(1, int(monster.max_hp)))
+		if monster_hp_percent <= 0.30 and randi() % 100 < procs.execute.chance:
+			var execute_damage = max(1, int(damage * procs.execute.value / 100.0))
+			monster.current_hp = max(0, monster.current_hp - execute_damage)
+			_note_dmg(combat, messages, execute_damage)
+			messages.append("[color=#FF4444]💀 Execute strikes for %d bonus damage![/color]" % execute_damage)
+
 
 func _apply_on_hit_chase_procs(character: Character, damage: int, messages: Array) -> void:
 	"""v0.9.599 — chase-affix on-hit triggers. Restores small flat resource on
@@ -4093,6 +4104,18 @@ func assassinate_chance(character, monster, combat, variable_fraction: float = 1
 const ABILITY_STAT_BASELINE_OFFSET := 13.0   # an all-in primary stat measures level + 13
 const ABILITY_STAT_EXPONENT := 0.5           # damping on the relative-stat term
 
+# GEAR ATTACK ON CARDS. Owner 2026-09-15, choosing a reduced share: *"When players don't have any of
+# their resource they will likely need to attack. If we give full damage to cards then it makes attack
+# worthless. It might be worth the cards getting a reduced amount so it still has a place in the game."*
+# A card gets ATTACK_CARD_SHARE of (gear attack / the level's expected stat). The base is the same
+# level + ABILITY_STAT_BASELINE_OFFSET a card's stat ratio measures against - NOT the character's own
+# Strength, which would multiply a low-STR Mage's cards several times over with the same weapon.
+# MEASURED (rare-geared sim characters): at 0.5 a Fighter's cards gained ~the same % from gear attack
+# as its basic attacks (L60 +260% vs +231%, L300 +168% vs +170%) - no reduction at all. At 0.25 the
+# Fighter's cards get about half its basic gain at L60 and L300 (a third at L10); every class's cards
+# get the same %, and casters' basic attacks keep gaining far more (their Strength is small).
+const ATTACK_CARD_SHARE := 0.25
+
 # Mages invest in WISDOM as well as INTELLIGENCE, and Wisdom's combat value used to arrive
 # through the mana pool: base_mana = 30 + INT*3 + WIS*1.5, and the old Magic Bolt scaled with
 # mana SPENT, so a deeper pool meant a bigger hit. Anchoring damage to a share of the health bar
@@ -4159,6 +4182,14 @@ const FORCEFIELD_RECAST_FALLOFF := 0.55
 # (`player_crit_damage`): ability weights are anchored and were tuned with no crit in them, so
 # the full multiplier would inflate every card by ~crit_chance x 0.5.
 const ABILITY_CRIT_DAMAGE := 1.25
+
+
+static func ability_crit_multiplier(character) -> float:
+	"""A card crit's multiplier: the ability base plus gear crit damage. ⛑ 2026-09-15 - gear crit
+	damage used to reach basic attacks only (equipment_audit.gd: +100% crit damage, Power Strike +0%).
+	Owner: gear stats reach cards."""
+	var gear: float = float(character.get_crit_damage_bonus()) / 100.0 if character != null else 0.0
+	return ABILITY_CRIT_DAMAGE + gear
 # 2026-09-05 — abilities with an inherent crit affinity, as a BONUS to the player's own crit
 # chance rather than a private roll of their own.
 #
@@ -5118,6 +5149,7 @@ func _process_ability_command_inner(peer_id: int, ability_name: String, arg: Str
 		if not result.has("messages"):
 			result["messages"] = []
 		_apply_on_hit_chase_procs(combat.character, imprint_damage_dealt, result.messages)
+		_apply_gear_hit_procs(combat, combat.character, imprint_damage_dealt, result.messages)
 		# v0.9.599 — chase-affix extra turn chance. Roll only on damage-
 		# dealing hits and only if the action wasn't already going to skip
 		# the monster turn (Analyze / Pickpocket etc. are free actions and
@@ -7601,6 +7633,17 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 			var ramp_total = minf(character.get_path_effect_total("ramp_damage_cap"), path_ramp * float(combat.get("round", 0)))
 			if ramp_total > 0.0:
 				dmg = dmg * (1.0 + ramp_total / 100.0)
+	# Gear "+X% damage" (the damage_mult chase affix). ⛑ 2026-09-15 - it multiplied basic attacks only
+	# (equipment_audit.gd: +50% -> basic +50%, Power Strike +0%). Owner: gear stats reach cards.
+	# Deterministic, so the card face quotes it too.
+	var gear_dmg_mult: float = character.get_damage_mult_bonus()
+	if gear_dmg_mult > 1.0:
+		dmg = dmg * gear_dmg_mult
+	# Gear attack, at a reduced share (ATTACK_CARD_SHARE, see its note). ⛑ 2026-09-15 - weapon attack and
+	# +attack affixes reached basic attacks only (equipment_audit.gd: +300 attack, Power Strike +0%).
+	var gear_attack: float = float(character.get_equipment_bonuses().get("attack", 0))
+	if gear_attack > 0.0:
+		dmg = dmg * (1.0 + ATTACK_CARD_SHARE * gear_attack / (float(character.level) + ABILITY_STAT_BASELINE_OFFSET))
 	# 2026-09-03 — CARD RANK-UP UPGRADES (damage side). Applied here, at the end of the existing
 	# modifier chain, because this is already the single funnel every ability's damage passes
 	# through: nineteen scattered checks would drift apart the way the cost tables did.

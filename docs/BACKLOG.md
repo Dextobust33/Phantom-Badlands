@@ -731,6 +731,15 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      comparison now calls the server's per-item function instead of a drifted mirror); the three
      crystal runes are runes; Cursed Coin flips - heads, 3 fights of +1 rarity loot; tails, the next
      foe is an elite (owner picked). All executed in items_in_combat.gd / equipment_audit.gd.
+   - ✅ DONE (player power - UNCALIBRATED): gear reaches cards. damage_mult in the card damage funnel
+     (+50% -> Power Strike +50%), gear crit damage in the card crit multiplier, equipment lifesteal /
+     Shocking / Execute fire on card hits (one shared function), and gear ATTACK at a reduced share -
+     owner: *"cards getting a reduced amount so [attack] still has a place"*. ATTACK_CARD_SHARE 0.25 of
+     gear attack over the level's expected stat (class-neutral; a Fighter's cards get ~half its basic
+     gain at L60/L300). **⚠ master now carries a player-power rise with NO refit - do not release
+     before preflight -> speciescal -> refcal -> rolecal** (after the per-card affixes land, once).
+   - OPEN, small: card_face_truth fails ONE cell, Sage L20 Frost Nova at 4 engine (quote 250, real
+     211, 0.85) - present before the gear change too (stash-tested), so an existing over-quote.
    - OPEN, investigate: the "defense" buff is read in two UNITS - as % damage reduction in the
      monster-hit mitigation and as flat defense in another path - while tier Stone Skin writes a flat
      value; party victory XP is a second copy of the solo sum missing hotspot / Ranger / Path terms;
