@@ -1671,12 +1671,29 @@ var _post_loot_victory_persists: bool = false
 
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
 # The Warden draws from the PLAYER sprite pool, at player size - see _overworld_display.
+const WARDEN_SPRITE_ID := "m1_1"
 const WARDEN_FIGURE_SPRITE := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
+
+
+func _warden_sprite(facing: String, walking: bool) -> String:
+	"""His sprite for the way he is going, built exactly like the player's own.
+
+	Owner 2026-09-14: *"his sprite isn't actually facing the way I am and following properly."*
+	He was pinned to `down_stand` - one frame, facing the camera, whichever way you walked. He
+	uses the same sprite set the player pool does, so the same facing and the same walk cycle are
+	already sitting there unused."""
+	var fidx: int = [0, 1, 0, 2][posmod(_ow_anim_tick, 4)] if walking else 0
+	var frame: String = ["_stand", "_walk1", "_walk2"][fidx]
+	var path := "res://client/sprites/overworld_pad32/%s/%s%s.png" % [WARDEN_SPRITE_ID, facing, frame]
+	return path if ResourceLoader.exists(path) else WARDEN_FIGURE_SPRITE
 # "warden" while he is escorting you, "" otherwise. Set from the location message.
 var _escort_kind: String = ""
 # A single world tile the guide is pointing at, and when the pointing stops. See "mark_tile".
 var _mark_tile: Vector2i = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 var _mark_until_ms: int = 0
+# Does this mark end when you step out of the post? True for the gateway (its whole meaning is
+# "the way out"); false for the dungeon, which you have to WALK to.
+var _mark_clear_on_leave_post: bool = false
 # World coords of the cell at the centre of the last map payload.
 var _last_map_center: Vector2i = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 const UiSpotlightScript = preload("res://client/ui_spotlight.gd")
@@ -24905,6 +24922,7 @@ func handle_server_message(message: Dictionary):
 			# converted to a grid cell at draw time, because the grid is recentred every step.
 			_mark_tile = Vector2i(int(message.get("x", 0)), int(message.get("y", 0)))
 			_mark_until_ms = Time.get_ticks_msec() + int(message.get("seconds", 30)) * 1000
+			_mark_clear_on_leave_post = bool(message.get("clear_on_leave_post", false))
 			# Redraw from the payload we already hold, so the ring appears immediately rather
 			# than on the player's next step.
 			if not _last_map_payload.is_empty():
@@ -46610,7 +46628,12 @@ func _overworld_display(payload: Dictionary) -> String:
 	for _wy in range(rows_n):
 		var _wrow: Array = meaning[_wy]
 		for _wx in range(_wrow.size()):
-			if String(_wrow[_wx]) != "warden":
+			# CONTAINS, not equals. A cell's meaning carries markers - "!hot:warden" inside a
+			# hotzone, "!other:warden" with somebody standing on him - and an exact match let
+			# every one of those through, which is the duplicate the owner saw: the tile copy
+			# survived while the follower drew as well. Owner 2026-09-14: *"the Warden is still
+			# duplicated, he's standing in the post and following me."*
+			if not String(_wrow[_wx]).contains("warden"):
 				continue
 			_wrow[_wx] = "empty"
 			if _escort_kind == "warden":
@@ -46701,7 +46724,8 @@ func _overworld_display(payload: Dictionary) -> String:
 		var _ey: int = mid + _eo.y
 		var _ek := "%d,%d" % [_ex, _ey]
 		if _ex >= 0 and _ey >= 0 and _ex < cols_n and _ey < rows_n and not figures.has(_ek):
-			figures[_ek] = {"main": WARDEN_FIGURE_SPRITE}
+			var _wmoving := (Time.get_ticks_msec() - _local_last_move_ms) <= WALK_MOVING_WINDOW_MS
+			figures[_ek] = {"main": _warden_sprite(_local_map_facing, _wmoving)}
 			_overworld_figure_meta[_ek] = {"kind": "npc", "is_local": false,
 				"data": {"name": "Warden Hollis", "class": "Fighter"}}
 	# Companions are placed LAST and never over a person: two players standing a square apart
@@ -46735,7 +46759,13 @@ func _overworld_display(payload: Dictionary) -> String:
 	# pointing at the right square - and the purpose here is "this is the way out", which is
 	# finished the moment you are out. So leaving the post clears it, and the 45-second timer is
 	# only the fallback for a player who never goes.
-	if _mark_tile.x != 0x7FFFFFFF and not bool(payload.get("post", false)):
+	if _mark_tile.x != 0x7FFFFFFF and _mark_clear_on_leave_post 			and not bool(payload.get("post", false)):
+		_mark_tile = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
+		_mark_until_ms = 0
+	# ...and ANY mark ends when you are standing on it. You have arrived; it has nothing left to
+	# say. This is what ends the dungeon mark, which must survive leaving the post to be any use
+	# at all - the whole point of it is the walk.
+	if _mark_tile.x != 0x7FFFFFFF and _last_map_center == _mark_tile:
 		_mark_tile = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 		_mark_until_ms = 0
 	var mark_cell := Vector2i(-1, -1)

@@ -133,8 +133,16 @@ func _init() -> void:
 	# Owner 2026-09-14: *"The Warden is already following me before I've even talked to him."*
 	# Stage 1 begins at CHARACTER CREATION, so keying the escort on the stage alone had him
 	# trailing someone who had never met him.
-	ck(src.contains("if not character.met_warden:
-		return false"),
+	# Whitespace-independent: the first cut embedded a real newline and two tabs in the
+	# literal, which matched only as long as nobody reindented the function it watches.
+	var i_esc := src.find("func _guide_escorts_overworld")
+	# The FUNCTION BODY, not a fixed byte window. 1600 characters did not reach past the
+	# docstring, so the check failed while the code it watches was correct - the same
+	# window-too-small fault opening_beats.gd already carries a note about.
+	var i_esc_end := src.find("
+func ", i_esc + 10)
+	var esc := src.substr(i_esc, (i_esc_end - i_esc) if i_esc_end > i_esc else 4000) if i_esc != -1 else ""
+	ck(esc.contains("if not character.met_warden:") and esc.contains("return false"),
 		"the escort requires having actually spoken to him")
 	ck(src.contains("character.met_warden = true"), "  which the conversation sets")
 	ck(src.contains("if not character.met_warden:") and src.contains('"[color=#9ACD32]Not Yet[/color]"'),
@@ -197,8 +205,17 @@ func _init() -> void:
 	# and the ring moved -1 cell in x, -4 in y, which is exactly right for a fixed world tile
 	# under a map that recentres each step. It was anchored correctly the whole time; it simply
 	# never ended, and a pointer that outlives its purpose reads as a bug even when it is right.
-	ck(csrc.contains('if _mark_tile.x != 0x7FFFFFFF and not bool(payload.get("post", false)):'),
-		"and leaving the post clears the mark - its job was 'here is the way out'")
+	# The clear condition belongs to the MARK, not to the map: the gateway ring ends when you
+	# leave the post, and the dungeon ring must survive exactly that or it is useless - the whole
+	# point of it is the walk. One flag, set by whoever sends the mark.
+	ck(csrc.contains("_mark_clear_on_leave_post"),
+		"each mark carries its own end condition")
+	ck(csrc.contains('"clear_on_leave_post": true') or src.contains('"clear_on_leave_post": true'),
+		"  the gateway ring ends when you step out - its job was 'here is the way out'")
+	ck(csrc.contains("if _mark_tile.x != 0x7FFFFFFF and _last_map_center == _mark_tile:"),
+		"  and ANY mark ends when you are standing on it")
+	ck(src.contains('send_to_peer(peer_id, {"type": "mark_tile", "x": int(d.get("x", 0))'),
+		"and the DUNGEON is marked too, so 'find the D' names something findable")
 	var wsrc2 := FileAccess.get_file_as_string("res://shared/world_system.gd")
 	ck(wsrc2.contains('"post": _inside_post'),
 		"  reading a flag the payload really carries")

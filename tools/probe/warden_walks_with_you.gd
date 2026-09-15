@@ -126,6 +126,35 @@ func _init() -> void:
 				"and it is LARGER than the tile he used to be drawn as")
 
 	print("")
+	print("===== AND HE IS IN ONE PLACE, FACING THE RIGHT WAY =====")
+	# Owner 2026-09-14: *"the Warden is still duplicated, he's standing in the post and following
+	# me (but his sprite isn't actually facing the way I am and following properly)."*
+	#
+	# The blanking test was an EXACT match on "warden". A cell's meaning carries markers -
+	# "!hot:warden" in a hotzone, "!other:warden" with somebody standing on him - so every marked
+	# case slipped through and the post copy survived beside the follower.
+	ck(src.contains('if not String(_wrow[_wx]).contains("warden"):'),
+		"the post copy is blanked for ANY warden cell, marked or not")
+	for marked in ["warden", "!hot:warden", "!other:warden", "!player:warden"]:
+		ck(marked.contains("warden"), "  '%s' is recognised as his tile" % marked)
+	ck(not "wall".contains("warden"), "  and an unrelated tile is not (control)")
+
+	# He faces where he walks. He was pinned to one forward-facing frame.
+	ck(src.contains("func _warden_sprite(facing: String, walking: bool)"),
+		"his sprite is chosen by facing")
+	ck(src.contains("_warden_sprite(_local_map_facing, _wmoving)"),
+		"  from the player's own facing, since he walks behind them")
+	var missing: Array = []
+	for f in ["up", "down", "left", "right"]:
+		for fr in ["_stand", "_walk1", "_walk2"]:
+			var pth := "res://client/sprites/overworld_pad32/m1_1/%s%s.png" % [f, fr]
+			if not ResourceLoader.exists(pth):
+				missing.append("%s%s" % [f, fr])
+	print("  his sprite set: 12 expected, %d missing" % missing.size())
+	ck(missing.is_empty(),
+		"every facing and walk frame exists, so nothing silently falls back to facing the camera")
+
+	print("")
 	print("----- NOT COVERED HERE -----")
 	print("  Whether he keeps up convincingly while you walk. Position is recomputed per frame")
 	print("  from your facing, so he snaps rather than steps - that is a look, and a playtest.")

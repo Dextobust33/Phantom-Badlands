@@ -20561,6 +20561,17 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 			"wardens_watch_2":
 				# Fight taught, world taught, THEN the dungeon - the order the owner set out.
 				_guide_teach(peer_id, "world")
+				# ⛑ AND POINT AT THE ACTUAL DUNGEON.
+				#
+				# Owner 2026-09-14: *"he said the rest of my gear is laying on the floor of that
+				# dungeon. What Dungeon? How does the player know where to go? Why do we keep
+				# leaving the player out to dry?"*
+				#
+				# "Find the D on your map" is worthless when the D is not on the map - a starter
+				# dungeon sits up to ~30 tiles from spawn and vision is about 11. My own probe
+				# passed this step because it checked that a next action was NAMED; it never
+				# asked whether the player could FIND it.
+				_point_at_the_dungeon(peer_id, character)
 		# He is the quest giver and he is with you: the step settles where you stand. See the
 		# _warden_here bypass in handle_quest_turn_in.
 		handle_quest_turn_in(peer_id, {"quest_id": _qid})
@@ -43154,6 +43165,41 @@ func _guide_escorts_overworld(peer_id: int, character) -> bool:
 	return st == 1 or st == 2
 
 
+func _point_at_the_dungeon(peer_id: int, character) -> void:
+	"""Say WHICH dungeon, WHERE it is, and ring it on the map once it is in sight.
+
+	The mark is the same one the gateway uses, so a player who has already followed a gold ring
+	out of the post is being taught one idiom rather than two. It is sent even when the dungeon
+	is off-screen: the client only draws it when the tile is inside the view, so it lights up by
+	itself as they get close."""
+	if character == null:
+		return
+	var d: Dictionary = _find_nearest_dungeon_for_quest(int(character.x), int(character.y), "", 1, peer_id)
+	if d.is_empty():
+		# Nothing to point at. Say so rather than send them hunting for a D that is not there.
+		_guide_say(peer_id, "There is a hole in the ground within a day's walk of here. Ask at the post if you lose it.")
+		return
+	var dname := String(d.get("name", "the dungeon"))
+	var dist := int(d.get("distance", 0))
+	var dir := String(d.get("direction_text", ""))
+	send_to_peer(peer_id, {"type": "mark_tile", "x": int(d.get("x", 0)), "y": int(d.get("y", 0)),
+		"label": dname, "seconds": 600})
+	_send_hint(peer_id,
+		"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
+		("\"That one.\"
+
+"
+			+ "[color=#FFD700]%s[/color] — about [color=#FFD700]%d tiles %s[/color] of you.
+
+"
+			% [dname, dist, dir]
+			+ "It is ringed in gold on your map the moment it comes into sight. Walk onto it.
+
+"
+			+ "[color=#9ACD32]\"The rest of your kit is on the floor down there. I am coming with you.\"[/color]"),
+		"", ["map"])
+
+
 func _tutorial_safe_monster(monster: Dictionary, character) -> Dictionary:
 	"""Keep the escorted fights to creatures the early game is actually made of.
 
@@ -43322,7 +43368,7 @@ func _maybe_warden_next_step(peer_id: int, character) -> void:
 		# Mark the actual tile. A post has several doors, so a compass direction is still a
 		# search - this is the one he means.
 		send_to_peer(peer_id, {"type": "mark_tile", "x": door.x, "y": door.y,
-			"label": "the way out", "seconds": 45})
+			"label": "the way out", "seconds": 45, "clear_on_leave_post": true})
 	var dir := _nearest_door_dir(character)
 	var way := ("to the [color=#FFD700]%s[/color]" % dir) if dir != "" else "in the post wall"
 	_send_hint(peer_id,
