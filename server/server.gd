@@ -2449,6 +2449,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_test_stable(peer_id)
 		"gm_completequest":
 			handle_gm_completequest(peer_id, message)
+		"gm_rescue_player":
+			handle_gm_rescue_player(peer_id, message)
 		"gm_world_reset":
 			handle_gm_world_reset(peer_id)
 		"gm_world_reset_confirm":
@@ -26038,8 +26040,9 @@ func _get_recipe_description(recipe: Dictionary) -> String:
 		"structure":
 			return "Placeable structure for player posts"
 		"escape_scroll":
-			var tier_max = recipe.get("tier_max", 4)
-			return "Safely exit any T1-%d dungeon" % tier_max
+			# One scroll, every dungeon, since 2026-09-14. The tier_max field survives on old
+			# saved scrolls and is deliberately not read - see make_escape_scroll.
+			return "Safely exit any dungeon"
 		"proc_enchant":
 			var proc_type = effect.get("proc_type", "")
 			match proc_type:
@@ -36368,31 +36371,17 @@ func _use_escape_scroll(peer_id: int, item_index: int):
 	if item.get("item_type", "") != "escape_scroll":
 		return
 
-	var tier_max = item.get("tier_max", 4)
-	# ⛑ THE INSTANCE'S GRADE, NOT THE TYPE'S.
+	# ⛑ NO GATE. A scroll always works.
 	#
-	# Since 2026-09-11 a dungeon's grade belongs to the INSTANCE - the land decides it - so a
-	# Phoenix's Nest whose type says tier 6 can quite properly be an F-grade instance standing in
-	# low country. This gate read the TYPE, so it refused a Scroll of Escape in a tier-3 dungeon
-	# on the grounds that Phoenix's Nests are tier 6.
+	# Owner 2026-09-14: *"none of them should block a player from being able to escape with
+	# one."* The gate that used to live here refused a scroll whose reach was under the
+	# dungeon's grade, and it read the TYPE's tier rather than the instance's - which locked a
+	# live player inside a tier-3 dungeon on the grounds that Phoenix's Nests are tier 6.
 	#
-	# Reported live: a player entered a phoenix dungeon whose monsters were LEVEL 29 - F5 covers
-	# 26-29, C5 covers 278-322, so the instance was unambiguously F - and could not use their
-	# scroll. Owner: *"what's the alternative, I wasn't aware the scrolls of escape don't work in
-	# high level dungeons, how are they meant to get out?"* There was no alternative, because the
-	# dungeon was never high level.
-	#
-	# `_instance_tier` is the same resolver the entrance panel and the map already use.
-	var dungeon_tier: int = _current_dungeon_tier(character)
-
-	if dungeon_tier > tier_max:
-		# And SAY how to get out, rather than only what does not work. Every dungeon places a
-		# scroll that matches its own grade on the first floor - that is the way out, and a
-		# player who walked past it had no way of knowing it existed.
-		send_to_peer(peer_id, {"type": "error", "message":
-			"This scroll only reaches tier %d, and this dungeon is %s. A matching scroll is on the FIRST FLOOR of every dungeon - or defeat the boss to leave."
-				% [tier_max, PowerRankScript.letter(dungeon_tier)]})
-		return
+	# Both halves are gone: the grade is resolved from the instance everywhere now
+	# (`_current_dungeon_tier`), and there is only one scroll, which works anywhere. Nothing is
+	# left here to say no. That is the point - the failure mode of this check was a character who
+	# could not leave, under permadeath.
 
 	# Consume scroll
 	character.remove_item(item_index)
@@ -41641,6 +41630,49 @@ func handle_gm_hire_test_guard(peer_id: int, _message: Dictionary):
 # window; nothing is touched until the confirm arrives. An irreversible action on live characters
 # should not be one mis-click.
 var _world_reset_armed_at: Dictionary = {}   # peer_id -> ticks_msec
+
+
+func handle_gm_rescue_player(peer_id: int, message: Dictionary) -> void:
+	"""Pull a named player out of wherever they are and put them at the Crossroads.
+
+	⛑ Owner 2026-09-14, after a player was locked inside a dungeon by the escape-scroll gate:
+	*"Admin needs a control so we can teleport a specific player back to the crossroads in case
+	this happens in the future."*
+
+	The gate that caused it is gone, but a stuck character under permadeath is the worst thing
+	this game can do to somebody, and "we fixed the one cause we know about" is not the same as
+	"it cannot happen". This is the hand that reaches in regardless of the reason.
+
+	Leaves the dungeon cleanly rather than collapsing it: a rescue must not also be a punishment."""
+	if not _is_admin(peer_id):
+		return
+	var who := String(message.get("player", "")).strip_edges()
+	if who == "":
+		return
+	var target := -1
+	for pid in characters:
+		if String(characters[pid].name) == who:
+			target = int(pid)
+			break
+	if target == -1:
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#FF6666]%s is not online.[/color]" % who})
+		return
+	var ch = characters[target]
+	if combat_mgr.is_in_combat(target):
+		combat_mgr.end_combat(target, false)
+	if ch.in_dungeon:
+		ch.exit_dungeon()
+	ch.x = 0
+	ch.y = 0
+	save_character(target)
+	send_to_peer(target, {"type": "text", "message":
+		"[color=#FFD700]An administrator has pulled you back to the Crossroads.[/color]"})
+	send_location_update(target)
+	send_character_update(target)
+	send_to_peer(peer_id, {"type": "text", "message":
+		"[color=#66FF66]%s is now at the Crossroads.[/color]" % who})
+	log_message("GM-RESCUE %s moved %s to the Crossroads" % [characters[peer_id].name if characters.has(peer_id) else "?", who])
 
 
 func handle_gm_world_reset(peer_id: int):

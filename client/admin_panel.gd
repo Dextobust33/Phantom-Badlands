@@ -20,6 +20,10 @@ var _title_label: Label
 var _subtitle_label: RichTextLabel
 var _button_column: VBoxContainer
 
+## Who is online, for the rescue page. Set by the client before open() - the panel has no
+## network of its own, and a rescue button that guessed at names would be worse than none.
+var online_names: Array = []
+
 var _current_page: String = "root"  # root | dungeon | combat | items | companions | player | world | loot_lab | abilities | patreon
 
 
@@ -107,7 +111,7 @@ func _render_page() -> void:
 	# An unknown page would render as an empty panel with no Back button - which looks
 	# exactly like a crash. Fall back to root rather than stranding the panel.
 	if not _current_page in ["root", "dungeon", "combat", "items", "companions", "player",
-			"world", "loot_lab", "abilities", "patreon"]:
+			"world", "loot_lab", "abilities", "patreon", "rescue"]:
 		_current_page = "root"
 	match _current_page:
 		"root":
@@ -126,6 +130,8 @@ func _render_page() -> void:
 			_add_button("Companions - eggs, KO/revive, fusion catalysts", "_page_companions", Color(1, 0.84, 0))
 			_add_button("Player - heal, quests, help reference", "_page_player", Color(0.6, 1, 0.6))
 			_add_button("World - test posts, guards, cartography", "_page_world", Color(0.6, 1, 0.6))
+			_add_button("Rescue - pull a stuck player back to the Crossroads", "_page_rescue",
+				Color(1.0, 0.68, 0.2))
 			_add_separator()
 			_add_button("Loot Lab - force minigame + rare cells / affixed tools", "_page_loot_lab", Color(0.4, 0.9, 1.0))
 			_add_button("Abilities - test +X to ability gear", "_page_abilities", Color(0.85, 0.65, 1.0))
@@ -237,6 +243,24 @@ func _render_page() -> void:
 			_subtitle_subline("[color=#FF6666]DANGER.[/color] The map wipe. Accounts, characters, Sanctuary and VALOR all survive; the land, posts, dungeons, market and every built tile do not. Two presses: the first only tells you what it would destroy.")
 			_add_button("WORLD RESET - show me what it would destroy", "gm_world_reset", Color(1.0, 0.7, 0.3))
 			_add_button("...CONFIRM WORLD RESET (no undo)", "gm_world_reset_confirm", Color(1.0, 0.3, 0.3))
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"rescue":
+			# ⛑ GETTING A STUCK PLAYER OUT.
+			#
+			# Owner 2026-09-14, after a player was locked in a dungeon by the escape-scroll gate:
+			# *"Admin needs a control so we can teleport a specific player back to the crossroads
+			# in case this happens in the future."*
+			#
+			# One button per ONLINE player rather than a name to type: a typo in a rescue tool
+			# is a rescue that quietly does nothing, and the roster is already on screen.
+			_title_label.text = "ADMIN - RESCUE A PLAYER"
+			_subtitle_label.text = "[color=#aaaaaa]Pulls a player out of wherever they are and puts them at the Crossroads. Works from inside a dungeon.[/color]"
+			if online_names.is_empty():
+				_subtitle_subline("[color=#FF8888]Nobody is online.[/color]")
+			for pname in online_names:
+				_add_button("Rescue  %s  -> Crossroads" % String(pname),
+					"gm_rescue:%s" % String(pname), Color(1.0, 0.68, 0.2))
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"player":

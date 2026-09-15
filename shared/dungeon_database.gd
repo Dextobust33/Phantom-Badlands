@@ -3347,29 +3347,31 @@ static func roll_dungeon_resource_type(rng: RandomNumberGenerator) -> String:
 		return "crystal"
 
 # Escape scroll tier mapping: dungeon tier → scroll item_type
-const ESCAPE_SCROLL_TIERS = {
-	1: "scroll_of_escape", 2: "scroll_of_escape", 3: "scroll_of_escape", 4: "scroll_of_escape",
-	5: "scroll_of_greater_escape", 6: "scroll_of_greater_escape", 7: "scroll_of_greater_escape",
-	8: "scroll_of_supreme_escape", 9: "scroll_of_supreme_escape"
-}
+## ⛑ ONE SCROLL. A player holding one is never stuck.
+##
+## There used to be three - Escape (T1-4), Greater (T1-7), Supreme (T1-9) - with a gate that
+## refused a scroll whose reach was below the dungeon's grade. On 2026-09-14 a live player was
+## locked in a dungeon while holding a scroll, because that gate read the dungeon TYPE's tier (6)
+## rather than the instance's grade (3). The grade bug is fixed; so is the idea behind it.
+##
+## Owner: *"We need to remove the different scrolls of escape, it should be just one type of
+## scroll of escape for all dungeons and none of them should block a player from being able to
+## escape with one."* An exit that only sometimes works is not an exit, and its failure mode is a
+## character who cannot leave, under permadeath.
+##
+## `tier_max` is still written so scrolls saved before today deserialise unchanged. Nothing reads
+## it any more.
+const ESCAPE_SCROLL_TIERS = {}
 
-static func make_escape_scroll(dungeon_tier: int) -> Dictionary:
-	"""Build the tier-appropriate escape-scroll item (NO roll). Used to GUARANTEE the
-	first escape scroll of a dungeon run (C2 — the exit now that the step budget is
-	retired) and by the 20% treasure roll below."""
-	var scroll_id = ESCAPE_SCROLL_TIERS.get(dungeon_tier, "scroll_of_escape")
-	var tier_max = 4
-	var scroll_name = "Scroll of Escape"
-	if scroll_id == "scroll_of_greater_escape":
-		tier_max = 7
-		scroll_name = "Scroll of Greater Escape"
-	elif scroll_id == "scroll_of_supreme_escape":
-		tier_max = 9
-		scroll_name = "Scroll of Supreme Escape"
+
+static func make_escape_scroll(_dungeon_tier: int = 1) -> Dictionary:
+	"""The escape scroll. One kind, works in any dungeon, guaranteed on every first floor.
+
+	Still takes a tier so no call site needed editing - it is deliberately ignored."""
 	return {
-		"name": scroll_name,
+		"name": "Scroll of Escape",
 		"item_type": "escape_scroll",
-		"tier_max": tier_max,
+		"tier_max": 9,
 		"type": "consumable"
 	}
 

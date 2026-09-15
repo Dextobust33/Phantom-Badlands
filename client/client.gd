@@ -35792,6 +35792,9 @@ func open_admin_menu() -> void:
 	# clicks/keys aren't swallowed by the chat box.
 	if input_field and input_field.has_focus():
 		input_field.release_focus()
+	# Hand the panel the roster before it draws: the rescue page lists one button per online
+	# player, and it has no network of its own to ask.
+	admin_panel.online_names = online_players_names.duplicate()
 	admin_panel.open()
 
 func close_admin_menu() -> void:
@@ -36983,6 +36986,13 @@ func _on_admin_panel_action(action_id: String) -> void:
 	"""Dispatch admin panel button clicks. Each action_id maps to a
 	gm_* server message or a small client-side helper. All server-side
 	commands are gated by _is_admin() server-side."""
+	# The rescue buttons carry their target in the action id, because there is one per online
+	# player and a fixed match statement cannot enumerate people.
+	if action_id.begins_with("gm_rescue:"):
+		var _who := action_id.substr(10)
+		send_to_server({"type": "gm_rescue_player", "player": _who})
+		display_game("[color=#FFAA33]Pulling %s back to the Crossroads...[/color]" % _who)
+		return
 	match action_id:
 		# The map wipe. Two separate actions on purpose: the first only asks the server what it
 		# WOULD destroy, the second does it. Neither is a toggle and neither is undoable, so

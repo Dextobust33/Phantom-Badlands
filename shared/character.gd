@@ -1194,12 +1194,25 @@ func calculate_derived_stats():
 	# HP formula: Base 50 + CON × 5 + primary stat contribution
 	var primary_stat_bonus = _get_primary_stat_for_hp()
 	max_hp = 50 + (constitution * 5) + primary_stat_bonus
-	# #55 identity pass (2026-08-27) — Tricksters are GLASS CANNONS: fragile-but-fast
-	# assassins. 30% less HP so a whiffed Outsmart (or getting caught before they flee)
-	# usually means death — the risk that pays for their unmatched over-level reach + high
-	# flee. They act first each turn, so they still get their shot before taking a hit.
-	if class_type in ["Grifter", "Ranger", "Ninja"]:
-		max_hp = int(max_hp * 0.7)
+	# ⛑ THE TRICKSTER HP PENALTY IS GONE (2026-09-14).
+	#
+	# It was a flat x0.7 on all three Trickster classes, added in the #55 identity pass on
+	# 2026-08-27 and justified entirely by OUTSMART: "30% less HP so a whiffed Outsmart (or
+	# getting caught before they flee) usually means death - the risk that pays for their
+	# unmatched over-level reach."
+	#
+	# Outsmart is not in the game any more. The risk was removed and the price for it was left
+	# behind, which is the worst of both: a class paying for a power it no longer has. Owner:
+	# *"Tricksters having reduced HP needs removed. We had that in when Outsmart was a thing but
+	# now that it isn't a thing they shouldn't have reduced HP anymore."*
+	#
+	# Their fragility still comes from the honest place - the lowest CON growth in the game
+	# (Grifter and Ninja at 0.25/level against a Barbarian's 1.0) - which is a design choice
+	# about where they spend their budget rather than a tax on top of it.
+	#
+	# This is a PLAYER-POWER change: the monster curve is calibrated against the old number, so
+	# every balance figure measured before the next refit is stale. Recalibration was explicitly
+	# deferred by the owner in favour of a feel check first.
 
 	# Resource pools. v0.9.700 (#29) — added a FLAT FLOOR so early-game pools hold
 	# ~3 casts (was ~1: pool ≈ one ability's ceiling), and NORMALIZED energy from

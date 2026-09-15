@@ -3401,18 +3401,18 @@ const RECIPES = {
 		"craft_time": 3.0
 	},
 	"scroll_of_greater_escape": {
-		"name": "Scroll of Greater Escape",
+		"name": "Scroll of Escape",
 		"skill": CraftingSkill.SCRIBING,
 		"skill_required": 16,
 		"difficulty": 30,
 		"materials": {"fine_parchment": 2, "arcane_ink": 1, "soul_shard": 1},
 		"output_type": "escape_scroll",
-		"tier_max": 7,
+		"tier_max": 9,
 		"specialist_only": true,
 		"craft_time": 4.0
 	},
 	"scroll_of_supreme_escape": {
-		"name": "Scroll of Supreme Escape",
+		"name": "Scroll of Escape",
 		"skill": CraftingSkill.SCRIBING,
 		"skill_required": 24,
 		"difficulty": 45,
