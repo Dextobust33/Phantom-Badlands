@@ -306,8 +306,24 @@ func _init() -> void:
 				unread.append("%s -> %s" % [String(it.get("name", "?")), nm2])
 	print("[ITEMS] buff names with no reader: %s" % ("none" if unread.is_empty() else ", ".join(unread)))
 
+	# THE DUNGEON-CRYSTAL RUNES. Until 2026-09-15 their recipes had no slot or effect and every craft
+	# refunded. Built by the real rune builder, applied by the real handler, read by the real aggregator.
+	var rune_fail := 0
+	for spec in [["void_rune", "weapon", "attack"], ["abyssal_rune", "armor", "defense"], ["primordial_rune", "helm", "max_hp"]]:
+		var rch = _fresh()
+		rch.equipped[spec[1]] = {"type": "%s_iron" % spec[1] if spec[1] != "weapon" else "weapon_iron", "name": "Probe Piece", "rarity": "rare", "level": 30, "affixes": {}}
+		var before_stat: int = int(rch.get_equipment_bonuses().get(spec[2], 0))
+		var rune: Dictionary = sv._create_crafted_rune(sv.CraftingDatabaseScript.RECIPES[spec[0]], sv.CraftingDatabaseScript.CraftingQuality.STANDARD, "probe")
+		rch.inventory.append(rune)
+		sv.handle_use_rune(PEER, {"rune_index": rch.inventory.size() - 1, "target_slot": spec[1]})
+		var after_stat: int = int(rch.get_equipment_bonuses().get(spec[2], 0))
+		var ok_r: bool = after_stat > before_stat
+		if not ok_r:
+			rune_fail += 1
+		print("[ITEMS] %-16s on %-6s %s %d -> %d  %s" % [spec[0], spec[1], spec[2], before_stat, after_stat, "works" if ok_r else "NO EFFECT"])
+
 	# Everything else is classified for the owner; a duplication is a failure outright. Proven to fire:
 	# the Enhancement Scroll at its cap reported DUPLICATED on the code before 2026-09-15's fix.
-	var ok: bool = dupes == 0 and unread.is_empty() and stack_eaten == 0
+	var ok: bool = dupes == 0 and unread.is_empty() and stack_eaten == 0 and rune_fail == 0
 	print("RESULT: %s (%d duplicating uses, %d unread buff names, %d uses that ate a stack)" % ["PASS" if ok else "FAIL", dupes, unread.size(), stack_eaten])
 	quit(0 if ok else 1)

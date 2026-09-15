@@ -278,7 +278,8 @@ func _init() -> void:
 	_row("  value one item rolls at item level 900", "INFO", "5 + 0.10 x 900 = %.0f%% (per the chase formula, before the 0.7-1.3 roll)" % (5.0 + 0.10 * 900.0))
 
 	print("[AUDIT] ================= CRAFTED GEAR =================")
-	var plain := {"type": "helm_crafted", "name": "Crafted Helm", "rarity": "rare", "level": 60, "wear": 0, "affixes": {}}
+	# The shape _create_crafted_equipment writes, including its "crafted" flag.
+	var plain := {"type": "helm_crafted", "name": "Crafted Helm", "rarity": "rare", "level": 60, "wear": 0, "affixes": {}, "crafted": true}
 	var listed := plain.duplicate(true)
 	listed["attack"] = 500
 	listed["defense"] = 500

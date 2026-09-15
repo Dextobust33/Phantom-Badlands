@@ -3424,16 +3424,22 @@ const RECIPES = {
 	},
 
 	# ===== DUNGEON-EXCLUSIVE CRYSTAL RECIPES =====
-	# Enchanter: Mythic runes using dungeon crystals
+	# Enchanter: runes from dungeon crystals, one step above Greater.
+	# ⛑ 2026-09-15 - these were "enchantment" recipes carrying enchant_stat / enchant_amount, fields
+	# nothing reads, and no target_slot or effect - so every craft answered "No equipment in slot to
+	# enchant" and refunded (equipment audit). Owner: make them top-tier runes. They now use the rune
+	# fields every other rune uses; the stat, slots and amounts are the ones the recipes already named.
 	"void_rune": {
 		"name": "Void Rune",
 		"skill": CraftingSkill.ENCHANTING,
 		"skill_required": 25,
 		"difficulty": 40,
 		"materials": {"void_crystal": 2, "primordial_spark": 1},
-		"output_type": "enchantment",
-		"enchant_stat": "attack",
-		"enchant_amount": 45,
+		"output_type": "rune",
+		"target_slot": "weapon",
+		"rune_stat": "attack_bonus",
+		"rune_tier": "void",
+		"rune_cap": 45,
 		"specialist_only": true,
 		"craft_time": 5.0
 	},
@@ -3443,9 +3449,11 @@ const RECIPES = {
 		"skill_required": 30,
 		"difficulty": 50,
 		"materials": {"abyssal_shard": 2, "void_crystal": 1},
-		"output_type": "enchantment",
-		"enchant_stat": "defense",
-		"enchant_amount": 50,
+		"output_type": "rune",
+		"target_slot": "armor,shield",
+		"rune_stat": "defense_bonus",
+		"rune_tier": "void",
+		"rune_cap": 50,
 		"specialist_only": true,
 		"craft_time": 6.0
 	},
@@ -3455,9 +3463,11 @@ const RECIPES = {
 		"skill_required": 35,
 		"difficulty": 60,
 		"materials": {"primordial_essence": 2, "abyssal_shard": 1},
-		"output_type": "enchantment",
-		"enchant_stat": "max_hp",
-		"enchant_amount": 180,
+		"output_type": "rune",
+		"target_slot": "helm,armor,shield",
+		"rune_stat": "hp_bonus",
+		"rune_tier": "void",
+		"rune_cap": 180,
 		"specialist_only": true,
 		"craft_time": 7.0
 	},

@@ -722,6 +722,11 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      Primordial Runes cannot be crafted (no target_slot or effect - always "no equipment", refund);
      Efficient Bolt and Swift Analyze cannot matter (tome pass vs today's decks); Cursed Coin still
      drops from two tables and "crumbles to dust".
+   - **OWNER 2026-09-15 on those:** crafted recipe stats and Tempering **add on top** of the level
+     base (player power - into the calibration pass); Void / Abyssal / Primordial become **top-tier
+     runes** (+attack weapon, +defense armour/shield, +HP helm/armour/shield); skill tomes **fold into
+     the per-card bonus table** shared with the card-specific gear; Cursed Coin gets a **new effect**
+     (I propose, owner picks).
    - OPEN, investigate: the "defense" buff is read in two UNITS - as % damage reduction in the
      monster-hit mitigation and as flat defense in another path - while tier Stone Skin writes a flat
      value; party victory XP is a second copy of the solo sum missing hotspot / Ranger / Path terms;

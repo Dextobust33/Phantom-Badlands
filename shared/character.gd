@@ -1268,6 +1268,200 @@ func get_stat(stat_name: String) -> int:
 		_:
 			return 0
 
+static func item_stat_bonuses(item: Dictionary) -> Dictionary:
+	"""The flat stat bonuses ONE item gives, before the class resource conversion.
+
+	⛑ 2026-09-15 - the ONE copy. The client's item comparison (`_compute_item_bonuses`) kept its own
+	hand-mirrored version, which had drifted: different Mage-gear multipliers, no Warlord weapon, no
+	enchantments, and extra fields the server never reads - so a comparison could show numbers the
+	game does not use. Both now call this."""
+	var bonuses = {
+		"attack": 0,
+		"defense": 0,
+		"strength": 0,
+		"constitution": 0,
+		"dexterity": 0,
+		"intelligence": 0,
+		"wisdom": 0,
+		"wits": 0,
+		"max_hp": 0,
+		"max_mana": 0,
+		"max_stamina": 0,     # Bonus max stamina from gear
+		"max_energy": 0,      # Bonus max energy from gear
+		"speed": 0,
+		# Class-specific bonuses
+		"mana_regen": 0,      # Flat mana per combat round (Mage gear)
+		"meditate_bonus": 0,  # % bonus to Meditate effectiveness (Mage gear)
+		"energy_regen": 0,    # Flat energy per combat round (Trickster gear)
+		"flee_bonus": 0,      # % bonus to flee chance (Trickster gear)
+		"stamina_regen": 0    # Flat stamina per combat round (Warrior gear)
+	}
+
+	var item_level = item.get("level", 1)
+	var item_type = item.get("type", "")
+	var rarity_mult = _get_rarity_multiplier(item.get("rarity", "common"))
+
+	# Check for item wear/damage (0-100, 100 = fully damaged/broken)
+	var wear = item.get("wear", 0)
+	var wear_penalty = 1.0 - (float(wear) / 100.0)  # 0% wear = 100% effectiveness, 100% wear = 0%
+
+	# Apply diminishing returns for items above level 100
+	var effective_level = _get_effective_item_level(item_level)
+
+	# Base bonus scales with effective item level, rarity, and wear
+	var base_bonus = int(effective_level * rarity_mult * wear_penalty)
+
+	# STEP 1: Apply base item type bonuses (all items get these)
+	# NERFED: Reduced multipliers significantly for balance
+	if "weapon" in item_type:
+		bonuses.attack += int(base_bonus * 1.5)  # Nerfed from 2.5x
+		bonuses.strength += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+	elif "armor" in item_type:
+		bonuses.defense += int(base_bonus * 1.0)  # Nerfed from 1.75x
+		bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.max_hp += int(base_bonus * 1.5)  # Nerfed from 2.5x
+	elif "helm" in item_type:
+		bonuses.defense += int(base_bonus * 0.6)  # Nerfed from 1.0x
+		bonuses.wisdom += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+	elif "shield" in item_type:
+		bonuses.defense += max(1, int(base_bonus * 0.4)) if base_bonus > 0 else 0
+		bonuses.max_hp += int(base_bonus * 2.0)  # Nerfed from 4x
+		bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+	elif "ring" in item_type:
+		bonuses.attack += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.intelligence += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+	elif "amulet" in item_type:
+		bonuses.max_mana += int(base_bonus * 1.0)  # Nerfed from 1.75x
+		bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.wits += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+	elif "boots" in item_type:
+		bonuses.speed += int(base_bonus * 0.6)  # Nerfed from 1.0x
+		bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+		bonuses.defense += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+
+	# STEP 2: Apply class-specific gear bonuses (IN ADDITION to base type bonuses)
+	# Use max(1, ...) for fractional multipliers to ensure even low-level items give bonuses
+	if "ring_arcane" in item_type:
+		# Arcane ring (Mage): extra INT + mana_regen
+		bonuses.intelligence += max(1, int(base_bonus * 0.7)) if base_bonus > 0 else 0
+		bonuses.mana_regen += max(1, int(base_bonus * 0.35)) if base_bonus > 0 else 0
+	elif "ring_shadow" in item_type:
+		# Shadow ring (Trickster): extra WITS + energy_regen
+		bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
+		bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+	elif "amulet_mystic" in item_type:
+		# Mystic amulet (Mage): extra max_mana + meditate_bonus
+		bonuses.max_mana += base_bonus  # Extra mana on top of base
+		bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
+	elif "amulet_evasion" in item_type:
+		# Evasion amulet (Trickster): extra speed + flee_bonus
+		bonuses.speed += base_bonus
+		bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
+	elif "boots_swift" in item_type:
+		# Swift boots (Trickster): extra Speed + WITS + energy_regen
+		bonuses.speed += int(base_bonus * 0.5)  # Extra speed on top of base
+		bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
+		bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
+	elif "weapon_warlord" in item_type:
+		# Warlord weapon (Warrior): STRENGTH + stamina_regen.
+		#
+		# 2026-09-04 — the strength half is new, and it fixes an ASYMMETRY rather than being a
+		# tuning guess. The other two class kits each grant a PRIMARY STAT plus sustain:
+		#   ring_arcane   INT x0.7   + mana_regen x0.35     (and amulet_mystic max_mana x1.0)
+		#   ring_shadow   WITS x0.5  + energy_regen x0.15   (and boots_swift WITS x0.3)
+		#   weapon_warlord            stamina_regen x0.2    <- sustain ONLY, nothing else
+		# The warrior kit gave a warrior nothing to hit harder with, while being the archetype
+		# measured furthest behind at elite. Owner: "Warriors give more attack for more attack
+		# or ability damage."
+		#
+		# STRENGTH rather than a flat attack bonus because warrior abilities scale on it
+		# (get_effective_stat("strength") in the Power Strike / Cleave / Devastate paths), so
+		# one stat serves both halves of that ask. x0.6 sits between the mage ring's 0.7 and the
+		# trickster ring's 0.5 — parity, not an edge.
+		bonuses.strength += max(1, int(base_bonus * 0.6)) if base_bonus > 0 else 0
+		bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
+	elif "shield_bulwark" in item_type:
+		# Bulwark shield (Warrior): CONSTITUTION + stamina_regen. The shield is the defensive
+		# half of the kit, so it takes the defensive stat rather than a second copy of strength.
+		bonuses.constitution += max(1, int(base_bonus * 0.4)) if base_bonus > 0 else 0
+		bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
+
+	# Apply affix bonuses (from randomized item affixes) - also affected by wear
+	var affixes = item.get("affixes", {})
+	# HP/Resources
+	if affixes.has("hp_bonus"):
+		bonuses.max_hp += int(affixes.hp_bonus * wear_penalty)
+	if affixes.has("mana_bonus"):
+		bonuses.max_mana += int(affixes.mana_bonus * wear_penalty)
+	if affixes.has("stamina_bonus"):
+		bonuses.max_stamina += int(affixes.stamina_bonus * wear_penalty)
+	if affixes.has("energy_bonus"):
+		bonuses.max_energy += int(affixes.energy_bonus * wear_penalty)
+	# Attack/Defense
+	if affixes.has("attack_bonus"):
+		bonuses.attack += int(affixes.attack_bonus * wear_penalty)
+	if affixes.has("defense_bonus"):
+		bonuses.defense += int(affixes.defense_bonus * wear_penalty)
+	# Core stats
+	if affixes.has("str_bonus"):
+		bonuses.strength += int(affixes.str_bonus * wear_penalty)
+	if affixes.has("con_bonus"):
+		bonuses.constitution += int(affixes.con_bonus * wear_penalty)
+	if affixes.has("dex_bonus"):
+		bonuses.dexterity += int(affixes.dex_bonus * wear_penalty)
+	if affixes.has("int_bonus"):
+		bonuses.intelligence += int(affixes.int_bonus * wear_penalty)
+	if affixes.has("wis_bonus"):
+		bonuses.wisdom += int(affixes.wis_bonus * wear_penalty)
+	if affixes.has("wits_bonus"):
+		bonuses.wits += int(affixes.wits_bonus * wear_penalty)
+	# Speed
+	if affixes.has("speed_bonus"):
+		bonuses.speed += int(affixes.speed_bonus * wear_penalty)
+
+	# Apply enchantment bonuses (permanent, NOT affected by wear)
+	var enchants = item.get("enchantments", {})
+	for stat_key in enchants:
+		var enchant_value = enchants[stat_key]
+		match stat_key:
+			"attack":
+				bonuses.attack += enchant_value
+			"defense":
+				bonuses.defense += enchant_value
+			"max_hp":
+				bonuses.max_hp += enchant_value
+			"max_mana":
+				bonuses.max_mana += enchant_value
+			"speed":
+				bonuses.speed += enchant_value
+			"strength":
+				bonuses.strength += enchant_value
+			"constitution":
+				bonuses.constitution += enchant_value
+			"dexterity":
+				bonuses.dexterity += enchant_value
+			"intelligence":
+				bonuses.intelligence += enchant_value
+			"wisdom":
+				bonuses.wisdom += enchant_value
+			"wits":
+				bonuses.wits += enchant_value
+
+	# CRAFTED gear adds its recipe's own stats (quality-scaled, and Tempering's bonus) ON TOP of the
+	# level/rarity base above. ⛑ 2026-09-15 - these fields were written by crafting and read by
+	# nothing, so a crafted item was exactly a drop of its level and Tempering did nothing
+	# (equipment_audit.gd, CRAFTED GEAR). Owner: add them on top. Wear-affected, like affixes.
+	if item.get("crafted", false):
+		bonuses.attack += int(float(item.get("attack", 0)) * wear_penalty)
+		bonuses.defense += int(float(item.get("defense", 0)) * wear_penalty)
+		bonuses.max_hp += int(float(item.get("hp", 0)) * wear_penalty)
+		bonuses.speed += int(float(item.get("speed", 0)) * wear_penalty)
+		bonuses.max_mana += int(float(item.get("mana", 0)) * wear_penalty)
+
+	return bonuses
+
+
 func get_equipment_bonuses() -> Dictionary:
 	"""Calculate total bonuses from all equipped items"""
 	var bonuses = {
@@ -1296,157 +1490,9 @@ func get_equipment_bonuses() -> Dictionary:
 		var item = equipped[slot]
 		if item == null or not item is Dictionary:
 			continue
-
-		var item_level = item.get("level", 1)
-		var item_type = item.get("type", "")
-		var rarity_mult = _get_rarity_multiplier(item.get("rarity", "common"))
-
-		# Check for item wear/damage (0-100, 100 = fully damaged/broken)
-		var wear = item.get("wear", 0)
-		var wear_penalty = 1.0 - (float(wear) / 100.0)  # 0% wear = 100% effectiveness, 100% wear = 0%
-
-		# Apply diminishing returns for items above level 100
-		var effective_level = _get_effective_item_level(item_level)
-
-		# Base bonus scales with effective item level, rarity, and wear
-		var base_bonus = int(effective_level * rarity_mult * wear_penalty)
-
-		# STEP 1: Apply base item type bonuses (all items get these)
-		# NERFED: Reduced multipliers significantly for balance
-		if "weapon" in item_type:
-			bonuses.attack += int(base_bonus * 1.5)  # Nerfed from 2.5x
-			bonuses.strength += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-		elif "armor" in item_type:
-			bonuses.defense += int(base_bonus * 1.0)  # Nerfed from 1.75x
-			bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-			bonuses.max_hp += int(base_bonus * 1.5)  # Nerfed from 2.5x
-		elif "helm" in item_type:
-			bonuses.defense += int(base_bonus * 0.6)  # Nerfed from 1.0x
-			bonuses.wisdom += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-		elif "shield" in item_type:
-			bonuses.defense += max(1, int(base_bonus * 0.4)) if base_bonus > 0 else 0
-			bonuses.max_hp += int(base_bonus * 2.0)  # Nerfed from 4x
-			bonuses.constitution += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-		elif "ring" in item_type:
-			bonuses.attack += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-			bonuses.intelligence += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-		elif "amulet" in item_type:
-			bonuses.max_mana += int(base_bonus * 1.0)  # Nerfed from 1.75x
-			bonuses.wisdom += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-			bonuses.wits += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-		elif "boots" in item_type:
-			bonuses.speed += int(base_bonus * 0.6)  # Nerfed from 1.0x
-			bonuses.dexterity += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-			bonuses.defense += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-
-		# STEP 2: Apply class-specific gear bonuses (IN ADDITION to base type bonuses)
-		# Use max(1, ...) for fractional multipliers to ensure even low-level items give bonuses
-		if "ring_arcane" in item_type:
-			# Arcane ring (Mage): extra INT + mana_regen
-			bonuses.intelligence += max(1, int(base_bonus * 0.7)) if base_bonus > 0 else 0
-			bonuses.mana_regen += max(1, int(base_bonus * 0.35)) if base_bonus > 0 else 0
-		elif "ring_shadow" in item_type:
-			# Shadow ring (Trickster): extra WITS + energy_regen
-			bonuses.wits += max(1, int(base_bonus * 0.5)) if base_bonus > 0 else 0
-			bonuses.energy_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-		elif "amulet_mystic" in item_type:
-			# Mystic amulet (Mage): extra max_mana + meditate_bonus
-			bonuses.max_mana += base_bonus  # Extra mana on top of base
-			bonuses.meditate_bonus += max(1, int(item_level / 2)) if item_level > 0 else 0
-		elif "amulet_evasion" in item_type:
-			# Evasion amulet (Trickster): extra speed + flee_bonus
-			bonuses.speed += base_bonus
-			bonuses.flee_bonus += max(1, int(item_level / 3)) if item_level > 0 else 0
-		elif "boots_swift" in item_type:
-			# Swift boots (Trickster): extra Speed + WITS + energy_regen
-			bonuses.speed += int(base_bonus * 0.5)  # Extra speed on top of base
-			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
-			bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
-		elif "weapon_warlord" in item_type:
-			# Warlord weapon (Warrior): STRENGTH + stamina_regen.
-			#
-			# 2026-09-04 — the strength half is new, and it fixes an ASYMMETRY rather than being a
-			# tuning guess. The other two class kits each grant a PRIMARY STAT plus sustain:
-			#   ring_arcane   INT x0.7   + mana_regen x0.35     (and amulet_mystic max_mana x1.0)
-			#   ring_shadow   WITS x0.5  + energy_regen x0.15   (and boots_swift WITS x0.3)
-			#   weapon_warlord            stamina_regen x0.2    <- sustain ONLY, nothing else
-			# The warrior kit gave a warrior nothing to hit harder with, while being the archetype
-			# measured furthest behind at elite. Owner: "Warriors give more attack for more attack
-			# or ability damage."
-			#
-			# STRENGTH rather than a flat attack bonus because warrior abilities scale on it
-			# (get_effective_stat("strength") in the Power Strike / Cleave / Devastate paths), so
-			# one stat serves both halves of that ask. x0.6 sits between the mage ring's 0.7 and the
-			# trickster ring's 0.5 — parity, not an edge.
-			bonuses.strength += max(1, int(base_bonus * 0.6)) if base_bonus > 0 else 0
-			bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
-		elif "shield_bulwark" in item_type:
-			# Bulwark shield (Warrior): CONSTITUTION + stamina_regen. The shield is the defensive
-			# half of the kit, so it takes the defensive stat rather than a second copy of strength.
-			bonuses.constitution += max(1, int(base_bonus * 0.4)) if base_bonus > 0 else 0
-			bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
-
-		# Apply affix bonuses (from randomized item affixes) - also affected by wear
-		var affixes = item.get("affixes", {})
-		# HP/Resources
-		if affixes.has("hp_bonus"):
-			bonuses.max_hp += int(affixes.hp_bonus * wear_penalty)
-		if affixes.has("mana_bonus"):
-			bonuses.max_mana += int(affixes.mana_bonus * wear_penalty)
-		if affixes.has("stamina_bonus"):
-			bonuses.max_stamina += int(affixes.stamina_bonus * wear_penalty)
-		if affixes.has("energy_bonus"):
-			bonuses.max_energy += int(affixes.energy_bonus * wear_penalty)
-		# Attack/Defense
-		if affixes.has("attack_bonus"):
-			bonuses.attack += int(affixes.attack_bonus * wear_penalty)
-		if affixes.has("defense_bonus"):
-			bonuses.defense += int(affixes.defense_bonus * wear_penalty)
-		# Core stats
-		if affixes.has("str_bonus"):
-			bonuses.strength += int(affixes.str_bonus * wear_penalty)
-		if affixes.has("con_bonus"):
-			bonuses.constitution += int(affixes.con_bonus * wear_penalty)
-		if affixes.has("dex_bonus"):
-			bonuses.dexterity += int(affixes.dex_bonus * wear_penalty)
-		if affixes.has("int_bonus"):
-			bonuses.intelligence += int(affixes.int_bonus * wear_penalty)
-		if affixes.has("wis_bonus"):
-			bonuses.wisdom += int(affixes.wis_bonus * wear_penalty)
-		if affixes.has("wits_bonus"):
-			bonuses.wits += int(affixes.wits_bonus * wear_penalty)
-		# Speed
-		if affixes.has("speed_bonus"):
-			bonuses.speed += int(affixes.speed_bonus * wear_penalty)
-
-		# Apply enchantment bonuses (permanent, NOT affected by wear)
-		var enchants = item.get("enchantments", {})
-		for stat_key in enchants:
-			var enchant_value = enchants[stat_key]
-			match stat_key:
-				"attack":
-					bonuses.attack += enchant_value
-				"defense":
-					bonuses.defense += enchant_value
-				"max_hp":
-					bonuses.max_hp += enchant_value
-				"max_mana":
-					bonuses.max_mana += enchant_value
-				"speed":
-					bonuses.speed += enchant_value
-				"strength":
-					bonuses.strength += enchant_value
-				"constitution":
-					bonuses.constitution += enchant_value
-				"dexterity":
-					bonuses.dexterity += enchant_value
-				"intelligence":
-					bonuses.intelligence += enchant_value
-				"wisdom":
-					bonuses.wisdom += enchant_value
-				"wits":
-					bonuses.wits += enchant_value
+		var ib: Dictionary = item_stat_bonuses(item)
+		for k in ib:
+			bonuses[k] += ib[k]
 
 	# Universal resource conversion: all resource bonuses apply to your class's resource
 	# Mana bonuses are ~2x larger than stamina/energy, so scale accordingly:
@@ -1550,7 +1596,7 @@ func get_on_kill_hp() -> int:
 	hp_on_kill affix. Not wear-affected."""
 	return int(_sum_affix_across_equipped("hp_on_kill", false))
 
-func _get_rarity_multiplier(rarity: String) -> float:
+static func _get_rarity_multiplier(rarity: String) -> float:
 	"""Get multiplier for item rarity - NERFED for balance"""
 	match rarity:
 		"common": return 1.0
@@ -1561,7 +1607,7 @@ func _get_rarity_multiplier(rarity: String) -> float:
 		"artifact": return 2.5
 		_: return 1.0
 
-func _get_effective_item_level(item_level: int) -> float:
+static func _get_effective_item_level(item_level: int) -> float:
 	"""Apply diminishing returns for items above level 50.
 	   Items 1-50: Full linear scaling
 	   Items 51+: Logarithmic scaling (50 + 15 * log2(level - 49))
