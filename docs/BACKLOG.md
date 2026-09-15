@@ -642,9 +642,10 @@ the teaching beats that depend on the Warden behaving):
 - [ ] **Keys a SOLO fight sets at start that a party view never gets:** `warrior_stance_def`,
       `warrior_stance_dr` (Warrior stance may do nothing in co-op), `player_slow`,
       `slow_aura_applied`. Measured by the same enumeration; not yet examined.
-- [ ] **Mark (and likely every skip-the-enemy-turn card) does not skip the turn in the Warden fight.**
-      Probably `skip_monster_turn` ignored by `resolve_party_round`. Check whether it is by design in
-      co-op before changing it.
+- [x] **Mark (and every skip-the-enemy-turn card) did nothing in any party fight.** FIXED on master,
+      not released. Nothing on the party path read `skip_monster_turn`. The monster acts once per
+      member per round, so a successful skip card now removes the action aimed at the member who
+      played it (the exact solo equivalent), with a log line. Probe: party_view_carries_state s4.
 - [ ] **Enemy hits on the Warden pop their damage number over the ENEMY.** Target of the damage mark
       is wrong for NPC members.
 - [ ] **No buff/debuff panel in party combat** (solo has one). Owner: *"While the warden is in the party

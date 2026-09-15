@@ -13405,6 +13405,12 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		result = process_attack(view)
 	if _redirect_pid != -1 and result.get("success", true):
 		_party_redirect_buff(combat, pid, _redirect_pid, view, _buffs_before, _hp_before, _view_before)
+	# A card that denies the monster its turn (Analyze/Mark, Pickpocket, Assassinate...) denies it
+	# the action aimed at THIS member this round. See the matching filter in
+	# _party_process_monster_phase. Only a card that resolved - a refused cast ("not enough
+	# energy") also returns skip_monster_turn, to stop solo handing the monster a free turn.
+	if kind == "ability" and result is Dictionary and bool(result.get("success", false)) 			and bool(result.get("skip_monster_turn", false)):
+		st["skips_monster_round"] = int(combat.get("round", 1))
 	_party_sync_view_back(combat, pid, view)
 	active_combats.erase(pid)
 	var act_label: String
@@ -13490,6 +13496,26 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 	var msgs: Array = []
 	var order := _party_alive_members(combat)
 	order.shuffle()   # vary who the monster opens on each round
+	# ⛑ 2026-09-15 - A SKIP CARD COSTS THE MONSTER ITS ACTION AGAINST YOU.
+	#
+	# Owner, in the Warden's fight: *"Mark doesn't skip the enemies turn when you use it while in
+	# combat with the Warden (likely the same issue for other round skip cards)."* Nothing on the
+	# party path read `skip_monster_turn` at all, so every such card was a plain card in co-op.
+	# The monster acts once per member here (see the docstring), so the exact solo equivalent is
+	# removing the ONE action aimed at the member who played it. Filtered before the guide's
+	# shield, so he is never made to take a hit that was cancelled.
+	var _this_round: int = int(combat.get("round", 1))
+	var _denied: Array = []
+	for _pid in order:
+		if int(combat.member_states.get(_pid, {}).get("skips_monster_round", -1)) == _this_round:
+			_denied.append(_pid)
+	if not _denied.is_empty() and int(combat.get("monster_stunned", 0)) <= 0:
+		order = order.filter(func(p): return not (p in _denied))
+		for _pid in _denied:
+			var _dn: String = combat.characters[_pid].name
+			msgs.append(_party_entry(_pid,
+				"[color=#A0E060]▶ The %s has no answer for you this round.[/color]" % combat.monster.get("name", "monster"),
+				"[color=#A0E060]▶ The %s has no answer for %s this round.[/color]" % [combat.monster.get("name", "monster"), _dn]))
 	# ⛑ AND THE GUIDE TAKES WHAT WOULD KILL YOU - ON THIS PATH TOO.
 	#
 	# `_guide_shield_targets` was only ever reached from `_select_monster_targets`, which belongs

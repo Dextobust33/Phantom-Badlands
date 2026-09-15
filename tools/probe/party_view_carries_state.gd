@@ -91,6 +91,25 @@ func _init() -> void:
 			reported += 1
 	ck(reported == 10, "every Assassinate cast's own result reaches the log (%d of 10)" % reported)
 
+	print("\n===== 4. A SKIP CARD DENIES THE MONSTER ITS ACTION AGAINST YOU =====")
+	# Owner: *"Mark doesn't skip the enemies turn when you use it while in combat with the Warden."*
+	# Control first: after a plain attack the monster DOES turn on the member, so a pass below
+	# cannot be a monster phase that never acts.
+	var c4 := _party(cm, sim, "Ninja")
+	_act(cm, c4, {"kind": "attack"})
+	var ctrl := _text(cm._party_process_monster_phase(c4))
+	ck(ctrl.find("turns on YOU") >= 0, "control: after an attack, the monster turns on the member")
+	c4["round"] = int(c4.get("round", 1)) + 1
+	_act(cm, c4, {"kind": "ability", "ability": "analyze", "arg": ""})
+	var denied := _text(cm._party_process_monster_phase(c4))
+	print("  monster phase after Mark: %s" % denied.substr(0, 160))
+	ck(denied.find("turns on YOU") < 0, "after Mark, it does NOT act against that member")
+	ck(denied.find("no answer for you") >= 0, "  and the log says why")
+	c4["round"] = int(c4.get("round", 1)) + 1
+	_act(cm, c4, {"kind": "attack"})
+	ck(_text(cm._party_process_monster_phase(c4)).find("turns on YOU") >= 0,
+		"  and it is for THAT round only - next round it acts again")
+
 	print("")
 	print("RESULT: %s (%d failing)" % ["PASS" if fails == 0 else "FAIL", fails])
 	quit(0 if fails == 0 else 1)
