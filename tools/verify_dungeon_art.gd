@@ -139,6 +139,43 @@ func _init() -> void:
 		elif not ResourceLoader.exists(lp):
 			bad.append("floor loot kind '%s' -> %s does not load" % [k, lp])
 
+	# --- and the same question for the PER-ITEM art keys, 2026-09-15 ---
+	#
+	# `kind` is a gameplay bucket; `_floor_loot_art` refines it to what the item actually is
+	# (`eq_helm`, `cn_scroll`) so the floor stops drawing one shield for every piece of gear.
+	# Read out of server.gd for the same reason the kinds are: a copy here is the "one value, two
+	# places" shape, and a new art key that nobody remembers to bake would fall back silently to
+	# the category picture - which looks exactly like the bug this pass was fixing.
+	var art_re := RegEx.new()
+	art_re.compile('return "(eq_[a-z_]+|cn_[a-z_]+)"')
+	var arts := {}
+	for m in art_re.search_all(srv):
+		arts[m.get_string(1)] = true
+	# ...plus the slot-derived family, which is BUILT rather than written literally
+	# (`return "eq_" + slot`), so the literal scan above cannot see it. The slots come from the
+	# same function the server calls, not from a list typed here.
+	var slot_re := RegEx.new()
+	slot_re.compile('return "(weapon|armor|helm|shield|boots|ring|amulet)"')
+	var char_src := FileAccess.get_file_as_string("res://shared/character.gd")
+	var i_slot := char_src.find("static func get_item_slot_from_type")
+	var i_slot_end := char_src.find("
+static func ", i_slot + 10)
+	if i_slot_end == -1:
+		i_slot_end = char_src.find("
+@export", i_slot + 10)
+	var slot_fn := char_src.substr(i_slot, (i_slot_end - i_slot) if i_slot_end > i_slot else 1200)
+	for m in slot_re.search_all(slot_fn):
+		arts["eq_" + m.get_string(1)] = true
+	if arts.is_empty():
+		bad.append("floor-loot ART scan matched NOTHING - the pattern has drifted from server.gd")
+	for k in arts:
+		checked += 1
+		var ap: String = DS.loot_path(String(k))
+		if ap == "":
+			bad.append("floor loot art '%s' is produced by the server but absent from LOOT_SPRITE" % k)
+		elif not ResourceLoader.exists(ap):
+			bad.append("floor loot art '%s' -> %s does not load" % [k, ap])
+
 	# --- and the rule that took THREE occurrences to learn ---
 	#
 	# Never `color=` a floor-backed sprite. Those images have the ground baked into them, so a

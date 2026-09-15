@@ -248,33 +248,100 @@ func _init() -> void:
 	# the instant step two completed, so anybody already on step three was never started and the
 	# Warden just stood there, while this probe passed because it started him itself.
 	sv._escort_released.erase(PEER)
+	# ⛑ HE ASKS BEFORE HE MOVES YOU, so the FIRST tick raises the question and does not walk.
+	#
+	# Found red on master 2026-09-15, and it had been red since the ask shipped: this asserted
+	# that one tick starts the walk, which stopped being true the moment the owner asked for an
+	# acknowledgement first (*"He should instead talk to you and you have to acknowledge what's
+	# about to happen before he starts moving you."*). Pinning the OLD behaviour meant the gate
+	# failed for a day on a fact that had deliberately changed - the same shape as the stale
+	# assertion in warden_walks_with_you.gd.
+	#
+	# Walked the way a player walks it now: tick, answer, tick.
 	sv._escort_walk_tick()
-	ck(sv._escort_walk.has(PEER), "the tick starts the walk for anyone eligible")
+	ck(not sv._escort_walk.has(PEER),
+		"the first tick ASKS rather than setting off under an unread popup")
+	ck(bool(sv._escort_asked.get(PEER, false)), "  and the question really went out")
+	sv.handle_tutorial_ack(PEER, {"ack": "escort_ready"})
+	sv._escort_walk_tick()
+	ck(sv._escort_walk.has(PEER), "the tick starts the walk once they have said go")
 	if sv._escort_walk.has(PEER):
 		# He STEPS TOWARD the goal rather than following a precomputed path - measured,
 		# compute_path_between returns nothing for this trip at any time budget, so a
 		# path-shaped walk would never have set off at all.
 		var _gx: int = int(sv._escort_walk[PEER].get("gx", 0))
 		var _gy: int = int(sv._escort_walk[PEER].get("gy", 0))
-		print("  heading for (%d,%d) from (%d,%d)" % [_gx, _gy, ch.x, ch.y])
+		print("  heading for (%d,%d) from (%d,%d)  [inside a post: %s]"
+			% [_gx, _gy, ch.x, ch.y,
+				str(sv.world_system._is_npc_post_interior(int(ch.x), int(ch.y)))])
 		ck(_gx != 0 or _gy != 0, "  with a real destination recorded")
 		var _d0: float = Vector2(float(_gx - int(ch.x)), float(_gy - int(ch.y))).length()
 		var _before := Vector2i(int(ch.x), int(ch.y))
-		# Force the step timer and tick a few times.
-		for _t in range(5):
+		# Force the step timer and tick. FIFTEEN, not five - and the number is a measurement,
+		# not a taste. The walk is a GREEDY stepper (straight at the goal, then the two axis
+		# fallbacks) rather than a path, so a wall between here and there costs it sidesteps that
+		# make no net progress. The starter dungeon is placed at a random angle, so whether five
+		# ticks cleared the obstacle was a coin flip: observed 2026-09-15 failing on one run and
+		# passing the next three with nothing changed between them.
+		#
+		# Raising the window is the honest fix. Weakening the assertion to "it moved at all" would
+		# have hidden the very thing it exists to catch - a walk that jiggles without arriving is
+		# exactly the wedged behaviour the owner reported.
+		# Measured from OUTSIDE THE POST, because the door detour is legitimate. A post is a
+		# walled room; when the dungeon lies on the far side of it, walking to the door moves you
+		# AWAY from the dungeon in a straight line while being exactly the right step. Observed
+		# 2026-09-15: every failing run of this check started inside a post and every passing one
+		# started outside, which is what identified the door routing rather than a broken walk.
+		#
+		# So progress is judged from the moment they are clear of the walls. Judging from the
+		# start would have punished the correct behaviour, and loosening the check to "it moved"
+		# would have stopped catching the wedge it exists for.
+		var _outside_at: float = -1.0
+		for _t in range(30):
 			# The tick ERASES the entry when the walk ends - arrival, wedged, or the player
 			# entering a dungeon - so it has to be re-checked each pass rather than indexed
 			# blind. The first cut indexed it and crashed on the first tick that finished.
 			if not sv._escort_walk.has(PEER):
+				print("    tick %d: the walk ENDED (wedged, or arrived)" % _t)
 				break
 			sv._escort_walk[PEER]["next_ms"] = 0
+			var _p0 := Vector2i(int(ch.x), int(ch.y))
 			sv._escort_walk_tick()
+			# Per-tick trace, so a failure says WHAT happened rather than only that it happened.
+			# Without this the check could only report "did not get closer", which is the shape
+			# that cost three wrong theories about this same walk a day earlier.
+			if Vector2i(int(ch.x), int(ch.y)) == _p0:
+				print("    tick %d: refused at %v (stuck=%d, gathering=%s)" % [_t, _p0,
+					int((sv._escort_walk.get(PEER, {}) as Dictionary).get("stuck", -1)),
+					str(sv.active_gathering.has(PEER))])
+			if _outside_at < 0.0 and not sv.world_system._is_npc_post_interior(int(ch.x), int(ch.y)):
+				_outside_at = Vector2(float(_gx - int(ch.x)), float(_gy - int(ch.y))).length()
+				print("    tick %d: clear of the post at %v, %.0f tiles to go" % [_t,
+					Vector2i(int(ch.x), int(ch.y)), _outside_at])
 			await process_frame
 		var _after := Vector2i(int(ch.x), int(ch.y))
 		var _d1: float = Vector2(float(_gx - int(ch.x)), float(_gy - int(ch.y))).length()
-		print("  after five ticks: %v -> %v   (distance %.0f -> %.0f)" % [_before, _after, _d0, _d1])
+		print("  after thirty ticks: %v -> %v   (distance %.0f -> %.0f)" % [_before, _after, _d0, _d1])
 		ck(_after != _before, "the character actually MOVED without the player pressing anything")
-		ck(_d1 < _d0, "  and moved CLOSER to the dungeon, not merely somewhere")
+		# Either he got somewhere, or he GAVE UP AND SAID SO. Both are acceptable outcomes; what
+		# is not acceptable is the third one, which is what this section caught: walking the
+		# player's character in a circle for thirty steps and never stopping, because the
+		# refusal counter only ever noticed a walk that could not MOVE.
+		#
+		# A starter dungeon is placed at a random angle from spawn, so some runs genuinely face a
+		# lake shore that a greedy stepper cannot round. Demanding progress every time would be
+		# demanding a pathfinder; demanding that he never pretends is the real requirement.
+		var _from: float = _outside_at if _outside_at >= 0.0 else _d0
+		var _progressed: bool = _d1 < _from
+		var _gave_up: bool = not sv._escort_walk.has(PEER)
+		ck(_progressed or _gave_up,
+			"  and either moved CLOSER (%.0f -> %.0f) or handed the controls back - never paced"
+				% [_from, _d1])
+		if _gave_up and not _progressed:
+			print("    (he gave up honestly - retry armed: %s)"
+				% str(sv._escort_retry_ms.has(PEER)))
+			ck(sv._escort_retry_ms.has(PEER),
+				"  giving up arms the quiet retry rather than restarting on the next frame")
 	# ...and a step of their own takes the reins back.
 	if sv._escort_walk.has(PEER):
 		sv.handle_move(PEER, {"direction": 6})

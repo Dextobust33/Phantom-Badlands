@@ -852,6 +852,135 @@ Render it, execute it, and make the control differ in ONE thing. See
 [[feedback_indentation_is_invisible_to_a_source_probe]] and
 [[feedback_verify_before_building]].
 
+## UNRELEASED (2026-09-15) -- the live tutorial walkthrough, and what it turned up
+
+Owner played the opening on the LIVE server and reported it beat by beat. Every item below is a
+thing they hit, plus the causes found underneath. **Not released yet.**
+
+### The gold ring was drawn on the WRONG TILE, always
+
+`_map_cells` renders `for dy in range(radius, -radius - 1, -1)` -- row 0 is NORTH and rows count
+southward -- so the screen row of a world tile is `mid - (world_y - center_y)`. The client ADDED
+it, which mirrors every marked tile about the player's own row. Owner's screenshot settled it: the
+panel read "Wolf Den -- 1 tiles southwest" and the ring sat one cell NORTH, on bare road.
+
+The Warden's own sprite offset carries this same negation, with a comment recording that it
+shipped wrong once already. One fact, two copies, one of them fixed. The stage-one door marker had
+been mirrored for its whole life too. See `tools/probe/guide_ring_and_delivery.gd`, which
+re-derives the row order from `world_system` rather than restating it.
+
+### THREE pop-ups became ONE, and none of them tells you to walk anywhere
+
+Owner: *"some of the dialogue says to walk toward a ringed tile and highlights the whole map. It
+shouldn't even be a line as the warden is supposed to walk you to the dungeon. There are like 3
+dialogue things around there that should likely be condensed to one. The final one where it says
+lead the way says I can move and he will follow instead."*
+
+The three were the "Where You Are" world lesson, the "That one." dungeon pointer, and the escort
+ask -- back to back, two of them instructing a walk the Warden makes for you, and the third under a
+button reading "Lead the way" that reads as an instruction to the player. Now one panel: where he
+is taking you, what the country is like, who does the walking, and a button that says
+**Take me there**. `_point_at_the_dungeon` is now `_mark_the_dungeon` -- it rings the tile and
+raises nothing.
+
+### He delivers you ONTO the dungeon, and says how to get in
+
+He used to stop one tile short. That single tile cost three things at once: the contextual [R] slot
+only becomes the Dungeon button when you STAND on the entrance, the ring only clears when you stand
+on what it marks, and the player was left guessing which of eight squares was the hole. Owner:
+*"The new player will be lost and have no idea that they need to step on the dungeon tile and hit R
+to go in."* Arrival is now a panel that names R and rings `action_4`.
+
+### The walk itself was wedging, pacing, and restarting in silence -- four separate faults
+
+1. **The step-two hand-off never ran.** `_escort_walk_start` was called from ABOVE
+   `handle_quest_turn_in`, while the stage still said 2, so `_escort_goal_for` returned {} and the
+   function fell out of its first `if`. The comment claimed it made the first step land
+   immediately; it did nothing at all. A silent no-op that looks like the feature working.
+2. **A post is a walled room and he walked into the wall.** Owner: *"when he was stuck he was in
+   the post not walking into a door."* He now leaves by a door chosen for the JOURNEY
+   (`here -> door -> goal`), **cached** in the walk state -- the first cut asked `_nearest_door`
+   every tick and paced between two doorways: thirty ticks, every one a real move, net displacement
+   ZERO.
+3. **Once out of a post, stepping back in sorts last.** Greedy stepping has no memory; with the
+   dungeon on the far side, the shortest step from just outside the door is back through the
+   building. He left and re-entered forever.
+4. **Pacing now counts as stuck.** The refusal counter only caught a walk that could not MOVE, so a
+   greedy stepper against a lake shore sailed past it -- moving every tick, arriving nowhere, and
+   never giving up. `ESCORT_DRIFT_TICKS` asks every 8 steps whether we got anywhere. Also: all
+   EIGHT directions are tried in order of the distance they leave you at, not three; and a silent
+   20-second restart now says something first (owner: *"he finally started walking again randomly,
+   didn't notify me"*).
+
+Measured in `tutorial_walkthrough`: 8 runs out of 8 now make real progress, from 3-in-4 before.
+
+### The chat bar stole focus mid-tutorial
+
+Owner: *"around step 2 being complete it focused the chat bar so I couldn't hit Q for my inventory
+until clicking off of it."* The teaching modals were the only full-screen panels missing from
+`any_popup_open`, so the very Enter that DISMISSED a lesson was seen again one frame later by a
+`_process` loop polling the physical key. CLAUDE.md Pitfall #7, arriving through the chat focus
+instead of the action bar. Both halves fixed: the modals suppress the polls while open, and
+`_swallow_modal_dismiss_keys` makes the key have to be released first.
+
+### Floor loot looks like the item now, not like its bucket
+
+Owner: *"most floor loot equipment looks like a shield, one of the scrolls looks like a potion."*
+Literally true -- the floor picked its sprite from `kind`, a GAMEPLAY category, and
+`equipment.png` is a picture of a shield while `consumable.png` is a picture of a potion. 14 new
+sprites (7 equipment slots off `Character.get_item_slot_from_type`, 7 consumable shapes), resolved
+server-side by `_floor_loot_art` with the category kept as a fallback so an unknown item never
+drops to a bare glyph. Bake recipe committed as `bake_floor_backed.py --rebake-loot`;
+`verify_dungeon_art.gd` now fails the release if a key the server can emit has no art (958 lookups,
+up from 713).
+
+### Assassinate advertised a kill chance the game never rolled
+
+Chasing *"Assassinate doesn't mention how much damage it will do if it doesn't kill on the card"*
+found the bigger fault behind it. `assassinate_chance` carries a docstring promising it is the
+single source "so the real roll, the live number on the card face and Analyze's report can never
+disagree". They disagreed by a flat **13 points at every Read level** -- the 2026-09-08 rework that
+made the strike always land wrote its odds as new constants at the ROLL site and left this function
+computing the odds of the retired instant-win card. The roll also never read `assassinate_pct`, so
+**Silver Tongue (+15%) and the unique that grants +20% moved the card and did nothing to the dice.**
+
+Fixed structurally: `assassinate_chance` holds the lethal formula and the roll site calls it. The
+roll is unchanged in power (2% + 3/Read, ~26% at a full stall); the DISPLAY moves down to the truth
+and the two +assassinate_pct sources begin working as written -- a small, per-class power gain worth
+a glance on the next `refcal`. The card now shows `~N | P% kill`, which also gives it the
+bottom-left damage pip every other damage card has.
+
+### Starter kit: a full pack used to eat it in silence
+
+Answering the owner's question: yes, the starter dungeon has always paid up on the way out -- any
+kit slot still empty when it is cleared is handed over. But `can_add_item()` was the WHOLE of the
+handling, so a full pack meant the gear vanished with no message. `_grant_missing_starter_kit` is
+now extracted, idempotent and re-askable: it names what it could not give, and walking into the
+Warden afterwards hands over whatever is still missing.
+
+### Housekeeping found on the way
+
+- **The working tree was MIXED line endings** while `.gitattributes` says `* text=auto eol=lf`.
+  Several source-reading probes bound a function body by searching for a literal newline + `func `,
+  and in the mixed state that never matches -- so they silently extracted 103k characters instead of
+  one function and reported nonsense. `new_character_starts_whole` had been red on master because
+  of it. 84 files normalised; git sees no diff (it normalises both sides).
+- **Five probes were red on master before any of today's work**, all stale assertions pinning text
+  or behaviour that had deliberately changed: `warden_walks_with_you` (escort range),
+  `tutorial_walkthrough` (he asks before moving), `guide_teaching` (three exact sentences from
+  before the 2026-09-14 rewrite), plus the two above. All re-pinned to the current intent -- and
+  where possible to a PROPERTY rather than to prose.
+- **`card_vs_server` reports ~7 abilities whose card estimate disagrees with the server** by 3-8x
+  (`magic_bolt` 0.12x, `meteor` 2.3x, `forcefield` 6x). Pre-existing, untouched, and worth its own
+  session.
+
+### Still open from this report
+
+- Nothing outstanding from the owner's list.
+- **NOT released.** Needs a version bump, the release gate, and a server deploy.
+
+---
+
 ## v0.9.789 SHIPPED (2026-09-14) -- the Warden walks you to your first dungeon
 
 The onboarding arc, released. Everything from v0.9.788 to here was unreleased until tonight.

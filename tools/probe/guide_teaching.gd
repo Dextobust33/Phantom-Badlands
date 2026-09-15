@@ -76,15 +76,30 @@ func _init() -> void:
 	var src := FileAccess.get_file_as_string("res://server/server.gd")
 	ck(src.contains("three Healing Herb"),
 		"the items lesson names the rations creation actually grants (STARTER_RATIONS = 3)")
-	ck(src.contains("Glass Cannon"),
-		"the combat lesson names a real trait, and one that has already killed somebody")
-	ck(src.contains("Dying here is permanent"),
+	# ⛑ STALE ASSERTIONS, FOUND RED ON MASTER 2026-09-15. These pinned three exact sentences
+	# ("Glass Cannon", "Dying here is permanent", "Rust is fine") that the 2026-09-14 onboarding
+	# rewrite deliberately replaced, and nobody updated the probe - so the tutorial gate had been
+	# failing for a day on text that had CHANGED ON PURPOSE.
+	#
+	# Re-pinned to the PROPERTY rather than the prose wherever that is possible. The old version
+	# asserted that the combat lesson named a monster trait; the rewrite replaced that with the
+	# controls, because the owner pointed out the trait was often not on the monster in front of
+	# them: *"When it mentions read what the thing in front of you does it's not clear what the
+	# player should do, not all monsters have something to see or hover."* Naming the CONTROLS is
+	# the promise now, and a control either exists or it does not - which is checkable.
+	var i_c := src.find("How A Fight Goes")
+	var combat_lesson := src.substr(i_c, 1600) if i_c != -1 else ""
+	ck(i_c != -1, "there is a combat lesson")
+	for control in ["Hover one with your mouse", "click the card", "[color=#FFD700]1[/color]"]:
+		ck(combat_lesson.contains(control),
+			"  the combat lesson names a control the player has: %s" % control)
+	ck(src.contains("Dying out here is permanent"),
 		"and it says the thing a new player most needs to hear")
 
 	print("")
 	print("----- the guide has a voice as well as a panel -----")
 	ck(src.contains("func _guide_say"), "_guide_say exists")
-	ck(src.contains("Rust is fine"), "and he speaks when the weapon lands")
+	ck(src.contains("not luggage"), "and he speaks when the weapon lands")
 	ck(src.contains("Staying up is the trick"), "and again when the armour does")
 
 	print("")

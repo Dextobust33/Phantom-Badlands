@@ -88,12 +88,29 @@ func _init() -> void:
 
 	print("")
 	print("===== FIGHT, THEN WORLD, THEN THE DARK =====")
-	ck(src.contains('"world":'), "there is a lesson about the world")
-	ck(src.contains('_guide_teach(peer_id, "world")'), "  and it is taught")
-	var i_w := src.find('_guide_teach(peer_id, "world")')
-	var i_ctx := src.rfind('"wardens_watch_2"', i_w)
-	ck(i_ctx != -1 and i_w - i_ctx < 400,
-		"  when step TWO finishes - after the fighting, before the dungeon")
+	# 2026-09-15 - the world lesson is no longer a panel of its own. It was the FIRST of three
+	# modals the player met back to back at the end of step two, and it ended by telling them to
+	# walk to a tile the Warden was about to carry them to. Owner: *"There are like 3 dialogue
+	# things around there that should likely be condensed to one."* So the check is no longer
+	# "is there a world panel" but "does the one panel still teach the world part", which is the
+	# thing that actually mattered.
+	var i_ask := src.find("func _escort_ask_to_lead")
+	var i_end := src.find("
+func ", i_ask + 10)
+	var ask := src.substr(i_ask, (i_end - i_ask) if i_end > i_ask else 4000)
+	ck(i_ask != -1, "the one panel exists")
+	ck(ask.contains("level"), "  it still teaches that the ground has a level")
+	ck(ask.contains("hover"), "  and that you can hover the map to read it")
+	ck(ask.contains("seen_guide_world_hint"),
+		"  and it marks the old standalone lesson seen, so it cannot fire as a second panel")
+	var i_ctx := src.find('if _qid == "wardens_watch_2"')
+	ck(i_ctx != -1, "  raised when step TWO finishes - after the fighting, before the dungeon")
+	# And it must sit AFTER the turn-in: everything the walk does reads the quest stage, and the
+	# stage only becomes 3 when the turn-in lands. The old code called the walk from ABOVE it and
+	# the call did nothing at all.
+	var i_turnin := src.find('handle_quest_turn_in(peer_id, {"quest_id": _qid})')
+	ck(i_turnin != -1 and i_ctx > i_turnin,
+		"  and AFTER handle_quest_turn_in, or the stage is still 2 and the walk silently no-ops")
 
 	print("")
 	print("----- NOT COVERED HERE -----")

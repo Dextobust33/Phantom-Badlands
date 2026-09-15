@@ -20603,27 +20603,29 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 				# The first moment a player has ever been hurt, so the first moment any of this
 				# means anything - which is why it is here and not at the gate.
 				_guide_teach(peer_id, "recovery")
-			"wardens_watch_2":
-				# Fight taught, world taught, THEN the dungeon - the order the owner set out.
-				_guide_teach(peer_id, "world")
-				# ⛑ AND POINT AT THE ACTUAL DUNGEON.
-				#
-				# Owner 2026-09-14: *"he said the rest of my gear is laying on the floor of that
-				# dungeon. What Dungeon? How does the player know where to go? Why do we keep
-				# leaving the player out to dry?"*
-				#
-				# "Find the D on your map" is worthless when the D is not on the map - a starter
-				# dungeon sits up to ~30 tiles from spawn and vision is about 11. My own probe
-				# passed this step because it checked that a next action was NAMED; it never
-				# asked whether the player could FIND it.
-				_point_at_the_dungeon(peer_id, character)
-				# ...and then actually take them there. The tick would pick this up anyway;
-				# starting here means the first step lands immediately rather than a frame later.
-				_escort_released.erase(peer_id)
-				_escort_walk_start(peer_id, character)
 		# He is the quest giver and he is with you: the step settles where you stand. See the
 		# _warden_here bypass in handle_quest_turn_in.
 		handle_quest_turn_in(peer_id, {"quest_id": _qid})
+		# ⛑ THE DUNGEON BEAT GOES **AFTER** THE TURN-IN, AND THIS IS WHY IT NEVER RAN.
+		#
+		# Everything about the walk reads `_wardens_watch_stage`, and that stage does not become
+		# 3 until `handle_quest_turn_in` swaps step two for step three. The old code called
+		# `_escort_walk_start` from ABOVE the turn-in, while the stage still said 2 - so
+		# `_escort_goal_for` returned {} and the function fell straight out of its first `if`.
+		# The comment claimed it made "the first step land immediately"; it did nothing at all,
+		# and the walk only ever began later, from the tick, after the ask.
+		#
+		# A silent no-op that LOOKS like the feature working is exactly the shape CLAUDE.md warns
+		# about - so the probe now asserts the order of these two calls.
+		#
+		# Owner 2026-09-14: *"he said the rest of my gear is laying on the floor of that
+		# dungeon. What Dungeon? How does the player know where to go?"* - hence the mark; a
+		# starter dungeon sits up to ~30 tiles out and vision is about 11.
+		if _qid == "wardens_watch_2":
+			_escort_released.erase(peer_id)
+			_mark_the_dungeon(peer_id, character)
+			# ONE panel, and the walk starts when they close it. See `_escort_ask_to_lead`.
+			_escort_ask_to_lead(peer_id, character)
 
 	if not updates.is_empty():
 		save_character(peer_id)
@@ -34681,6 +34683,14 @@ func _send_dungeon_state(peer_id: int):
 				# dungeon step.
 				"name": String(it.get("item_data", {}).get("name", "")),
 				"rarity": String(it.get("item_data", {}).get("rarity", "")),
+				# 2026-09-15 - WHICH PICTURE, decided from the item rather than from its bucket.
+				# `kind` is a gameplay category ("equipment", "consumable") and four dozen
+				# different objects share each one, so the floor drew one shield for every piece
+				# of gear in the game and one potion for every scroll. Owner: *"most floor loot
+				# equipment looks like a shield, one of the scrolls looks like a potion."*
+				# Resolved server-side for the same reason `variant` is: the server holds the
+				# whole item and the client holds a lookup table. Empty falls back to `kind`.
+				"art": _floor_loot_art(it),
 				"amount": int(it.get("item_data", {}).get("valor", 0))
 			})
 
@@ -35691,38 +35701,16 @@ func _complete_dungeon(peer_id: int):
 	# ⛑ THE STARTER DUNGEON OWES YOU THE KIT, AND PAYS UP ON THE WAY OUT.
 	#
 	# Owner 2026-09-14: *"For my starter gear being floor loot is it just scattered around
-	# randomly? Seems like I could miss all of it then and just go straight to the boss."*
-	# Exactly so - `_place_floor_item_random` drops it on any empty tile, and nothing makes a
+	# randomly? Seems like I could miss all of it then and just go straight to the boss?"*
+	# Exactly so - `_place_floor_item_random` drops it on any empty tile and nothing makes a
 	# player walk over it. Finding gear on the floor is the good version of this and stays; but
 	# the kit is what a new character needs to survive the next ten levels, so it cannot depend
 	# on which way they wandered.
 	#
-	# Anything still missing when the dungeon is cleared is handed over here. Slots they ALREADY
-	# filled - from the floor, or from anywhere else - are left alone, so a player who explored
-	# properly is not handed a second copy of everything.
-	if _is_starter_dungeon(instance_id) and drop_tables:
-		var _missed: Array = []
-		for _slot in ["helm", "boots", "shield", "accessory"]:
-			var _real_slot: String = "ring" if _slot == "accessory" else _slot
-			var _have = character.equipped.get(_real_slot, null)
-			if _have != null and not (_have is Dictionary and (_have as Dictionary).is_empty()):
-				continue
-			var _in_pack := false
-			for _it in character.inventory:
-				if _it is Dictionary and Character.get_item_slot_from_type(String(_it.get("type", ""))) == _real_slot:
-					_in_pack = true
-					break
-			if _in_pack:
-				continue
-			var _kit = drop_tables.get_starter_kit_item(_slot)
-			if _kit is Dictionary and not (_kit as Dictionary).is_empty() and character.can_add_item():
-				character.add_item(_kit)
-				_missed.append(String(_kit.get("name", _slot)))
-		if not _missed.is_empty():
-			_guide_say(peer_id, "You walked past some of it. Here — I picked it up behind you.")
-			send_to_peer(peer_id, {"type": "text", "message":
-				"[color=#9ACD32]Recovered from the floor: %s[/color]" % ", ".join(_missed)})
-
+	# The handover itself lives in `_grant_missing_starter_kit` so it can also be asked for
+	# again later - see that function.
+	if _is_starter_dungeon(instance_id):
+		_grant_missing_starter_kit(peer_id, character)
 
 	var boss_egg_monster = rewards.get("boss_egg", "")
 	var _lead_egg := _grant_boss_egg(peer_id, character, String(boss_egg_monster), inst_sub_tier, _current_dungeon_tier(character))
@@ -43479,6 +43467,10 @@ func _guide_escorts_overworld(peer_id: int, character) -> bool:
 ## manual input cancels it, because a tutorial that will not give the controls back is worse than
 ## one that never took them.
 const ESCORT_STEP_MS := 450
+## How often to ask "have we actually got anywhere?" - see the drift check in _escort_walk_tick.
+## Eight steps is far enough that a legitimate detour round a corner is not mistaken for pacing,
+## and short enough that a player is not walked in circles for long before being told.
+const ESCORT_DRIFT_TICKS := 8
 var _escort_walk: Dictionary = {}     # peer_id -> {"path": Array[Vector2i], "at": int, "next_ms": int}
 
 
@@ -43535,19 +43527,57 @@ func handle_tutorial_ack(peer_id: int, message: Dictionary) -> void:
 
 
 func _escort_ask_to_lead(peer_id: int, character) -> void:
-	"""Tell them what is about to happen, and wait to be told to go."""
+	"""THE ONE PANEL between the second fight and the dungeon. Tell them what happens, then wait.
+
+	⛑ IT USED TO BE THREE, AND THEY CONTRADICTED EACH OTHER.
+	
+	Owner 2026-09-15, walking the live tutorial: *"There are like 3 dialogue things around there
+	that should likely be condensed to one. The final one where it says lead the way says I can
+	move and he will follow instead."*
+
+	The three were "Where You Are" (the world lesson), "That one." (the dungeon pointer) and this
+	one - back to back, two of them telling the player to walk to a ringed tile while the third
+	offered to carry them there, under a button reading "Lead the way" that a player naturally
+	reads as an instruction to THEMSELVES. All three are now this panel, in the order the player
+	needs them: where he is taking you, what the country between here and there is like, and who
+	is doing the walking.
+
+	⛑ AND NOTHING IN IT TELLS THEM TO WALK ANYWHERE. He walks them. The only navigation line left
+	is the one that matters if they take over - and it is phrased as an option, not a task.
+
+	He waits to be told to go. Owner 2026-09-14, watching him set off: *"He does start walking you
+	but you have popups on the screen so you can`t tell what`s happening."* And: *"He should
+	instead talk to you and you have to acknowledge what`s about to happen before he starts
+	moving you."* Having the ground move under an unread popup is worse than not moving at all,
+	and it is the player`s character."""
 	if _escort_asked.get(peer_id, false):
 		return
 	_escort_asked[peer_id] = true
 	var goal: Dictionary = _escort_goal_for(peer_id, character)
-	var where := String(goal.get("where", "out there"))
+	var where := String(goal.get("where", ""))
 	var what := String(goal.get("name", "the dungeon"))
+	# The world lesson is folded in below, so the standalone panel must never also fire. Marked
+	# here rather than left to `_guide_teach`, which is no longer called for it.
+	if character != null:
+		character.seen_guide_world_hint = true
+		save_character(peer_id)
+	var _bearing := (" — [color=#FFD700]%s[/color] of here" % where) if where != "" else ""
 	var sent := _send_hint(peer_id,
-		"[color=#9ACD32]Warden Hollis Will Take You[/color]",
-		"\"The rest of your kit is on the floor of %s, %s of here. I will walk you to the door myself.\"\n\n" % [what, where]
-		+ "He leads from the front. [color=#FFD700]Move on your own at any time[/color] and he "
-		+ "will fall in behind you instead.",
-		"", [], "escort_ready", "Lead the way")
+		"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
+		("\"The rest of your kit is on the floor of [color=#FFD700]" + what + "[/color]" + _bearing + ". "
+			+ "I will walk you to the door myself — stay close.\"
+
+"
+			+ "[color=#9ACD32]He sets off the moment you are ready.[/color] You do not have to steer: "
+			+ "if you would rather find your own way, [color=#FFD700]just move[/color] and he falls in "
+			+ "behind you.
+
+"
+			+ "[color=#808080]On the way:[/color] the ground out there has a [color=#FFD700]level[/color], "
+			+ "and it no longer rises evenly with distance — hover a patch of map to read it before you "
+			+ "walk into it. Inside a post nothing can touch you. Outside one, "
+			+ "[color=#FFAA00]dying is permanent[/color]."),
+		"", [], "escort_ready", "Take me there")
 	if not sent:
 		# Tutorials switched off. Waiting for an acknowledgement that can never arrive would
 		# strand them at the post forever, so take the silence as a yes.
@@ -43585,6 +43615,114 @@ func _escort_walk_maybe_start_all() -> void:
 		_escort_walk_start(peer_id, ch)
 
 
+func _escort_deliver(peer_id: int, character) -> void:
+	"""He has put them ON the entrance. Now say how to go in, and ring the button that does it.
+
+	⛑ ARRIVING IS NOT THE SAME AS KNOWING WHAT TO DO NEXT.
+
+	Owner 2026-09-15: *"He got me close to the dungeon... The new player will be lost and have no
+	idea that they need to step on the dungeon tile and hit R to go in."* Quite - the old arrival
+	was a single line of chat ("Here it is. Walk in when you are ready") delivered while standing
+	one tile SHORT of the entrance, so the player had to work out both that there was a step left
+	to take and that a button they had never used appears when they take it.
+
+	Two changes, and this is the second half. The walk now ends ON the tile (see the tick), which
+	is what makes the contextual [R] slot read "Dungeon" at all; and this panel names that key and
+	rings the button, the same way every other lesson in the opening names the control it means.
+
+	Slot 4 is the contextual location action - see docs/action-bar-states.md. At a dungeon
+	entrance it IS the Dungeon button, so ringing `action_4` cannot point at the wrong thing."""
+	_escort_done[peer_id] = true
+	_escort_walk.erase(peer_id)
+	var what := String(_escort_goal_for(peer_id, character).get("name", "the dungeon"))
+	if what == "":
+		what = "the dungeon"
+	var sent := _send_hint(peer_id,
+		"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
+		("\"Here it is. Mind the dark.\"\n\n"
+			+ "You are standing on the mouth of [color=#FFD700]%s[/color]. " % what
+			+ "Press [color=#9ACD32]R[/color] — or click the [color=#FFD700]Dungeon[/color] button "
+			+ "on your action bar — to go down.\n\n"
+			+ "[color=#9ACD32]\"The rest of your kit is lying on the floor down there. Walk over "
+			+ "a thing and it is yours — do not run for the stairs.\"[/color]\n\n"
+			+ "[color=#808080]He is coming with you.[/color]"),
+		"", ["action_4"])
+	if not sent:
+		# Tutorials off - he still says it, because this is the one instruction that is not
+		# optional. Without it a player who switched the lessons off is simply standing on a hole.
+		_guide_say(peer_id, "Here it is. Press R to go down - I am right behind you.")
+
+
+func _best_door_toward(character, gx: int, gy: int) -> Vector2i:
+	"""The door to LEAVE BY when heading for (gx, gy) - the one that is actually on the way.
+
+	Scored as `here -> door -> goal`, not simply "nearest to me". A post has several doors and
+	the closest one is routinely on the wrong side of the building, which would walk the player
+	out of the far wall and back around.
+
+	Same radial scan `_nearest_door` uses; this one keeps looking instead of returning the first
+	hit, because the first hit is the nearest and the nearest is the thing that was wrong.
+	Returns the sentinel when the post has no door in range."""
+	if character == null or world_system == null or world_system.chunk_manager == null:
+		return Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
+	var cx := int(character.x)
+	var cy := int(character.y)
+	var best := Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
+	var best_cost := 1e12
+	for dx in range(-14, 15):
+		for dy in range(-14, 15):
+			var tx := cx + dx
+			var ty := cy + dy
+			var tile = world_system.chunk_manager.get_tile(tx, ty)
+			if String(tile.get("type", "")) != "door":
+				continue
+			var to_door := Vector2(float(dx), float(dy)).length()
+			var on := Vector2(float(gx - tx), float(gy - ty)).length()
+			var cost := to_door + on
+			if cost < best_cost:
+				best_cost = cost
+				best = Vector2i(tx, ty)
+	return best
+
+
+func _escort_step_target(peer_id: int, character, st: Dictionary, gx: int, gy: int) -> Vector2i:
+	"""Where the NEXT step should aim. Usually the goal; inside a post, the chosen door.
+
+	⛑ A POST IS A WALLED ROOM AND HE WAS WALKING INTO THE WALL.
+
+	Owner 2026-09-15: *"when he was stuck he was in the post not walking into a door."* The walk
+	only ever steered straight at the dungeon and tried two axis fallbacks when that was refused
+	- which works in open country and cannot work inside a box with a few gaps in it.
+
+	⛑ AND THE FIRST FIX FOR IT OSCILLATED, WHICH WAS WORSE THAN STANDING STILL.
+
+	The first cut asked `_nearest_door` afresh every tick. A post has several doors, so as the
+	player walked toward door A, door B became the nearer one, and he walked back. Measured in
+	`tutorial_walkthrough`: thirty ticks, every one of them a real move, net displacement ZERO -
+	and because he was moving, the six-refusal give-up never fired either, so he would have
+	paced between two doorways forever.
+
+	Two changes together. The door is chosen for the JOURNEY (`_best_door_toward` scores
+	here -> door -> goal, so a door on the far side of the building loses), and it is CACHED in
+	the walk state until they are through it. A waypoint that can be re-elected every step is not
+	a waypoint."""
+	if character == null or world_system == null:
+		return Vector2i(gx, gy)
+	if not world_system._is_npc_post_interior(int(character.x), int(character.y)):
+		st.erase("door_x")          # through it - forget the door, aim at the dungeon
+		st.erase("door_y")
+		return Vector2i(gx, gy)
+	if world_system._is_npc_post_interior(gx, gy):
+		return Vector2i(gx, gy)          # both inside: no wall between us
+	if st.has("door_x"):
+		return Vector2i(int(st["door_x"]), int(st["door_y"]))
+	var door := _best_door_toward(character, gx, gy)
+	if door.x == 0x7FFFFFFF:
+		return Vector2i(gx, gy)          # no door found; fall back to the old behaviour
+	st["door_x"] = door.x
+	st["door_y"] = door.y
+	return door
+
 func _escort_walk_tick() -> void:
 	"""Move every escorted player one step along the Warden's route, when it is due."""
 	_escort_walk_maybe_start_all()
@@ -43614,19 +43752,67 @@ func _escort_walk_tick() -> void:
 			continue
 		var gx: int = int(st.get("gx", 0))
 		var gy: int = int(st.get("gy", 0))
-		var dx: int = gx - int(ch.x)
-		var dy: int = gy - int(ch.y)
-		if absi(dx) <= 1 and absi(dy) <= 1:
-			_escort_walk.erase(peer_id)
-			# Delivered. Without this he re-starts the walk on the very next tick, arrives
-			# again, and announces it again, forever - the stage stays at 3 until the dungeon
-			# is cleared, so arrival alone never made him stop.
-			_escort_done[peer_id] = true
-			_guide_say(peer_id, "Here it is. Walk in when you are ready - I am right behind you.")
+		# ⛑ ONTO THE TILE, NOT BESIDE IT.
+		#
+		# This used to finish at `absi(dx) <= 1 and absi(dy) <= 1` - one tile short, every time.
+		# That single tile cost three separate things: the contextual [R] slot never became the
+		# Dungeon button (it only appears when you are standing ON the entrance), the gold ring
+		# never cleared (it clears when you stand on what it marks), and the player was left to
+		# guess which of the eight squares around them was the hole. Owner 2026-09-15: *"He got
+		# me close to the dungeon but now it shows a yellow ring on a path tile."*
+		if int(ch.x) == gx and int(ch.y) == gy:
+			_escort_deliver(peer_id, ch)
 			continue
-		# Straight at it, then the two next-best directions when the straight one is refused.
-		var want := _dir_toward(dx, dy)
-		var tries: Array = [want, _dir_toward(dx, 0), _dir_toward(0, dy)]
+		# The immediate target - the door first if we are boxed inside a post.
+		var aim := _escort_step_target(peer_id, ch, st, gx, gy)
+		var dx: int = aim.x - int(ch.x)
+		var dy: int = aim.y - int(ch.y)
+		# ⛑ ALL EIGHT, BEST FIRST - NOT THREE.
+		#
+		# This used to try the straight line and the two axis fallbacks, and nothing else. Three
+		# directions is enough in open country and not enough beside anything: a lake edge or a
+		# cliff that happens to lie across all three refuses every step, the stuck counter reaches
+		# six, and he announces "the ground beats me here" and hands back the controls. That is
+		# the wedge the owner hit on the live server, and the post-door waypoint above only fixes
+		# the indoor half of it.
+		#
+		# Measured: with three directions `tutorial_walkthrough` failed its "moved CLOSER" check
+		# on roughly one run in four - the starter dungeon is placed at a random angle, so whether
+		# the route happened to clear an obstacle was a coin flip. Ordering all eight neighbours
+		# by the distance they LEAVE you at means the sideways steps are tried too, which is what
+		# lets him slide along an edge rather than butt into it.
+		#
+		# Still greedy, deliberately: a real path costs a search every 450ms per escorted player,
+		# and `compute_path_between` returns nothing for this trip anyway (measured at every time
+		# budget from 40ms to unlimited). A concave pocket can still trap it, and the six-refusal
+		# give-up remains the net under that.
+		# ⛑ AND ONCE YOU ARE OUT OF THE POST, STAY OUT.
+		#
+		# Greedy stepping has no memory, and a post sits in the middle of the open ground like a
+		# wall with holes in it. With the dungeon on the far side, the shortest step from just
+		# outside the west door is straight back through the building - so he left by the door,
+		# re-entered on the next tick, was sent to the door again, and paced across the threshold
+		# for as long as you watched. Measured in `tutorial_walkthrough`: thirty ticks, every one
+		# a real move, net displacement ZERO. And because he was MOVING, the six-refusal give-up
+		# never fired either - so unlike the wedge this one would never have ended.
+		#
+		# A penalty rather than a ban: post tiles sort last, so he goes around when going around
+		# is possible and still cuts through if that is genuinely the only way out of wherever he
+		# is standing. Nothing is forbidden; it is just the worst option.
+		var avoid_posts: bool = not world_system._is_npc_post_interior(int(ch.x), int(ch.y))
+		var scored: Array = []
+		for d in [1, 2, 3, 4, 6, 7, 8, 9]:
+			var off := world_system.get_direction_offset(int(ch.x), int(ch.y), int(d))
+			var ndx: int = aim.x - int(off.x)
+			var ndy: int = aim.y - int(off.y)
+			var cost: int = ndx * ndx + ndy * ndy
+			if avoid_posts and world_system._is_npc_post_interior(int(off.x), int(off.y)):
+				cost += 1000000
+			scored.append([cost, int(d)])
+		scored.sort_custom(func(a, b): return int(a[0]) < int(b[0]))
+		var tries: Array = []
+		for e in scored:
+			tries.append(int(e[1]))
 		var moved := false
 		for d in tries:
 			if int(d) == 5:
@@ -43638,9 +43824,40 @@ func _escort_walk_tick() -> void:
 				break
 		st["next_ms"] = now + ESCORT_STEP_MS
 		st["stuck"] = 0 if moved else int(st.get("stuck", 0)) + 1
+		# ⛑ PACING COUNTS AS STUCK. The refusal counter below only catches a walk that cannot
+		# MOVE; a greedy stepper against a concave obstacle - a lake shore, an inlet - moves every
+		# single tick and arrives nowhere, so it sails straight past that net. Measured: with the
+		# post oscillation fixed, one starter-dungeon placement in eight still left the player
+		# exactly where they began after thirty real steps.
+		#
+		# So: every ESCORT_DRIFT_TICKS, ask whether we have actually got anywhere since last time.
+		# If not, fall through to the same give-up as a refusal - which hands the controls back
+		# and says so, rather than walking somebody's character in a circle indefinitely.
+		#
+		# A real path would fix the routing rather than detect the failure, but `compute_path_between`
+		# returns nothing for this trip at any time budget (measured), and a search per escorted
+		# player every 450ms is not free. Detecting it honestly is the smaller, truer change.
+		var _tick_n: int = int(st.get("ticks", 0)) + 1
+		st["ticks"] = _tick_n
+		if not st.has("anchor_x"):
+			st["anchor_x"] = int(ch.x)
+			st["anchor_y"] = int(ch.y)
+		elif _tick_n % ESCORT_DRIFT_TICKS == 0:
+			var _moved_far: bool = absi(int(ch.x) - int(st["anchor_x"])) > 1 					or absi(int(ch.y) - int(st["anchor_y"])) > 1
+			st["anchor_x"] = int(ch.x)
+			st["anchor_y"] = int(ch.y)
+			if not _moved_far:
+				st["stuck"] = 6          # went nowhere in ESCORT_DRIFT_TICKS steps - give up
 		if int(st.get("stuck", 0)) >= 6:
-			# Wedged. Hand the controls back rather than jiggle forever - and stay quiet for a
-			# while, because an immediate retry is how six refused steps became an endless one.
+			# ⛑ WEDGED ON THE DOORSTEP IS ARRIVAL, NOT FAILURE. If the last step onto the
+			# entrance is the one being refused, saying "the ground beats me" and handing back
+			# the controls is both wrong and useless - they are there. Deliver instead.
+			if absi(gx - int(ch.x)) <= 1 and absi(gy - int(ch.y)) <= 1:
+				_escort_deliver(peer_id, ch)
+				continue
+			# Genuinely wedged. Hand the controls back rather than jiggle forever - and stay
+			# quiet for a while, because an immediate retry is how six refused steps became an
+			# endless one.
 			_escort_walk.erase(peer_id)
 			_escort_retry_ms[peer_id] = now + 20000
 			_guide_say(peer_id, "The ground beats me here. Head %s - I am with you."
@@ -43675,6 +43892,14 @@ func _escort_walk_start(peer_id: int, character) -> void:
 	var _first: bool = not _escort_rested.get(peer_id, false)
 	_escort_rested[peer_id] = true
 	if not _first:
+		# ⛑ A RESTART THAT SAYS NOTHING IS A CHARACTER THAT WALKS OFF BY ITSELF.
+		#
+		# The heal is once-only and correct, but the SILENCE was not: after a wedged walk gives
+		# up it sits out a 20-second cooldown and then simply starts moving the player again with
+		# no word at all. Owner 2026-09-15: *"I walked a bit and then he finally started walking
+		# again randomly, didn't notify me."* From the player's side their character began
+		# walking on its own, twenty seconds after being told to go it alone.
+		_guide_say(peer_id, "Ground's clear now. With me — I have the way.")
 		_escort_walk[peer_id] = {"gx": int(goal.get("x", 0)), "gy": int(goal.get("y", 0)),
 			"next_ms": Time.get_ticks_msec(), "stuck": 0}
 		return
@@ -43751,21 +43976,32 @@ func _nearest_starter_dungeon(character) -> Dictionary:
 	return best
 
 
-func _point_at_the_dungeon(peer_id: int, character) -> void:
-	"""Say WHICH dungeon, WHERE it is, and ring it on the map once it is in sight.
+func _mark_the_dungeon(peer_id: int, character) -> Dictionary:
+	"""Ring the starter dungeon on the map and return what it is. NO popup - see below.
 
-	The mark is the same one the gateway uses, so a player who has already followed a gold ring
-	out of the post is being taught one idiom rather than two. It is sent even when the dungeon
-	is off-screen: the client only draws it when the tile is inside the view, so it lights up by
-	itself as they get close."""
+	Say WHICH dungeon, WHERE it is, and ring it on the map so it announces itself as they get
+	close. This used to raise a panel of its own saying "That one... Walk onto it", which was
+	wrong twice over once the Warden started doing the walking:
+
+	⛑ 1. IT TOLD THEM TO WALK SOMEWHERE HE WAS ABOUT TO CARRY THEM TO.
+	⛑ 2. IT WAS THE SECOND OF THREE PANELS IN A ROW.
+
+	Owner 2026-09-15: *"some of the dialogue says to walk toward a ringed tile and highlights the
+	whole map. It shouldn`t even be a line as the warden is supposed to walk you to the dungeon.
+	There are like 3 dialogue things around there that should likely be condensed to one."*
+
+	So the MARK survives - it is the one part a player actually uses, and it is what tells them
+	where they were taken once they are standing there - and the words moved into the single
+	panel `_escort_ask_to_lead` raises. The ring is also drawn on the right tile now; it was
+	mirrored north/south about the player (see the mark_cell note in client.gd)."""
 	if character == null:
-		return
+		return {}
 	# ⛑ MAKE SURE THERE IS ONE, THEN FIND IT.
 	#
 	# `_find_nearest_dungeon_for_quest(..., tier 1)` accepts only tier-1 instances, and since the
-	# LAND decides a dungeon's grade there may be no tier-1 anywhere near spawn - measured: none
+	# LAND decides a dungeon`s grade there may be no tier-1 anywhere near spawn - measured: none
 	# at all from (-8,-8) on a fresh world. The pointer then fell through to a vague line and the
-	# player was told to find a "D" that did not exist. Owner: *"I don't see a D."*
+	# player was told to find a "D" that did not exist. Owner: *"I don`t see a D."*
 	_ensure_starter_dungeon_exists()
 	var d: Dictionary = _nearest_starter_dungeon(character)
 	if d.is_empty():
@@ -43773,25 +44009,10 @@ func _point_at_the_dungeon(peer_id: int, character) -> void:
 	if d.is_empty():
 		# Still nothing. Say so plainly rather than send them hunting.
 		_guide_say(peer_id, "There is a hole in the ground somewhere near. Ask at the post - I cannot see it from here.")
-		return
-	var dname := String(d.get("name", "the dungeon"))
-	var dist := int(d.get("distance", 0))
-	var dir := String(d.get("direction_text", ""))
+		return {}
 	send_to_peer(peer_id, {"type": "mark_tile", "x": int(d.get("x", 0)), "y": int(d.get("y", 0)),
-		"label": dname, "seconds": 600})
-	_send_hint(peer_id,
-		"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
-		("\"That one.\"
-
-"
-			+ "[color=#FFD700]%s[/color] — [color=#FFD700]%s[/color] of you.
-
-" % [dname, dir]
-			+ "It is ringed in gold on your map the moment it comes into sight. Walk onto it.
-
-"
-			+ "[color=#9ACD32]\"The rest of your kit is on the floor down there. I am coming with you.\"[/color]"),
-		"", ["map"])
+		"label": String(d.get("name", "the dungeon")), "seconds": 900})
+	return d
 
 
 func _tutorial_safe_monster(monster: Dictionary, character) -> Dictionary:
@@ -43897,9 +44118,24 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 			_guide_say(peer_id, "Three more. You have a blade now, so this should go faster than the first one did.")
 			_guide_teach(peer_id, "equipment")
 		3:
-			_guide_say(peer_id, "The hole in the ground, then. Find the [color=#FFD700]D[/color] on your map and walk onto it. I am coming with you.")
-			_guide_say(peer_id, "Whatever is lying on the floor down there is yours. Walk over it and it is picked up — that is where the rest of your kit is coming from, so do not run for the stairs.")
+			# He is WALKING them there, so "find the D on your map" is the wrong instruction and
+			# always was once the escort shipped. If the walk is still on he simply says so; if
+			# they took the lead, the bearing they already have on screen is the useful thing.
+			if _escort_walk.has(peer_id):
+				_guide_say(peer_id, "Stay with me. I have the way.")
+			else:
+				_guide_say(peer_id, "The hole in the ground, then. It is ringed on your map - I am coming with you.")
+			_guide_say(peer_id, "Whatever is lying on the floor down there is yours. Walk over it and it is picked up - that is where the rest of your kit is coming from, so do not run for the stairs.")
 		4:
+			# ⛑ AND HE STILL OWES YOU ANYTHING YOUR PACK HAD NO ROOM FOR.
+			#
+			# The end-of-dungeon net cannot force gear into a full bag, so it names what it could
+			# not give and tells the player to make room and come and see him. This is the half
+			# that makes that sentence true. `_grant_missing_starter_kit` is idempotent - it asks
+			# what is missing rather than remembering a debt - so calling it here hands over only
+			# what is still genuinely absent and is a silent no-op for everyone else.
+			if _grant_missing_starter_kit(peer_id, character) > 0:
+				return
 			_guide_say(peer_id, "You've got what you need to survive. Keep an eye on the Area Level and see what you can recover out there.")
 		_:
 			_guide_say(peer_id, "You look new. Check your quest log — I have already written you down for the Watch.")
@@ -43915,6 +44151,108 @@ func _nearest_door_dir(character) -> String:
 	if d.x == 0x7FFFFFFF:
 		return ""
 	return _compass_direction(int(character.x), int(character.y), d.x, d.y)
+
+
+func _grant_missing_starter_kit(peer_id: int, character) -> int:
+	"""Hand over any starter-kit slot this character still has nothing in. Returns how many.
+
+	STATELESS AND IDEMPOTENT ON PURPOSE, and that is what makes it safe to call twice. It asks
+	the character what it is missing rather than remembering what it owes, so a slot already
+	filled - from the floor, from a drop, from a shop - is left alone and nobody is handed a
+	second copy of anything.
+
+	⛑ WHICH IS ALSO THE FIX FOR THE FULL PACK.
+
+	The `can_add_item()` guard is right - an item cannot be forced into a full bag - but it
+	used to be the WHOLE of the handling, so a new player who filled forty slots on their first
+	dungeon run silently never received the gear this net exists to guarantee. Now they are told
+	which pieces, by name, and because this function is idempotent the Warden can simply be
+	asked again once they have made room. A promise the code cannot keep is worse than no
+	promise, so the line he says and the retry that backs it shipped together."""
+	if character == null or drop_tables == null:
+		return 0
+	var _missed: Array = []
+	var _full: Array = []
+	for _slot in ["helm", "boots", "shield", "accessory"]:
+		var _real_slot: String = "ring" if _slot == "accessory" else _slot
+		var _have = character.equipped.get(_real_slot, null)
+		if _have != null and not (_have is Dictionary and (_have as Dictionary).is_empty()):
+			continue
+		var _in_pack := false
+		for _it in character.inventory:
+			if _it is Dictionary and Character.get_item_slot_from_type(String(_it.get("type", ""))) == _real_slot:
+				_in_pack = true
+				break
+		if _in_pack:
+			continue
+		var _kit = drop_tables.get_starter_kit_item(_slot)
+		if not (_kit is Dictionary) or (_kit as Dictionary).is_empty():
+			continue
+		if character.can_add_item():
+			character.add_item(_kit)
+			_missed.append(String(_kit.get("name", _slot)))
+		else:
+			_full.append(String(_kit.get("name", _slot)))
+	if not _missed.is_empty():
+		_guide_say(peer_id, "You walked past some of it. Here — I picked it up behind you.")
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#9ACD32]Recovered from the floor: %s[/color]" % ", ".join(_missed)})
+	if not _full.is_empty():
+		_guide_say(peer_id, "Your pack is full. I am still holding the rest — make room and come and see me.")
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#FFAA00]No room for: %s[/color]" % ", ".join(_full)})
+	if not _missed.is_empty():
+		send_character_update(peer_id)
+		save_character(peer_id)
+	return _missed.size()
+
+
+func _floor_loot_art(entity: Dictionary) -> String:
+	"""Which SPRITE a floor item should draw as - finer than its gameplay `kind`.
+
+	⛑ ONE PICTURE FOR FIFTY OBJECTS.
+
+	Owner 2026-09-15, walking the starter dungeon: *"most floor loot equipment looks like a
+	shield, one of the scrolls looks like a potion. We should have plenty of equipment sprites to
+	use more appropriate ones based on the item."*
+
+	Exactly so, and the cause is that the floor drew from `kind`, which is a GAMEPLAY category:
+	every helm, blade, ring and pair of boots in the game is `equipment`, and every potion, tome,
+	charm and scroll is `consumable`. Two sprites were doing the work of a wardrobe.
+
+	The item's own type is the right unit, so this reads it. Returns "" for anything whose kind is
+	already specific enough (valor, materials, the escape scroll, quest relics) - the client falls
+	back to `kind` on empty, so nothing regresses if an item is unrecognised here.
+
+	The slot vocabulary is `Character.get_item_slot_from_type`, not a second list: seven slots,
+	and if an eighth is ever added this keeps working the moment that function knows about it."""
+	var data = entity.get("item_data", {})
+	if not (data is Dictionary) or (data as Dictionary).is_empty():
+		return ""
+	var itype := String(data.get("item_type", data.get("type", "")))
+	if itype == "":
+		return ""
+	var slot := Character.get_item_slot_from_type(itype)
+	if slot != "":
+		return "eq_" + slot
+	# Consumables, grouped by what they LOOK like rather than by what they do - a tome and a
+	# scroll are different objects, a mana potion and a health potion are the same object in a
+	# different colour (and the floor already tints by rarity).
+	if itype.begins_with("potion_") or itype.begins_with("mana_") 			or itype.begins_with("stamina_") or itype.begins_with("energy_"):
+		return "cn_potion"
+	if itype.begins_with("scroll_"):
+		return "cn_scroll"
+	if itype.begins_with("tome_") or itype == "ability_tome":
+		return "cn_tome"
+	if itype.begins_with("charm_") or itype == "floor_skip_charm" 			or itype == "reclaimer_lantern" or itype == "boss_slayer_tonic":
+		return "cn_charm"
+	if itype.begins_with("gem_") or itype == "soul_gem":
+		return "cn_gem"
+	if itype == "gold_pouch" or itype == "mysterious_box" or itype == "cursed_coin":
+		return "cn_pouch"
+	if itype.begins_with("home_stone_") or itype == "travel_stone":
+		return "cn_stone"
+	return ""
 
 
 func _nearest_door(character) -> Vector2i:
@@ -44081,31 +44419,21 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				+ "[color=#FFD700]Next:[/color] he is handing you armour now. Put it on, then find the next one.")
 			ring = ["action_0", "travel_stance"]
 		"world":
-			# ⛑ THE BEAT BETWEEN THE FIGHT AND THE DUNGEON.
+			# ⛑ RETIRED 2026-09-15 - ABSORBED INTO `_escort_ask_to_lead`, NOT DELETED.
 			#
-			# Owner 2026-09-14: *"he teaches you how to fight then teaches you about the world. He
-			# should take you to a starter dungeon."* Fighting was taught and the dungeon was taught;
-			# the WORLD between them was not, so a player who had just won their second fight knew
-			# how to swing and nothing about the place they were standing in.
-			if ch.seen_guide_world_hint:
-				return
+			# This was the first of THREE panels the player met back to back at the end of step
+			# two, and it closed by telling them to "walk onto the ringed tile" - an instruction
+			# for a journey the Warden makes on their behalf. Owner 2026-09-15: *"It shouldn`t
+			# even be a line as the warden is supposed to walk you to the dungeon. There are like
+			# 3 dialogue things around there that should likely be condensed to one."*
+			#
+			# The part worth keeping - the ground has a LEVEL and you can hover to read it - now
+			# lives in the single panel, which also sets `seen_guide_world_hint`. The branch stays
+			# as a no-op so a stray caller cannot resurrect the old wording, and so the next
+			# person to grep for it finds this note instead of an empty space.
 			ch.seen_guide_world_hint = true
-			title = "[color=#9ACD32]Where You Are[/color]"
-			body = ("\"Now look up. This is the Badlands, and it does not care about you.\"
-
-"
-				+ "[color=#FFD700]Posts[/color] like the one behind us are safe — nothing attacks you "
-				+ "inside the walls. Everything between them is not.
-
-"
-				+ "The ground has a [color=#FFD700]level[/color], and it does not rise evenly with "
-				+ "distance any more — hover a part of the map to read it BEFORE you walk into it.
-
-"
-				+ "[color=#9ACD32]\"Rest when you are hurt — it costs nothing but time. And when you die "
-				+ "out here you stay dead — only the Sanctuary carries over.\"[/color]\n\n"
-				+ "[color=#FFD700]Next:[/color] he will show you the way on the map — walk onto the ringed tile.")
-			ring = ["map"]
+			save_character(peer_id)
+			return
 		_:
 			return
 	_send_hint(peer_id, title, body, "", ring)

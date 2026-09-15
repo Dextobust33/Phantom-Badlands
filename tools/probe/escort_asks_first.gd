@@ -77,8 +77,22 @@ func _init() -> void:
 	# The pop-up must carry the ack the server is waiting on, and the client must send it back.
 	# Either half missing leaves the player at the post forever with no way to say yes.
 	var ssrc := FileAccess.get_file_as_string("res://server/server.gd")
-	ck(ssrc.contains('"escort_ready", "Lead the way"'),
+	# 2026-09-15 - the label was "Lead the way", which the owner read as an instruction to
+	# THEMSELVES while the body told them the Warden does the walking: *"The final one where it
+	# says lead the way says I can move and he will follow instead."* The button now says who is
+	# doing what.
+	ck(ssrc.contains('"escort_ready", "Take me there"'),
 		"the pop-up asks for an answer and labels the button as a decision")
+	# Checked against the CALL, not the file: the docstring names the old label to record why it
+	# changed, and a check that cannot tell an explanation from a live string would force the
+	# reason for a fix to be deleted along with the fault.
+	var _ai := ssrc.find("func _escort_ask_to_lead")
+	var _ae := ssrc.find("
+func ", _ai + 10)
+	var _ask := ssrc.substr(_ai, (_ae - _ai) if _ae > _ai else 5000)
+	var _hi := _ask.find("_send_hint")
+	ck(_hi != -1 and not _ask.substr(_hi).contains('"Lead the way"'),
+		"  and the old self-contradicting label is gone from the panel itself")
 	ck(ssrc.contains('"tutorial_ack":'), "the server routes the answer")
 	var csrc := FileAccess.get_file_as_string("res://client/client.gd")
 	ck(csrc.contains('{"type": "tutorial_ack", "ack": _hint_ack_pending}'),

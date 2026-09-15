@@ -76,6 +76,31 @@ const LOOT_SPRITE := {
 	# `verify_dungeon_art.gd` now diffs this table against the kinds the server can actually
 	# send, so a sixth kind cannot be added without its art again.
 	"consumable": "consumable",
+	# 2026-09-15 - PER-ITEM ART, keyed by what the thing IS rather than which gameplay bucket it
+	# sits in. `equipment` and `consumable` above are CATEGORIES: every helm, blade, ring and pair
+	# of boots shared one picture and every potion, tome and charm shared another, so the floor
+	# of a dungeon showed the same shield over and over. Owner: *"most floor loot equipment looks
+	# like a shield, one of the scrolls looks like a potion. We should have plenty of equipment
+	# sprites to use more appropriate ones based on the item."*
+	#
+	# The keys are produced by `server.gd::_floor_loot_art` - `eq_<slot>` off
+	# `Character.get_item_slot_from_type`, `cn_<shape>` for consumables grouped by what they look
+	# like. The two category entries above STAY as the fallback: an item this table has never
+	# heard of still draws something.
+	"eq_weapon": "eq_weapon",
+	"eq_armor": "eq_armor",
+	"eq_helm": "eq_helm",
+	"eq_shield": "eq_shield",
+	"eq_boots": "eq_boots",
+	"eq_ring": "eq_ring",
+	"eq_amulet": "eq_amulet",
+	"cn_potion": "cn_potion",
+	"cn_scroll": "cn_scroll",
+	"cn_tome": "cn_tome",
+	"cn_charm": "cn_charm",
+	"cn_gem": "cn_gem",
+	"cn_pouch": "cn_pouch",
+	"cn_stone": "cn_stone",
 }
 
 
@@ -84,6 +109,17 @@ static func loot_path(kind: String) -> String:
 	if kind == "" or not LOOT_SPRITE.has(kind):
 		return ""
 	return LOOT_DIR + String(LOOT_SPRITE[kind]) + ".png"
+
+
+static func loot_path_for(art: String, kind: String) -> String:
+	"""The sprite for one floor item: its own art key if we have one, else its category.
+
+	Two arguments rather than one because the fallback is the POINT. `art` comes from the item
+	(`eq_helm`, `cn_scroll`); `kind` is the gameplay bucket that always exists. A new item type
+	the art table has not learned yet therefore keeps drawing its category picture instead of
+	dropping back to a bare glyph, which is what the per-item pass must not cost us."""
+	var p := loot_path(art)
+	return p if p != "" else loot_path(kind)
 
 ## Monster display name -> baked sprite, from the TIME FANTASY monsters pack.
 ##

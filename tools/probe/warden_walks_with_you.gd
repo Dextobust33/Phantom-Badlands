@@ -68,8 +68,20 @@ func _init() -> void:
 	var q3 := qsrc.substr(i3, 1400) if i3 != -1 else ""
 	ck(q3.contains("companion egg"),
 		"  (the egg really is paid at stage 3, after the escort has gone)")
-	ck(FileAccess.get_file_as_string("res://server/server.gd").contains("return st == 1 or st == 2"),
-		"  (and the escort really is stages 1-2 only)")
+	# ⛑ STALE ASSERTION, FOUND RED ON MASTER 2026-09-15. It pinned `return st == 1 or st == 2`,
+	# which stopped being the code on 2026-09-14 when the escort was extended THROUGH step three
+	# and then home again - owner: *"the warden doesn't seem to be in my party anymore. I
+	# immediately ran into a wolf and had to fight it solo."* The probe was never updated, so the
+	# onboarding gate has been failing for a day on a fact that had deliberately changed.
+	#
+	# Pinned to the real range now, which also keeps the premise above honest: the cell BEHIND
+	# the player is empty for stages 1-2 because the companion egg is not paid until stage 3
+	# ends, and `_has_comp` is what covers the rest.
+	var srv_src := FileAccess.get_file_as_string("res://server/server.gd")
+	ck(srv_src.contains("return st >= 1 and st <= 3"),
+		"  (the escort runs stages 1-3 - it used to end where step three BEGAN)")
+	ck(srv_src.contains("if st == 4:"),
+		"  (and stage 4 keeps him until they are back inside a post, not abandoned in a field)")
 
 	print("")
 	print("===== AND WHEN THERE IS A COMPANION, THEY DO NOT SHARE A SQUARE =====")

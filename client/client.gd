@@ -4998,7 +4998,21 @@ func _process(delta):
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var quest_board_open = quest_board_panel != null and quest_board_panel.visible
 	var feedback_open = _feedback_dialog != null and _feedback_dialog.visible
-	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open or quest_board_open or feedback_open
+	# ⛑ THE TEACHING MODALS ARE POPUPS TOO.
+	#
+	# They were the only full-screen modals missing from this list, and they are the ones a brand
+	# new player sees most. While one was open the action bar still polled its hotkeys and the
+	# ENTER-to-focus-chat poll below still ran - so the very Enter or Space that DISMISSED the
+	# lesson was seen again, one frame later, by a `_process` loop that polls the physical key
+	# rather than the event the panel consumed.
+	#
+	# Owner 2026-09-15, clicking through the step-two lessons: *"during one of the steps I think
+	# around step 2 being complete it focused the chat bar so I couldn't hit Q for my inventory
+	# until clicking off of it."* Which is Pitfall #7 in CLAUDE.md, arriving through the chat
+	# focus rather than the action bar. `_swallow_modal_dismiss_keys` closes the other half: the
+	# key must be RELEASED before it counts again.
+	var teaching_modal_open = (tutorial_hint_panel != null and tutorial_hint_panel.visible) 		or (numpad_help_panel != null and numpad_help_panel.visible) 		or (guided_intro_overlay != null and guided_intro_overlay.visible)
+	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open or quest_board_open or feedback_open or teaching_modal_open
 	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode and not _testfx_step_active
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
@@ -14202,8 +14216,20 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 				# every other damage card uses. Owner: "Should the card not... use the damage
 				# area in the bottom left like other cards do?"
 				return {"text": "~%d guaranteed" % maxi(1, int(_combat_finisher_value * fraction)), "color": "#A0E060"}
+			# ⛑ IT ALWAYS HITS. SAY SO.
+			#
+			# Owner 2026-09-15: *"Assassinate doesn't mention how much damage it will do if it
+			# doesn't kill on the card."* The Ninja's strike lands whatever the roll says - the
+			# roll only decides whether it also ENDS them - and at 8 Read the lethal chance is
+			# about 26%, so roughly three casts in four resolve as the damage this face never
+			# mentioned. A player reading "26% kill" has every reason to read the other 74% as
+			# nothing at all.
+			#
+			# Both numbers, damage first, because the damage is the part that is certain. Server
+			# values on both halves, for the reason the note above gives.
 			var chance = max(1, int(_combat_assassinate_chance * fraction))
-			return {"text": "%d%% kill" % chance, "color": "#A0E060"}
+			var strike = maxi(1, int(_combat_finisher_damage * fraction))
+			return {"text": "~%d · %d%% kill" % [strike, chance], "color": "#A0E060"}
 		"forethought":
 			return {"text": "Skip monster turn", "color": "#9370DB"}
 		"tactical_retreat":
@@ -20615,7 +20641,14 @@ func _get_ability_description_text(ability_name: String) -> String:
 					return "Cash the con. GUARANTEED damage scaling with the Leverage you spend (about 16% of a health bar per stack, so a full bank is over a bar). Spends every stack. Cannot be cast with none. Variable cost 15-50 energy."
 				"Ranger":
 					return "Discharge the shot. GUARANTEED damage scaling with the Aim you release (about 11% of a health bar per stack). Spends every stack. Cannot be cast with none. Variable cost 15-50 energy."
-			return "Instant-win attempt. 15% base, +5% per " + _eng + ", plus your Wits against the enemy's Intelligence (capped) and -2% per level it is above you. Each " + _eng + " raises the ceiling too — 60% cold, 85% at full. On success: instant kill + 1.25× XP. On failure: the enemy counter-attacks. Variable cost 15-50 energy — the success CHANCE scales with spend, so a floor cast is almost always a miss."
+			# ⛑ REWRITTEN 2026-09-15, TWICE OVER WRONG. Every number in the old sentence
+			# ("15% base, +5% per Read... 60% cold, 85% at full") came from the retired
+			# instant-win card, and it described the whole ability as a coin flip that either
+			# wins or gives the enemy a free hit. The strike has ALWAYS LANDED since the
+			# 2026-09-08 rework. Owner 2026-09-15: *"Assassinate doesn't mention how much damage
+			# it will do if it doesn't kill on the card."* Read off the code, per the stat-text
+			# rule: NINJA_STRIKE_PER_READ, NINJA_LETHAL_BASE, NINJA_LETHAL_PER_READ.
+			return "A strike that ALWAYS lands: about 11% of a health bar per " + _eng + " spent, so a full stall is close to a whole bar. It also ROLLS to end the fight outright — 2% base, +3% per " + _eng + " (about 26% at a full stall), less 1% per level the enemy is above you, plus any +Assassinate bonuses you carry. On a kill: instant win + 1.25× XP. Spends every " + _eng + "; cannot be cast with none. Variable cost 15-50 energy — both the damage and the kill chance scale with spend."
 		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total. Variable cost 8-25 energy — debuff magnitude scales with spend; 50% stack cap unchanged."
 		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: 15% of your max HP as self-damage. Bonus loot if the hit kills. Variable cost 10-35 energy — both hit damage AND miss self-damage scale with spend; success chance stays constant."
 		"forethought": return "Pay 1 of your primary resource to skip the monster's turn. The hand mulligan is now automatic — every player action draws a fresh hand, so Forethought is purely a tempo / safety card. Universal."
@@ -20832,7 +20865,9 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 					return "Cash in everything you have on it: [b]guaranteed[/b] damage that scales with the [color=#7FD8C8]◉ Leverage[/color] you spend. Needs at least one."
 				"Ranger":
 					return "Loose the steadied shot: [b]guaranteed[/b] damage that scales with the [color=#7FD8C8]◉ Aim[/color] you discharge. Needs at least one."
-			return "A high-risk [b]instant win[/b]: a chance to end the fight outright with bonus XP, rising with each [color=#7FD8C8]◉ Read[/color]."
+			# The Ninja. It is not a gamble with nothing on the losing side - the strike lands
+			# either way, and saying otherwise is what made the card unreadable.
+			return "[b]Guaranteed[/b] damage that scales with the [color=#7FD8C8]◉ Read[/color] you spend — [b]and[/b] a chance the same strike ends the fight outright for bonus XP, rising with each [color=#7FD8C8]◉ Read[/color]. Needs at least one."
 	# Universal / anything else: plain description as bbcode.
 	return _get_ability_description_text(ability_name)
 
@@ -21198,6 +21233,11 @@ var _duplicate_instance_warned := false
 # The finisher as the SERVER computes it: "roll" (percent) or "guaranteed" (damage).
 var _combat_finisher_kind: String = ""
 var _combat_finisher_value: int = 0
+# The finisher's DAMAGE, which is a different number from `_combat_finisher_value` for exactly
+# one class. `finisher_value` carries a PERCENT for the Ninja, whose strike rolls to kill - so
+# for the only card in the game that does both, the damage had nowhere to come from and the face
+# printed the chance alone. See combat_manager._finisher_damage.
+var _combat_finisher_damage: int = 0
 # The class ENGINE's live damage multiplier, straight from the server (Steady Aim / Rage).
 # 1.0 outside combat and for classes with no ramp. Cached here for the same reason
 # _combat_finisher_value is: the card face needs it, and the client must not own a copy of the
@@ -37461,6 +37501,7 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	_combat_assassinate_chance = int(state.get("assassinate_chance", 0)) if is_trickster else 0
 	_combat_finisher_kind = String(state.get("finisher_kind", ""))
 	_combat_finisher_value = int(state.get("finisher_value", 0))
+	_combat_finisher_damage = int(state.get("finisher_damage", 0))
 	_combat_engine_ramp = maxf(0.01, float(state.get("engine_damage_ramp", 1.0)))
 	if is_warrior:
 		# The meter's NAME comes from the server (Momentum / Rage / Conviction) so the three
@@ -42955,6 +42996,7 @@ func _on_scratch_off_slot_missed(slot_index: int) -> void:
 
 func _on_numpad_help_dismissed() -> void:
 	"""v0.9.372 — Got it button. Close popup, persist any toggle changes."""
+	_swallow_modal_dismiss_keys()
 	if numpad_help_panel:
 		numpad_help_panel.close()
 	_save_keybinds()
@@ -43061,8 +43103,23 @@ func _enqueue_tutorial_hint(title: String, body: String, opt_out: String = "",
 	_drain_new_player_modals()
 
 
+func _swallow_modal_dismiss_keys() -> void:
+	"""The key that CLOSED a teaching modal must not also act in the game underneath.
+
+	The panels dismiss on Enter / Space / Esc through `_unhandled_key_input`, but `_process`
+	polls `Input.is_physical_key_pressed` - it never sees that the event was consumed, so the
+	still-held key reads as a fresh press the moment the panel hides. Marking it pressed here
+	means it has to be RELEASED and pressed again to do anything, which is the pattern CLAUDE.md
+	Pitfall #7 already prescribes for mode exits.
+
+	Space is action slot 0 (Rest / Attack); Enter is the chat-focus poll."""
+	set_meta("enter_pressed", true)
+	set_meta("hotkey_0_pressed", true)
+
+
 func _on_tutorial_hint_dismissed() -> void:
 	"""Ring the buttons the hint just named - AFTER it closes, not under it."""
+	_swallow_modal_dismiss_keys()
 	if _hint_ack_pending != "":
 		send_to_server({"type": "tutorial_ack", "ack": _hint_ack_pending})
 		_hint_ack_pending = ""
@@ -43132,6 +43189,7 @@ func _start_guided_intro() -> void:
 
 func _on_guided_intro_finished() -> void:
 	# Surface anything that queued up while the tour was running.
+	_swallow_modal_dismiss_keys()
 	_drain_new_player_modals()
 
 
@@ -46840,8 +46898,24 @@ func _overworld_display(payload: Dictionary) -> String:
 		_mark_until_ms = 0
 	var mark_cell := Vector2i(-1, -1)
 	if _mark_tile.x != 0x7FFFFFFF and Time.get_ticks_msec() < _mark_until_ms 			and _last_map_center.x != 0x7FFFFFFF:
+		# ⛑ WORLD Y IS NOT SCREEN Y, AND THIS IS THE SECOND PLACE IT BIT.
+		#
+		# `_map_cells` renders `for dy in range(radius, -radius - 1, -1)` - row 0 is the NORTH
+		# edge and rows count southward - so the screen row of a world tile is
+		# `mid - (world_y - center_y)`. Adding it instead MIRRORS the ring about the player's
+		# own row: every marked tile was drawn exactly as far to the north as it really lay to
+		# the south, and vice versa.
+		#
+		# Owner 2026-09-15, standing one tile from the Wolf Den the Warden had just walked them
+		# to: *"now it shows a yellow ring on a path tile when I think he is standing on the
+		# Dungeon we are supposed to go to."* Measured from that screenshot - the panel read
+		# "Wolf Den, 1 tiles southwest" and the ring was drawn one cell NORTH of the player.
+		#
+		# The Warden's own sprite offset carries this same negation, with a comment recording
+		# that it shipped wrong the first time too (goal 39 tiles southwest, figure drawn due
+		# north). Same fact, two copies, and only one of them had been fixed.
 		mark_cell = Vector2i(mid + (_mark_tile.x - _last_map_center.x),
-			mid + (_mark_tile.y - _last_map_center.y))
+			mid - (_mark_tile.y - _last_map_center.y))
 		if mark_cell.x < 0 or mark_cell.y < 0 or mark_cell.x >= cols_n or mark_cell.y >= rows_n:
 			mark_cell = Vector2i(-1, -1)      # off screen this step; nothing to draw
 	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}), _ow_anim_tick, mark_cell):
@@ -47756,8 +47830,11 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 								_egg_spr = _backed
 					else:
 						# Real item art for the other loot kinds, floor baked in like everything
-						# else on the ground.
-						var _lp: String = _DungeonSprites.loot_path(_kind)
+						# else on the ground. The item's OWN art key first (`eq_helm`,
+						# `cn_scroll`), its gameplay category as the fallback - see
+						# DungeonSprites.loot_path_for.
+						var _lp: String = _DungeonSprites.loot_path_for(
+							String(fi.get("art", "")), _kind)
 						if _lp != "" and ResourceLoader.exists(_lp):
 							_egg_spr = _lp
 					if _egg_spr != "":

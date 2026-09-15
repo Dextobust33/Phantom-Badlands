@@ -57,9 +57,19 @@ func _init() -> void:
 	print("===== AND EVERY STEP NAMES THE NEXT ACTION, IN A POPUP =====")
 	# The lesson that fires as each step closes must end with an explicit next action. A popup,
 	# because the owner has twice reported his chat lines being missed.
+	# 2026-09-15 - step TWO no longer closes with a "Next:" line, and that is the fix rather than
+	# a regression. Its beat used to be the "Where You Are" panel ending "walk onto the ringed
+	# tile", which was an instruction for a journey the WARDEN makes on the player's behalf - and
+	# it was the first of three panels in a row. Owner: *"It shouldn't even be a line as the
+	# warden is supposed to walk you to the dungeon. There are like 3 dialogue things around
+	# there that should likely be condensed to one."*
+	#
+	# The rule this section enforces is "no step ends without telling you what to do next", and
+	# step two now satisfies it with a BUTTON instead of a sentence: the merged panel ends in a
+	# decision the player makes, which is a stronger next action than a line of prose. Checked
+	# below, separately, because the shape is genuinely different.
 	var beats := {
 		"wardens_watch_1": ["Catching Your Breath", "he is handing you armour"],
-		"wardens_watch_2": ["Where You Are", "find the [color=#FFD700]D[/color] on your map"],
 	}
 	for step in beats:
 		var title: String = String(beats[step][0])
@@ -75,6 +85,26 @@ func _init() -> void:
 		ck(body.contains("[color=#FFD700]Next:[/color]"),
 			"  and it ends with an explicit Next: line")
 		ck(body.contains(expect), "  naming the real next action")
+
+	print("")
+	print("----- step TWO ends in a DECISION, not a sentence -----")
+	var i_ask := src.find("func _escort_ask_to_lead")
+	var i_ae := src.find("
+func ", i_ask + 10)
+	var ask := src.substr(i_ask, (i_ae - i_ask) if i_ae > i_ask else 5000)
+	ck(i_ask != -1, "the merged panel exists")
+	ck(ask.contains("\"escort_ready\""),
+		"  it is a panel the server WAITS on - nothing moves under an unread popup")
+	ck(ask.contains('"Take me there"'),
+		"  and its button is the next action, in the player's own words")
+	var _hi := ask.find("_send_hint")
+	var shown := ask.substr(_hi) if _hi != -1 else ""
+	ck(not shown.contains("[color=#FFD700]D[/color]"),
+		"  and it does NOT send them hunting for a D on the map - he walks them there")
+	# The step-two turn-in must actually RAISE it, or the step ends in silence again.
+	var i_ctx := src.find('if _qid == "wardens_watch_2"')
+	ck(i_ctx != -1 and src.substr(i_ctx, 400).contains("_escort_ask_to_lead(peer_id, character)"),
+		"  and finishing step two is what raises it")
 
 	print("")
 	print("----- the LAST step, which has no next quest to hand you -----")

@@ -254,6 +254,17 @@ const READ_HEIST_PER: int = 3
 # 48 base + 5x5 = 73% at a full Read for a Trickster: reliable, but only after five turns of
 # setup. Without this the cap ate every stack past the second — see assassinate_chance.
 const READ_CAP_PER: float = 3.125   # 8 x 3.125 = +25 to the ceiling, exactly where 5 x 5 landed
+# ⛑ BOTH OF THE ABOVE ARE NOW UNREFERENCED, 2026-09-15, AND THAT IS THE POINT.
+#
+# They describe the instant-win card the Trickster finisher USED to be. The 2026-09-08 rework
+# replaced it with "a strike that always lands, plus a chance it simply ends them" and gave that
+# its own constants (NINJA_LETHAL_BASE / NINJA_LETHAL_PER_READ) - but only at the ROLL site.
+# `assassinate_chance` kept computing with these, so the card face, the Read meter and Analyze
+# all advertised odds 13 points higher than the dice, for a week.
+#
+# Kept rather than deleted so that anyone who greps these names - or reads the reasoning above
+# and takes it for current design - lands on this note instead of on a plausible dead end. The
+# live numbers are beside the Ninja branch; see `assassinate_chance`.
 
 # v0.9.697 — Mage Focus: a RAMP. Every spell channeled builds Focus, which
 # passively boosts ALL spell damage. Meteor is the DISCHARGE — bigger per-Focus
@@ -4003,31 +4014,42 @@ func assassinate_chance(character, monster, combat, variable_fraction: float = 1
 	OWN copy of the odds with different constants (cap 85/70 against the real 48, and double
 	the level penalty), so the number it reported to the player was one the game never rolled
 	against. One definition, three readers."""
-	var wits: int = character.get_effective_stat("wits")
-	var monster_int: int = int(monster.get("intelligence", 15))
+	# ⛑ 2026-09-15 - THIS FUNCTION WAS NOT THE SINGLE SOURCE IT SAYS IT IS.
+	#
+	# The docstring above has promised since 2026-09-05 that the roll, the card face and
+	# Analyze cannot disagree. They disagreed by a flat THIRTEEN POINTS at every Read level,
+	# because the Ninja rework of 2026-09-08 - the one that made the strike always land and
+	# turned the finisher into "damage, plus a chance it simply ends them" - wrote its odds as
+	# NEW constants inside `process_ability_command` and left this function carrying the odds of
+	# the retired instant-win card:
+	#
+	#     read   shown (here)   rolled (there)
+	#        1        18%             5%
+	#        4        27%            14%
+	#        8        39%            26%
+	#
+	# Worse, the roll never read `assassinate_pct` at all, so [b]Silver Tongue[/b] (+15%) and the
+	# unique that grants +20% moved the number on the card and did NOTHING to the dice. Two
+	# pieces of content whose text promised an effect the game did not apply.
+	#
+	# So: this is now the LETHAL formula - the one players actually experience - and the roll
+	# site calls it instead of computing its own. That is what makes the docstring true, and it
+	# is the structural version of the fix rather than a third copy kept in step by hand.
+	#
+	# The ROLL is deliberately unchanged in power: the constants below are the ones the game has
+	# been rolling against since 2026-09-08. Only the DISPLAY moves (down, to the truth) and the
+	# two +assassinate_pct sources begin working as written. See [[feedback-one-value-two-places]].
 	var level_diff: int = int(monster.level) - character.level
 	var read: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
-	# Weak on its own (15% base, so opening with it is a poor play), strong once the stall has
-	# done its work (+READ_HEIST_PER per Read). Stall, build, then cash.
-	#
-	# 2026-09-05 — the WITS term is CAPPED. Uncapped at 1.5x the gap it reached +45 by level 25,
-	# which put a Grifter at 57% before building a single Read and pinned it to the ceiling
-	# after one stack. Reported: "my Assassinate % chance isn't going up with my Read." It was
-	# going up; the cap was eating it. A finisher that is already a coin-flip cold is also the
-	# opposite of the stated design, which is that opening with it should be a poor play.
-	var wits_edge: int = clampi(int((wits - monster_int) * 1.5), -20, 20)
-	var chance: int = 15 + wits_edge + read * READ_HEIST_PER
-	# Heavy penalty for punching above your level: -2% per level of gap.
+	# Weak cold, worth building: ~2% from nothing, +3 a stack, so a full stall is ~26%.
+	var chance: int = NINJA_LETHAL_BASE + read * NINJA_LETHAL_PER_READ
+	# Penalty for punching above your level.
 	if level_diff > 0:
-		chance -= level_diff * 2
-	# Silver Tongue and the uniques that used to buy Outsmart odds now buy these instead, so
-	# the node and the items keep doing what their text promises.
+		chance -= level_diff
+	# Silver Tongue and the uniques that used to buy Outsmart odds buy these instead, so the
+	# node and the items do what their text promises - which, until today, they did not.
 	chance += int(character.get_path_effect_total("assassinate_pct"))
-	# Each Read also lifts the CEILING, which is what makes stacks 3-8 worth building. Without
-	# it the cap ate every stack past the first — the exact defect READ_CAP_PER was added to
-	# fix for Outsmart, and which came back when this function replaced it and clamped flat.
-	var ceiling: int = 60 + int(read * READ_CAP_PER)
-	chance = clampi(chance, 5, ceiling)
+	chance = clampi(chance, 1, 90)
 	# A partial energy commit scales the odds down proportionally.
 	return max(1, int(chance * variable_fraction))
 
@@ -6956,10 +6978,12 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			_nj_dmg = apply_skill_damage_bonus(character, ability_name, _nj_dmg, combat)
 			_nj_dmg = apply_damage_variance(apply_ability_damage_modifiers(
 				_nj_dmg, character.level, monster, character, combat, messages))
-			var success_chance = mini(90, NINJA_LETHAL_BASE + _nj_read * NINJA_LETHAL_PER_READ)
-			if level_diff > 0:
-				success_chance = maxi(1, success_chance - level_diff)
-			success_chance = maxi(1, int(float(success_chance) * variable_fraction))
+			# ONE definition, and this is the reader that matters. It used to compute its own
+			# copy here, which is how the card came to advertise odds the dice never used and
+			# how +assassinate_pct came to be decorative. `assassinate_chance` now holds this
+			# exact formula - level penalty, path bonuses and partial commit included - so the
+			# number on the card IS the number rolled, by construction rather than by care.
+			var success_chance = assassinate_chance(character, monster, combat, variable_fraction)
 			combat["combo"] = 0
 
 			var roll = randi() % 100
@@ -11218,6 +11242,10 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# percent when it is a roll and damage when it is not.
 		"finisher_kind": _finisher_kind(character),
 		"finisher_value": _finisher_value(character, combat),
+		# ...and the DAMAGE, always, including for the roll. `finisher_value` carries a percent
+		# for the Ninja, so before this the client had no number to print for a strike that
+		# always lands. See _finisher_damage.
+		"finisher_damage": _finisher_damage(character, combat),
 		# The class ENGINE's live damage multiplier, so a card face can show what it will
 		# actually hit for. 1.0 when the class has no ramp or the meter is empty. Sent as state
 		# for the same reason finisher_value is: the client must not own a copy of the constant.
@@ -14262,6 +14290,38 @@ func _finisher_kind(character) -> String:
 	return ""
 
 
+func _finisher_damage(character, combat: Dictionary) -> int:
+	"""The damage a Trickster finisher deals, for EVERY Trickster - including the one that rolls.
+
+	⛑ THE NINJA'S STRIKE ALWAYS LANDS, AND ITS CARD NEVER SAID SO.
+
+	Owner 2026-09-15: *"Assassinate doesn't mention how much damage it will do if it doesn't kill
+	on the card."* Correct, and it is the whole card for most casts: at 8 Read the lethal roll is
+	about 26%, so roughly three casts in four resolve as a damage strike the face never mentioned.
+	A player reading "26% kill" has every reason to think the other 74% is nothing.
+
+	`_finisher_value` cannot answer this. It returns ONE number with two meanings - a percent for
+	a roll, damage for a guaranteed strike - so for the Ninja it returns the chance and there was
+	nowhere for the damage to come from. This is the damage, for all three, and the guaranteed
+	classes now read their value off it so the maths still lives in one place.
+
+	Same convention as every other card face: monster-side mitigation is deliberately NOT
+	subtracted, because no other card's face subtracts the target's armour."""
+	var n: int = maxi(1, clampi(int(combat.get("combo", 0)), 0, COMBO_MAX))
+	match String(character.class_type):
+		"Grifter":
+			return int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n)))
+		"Ranger":
+			# The Aim ramp is applied TWICE in the real hit - once by the discharge and once by
+			# `apply_ability_damage_modifiers`. See the note in _finisher_value; the estimate has
+			# to match the hit, not the formula.
+			var _rs: float = _ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))
+			return int(_rs * (1.0 + float(n) * RANGER_AIM_DMG_PER))
+		"Ninja":
+			return int(_ability_anchored_damage(character, "wits", NINJA_STRIKE_PER_READ * float(n)))
+	return 0
+
+
 func _finisher_value(character, combat: Dictionary) -> int:
 	"""Percent for a roll, damage for a guaranteed strike. One computation, two readers."""
 	# 2026-09-08 - size it on the stacks the strike will have WHEN IT RESOLVES, not the stacks
@@ -14273,7 +14333,7 @@ func _finisher_value(character, combat: Dictionary) -> int:
 	var n: int = maxi(1, clampi(int(combat.get("combo", 0)), 0, COMBO_MAX))
 	match String(character.class_type):
 		"Grifter":
-			return int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n)))
+			return _finisher_damage(character, combat)
 		"Ranger":
 			# The docstring above claimed "one computation, two readers" and was not true. The
 			# actual strike runs through `apply_ability_damage_modifiers`, which applies the
@@ -14313,9 +14373,14 @@ func _read_note(character, combat: Dictionary) -> String:
 			return "%s ~%s" % [_ability_display_name(character, "perfect_heist"),
 				_short_num(_finisher_value(character, combat))]
 		_:
+			# The Ninja. BOTH halves - the strike lands whatever the roll says, and the meter was
+			# only ever showing the roll. Owner 2026-09-15: *"Assassinate doesn't mention how much
+			# damage it will do if it doesn't kill on the card."* Same fact, same fix, on the
+			# meter as well as the card - see the sweep note on _finisher_damage.
 			var mon = combat.get("monster", null)
 			var pct: int = assassinate_chance(character, mon, combat) if mon is Dictionary else 0
-			return "%s %d%%" % [_ability_display_name(character, "perfect_heist"), pct]
+			return "%s ~%s / %d%%" % [_ability_display_name(character, "perfect_heist"),
+				_short_num(_finisher_damage(character, combat)), pct]
 
 
 func _short_num(v: int) -> String:
