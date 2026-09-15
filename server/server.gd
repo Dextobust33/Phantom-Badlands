@@ -5437,6 +5437,9 @@ func handle_move(peer_id: int, message: Dictionary):
 	# A step the PLAYER took cancels the Warden's walk. He is leading, not driving: the moment
 	# somebody wants to go their own way, they do. `escorted` marks the steps he takes himself.
 	if not bool(message.get("escorted", false)) and _escort_walk.has(peer_id):
+		# Released until the next beat - otherwise the tick restarts him on the very next frame
+		# and the player is fighting the guide for the controls.
+		_escort_released[peer_id] = true
 		_escort_walk_cancel(peer_id, "You take your own path. Warden Hollis falls in behind you.")
 
 	# Party followers can't move independently
@@ -20608,7 +20611,9 @@ func check_kill_quest_progress(peer_id: int, monster_level: int, monster_name: S
 				# passed this step because it checked that a next action was NAMED; it never
 				# asked whether the player could FIND it.
 				_point_at_the_dungeon(peer_id, character)
-				# ...and then actually take them there.
+				# ...and then actually take them there. The tick would pick this up anyway;
+				# starting here means the first step lands immediately rather than a frame later.
+				_escort_released.erase(peer_id)
 				_escort_walk_start(peer_id, character)
 		# He is the quest giver and he is with you: the step settles where you stand. See the
 		# _warden_here bypass in handle_quest_turn_in.
@@ -43427,8 +43432,33 @@ func _escort_walk_cancel(peer_id: int, why: String = "") -> void:
 			"[color=#808080]%s[/color]" % why})
 
 
+var _escort_released: Dictionary = {}   # peer_id -> true once the player has taken the lead
+
+
+func _escort_walk_maybe_start_all() -> void:
+	"""Begin the walk for anyone who is eligible and not already going.
+
+	⛑ It used to start ONLY at the instant step two completed. Anyone already on step three -
+	a character created before the feature, a reconnect, a player who walked off and came back -
+	was never started at all, and the Warden simply stood there. Owner 2026-09-14, after the
+	feature shipped: *"He's still not moving..."* He was never told to.
+
+	Driven from the tick instead, so eligibility is re-checked continuously and the walk cannot
+	be missed by being in the wrong place when one event fired."""
+	for peer_id in characters:
+		if _escort_walk.has(peer_id) or _escort_released.get(peer_id, false):
+			continue
+		var ch = characters[peer_id]
+		if ch.in_dungeon or combat_mgr.is_in_combat(peer_id) or pending_flocks.has(peer_id):
+			continue
+		if _wardens_watch_stage(ch) != 3 or not _guide_escorts_overworld(peer_id, ch):
+			continue
+		_escort_walk_start(peer_id, ch)
+
+
 func _escort_walk_tick() -> void:
 	"""Move every escorted player one step along the Warden's route, when it is due."""
+	_escort_walk_maybe_start_all()
 	if _escort_walk.is_empty():
 		return
 	var now := Time.get_ticks_msec()

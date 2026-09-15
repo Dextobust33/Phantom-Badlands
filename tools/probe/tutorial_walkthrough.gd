@@ -243,8 +243,13 @@ func _init() -> void:
 	if _open.x != 0x7FFFFFFF:
 		ch.x = _open.x
 		ch.y = _open.y
-	sv._escort_walk_start(PEER, ch)
-	ck(sv._escort_walk.has(PEER), "a route is plotted and the walk begins")
+	# Start it the way the GAME does - from the tick - rather than by calling the starter by
+	# hand. Calling the starter directly is what hid the real bug: the walk only ever began at
+	# the instant step two completed, so anybody already on step three was never started and the
+	# Warden just stood there, while this probe passed because it started him itself.
+	sv._escort_released.erase(PEER)
+	sv._escort_walk_tick()
+	ck(sv._escort_walk.has(PEER), "the tick starts the walk for anyone eligible")
 	if sv._escort_walk.has(PEER):
 		# He STEPS TOWARD the goal rather than following a precomputed path - measured,
 		# compute_path_between returns nothing for this trip at any time budget, so a
