@@ -640,6 +640,14 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    what is broken or needs revised, for example things that give +1 to warrior abilities (does that
    work and what does it do, etc.)"* Same class as item 3 - an item promising what the game does
    not do - and it goes BEFORE the dungeon arc, because dungeon rarity pays out in exactly this loot.
+   **In-combat item use is IN SCOPE (owner 2026-09-15):** *"ensure it also tries to use items in
+   combat. Some aren't meant for in combat use and may cause problems or unexpected things to
+   happen."* Every usable item type (potion effects table, scrolls, tomes, home stones, charms,
+   lanterns, eggs, crafted consumables...) is USED mid-fight through the real handlers - solo
+   `handle_combat_use_item` and the party item path - and classified: works as intended / refused
+   cleanly / refused but consumed / script error / unexpected side effect (leaves combat, teleports,
+   opens a menu under the fight, grants twice, etc.). Owner asked to be ASKED about anything whose
+   behaviour looks wrong or is unclear rather than having it decided silently.
    **Found while fixing the floor count, belongs here:** `handle_inventory_use` consumes an item
    BEFORE dispatching to its effect, so a refusal inside any effect branch still eats the item. The
    Floor Skip Charm is refunded now (`_refund_used_item`); every other refusal branch in that handler
