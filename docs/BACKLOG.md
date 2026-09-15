@@ -705,6 +705,27 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      cards, shield on shield cards, duration on buffs...). Existing items need a migration. Supersedes
      the wear-truncation and missing-card-list findings.
    - **extra_turn_chance:** cap at **30%** total across gear.
+   **PROGRESS 2026-09-15 (all on master, probes `items_in_combat.gd` + `equipment_audit.gd`):**
+   - ✅ one consumable resolver in drop_tables for every use path; refuse-and-keep without a combat
+     effect; inventory_use mid-fight takes the fight's rules; refusals before the spend; crafted
+     scribing / bane / heal-percent / debuff items usable; crafted buff names mapped to readers;
+     readers added for xp_bonus (solo AND party), rare_drop, reclaimer_lantern; Area Maps mark tiles.
+   - ✅ Apex Sigil is a real consumable (and works mid-fight); one use of a stacked Escape Scroll /
+     Compass / Ability Tome / Sigil no longer deletes the stack.
+   - ✅ proc runes proc; crafted armour and potions get rarity bonuses (legendary potion: 3 uses,
+     1.75x - a designed table that was never live); Greater Forcefield and Devastating Berserk tomes
+     work; gear extra-turn capped at 30%.
+   - CORRECTED: the cost tomes were never over-applying - the audit compared different random
+     characters and measured net-of-refund cost. Both exact. crit_chance DOES reach cards (+12%).
+   - OPEN, need owner: crafted gear's recipe attack/defense/hp/speed (and Tempering) are never
+     read - the aggregator gives crafted gear the same level/rarity base as a drop; Void / Abyssal /
+     Primordial Runes cannot be crafted (no target_slot or effect - always "no equipment", refund);
+     Efficient Bolt and Swift Analyze cannot matter (tome pass vs today's decks); Cursed Coin still
+     drops from two tables and "crumbles to dust".
+   - OPEN, investigate: the "defense" buff is read in two UNITS - as % damage reduction in the
+     monster-hit mitigation and as flat defense in another path - while tier Stone Skin writes a flat
+     value; party victory XP is a second copy of the solo sum missing hotspot / Ranger / Path terms;
+     crafting output is handled by two near-identical match blocks (server.gd ~26612 and ~27667).
    Fix order: item-use validation (the class, not per branch) -> crafted scribing / crafted buff names /
    Apex Sigil / proc runes / crafted stats -> skill tomes -> extra-turn cap -> per-card affixes (design
    the table first) -> gear stats reach cards -> calibration chain LAST, once.
