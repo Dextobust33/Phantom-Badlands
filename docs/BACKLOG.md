@@ -651,7 +651,47 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    **Found while fixing the floor count, belongs here:** `handle_inventory_use` consumes an item
    BEFORE dispatching to its effect, so a refusal inside any effect branch still eats the item. The
    Floor Skip Charm is refunded now (`_refund_used_item`); every other refusal branch in that handler
-   needs the same check.
+   needs the same check (measured list below). Structural fix: validate before consuming, in one
+   place, rather than a refund per branch.
+   **MEASURED 2026-09-15** (`tools/probe/equipment_audit.gd`, `tools/probe/items_in_combat.gd`; every
+   row executed, instrument defects found and fixed first: a no-weapon baseline, a shallow `to_dict`
+   snapshot that hid every buff change, a companion modifier that was never parsed):
+   - ✅ FIXED: **Enhancement Scroll on capped gear DUPLICATED the scroll** (the refusals re-inserted a
+     scroll never removed). items_in_combat now FAILS on any duplication.
+   - **Combat Use Item eats items it has no branch for.** `process_use_item` accepts anything in
+     POTION_EFFECTS but only handles heal/resource/buff/taunt/revive, and the client's combat menu
+     OFFERS nearly all of them: every stat tome, skill tome, bane potion, resurrect scroll, debuff
+     scroll, Time Stop, Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm, Mysterious Box, gems,
+     pouches, cursed coin, travel stone and home stones are removed with only "Free action" printed.
+     OWNER DECISION pending: which work mid-fight vs refuse.
+   - **`inventory_use` has no combat gate:** mid-fight it heals outside the one-free-item rule, and a
+     Floor Skip Charm moves you down a floor with the fight still running.
+   - **Consumed by a refusal (out of combat):** Revive Potion with no/healthy companion, Taunt Charm,
+     potion aimed at a knocked-out companion ("can only be revived by a healer" - revive potions exist),
+     Travel Stone (eaten silently, no message).
+   - **Crafted scribing output cannot be used at all** ("cannot be used directly. Try equipping it"):
+     both Area Maps, all six Spell Tomes, Worldtree Tome, Bestiary Page, and the Weakness /
+     Vulnerability / Slow / Doom / Monster Select / Target Farm scrolls - the empty-effect check runs
+     before the scribing branches. The debuff branch also hardcodes "weakness".
+   - **Crafted scrolls write buff names combat never reads:** Rage / Dragon Fury ("attack") and
+     Forcefield / Sea Ward ("shield") do nothing. Tier-scroll names (strength, forcefield) are read.
+   - **Apex Sigil drops as junk:** `_generate_item` builds it as an epic affixed non-consumable with no
+     `item_type`, so `_use_apex_sigil` returns silently. 8% from apex kills.
+   - **Skill tomes:** damage tomes for Bolt/Meteor/Power Strike/Cleave/Ambush/Exploit exact. Cost tomes
+     over-apply (Efficient Strike 10% -> 28% cheaper, Efficient Vanish 15% -> 33%). Greater Forcefield
+     and Devastating Berserk do nothing; Swift Analyze (Analyze already ~free) and Efficient Bolt
+     (Bolt's cost is what you pour in) cannot matter. Owner: *"Lots of those items were designed before
+     we had our current classes or their decks/abilities so they likely need expanded or new ones
+     added as well"* - the tome set wants a pass against today's nine decks.
+   - **Gear:** +1 Warrior dmg works (Power Strike +12%) but ANY wear (even 1%) truncates it to 0.
+     Trickster rank affix misses Vanish, Perfect Heist, Gambit; Mage misses Frost Nova (hand lists).
+     damage_mult, attack_bonus, crit_damage and proc lifesteal reach the basic attack only (Power
+     Strike +0%); crit_chance barely (+3%). Proc runes (`proc_effects`): no effect.
+     extra_turn_chance uncapped (150 = the monster never acts; one item at L900 rolls ~95%).
+     A crafted item's own attack/defense/hp/speed is ignored, and `apply_rarity_bonuses` matches bare
+     "helm"/"weapon" while crafting names items "<slot>_crafted", so crafted rarity bonuses never land.
+     Source-read only: wish upgrades read `item_type` (items store `type`); Void/Abyssal/Primordial
+     rune recipe fields have no reader.
    Method, per CLAUDE.md's equipment rule: walk ACQUISITION PATHS by calling each generator (drop
    tables, hunt, monster-ability drops like `warrior_hoarder`, dungeon floor loot and chests,
    crafting, merchants, uniques/sets), then PROBE each stat by equipping it and diffing what combat
