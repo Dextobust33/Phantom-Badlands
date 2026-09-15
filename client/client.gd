@@ -33390,7 +33390,8 @@ func update_tool_status_overlay():
 	# it is off screen for most of the journey and the gold ring cannot help until they are
 	# nearly on it. This sits in the side panel and updates with every step.
 	if not _escort_goal.is_empty():
-		sections.append("[color=#9ACD32]Warden Hollis leads you to:[/color]
+		var _lead_line := "Warden Hollis sees you home to:" if String(_escort_goal.get("kind", "")) == "home" else "Warden Hollis leads you to:"
+		sections.append("[color=#9ACD32]" + _lead_line + "[/color]
   [color=#FFD700]%s[/color]
   [color=#FFFFFF]%s[/color]"
 			% [String(_escort_goal.get("name", "the dungeon")),
@@ -45689,6 +45690,11 @@ func handle_dungeon_floor_change(message: Dictionary):
 func handle_dungeon_complete(message: Dictionary):
 	"""Handle dungeon completion"""
 	dungeon_mode = false
+	# The overworld facing is inferred from position CHANGES between location messages, and
+	# leaving a dungeon puts you back on the tile you entered from - no change, so the facing of
+	# your last DUNGEON step carried onto the map and placed the Warden and your companion by it.
+	# Owner 2026-09-15: *"his sprite is stuck north of me."* A fresh start reads as neutral.
+	_local_map_facing = ""
 	# Put the Coords / Region boxes back on the surface. They restore themselves on the
 	# next overworld draw anyway, but a hide that depends on another message arriving is
 	# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
@@ -46080,6 +46086,7 @@ func handle_dungeon_exit(message: Dictionary):
 
 	"""Handle exiting a dungeon (voluntary, death, collapse, or escape scroll)"""
 	dungeon_mode = false
+	_local_map_facing = ""      # see handle_dungeon_complete
 	# Put the Coords / Region boxes back on the surface. They restore themselves on the
 	# next overworld draw anyway, but a hide that depends on another message arriving is
 	# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.

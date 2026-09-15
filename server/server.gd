@@ -20671,6 +20671,16 @@ func _warden_settle_steps(peer_id: int, character, updates: Array) -> void:
 		# Owner 2026-09-14: *"he said the rest of my gear is laying on the floor of that
 		# dungeon. What Dungeon? How does the player know where to go?"* - hence the mark; a
 		# starter dungeon sits up to ~30 tiles out and vision is about 11.
+		# Step three settles INSIDE the dungeon, at the moment it is cleared. Owner 2026-09-15:
+		# *"I completed the first dungeon and got teleported out. Now I am standing here with no
+		# idea what to do."* So he says what is next and rings the way home, which the location
+		# payload's home goal (see _escort_goal_for) keeps pointed at as they walk.
+		if _qid == "wardens_watch_3" and chunk_manager:
+			var _home: Dictionary = chunk_manager.get_nearest_npc_post(int(character.x), int(character.y))
+			if not _home.is_empty():
+				send_to_peer(peer_id, {"type": "mark_tile", "x": int(_home.get("x", 0)), "y": int(_home.get("y", 0)),
+					"label": String(_home.get("name", "the post")), "seconds": 900})
+				_guide_say(peer_id, "That is the Watch done. Back to %s - I will see you as far as the gate, and then the road is yours." % String(_home.get("name", "the post")))
 		if _qid == "wardens_watch_2":
 			_escort_released.erase(peer_id)
 			_mark_the_dungeon(peer_id, character)
@@ -43977,8 +43987,29 @@ func _escort_goal_for(peer_id: int, character) -> Dictionary:
 		return {}
 	if not _guide_escorts_overworld(peer_id, character):
 		return {}
-	if _wardens_watch_stage(character) != 3:
-		return {}          # only step three is a journey; the others are fought where you stand
+	var _stage := _wardens_watch_stage(character)
+	# ⛑ STEP FOUR IS A JOURNEY TOO: HOME.
+	#
+	# Owner 2026-09-15, after clearing the starter dungeon: *"after doing the starter dungeon his
+	# sprite is stuck north of me instead of following or leading me"* and *"Now I am standing
+	# here with no idea what to do."* The escort deliberately lasts until they are inside a post
+	# again, but this returned {} for anything but step three - so he had nowhere to face, the
+	# client placed him from a facing left over from the last DUNGEON step, and nothing said
+	# where home was. Now he heads for the nearest post, which the side panel names and his
+	# figure leads toward (read only by the location payload; the walk itself stays step three).
+	if _stage == 4:
+		if chunk_manager == null:
+			return {}
+		var _post: Dictionary = chunk_manager.get_nearest_npc_post(int(character.x), int(character.y))
+		if _post.is_empty():
+			return {}
+		var _px := int(_post.get("x", 0))
+		var _py := int(_post.get("y", 0))
+		return {"name": String(_post.get("name", "the post")), "kind": "home",
+			"where": _get_direction_text(int(character.x), int(character.y), _px, _py),
+			"x": _px, "y": _py}
+	if _stage != 3:
+		return {}          # steps one and two are fought where you stand
 	# Make sure there IS one before promising to walk them to it. `_point_at_the_dungeon` has
 	# ensured this since the pointer shipped; the escort read the same world without it, so a
 	# player who reached step three before any tier-1 instance existed got a Warden who agreed

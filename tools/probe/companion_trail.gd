@@ -26,7 +26,10 @@ func _init() -> void:
 	print("===== THE RULE EXISTS ONCE =====")
 	ck(src.find("func _trail_offset(facing: String) -> Vector2i:") >= 0,
 		"there is a single `_trail_offset` helper")
-	ck(src.count("_trail_offset(") == 3,
+	# >= 3, not == 3: red since the Warden's escort began reading the same rule for the cell behind
+	# a player without a companion (a fourth reference). Pinning an exact count pinned the probe to
+	# how many things USE the rule, which is not what it guards.
+	ck(src.count("_trail_offset(") >= 3,
 		"and it is CALLED from both companion paths (found %d references incl. the definition)"
 			% src.count("_trail_offset("))
 	ck(src.find("var tdx := -1") < 0,

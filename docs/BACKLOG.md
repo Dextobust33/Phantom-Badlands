@@ -669,8 +669,13 @@ the teaching beats that depend on the Warden behaving):
       296 / dealt 303); descriptions in client.gd (two), help, and constants.gd corrected off the cast.
 - [x] **Exploit's description was stale** (said 15 + WITS/4, cap 35%; the cast is 10 + WITS/6, cap 22%). FIXED on master in all three client texts.
 - [ ] **The Warden's sprite is not drawn inside the dungeon** - he should follow as on the overworld.
-- [ ] **After the starter dungeon his sprite is stuck NORTH of the player** instead of following/leading.
-      (See [[reference_map_y_is_inverted]] - the same y sign has bitten the ring and his offset before.)
+- [x] **After the starter dungeon his sprite sat NORTH of the player.** FIXED on master, not released.
+      Step four had no goal, so the client placed him from a facing left over from the last DUNGEON
+      step (leaving a dungeon puts you on the tile you entered from - no position change, so the
+      facing never updated), and with a companion out the flank table puts him north for east/west.
+      Now: step four's goal is the nearest post (`kind: "home"`, panel reads "sees you home to"), the
+      facing resets on dungeon exit/complete, and clearing the dungeon rings the post and has him
+      say where to go. He does NOT auto-walk home yet - the walk is still step three only.
 - [x] **Safety net: the Warden cannot be walked into high country.** FIXED on master, not released.
       Owner chose the walk-in cap. While he escorts (stages 1-3, and stage 4 until inside a post), a
       step onto ground above `_warden_cap_level()` is refused with a panel in his voice. The cap is

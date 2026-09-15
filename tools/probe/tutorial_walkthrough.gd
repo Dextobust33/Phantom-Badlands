@@ -433,6 +433,14 @@ func _init() -> void:
 	ck(sv._guide_escorts_overworld(PEER, ch),
 		"he is STILL with them out in the open - the walk home is the same walk")
 
+	# ...and he has somewhere to face: HOME. Owner 2026-09-15: *"after doing the starter dungeon
+	# his sprite is stuck north of me instead of following or leading me."* Step four had no goal,
+	# so his figure was placed by a facing left over from the dungeon.
+	var _home_goal: Dictionary = sv._escort_goal_for(PEER, ch)
+	print("  step four goal: %s" % str(_home_goal))
+	ck(String(_home_goal.get("kind", "")) == "home" and _home_goal.has("x"),
+		"  and at step four he heads for a post, so his figure and the panel point home")
+
 	# ⛑ AND HE CANNOT BE WALKED INTO HIGH COUNTRY. Owner 2026-09-15: *"ensure they can't just take
 	# him and go out to crazy difficult content and have him keep them alive."* Find a real border
 	# on this world where one step climbs past his cap, and walk it both ways.
