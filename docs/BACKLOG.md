@@ -788,6 +788,13 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    underground, were held until the party ended - v0.9.791's server only flushed them on item use and
    disconnect. Fixed d34ea3f0 (flush every resolved party round and at party combat end; dungeon
    party fights use the same two paths), probe `card_copies_visible.gd`, also unreleased.
+   And the Warden kept joining the party of a player who ABANDONED Warden's Watch partway (any
+   completed step read as "finished", and finished means "he walks you home") - and of every player
+   who DID finish, outside posts, forever (nothing saved said he had left them home). Fixed on
+   master, probe `warden_leaves_when_watch_ends.gd` (red on the old code).
+   Owner, before this release too: the road width fix (item 6, roads 3 -> 2) and FEWER DOORS on the
+   starter post; companion sprites that FACE the way they walk on the overworld and in dungeons
+   (release held for it).
 4b. **Default UI scale at 1080p (owner 2026-09-15).** *"We need to take a look at the initial UI Scale.
    1080p players ASCII map has to be scrolled to even see the middle of their map. The Tool panel and
    all of that is too big over there. Ideally they should be able to see their whole ASCII map by

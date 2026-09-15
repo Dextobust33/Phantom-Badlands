@@ -43373,9 +43373,14 @@ func _wardens_watch_stage(character) -> int:
 		var qid := String(q.get("quest_id", q.get("id", "")))
 		if qid.begins_with("wardens_watch_"):
 			return int(qid.substr(14))
-	for qid in character.completed_quests:
-		if String(qid).begins_with("wardens_watch_"):
-			return 4
+	# FINISHED means the LAST step was handed in. ⛑ 2026-09-15 - this returned 4 for ANY completed
+	# step, so a player who finished step one and then abandoned the chain read as "finished" - and
+	# stage 4 is "the Warden walks you home", so he joined their party every time they left a post.
+	# Owner: *"I canceled my starter quest partially through and now he is joining my party still
+	# whenever I leave the post even though I have no quest with him active."* An abandoned Watch is
+	# no Watch: stage 0.
+	if "wardens_watch_3" in character.completed_quests:
+		return 4
 	return 0
 
 
@@ -43427,6 +43432,11 @@ func _guide_escorts_overworld(peer_id: int, character) -> bool:
 	# So stage 4 - the chain complete - keeps him until they are standing inside a post again.
 	# He leaves for good, as designed; he just does not leave them in a field to do it.
 	if st == 4:
+		# Once he has left them at a post (the "home" lesson fires there and is saved on the
+		# character), the escort is OVER. The per-session walk-home flag never reached this check,
+		# so a finished player had him pulled into every fight outside a post, after a relog too.
+		if character.seen_guide_home_hint:
+			return false
 		return not world_system._is_npc_post_interior(int(character.x), int(character.y))
 	return st >= 1 and st <= 3
 

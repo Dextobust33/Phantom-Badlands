@@ -474,6 +474,11 @@ func _init() -> void:
 	var _completed: Array = ch.completed_quests.duplicate()
 	ch.active_quests.clear()
 	ch.completed_quests.append("wardens_watch_3")
+	# NOT HOME YET. Section 9 already fired the Home lesson, and since 2026-09-15 that lesson - saved
+	# on the character, fired on arrival inside a post - is what ends the escort for good (a finished
+	# player had him pulled into every fight outside a post, and an abandoned Watch read as finished).
+	# The walk home happens BEFORE that arrival, so it is measured from the state before it.
+	ch.seen_guide_home_hint = false
 	ck(sv._wardens_watch_stage(ch) == 4, "with the chain finished the character reads stage 4")
 	ch.x = 9999
 	ch.y = 9999       # far from any post interior
