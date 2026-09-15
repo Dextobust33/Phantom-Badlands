@@ -5522,6 +5522,9 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Same contract as the line above: a refused step is a step that did not happen.
 	if new_pos != Vector2i(old_x, old_y) and not _warden_lets_you_go(peer_id, character, new_pos.x, new_pos.y):
 		return
+	# ...nor carry him out into country he was never meant to protect anybody in.
+	if new_pos != Vector2i(old_x, old_y) and not _warden_keeps_you_close(peer_id, character, new_pos.x, new_pos.y):
+		return
 
 	# Cancel any active trade (moving breaks trade)
 	if active_trades.has(peer_id):
@@ -45740,6 +45743,67 @@ func _danger_band(ratio: float) -> int:
 	if ratio >= DANGER_STEP_RATIO:
 		return 1
 	return 0
+
+
+## ⛑ THE WARDEN IS NOT A WAY TO CARRY A LEVEL 1 INTO LEVEL 40 COUNTRY.
+##
+## Owner 2026-09-15: *"We also need to put a safety net in place anytime the Warden is in the
+## player's party to ensure they can't just take him and go out to crazy difficult content and have
+## him keep them alive. They shouldn't be able to go out much further Monster level wise than where
+## their starter dungeon is. This applies to before and after the starter dungeon completion."*
+##
+## He holds every lethal hit (see _guide_shield_targets), so without this a new character could walk
+## him anywhere and farm what it could never survive alone. The cap is MEASURED off the world rather
+## than typed: the highest Area Level inside the ring starter dungeons spawn in, plus a margin.
+## Measured 2026-09-15 on the local seed: the ring tops out at 6, the band beyond it reaches 11, so
+## the cap is 9. Cached - the terrain curve does not move while the server runs.
+const WARDEN_CAP_RADIUS := 40      # matches STARTER_AREA_RADIUS in _ensure_starter_dungeon_exists
+const WARDEN_CAP_MARGIN := 3
+var _warden_cap_cache: int = -1
+var _warden_cap_hint_ms: Dictionary = {}
+
+func _warden_cap_level() -> int:
+	if _warden_cap_cache >= 0:
+		return _warden_cap_cache
+	var top := 0
+	if world_system:
+		for y in range(-WARDEN_CAP_RADIUS, WARDEN_CAP_RADIUS + 1, 4):
+			for x in range(-WARDEN_CAP_RADIUS, WARDEN_CAP_RADIUS + 1, 4):
+				if x * x + y * y <= WARDEN_CAP_RADIUS * WARDEN_CAP_RADIUS:
+					top = maxi(top, world_system.danger_level_at(x, y))
+	_warden_cap_cache = top + WARDEN_CAP_MARGIN
+	return _warden_cap_cache
+
+
+func _warden_keeps_you_close(peer_id: int, character, nx: int, ny: int) -> bool:
+	"""Whether this step may proceed while the Warden is with you. Same contract as the gates
+	around it: one refused step, no side effects, and it can never strand anybody - a step that
+	does not climb (including every step back toward safer ground) always goes through."""
+	if character == null or world_system == null:
+		return true
+	if not _guide_escorts_overworld(peer_id, character):
+		return true
+	var cap := _warden_cap_level()
+	var there: int = world_system.danger_level_at(nx, ny)
+	if there <= cap:
+		return true
+	if there <= world_system.danger_level_at(int(character.x), int(character.y)):
+		return true
+	var now := Time.get_ticks_msec()
+	if now - int(_warden_cap_hint_ms.get(peer_id, -100000)) > 4000:
+		_warden_cap_hint_ms[peer_id] = now
+		_send_hint(peer_id,
+			"[color=#9ACD32]%s[/color]" % GUIDE_NAME,
+			("He steps in front of you.
+
+"
+				+ "\"Not that way. Out there is [color=#FF6644]Area Level %d[/color], and I did not bring you out here to find out what that does to you.\"
+
+" % there
+				+ "While he is with you, you stay in country up to [color=#FFD700]Area Level %d[/color]. " % cap
+				+ "Once he has seen you back inside a post, the road is yours."),
+			"", ["map"])
+	return false
 
 
 func _warden_lets_you_go(peer_id: int, character, nx: int, ny: int) -> bool:

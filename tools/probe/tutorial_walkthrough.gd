@@ -432,6 +432,35 @@ func _init() -> void:
 	ch.y = 9999       # far from any post interior
 	ck(sv._guide_escorts_overworld(PEER, ch),
 		"he is STILL with them out in the open - the walk home is the same walk")
+
+	# ⛑ AND HE CANNOT BE WALKED INTO HIGH COUNTRY. Owner 2026-09-15: *"ensure they can't just take
+	# him and go out to crazy difficult content and have him keep them alive."* Find a real border
+	# on this world where one step climbs past his cap, and walk it both ways.
+	var cap: int = sv._warden_cap_level()
+	print("  the Warden's cap on this world: Area Level %d" % cap)
+	ck(cap >= 3 and cap < 40, "  measured from the starter ring, not typed (%d)" % cap)
+	var border := Vector4i(0x7FFFFFFF, 0, 0, 0)
+	for _by in range(-80, 81, 2):
+		for _bx in range(20, 120):
+			if sv.world_system.danger_level_at(_bx, _by) <= cap and sv.world_system.danger_level_at(_bx + 1, _by) > cap:
+				border = Vector4i(_bx, _by, _bx + 1, _by)
+				break
+		if border.x != 0x7FFFFFFF:
+			break
+	if border.x == 0x7FFFFFFF:
+		print("  SKIP - no cap border found in the scanned band")
+	else:
+		ch.x = border.x
+		ch.y = border.y
+		ck(sv._guide_escorts_overworld(PEER, ch), "  (standing at a border he is escorting across)")
+		ck(not sv._warden_keeps_you_close(PEER, ch, border.z, border.w),
+			"the step past Area Level %d is refused while he is with you" % cap)
+		ch.x = border.z
+		ch.y = border.w
+		ck(sv._warden_keeps_you_close(PEER, ch, border.x, border.y),
+			"  and the step back DOWN is never refused, so nobody already out there is stranded")
+		ch.x = border.x
+		ch.y = border.y
 	# ...and lets go once they are safe. Find a real post interior to stand in.
 	var home := _find_post_interior()
 	if home.x == 0x7FFFFFFF:

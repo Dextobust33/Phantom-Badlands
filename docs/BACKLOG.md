@@ -670,9 +670,12 @@ the teaching beats that depend on the Warden behaving):
 - [ ] **The Warden's sprite is not drawn inside the dungeon** - he should follow as on the overworld.
 - [ ] **After the starter dungeon his sprite is stuck NORTH of the player** instead of following/leading.
       (See [[reference_map_y_is_inverted]] - the same y sign has bitten the ring and his offset before.)
-- [ ] **Safety net: the Warden must not carry a player into content far above the starter dungeon.**
-      Before AND after completing it, while he is in the party, cap how far out (monster level) they
-      can take him.
+- [x] **Safety net: the Warden cannot be walked into high country.** FIXED on master, not released.
+      Owner chose the walk-in cap. While he escorts (stages 1-3, and stage 4 until inside a post), a
+      step onto ground above `_warden_cap_level()` is refused with a panel in his voice. The cap is
+      measured: highest Area Level within 40 tiles of the origin (the starter-dungeon ring) + 3 = 9
+      on the local seed. Steps that do not climb always pass, so nobody is stranded.
+      Probe: tutorial_walkthrough section 10. **Check the live seed gives a sane number too.**
 - [ ] **Teach what to do with spare gear back at the post** - list it on the market or salvage it.
       Owner: a new player comes home with a pile of extra equipment and no idea what it is for.
 - [ ] **Teach eggs and companions** when the dungeon hands over the first egg: what an egg is, how to
