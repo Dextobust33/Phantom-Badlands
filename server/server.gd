@@ -11377,8 +11377,9 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					"type": "text",
 					"message": "[color=#FFFF00]%s is already at enchantment cap for all stats![/color]" % enhance_name
 				})
-				# Don't consume scroll — put it back
-				character.inventory.insert(index, item)
+				# ⛑ 2026-09-15 - the scroll is still in the bag: this branch runs BEFORE the removal
+				# below. It used to "put it back" with an insert, which made a SECOND scroll every time a
+				# capped item was targeted - a duplication loop (tools/probe/items_in_combat.gd).
 				send_character_update(peer_id)
 				return
 		else:
@@ -11389,7 +11390,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					"type": "text",
 					"message": "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [enhance_name, stat, cap]
 				})
-				character.inventory.insert(index, item)
+				# Not removed yet - see the "all" branch above. No re-insert.
 				send_character_update(peer_id)
 				return
 			var actual_bonus = mini(bonus, cap - current)

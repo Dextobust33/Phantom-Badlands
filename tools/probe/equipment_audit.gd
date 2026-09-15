@@ -67,6 +67,79 @@ func _mean(item, card: String, klass: String = "Fighter") -> Dictionary:
 	return {"dmg": dmg / N, "healed": healed / N, "skips": skips}
 
 
+## One card cast N times on the same seed, with `enh` written into skill_enhancements first.
+func _cast(card: String, klass: String, enh: Dictionary) -> Dictionary:
+	seed(515151)
+	var dmg := 0.0
+	var spent := 0.0
+	var refused := ""
+	var after := ""
+	for i in range(N):
+		var ch = sim.make_char(60, "none", klass, "Human")
+		ch.equipped["weapon"] = _weapon({})
+		for k in enh:
+			for e in enh[k]:
+				ch.enhance_skill(k, e, enh[k][e])
+		ch.current_hp = ch.get_total_max_hp()
+		ch.current_mana = ch.get_total_max_mana()
+		ch.current_stamina = ch.get_total_max_stamina()
+		ch.current_energy = ch.get_total_max_energy()
+		var pool0: int = ch.current_mana + ch.current_stamina + ch.current_energy
+		var mon: Dictionary = sim.make_monster(60, "normal", 50.0)
+		mon["defense"] = 0
+		cm.start_combat(0, ch, mon)
+		var c = cm.active_combats[0]
+		c["player_can_act"] = true
+		c["suppress_monster_turn"] = true
+		c["combat_hand"] = [card]
+		var hp0: int = int(c["monster"]["current_hp"])
+		# Magic Bolt takes the mana to pour in; a fixed amount keeps the cast identical across both arms.
+		var res: Dictionary = cm.process_ability_command(0, card, "200" if card == "magic_bolt" else "")
+		if not bool(res.get("success", true)) and refused == "":
+			refused = String(res.get("message", "?"))
+		dmg += hp0 - int(c["monster"]["current_hp"])
+		spent += pool0 - (ch.current_mana + ch.current_stamina + ch.current_energy)
+		if i == 0:
+			after = "buffs=%s shield=%s" % [JSON.stringify(ch.active_buffs), str(c.get("forcefield_shield", c.get("player_shield", "")))]
+		cm.active_combats.erase(0)
+	return {"dmg": dmg / N, "spent": spent / N, "refused": refused, "after": after}
+
+
+## A persistent buff written exactly as the scroll handlers write it, then one player swing and one
+## monster turn: damage dealt, damage taken, thorns returned, HP healed by the swing.
+func _buffed(stat: String, value: int) -> Dictionary:
+	seed(626262)
+	var r := {"dealt": 0.0, "taken": 0.0, "thorns": 0.0, "healed": 0.0}
+	for i in range(N):
+		var ch = sim.make_char(60, "none", "Fighter", "Human")
+		ch.equipped["weapon"] = _weapon({})
+		if stat != "":
+			ch.add_persistent_buff(stat, value, 3)
+		ch.current_hp = int(ch.get_total_max_hp() / 2)
+		var mon: Dictionary = sim.make_monster(60, "normal", 50.0)
+		mon["defense"] = 0
+		mon["abilities"] = []
+		cm.start_combat(0, ch, mon)
+		var c = cm.active_combats[0]
+		c["player_can_act"] = true
+		c["suppress_monster_turn"] = true
+		var mhp0: int = int(c["monster"]["current_hp"])
+		var php0: int = int(ch.current_hp)
+		cm.process_attack(c)
+		r.dealt += mhp0 - int(c["monster"]["current_hp"])
+		r.healed += int(ch.current_hp) - php0
+		var php1: int = int(ch.current_hp)
+		var mhp1: int = int(c["monster"]["current_hp"])
+		c["suppress_monster_turn"] = false
+		cm.process_monster_turn(c)
+		r.taken += php1 - int(ch.current_hp)
+		r.thorns += mhp1 - int(c["monster"]["current_hp"])
+		cm.active_combats.erase(0)
+	for k in r:
+		r[k] = r[k] / N
+	return r
+
+
 func _row(tag: String, verdict: String, detail: String) -> void:
 	print("[AUDIT] %-44s %-11s %s" % [tag, verdict, detail])
 
@@ -169,6 +242,61 @@ func _init() -> void:
 	var normal_out: Dictionary = DT.apply_rarity_bonuses({"type": "helm"}, "legendary")
 	_row("crafted armour rarity bonuses", "NONE" if not (rarity_out.get("rarity_bonuses", {}) as Dictionary).size() > 0 else "PRESENT",
 		"helm_crafted legendary -> %s | bare helm legendary -> %s" % [str(rarity_out.get("rarity_bonuses", {})), str(normal_out.get("rarity_bonuses", {}))])
+
+	print("[AUDIT] ================= SKILL ENHANCER TOMES (read off POTION_EFFECTS, not copied) =================")
+	# Owner 2026-09-15: *"Lots of those items were designed before we had our current classes or their
+	# decks/abilities."* Each tome is cast with and without its enhancement on the same seed; the row
+	# says what moved - damage, resource spent, or the buff/shield the card leaves behind.
+	for tk in DT.POTION_EFFECTS.keys():
+		var te: Dictionary = DT.POTION_EFFECTS[tk]
+		if not te.has("skill_enhance"):
+			continue
+		var card := String(te.skill_enhance)
+		var klass := "Fighter"
+		if card in ["magic_bolt", "blast", "forcefield", "meteor", "haste", "paralyze", "banish", "frost_nova"]:
+			klass = "Wizard"
+		elif card in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit", "shadowstep"]:
+			klass = "Ninja"
+		var a0: Dictionary = _cast(card, klass, {})
+		var a1: Dictionary = _cast(card, klass, {card: {String(te.get("effect", "")): float(te.get("value", 0))}})
+		var what := String(te.get("effect", ""))
+		var moved := ""
+		if a0.refused != "":
+			_row(String(tk), "UNTESTABLE", "%s refused the cast: %s" % [card, a0.refused])
+			continue
+		if what == "damage_bonus":
+			var d: float = 100.0 * (a1.dmg / maxf(1.0, a0.dmg) - 1.0)
+			moved = "damage %.0f -> %.0f (%+.0f%%, tome says +%d%%)" % [a0.dmg, a1.dmg, d, int(te.value)]
+			if a0.dmg < 1.0:
+				moved += " | card deals no damage; leftover %s -> %s" % [a0.after, a1.after]
+				_row(String(tk), "NO EFFECT" if a0.after == a1.after else "CHANGES", moved)
+			else:
+				_row(String(tk), "WORKS" if absf(d - float(te.value)) < 4.0 else ("NO EFFECT" if absf(d) < 2.0 else "OFF"), moved)
+		else:
+			var r: float = 100.0 * (1.0 - a1.spent / maxf(0.01, a0.spent))
+			_row(String(tk), "WORKS" if absf(r - float(te.value)) < 4.0 else ("NO EFFECT" if absf(r) < 2.0 else "OFF"),
+				"%s cost %.1f -> %.1f (%.0f%% cheaper, tome says %d%%)" % [card, a0.spent, a1.spent, r, int(te.value)])
+
+	print("[AUDIT] ================= BUFF NAMES SCROLLS WRITE: does combat read them? =================")
+	# Crafted scrolls write {stat: bonus_pct|amount} as a persistent buff under the recipe's stat name;
+	# tier scrolls write "strength"/"defense"/... The tier names are the CONTROL - they must move.
+	var buff_rows := [
+		["strength (tier Rage, control)", "strength", 200, "dealt"],
+		["attack (crafted Rage / Dragon Fury)", "attack", 30, "dealt"],
+		["crit_chance (crafted Precision)", "crit_chance", 50, "dealt"],
+		["defense (tier Stone Skin, control)", "defense", 400, "taken"],
+		["shield (crafted Forcefield / Sea Ward)", "shield", 500, "taken"],
+		["forcefield (tier Forcefield, control)", "forcefield", 500, "taken"],
+		["thorns (crafted Thorns)", "thorns", 50, "thorns"],
+		["lifesteal (crafted Vampirism)", "lifesteal", 50, "healed"],
+	]
+	var b_none: Dictionary = _buffed("", 0)
+	for br in buff_rows:
+		var m: Dictionary = _buffed(String(br[1]), int(br[2]))
+		var key := String(br[3])
+		var moved: float = float(m[key]) - float(b_none[key])
+		var pct: float = 100.0 * moved / maxf(1.0, absf(float(b_none[key])))
+		_row(String(br[0]), "READ" if absf(pct) >= 3.0 else "IGNORED", "%s %.0f -> %.0f (%+.0f%%) with value %d" % [key, float(b_none[key]), float(m[key]), pct, int(br[2])])
 
 	print("[AUDIT] ================= SOURCE-ONLY FACTS (could not execute cheaply) =================")
 	var ssrc := FileAccess.get_file_as_string("res://server/server.gd")
