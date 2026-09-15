@@ -781,6 +781,10 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    dungeon (random spot, no entrance, can be in a hotzone). Fixed on master 69d0f37e, probe
    `starter_dungeon_two_players.gd` (red on the old code). Workaround until then: walk to the real
    entrance's coordinates.
+   Also for that release (same live session): a Warden (party) fight underground wrote "YOUR TURN"
+   and card lines into the dungeon run log, which stayed after the fight - fixed on master, probe
+   `dungeon_log_no_fight_text.gd` (red on the old code); and "Floor 2/5" on the starter dungeon
+   (fixed 05992bee, also unreleased).
 4b. **Default UI scale at 1080p (owner 2026-09-15).** *"We need to take a look at the initial UI Scale.
    1080p players ASCII map has to be scrolled to even see the middle of their map. The Tool panel and
    all of that is too big over there. Ideally they should be able to see their whole ASCII map by

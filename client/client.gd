@@ -35657,6 +35657,14 @@ func display_game(text: String):
 		_house_side_refresh()
 		return
 	if dungeon_mode and not _dungeon_rendering and not _dungeon_menu_open():
+		# ⛑ 2026-09-15 - NOT DURING A FIGHT. A fight's text belongs to the combat scene, which prints
+		# it itself; above ground the same display_game lines land in game_output BEHIND that scene
+		# and are never seen. Underground they went into the run log instead, so a Warden (party)
+		# fight filled the side panel with "YOUR TURN" and card names that stayed after the fight.
+		# Owner, from a live player: *"Their text on the right while in the dungeon and out of combat
+		# also says your turn sabotage analyze vanish, etc."* Same window the rest of the UI uses.
+		if _combat_ui_busy():
+			return
 		# A panel MENU is being built (rest / food / gather): its lines are the menu, not news,
 		# so they go to the menu block rather than into the run log, which they would otherwise
 		# flood - a nine-item food list would push every real event out of a six-line log.
