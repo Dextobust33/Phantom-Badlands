@@ -322,8 +322,35 @@ func _init() -> void:
 			rune_fail += 1
 		print("[ITEMS] %-16s on %-6s %s %d -> %d  %s" % [spec[0], spec[1], spec[2], before_stat, after_stat, "works" if ok_r else "NO EFFECT"])
 
+	# CURSED COIN, both faces, through the real handler and the real encounter. Owner 2026-09-15: heads
+	# is better loot for a few fights, tails an elite next.
+	var coin_fail := 0
+	var faces := {}
+	for attempt in range(40):
+		var cch = _fresh()
+		cch.x = 57
+		cch.y = -11
+		cch.inventory.append(_item("cursed_coin"))
+		sv.handle_inventory_use(PEER, {"index": cch.inventory.size() - 1})
+		if cch.get_buff_value("rare_drop") >= 100:
+			faces["heads"] = true
+		for d in cch.pending_monster_debuffs:
+			if String(d.get("type", "")) == "elite":
+				faces["tails"] = true
+				sv.trigger_encounter(PEER)
+				var fought = sv.combat_mgr.active_combats.get(PEER, {})
+				var is_elite: bool = not fought.is_empty() and bool(fought.monster.get("is_elite", false))
+				faces["tails_elite"] = is_elite
+				sv.combat_mgr.active_combats.erase(PEER)
+				break
+		if faces.has("heads") and faces.has("tails_elite"):
+			break
+	if not (faces.get("heads", false) and faces.get("tails_elite", false)):
+		coin_fail = 1
+	print("[ITEMS] cursed coin faces seen: %s  %s" % [str(faces), "works" if coin_fail == 0 else "FAIL"])
+
 	# Everything else is classified for the owner; a duplication is a failure outright. Proven to fire:
 	# the Enhancement Scroll at its cap reported DUPLICATED on the code before 2026-09-15's fix.
-	var ok: bool = dupes == 0 and unread.is_empty() and stack_eaten == 0 and rune_fail == 0
+	var ok: bool = dupes == 0 and unread.is_empty() and stack_eaten == 0 and rune_fail == 0 and coin_fail == 0
 	print("RESULT: %s (%d duplicating uses, %d unread buff names, %d uses that ate a stack)" % ["PASS" if ok else "FAIL", dupes, unread.size(), stack_eaten])
 	quit(0 if ok else 1)

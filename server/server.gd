@@ -9486,6 +9486,10 @@ func trigger_encounter(peer_id: int):
 				"slow":
 					monster["speed"] = max(1, int(monster.get("speed", 10) * (1.0 - reduction)))
 					debuff_messages.append("[color=#FF00FF]Slow curse: -%d%% speed![/color]" % debuff_value)
+				"elite":
+					# Cursed Coin, tails.
+					monster_db.reapply_variant(monster, "elite")
+					debuff_messages.append("[color=#FF6666]The coin's due: this one came out an elite![/color]")
 				"doom":
 					var hp_loss = int(monster.max_hp * reduction)
 					monster.max_hp = max(1, monster.max_hp - hp_loss)
@@ -11929,11 +11933,21 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 					"message": "[color=#FF00FF]You open the %s...[/color]\n[color=#FF0000]But your inventory is full! The item is lost![/color]" % item_name
 				})
 	elif effect.has("cursed_coin"):
-		# Cursed Coin - no longer functional (gold system removed)
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#808080]The cursed coin crumbles to dust in your hands. Its dark magic has faded.[/color]"
-		})
+		# Cursed Coin - a flip, owner 2026-09-15 (it had done nothing since the gold system went).
+		# Heads rides the rare_drop reader in roll_combat_drops (100 = every kill rolls one step up);
+		# tails is a pending "elite" the next encounter applies, beside the debuff scrolls.
+		if randi() % 2 == 0:
+			character.add_persistent_buff("rare_drop", 100, DropTablesScript.CURSED_COIN_LOOT_FIGHTS)
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FFD700]The coin lands face up.[/color]\n[color=#00FF00]Loot from your next %d fights rolls one rarity higher.[/color]" % DropTablesScript.CURSED_COIN_LOOT_FIGHTS
+			})
+		else:
+			character.pending_monster_debuffs.append({"type": "elite", "value": 0})
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FFD700]The coin lands face down.[/color]\n[color=#FF6666]The next thing you fight comes out an elite.[/color]"
+			})
 	elif effect.has("permanent_stat"):
 		# Stat Tome - Permanently increase a stat
 		var stat_name = effect.permanent_stat

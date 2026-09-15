@@ -27785,7 +27785,7 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	elif item_type == "mysterious_box":
 		return "Open to receive a random reward (could be anything!)"
 	elif item_type == "cursed_coin":
-		return "Flip the coin: 50% double Valor, 50% lose half Valor"
+		return "Flip it: heads, loot from your next %d fights rolls one rarity higher; tails, your next foe comes out an elite" % preload("res://shared/drop_tables.gd").CURSED_COIN_LOOT_FIGHTS
 	elif "boots" in item_type:
 		var spd_bonus = int(base_bonus * 0.5)
 		var dex_bonus = int(base_bonus * 0.3)
@@ -35025,7 +35025,7 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [color=#A335EE]Runes:[/color] Enchanting-crafted consumables. Use on equipped gear to add affixes or proc effects.
   Stat runes set affix caps (+8 def, +200 HP, etc). Proc runes add lifesteal/shocking/reflect/execute.
   Runes stack in inventory. Sell on market under the Runes category.
-[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50% 2x Valor or lose half)
+[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(flip: better loot for 3 fights, or an elite next)
 [color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10% cost or +15% dmg
 [color=#00FF00]Equip/Unequip:[/color] In the Inventory panel: [b]double-click[/b] an item to equip/use it, [b]drag[/b] it onto its slot to equip, [b]drag a slot off[/b] the doll to unequip, or [b]right-click[/b] for all options (Inspect/Use/Equip/Lock/Salvage/Drop).
 [color=#FF4444]Lock:[/color] Right-click an item → Lock protects it from Salvage All, accidental discard, and single salvage.

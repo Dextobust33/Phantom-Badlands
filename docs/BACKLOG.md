@@ -727,6 +727,10 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      runes** (+attack weapon, +defense armour/shield, +HP helm/armour/shield); skill tomes **fold into
      the per-card bonus table** shared with the card-specific gear; Cursed Coin gets a **new effect**
      (I propose, owner picks).
+   - ✅ DONE: crafted recipe stats + Tempering count on top of the base (and the client's item
+     comparison now calls the server's per-item function instead of a drifted mirror); the three
+     crystal runes are runes; Cursed Coin flips - heads, 3 fights of +1 rarity loot; tails, the next
+     foe is an elite (owner picked). All executed in items_in_combat.gd / equipment_audit.gd.
    - OPEN, investigate: the "defense" buff is read in two UNITS - as % damage reduction in the
      monster-hit mitigation and as flat defense in another path - while tier Stone Skin writes a flat
      value; party victory XP is a second copy of the solo sum missing hotspot / Ranger / Path terms;

@@ -414,7 +414,7 @@ See `Character.get_themed_item_name()` for full mappings.
 | Item | Effect |
 |------|--------|
 | Mysterious Box | Random item (same tier or +1) |
-| Cursed Coin | 50% double gold, 50% lose half |
+| Cursed Coin | Flip: heads, next 3 fights' loot rolls one rarity higher; tails, next foe is an elite |
 
 ### Stat Tomes (Tier 6+)
 Permanent +1 to a stat. One per stat type.

@@ -938,7 +938,8 @@ const POTION_EFFECTS = {
 	# === MYSTERY/GAMBLING ITEMS (Tier 4+) ===
 	# Mysterious Box - Opens to random item from same tier or +1 higher
 	"mysterious_box": {"mystery_box": true},
-	# Cursed Coin - 50% double essence gain, 50% lose half essence (legacy, may be removed)
+	# Cursed Coin - a flip. Heads: the next CURSED_COIN_LOOT_FIGHTS fights' loot rolls one rarity
+	# higher. Tails: the next foe comes out an elite. (Owner 2026-09-15; it did nothing since gold went.)
 	"cursed_coin": {"cursed_coin": true},
 	# === Audit #9 Slice 5 — Travel Stone ===
 	# Spent as currency on the network-browse market_network_buy flow.
@@ -5935,6 +5936,10 @@ func is_usable_in_combat(item_type: String) -> bool:
 ## and is refused WITHOUT being spent - owner 2026-09-15: *"It should refuse if it doesn't have a
 ## combat effect."* The client's combat menu filter reads `combat_use_effect` too.
 const COMBAT_EFFECT_KEYS := ["heal", "mana", "stamina", "energy", "resource", "buff", "companion_taunt", "revive_companion", "full_restore"]
+
+## Cursed Coin heads: how many fights the one-step rarity bump lasts. Read by the use handler and the
+## item text, so the two cannot disagree.
+const CURSED_COIN_LOOT_FIGHTS := 3
 
 ## A crafted debuff scroll's stat -> the pending_monster_debuffs type the next encounter applies.
 const CRAFTED_DEBUFF_TYPES := {"monster_attack": "weakness", "monster_defense": "vulnerability",
