@@ -31181,7 +31181,22 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.791[/color] [color=#808080](Current)[/color]")
+	# v0.9.792 — the equipment and item audit: every usable item used in and out of a fight, gear
+	# measured against what combat actually reads, card-specific gear replacing the +N rank
+	# affixes, gear reaching cards, a defense double-count, and the tutorial fixes from a live
+	# two-player session. Monster curve re-calibrated after the player-side changes.
+	display_game("[color=#00FF00]v0.9.792[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOUR GEAR NOW POWERS YOUR CARDS.[/color] Gear [b]+% damage[/b], [b]crit damage[/b], [b]lifesteal[/b], [b]Shocking[/b] and [b]Execute[/b] used to work on basic attacks only — about one action in a hundred. They now work on your cards, and your weapon's [b]attack[/b] adds to card damage too, at half the share it gives a swing, so attacking still has its place. Monsters were re-sized to match.")
+	display_game("  [color=#FF8000]★ CARD GEAR REPLACES “+1 TO ABILITIES”.[/color] Epic and better gear can now carry a bonus for [b]one card[/b]: [b]+15/30/45% power[/b] (damage, shield or buff strength), [b]cheaper cost[/b], or [b]longer duration[/b] — and only the kinds that card can actually use. Your old “+N” items keep their value as card power. Skill tomes work the same way, one for every card.")
+	display_game("  [color=#FF4444]★ ITEMS STOPPED VANISHING.[/color] The combat item menu offered tomes, bane potions, resurrect scrolls and more, then [b]destroyed them for no effect[/b]. Anything without a use mid-fight is now refused and kept. Items refused for another reason (a revive potion with no companion down, a charm outside a fight) are no longer used up, and using one [b]Escape Scroll, Compass, Apex Sigil or card tome[/b] no longer deletes the whole stack.")
+	display_game("  [color=#FF4444]★ CRAFTED ITEMS DO WHAT THEY SAY.[/color] [b]Area Maps, Spell Tomes, Bestiary Pages[/b], debuff scrolls, bane potions and heal-percent elixirs could not be used at all. [b]Rage, Forcefield, Power, Luck, Insight[/b] and more buffed nothing. [b]Proc runes[/b] never procced, crafted armour and potions lost their rarity bonuses, crafted stats and [b]Tempering[/b] were ignored, and [b]Void, Abyssal and Primordial Runes[/b] could not be made. All of it works now.")
+	display_game("  [color=#FF4444]★ DEFENSE COUNTED ONCE.[/color] Defense buffs were applied twice on every hit, and [b]Stone Skin[/b] gave far more than its tier promised. Both now match their text. [b]Extra turn[/b] from gear caps at 30%, and [b]Apex Sigils[/b] finally work, in or out of a fight.")
+	display_game("  [color=#FF4444]★ THE TUTORIAL WITH A FRIEND ONLINE.[/color] A second new player’s Warden could lead them to [b]the other player’s private dungeon[/b] instead of the entrance. Card rank-ups earned beside the Warden now appear [b]when you earn them[/b], not all at once back at the post; fight text no longer fills the dungeon log; and the starter dungeon counts [b]2 floors[/b], not 5.")
+	display_game("  [color=#1EFF00]◆ Hover your kennel.[/color] In the Sanctuary’s Companion Stable, hover a companion to see its art and press [b]Inspect[/b] for everything else. Hovering [b]another player[/b] on the map now shows their gear on their portrait, and hovering their companion shows its art.")
+	display_game("  [color=#1EFF00]◆ And[/color] the Warden’s egg now comes with a [b]Home Stone (Companion)[/b] and a lesson on keeping a companion past your death, the [b]Cursed Coin[/b] flips for better loot or an elite, and a [b]death curse[/b] now strikes for a fifth of your own health rather than a share of the monster’s.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.791[/color]")
 	display_game("  [color=#FF8000]★ WARDEN'S WATCH CAN BE FINISHED.[/color] Clearing the starter dungeon completed the last step and then [b]nothing handed it in[/b] — and the post could not either. He now settles it the moment the dungeon falls, pays out the egg, and [b]walks you home[/b]. If you were already stuck on it, walk into him.")
 	display_game("  [color=#FF8000]★ HE FINDS A REAL ROUTE.[/color] Post walls, doorways, water and trees used to send him pacing back and forth before giving up. He plans a path around them now, follows you through the starter dungeon, and will not walk a new character into country far above where they started.")
 	display_game("  [color=#FF8000]★ AND HE TELLS YOU WHAT COMES NEXT.[/color] What an egg is and how it hatches, how to bring a companion out and keep it alive, where your quests are, and what to do with the gear you do not want — [b]salvage[/b] it or [b]sell[/b] it at the market stall.")
@@ -31318,11 +31333,6 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ A hit your shield ate now says so.[/color] A blow absorbed in full used to print nothing at all, which read as the monster having done nothing. The log names what stopped it.")
 	display_game("  [color=#1EFF00]◆ Dungeon decorations stay put when you stand on them.[/color] Stepping onto a pebble or a tuft used to erase it until you stepped off. Your sprite, your companion and every monster now draw [b]over[/b] the decoration, and the themed floor tiles carry scatter too.")
 	display_game("  [color=#1EFF00]◆ An egg hatching underground no longer blanks the floor.[/color] The dungeon map stayed on screen; the news goes to the run log on the right.")
-	display_game("")
-
-	display_game("[color=#808080]v0.9.766[/color]")
-	display_game("  [color=#1EFF00]◆ More room on the dungeon panel.[/color] The [b]Tools[/b] readout no longer takes up space underground — a pickaxe does nothing down there. Backpack, Pouch and Eggs stay, since those still matter while you are exploring. The panel is about [b]13% taller[/b] as a result, so the run log and the key have more breathing room.")
-	display_game("  [color=#1EFF00]◆ You can rebind West again.[/color] In [b]Settings → Movement Keys[/b], pressing [color=#FFFFFF]4[/color] was rebinding [b]Hunt[/b] instead of West — so West could not be rebound at all. [color=#FFFFFF]4[/color] is West and [color=#FFFFFF]5[/color] is Hunt now.")
 	display_game("")
 
 	display_game("[color=#00FFFF]v0.9.745[/color]")
