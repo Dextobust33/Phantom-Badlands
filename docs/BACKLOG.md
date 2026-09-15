@@ -168,10 +168,10 @@ All of this came out of the distribution work. Recorded before starting any of i
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
-## ⚑ WHERE THE LIST STANDS — 47 open, 141 done (recounted 2026-09-15)
+## ⚑ WHERE THE LIST STANDS — 53 open, 161 done (recounted 2026-09-15 evening)
 
-Counted mechanically (`- [ ]` vs `- [x]` across this file), not estimated. The breakdown
-below is from 2026-09-13 and is now approximate — the onboarding arc closed a large share of
+Counted mechanically (`- [ ]` vs `- [x]` across this file), not estimated. **The working order is
+the RECOMMENDED ORDER in the NEXT SESSION block.** The breakdown below is from 2026-09-13 and is now approximate — the onboarding arc closed a large share of
 "everything else" between then and now.
 
     Phase 5 - the dungeon arc            16   the big content direction
@@ -255,7 +255,9 @@ Asked because the arc had run out of defects and into design. All four answered.
       are proven only by their helpers: the entry-warning display (axis two) and the dungeon
       completion/teleport path around the co-op unique roll. Live checks owed.
 
-- [ ] **PARTY PLAY IN DUNGEONS + JOIN-IN-PROGRESS COMBAT. ⚑ BLOCKS the onboarding guide NPC.**
+- [ ] **PARTY PLAY — HALF TWO: independent movement + join-in-progress combat.** (Half one, dungeon
+      party combat, is built and live; the onboarding guide it blocked has shipped.) Original title:
+      PARTY PLAY IN DUNGEONS + JOIN-IN-PROGRESS COMBAT.
       This is what *"party play isn't working properly"* (2026-08-26, never reproduced) actually
       meant. Owner 2026-09-13: *"likely regarding no support for it in dungeons and possibly
       making it where players can navigate themselves but then join each other when they are in
@@ -318,8 +320,8 @@ Asked because the arc had run out of defects and into design. All four answered.
       victory path, so a party fight never chains into one (the same gap the overworld has, and
       the standing *"party flocks are not wired"* item), and none of this is playtested.
 
-- [ ] **ONBOARDING: a tutorial + a starter chain that reaches level 1. ⚑ DEPENDENCY of the
-      questing replacement - build this FIRST.** Owner 2026-09-13: *"There should be a tutorial or
+- [x] **SHIPPED v0.9.788-v0.9.791 as Warden's Watch.** ~~ONBOARDING: a tutorial + a starter chain that reaches level 1. ⚑ DEPENDENCY of the
+      questing replacement - build this FIRST.~~ Owner 2026-09-13: *"There should be a tutorial or
       early game dungeon quest in our to do list that will help alleviate your concerns."*
 
       **It was not in this list.** The design exists and has since 2026-05-17, but only in the
@@ -580,135 +582,80 @@ companion out. The rest of the batch is still not urgent; this one is. **Owner's
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
 nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-15, after the live tutorial walkthrough)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-15 evening, after v0.9.791)
 
-### ⚑ WHERE THINGS STAND RIGHT NOW (2026-09-15, afternoon)
+### ⚑ WHERE THINGS STAND
 
-**LIVE: v0.9.791** (2026-09-15 evening) — the whole "LIVE TEST OF v0.9.790" batch below, plus the
-owner's local test round: the Warden plans a real route (`_escort_path`, BFS over `move_player`),
-walks you home after the dungeon, stands on the real dungeon ground, and leaving a dungeon no longer
-turns the player into a yellow "@". Nothing is held.
+**LIVE: v0.9.791. Nothing is held on master.** The whole onboarding arc is out: Warden's Watch
+runs start to finish (he arms you, teaches the fight, walks a real route to the starter dungeon,
+follows you through it, settles the last step, walks you home and teaches eggs / companions /
+spare gear), and party fights stopped dropping per-member state. Full write-up in the v0.9.790 and
+"LIVE TEST OF v0.9.790" sections below.
 
-### ⚑ THE GOLD RING WAS USUALLY NOT ON THE MAP — fixed in v0.9.790, three gaps left
+**Seen only in probes, not yet in a running client:** teammate damage numbers in co-op, the party
+status strip, the Warden in the dungeon and his walk home, and the three new lessons. The owner's
+last local run covered cards, the walk and the lessons; watch the rest in the next co-op fight.
 
-Owner, during the release: *"when it says to go to the gold ring will that actually be on the
-players map or too far away for them to see it or behind an overlay?"* Measured by reading the
-draw path: **no, mostly not.** The starter dungeon spawns ~30 tiles out (`_ensure_starter_dungeon_exists`)
-against a sprite-map reach of 11 (fewer in fog/blizzard/sandstorm), and the client's off-grid
-branch drew NOTHING - no edge marker - so the ring appeared only in the last ~11 tiles of the walk.
-The Warden's stage-3 line "It is ringed on your map" was false whenever it was said, and the mark
-lives only in client memory (lost on relog, 900s timer).
+### ▶ RECOMMENDED ORDER (2026-09-15)
 
-Fixed: an off-grid mark now draws a **gold arrowhead 4 cells from the player** pointing at it
-(`overworld_room.gd` pass 4, `mark_arrow`); the Warden's line re-sends the mark before claiming it
-and now says "gold marker". Probe `tools/probe/mark_arrow_offscreen.gd` renders and reads pixels
-(with a reversed-direction control); release gate line `mark_arrow`.
+Ordered by what players hit first and what the next item depends on. Big-arc work comes after the
+live defects because the arc adds more of exactly the surfaces those defects live in.
 
-**Still open, not done:**
-- [ ] **Text-map fallback draws no ring or arrow at all** (sprite toggle off, or licence-restricted
-      art missing from the build). Only the side-panel bearing helps there.
-- [ ] **The ring can sit under the corner labels** (`coord_post_label` top-left, `RegionLabel`
-      top-right) when the marked tile is in the top rows near a corner. Unverified in pixels.
-- [ ] **Two unfinished starter dungeons could split the ring from the walk:** the mark is chosen
-      once, `_escort_goal_for` re-picks every step. Inferred from code, not observed.
+1. **⛔ INSTANCED CARDS ARE NOT WORKING — live since 2026-09-14** (full report further down, under
+   the owner decisions block). Players see two upgrade screens for one card and then no card, can
+   not see what a dungeon awarded, and cannot tell copies apart. A double grant that loses the card
+   also loses the upgrade choice, so this costs players progress. Reproduce complaint 2 first.
+2. **A REAL card-face instrument, then fix what it finds.** Card faces lying was the single most
+   common fault in the 2026-09-15 test (Assassinate, Phantom Strike, partial casts, Wild Swing).
+   `card_vs_server.gd` cannot answer it - it re-implements the client's retired fallback formulas,
+   so its "3-8x LIES" table describes a path combat cards no longer use (see "Two stale
+   instruments" in Phase 3). Build the instrument that can: for every card of every class, compare
+   `_build_ability_effect_info`'s quote with the mean of real casts (defence and variance
+   accounted for), solo AND party. Then fix per card. Cheap, and it closes the class.
+3. **First-hour polish, all small, all seen by every new player:**
+   - the Warden's handout is named like endgame loot (needs a plain-base-item path, below);
+   - the dungeon completion screen says **"Floors Cleared: 2/5"** for the 2-floor starter dungeon
+     (owner screenshot 2026-09-15) - the total comes from the dungeon TYPE, not the instance;
+   - roads 3 wide -> 2 (owner, 2026-09-14; note the encounter corridor narrows with it).
+   - **give a Home Stone (Companion) at the end of Warden's Watch, and teach it** (owner 2026-09-15:
+     *"have the player get their home stone companion at the end of the tutorial as well as let
+     players know what it is for and how to use it"*). The reward is one line - chain bonuses
+     already take `"home_stones"` (the Goblin King / Alpha Wolf chains use it) - but the lesson must
+     be read off the stone's real flow (`home_stone_select` / `home_stone_companion_response` in
+     server.gd), not written from memory. Fold it into the "An Egg" / first-hatch beats rather than
+     adding a fourth panel.
+4. **One owner decision, then a small change:** should charm / weakness / slow on the monster be
+   SHARED in co-op (see the open item below)? Today they protect only the member who cast them.
+5. **The dungeon arc — the owner's big direction, and most of the list** (Phase 5 + the third
+   owner-decision batch): dungeon rarity axes two and three (rolled modifiers, then rarer monsters
+   / a guaranteed unique), dungeon-centred questing replacing the overworld quests, the Atlas as
+   the hub, the dungeon card content. Onboarding already ends in a dungeon, which was that arc's
+   stated prerequisite.
+6. **The two accepted proposals nobody has built** (top of this file): trivial-encounter
+   auto-resolve (full rewards) and post-to-post road travel (costs time and resources). Both are
+   self-contained and good filler between arc pieces.
+7. **Scrollback** (below) - retires the Player-Visible Output Rule's whole class of bug.
+8. **LAST, by the owner's call:** the death curve runs the wrong way (end of file).
 
-### ⚑ LIVE TEST OF v0.9.790 — owner, 2026-09-15 afternoon — SHIPPED as v0.9.791
+**Deferred, not forgotten:** Sanctuary menus revamp, companion type balance (needs the calibration
+chain after it), party half two (independent movement + join-in-progress), controller support.
 
-**Shipped in v0.9.791** (probe `tools/probe/wild_swing_and_preview.gd`):
-- [x] Assassinate read "~1 · 3% kill" in the Warden fight. The party payload hand-copied the engine
-      fields and lacked 11 of them (finisher kind/damage, read_note, ramp, all three meter LABELS).
-      Both paths now read `engine_display_fields`.
-- [x] Wild Swing whiff read as "Meteor - 1 damage" with no miss line (13/60 casts). Now announced.
-- [x] The card PREVIEW cast the upgrades: Opener and Sure Strike consumed at fight start, Sacrificial
-      spent by the quote (every real cast 0), Wild Swing's quote flickering to 0. Preview is pure now.
-- [x] Partial-cast damage pip quoted a full spend while the effect line quoted the planned one.
+### ⚑ SMALL OPEN ITEMS LEFT BY THE 2026-09-15 WORK
 
-**Open, in the order they should be worked** (a blocker first, then the shared party-view cause, then
-the teaching beats that depend on the Warden behaving):
-- [x] **⛔ Warden's Watch III cannot be turned in.** FIXED on master, not released. Two causes: the
-      Warden's hand-in loop lived in the KILL-progress path and step three is a DUNGEON_CLEAR; and the
-      post's hand-in list compared "crossroads" with the runtime id "npc_crossroads" (third time that
-      prefix has stranded a chain). `_warden_settle_steps` now runs for dungeon progress too, and
-      every quest-vs-post comparison goes through `_same_post`. Probe: tutorial_walkthrough 9d.
-- [x] **After the dungeon the player had no idea what to do.** FIXED on master, not released: the step
-      now settles on the spot, he names and rings the nearest post, and the "Home" lesson fires the
-      first time they are back inside one (quest log + Quest Board tile). He points; he does not
-      auto-walk them home (possible follow-up).
-- [x] **Party per-member state was a WHITELIST, and everything not on it was dropped between rounds.**
-      FIXED on master, not released. Enumerated what every class's cards write onto a party view:
-      `vanished` (Phantom Strike's crit never landed in party), `analyze_bonus`,
-      `crit_escalation_stacks`, `casts_this_fight`, `forcefield_casts`, `guard_open`, and the
-      runtime-named once-per-fight flags (`opener_used_<card>` ...). Now carried by default
-      (`view_carry`), excluding only `_PARTY_VIEW_REBUILT_KEYS` and `_`-prefixed scratch.
-      Also found: a non-lethal Assassinate aborted mid-cast in any party (script error reading the
-      suppressed monster turn's missing `message`) - the suppressed turn now has the full shape.
-      Probe: `tools/probe/party_view_carries_state.gd`, all 5 checks proven red on the old code.
-- [x] **The Fighter's free opening stance never applied in party fights** (the solo start applied it
-      inline). FIXED on master: `_apply_opening_stance`, called by both starts, players only. A
-      party-only power change; the calibration chain measures solo, so it does not move the curve.
-      `player_slow` / `slow_aura_applied` are set in the monster turn, not at start, and are carried
-      per member now - nothing more to do there.
-- [x] **Mark (and every skip-the-enemy-turn card) did nothing in any party fight.** FIXED on master,
-      not released. Nothing on the party path read `skip_monster_turn`. The monster acts once per
-      member per round, so a successful skip card now removes the action aimed at the member who
-      played it (the exact solo equivalent), with a log line. Probe: party_view_carries_state s4.
-- [x] **Enemy hits on the Warden popped their damage number over the ENEMY.** FIXED on master, not
-      released - and it was every co-op TEAMMATE, not only the Warden. The client parsed "hits Warden
-      Hollis for 43 damage" (no "you") as damage to the monster. The monster phase now sends measured
-      `taken` / `monster_lost` on each beat and the client pops those. Probe: party_view_carries_state s5.
-      Not verified in a running client - worth a look in the next co-op fight.
-- [x] **No buff/debuff panel in party combat.** FIXED on master, not released. `player_status` /
-      `monster_status` were solo-only; now `status_display_fields`, and the party payload builds from
-      the member's REAL `_party_member_view` instead of a hand-made subset. Client feeds the strip from
-      party messages. Not verified in a running client.
-- [x] **The Warden's walk stepped into gathering nodes** and opened a gathering session, then waited on
-      it forever (found as a 2-in-3 failure of tutorial_walkthrough 9a). A blocked escorted step is now
-      a plain refusal - no bump interaction of any kind on the player's behalf.
-- [ ] **Monster debuffs outside `_PARTY_SHARED_MONSTER_KEYS`** (`monster_charmed`, `monster_weakness`,
-      `monster_slowed` + durations) are now carried PER MEMBER (before: dropped after the action). So a
-      charm protects only its caster in co-op. Decide whether they should be shared - and if so, tick
-      once per round, not once per member (see `_PARTY_DOT_KEYS`).
-- [x] **Phantom Strike's card hid its damage, and its text promised a skipped turn.** FIXED on master,
-      not released. `preview_ability_effect` now quotes it (probe: wild_swing_and_preview s2b, quoted
-      296 / dealt 303); descriptions in client.gd (two), help, and constants.gd corrected off the cast.
-- [x] **Exploit's description was stale** (said 15 + WITS/4, cap 35%; the cast is 10 + WITS/6, cap 22%). FIXED on master in all three client texts.
-- [x] **The Warden was not drawn inside the starter dungeon.** FIXED on master, not released. The
-      dungeon view had no code for him and the server sent nothing. dungeon_state now carries
-      `escort: "warden"` (same gate as his guided dungeon fights) and the grid draws his floor-backed
-      frame two steps back (behind a companion) or one (without), yielding to anything server-placed.
-      Probe: dungeon_draw_order 1/1b. Not seen in a running client.
-- [x] **After the starter dungeon his sprite sat NORTH of the player.** FIXED on master, not released.
-      Step four had no goal, so the client placed him from a facing left over from the last DUNGEON
-      step (leaving a dungeon puts you on the tile you entered from - no position change, so the
-      facing never updated), and with a companion out the flank table puts him north for east/west.
-      Now: step four's goal is the nearest post (`kind: "home"`, panel reads "sees you home to"), the
-      facing resets on dungeon exit/complete, and clearing the dungeon rings the post and has him
-      say where to go. He does NOT auto-walk home yet - the walk is still step three only.
-- [x] **Safety net: the Warden cannot be walked into high country.** FIXED on master, not released.
-      Owner chose the walk-in cap. While he escorts (stages 1-3, and stage 4 until inside a post), a
-      step onto ground above `_warden_cap_level()` is refused with a panel in his voice. The cap is
-      measured: highest Area Level within 40 tiles of the origin (the starter-dungeon ring) + 3 = 9
-      on the local seed. Steps that do not climb always pass, so nobody is stranded.
-      Probe: tutorial_walkthrough section 10. **Check the live seed gives a sane number too.**
-- [x] **Teach what to do with spare gear back at the post.** In the "Home" lesson: Salvage (Inventory
-      Q -> Salvage, anywhere) and Sell ($ tile -> List Item / Sell / Bulk List; paid on listing).
-- [x] **Teach eggs and companions.** "An Egg" lesson when the Watch pays out its egg (hatches by
-      walking, live steps-remaining, Eggs: line click = pause, Eggs button, and that a hatched
-      companion must be CLICKED in Companions to come out). The first-hatch Companions panel now
-      leads with deploying it and keeping it alive (walk/Rest heal; KO needs the H tile or a
-      Revive Potion; the Inn heals only you). All controls read off the client, not remembered.
-      None of the three has been seen in a running client yet.
-### ⚑ TWO THINGS TO WATCH AFTER THIS RELEASE
-
-- **`assassinate_pct` now reaches the dice.** Silver Tongue (+15%) and one unique moved the card
-  and did nothing to the roll; they work now. That is a small **per-class power gain**, so give it
-  a glance on the next `refcal` — it does not warrant a chain run on its own, but it is real and it
-  is the kind of thing that is easy to forget was ever changed. See the top of CLAUDE.md.
-- **`card_vs_server` reports ~7 abilities whose card estimate disagrees with the server by 3-8x**
-  (`magic_bolt` 0.12x, `meteor` 2.33x, `forcefield` 5.8-7.7x, `power_strike` and `cleave` ~0.40x).
-  Pre-existing, nothing to do with the Assassinate fix, and untouched. It is a session of its own
-  and it is the same shape as the Assassinate bug: a card face promising a number the server does
-  not produce. Run `tools/probe/card_vs_server.gd` to see the current table.
+- [ ] **Co-op monster debuffs: shared or per-member? (owner decision)** `monster_charmed`,
+      `monster_weakness`, `monster_slowed` + durations are outside `_PARTY_SHARED_MONSTER_KEYS`, so
+      since v0.9.791 they carry PER MEMBER (before: dropped after the action). A charm protects only
+      its caster. If shared, they must tick once per round, not once per member (see `_PARTY_DOT_KEYS`).
+- [ ] **Text-map fallback draws no gold ring or arrow** (sprite toggle off, or licence art missing).
+- [ ] **The ring can sit under the corner labels** near the top corners of the map. Unverified in pixels.
+- [ ] **Two unfinished starter dungeons could split the ring from the walk** - the mark is chosen once,
+      `_escort_goal_for` re-picks. Inferred from code, not observed.
+- [ ] **"Floors Cleared: 2/5" on the starter dungeon's completion screen** (owner screenshot
+      2026-09-15). The total is the dungeon TYPE's floor count; the starter instance has 2.
+- [ ] **Home is the NEAREST post**, which after an eastern starter dungeon is not the Crossroads
+      (measured: (65,-9)). Probably right; confirm with the owner if it reads oddly in play.
+- [ ] **`assassinate_pct` now reaches the dice** (v0.9.790): Silver Tongue +15% and one unique work as
+      written. A small per-class power gain - glance at it on the next `refcal`.
 
 ### ⚑ THE STARTER KIT IS STILL NAMED LIKE ENDGAME LOOT — verified still live 2026-09-15
 
@@ -1007,6 +954,123 @@ Render it, execute it, and make the control differ in ONE thing. See
 [[feedback_indentation_is_invisible_to_a_source_probe]] and
 [[feedback_verify_before_building]].
 
+## v0.9.791 SHIPPED (2026-09-15 evening) -- Warden's Watch can be finished, and party fights stop forgetting
+
+Everything below shipped in v0.9.791 except the unticked items, which are carried forward in the
+"SMALL OPEN ITEMS" list at the top of the NEXT SESSION block. The owner's local test round added: the
+Warden plans a real route (`_escort_path`, BFS over `move_player`, tight -> wide -> through posts),
+walks you home after the dungeon, stands on the real dungeon ground, and leaving a dungeon no longer
+turns the player into a yellow "@" (the facing had been reset to "").
+
+### The gold ring was usually not on the map (fixed in v0.9.790; its three gaps are now listed under SMALL OPEN ITEMS)
+
+Owner, during the release: *"when it says to go to the gold ring will that actually be on the
+players map or too far away for them to see it or behind an overlay?"* Measured by reading the
+draw path: **no, mostly not.** The starter dungeon spawns ~30 tiles out (`_ensure_starter_dungeon_exists`)
+against a sprite-map reach of 11 (fewer in fog/blizzard/sandstorm), and the client's off-grid
+branch drew NOTHING - no edge marker - so the ring appeared only in the last ~11 tiles of the walk.
+The Warden's stage-3 line "It is ringed on your map" was false whenever it was said, and the mark
+lives only in client memory (lost on relog, 900s timer).
+
+Fixed: an off-grid mark now draws a **gold arrowhead 4 cells from the player** pointing at it
+(`overworld_room.gd` pass 4, `mark_arrow`); the Warden's line re-sends the mark before claiming it
+and now says "gold marker". Probe `tools/probe/mark_arrow_offscreen.gd` renders and reads pixels
+(with a reversed-direction control); release gate line `mark_arrow`.
+
+**Still open, not done:**
+- [→ carried forward to SMALL OPEN ITEMS] **Text-map fallback draws no ring or arrow at all** (sprite toggle off, or licence-restricted
+      art missing from the build). Only the side-panel bearing helps there.
+- [→ carried forward to SMALL OPEN ITEMS] **The ring can sit under the corner labels** (`coord_post_label` top-left, `RegionLabel`
+      top-right) when the marked tile is in the top rows near a corner. Unverified in pixels.
+- [→ carried forward to SMALL OPEN ITEMS] **Two unfinished starter dungeons could split the ring from the walk:** the mark is chosen
+      once, `_escort_goal_for` re-picks every step. Inferred from code, not observed.
+
+### The owner's live test of v0.9.790, item by item
+
+**Shipped in v0.9.791** (probe `tools/probe/wild_swing_and_preview.gd`):
+- [x] Assassinate read "~1 · 3% kill" in the Warden fight. The party payload hand-copied the engine
+      fields and lacked 11 of them (finisher kind/damage, read_note, ramp, all three meter LABELS).
+      Both paths now read `engine_display_fields`.
+- [x] Wild Swing whiff read as "Meteor - 1 damage" with no miss line (13/60 casts). Now announced.
+- [x] The card PREVIEW cast the upgrades: Opener and Sure Strike consumed at fight start, Sacrificial
+      spent by the quote (every real cast 0), Wild Swing's quote flickering to 0. Preview is pure now.
+- [x] Partial-cast damage pip quoted a full spend while the effect line quoted the planned one.
+
+**Open, in the order they should be worked** (a blocker first, then the shared party-view cause, then
+the teaching beats that depend on the Warden behaving):
+- [x] **⛔ Warden's Watch III cannot be turned in.** FIXED on master, not released. Two causes: the
+      Warden's hand-in loop lived in the KILL-progress path and step three is a DUNGEON_CLEAR; and the
+      post's hand-in list compared "crossroads" with the runtime id "npc_crossroads" (third time that
+      prefix has stranded a chain). `_warden_settle_steps` now runs for dungeon progress too, and
+      every quest-vs-post comparison goes through `_same_post`. Probe: tutorial_walkthrough 9d.
+- [x] **After the dungeon the player had no idea what to do.** FIXED on master, not released: the step
+      now settles on the spot, he names and rings the nearest post, and the "Home" lesson fires the
+      first time they are back inside one (quest log + Quest Board tile). He points; he does not
+      auto-walk them home (possible follow-up).
+- [x] **Party per-member state was a WHITELIST, and everything not on it was dropped between rounds.**
+      FIXED on master, not released. Enumerated what every class's cards write onto a party view:
+      `vanished` (Phantom Strike's crit never landed in party), `analyze_bonus`,
+      `crit_escalation_stacks`, `casts_this_fight`, `forcefield_casts`, `guard_open`, and the
+      runtime-named once-per-fight flags (`opener_used_<card>` ...). Now carried by default
+      (`view_carry`), excluding only `_PARTY_VIEW_REBUILT_KEYS` and `_`-prefixed scratch.
+      Also found: a non-lethal Assassinate aborted mid-cast in any party (script error reading the
+      suppressed monster turn's missing `message`) - the suppressed turn now has the full shape.
+      Probe: `tools/probe/party_view_carries_state.gd`, all 5 checks proven red on the old code.
+- [x] **The Fighter's free opening stance never applied in party fights** (the solo start applied it
+      inline). FIXED on master: `_apply_opening_stance`, called by both starts, players only. A
+      party-only power change; the calibration chain measures solo, so it does not move the curve.
+      `player_slow` / `slow_aura_applied` are set in the monster turn, not at start, and are carried
+      per member now - nothing more to do there.
+- [x] **Mark (and every skip-the-enemy-turn card) did nothing in any party fight.** FIXED on master,
+      not released. Nothing on the party path read `skip_monster_turn`. The monster acts once per
+      member per round, so a successful skip card now removes the action aimed at the member who
+      played it (the exact solo equivalent), with a log line. Probe: party_view_carries_state s4.
+- [x] **Enemy hits on the Warden popped their damage number over the ENEMY.** FIXED on master, not
+      released - and it was every co-op TEAMMATE, not only the Warden. The client parsed "hits Warden
+      Hollis for 43 damage" (no "you") as damage to the monster. The monster phase now sends measured
+      `taken` / `monster_lost` on each beat and the client pops those. Probe: party_view_carries_state s5.
+      Not verified in a running client - worth a look in the next co-op fight.
+- [x] **No buff/debuff panel in party combat.** FIXED on master, not released. `player_status` /
+      `monster_status` were solo-only; now `status_display_fields`, and the party payload builds from
+      the member's REAL `_party_member_view` instead of a hand-made subset. Client feeds the strip from
+      party messages. Not verified in a running client.
+- [x] **The Warden's walk stepped into gathering nodes** and opened a gathering session, then waited on
+      it forever (found as a 2-in-3 failure of tutorial_walkthrough 9a). A blocked escorted step is now
+      a plain refusal - no bump interaction of any kind on the player's behalf.
+- [→ carried forward to SMALL OPEN ITEMS] **Monster debuffs outside `_PARTY_SHARED_MONSTER_KEYS`** (`monster_charmed`, `monster_weakness`,
+      `monster_slowed` + durations) are now carried PER MEMBER (before: dropped after the action). So a
+      charm protects only its caster in co-op. Decide whether they should be shared - and if so, tick
+      once per round, not once per member (see `_PARTY_DOT_KEYS`).
+- [x] **Phantom Strike's card hid its damage, and its text promised a skipped turn.** FIXED on master,
+      not released. `preview_ability_effect` now quotes it (probe: wild_swing_and_preview s2b, quoted
+      296 / dealt 303); descriptions in client.gd (two), help, and constants.gd corrected off the cast.
+- [x] **Exploit's description was stale** (said 15 + WITS/4, cap 35%; the cast is 10 + WITS/6, cap 22%). FIXED on master in all three client texts.
+- [x] **The Warden was not drawn inside the starter dungeon.** FIXED on master, not released. The
+      dungeon view had no code for him and the server sent nothing. dungeon_state now carries
+      `escort: "warden"` (same gate as his guided dungeon fights) and the grid draws his floor-backed
+      frame two steps back (behind a companion) or one (without), yielding to anything server-placed.
+      Probe: dungeon_draw_order 1/1b. Not seen in a running client.
+- [x] **After the starter dungeon his sprite sat NORTH of the player.** FIXED on master, not released.
+      Step four had no goal, so the client placed him from a facing left over from the last DUNGEON
+      step (leaving a dungeon puts you on the tile you entered from - no position change, so the
+      facing never updated), and with a companion out the flank table puts him north for east/west.
+      Now: step four's goal is the nearest post (`kind: "home"`, panel reads "sees you home to"), the
+      facing resets on dungeon exit/complete, and clearing the dungeon rings the post and has him
+      say where to go. He does NOT auto-walk home yet - the walk is still step three only.
+- [x] **Safety net: the Warden cannot be walked into high country.** FIXED on master, not released.
+      Owner chose the walk-in cap. While he escorts (stages 1-3, and stage 4 until inside a post), a
+      step onto ground above `_warden_cap_level()` is refused with a panel in his voice. The cap is
+      measured: highest Area Level within 40 tiles of the origin (the starter-dungeon ring) + 3 = 9
+      on the local seed. Steps that do not climb always pass, so nobody is stranded.
+      Probe: tutorial_walkthrough section 10. **Check the live seed gives a sane number too.**
+- [x] **Teach what to do with spare gear back at the post.** In the "Home" lesson: Salvage (Inventory
+      Q -> Salvage, anywhere) and Sell ($ tile -> List Item / Sell / Bulk List; paid on listing).
+- [x] **Teach eggs and companions.** "An Egg" lesson when the Watch pays out its egg (hatches by
+      walking, live steps-remaining, Eggs: line click = pause, Eggs button, and that a hatched
+      companion must be CLICKED in Companions to come out). The first-hatch Companions panel now
+      leads with deploying it and keeping it alive (walk/Rest heal; KO needs the H tile or a
+      Revive Potion; the Inn heals only you). All controls read off the client, not remembered.
+      None of the three has been seen in a running client yet.
 ## v0.9.790 SHIPPED (2026-09-15) -- the live tutorial walkthrough, and what it turned up
 
 Owner played the opening on the LIVE server and reported it beat by beat. Every item below is a
