@@ -614,16 +614,16 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      dungeon card and no second copy of anything, so complaint 1 is still unexplained.
    **Still open: complaint 1, the dungeon card award being invisible.** Not reproduced; start from
    the completion screen text and whether a copy-drop is ever rolled for a starter dungeon.
-2. **DEATH CURSE is a flock killer (owner 2026-09-15).** *"It often puts a player to 1 hp meaning it
-   could be death in a flock or if they can't heal."* Read off the code (`combat_manager.gd`, on
-   defeat): damage is **10% of the MONSTER's max HP**, reduced by WIS up to 50%, and clamped to
-   leave the player at 1. Monster HP is not sized to the player's, and elites carry x3.5 of it, so
-   10% of an elite is routinely the player's whole bar - the clamp is doing all of the saving.
-   Carried by Demon, Demon Lord, Balrog, Phoenix, Elder Lich, Death Incarnate, The Nameless One and
-   Entropy. **Measure before changing:** which of those can flock (species `flock_chance`, plus the
-   empowered modifier that grants flocking), and the HP a player is left at across a flock chain
-   (`-- flock` already runs chains). Likely shape of the fix: size the curse to the PLAYER's bar,
-   not the monster's - but that is a per-monster power change, so re-check the curve after.
+2. **✅ DEATH CURSE resized — DONE on master 2026-09-15, not released.** Owner: *"It often puts a
+   player to 1 hp meaning it could be death in a flock or if they can't heal."* Measured: it was 10%
+   of the MONSTER's max HP - from ~40% of a real player's bar at the low end to 100-500% for most
+   carriers, most levels and every elite, so it usually left the player at 1 HP. Every carrier CAN
+   flock: an empowered Broodcalling monster forces a 100% flock and the flock is the same species.
+   Owner chose **20% of the player's max HP** (Wisdom resists up to half, still never lethal, Undead
+   still immune). Trait chip and help text updated. Probe `death_curse_sized.gd` (real kill path).
+   - [ ] **Party fights never apply death curse at all** - a member's killing blow skips the solo
+         victory path where the curse lives (`suppress_victory`). The opposite gap; decide whether
+         the killer, or everyone, takes it.
 3. **A REAL card-face instrument, then fix what it finds.** Card faces lying was the single most
    common fault in the 2026-09-15 test (Assassinate, Phantom Strike, partial casts, Wild Swing).
    `card_vs_server.gd` cannot answer it - it re-implements the client's retired fallback formulas,

@@ -452,6 +452,9 @@ const ABILITY_DISARM = "disarm"
 const ABILITY_UNPREDICTABLE = "unpredictable"
 const ABILITY_WISH_GRANTER = "wish_granter"
 const ABILITY_DEATH_CURSE = "death_curse"
+# A death curse strikes for this share of the PLAYER's max HP (before Wisdom). The trait chip's text
+# states the same number; tools/probe/death_curse_sized.gd fails if the two ever disagree.
+const DEATH_CURSE_PLAYER_SHARE := 0.20
 const ABILITY_BERSERKER = "berserker"
 const ABILITY_COWARD = "coward"
 const ABILITY_LIFE_STEAL = "life_steal"
@@ -3249,7 +3252,18 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		if character.is_immune_to_death_curse():
 			messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
 		else:
-			var base_curse_damage = int(monster.max_hp * 0.10)  # Reduced from 25% to 10%
+			# ⛑ 2026-09-15 - SIZED TO THE PLAYER, NOT THE MONSTER.
+			#
+			# It was 10% of the MONSTER's max HP, set back when a monster's bar was about the size
+			# of a player's. Monster HP has since been sized to take several turns (the reference
+			# curve), and this never moved with it. Measured across all eight carriers at their home
+			# levels: from ~40% of a real player's bar at the low end to 100-500% for most carriers,
+			# most levels and every elite - so it usually left the player at 1 HP and the clamp below
+			# was doing the work. Any of them can flock (Broodcalling forces it, and a flock is more of the same
+			# species), so a chain was a string of trips to 1 HP. Owner: *"It often puts a player to
+			# 1 hp meaning it could be death in a flock or if they can't heal."* Owner chose 20% of
+			# the player's max HP; Wisdom still resists up to half and it still cannot kill.
+			var base_curse_damage = int(float(character.get_total_max_hp()) * DEATH_CURSE_PLAYER_SHARE)
 			# WIS provides ability resistance: reduces damage by min(50%, WIS/200)
 			var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
 			var wis_reduction = minf(0.50, float(player_wis) / 200.0)  # Max 50% reduction at WIS 100+
@@ -11596,7 +11610,7 @@ const MONSTER_TRAITS := {
 	"energy_drain": {"label": "Energy Drain", "color": "#FFA500", "desc": "Drains 5-15 energy on hit, more at higher levels."},
 	"bleed": {"label": "Causes Bleeding", "color": "#FF4444", "desc": "40% chance on hit to stack a bleed, up to 3, each worth 15% of its strength a turn."},
 	"curse": {"label": "Curse", "color": "#BA55D3", "desc": "30% chance to cut your defence by 25 for the rest of the fight. Wisdom resists up to half."},
-	"death_curse": {"label": "Death Curse", "color": "#FF0000", "desc": "When it dies it strikes you for 10% of its own maximum HP. Wisdom resists up to half; undead forms are immune."},
+	"death_curse": {"label": "Death Curse", "color": "#FF0000", "desc": "When it dies it strikes you for 20% of YOUR maximum HP. Wisdom resists up to half; it cannot kill you, and undead forms are immune."},
 	"weakness": {"label": "Weakening", "color": "#FFA500", "desc": "30% chance to cut your attack damage by 25% for 20 turns - which outlasts the fight."},
 	"blind": {"label": "Blinding", "color": "#808080", "desc": "40% chance to blind you: -30% hit chance and reduced vision for 15 turns."},
 	"disarm": {"label": "Disarming", "color": "#FF8800", "desc": "25% chance to disarm you: -30% damage for 3 rounds."},

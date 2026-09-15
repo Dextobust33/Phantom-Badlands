@@ -35136,7 +35136,7 @@ func _main_help_text() -> String:
   [color=#FFFFFF]Regen[/color] - Heals 10% max HP per round | [color=#FFFFFF]Reflect[/color] - Returns 25% of damage dealt
   [color=#FFFFFF]Thorns[/color] - Melee attacks hurt you back | [color=#FFFFFF]Disguise[/color] - Hidden stats for first 2 rounds
 [color=#FFD700]Special:[/color]
-  [color=#FFFFFF]Death Curse[/color] - Deals 10% max HP damage when killed (can't kill you)
+  [color=#FFFFFF]Death Curse[/color] - When killed, strikes you for 20% of your max HP (Wisdom resists; can't kill you)
   [color=#FFFFFF]Summoner[/color] - Calls reinforcement monster mid-fight
   [color=#FFFFFF]Corrosive/Sunder[/color] - Damages your gear (repair at blacksmith stations!)
   [color=#FFFFFF]XP Steal[/color] - Steals 1-3% of your XP per hit | [color=#FFFFFF]Item Steal[/color] - 5% chance to steal equipped item
