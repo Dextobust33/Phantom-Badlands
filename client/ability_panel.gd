@@ -41,6 +41,9 @@ var _deck_collection: Dictionary = {} # Slice 6c: ability_name → deck copy cou
 # 2026-09-11 — card instances: copies OWNED per card, in the deck or benched. A thinned copy is
 # benched rather than destroyed, so `+` has to know one is waiting to come back.
 var owned_counts: Dictionary = {}
+# 2026-09-15 — {card: [{key, n, in_deck}]} for cards owned MORE than once. Each copy has its own
+# uses and upgrades, so each is drawn as its own tile with its own thin/restore buttons.
+var instances_by_card: Dictionary = {}
 
 # Mastery rank thresholds + display (mirrors character.gd's MASTERY_RANK_*).
 # v0.9.567 — extended to R6 (Legend, Mythic) + softened early thresholds.
@@ -510,6 +513,20 @@ func _rebuild_abilities() -> void:
 			# absent from the collection is BENCHED (addable), not in the deck.
 			var deck_count := int(_deck_collection.get(ab_name, 0))
 			deck_total += max(0, deck_count)
+			# ⛑ 2026-09-15 - ONE TILE PER COPY. A card owned twice used to be ONE tile with "x2",
+			# whose - thinned an unnamed copy. Owner: players *"had no way of seeing a second copy of
+			# the card"* - so two upgrade screens for two copies looked like one card twice.
+			var _copies: Array = instances_by_card.get(ab_name, [])
+			if _copies.size() > 1:
+				for _cp in _copies:
+					var _cp_ab: Dictionary = ability.duplicate()
+					_cp_ab["display"] = "%s · copy %d" % [str(ability.get("display", _humanize(ab_name))), int(_cp["n"])]
+					var _cp_entry := _make_deck_entry(_cp_ab, 1 if bool(_cp["in_deck"]) else 0, _cp)
+					if _cp_entry != null:
+						_ability_grid.add_child(_cp_entry)
+					if _deck_strip != null and bool(_cp["in_deck"]):
+						_deck_strip.add_child(_make_deck_pile_tile(_cp_ab, 1, false, _cp))
+				continue
 			var entry := _make_deck_entry(ability, deck_count)
 			if entry != null:
 				_ability_grid.add_child(entry)
@@ -545,7 +562,7 @@ func _rebuild_abilities() -> void:
 			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#B8A98C]— the cards you'll draw from ([i]click a tile to thin one[/i]):[/color]"
 
 
-func _make_deck_pile_tile(ability: Dictionary, count: int, is_loaner: bool = false) -> Control:
+func _make_deck_pile_tile(ability: Dictionary, count: int, is_loaner: bool = false, copy: Dictionary = {}) -> Control:
 	"""v0.9.716/717 — compact tile for the visual deck strip: category-tinted, shows
 	the card name + a ×N copy badge (or a gold 'loan' tag for an active companion
 	loaner). Click an OWNED tile to thin one copy (server enforces the 5-card
@@ -585,10 +602,19 @@ func _make_deck_pile_tile(ability: Dictionary, count: int, is_loaner: bool = fal
 	lbl.text = "%s%s%s" % [prefix, disp, badge]
 	tile.add_child(lbl)
 	if not is_loaner:
+		var _cull_target := _copy_command(ab_name, copy)
 		tile.gui_input.connect(func(ev: InputEvent):
 			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-				_on_cull_pressed(ab_name))
+				_on_cull_pressed(_cull_target))
 	return tile
+
+
+func _copy_command(ab_name: String, copy: Dictionary) -> String:
+	"""What to send to act on ONE copy: 'card#n' (the first copy is addressed as 'card#1', since
+	its stored key is the bare id and a bare id means 'any copy'). The card itself when no copy."""
+	if copy.is_empty():
+		return ab_name
+	return "%s#%d" % [ab_name, int(copy.get("n", 1))]
 
 
 func _loaner_permanence_text(ability_name: String) -> String:
@@ -793,7 +819,7 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	return card
 
 
-func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
+func _make_deck_entry(ability: Dictionary, deck_count: int, copy: Dictionary = {}) -> Control:
 	"""v0.9.678 slice 3 — a combat-styled deck card (built by combat_scene_panel,
 	flips on click for the long description) plus a −/+ control row (thin/restore)."""
 	var ab_name := str(ability.get("name", ""))
@@ -806,7 +832,9 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 	var glyph := str(cat.get("glyph", ""))
 	var cost_text := _cost_text_for(ab_name)
 	# v0.9.688 — computed-number description (Warrior slice); hover a number for its formula.
-	var back: String = client_ref._ability_desc_bbcode(ab_name) if (client_ref and client_ref.has_method("_ability_desc_bbcode")) else _tooltip_for(ab_name)
+	# A copy's OWN progress lives under its stored key (bare for copy 1, 'card#n' after).
+	var _data_key: String = str(copy.get("key", ab_name)) if not copy.is_empty() else ab_name
+	var back: String = client_ref._ability_desc_bbcode(_data_key) if (client_ref and client_ref.has_method("_ability_desc_bbcode")) else _tooltip_for(ab_name)
 	# v0.9.683 — companion cards carry the companion's monster art.
 	var art_bb: String = csp.companion_card_art_bbcode(ab_name) if csp.has_method("companion_card_art_bbcode") else ""
 	# v0.9.691 — damage/heal value on the card front.
@@ -840,7 +868,7 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 		rank_lbl.scroll_active = false
 		rank_lbl.autowrap_mode = TextServer.AUTOWRAP_OFF
 		rank_lbl.add_theme_font_size_override("normal_font_size", 10)
-		rank_lbl.text = "[center]%s[/center]" % _get_rank_progress_text(ab_name)
+		rank_lbl.text = "[center]%s[/center]" % _get_rank_progress_text(_data_key)
 		entry.add_child(rank_lbl)
 	var ctl := HBoxContainer.new()
 	ctl.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -853,6 +881,25 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 		note.add_theme_font_size_override("font_size", 11)
 		note.add_theme_color_override("font_color", Color("#C8A24A"))
 		ctl.add_child(note)
+	elif not copy.is_empty():
+		# ONE copy: take this one out, or put this one back. Its upgrades stay with it either way.
+		var _cmd := _copy_command(ab_name, copy)
+		if deck_count >= 1:
+			var cminus := Button.new()
+			cminus.text = "−"
+			cminus.custom_minimum_size = Vector2(30, 22)
+			cminus.focus_mode = Control.FOCUS_NONE
+			cminus.tooltip_text = "Take THIS copy out of your deck (it keeps its upgrades)."
+			cminus.pressed.connect(_on_cull_pressed.bind(_cmd))
+			ctl.add_child(cminus)
+		else:
+			var cplus := Button.new()
+			cplus.text = "+"
+			cplus.custom_minimum_size = Vector2(30, 22)
+			cplus.focus_mode = Control.FOCUS_NONE
+			cplus.tooltip_text = "Put THIS copy back in your deck (it keeps its own upgrades)."
+			cplus.pressed.connect(_on_add_pressed.bind(_cmd))
+			ctl.add_child(cplus)
 	else:
 		if deck_count >= 1:
 			var minus := Button.new()

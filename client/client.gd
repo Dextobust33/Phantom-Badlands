@@ -21496,7 +21496,7 @@ func _show_milestone_reveal(ability_name: String, offer: Array, reveals_allowed:
 	# The ability being upgraded stays in the title for the WHOLE flow. It used to be replaced
 	# by "Reveal 3 of them" and then "Choose one", so by the time a player was actually picking,
 	# nothing on screen said which card they were upgrading.
-	_ms_ability_label = _ability_display_name(ability_name)
+	_ms_ability_label = _ability_display_name(ability_name) + _card_copy_label(ability_name)
 	_ms_phase = "preview"
 	# Cleared HERE, not only by the unlock tween. If an overlay is closed mid-flight the tween
 	# never fires, and a guard that outlives its own animation locks the player out of every
@@ -25548,7 +25548,7 @@ func handle_server_message(message: Dictionary):
 			var ra_ability = str(message.get("ability", ""))
 			var ra_choice = str(message.get("choice", ""))
 			if message.get("ok", false):
-				var ra_label = _ability_display_name(ra_ability)
+				var ra_label = _ability_display_name(ra_ability) + _card_copy_label(ra_ability)
 				if ra_choice == "copy":
 					display_game("[color=#87CEEB]%s — added +1 copy to deck (now %d).[/color]" % [ra_label, int(message.get("new_copy_count", 1))])
 				elif ra_choice == "effect":
@@ -25594,7 +25594,7 @@ func handle_server_message(message: Dictionary):
 			# fresh counts, refresh the ability panel UI, and notify the player.
 			var cull_ok = bool(message.get("ok", false))
 			var cull_ability = str(message.get("ability", ""))
-			var cull_label = _ability_display_name(cull_ability)
+			var cull_label = _ability_display_name(cull_ability) + _card_copy_label(cull_ability)
 			if cull_ok:
 				var fresh_collection = message.get("collection", {})
 				if fresh_collection is Dictionary:
@@ -25602,7 +25602,7 @@ func handle_server_message(message: Dictionary):
 				var new_count = int(message.get("new_count", 1))
 				display_game("[color=#9ACD32]Culled one copy of %s — deck now × %d.[/color]" % [cull_label, new_count])
 				if ability_panel and ability_panel.has_method("update_deck_collection"):
-					ability_panel.owned_counts = _owned_counts_by_card()
+					_push_copy_data_to_ability_panel()
 					ability_panel.update_deck_collection(_deck_counts_by_card())
 			else:
 				var reason = str(message.get("reason", "Cull rejected"))
@@ -44108,6 +44108,42 @@ func _card_instances_of(card_id: String) -> Array:
 			out.append(String(k))
 	return out
 
+func _card_copy_label(iid: String) -> String:
+	"""" · copy N" when the player owns more than one copy of this card, else "".
+
+	2026-09-15. Owner: *"two upgrade screens pop up back to back for the same card ... They also
+	have no way to differentiate between them."* Every copy levels on its own, but every surface
+	named it by its card, so two upgrade screens for two copies read as one card twice."""
+	var base := Character.card_base(iid)
+	if _card_copies_owned(base) <= 1:
+		return ""
+	return " · copy %d" % Character.card_copy_n(iid)
+
+
+func _push_copy_data_to_ability_panel() -> void:
+	"""Owned counts and per-COPY data for the deck screen. ONE function, called on populate AND
+	after every thin/restore - a second copy of this block is how the tiles would go stale."""
+	if ability_panel == null:
+		return
+	ability_panel.owned_counts = _owned_counts_by_card()
+	var _inst := {}
+	for _card in ability_panel.owned_counts.keys():
+		if int(ability_panel.owned_counts[_card]) > 1:
+			_inst[_card] = _card_instances_sorted(String(_card))
+	ability_panel.instances_by_card = _inst
+
+
+func _card_instances_sorted(card_id: String) -> Array:
+	"""This card's owned copies in copy order: [{key, n, in_deck}]. `key` is the stored key (the
+	first copy is bare); commands for a single copy use `card#n`, see Character._explicit_copy_key."""
+	var out: Array = []
+	var coll = character_data.get("combat_deck_collection", {})
+	for iid in _card_instances_of(card_id):
+		out.append({"key": iid, "n": Character.card_copy_n(iid), "in_deck": int(coll.get(iid, 0)) > 0 if coll is Dictionary else false})
+	out.sort_custom(func(a, b): return int(a["n"]) < int(b["n"]))
+	return out
+
+
 func _card_copies_owned(card_id: String) -> int:
 	return _card_instances_of(card_id).size()
 
@@ -44538,7 +44574,7 @@ func _populate_ability_panel() -> void:
 	# Slice 6c — pass deck collection so panel shows copy counts + cull buttons.
 	# 2026-09-11 — the panel wants {card: copies in deck}; the collection is per COPY now.
 	var deck_collection = _deck_counts_by_card()
-	ability_panel.owned_counts = _owned_counts_by_card()
+	_push_copy_data_to_ability_panel()
 	# #69 — class + race passives (from character_update) shown as Trait cards on the deck.
 	var _class_trait = character_data.get("class_trait", {})
 	var _race_trait = character_data.get("race_trait", {})

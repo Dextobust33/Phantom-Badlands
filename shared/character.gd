@@ -4484,6 +4484,14 @@ func total_deck_copies() -> int:
 		n += int(combat_deck_collection[k])
 	return n
 
+func _explicit_copy_key(name: String) -> String:
+	"""The stored collection key for a name that addresses ONE copy, or "" for a bare card name.
+	'cleave#2' -> 'cleave#2'; 'cleave#1' -> 'cleave' (the first copy is stored bare)."""
+	if name.find(CARD_COPY_SEP) < 0:
+		return ""
+	return card_iid(card_base(name), card_copy_n(name))
+
+
 func cull_ability_card(ability_name: String) -> Dictionary:
 	"""v0.9.678 (slice 3) — remove ONE copy, now allowed down to 0 (thinning), as
 	long as the total deck stays >= MIN_DECK_SIZE so combat can always draw a hand.
@@ -4499,8 +4507,12 @@ func cull_ability_card(ability_name: String) -> Dictionary:
 		result["reason"] = "Ability not in deck collection"
 		return result
 	var iid := ""
-	if is_card_instance(ability_name) and combat_deck_collection.has(ability_name):
-		iid = ability_name if int(combat_deck_collection[ability_name]) > 0 else ""
+	# `card#1` names the FIRST copy explicitly. Its stored key is the bare id, and a bare id on
+	# its own means "whichever copy you would give up first" - so without this a player looking
+	# at copy 1 in the deck screen could not thin copy 1. Added 2026-09-15 with per-copy tiles.
+	var _named := _explicit_copy_key(ability_name)
+	if _named != "" and combat_deck_collection.has(_named):
+		iid = _named if int(combat_deck_collection[_named]) > 0 else ""
 	else:
 		iid = least_invested_instance(_base, true)
 	if iid == "":
@@ -4602,7 +4614,7 @@ func add_ability_copy(ability_name: String, from_reward: bool = false) -> Dictio
 	# Must be an accessible ability for a free restore.
 	var accessible := false
 	for entry in get_all_available_abilities():
-		if entry.get("name", "") == ability_name and not bool(entry.get("non_combat", false)):
+		if entry.get("name", "") == card_base(ability_name) and not bool(entry.get("non_combat", false)):
 			accessible = true
 			break
 	if not accessible:
@@ -4618,6 +4630,22 @@ func add_ability_copy(ability_name: String, from_reward: bool = false) -> Dictio
 		return result
 	# A benched copy is restored first (free, it is already owned); only then is a new copy
 	# minted, and that needs a reward source.
+	# A SPECIFIC copy asked for by the deck screen ("cleave#2", or "cleave#1" for the first).
+	var _named_add := _explicit_copy_key(ability_name)
+	if _named_add != "":
+		if not combat_deck_collection.has(_named_add):
+			result["reason"] = "You do not own that copy."
+			return result
+		if int(combat_deck_collection[_named_add]) > 0:
+			result["reason"] = "That copy is already in your deck."
+			result["new_count"] = card_copies_in_deck(card_base(ability_name))
+			return result
+		combat_deck_collection[_named_add] = 1
+		result["ok"] = true
+		result["instance"] = _named_add
+		result["new_count"] = card_copies_in_deck(card_base(ability_name))
+		return result
+	ability_name = card_base(ability_name)
 	var _benched := least_invested_instance(ability_name, false, true)
 	if _benched != "" and int(combat_deck_collection.get(_benched, 0)) <= 0:
 		combat_deck_collection[_benched] = 1

@@ -45233,6 +45233,19 @@ func _broadcast_party_update(leader_id: int, msgs: Array, resolved: bool, log_en
 		_upd_msg.merge(_party_member_hand_payload(leader_id, pid), true)
 		send_to_peer(pid, _upd_msg)
 		send_character_update(pid)
+		# ⛑ 2026-09-15 - ANNOUNCE A RANK-UP THE ROUND IT HAPPENS, ON EVERY PARTY PATH.
+		#
+		# A card that levelled in a party fight queued its upgrade choice and NOTHING showed it:
+		# the flush was called from the item-use and disconnect paths but not from the card-command
+		# path, which is how nearly every round resolves. Measured (a Ninja in the Warden's fight,
+		# Ambush at 9 uses): queued after the cast, still unannounced a round later. The choices
+		# piled up and then arrived back to back at the next login - two "Ambush" screens in a row,
+		# which with a second copy of the card looked like one card upgrading twice. Owner
+		# 2026-09-14: *"two upgrade screens pop up back to back for the same card."*
+		# Flushed HERE because every resolved round is broadcast through this function; the flag
+		# on each queue entry keeps a second call from re-announcing.
+		if resolved:
+			_flush_pending_rank_choices(pid)
 
 func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entries: Array = []) -> void:
 	"""#64 Slice 4 — end the co-op fight for everyone. On victory each SURVIVING member gets
@@ -45449,6 +45462,8 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 			# the grid it draws is the one WITHOUT the monster they just killed.
 			if _dctx.is_empty():
 				send_location_update(pid)
+			# The winning blow can be the use that ranks a card up; announce it like any other round.
+			_flush_pending_rank_choices(pid)
 			save_character(pid)
 		combat_mgr.party_combat_membership.erase(pid)
 	combat_mgr.active_party_combats.erase(leader_id)
