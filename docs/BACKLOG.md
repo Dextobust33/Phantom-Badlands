@@ -784,7 +784,11 @@ live defects because the arc adds more of exactly the surfaces those defects liv
 4b. **Default UI scale at 1080p (owner 2026-09-15).** *"We need to take a look at the initial UI Scale.
    1080p players ASCII map has to be scrolled to even see the middle of their map. The Tool panel and
    all of that is too big over there. Ideally they should be able to see their whole ASCII map by
-   default."* Measure first (a 1920x1080 client screenshot: map viewport vs map content, panel sizes),
+   default."* And, same report from a live player: *"Their area on the right for where the dungeon
+   text goes is pretty cramped as well, just like their map was."* - the dungeon side panel shares the
+   column. Found in code so far: the map font is capped to fit WIDTH only (no height cap), and the
+   Tools/Status overlay under it grows 1.5x at 1080p and squeezes the map from below.
+   Measure first (a 1920x1080 client screenshot: map viewport vs map content, panel sizes),
    then set the default scale/layout so the whole map fits with no scroll; check the per-element
    resize system (memory: UI Scale system) so saved user scales are not clobbered.
 5. **Shorter names for stacked affixes (owner 2026-09-15).** *"find a way to shorten those long names
