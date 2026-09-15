@@ -20916,10 +20916,16 @@ func _ability_card_estimate(ability_name: String) -> Dictionary:
 	feeds the card's effect text), so the pip, description, and effect line all
 	agree. Returns {damage:int|-1, heal:int|-1}."""
 	var planned := 0
+	var frac := 1.0
 	var ps = _get_ability_planned_spend(ability_name)
 	if ps is Dictionary:
 		planned = int(ps.get("amount", 0))
-	var eff = _estimate_ability_card_effect(ability_name, planned, 1.0)
+		frac = float(ps.get("fraction", 1.0))
+	# 2026-09-15 - pass the REAL fraction. This passed 1.0 while the card's effect line (built in
+	# combat_scene_panel) passed the planned fraction, so on a partial cast the text and the pip
+	# were two numbers and the pip quoted a full spend. Owner: *"Partial casts also don't seem to
+	# show the damage the partial cast will do on the bottom left of the card."*
+	var eff = _estimate_ability_card_effect(ability_name, planned, frac)
 	var txt := str(eff.get("text", ""))
 	var rx := RegEx.new()
 	rx.compile("~\\s*([0-9]+)")  # v0.9.699 — match any "~N" (Gambit's is "~N @X%", no "dmg")

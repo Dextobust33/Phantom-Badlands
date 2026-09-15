@@ -610,6 +610,48 @@ and now says "gold marker". Probe `tools/probe/mark_arrow_offscreen.gd` renders 
 - [ ] **Two unfinished starter dungeons could split the ring from the walk:** the mark is chosen
       once, `_escort_goal_for` re-picks every step. Inferred from code, not observed.
 
+### ⚑ LIVE TEST OF v0.9.790 — owner, 2026-09-15 afternoon (the Warden tutorial, start to finish)
+
+**Fixed on master, NOT released** (probe `tools/probe/wild_swing_and_preview.gd`):
+- [x] Assassinate read "~1 · 3% kill" in the Warden fight. The party payload hand-copied the engine
+      fields and lacked 11 of them (finisher kind/damage, read_note, ramp, all three meter LABELS).
+      Both paths now read `engine_display_fields`.
+- [x] Wild Swing whiff read as "Meteor - 1 damage" with no miss line (13/60 casts). Now announced.
+- [x] The card PREVIEW cast the upgrades: Opener and Sure Strike consumed at fight start, Sacrificial
+      spent by the quote (every real cast 0), Wild Swing's quote flickering to 0. Preview is pure now.
+- [x] Partial-cast damage pip quoted a full spend while the effect line quoted the planned one.
+
+**Open, in the order they should be worked** (a blocker first, then the shared party-view cause, then
+the teaching beats that depend on the Warden behaving):
+- [ ] **⛔ Warden's Watch III cannot be turned in.** Owner walked back to the post after clearing the
+      starter dungeon and found no way to hand it in. Blocks every new character's progression.
+- [ ] **After the dungeon the player is teleported out with no idea what to do.** The Warden should
+      show the Quest Log and walk (or point) them back to the post for the turn-in.
+- [ ] **Party per-member state is a WHITELIST, and everything not on it is dropped between rounds.**
+      `_party_member_view` / `_party_sync_view_back`. Measured by code trace: Phantom Strike's
+      `vanished` (next hit never crits in party), `analyze_bonus`, `crit_escalation_stacks` (Killing
+      Edge), `path_first_strike_done` (the Path keystone probably crits EVERY action in party). Same
+      shape as Arcane Surge in v0.9.740. Structural fix under way: carry by default, exclude declared
+      shared/transient keys, and a probe that enumerates the keys each class writes.
+- [ ] **Mark (and likely every skip-the-enemy-turn card) does not skip the turn in the Warden fight.**
+      Probably `skip_monster_turn` ignored by `resolve_party_round`. Check whether it is by design in
+      co-op before changing it.
+- [ ] **Enemy hits on the Warden pop their damage number over the ENEMY.** Target of the damage mark
+      is wrong for NPC members.
+- [ ] **No buff/debuff panel in party combat** (solo has one). Owner: *"While the warden is in the party
+      it should work just like party combat does."*
+- [ ] **Phantom Strike's card hides its damage** (WITS x 0.18 of a bar x spend; `preview_ability_effect`
+      has no `vanish` branch) and three descriptions still promise the enemy loses its turn, which
+      was removed 2026-09-07 (client.gd ~20641, ~20852, help ~35089; constants.gd:134).
+- [ ] **The Warden's sprite is not drawn inside the dungeon** - he should follow as on the overworld.
+- [ ] **After the starter dungeon his sprite is stuck NORTH of the player** instead of following/leading.
+      (See [[reference_map_y_is_inverted]] - the same y sign has bitten the ring and his offset before.)
+- [ ] **Safety net: the Warden must not carry a player into content far above the starter dungeon.**
+      Before AND after completing it, while he is in the party, cap how far out (monster level) they
+      can take him.
+- [ ] **Teach eggs and companions** when the dungeon hands over the first egg: what an egg is, how to
+      see/manage/hatch it, what companions are, and how to equip, use and heal them.
+
 ### ⚑ TWO THINGS TO WATCH AFTER THIS RELEASE
 
 - **`assassinate_pct` now reaches the dice.** Silver Tongue (+15%) and one unique moved the card

@@ -4697,7 +4697,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 			# Run the REAL modifier chain (mastery rank, off-affinity, imprints, Path effects)
 			# rather than a fourth copy of it. A rank-0 ability is at 0.80x, which is most of
 			# what a fresh character will ever see, so omitting this made every card ~20% high.
-			var out_dmg: int = apply_skill_damage_bonus(character, name, int(dmg * preview_buff_mult), combat)
+			var out_dmg: int = apply_skill_damage_bonus(character, name, int(dmg * preview_buff_mult), combat, true)
 			if is_spell:
 				out_dmg = int(float(out_dmg) * _caster_passive_damage_mult(character))
 			# 2026-09-11 — the ENGINE RAMP (Steady Aim / Rage), applied here because every anchored
@@ -4743,7 +4743,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 						_pv = maxi(1, _pv - _pgap)
 				dev_note = "%s, %d%% lethal" % [dev_note, _pv]
 			return {"kind": "damage",
-					"value": apply_skill_damage_bonus(character, name, dev_base, combat),
+					"value": apply_skill_damage_bonus(character, name, dev_base, combat, true),
 					"scales": dev_note}
 		# shield_bash / ambush / gambit / frost_nova are handled by the anchored branch above
 		# now that they are converted. Their temporary attack-based branches are gone with the
@@ -4759,7 +4759,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 				mhp = float(mon.get("max_hp", 0))
 			if mhp > 0.0:
 				return {"kind": "damage",
-						"value": apply_skill_damage_bonus(character, name, int(mhp * float(pct) / 100.0), combat),
+						"value": apply_skill_damage_bonus(character, name, int(mhp * float(pct) / 100.0), combat, true),
 						"scales": "%d%% of enemy max HP" % pct}
 			return {}
 		"forcefield", "shield":
@@ -7522,7 +7522,7 @@ func apply_variable_cost(character: Character, ability_name: String, combat: Dic
 		result.messages.append("[color=#FFA500]Partial cast — %d/%d %s (%d%% effect).[/color]" % [spend, adj_ceiling, resource_type, int(fraction * 100)])
 	return result
 
-func apply_skill_damage_bonus(character: Character, ability_name: String, base_damage: int, combat = null) -> int:
+func apply_skill_damage_bonus(character: Character, ability_name: String, base_damage: int, combat = null, preview: bool = false) -> int:
 	"""Apply mastery + legacy skill_enhancement damage modifier to an
 	ability's damage. Mastery Slice 1 stacks the use-progression damage
 	multiplier (rank 0 = 0.80, rank 4 = 1.20) on top of any legacy
@@ -7569,7 +7569,7 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 	# 2026-09-03 — CARD RANK-UP UPGRADES (damage side). Applied here, at the end of the existing
 	# modifier chain, because this is already the single funnel every ability's damage passes
 	# through: nineteen scattered checks would drift apart the way the cost tables did.
-	dmg = _apply_card_upgrade_damage(character, ability_name, dmg, combat)
+	dmg = _apply_card_upgrade_damage(character, ability_name, dmg, combat, preview)
 	return int(dmg)
 
 func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage_dealt: int, result: Dictionary) -> void:
@@ -7627,6 +7627,9 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 		var _crit_src: String = String(combat.get("_crit_label", "Keen Edge"))
 		combat["_crit_label"] = "Keen Edge"
 		result.messages.append("[color=#FFD700]%s: a clean critical.[/color]" % _crit_src)
+	if String(combat.get("_card_whiff", "")) != "":
+		result.messages.append("[color=#FF9966]%s[/color]" % String(combat["_card_whiff"]))
+		combat["_card_whiff"] = ""
 
 	# Cast-time upgrades that do not depend on damage: these fire whether or not the card hit.
 	if "warding" in picks:
@@ -7933,15 +7936,46 @@ func _restore_primary_resource(character, amount: int) -> void:
 		"trickster":
 			character.current_energy = mini(character.get_total_max_energy(), character.current_energy + amount)
 
-func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg: float, combat) -> float:
+func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg: float, combat, preview: bool = false) -> float:
 	"""Damage-side rank-up upgrades. Each is a no-op unless the card actually carries it, so the
-	cost of asking is a dictionary lookup per pick, not per upgrade in the pool."""
+	cost of asking is a dictionary lookup per pick, not per upgrade in the pool.
+
+	`preview` = quoting the card face, not casting it. See the note below."""
 	if character == null:
 		return dmg
 	var picks: Array = character.get_milestone_picks(ability_name)
 	if picks.is_empty():
 		return dmg
 	var monster = combat.get("monster", {}) if (combat != null and combat is Dictionary) else {}
+
+	# ⛑ 2026-09-15 - THE CARD PREVIEW WAS CASTING THE UPGRADES.
+	#
+	# `preview_ability_effect` quotes every card in hand through the real modifier chain, and that
+	# chain ends here - where the once-per-fight upgrades WRITE their flag onto the combat and the
+	# gambles ROLL. Measured (`tools/probe/wild_swing_and_preview.gd`): Opener was already marked
+	# used before the player had cast anything, because starting the fight sends the state; the
+	# same held for Sure Strike, and Sacrificial - "once per fight, then the card is spent" - was
+	# spent by the quote, so every real cast of it returned 0. Wild Swing's face read 0 on about
+	# one state send in five. Owner's report that led here: *"Wild Swing on his meteor and it kept
+	# hitting for 1 damage."*
+	#
+	# So a preview reads state and never writes it, and quotes the gambles at their expected value
+	# from the SAME table the client estimate uses. Conditional bonuses (Opener, Sure Strike) stay
+	# out of the number for the reason that table gives: they are a "when" note, not an average.
+	if preview:
+		dmg *= CardUpgrades.estimate_damage_mult(picks)
+		if "executioner" in picks and monster is Dictionary:
+			var pmx: float = maxf(1.0, float(monster.get("max_hp", 1)))
+			if float(monster.get("current_hp", pmx)) / pmx < 0.30:
+				dmg *= CardUpgrades.damage_mult_for("executioner")
+		if "all_in" in picks:
+			var ppool: int = maxi(1, _primary_resource_max(character))
+			var pfrac: float = clampf(float(_primary_resource_value(character)) / float(ppool), 0.0, 1.0)
+			dmg *= lerpf(CardUpgrades.damage_mult_for("all_in"), 0.75, pfrac)
+		if "sacrificial" in picks and combat is Dictionary:
+			if bool(combat.get("sacrificed_%s" % ability_name, false)):
+				return 0.0
+		return dmg
 
 	# --- upside ---------------------------------------------------------------------------
 	if "executioner" in picks and monster is Dictionary:
@@ -7971,6 +8005,7 @@ func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg:
 	if "wild_swing" in picks:
 		# A real chance to whiff outright — the gamble IS the upgrade.
 		if randf() < CardUpgrades.damage_miss_chance("wild_swing"):
+			_note_card_whiff(combat, "Wild Swing", "the swing goes wide")
 			return 0.0
 		dmg *= CardUpgrades.damage_mult_for("wild_swing")
 	if "all_in" in picks:
@@ -7986,6 +8021,7 @@ func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg:
 		dmg *= randf_range(0.50, 1.50)
 	if "gamblers_cut" in picks:
 		if randf() < CardUpgrades.damage_miss_chance("gamblers_cut"):
+			_note_card_whiff(combat, "Gambler's Cut", "the bet does not come in")
 			return 0.0       # a quarter of the time it simply does not happen
 	# Keen Edge. Abilities had no critical hit of their own — only basic attacks and the mage's
 	# class passive did — so this adds one rather than pretending to modify something that was
@@ -8016,8 +8052,20 @@ func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg:
 			# once per fight, then the card is spent
 			dmg *= CardUpgrades.damage_mult_for("sacrificial")
 		else:
+			_note_card_whiff(combat, "Sacrificial", "this card was spent earlier in the fight")
 			return 0.0
 	return dmg
+
+
+func _note_card_whiff(combat, upgrade_name: String, why: String) -> void:
+	"""Record that a card upgrade zeroed this cast, so the log can SAY so.
+
+	2026-09-15. A whiff returned 0 and nothing else, and most damage sites then floor the hit to
+	1 (`apply_damage_variance`), so the log read "Meteor - 1 damage" with no mention of a miss.
+	Owner: *"Wild Swing on his meteor and it kept hitting for 1 damage."* Measured 13 of 60
+	casts. Same flag-then-announce shape as `_keen_crit`, announced in _apply_card_upgrade_on_hit."""
+	if combat is Dictionary:
+		combat["_card_whiff"] = "%s: %s - it misses." % [upgrade_name, why]
 
 # v0.9.637 — Buff-ability rank scaling. Player report: 'War Cry just got a
 # rank up and it had a Damage option or a crit chance option (from Wyvern).
@@ -11185,38 +11233,20 @@ func player_total_mitigation_pct(character, combat: Dictionary) -> int:
 		mult *= (1.0 - float(int(src["pct"])) / 100.0)
 	return int(round((1.0 - mult) * 100.0))
 
-func get_combat_display(peer_id: int) -> Dictionary:
-	"""Get formatted combat state for display"""
-	if not active_combats.has(peer_id):
-		return {}
+func engine_display_fields(character, combat: Dictionary) -> Dictionary:
+	"""Every class-engine and finisher field a card face or meter reads, for SOLO AND PARTY.
 
-	var combat = active_combats[peer_id]
-	var character = combat.character
-	var monster = combat.monster
+	⛑ 2026-09-15 - THE PARTY PAYLOAD HAD ITS OWN HAND-COPIED SUBSET OF THESE.
 
-	# Get monster's class affinity for color coding. v0.9.513 — monster may
-	# carry an explicit `name_color` override (e.g., apex variants set to
-	# purple by trigger_flock_encounter); that takes priority when present.
-	var affinity = monster.get("class_affinity", 0)
-	var name_color = String(monster.get("name_color", "")) if monster.get("name_color", "") != "" else _get_affinity_color(affinity)
+	Owner, playing the Warden tutorial fight (a party combat) on v0.9.790: the Ninja's Assassinate
+	card read "~1 · 3% kill" at every Read level. `server._party_member_hand_payload` mirrored the
+	meter fields by hand and never gained `finisher_kind` / `finisher_damage` / `read_note` /
+	`engine_damage_ramp` when solo did, so in ANY party the card fell back to damage 0 -> "~1".
+	The same file already carried a note that costs and effects had been "only ever added to the
+	solo state" once before. One builder, two readers, so the next field cannot miss one path.
 
-	# Check if player knows this monster (has killed it at or above this level)
-	# Use base_name so killing any variant teaches you about the base monster type
-	# If unknown OR player is blinded, send -1 for HP values so client shows "???"
-	var monster_base = monster.get("base_name", monster.name)
-	var knows_monster = character.knows_monster(monster_base, monster.level)
-	# A DISGUISED monster does not show its HP. This is what the disguise actually does now -
-	# it hides the number rather than faking a smaller pool. Reuses the same "???" path as an
-	# unfamiliar monster, which players already understand.
-	var disguised: bool = (combat.get("disguise_active", false)
-		and not combat.get("disguise_revealed", false))
-	var can_see_hp = knows_monster and not character.blind_active and not disguised
-	var display_hp = monster.current_hp if can_see_hp else -1
-	var display_max_hp = monster.max_hp if can_see_hp else -1
-	var display_hp_percent = int((float(monster.current_hp) / monster.max_hp) * 100) if can_see_hp else -1
-
+	`combat` only needs `.get`-able combo / momentum / focus / monster (+ disguise flags)."""
 	return {
-		"round": combat.round,
 		"momentum": int(combat.get("momentum", 0)),  # v0.9.696 Warrior Momentum
 		"momentum_max": MOMENTUM_MAX,
 		"is_warrior_momentum": character.get_class_path() == "warrior",
@@ -11262,6 +11292,40 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"focus_label": class_engine_label(String(character.class_type)),
 		"focus_finisher": _ability_display_name(character, "meteor"),
 		"focus_note": _engine_note(character, combat),
+	}
+
+func get_combat_display(peer_id: int) -> Dictionary:
+	"""Get formatted combat state for display"""
+	if not active_combats.has(peer_id):
+		return {}
+
+	var combat = active_combats[peer_id]
+	var character = combat.character
+	var monster = combat.monster
+
+	# Get monster's class affinity for color coding. v0.9.513 — monster may
+	# carry an explicit `name_color` override (e.g., apex variants set to
+	# purple by trigger_flock_encounter); that takes priority when present.
+	var affinity = monster.get("class_affinity", 0)
+	var name_color = String(monster.get("name_color", "")) if monster.get("name_color", "") != "" else _get_affinity_color(affinity)
+
+	# Check if player knows this monster (has killed it at or above this level)
+	# Use base_name so killing any variant teaches you about the base monster type
+	# If unknown OR player is blinded, send -1 for HP values so client shows "???"
+	var monster_base = monster.get("base_name", monster.name)
+	var knows_monster = character.knows_monster(monster_base, monster.level)
+	# A DISGUISED monster does not show its HP. This is what the disguise actually does now -
+	# it hides the number rather than faking a smaller pool. Reuses the same "???" path as an
+	# unfamiliar monster, which players already understand.
+	var disguised: bool = (combat.get("disguise_active", false)
+		and not combat.get("disguise_revealed", false))
+	var can_see_hp = knows_monster and not character.blind_active and not disguised
+	var display_hp = monster.current_hp if can_see_hp else -1
+	var display_max_hp = monster.max_hp if can_see_hp else -1
+	var display_hp_percent = int((float(monster.current_hp) / monster.max_hp) * 100) if can_see_hp else -1
+
+	var _state := {
+		"round": combat.round,
 		"player_name": character.name,
 		"player_hp": character.current_hp,
 		"player_max_hp": character.get_total_max_hp(),
@@ -11380,6 +11444,8 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"companion_combat_max_hp": character.get_companion_max_hp() if character.has_active_companion() else -1,
 		"companion_ko": character.is_companion_ko() if character.has_active_companion() else false,
 	}
+	_state.merge(engine_display_fields(character, combat))
+	return _state
 
 func get_monster_ascii_art(monster_name: String) -> String:
 	# Server-side ASCII art removed - all art is now rendered client-side via monster_art.gd

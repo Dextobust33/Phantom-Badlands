@@ -44861,26 +44861,12 @@ func _party_member_hand_payload(leader_id: int, pid: int) -> Dictionary:
 	# Mage Focus). Mirror get_combat_display's field names so _sync_momentum_meter reads it.
 	var ch = characters.get(pid, null)
 	if ch:
-		var path = ch.get_class_path()
-		out["is_warrior_momentum"] = path == "warrior"
-		out["momentum"] = int(st.get("momentum", 0))
-		out["momentum_max"] = CombatManager.MOMENTUM_MAX
-		out["is_trickster_read"] = path == "trickster"
-		out["read"] = int(st.get("combo", 0))
-		out["read_max"] = CombatManager.COMBO_MAX
-		# 2026-09-03 — was hardcoded 0 with the note "charge viz not wired for co-op yet", which
-		# is why the meter read 0% at every Read level in a party: the number was never computed,
-		# not merely mis-scaled. The meter has to tell the truth, so compute it from the same
-		# shared helper the roll uses, with this member's own Read.
-		var _os_view := {
-			"character": ch,
-			"monster": c.get("monster", {}),
-			"combo": int(st.get("combo", 0)),
-		}
-		out["assassinate_chance"] = int(combat_mgr.assassinate_chance(ch, c.get("monster", {}), _os_view))
-		out["is_mage_focus"] = path == "mage"
-		out["focus"] = int(st.get("focus", 0))
-		out["focus_max"] = CombatManager.FOCUS_MAX
+		# ⛑ 2026-09-15 - THE ENGINE FIELDS COME FROM THE SAME BUILDER SOLO USES.
+		#
+		# This block used to hand-copy a subset (momentum, read, focus, assassinate_chance) and
+		# never gained `finisher_kind` / `finisher_damage` / `read_note` / `engine_damage_ramp` /
+		# the labels when solo did - so in every party fight, the Warden tutorial included, the
+		# Ninja's Assassinate card fell back to "~1" damage. See engine_display_fields.
 		# 2026-09-03 — PARTY PARITY. The authoritative per-card COSTS (v0.9.741) and
 		# DAMAGE/SHIELD (2026-09-03) were only ever added to the solo `get_combat_state`, so a
 		# player in a party still saw the client's own hand-copied estimates — the ones measured
@@ -44898,7 +44884,10 @@ func _party_member_hand_payload(leader_id: int, pid: int) -> Dictionary:
 			"combo": int(st.get("combo", 0)),
 			"focus": int(st.get("focus", 0)),
 			"round": int(c.get("round", 1)),
+			"disguise_active": bool(c.get("disguise_active", false)),
+			"disguise_revealed": bool(c.get("disguise_revealed", false)),
 		}
+		out.merge(combat_mgr.engine_display_fields(ch, _member_view), true)
 		out["ability_costs"] = combat_mgr._build_ability_cost_info(_member_view)
 		out["ability_effects"] = combat_mgr._build_ability_effect_info(_member_view)
 		out["turn_regen"] = int(combat_mgr._estimate_turn_regen_for(ch))
