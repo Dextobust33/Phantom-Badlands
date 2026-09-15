@@ -20639,7 +20639,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks. Variable cost 6-20 energy — success CHANCE scales with spend; ore quantity stays the same."
 		"ambush": return "WITS-scaled damage, and it is the surprise strike: +25% crit chance on top of your own. Variable cost 9-30 energy — damage scales with spend."
 		"vanish": return "WITS-scaled damage from the dark, and your next damaging action (attack or ability) is a guaranteed critical. The enemy still takes its turn. Variable cost 12-40 energy — damage scales with spend."
-		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
+		"exploit": return "Deal 10-22% of the monster's max HP as damage (10% + WITS/6, capped at 22%). Variable cost 10-35 energy — damage chunk scales with spend."
 		"perfect_heist":
 			var _eng := _engine_word()
 			match String(character_data.get("class", "")):
@@ -20842,10 +20842,12 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"ambush":
 			return "Deal %s damage with [b]+25%% crit chance[/b] on top of your own." % _desc_num(est_dmg, "WITS-anchored damage × rank/tier; Ambush adds +25 to your crit chance")
 		"exploit":
-			var _ex_pct := clampi(15 + int(float(s_wits) / 4.0), 15, 35)
+			# 2026-09-15 - read off the cast (combat_manager "exploit"): #55 trimmed it to 10% + WITS/6,
+			# capped 22%, and this copy kept the old 15% + WITS/4, cap 35% for three weeks.
+			var _ex_pct := mini(22, 10 + int(float(s_wits) / 6.0))
 			if est_dmg > 0:
-				return "Deal %s — a slice of the enemy's [b]max HP[/b], so it shines against tough foes." % _desc_num(est_dmg, "%d%% of enemy max HP (15%% + WITS/4, cap 35%%)" % _ex_pct)
-			return "Deal %s of the enemy's [b]max HP[/b] as damage — great against tough foes." % _desc_num("%d%%" % _ex_pct, "15% + WITS/4, capped 35%")
+				return "Deal %s — a slice of the enemy's [b]max HP[/b], so it shines against tough foes." % _desc_num(est_dmg, "%d%% of enemy max HP (10%% + WITS/6, cap 22%%)" % _ex_pct)
+			return "Deal %s of the enemy's [b]max HP[/b] as damage — great against tough foes." % _desc_num("%d%%" % _ex_pct, "10% + WITS/6, capped 22%")
 		"sabotage":
 			return ("Weaken the enemy: %s to its strength and defense (stacks up to -50%%). [color=#7FD8C8]The enemy usually loses its turn (75%%).[/color]") % _desc_num("-%d%%" % clampi(15 + int(float(s_wits) / 3.0), 1, 50), "15 + WITS ÷ 3 per cast")
 		"vanish":
@@ -35098,7 +35100,7 @@ func _main_help_text() -> String:
   [color=#FFFFFF]Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50% crit chance, scales with √WIT
   [color=#FFFFFF]Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
   [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Strike from the dark (WITS damage). Next damaging action auto-crits
-  [color=#FFFFFF]Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
+  [color=#FFFFFF]Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 10-22% of monster's max HP as damage (scales with WIT)
   [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]engine stack[/color] (Leverage / Aim / Read), ±WIT (capped) vs enemy INT, -2%/level above you. Each stack also raises the ceiling: 60% cold, 85% at full. Fail = free enemy attack
 
 [b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]

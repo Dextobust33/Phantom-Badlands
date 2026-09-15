@@ -665,8 +665,7 @@ the teaching beats that depend on the Warden behaving):
 - [x] **Phantom Strike's card hid its damage, and its text promised a skipped turn.** FIXED on master,
       not released. `preview_ability_effect` now quotes it (probe: wild_swing_and_preview s2b, quoted
       296 / dealt 303); descriptions in client.gd (two), help, and constants.gd corrected off the cast.
-- [ ] **Exploit's description is stale too** (client.gd ability text: "15 + WITS/4, cap 35%"; the cast
-      has been 10 + WITS/6, cap 22% since #55). Spotted while fixing Phantom Strike, not changed.
+- [x] **Exploit's description was stale** (said 15 + WITS/4, cap 35%; the cast is 10 + WITS/6, cap 22%). FIXED on master in all three client texts.
 - [ ] **The Warden's sprite is not drawn inside the dungeon** - he should follow as on the overworld.
 - [ ] **After the starter dungeon his sprite is stuck NORTH of the player** instead of following/leading.
       (See [[reference_map_y_is_inverted]] - the same y sign has bitten the ring and his offset before.)
