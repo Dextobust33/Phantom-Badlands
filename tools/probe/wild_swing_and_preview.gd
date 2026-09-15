@@ -94,6 +94,27 @@ func _init() -> void:
 	ck(vals.size() == 1 and not vals.has(0), "Wild Swing Meteor's quote is one steady number over 80 sends: %s" % str(vals.keys()))
 	cm.active_combats.erase(0)
 
+	print("\n===== 2b. PHANTOM STRIKE'S CARD QUOTES THE DAMAGE IT DEALS =====")
+	# Owner: *"I used Phantom strike and it did damage it didn't advertise or show on the card
+	# face."* The preview had no branch for it, so the face showed only "Auto-crit".
+	var ch5 = sim.make_char(20, "average", "Ninja", "Human")
+	cm.start_combat(0, ch5, sim.make_monster(20, "normal", 50.0))
+	var c5 = cm.active_combats[0]
+	c5["combat_hand"] = ["vanish"]
+	var q5: Dictionary = cm._build_ability_effect_info(c5).get("vanish", {})
+	ck(String(q5.get("kind", "")) == "damage" and int(q5.get("value", 0)) > 0,
+		"the quote is a damage number (%s)" % str(q5))
+	c5["player_can_act"] = true
+	c5["suppress_monster_turn"] = true
+	ch5.current_energy = ch5.get_total_max_energy()
+	var vhp0: int = int(c5["monster"]["current_hp"])
+	cm.process_ability_command(0, "vanish", "")
+	var vdealt: int = vhp0 - int(c5["monster"]["current_hp"])
+	# The cast applies defence and +-15% variance on top; the quote, like every card's, does not.
+	ck(vdealt > 0 and vdealt <= int(q5.get("value", 0)) * 1.3,
+		"  and the real strike is in its neighbourhood (quoted %d, dealt %d)" % [int(q5.get("value", 0)), vdealt])
+	cm.active_combats.erase(0)
+
 	print("\n===== 3. THE PARTY PAYLOAD CARRIES EVERY ENGINE FIELD =====")
 	var s = ServerScript.new()
 	s.combat_mgr = cm

@@ -4613,6 +4613,20 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 	var preview_buff_mult: float = 1.0 + float(character.get_buff_value("damage")) / 100.0
 	preview_buff_mult *= 1.0 + float(int(combat.get("analyze_bonus", 0))) / 100.0
 
+	# --- Phantom Strike: it strikes, and has done since 2026-09-07. -------------------------
+	# Owner 2026-09-15: *"I used Phantom strike and it did damage it didn't advertise or show on
+	# the card face."* This function had no branch for it, so the client fell back to its own
+	# "Auto-crit" tag - the half of the card that was true - and the damage pip stayed empty.
+	# Same terms as the cast (anchored WITS share, the real modifier chain) at a full spend; the
+	# client scales it by the planned spend like every other variable-cost card.
+	if name == "vanish":
+		var _vd: float = _ability_anchored_damage(character, "wits", VANISH_WEIGHT)
+		if _vd > 0.0:
+			return {"kind": "damage",
+					"value": apply_skill_damage_bonus(character, name, int(_vd * preview_buff_mult), combat, true),
+					"scales": "next hit crits"}
+		return {}
+
 	# --- Anchored abilities: a share of the health bar they are fighting. ------------------
 	if ABILITY_WEIGHTS.has(name):
 		var is_spell: bool = name in ["magic_bolt", "blast", "meteor", "frost_nova"]

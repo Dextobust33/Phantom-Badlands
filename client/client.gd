@@ -20638,7 +20638,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"distract": return "Enemy suffers -50% accuracy on its next attack. Variable cost 5-15 energy — accuracy debuff magnitude scales with spend; single-attack scope unchanged."
 		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks. Variable cost 6-20 energy — success CHANCE scales with spend; ore quantity stays the same."
 		"ambush": return "WITS-scaled damage, and it is the surprise strike: +25% crit chance on top of your own. Variable cost 9-30 energy — damage scales with spend."
-		"vanish": return "Go invisible — your next damaging action is a guaranteed crit. Skips enemy turn."
+		"vanish": return "WITS-scaled damage from the dark, and your next damaging action (attack or ability) is a guaranteed critical. The enemy still takes its turn. Variable cost 12-40 energy — damage scales with spend."
 		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
 		"perfect_heist":
 			var _eng := _engine_word()
@@ -20849,7 +20849,11 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"sabotage":
 			return ("Weaken the enemy: %s to its strength and defense (stacks up to -50%%). [color=#7FD8C8]The enemy usually loses its turn (75%%).[/color]") % _desc_num("-%d%%" % clampi(15 + int(float(s_wits) / 3.0), 1, 50), "15 + WITS ÷ 3 per cast")
 		"vanish":
-			return "[b]Phantom Strike[/b]: your next damaging action is a [b]guaranteed critical hit[/b] — ability or attack. [color=#7FD8C8]The enemy loses its turn.[/color]"
+			# 2026-09-15 - read off the cast, not remembered. It has dealt damage since 2026-09-07
+			# and stopped skipping the enemy's turn the same day; this text still said neither.
+			if est_dmg > 0:
+				return "[b]Phantom Strike[/b]: strike from the dark for %s, and your next damaging action — ability or attack — is a [b]guaranteed critical hit[/b]. The enemy still takes its turn." % _desc_num(est_dmg, "18% of a same-level health bar × WITS scaling × spend")
+			return "[b]Phantom Strike[/b]: a WITS-scaled strike from the dark, and your next damaging action — ability or attack — is a [b]guaranteed critical hit[/b]. The enemy still takes its turn."
 		"gambit":
 			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ %s[/color]." % [_desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier"), _engine_word()]
 		"analyze":
@@ -35086,7 +35090,7 @@ func _main_help_text() -> String:
   [color=#FFFFFF]Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%+WIT/3 (stacks, max 50%)
   [color=#FFFFFF]Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50% crit chance, scales with √WIT
   [color=#FFFFFF]Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
-  [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next damaging action auto-crits
+  [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Strike from the dark (WITS damage). Next damaging action auto-crits
   [color=#FFFFFF]Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
   [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]engine stack[/color] (Leverage / Aim / Read), ±WIT (capped) vs enemy INT, -2%/level above you. Each stack also raises the ceiling: 60% cold, 85% at full. Fail = free enemy attack
 
