@@ -816,6 +816,29 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    Measure first (a 1920x1080 client screenshot: map viewport vs map content, panel sizes),
    then set the default scale/layout so the whole map fits with no scroll; check the per-element
    resize system (memory: UI Scale system) so saved user scales are not clobbered.
+4d. **XP BY DANGER - owner decided 2026-09-15, DO THIS FIRST after the release.** The XP formula
+   scales a kill by lethality (hp + 2*str + def) against `expected_lethality = 50 + level * 10`,
+   clamped to 0.7-1.4. That constant predates the calibrated monster curve. MEASURED
+   (`tools/probe/xp_lethality_term.gd`, 60 real monsters at each of 11 levels): **every monster at
+   every level clamps at 1.4**, so the term is dead - a monster six times deadlier than another of
+   its level pays identical XP. The constant is 2.5x low at L1 and 75x low at L250.
+   **Owner picked: tougher monsters pay more, AND the average kill pays ~15-20% more overall.**
+   What the measurement already settles:
+   - a monster's lethality within its own level runs **0.33..2.17x that level's mean**, so there is
+     plenty of real spread for the term to read
+   - the spawn mix sits at **1.09x (L1) to 2.56x (L1000)** of the calibrated curve's own `hp+2*str`,
+     so a single constant against the curve would bias the whole progression; multiplying by the
+     level's **mean species_power** (already in the curve file) cuts that drift to 0.63..1.26
+   - the rest is that only low-tier species spawn at low levels, so "expected" has to be the mean
+     over the level's **weighted eligible pool** (`select_monster_type`'s tier weights, bleed
+     included), not over all 47 species
+   Build it as `_expected_lethality(level)` reading the curve + the eligible pool, cached per level,
+   with NO new hand-written constant (that is the whole fault being fixed), then re-centre so the
+   average kill pays ~1.18x today's flat 1.4, and VERIFY kills-per-level at L1 / L10 / L50 / L250 /
+   L1000 before and after - the early game is deliberately ~19 kills per level and must not drift.
+   Beware the recursion: expected-lethality must not call `scale_monster_to_level`, which calls the
+   XP formula. XP does not feed the monster curve, so this needs no re-calibration.
+
 4c. **Two "what did that do?" gaps (owner 2026-09-15).** Both are the same shape - an action lands
    and the player is never told what it acted on or what they got. Cheap, and both sit on the
    onboarding path now that the Warden hands out a Home Stone (Companion).
