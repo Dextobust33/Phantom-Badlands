@@ -692,6 +692,22 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      "helm"/"weapon" while crafting names items "<slot>_crafted", so crafted rarity bonuses never land.
      Source-read only: wish upgrades read `item_type` (items store `type`); Void/Abyssal/Primordial
      rune recipe fields have no reader.
+   **OWNER DECISIONS 2026-09-15** on the measured results:
+   - **Fight items:** *"It should refuse if it doesn't have a combat effect."* Refused, KEPT, and not
+     offered by the combat menu. One predicate for "has a combat effect", read by the server's combat
+     path and the client's menu filter.
+   - **Gear vs cards:** damage_mult / attack_bonus / crit / proc stats **reach cards**, then the
+     calibration chain (preflight -> speciescal -> refcal -> rolecal) runs once - player power moves.
+   - **+N ability ranks:** *"We should probably do away with +1 as it isn't clear. There should
+     instead be equipment that increases specific skills (ensuring it actually benefits the skill and
+     doesn't give like + damage to a skill with no damage)."* Retire the archetype rank affixes;
+     replace with per-card affixes whose stat is one the card actually uses (damage only on damaging
+     cards, shield on shield cards, duration on buffs...). Existing items need a migration. Supersedes
+     the wear-truncation and missing-card-list findings.
+   - **extra_turn_chance:** cap at **30%** total across gear.
+   Fix order: item-use validation (the class, not per branch) -> crafted scribing / crafted buff names /
+   Apex Sigil / proc runes / crafted stats -> skill tomes -> extra-turn cap -> per-card affixes (design
+   the table first) -> gear stats reach cards -> calibration chain LAST, once.
    Method, per CLAUDE.md's equipment rule: walk ACQUISITION PATHS by calling each generator (drop
    tables, hunt, monster-ability drops like `warrior_hoarder`, dungeon floor loot and chests,
    crafting, merchants, uniques/sets), then PROBE each stat by equipping it and diffing what combat
