@@ -30971,6 +30971,13 @@ func _apply_party_hand_from_message(message: Dictionary) -> void:
 		_server_turn_regen = int(message.get("turn_regen", 0))
 	# Meter fields ride alongside the hand; _sync_momentum_meter no-ops if none present.
 	_sync_momentum_meter(message)
+	# 2026-09-15 - the status strip (buffs, debuffs, DoT timers, mitigation), same as solo's
+	# combat_update. The server only ever sent it in solo, so a party fight showed none of it.
+	if message.get("player_status", null) is Dictionary:
+		_last_player_status = message["player_status"]
+		_last_monster_status = message.get("monster_status", {}) if message.get("monster_status", null) is Dictionary else {}
+		if combat_scene_panel.has_method("update_combat_status"):
+			combat_scene_panel.update_combat_status(_last_player_status, _last_monster_status)
 
 func _handle_party_combat_end(message: Dictionary):
 	"""Handle party combat ending."""

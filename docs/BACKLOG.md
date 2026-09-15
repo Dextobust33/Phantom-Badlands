@@ -651,8 +651,17 @@ the teaching beats that depend on the Warden behaving):
       Hollis for 43 damage" (no "you") as damage to the monster. The monster phase now sends measured
       `taken` / `monster_lost` on each beat and the client pops those. Probe: party_view_carries_state s5.
       Not verified in a running client - worth a look in the next co-op fight.
-- [ ] **No buff/debuff panel in party combat** (solo has one). Owner: *"While the warden is in the party
-      it should work just like party combat does."*
+- [x] **No buff/debuff panel in party combat.** FIXED on master, not released. `player_status` /
+      `monster_status` were solo-only; now `status_display_fields`, and the party payload builds from
+      the member's REAL `_party_member_view` instead of a hand-made subset. Client feeds the strip from
+      party messages. Not verified in a running client.
+- [x] **The Warden's walk stepped into gathering nodes** and opened a gathering session, then waited on
+      it forever (found as a 2-in-3 failure of tutorial_walkthrough 9a). A blocked escorted step is now
+      a plain refusal - no bump interaction of any kind on the player's behalf.
+- [ ] **Monster debuffs outside `_PARTY_SHARED_MONSTER_KEYS`** (`monster_charmed`, `monster_weakness`,
+      `monster_slowed` + durations) are now carried PER MEMBER (before: dropped after the action). So a
+      charm protects only its caster in co-op. Decide whether they should be shared - and if so, tick
+      once per round, not once per member (see `_PARTY_DOT_KEYS`).
 - [x] **Phantom Strike's card hid its damage, and its text promised a skipped turn.** FIXED on master,
       not released. `preview_ability_effect` now quotes it (probe: wild_swing_and_preview s2b, quoted
       296 / dealt 303); descriptions in client.gd (two), help, and constants.gd corrected off the cast.

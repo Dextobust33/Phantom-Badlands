@@ -11314,6 +11314,49 @@ func engine_display_fields(character, combat: Dictionary) -> Dictionary:
 		"focus_note": _engine_note(character, combat),
 	}
 
+func status_display_fields(character, combat: Dictionary) -> Dictionary:
+	"""The status strip under each combatant's bar, for SOLO AND PARTY.
+
+	⛑ 2026-09-15 - only the solo combat_state carried these, so a party fight (the Warden's
+	included) showed no buffs, debuffs, DoT timers or mitigation at all. Owner: *"There is no
+	panel where players can see buffs and debuffs like in solo combat. While the warden is in the
+	party it should work just like party combat does."* Same fix as engine_display_fields: one
+	builder, and the party payload hands it the member's real view."""
+	return {
+		"player_status": {
+			"poison_turns": character.poison_turns_remaining if character.poison_active else 0,
+			"poison_damage": character.poison_damage if character.poison_active else 0,
+			"blind_turns": character.blind_turns_remaining if character.blind_active else 0,
+			"cloak": character.cloak_active,
+			"forcefield_shield": int(combat.get("forcefield_shield", 0)),
+			"buffs": character.active_buffs.duplicate(true) if character.active_buffs is Array else [],
+			# Mitigation the player cannot otherwise see: CON and banked engine stacks are not
+			# buffs, so they appeared on no surface at all.
+			"mitigation_pct": player_total_mitigation_pct(character, combat),
+			"mitigation_sources": player_mitigation_breakdown(character, combat),
+		},
+		"monster_status": {
+			"bleed_damage": int(combat.get("monster_bleed", 0)),
+			"bleed_turns": int(combat.get("monster_bleed_duration", 0)),
+			"poison_damage": int(combat.get("monster_poison", 0)),
+			"poison_turns": int(combat.get("monster_poison_duration", 0)),
+			"stun_turns": int(combat.get("monster_stunned", 0)),
+			"charm_turns": int(combat.get("monster_charmed", 0)),
+			"weakness_value": int(combat.get("monster_weakness", 0)),
+			"weakness_turns": int(combat.get("monster_weakness_duration", 0)),
+			"slow_value": int(combat.get("monster_slowed", 0)),
+			"slow_turns": int(combat.get("monster_slow_duration", 0)),
+			# 2026-09-07 — the three debuffs the CURRENT card set actually applies were missing,
+			# so the entire Trickster kit was invisible: you cast Sabotage/Hamstring/Snare,
+			# Distract, or Analyze/Track/Mark and had no way to see whether it landed, how big it
+			# was, or when it runs out. These are combat-scoped rather than turn-scoped, so they
+			# carry no duration — they last the fight, which is what "--" means on the chip.
+			"sabotage_value": int(combat.get("monster_sabotaged", 0)),
+			"distract_value": int(combat.get("enemy_distracted", 0)),
+			"analyze_value": int(combat.get("analyze_bonus", 0)),
+		},
+	}
+
 func get_combat_display(peer_id: int) -> Dictionary:
 	"""Get formatted combat state for display"""
 	if not active_combats.has(peer_id):
@@ -11426,38 +11469,6 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# Status-effect strip (additive — old clients ignore these fields).
 		# Compact dicts grouped by side so the client renders them under each
 		# combatant's HP bar without hunting through scattered top-level keys.
-		"player_status": {
-			"poison_turns": character.poison_turns_remaining if character.poison_active else 0,
-			"poison_damage": character.poison_damage if character.poison_active else 0,
-			"blind_turns": character.blind_turns_remaining if character.blind_active else 0,
-			"cloak": character.cloak_active,
-			"forcefield_shield": int(combat.get("forcefield_shield", 0)),
-			"buffs": character.active_buffs.duplicate(true) if character.active_buffs is Array else [],
-			# Mitigation the player cannot otherwise see: CON and banked engine stacks are not
-			# buffs, so they appeared on no surface at all.
-			"mitigation_pct": player_total_mitigation_pct(character, combat),
-			"mitigation_sources": player_mitigation_breakdown(character, combat),
-		},
-		"monster_status": {
-			"bleed_damage": int(combat.get("monster_bleed", 0)),
-			"bleed_turns": int(combat.get("monster_bleed_duration", 0)),
-			"poison_damage": int(combat.get("monster_poison", 0)),
-			"poison_turns": int(combat.get("monster_poison_duration", 0)),
-			"stun_turns": int(combat.get("monster_stunned", 0)),
-			"charm_turns": int(combat.get("monster_charmed", 0)),
-			"weakness_value": int(combat.get("monster_weakness", 0)),
-			"weakness_turns": int(combat.get("monster_weakness_duration", 0)),
-			"slow_value": int(combat.get("monster_slowed", 0)),
-			"slow_turns": int(combat.get("monster_slow_duration", 0)),
-			# 2026-09-07 — the three debuffs the CURRENT card set actually applies were missing,
-			# so the entire Trickster kit was invisible: you cast Sabotage/Hamstring/Snare,
-			# Distract, or Analyze/Track/Mark and had no way to see whether it landed, how big it
-			# was, or when it runs out. These are combat-scoped rather than turn-scoped, so they
-			# carry no duration — they last the fight, which is what "--" means on the chip.
-			"sabotage_value": int(combat.get("monster_sabotaged", 0)),
-			"distract_value": int(combat.get("enemy_distracted", 0)),
-			"analyze_value": int(combat.get("analyze_bonus", 0)),
-		},
 		# Phase B1 — Companion combat HP. Additive fields; old clients ignore
 		# them. -1 / false when no active companion.
 		"companion_combat_hp": character.get_companion_combat_hp() if character.has_active_companion() else -1,
@@ -11465,6 +11476,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"companion_ko": character.is_companion_ko() if character.has_active_companion() else false,
 	}
 	_state.merge(engine_display_fields(character, combat))
+	_state.merge(status_display_fields(character, combat))
 	return _state
 
 func get_monster_ascii_art(monster_name: String) -> String:

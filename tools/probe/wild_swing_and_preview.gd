@@ -123,8 +123,10 @@ func _init() -> void:
 	var ninja = sim.make_char(5, "average", "Ninja", "Human")
 	var mon = sim.make_monster(5, "normal", 50.0)
 	s.characters = {7: ninja}
-	cm.active_party_combats[7] = {"members": [7], "monster": mon, "round": 2,
-		"member_states": {7: {"hand": ["perfect_heist"], "deck": [], "discard": [], "combo": 3}}}
+	cm.active_party_combats[7] = {"members": [7], "monster": mon, "round": 2, "characters": {7: ninja},
+		"monster_sabotaged": 14,
+		"member_states": {7: {"hand": ["perfect_heist"], "deck": [], "discard": [], "combo": 3,
+			"view_carry": {"analyze_bonus": 10}}}}
 	var payload: Dictionary = s._party_member_hand_payload(7, 7)
 	var want: Dictionary = cm.engine_display_fields(ninja, {"character": ninja, "monster": mon, "combo": 3})
 	var missing: Array = []
@@ -135,6 +137,13 @@ func _init() -> void:
 	ck(String(payload.get("finisher_kind", "")) == "roll", "the Ninja's finisher is named a roll (got '%s')" % payload.get("finisher_kind", ""))
 	ck(int(payload.get("finisher_damage", 0)) > 1, "and carries real strike damage (got %s, was absent -> '~1')" % payload.get("finisher_damage", 0))
 	ck(int(payload.get("assassinate_chance", 0)) == int(want.get("assassinate_chance", -1)), "the chance matches the shared builder")
+	# The status strip, which only solo ever sent. Owner: *"There is no panel where players can
+	# see buffs and debuffs like in solo combat."*
+	ck(payload.get("player_status", null) is Dictionary and payload.get("monster_status", null) is Dictionary,
+		"the party payload carries the status strip (player_status / monster_status)")
+	var ms: Dictionary = payload.get("monster_status", {})
+	ck(int(ms.get("sabotage_value", 0)) == 14, "  with the SHARED monster debuff on it (sabotage %s)" % ms.get("sabotage_value", 0))
+	ck(int(ms.get("analyze_value", 0)) == 10, "  and this member's own carried Analyze bonus (%s)" % ms.get("analyze_value", 0))
 	cm.active_party_combats.erase(7)
 	s.free()
 

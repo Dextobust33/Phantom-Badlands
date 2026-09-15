@@ -5527,6 +5527,15 @@ func handle_move(peer_id: int, message: Dictionary):
 	if active_trades.has(peer_id):
 		_cancel_trade(peer_id, "Trade cancelled - you moved away.")
 
+	# ⛑ THE WARDEN'S STEP DOES NOT BUMP INTO THINGS ON YOUR BEHALF.
+	#
+	# A blocked tile is how the player TOUCHES the world - bump a tree to chop it, a station to
+	# craft, the quest board to read it. An escorted step is the walk trying a direction, and a
+	# blocked one is just a refusal. Measured 2026-09-15 (tutorial_walkthrough 9a, two runs in
+	# three): the walk stepped into a gathering node, opened a gathering session the player never
+	# asked for, and then waited forever because busy hands pause the escort.
+	if new_pos.x == old_x and new_pos.y == old_y and direction != 5 and _escorted_step:
+		return
 	# If blocked and not resting (direction 5), check what we bumped into
 	if new_pos.x == old_x and new_pos.y == old_y and direction != 5:
 		var target_pos = world_system.get_direction_offset(old_x, old_y, direction)
@@ -44920,18 +44929,12 @@ func _party_member_hand_payload(leader_id: int, pid: int) -> Dictionary:
 		# The builders want a combat-shaped dict; a party member's state is spread across
 		# member_states plus the shared monster, so assemble that view here and hand it over
 		# rather than duplicating either formula.
-		var _member_view := {
-			"character": ch,
-			"monster": c.get("monster", {}),
-			"combat_hand": out["combat_hand"],
-			"momentum": int(st.get("momentum", 0)),
-			"combo": int(st.get("combo", 0)),
-			"focus": int(st.get("focus", 0)),
-			"round": int(c.get("round", 1)),
-			"disguise_active": bool(c.get("disguise_active", false)),
-			"disguise_revealed": bool(c.get("disguise_revealed", false)),
-		}
+		# The member's REAL view - shared monster CC/DoTs, their own carried fight state - rather
+		# than a hand-built subset of it, which is how the status strip and half the engine
+		# fields went missing in co-op. Building it is read-only.
+		var _member_view: Dictionary = combat_mgr._party_member_view(c, pid)
 		out.merge(combat_mgr.engine_display_fields(ch, _member_view), true)
+		out.merge(combat_mgr.status_display_fields(ch, _member_view), true)
 		out["ability_costs"] = combat_mgr._build_ability_cost_info(_member_view)
 		out["ability_effects"] = combat_mgr._build_ability_effect_info(_member_view)
 		out["turn_regen"] = int(combat_mgr._estimate_turn_regen_for(ch))

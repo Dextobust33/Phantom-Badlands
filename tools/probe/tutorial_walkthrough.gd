@@ -323,6 +323,9 @@ func _init() -> void:
 		var _d1: float = Vector2(float(_gx - int(ch.x)), float(_gy - int(ch.y))).length()
 		print("  after thirty ticks: %v -> %v   (distance %.0f -> %.0f)" % [_before, _after, _d0, _d1])
 		ck(_after != _before, "the character actually MOVED without the player pressing anything")
+		# 2026-09-15: the walk used to step INTO gathering nodes, open a session the player never
+		# asked for, and then wait on it forever (busy hands pause him). Two runs in three failed.
+		ck(not sv.active_gathering.has(PEER), "  and never opened a gathering session on the player's behalf")
 		# Either he got somewhere, or he GAVE UP AND SAID SO. Both are acceptable outcomes; what
 		# is not acceptable is the third one, which is what this section caught: walking the
 		# player's character in a circle for thirty steps and never stopping, because the
