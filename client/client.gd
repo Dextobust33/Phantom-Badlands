@@ -45693,8 +45693,13 @@ func handle_dungeon_complete(message: Dictionary):
 	# The overworld facing is inferred from position CHANGES between location messages, and
 	# leaving a dungeon puts you back on the tile you entered from - no change, so the facing of
 	# your last DUNGEON step carried onto the map and placed the Warden and your companion by it.
-	# Owner 2026-09-15: *"his sprite is stuck north of me."* A fresh start reads as neutral.
-	_local_map_facing = ""
+	# Owner 2026-09-15: *"his sprite is stuck north of me."* A fresh start faces the camera.
+	#
+	# ⛑ A REAL DIRECTION, NEVER "". The first cut reset this to "" and the player's own sprite path
+	# is built from it (`overworld_pad32/<id>/<facing>_stand.png`), so the file did not exist and
+	# the player drew as a yellow "@" on leaving the dungeon. Owner: *"Your character sprite doesn't
+	# draw when you come out of the dungeon ... your character is a yellow @ sign."*
+	_local_map_facing = "down"
 	# Put the Coords / Region boxes back on the surface. They restore themselves on the
 	# next overworld draw anyway, but a hide that depends on another message arriving is
 	# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
@@ -46086,7 +46091,7 @@ func handle_dungeon_exit(message: Dictionary):
 
 	"""Handle exiting a dungeon (voluntary, death, collapse, or escape scroll)"""
 	dungeon_mode = false
-	_local_map_facing = ""      # see handle_dungeon_complete
+	_local_map_facing = "down"  # see handle_dungeon_complete - a real direction, never ""
 	# Put the Coords / Region boxes back on the surface. They restore themselves on the
 	# next overworld draw anyway, but a hide that depends on another message arriving is
 	# how the ORIGINAL bug worked: the gate was correct and simply never re-ran.
@@ -47181,16 +47186,23 @@ func _dungeon_warden_at(x: int, y: int) -> bool:
 	return spot == Vector2i(x, y)
 
 
-func _dungeon_warden_img() -> String:
-	"""His floor-backed frame, facing the way you are going - the same art set the player uses."""
+func _dungeon_warden_img(prop: String = "") -> String:
+	"""His floor-backed frame, facing the way you are going - the same art set the player uses.
+
+	`prop` is the cell's real GROUND, composited in exactly as the player's own sprite does
+	(`_dungeon_player_glyph`). The first cut drew the baked frame bare, so he carried a square of
+	corridor floor across every room. Owner 2026-09-15: *"the ground under the warden's sprite
+	while in a dungeon doesn't update like the players does causing it to be brown on tiles it
+	shouldn't be."*"""
 	var f := _local_map_facing if _local_map_facing != "" else "down"
 	var frame: String = ["_stand", "_walk1", "_walk2"][clampi(posmod(_dungeon_anim_tick, 3), 0, 2)]
 	var path := "res://client/sprites/overworld_floor32/%s/%s%s.png" % [WARDEN_SPRITE_ID, f, frame]
 	if not ResourceLoader.exists(path):
 		path = "res://client/sprites/overworld_floor32/%s/down_stand.png" % WARDEN_SPRITE_ID
 	if not ResourceLoader.exists(path):
-		return _dungeon_glyph_cell("W", "#9ACD32")
-	return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX, path]
+		return _dungeon_glyph_cell("W", "#9ACD32", "", prop)
+	return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX,
+		_DungeonComposite.over_prop(path, prop)]
 
 
 func _dungeon_companion_at(x: int, y: int) -> bool:
@@ -47957,7 +47969,7 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 				elif _dungeon_warden_at(x, y):
 					# Same rule as the companion below: inferred client-side, so anything the server
 					# placed wins the cell and he yields.
-					line += _dungeon_warden_img()
+					line += _dungeon_warden_img(_prop)
 				elif _dungeon_companion_at(x, y):
 					# LAST, and deliberately. The companion is the ONLY thing in this grid with no
 					# server-authoritative position - it is inferred client-side from the cell the

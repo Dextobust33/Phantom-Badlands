@@ -20695,7 +20695,16 @@ func _warden_settle_steps(peer_id: int, character, updates: Array) -> void:
 				send_to_peer(peer_id, {"type": "mark_tile", "x": int(_home.get("x", 0)), "y": int(_home.get("y", 0)),
 					"label": String(_home.get("name", "the post")), "seconds": 900})
 				_guide_say(peer_id, "That is the Watch done. Back to %s - I will see you as far as the gate, and then the road is yours." % String(_home.get("name", "the post")))
-			_guide_teach(peer_id, "first_egg")
+			# The walk home waits for the egg panel to be read. If that panel will not appear
+			# (seen before, no egg, tutorials off) the silence is a yes, as with the first walk.
+			_escort_released.erase(peer_id)
+			_escort_home_done.erase(peer_id)
+			var _acct_e := String(peers[peer_id].get("account_id", "")) if peers.has(peer_id) else ""
+			var _egg_panel: bool = not character.seen_guide_egg_hint and not character.incubating_eggs.is_empty() \
+				and (_acct_e == "" or persistence.tutorials_enabled(_acct_e))
+			_guide_teach(peer_id, "first_egg", "escort_home")
+			if not _egg_panel:
+				_escort_home_ready[peer_id] = true
 		if _qid == "wardens_watch_2":
 			_escort_released.erase(peer_id)
 			_mark_the_dungeon(peer_id, character)
@@ -43552,6 +43561,9 @@ const ESCORT_STEP_MS := 450
 ## and short enough that a player is not walked in circles for long before being told.
 const ESCORT_DRIFT_TICKS := 8
 var _escort_walk: Dictionary = {}     # peer_id -> {"path": Array[Vector2i], "at": int, "next_ms": int}
+# Step four's walk home: ready once the egg panel is closed, done once they are inside a post.
+var _escort_home_ready: Dictionary = {}
+var _escort_home_done: Dictionary = {}
 
 
 func _dir_toward(dx: int, dy: int) -> int:
@@ -43604,6 +43616,8 @@ func handle_tutorial_ack(peer_id: int, message: Dictionary) -> void:
 			# moving at all, and it is the player's character.
 			_escort_ready[peer_id] = true
 			_escort_asked.erase(peer_id)
+		"escort_home":
+			_escort_home_ready[peer_id] = true
 
 
 func _escort_ask_to_lead(peer_id: int, character) -> void:
@@ -43677,8 +43691,6 @@ func _escort_walk_maybe_start_all() -> void:
 	for peer_id in characters:
 		if _escort_walk.has(peer_id) or _escort_released.get(peer_id, false):
 			continue
-		if _escort_done.get(peer_id, false):
-			continue
 		if Time.get_ticks_msec() < int(_escort_retry_ms.get(peer_id, 0)):
 			continue
 		var ch = characters[peer_id]
@@ -43687,7 +43699,27 @@ func _escort_walk_maybe_start_all() -> void:
 		# Busy hands. Fishing, mining, chopping - he waits rather than hauling them off a node.
 		if active_gathering.has(peer_id):
 			continue
-		if _wardens_watch_stage(ch) != 3 or not _guide_escorts_overworld(peer_id, ch):
+		if not _guide_escorts_overworld(peer_id, ch):
+			continue
+		var _st_now := _wardens_watch_stage(ch)
+		# Step four: he walks you HOME. Owner 2026-09-15: *"the warden should ideally walk you back
+		# to the post since he is standing in front of you."* Waits for the egg panel to be closed
+		# (see _warden_settle_steps), once per character, and never inside a post.
+		if _st_now == 4:
+			if _escort_home_done.get(peer_id, false) or not _escort_home_ready.get(peer_id, false):
+				continue
+			if world_system._is_npc_post_interior(int(ch.x), int(ch.y)):
+				_escort_home_done[peer_id] = true
+				continue
+			var _hg: Dictionary = _escort_goal_for(peer_id, ch)
+			if _hg.is_empty():
+				continue
+			_guide_say(peer_id, "Home, then. Stay with me.")
+			_escort_walk[peer_id] = {"gx": int(_hg.get("x", 0)), "gy": int(_hg.get("y", 0)),
+				"next_ms": Time.get_ticks_msec(), "stuck": 0, "home": true}
+			continue
+		# `_escort_done` is step three's arrival; it must not also stop the walk home.
+		if _st_now != 3 or _escort_done.get(peer_id, false):
 			continue
 		if not _escort_ready.get(peer_id, false):
 			_escort_ask_to_lead(peer_id, ch)
@@ -43803,6 +43835,89 @@ func _escort_step_target(peer_id: int, character, st: Dictionary, gx: int, gy: i
 	st["door_y"] = door.y
 	return door
 
+## ⛑ HE FINDS A ROUTE NOW, INSTEAD OF STEPPING AT THE GOAL AND HOPING.
+##
+## Owner 2026-09-15: *"It seems like the post doors/walls get the wardens pathing confused, he goes
+## back and forth before giving up. Also, the water/gathering nodes might be a problem for him as
+## well."* The walk was a greedy stepper - try the eight directions by how close each leaves you -
+## and a greedy stepper has no answer to a wall between you and the goal: every step around it
+## scores worse than stepping back. Four earlier patches (door waypoints, a cached door, a drift
+## check, sorting post tiles last) each fixed one shape of that and left the rest.
+##
+## This retires the class. A bounded breadth-first search asks `world_system.move_player` - the
+## exact rule a real step obeys, walls, water, gathering nodes and his own post tile included -
+## whether each neighbour can be entered, so there is no second copy of "what blocks movement" to
+## drift. Post interiors are only crossed when the walk starts or ends inside one.
+const ESCORT_PATH_PAD := 16          # first try: this far beyond the start/goal box
+const ESCORT_PATH_WIDE_PAD := 48     # then this far, for lakes and ridges that need a real detour
+const ESCORT_PATH_MAX_NODES := 40000
+const _ESCORT_DIR_BY_DELTA := {
+	Vector2i(0, 1): 8, Vector2i(0, -1): 2, Vector2i(-1, 0): 4, Vector2i(1, 0): 6,
+	Vector2i(-1, 1): 7, Vector2i(1, 1): 9, Vector2i(-1, -1): 1, Vector2i(1, -1): 3,
+}
+
+func _escort_path(character, gx: int, gy: int, home: bool, quick: bool = false) -> Array:
+	"""Tiles from (not including) the character's position to the goal, or [] if no route exists.
+	`home` ends at the FIRST post-interior tile - arriving inside is the whole of the goal, and a
+	post's centre is often a throne that cannot be stood on.
+
+	Three tries, cheapest first. Measured 2026-09-15 sweeping 24 dungeon placements from the
+	Crossroads: the tight box missed 2 of 16 land goals that a wide search reached - a lake detour
+	and a route that has to pass through the post. So: tight, then wide, then wide THROUGH posts."""
+	if world_system == null or character == null:
+		return []
+	var p: Array = _escort_path_search(character, gx, gy, home, ESCORT_PATH_PAD, false)
+	# A goal with NO route costs the whole wide search - measured 300-550ms - so a re-plan after a
+	# refused step asks only the tight box. The full search runs once per walk.
+	if quick:
+		return p
+	if p.is_empty():
+		p = _escort_path_search(character, gx, gy, home, ESCORT_PATH_WIDE_PAD, false)
+	if p.is_empty():
+		p = _escort_path_search(character, gx, gy, home, ESCORT_PATH_WIDE_PAD, true)
+	return p
+
+
+func _escort_path_search(character, gx: int, gy: int, home: bool, pad: int, through_posts: bool) -> Array:
+	var start := Vector2i(int(character.x), int(character.y))
+	var goal := Vector2i(gx, gy)
+	var minx: int = mini(start.x, gx) - pad
+	var maxx: int = maxi(start.x, gx) + pad
+	var miny: int = mini(start.y, gy) - pad
+	var maxy: int = maxi(start.y, gy) + pad
+	var through: Array = ["warden"]
+	var may_use_posts: bool = through_posts or home or world_system._is_npc_post_interior(start.x, start.y) \
+		or world_system._is_npc_post_interior(gx, gy)
+	var prev := {start: start}
+	var queue: Array = [start]
+	var head := 0
+	var found := Vector2i(0x7FFFFFFF, 0)
+	while head < queue.size() and prev.size() < ESCORT_PATH_MAX_NODES:
+		var cur: Vector2i = queue[head]
+		head += 1
+		if cur == goal or (home and cur != start and world_system._is_npc_post_interior(cur.x, cur.y)):
+			found = cur
+			break
+		for d in [8, 2, 4, 6, 7, 9, 1, 3]:          # cardinals first: straighter-looking routes
+			var n: Vector2i = world_system.move_player(cur.x, cur.y, int(d), through)
+			if n == cur or prev.has(n):
+				continue
+			if n.x < minx or n.x > maxx or n.y < miny or n.y > maxy:
+				continue
+			if not may_use_posts and n != goal and world_system._is_npc_post_interior(n.x, n.y):
+				continue
+			prev[n] = cur
+			queue.append(n)
+	if found.x == 0x7FFFFFFF:
+		return []
+	var path: Array = []
+	var at: Vector2i = found
+	while at != start:
+		path.push_front(at)
+		at = prev[at]
+	return path
+
+
 func _escort_walk_tick() -> void:
 	"""Move every escorted player one step along the Warden's route, when it is due."""
 	_escort_walk_maybe_start_all()
@@ -43840,10 +43955,58 @@ func _escort_walk_tick() -> void:
 		# never cleared (it clears when you stand on what it marks), and the player was left to
 		# guess which of the eight squares around them was the hole. Owner 2026-09-15: *"He got
 		# me close to the dungeon but now it shows a yellow ring on a path tile."*
-		if int(ch.x) == gx and int(ch.y) == gy:
+		var _home_walk: bool = bool(st.get("home", false))
+		# Home: arriving INSIDE a post is the goal, and that is also where he leaves you.
+		if _home_walk and (world_system._is_npc_post_interior(int(ch.x), int(ch.y))
+				or not _guide_escorts_overworld(peer_id, ch)):
+			_escort_walk.erase(peer_id)
+			_escort_home_done[peer_id] = true
+			continue
+		if not _home_walk and int(ch.x) == gx and int(ch.y) == gy:
 			_escort_deliver(peer_id, ch)
 			continue
-		# The immediate target - the door first if we are boxed inside a post.
+		# --- the route -------------------------------------------------------------------------
+		var _path: Array = st.get("path", [])
+		if _path.is_empty() and not bool(st.get("path_failed", false)):
+			_path = _escort_path(ch, gx, gy, _home_walk, bool(st.get("planned_once", false)))
+			st["planned_once"] = true
+			if _path.is_empty():
+				st["path_failed"] = true
+		if not _path.is_empty():
+			var _here := Vector2i(int(ch.x), int(ch.y))
+			var _next: Vector2i = _path[0]
+			var _dir: int = int(_ESCORT_DIR_BY_DELTA.get(_next - _here, 0))
+			var _stepped := false
+			if _dir != 0:
+				handle_move(peer_id, {"direction": _dir, "escorted": true})
+			var _now_at := Vector2i(int(ch.x), int(ch.y))
+			if _now_at == _next:
+				_path.pop_front()
+				_stepped = true
+			elif _now_at != _here:
+				_path = []             # moved, but not where planned: plan again from here
+				_stepped = true
+			else:
+				# Refused - a gate, a cap, something that moved into the way. Re-plan, and after a
+				# few refusals in a row stop trusting the route and let the old stepper try.
+				_path = []
+				st["refusals"] = int(st.get("refusals", 0)) + 1
+				if int(st["refusals"]) >= 3:
+					st["path_failed"] = true
+			if _stepped:
+				st["refusals"] = 0
+			st["path"] = _path
+			st["next_ms"] = now + ESCORT_STEP_MS
+			st["stuck"] = 0 if _stepped else int(st.get("stuck", 0)) + 1
+			if int(st.get("stuck", 0)) >= 6:
+				_escort_walk.erase(peer_id)
+				_escort_retry_ms[peer_id] = now + 20000
+				_guide_say(peer_id, "The ground beats me here. Head %s - I am with you."
+					% String(_escort_goal_for(peer_id, ch).get("where", "on")))
+				continue
+			_escort_walk[peer_id] = st
+			continue
+		# --- no route inside the search box: the old greedy stepper, and its honest give-up --------
 		var aim := _escort_step_target(peer_id, ch, st, gx, gy)
 		var dx: int = aim.x - int(ch.x)
 		var dy: int = aim.y - int(ch.y)
@@ -44431,7 +44594,7 @@ func _guide_say(peer_id: int, line: String) -> void:
 		"[color=#9ACD32]%s:[/color] [color=#CFE8B0]\"%s\"[/color]" % [GUIDE_NAME, line]})
 
 
-func _guide_teach(peer_id: int, topic: String) -> void:
+func _guide_teach(peer_id: int, topic: String, ack: String = "") -> void:
 	"""One overlay per system, the FIRST time that system matters to this character.
 
 	Owner 2026-09-14 chose panel-then-voice: a panel for each major system so the lesson cannot
@@ -44558,9 +44721,27 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			body = ("\"This is where I leave you. You know enough not to die stupidly.\"\n\n"
 				+ "[color=#FFD700]Quests[/color] - the [color=#FFD700]Quests[/color] button (bottom right, or [color=#9ACD32]R[/color] when nothing else is on your tile) shows what you are working on. To take a new one or hand one in, walk into the [color=#FFD700]Q[/color] tile - the Quest Board - inside a post.\n\n"
 				+ "[color=#FFD700]Gear you do not want[/color] - you will be carrying plenty.\n"
-				+ "  - [b]Salvage it[/b] for crafting materials, anywhere: open [color=#FFD700]Inventory[/color] ([color=#9ACD32]Q[/color]) and press [color=#FFD700]Salvage[/color], or use [color=#FFD700]Salvage[/color] in the inventory window.\n"
-				+ "  - [b]Sell it[/b] for valor: walk into the [color=#FFD700]$[/color] tile - the Open Market - and choose [color=#FFD700]List Item[/color], or [color=#FFD700]Sell / Bulk List[/color], then List from Inventory. You are paid the moment it is listed.")
+				+ "  - [b]Salvage it[/b], anywhere: open your [color=#FFD700]Inventory[/color] ([color=#9ACD32]Q[/color]) and use the [color=#FFD700]Salvage[/color] dropdown at the bottom left, or right-click the item you want to break down. You get [color=#9ACD32]materials[/color] - use them for crafting, or list them on the market for valor.\n"
+				+ "  - [b]Sell it[/b]: walk into the [color=#FFD700]market stall[/color] - the counter piled with goods, ringed on your map - and choose [color=#FFD700]Sell / Bulk List[/color], then List from Inventory. You are paid valor the moment it is listed.")
 			ring = ["quests_shortcut", "inventory_shortcut"]
+			# The market is a SPRITE now; there is no "$" to look for. Owner 2026-09-15: *"Shows Sell
+			# it for valor walk into the $ tile (it's a sprite now so no $ exists)."* Ring the nearest
+			# stall instead, the same way he rings the dungeon and the door.
+			if chunk_manager:
+				var _best := Vector2i(0x7FFFFFFF, 0)
+				var _bd := 1 << 30
+				for _my in range(-14, 15):
+					for _mx in range(-14, 15):
+						var _tx := int(ch.x) + _mx
+						var _ty := int(ch.y) + _my
+						if String(chunk_manager.get_tile(_tx, _ty).get("type", "")) == "market":
+							var _dd := _mx * _mx + _my * _my
+							if _dd < _bd:
+								_bd = _dd
+								_best = Vector2i(_tx, _ty)
+				if _best.x != 0x7FFFFFFF:
+					send_to_peer(peer_id, {"type": "mark_tile", "x": _best.x, "y": _best.y,
+						"label": "Market", "seconds": 120, "clear_on_leave_post": true})
 		"world":
 			# ⛑ RETIRED 2026-09-15 - ABSORBED INTO `_escort_ask_to_lead`, NOT DELETED.
 			#
@@ -44579,7 +44760,7 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 			return
 		_:
 			return
-	_send_hint(peer_id, title, body, "", ring)
+	_send_hint(peer_id, title, body, "", ring, ack)
 	save_character(peer_id)
 
 

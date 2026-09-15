@@ -89,6 +89,13 @@ func _init() -> void:
 	ck(not cl._dungeon_warden_at(5, 5), "  never on your own cell")
 	cl.dungeon_data = {"escort": ""}
 	ck(not cl._dungeon_warden_at(4, 5), "and he is not drawn when the server says he is not with you")
+	# ...and he stands ON the real ground, like the player, not on a baked square of corridor.
+	var wsrc := FileAccess.get_file_as_string(CLIENT)
+	ck(wsrc.contains("line += _dungeon_warden_img(_prop)"), "the Warden's cell is handed the ground it stands on")
+	# 2026-09-15: leaving a dungeon reset the facing to "", the player's sprite path is built from
+	# it, and the player drew as a yellow "@". A facing is always a real direction.
+	ck(not wsrc.contains('_local_map_facing = ""'), "the map facing is never reset to an empty direction")
+	ck(wsrc.contains("_DungeonComposite.over_prop(path, prop)]"), "  and composites onto it, the same helper the player uses")
 	cl.free()
 
 	print("\n--- 2. light does not depend on what is standing on the cell ---")

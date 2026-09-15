@@ -297,7 +297,11 @@ func _init() -> void:
 		# start would have punished the correct behaviour, and loosening the check to "it moved"
 		# would have stopped catching the wedge it exists for.
 		var _outside_at: float = -1.0
-		for _t in range(30):
+		# 220, not 30: since 2026-09-15 he follows a real ROUTE, and a lake detour is ~100 steps that
+		# first lead AWAY from the goal - measured (25,14) in 96 ticks, (21,21) in 103. Thirty ticks
+		# judged a correct detour as 'not closer'. The requirement is unchanged: arrive, or give up
+		# honestly; never pace forever.
+		for _t in range(220):
 			# The tick ERASES the entry when the walk ends - arrival, wedged, or the player
 			# entering a dungeon - so it has to be re-checked each pass rather than indexed
 			# blind. The first cut indexed it and crashed on the first tick that finished.
@@ -321,7 +325,7 @@ func _init() -> void:
 			await process_frame
 		var _after := Vector2i(int(ch.x), int(ch.y))
 		var _d1: float = Vector2(float(_gx - int(ch.x)), float(_gy - int(ch.y))).length()
-		print("  after thirty ticks: %v -> %v   (distance %.0f -> %.0f)" % [_before, _after, _d0, _d1])
+		print("  after the walk: %v -> %v   (distance %.0f -> %.0f)" % [_before, _after, _d0, _d1])
 		ck(_after != _before, "the character actually MOVED without the player pressing anything")
 		# 2026-09-15: the walk used to step INTO gathering nodes, open a session the player never
 		# asked for, and then wait on it forever (busy hands pause him). Two runs in three failed.
@@ -414,6 +418,34 @@ func _init() -> void:
 	sv._handle_warden_interact(PEER, ch)
 	await process_frame
 	ck(sv._wardens_watch_stage(ch) == 4, "  walking into the Warden settles it (stage %d)" % sv._wardens_watch_stage(ch))
+	# ⛑ AND HE WALKS THEM HOME. Owner 2026-09-15: *"the warden should ideally walk you back to the
+	# post since he is standing in front of you"*, and his route used to pace at post walls and
+	# water: *"he goes back and forth before giving up."* The egg panel is closed (the ack), then
+	# the REAL tick walks them - through the real move handler, so the home lesson has to fire
+	# from handle_move on arrival rather than being called here.
+	var _hx0 := Vector2i(int(ch.x), int(ch.y))
+	var _open_h := _find_open_ground(_hx0.x, _hx0.y)
+	if _open_h.x != 0x7FFFFFFF:
+		ch.x = _open_h.x
+		ch.y = _open_h.y
+	sv._escort_released.erase(PEER)
+	sv._escort_home_done.erase(PEER)
+	# A give-up on the way TO the dungeon arms a 20s retry; in play that has long passed by the time
+	# the dungeon is cleared, so it is not what this measures.
+	sv._escort_retry_ms.erase(PEER)
+	sv.handle_tutorial_ack(PEER, {"ack": "escort_home"})
+	var _home_ticks := -1
+	var _home_start := Vector2i(int(ch.x), int(ch.y))
+	for _t in range(260):
+		if sv._escort_walk.has(PEER):
+			sv._escort_walk[PEER]["next_ms"] = 0
+		sv._escort_walk_tick()
+		if sv.world_system._is_npc_post_interior(int(ch.x), int(ch.y)):
+			_home_ticks = _t
+			break
+	print("  walk home from %v: %s" % [_home_start, ("inside a post after %d ticks at %v" % [_home_ticks, Vector2i(int(ch.x), int(ch.y))]) if _home_ticks >= 0 else ("NOT home - stopped at %v, walking=%s" % [Vector2i(int(ch.x), int(ch.y)), str(sv._escort_walk.has(PEER))])])
+	ck(_home_ticks >= 0, "  and once the egg panel is closed he WALKS them home, into a post")
+	ck(ch.seen_guide_home_hint, "  where the Home lesson fires from the real move handler")
 	# The dungeon-completion path must actually CALL the routine exercised above.
 	var _dsrc := FileAccess.get_file_as_string("res://server/server.gd")
 	var _dcall := _dsrc.find("var quest_updates = quest_mgr.check_dungeon_progress(character, dungeon_type)")

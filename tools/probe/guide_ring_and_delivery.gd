@@ -82,7 +82,9 @@ func _init() -> void:
 	var t := ssrc.find("func _escort_walk_tick")
 	var t_end := ssrc.find("\nfunc ", t + 10)
 	var tick := ssrc.substr(t, (t_end - t) if t_end > t else 6000)
-	ck(tick.contains("if int(ch.x) == gx and int(ch.y) == gy:"),
+	# `not _home_walk and` since 2026-09-15: the tick also walks you HOME, whose goal is any post
+	# interior rather than one tile. The dungeon arrival rule itself is unchanged.
+	ck(tick.contains("int(ch.x) == gx and int(ch.y) == gy:"),
 		"arrival is standing ON the entrance")
 	ck(not tick.contains("if absi(dx) <= 1 and absi(dy) <= 1:"),
 		"  the one-tile-short arrival is gone")
