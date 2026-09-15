@@ -8515,6 +8515,15 @@ func send_location_update(peer_id: int):
 		# true of the frame being drawn: escort state changes when a quest stage turns over, and
 		# a separate push would arrive a frame late and draw him beside a player he had left.
 		"escort": "warden" if _guide_escorts_overworld(peer_id, character) else "",
+		# ⛑ HE LEADS. Owner 2026-09-14: *"he should lead us to the Dungeon. The player shouldn't
+		# be left to fumble and have no idea what to do."*
+		#
+		# A popup naming a bearing is read once and then the player is walking blind - the
+		# starter dungeon sits ~30 tiles out against a vision radius of 11, so it is off screen
+		# for most of the journey and the gold ring cannot help until they are nearly there.
+		# This rides EVERY location message, so the direction and the distance are on screen the
+		# whole way and update with each step.
+		"escort_goal": _escort_goal_for(peer_id, character),
 		"description": map_display,
 		"map": map_payload if peer_reads_payload else {},
 		"at_water": is_at_water,
@@ -43247,7 +43256,74 @@ func _guide_escorts_overworld(peer_id: int, character) -> bool:
 	if not character.met_warden:
 		return false
 	var st := _wardens_watch_stage(character)
-	return st == 1 or st == 2
+	# ⛑ THROUGH STEP THREE, NOT UP TO IT.
+	#
+	# The docstring above has always said "ends when step 3 does"; the code ended it when step 3
+	# STARTED. Step three is the walk to the dungeon and the dungeon itself - open ground a
+	# level-2 character has to cross - so he vanished at the exact moment he had just promised
+	# to come along. Owner 2026-09-14: *"the warden doesn't seem to be in my party anymore. I
+	# immediately ran into a wolf and had to fight it solo."*
+	#
+	# ⛑ AND HOME AGAIN.
+	#
+	# Owner 2026-09-14: *"this is a starter dungeon, the player doesn't even have full equipment
+	# at this point... they have to live to get to it and back from it."* Quite - the starter
+	# dungeon sits ~30 tiles out, and ending the escort the moment the boss died left a level-2
+	# with an unfinished kit to walk all of that back alone, carrying everything they had just
+	# earned. Under permadeath that is the worst possible place to abandon somebody.
+	#
+	# So stage 4 - the chain complete - keeps him until they are standing inside a post again.
+	# He leaves for good, as designed; he just does not leave them in a field to do it.
+	if st == 4:
+		return not world_system._is_npc_post_interior(int(character.x), int(character.y))
+	return st >= 1 and st <= 3
+
+
+func _escort_goal_for(peer_id: int, character) -> Dictionary:
+	"""Where the Warden is taking you, refreshed every step. Empty when he is not leading."""
+	if character == null or not _guide_escorts_overworld(peer_id, character):
+		return {}
+	if _wardens_watch_stage(character) != 3:
+		return {}          # only step three is a journey; the others are fought where you stand
+	var d: Dictionary = _nearest_starter_dungeon(character)
+	if d.is_empty():
+		return {}
+	# `direction_text` already reads "22 tiles northwest" - it carries the distance itself. The
+	# first cut printed the distance again beside it and produced "22 tiles 22 tiles northwest".
+	return {"name": String(d.get("name", "the dungeon")),
+		"where": String(d.get("direction_text", "")),
+		"x": int(d.get("x", 0)), "y": int(d.get("y", 0))}
+
+
+func _nearest_starter_dungeon(character) -> Dictionary:
+	"""The dungeon the tutorial means: the one flagged `starter`, nearest to this character.
+
+	Looked up by the FLAG rather than by tier, because the tier filter is what failed - a starter
+	dungeon is sized and flagged for new players regardless of what grade the land gave it."""
+	if character == null:
+		return {}
+	var best: Dictionary = {}
+	var best_d := 1e12
+	for iid in active_dungeons:
+		var inst: Dictionary = active_dungeons[iid]
+		if not bool(inst.get("starter", false)):
+			continue
+		if int(inst.get("completed_at", 0)) > 0:
+			continue
+		var dx: float = float(int(inst.get("world_x", 0)) - int(character.x))
+		var dy: float = float(int(inst.get("world_y", 0)) - int(character.y))
+		var dist := sqrt(dx * dx + dy * dy)
+		if dist < best_d:
+			best_d = dist
+			best = {
+				"x": int(inst.get("world_x", 0)),
+				"y": int(inst.get("world_y", 0)),
+				"distance": int(dist),
+				"direction_text": _get_direction_text(int(character.x), int(character.y),
+					int(inst.get("world_x", 0)), int(inst.get("world_y", 0))),
+				"name": String(_dungeon_data_for(inst).get("name", "the dungeon")),
+			}
+	return best
 
 
 func _point_at_the_dungeon(peer_id: int, character) -> void:
@@ -43259,10 +43335,19 @@ func _point_at_the_dungeon(peer_id: int, character) -> void:
 	itself as they get close."""
 	if character == null:
 		return
-	var d: Dictionary = _find_nearest_dungeon_for_quest(int(character.x), int(character.y), "", 1, peer_id)
+	# ⛑ MAKE SURE THERE IS ONE, THEN FIND IT.
+	#
+	# `_find_nearest_dungeon_for_quest(..., tier 1)` accepts only tier-1 instances, and since the
+	# LAND decides a dungeon's grade there may be no tier-1 anywhere near spawn - measured: none
+	# at all from (-8,-8) on a fresh world. The pointer then fell through to a vague line and the
+	# player was told to find a "D" that did not exist. Owner: *"I don't see a D."*
+	_ensure_starter_dungeon_exists()
+	var d: Dictionary = _nearest_starter_dungeon(character)
 	if d.is_empty():
-		# Nothing to point at. Say so rather than send them hunting for a D that is not there.
-		_guide_say(peer_id, "There is a hole in the ground within a day's walk of here. Ask at the post if you lose it.")
+		d = _find_nearest_dungeon_for_quest(int(character.x), int(character.y), "", 3, peer_id)
+	if d.is_empty():
+		# Still nothing. Say so plainly rather than send them hunting.
+		_guide_say(peer_id, "There is a hole in the ground somewhere near. Ask at the post - I cannot see it from here.")
 		return
 	var dname := String(d.get("name", "the dungeon"))
 	var dist := int(d.get("distance", 0))
@@ -43274,10 +43359,9 @@ func _point_at_the_dungeon(peer_id: int, character) -> void:
 		("\"That one.\"
 
 "
-			+ "[color=#FFD700]%s[/color] — about [color=#FFD700]%d tiles %s[/color] of you.
+			+ "[color=#FFD700]%s[/color] — [color=#FFD700]%s[/color] of you.
 
-"
-			% [dname, dist, dir]
+" % [dname, dir]
 			+ "It is ringed in gold on your map the moment it comes into sight. Walk onto it.
 
 "
@@ -43594,7 +43678,7 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 "
 				+ "[color=#9ACD32]\"Rest when you are hurt — it costs nothing but time. And when you die "
 				+ "out here you stay dead — only the Sanctuary carries over.\"[/color]\n\n"
-				+ "[color=#FFD700]Next:[/color] find the [color=#FFD700]D[/color] on your map and walk onto it. He is coming with you.")
+				+ "[color=#FFD700]Next:[/color] he will show you the way on the map — walk onto the ringed tile.")
 			ring = ["map"]
 		_:
 			return

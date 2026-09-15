@@ -190,6 +190,59 @@ func _init() -> void:
 	ck(stage_after == 3, "step two settled itself too - the chain did not stall")
 	ck(ch.seen_guide_world_hint, "  and the world lesson fired on the way past")
 
+	print("")
+	print("===== 9. HE IS STILL WITH YOU, AND HE POINTS AT A REAL DUNGEON =====")
+	# Owner 2026-09-14: *"It told me to go do the D on my map. I don't see a D and the warden
+	# doesn't seem to be in my party anymore. I immediately ran into a wolf and had to fight it
+	# solo."* Step three IS the walk to the dungeon - open ground a level-2 has to cross - and
+	# the escort was ending as step three began.
+	ck(sv._guide_escorts_overworld(PEER, ch),
+		"the escort covers step THREE as well - the walk to the dungeon is the dangerous part")
+	# And there has to be something to walk to. A starter dungeon sits ~30 tiles out against a
+	# vision radius of 11, so it is off screen: the bearing in his popup is the only guidance
+	# until the ring lights up, which makes "is there one at all" worth asserting.
+	# Ask through the REAL path - the one the location message uses - rather than reaching for a
+	# lookup of my own. The first cut called _find_nearest_dungeon_for_quest directly and so
+	# measured a different function than the game runs.
+	sv._ensure_starter_dungeon_exists()
+	var goal: Dictionary = sv._escort_goal_for(PEER, ch)
+	if goal.is_empty():
+		print("  he is leading them nowhere")
+	else:
+		print("  leading to: %s, %s" % [String(goal.get("name", "?")), String(goal.get("where", "?"))])
+	ck(not goal.is_empty(), "he is LEADING them somewhere, not just naming a bearing once")
+	ck(String(goal.get("where", "")).contains("tiles"),
+		"  with a live distance and bearing that rides every location message")
+	# And it says the distance ONCE. `direction_text` already contains it, so printing the
+	# number beside it produced "22 tiles 22 tiles northwest".
+	var _w := String(goal.get("where", ""))
+	ck(_w.count("tiles") == 1, "  said once, not twice (%s)" % _w)
+
+	print("")
+	print("===== 10. AND HE SEES THEM HOME =====")
+	# Owner 2026-09-14: *"this is a starter dungeon, the player doesn't even have full equipment
+	# at this point... they have to live to get to it and back from it."* The escort used to end
+	# the moment the boss died, leaving a level-2 with an unfinished kit ~30 tiles from anywhere,
+	# carrying everything they had just earned.
+	var _completed: Array = ch.completed_quests.duplicate()
+	ch.active_quests.clear()
+	ch.completed_quests.append("wardens_watch_3")
+	ck(sv._wardens_watch_stage(ch) == 4, "with the chain finished the character reads stage 4")
+	ch.x = 9999
+	ch.y = 9999       # far from any post interior
+	ck(sv._guide_escorts_overworld(PEER, ch),
+		"he is STILL with them out in the open - the walk home is the same walk")
+	# ...and lets go once they are safe. Find a real post interior to stand in.
+	var home := _find_post_interior()
+	if home.x == 0x7FFFFFFF:
+		print("  SKIP - no post interior found near the origin in this seed")
+	else:
+		ch.x = home.x
+		ch.y = home.y
+		ck(not sv._guide_escorts_overworld(PEER, ch),
+			"and he leaves once they are standing inside a post")
+	ch.completed_quests = _completed
+
 	_finish()
 
 
@@ -212,6 +265,17 @@ func _stage_done(ch) -> bool:
 		if String(qid) == "wardens_watch_1":
 			return true
 	return _stage1_progress(ch) == -1
+
+
+func _find_post_interior() -> Vector2i:
+	for r in range(1, 45):
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				if absi(dx) != r and absi(dy) != r:
+					continue
+				if sv.world_system._is_npc_post_interior(dx, dy):
+					return Vector2i(dx, dy)
+	return Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 
 
 func _find_post_edge() -> Vector4i:

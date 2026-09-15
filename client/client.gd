@@ -1688,6 +1688,8 @@ func _warden_sprite(facing: String, walking: bool) -> String:
 	return path if ResourceLoader.exists(path) else WARDEN_FIGURE_SPRITE
 # "warden" while he is escorting you, "" otherwise. Set from the location message.
 var _escort_kind: String = ""
+# Where he is taking you, refreshed by every location message. Empty when he is not leading.
+var _escort_goal: Dictionary = {}
 # A single world tile the guide is pointing at, and when the pointing stops. See "mark_tile".
 var _mark_tile: Vector2i = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 var _mark_until_ms: int = 0
@@ -24472,6 +24474,8 @@ func handle_server_message(message: Dictionary):
 			# Who is walking with you. Read before anything draws, so the escort appears on the
 			# same frame as the move rather than one behind it.
 			_escort_kind = String(message.get("escort", ""))
+			var _eg = message.get("escort_goal", {})
+			_escort_goal = _eg if _eg is Dictionary else {}
 			# Surfaced HERE rather than at _ready, because at startup there is no game output to
 			# print into yet. Fires once, on the first location message after entering the world.
 			if _duplicate_instance_warned:
@@ -33289,6 +33293,20 @@ func update_tool_status_overlay():
 			quest_parts.append("  [color=%s]%s %d/%d[/color]" % [color, qname, progress, target])
 			shown += 1
 		sections.append("\n".join(quest_parts))
+
+	# --- The Warden leading you somewhere ---
+	#
+	# Owner 2026-09-14: *"he should lead us to the Dungeon. The player shouldn't be left to
+	# fumble and have no idea what to do."* A popup naming a bearing is read once and then they
+	# are walking blind - the starter dungeon is ~30 tiles out against a vision radius of 11, so
+	# it is off screen for most of the journey and the gold ring cannot help until they are
+	# nearly on it. This sits in the side panel and updates with every step.
+	if not _escort_goal.is_empty():
+		sections.append("[color=#9ACD32]Warden Hollis leads you to:[/color]
+  [color=#FFD700]%s[/color]
+  [color=#FFFFFF]%s[/color]"
+			% [String(_escort_goal.get("name", "the dungeon")),
+				String(_escort_goal.get("where", ""))])
 
 	# --- Incubating eggs (clickable, * = frozen) ---
 	var eggs = character_data.get("incubating_eggs", [])
