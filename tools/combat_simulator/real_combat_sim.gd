@@ -101,6 +101,47 @@ func _budget_expired() -> bool:
 	return true
 
 
+func _write_curve(fields: Dictionary, what: String) -> bool:
+	"""The ONE place shared/reference_monster_curve.json is written.
+
+	2026-09-15: a rolecal run outlived its budget, printed "results INCOMPLETE and must not be
+	used", and then wrote its half-converged multipliers into the curve anyway. All three
+	calibration layers had their own FileAccess call and not one of them asked whether the run
+	had aborted. Recovering cost a full 45-minute chain re-run (and a `git checkout` of the file
+	took the two GOOD layers with it). Every layer asks here now, so a fourth cannot forget.
+
+	`fields` are merged over whatever is already in the file — the layers are orthogonal and each
+	owns only its own keys (anchors / species_power / role_multipliers)."""
+	if _budget_tripped:
+		print("\n!! NOT writing %s — this run aborted on its budget, so its results are incomplete.\n!! shared/reference_monster_curve.json is UNCHANGED. Re-run with --budget=<seconds>." % what)
+		return false
+	var out := {}
+	var rf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
+	if rf != null:
+		var parsed = JSON.parse_string(rf.get_as_text())
+		rf.close()
+		if parsed is Dictionary:
+			out = parsed
+	for k in fields:
+		out[k] = fields[k]
+	var wf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
+	if wf == null:
+		print("\n!! COULD NOT OPEN the curve file for writing — %s was NOT saved." % what)
+		return false
+	wf.store_string(JSON.stringify(out, "\t"))
+	wf.close()
+	print("\nWrote %s." % what)
+	# CRITICAL: monster_database caches the curve on first load and _load_reference_curve
+	# early-returns once populated, so writing the file is NOT enough — any audit running after
+	# a calibration in the SAME process keeps using the pre-calibration curve. That is exactly
+	# what happened once: a `-- refcal roles ability_hp` run showed the calibration hitting ~5
+	# turns while the roles audit that followed measured ~3, and the disagreement was read as
+	# "high-level HP under-converges" when the two were simply measuring different curves.
+	monster_db._reference_anchors = []
+	monster_db._curve_is_calibrated = false
+	return true
+
+
 func _init():
 	seed(20260824)  # reproducible run-to-run (gear affixes/crits/empowered are RNG)
 	drop_tables = load("res://shared/drop_tables.gd").new()
@@ -2576,36 +2617,23 @@ Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;
 	# An allow-list of keys to keep has to be updated by whoever adds the next key, and will not
 	# be. Preserving the whole document and overwriting only refcal's own three fields means any
 	# future block survives by construction.
-	var out := {}
 	var _prev = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
 	if _prev != null:
 		var _parsed = JSON.parse_string(_prev.get_as_text())
 		_prev.close()
 		if _parsed is Dictionary:
-			out = _parsed
-	var _kept: Array = []
-	for _k in out.keys():
-		if _k not in ["generated", "target_turns", "anchors"]:
-			_kept.append(String(_k))
-	out["generated"] = "sim run_reference_calibrate"
-	out["target_turns"] = TARGET_TURNS_NORMAL_SIM
-	out["anchors"] = table
-	if not _kept.is_empty():
-		_kept.sort()
-		print("(carried forward: %s — re-run their audits if the base curve moved much)" % ", ".join(_kept))
-	var f = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(out, "\t"))
-		f.close()
-		print("\nWrote shared/reference_monster_curve.json (%d anchors)." % table.size())
-		# CRITICAL: monster_database caches the curve on first load and _load_reference_curve
-		# early-returns once populated, so writing the file is NOT enough — any audit running
-		# after refcal in the SAME process keeps using the pre-calibration curve. That is exactly
-		# what happened: a `-- refcal roles ability_hp` run showed the calibration hitting ~5
-		# turns while the roles audit that followed measured ~3, and the disagreement was read as
-		# "high-level HP under-converges" when the two were simply measuring different curves.
-		monster_db._reference_anchors = []
-		monster_db._curve_is_calibrated = false
+			var _kept: Array = []
+			for _k in (_parsed as Dictionary).keys():
+				if _k not in ["generated", "target_turns", "anchors"]:
+					_kept.append(String(_k))
+			if not _kept.is_empty():
+				_kept.sort()
+				print("(carried forward: %s — re-run their audits if the base curve moved much)" % ", ".join(_kept))
+	_write_curve({
+		"generated": "sim run_reference_calibrate",
+		"target_turns": TARGET_TURNS_NORMAL_SIM,
+		"anchors": table,
+	}, "shared/reference_monster_curve.json (%d anchors)" % table.size())
 	print("Re-run `-- refval` to confirm the model lands on target with these anchors.")
 	print("=====================================================================\n")
 
@@ -3256,23 +3284,8 @@ func run_role_calibrate():
 					"ok" if absf(_w - _tw) <= 8.0 else "OFF",
 					clamped_n, passes, "  SATURATED" if clamped_last else ""])
 		out_roles[role] = anchors
-	# Merge into the existing curve file — the baseline anchors from refcal must survive.
-	var existing := {}
-	var rf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
-	if rf:
-		var parsed = JSON.parse_string(rf.get_as_text())
-		rf.close()
-		if parsed is Dictionary:
-			existing = parsed
-	existing["role_multipliers"] = out_roles
-	var wf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
-	if wf:
-		wf.store_string(JSON.stringify(existing, "	"))
-		wf.close()
-		print("
-Wrote per-level role_multipliers for %d roles into the curve file." % out_roles.size())
-	monster_db._reference_anchors = []
-	monster_db._curve_is_calibrated = false
+	# _write_curve merges — the baseline anchors from refcal must survive.
+	_write_curve({"role_multipliers": out_roles}, "per-level role_multipliers for %d roles" % out_roles.size())
 	print("=====================================================================
 ")
 
@@ -3622,22 +3635,7 @@ func run_species_calibrate():
 		power[nm] = sp_anchors
 		if not shown.is_empty():
 			print("  %-22s%s %s" % [nm, " APEX" if is_apex else "     ", "  ".join(shown)])
-	var existing := {}
-	var rf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
-	if rf:
-		var parsed = JSON.parse_string(rf.get_as_text())
-		rf.close()
-		if parsed is Dictionary:
-			existing = parsed
-	existing["species_power"] = power
-	var wf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
-	if wf:
-		wf.store_string(JSON.stringify(existing, "	"))
-		wf.close()
-		print("
-Wrote species_power for %d species." % power.size())
-	monster_db._reference_anchors = []
-	monster_db._curve_is_calibrated = false
+	_write_curve({"species_power": power}, "species_power for %d species" % power.size())
 	print("=====================================================================
 ")
 
