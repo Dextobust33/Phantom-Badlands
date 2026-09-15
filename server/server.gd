@@ -44124,7 +44124,10 @@ func _handle_warden_interact(peer_id: int, character) -> void:
 			if _escort_walk.has(peer_id):
 				_guide_say(peer_id, "Stay with me. I have the way.")
 			else:
-				_guide_say(peer_id, "The hole in the ground, then. It is ringed on your map - I am coming with you.")
+				# The mark is sent once, at the end of step two, and lives only in client memory -
+				# a relog or its 15-minute timer loses it. Re-send it so the line below is true.
+				if not _mark_the_dungeon(peer_id, character).is_empty():
+					_guide_say(peer_id, "The hole in the ground, then. Follow the gold marker on your map - I am coming with you.")
 			_guide_say(peer_id, "Whatever is lying on the floor down there is yours. Walk over it and it is picked up - that is where the rest of your kit is coming from, so do not run for the stairs.")
 		4:
 			# ⛑ AND HE STILL OWES YOU ANYTHING YOUR PACK HAD NO ROOM FOR.

@@ -111,6 +111,8 @@ check "outsmart_button_gone" "true"          "$(field outsmart_button_gone)"
 check "passive_single_source" "true"         "$(field passive_single_source)"
 # The sprite Sanctuary's art is loaded by path and untracked; prove the packaged build has it.
 check "sanctuary_sprites"    "true"          "$(field sanctuary_sprites)"
+# v0.9.790: the off-map guide arrow (OverworldRoom.build's 7th argument).
+check "mark_arrow"           "true"          "$(field mark_arrow)"
 # The multi-cell tile manifest is a raw .json, not an imported resource - if it misses the .pck
 # the map silently falls back to the shrunken 32px tiles and nothing else looks wrong.
 BIG_TILES="$(field big_tiles)"

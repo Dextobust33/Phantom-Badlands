@@ -2506,6 +2506,12 @@ func _ready():
 		# silently falls back to the shrunken 32px tiles and everything still "works".
 		_OverworldRoom._load_big_spans()
 		print("[BUILDVERIFY] big_tiles=", _OverworldRoom._big_spans.size())
+		# v0.9.790: an off-map mark draws an arrow instead of nothing. `build` gained its 7th arg.
+		var _mark_arrow_live := false
+		for _m in (load("res://client/overworld_room.gd") as Script).get_script_method_list():
+			if String(_m.get("name", "")) == "build":
+				_mark_arrow_live = _m.get("args", []).size() >= 7
+		print("[BUILDVERIFY] mark_arrow=", _mark_arrow_live)
 		# Perf guards for the 4K-laptop thermal-throttling report (v0.9.735). These live in
 		# project.godot, which is baked into the pck — so the only way to know a shipped build
 		# still has them is to ask the running engine.
@@ -31358,7 +31364,7 @@ func display_changelog():
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
 	display_game("[color=#00FF00]v0.9.790[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FF8000]★ THE GOLD RING MARKS THE RIGHT TILE.[/color] It was drawn [b]mirrored north-to-south about you[/b], for its whole life. A panel saying “1 tile southwest” put the ring one tile [b]north[/b], on bare road. It now sits on the place it names.")
+	display_game("  [color=#FF8000]★ THE GOLD RING MARKS THE RIGHT TILE.[/color] It was drawn [b]mirrored north-to-south about you[/b], for its whole life. A panel saying “1 tile southwest” put the ring one tile [b]north[/b], on bare road. It now sits on the place it names — and when that place is [b]too far away to be on your map[/b], a [b]gold arrow[/b] beside you points the way instead of nothing being drawn at all.")
 	display_game("  [color=#FF8000]★ THE WARDEN PUTS YOU ON THE DOORSTEP.[/color] Three pop-ups in a row (two of them telling you to walk somewhere he walks you) are now [b]one[/b], with a button that says [b]Take me there[/b]. He no longer stops a tile short, and when you arrive he tells you to [b]press R[/b] to go in.")
 	display_game("  [color=#FF4444]★ AND HE STOPS GETTING LOST.[/color] He was walking into post walls, stepping back into the building he had just left, and pacing a lake shore forever without giving up. He leaves by a door now, notices when he is going nowhere, and [b]tells you[/b] before trying again.")
 	display_game("  [color=#FF4444]★ ASSASSINATE SHOWS THE ODDS IT ACTUALLY ROLLS.[/color] The card advertised a kill chance [b]13 points higher[/b] than the one the game rolled, and [b]Silver Tongue[/b] and the unique that raise it moved the card but not the dice. Both now work as written, and the card also shows the damage it deals when it does not kill.")
@@ -46906,7 +46912,8 @@ func _overworld_display(payload: Dictionary) -> String:
 		_mark_tile = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
 		_mark_until_ms = 0
 	var mark_cell := Vector2i(-1, -1)
-	if _mark_tile.x != 0x7FFFFFFF and Time.get_ticks_msec() < _mark_until_ms 			and _last_map_center.x != 0x7FFFFFFF:
+	var mark_arrow := Vector2i.ZERO      # non-zero: the mark is off the grid in this direction
+	if _mark_tile.x != 0x7FFFFFFF and Time.get_ticks_msec() < _mark_until_ms			and _last_map_center.x != 0x7FFFFFFF:
 		# ⛑ WORLD Y IS NOT SCREEN Y, AND THIS IS THE SECOND PLACE IT BIT.
 		#
 		# `_map_cells` renders `for dy in range(radius, -radius - 1, -1)` - row 0 is the NORTH
@@ -46926,8 +46933,24 @@ func _overworld_display(payload: Dictionary) -> String:
 		mark_cell = Vector2i(mid + (_mark_tile.x - _last_map_center.x),
 			mid - (_mark_tile.y - _last_map_center.y))
 		if mark_cell.x < 0 or mark_cell.y < 0 or mark_cell.x >= cols_n or mark_cell.y >= rows_n:
-			mark_cell = Vector2i(-1, -1)      # off screen this step; nothing to draw
-	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}), _ow_anim_tick, mark_cell):
+			# ⛑ OFF THE GRID IS THE COMMON CASE, NOT THE EDGE CASE.
+			#
+			# Owner 2026-09-15: *"when it says to go to the gold ring will that actually be on the
+			# players map or too far away for them to see it?"* Too far, usually: the starter
+			# dungeon spawns ~30 tiles out against a vision radius of 11, and this branch used to
+			# draw nothing - so the mark was invisible for most of the walk it exists for.
+			#
+			# Point at it instead, a few cells from the player rather than at the map's edge: the
+			# top corners sit under the coordinate and region labels, and the eye is on the player.
+			var _off := Vector2(mark_cell.x - mid, mark_cell.y - mid)
+			var _reach: int = mini(4, mini(mid, mini(cols_n - 1 - mid, rows_n - 1 - mid)))
+			if _reach >= 1 and _off.length() > 0.0:
+				var _step := _off / maxf(absf(_off.x), absf(_off.y))   # onto the square ring
+				mark_arrow = Vector2i(roundi(_off.x), roundi(_off.y))
+				mark_cell = Vector2i(mid + roundi(_step.x * _reach), mid + roundi(_step.y * _reach))
+			else:
+				mark_cell = Vector2i(-1, -1)
+	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}), _ow_anim_tick, mark_cell, mark_arrow):
 		return MapPayload.inflate(payload)
 	# NO CROP INSIDE A POST, and the reason is a measurement rather than a preference. The zoom
 	# shipped as "crop to the middle 11 and draw them twice as big", on the assumption that you

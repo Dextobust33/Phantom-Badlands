@@ -166,7 +166,8 @@ static func _under_tile(meaning: String) -> String:
 
 
 static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = {},
-		dungeons: Dictionary = {}, anim_tick: int = 0, mark_cell: Vector2i = Vector2i(-1, -1)) -> bool:
+		dungeons: Dictionary = {}, anim_tick: int = 0, mark_cell: Vector2i = Vector2i(-1, -1),
+		mark_arrow: Vector2i = Vector2i.ZERO) -> bool:
 	"""Compose the map. Cheap when nothing has changed, which is most redraws that are not moves.
 
 	`anim_tick` is the IDLE heartbeat. Every figure on the map - you, your companion, other
@@ -195,7 +196,7 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 		key += "%s=%s;" % [fk, str(figures[fk])]
 	# The marked cell too - the guide points at ONE door, and the map has to redraw when he
 	# starts and stops pointing.
-	key += "m%d,%d;" % [mark_cell.x, mark_cell.y]
+	key += "m%d,%d>%d,%d;" % [mark_cell.x, mark_cell.y, mark_arrow.x, mark_arrow.y]
 	# Dungeon families are part of the picture now, so they are part of what decides whether it
 	# has to be redrawn.
 	for dk in dungeons:
@@ -348,11 +349,33 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 	# you to leave out of."* A post has several doors; ringing the map display pointed at all of
 	# them and therefore at none. Drawn INTO the map rather than as an overlay Control because a
 	# map cell is not a Control - the grid is one composited image.
-	if mark_cell.x >= 0 and mark_cell.y >= 0 and mark_cell.x < cols and mark_cell.y < rows:
+	#
+	# When the marked tile is off the grid the client passes `mark_arrow` (its direction in
+	# screen cells) and a cell a few steps from the player; a gold arrowhead is drawn there
+	# instead of the ring, pointing the way. Outlined dark so it reads on sand and snow alike.
+	if mark_cell.x >= 0 and mark_cell.y >= 0 and mark_cell.x < cols and mark_cell.y < rows 			and mark_arrow != Vector2i.ZERO:
+		var ax: int = mark_cell.x * CELL
+		var ay: int = mark_cell.y * CELL
+		var d := Vector2(mark_arrow).normalized()
+		var half: float = (CELL - 1) / 2.0
+		var edge := Color(0.1, 0.07, 0.02, 1.0)
+		var gold_a := Color(1.0, 0.84, 0.25, 1.0)
+		for j in range(CELL):
+			for i in range(CELL):
+				var u: float = i - half
+				var v: float = j - half
+				var along: float = u * d.x + v * d.y
+				var across: float = absf(-u * d.y + v * d.x)
+				# Tip at +12.5 along the direction, base at -8.5, half-width ~7 at the base. Longer
+				# than it is wide on purpose: an equilateral triangle does not say which way it means.
+				if along <= 14.5 and along >= -10.5 and across <= (14.5 - along) * 0.36 + 1.0:
+					var inner: bool = along <= 12.5 and along >= -8.5 and across <= (12.5 - along) * 0.33
+					_px(grid, ax + i, ay + j, gold_a if inner else edge)
+	elif mark_cell.x >= 0 and mark_cell.y >= 0 and mark_cell.x < cols and mark_cell.y < rows:
 		var mx: int = mark_cell.x * CELL
 		var my: int = mark_cell.y * CELL
 		var gold := Color(1.0, 0.84, 0.25, 1.0)
-		for t in range(3):                       # a 3px ring, inset so it frames the tile
+		for t in range(3):                      # a 3px ring, inset so it frames the tile
 			for i in range(CELL):
 				_px(grid, mx + i, my + t, gold)
 				_px(grid, mx + i, my + CELL - 1 - t, gold)

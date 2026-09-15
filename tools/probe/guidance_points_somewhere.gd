@@ -178,8 +178,10 @@ func ", i_esc + 10)
 	ck(csrc.contains('"mark_tile":'), "the client receives it")
 	var room := FileAccess.get_file_as_string("res://client/overworld_room.gd")
 	ck(room.contains("mark_cell: Vector2i"), "and the composer rings that ONE cell")
-	ck(room.contains('key += "m%d,%d;" % [mark_cell.x, mark_cell.y]'),
-		"  and the mark is in the cache key, so the map redraws when he starts pointing")
+	# The key also carries the off-screen arrow's direction (2026-09-15), or the arrow would not
+	# turn as the player walks around the target.
+	ck(room.contains('key += "m%d,%d>%d,%d;" % [mark_cell.x, mark_cell.y, mark_arrow.x, mark_arrow.y]'),
+		"  and the mark (and its off-screen arrow) is in the cache key, so the map redraws when he starts pointing")
 
 	print("")
 	print("  ----- and it lands on the DOOR, not near it -----")

@@ -582,36 +582,33 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-15, after the live tutorial walkthrough)
 
-### ⚑ WHERE THINGS STAND RIGHT NOW (2026-09-15, session ended mid-arc)
+### ⚑ WHERE THINGS STAND RIGHT NOW (2026-09-15, afternoon)
 
-**LIVE on the server: v0.9.789.** Nothing since has been released.
+**LIVE: v0.9.790** — the live-tutorial fixes (`e31e1845`) plus the off-map guide arrow below.
+Released from `master`; nothing is held.
 
-**On `master`, committed and UNRELEASED: `e31e1845` — "The Warden points at the right tile, and
-puts you on the doorstep".** That is the whole of the 2026-09-15 work; it is written up in full in
-the `## UNRELEASED (2026-09-15)` block below. Working tree is clean, every probe touched by it is
-green, and the dungeon-art gate passes at 958 lookups.
+### ⚑ THE GOLD RING WAS USUALLY NOT ON THE MAP — fixed in v0.9.790, three gaps left
 
-**▶ THE NEXT ACTION IS A RELEASE.** The work is finished and tested but no player has it. In order:
+Owner, during the release: *"when it says to go to the gold ring will that actually be on the
+players map or too far away for them to see it or behind an overlay?"* Measured by reading the
+draw path: **no, mostly not.** The starter dungeon spawns ~30 tiles out (`_ensure_starter_dungeon_exists`)
+against a sprite-map reach of 11 (fewer in fog/blizzard/sandstorm), and the client's off-grid
+branch drew NOTHING - no edge marker - so the ring appeared only in the last ~11 tiles of the walk.
+The Warden's stage-3 line "It is ringed on your map" was false whenever it was said, and the mark
+lives only in client memory (lost on relog, 900s timer).
 
-1. Bump `VERSION.txt` (v0.9.789 is live, so v0.9.790) and **copy it into `builds/windows/`** —
-   it is a SIDECAR, not packed content, and forgetting it is what failed the gate on v0.9.760.
-2. `godot --headless --editor --quit --path .` **first** — the export reuses a stale script cache
-   otherwise and ships old code under a new version number.
-3. Export Windows client + launcher, then `bash build_linux_release.sh`.
-4. `bash tools/verify_release_build.sh builds/windows/PhantomBadlandsClient.exe` — non-zero means
-   do not upload.
-5. Update `display_changelog()` in `client/client.gd` (~line 19938) before building, not after.
-6. Warn players via the shutdown sentinel, **poll MainPID rather than `is-active`** (the unit has
-   `Restart=always`, so it never goes inactive — this cost a double disconnect on v0.9.787), swap
-   the server binary, and verify by hashing `/proc/$PID/exe`.
-7. Four assets on one tag, plus the pck/runtime/manifest split.
+Fixed: an off-grid mark now draws a **gold arrowhead 4 cells from the player** pointing at it
+(`overworld_room.gd` pass 4, `mark_arrow`); the Warden's line re-sends the mark before claiming it
+and now says "gold marker". Probe `tools/probe/mark_arrow_offscreen.gd` renders and reads pixels
+(with a reversed-direction control); release gate line `mark_arrow`.
 
-**What the release carries**, in the owner's words: the gold ring now points at the tile it means
-(it was mirrored north/south about the player for its entire life), three tutorial pop-ups became
-one, the Warden delivers you ONTO the dungeon tile and tells you to press R, the escort no longer
-wedges in posts or paces forever, the chat bar no longer steals focus mid-lesson, floor loot looks
-like the item instead of like its bucket, and Assassinate stopped advertising a kill chance the
-game never rolled.
+**Still open, not done:**
+- [ ] **Text-map fallback draws no ring or arrow at all** (sprite toggle off, or licence-restricted
+      art missing from the build). Only the side-panel bearing helps there.
+- [ ] **The ring can sit under the corner labels** (`coord_post_label` top-left, `RegionLabel`
+      top-right) when the marked tile is in the top rows near a corner. Unverified in pixels.
+- [ ] **Two unfinished starter dungeons could split the ring from the walk:** the mark is chosen
+      once, `_escort_goal_for` re-picks every step. Inferred from code, not observed.
 
 ### ⚑ TWO THINGS TO WATCH AFTER THIS RELEASE
 
@@ -922,10 +919,11 @@ Render it, execute it, and make the control differ in ONE thing. See
 [[feedback_indentation_is_invisible_to_a_source_probe]] and
 [[feedback_verify_before_building]].
 
-## UNRELEASED (2026-09-15) -- the live tutorial walkthrough, and what it turned up
+## v0.9.790 SHIPPED (2026-09-15) -- the live tutorial walkthrough, and what it turned up
 
 Owner played the opening on the LIVE server and reported it beat by beat. Every item below is a
-thing they hit, plus the causes found underneath. **Not released yet.**
+thing they hit, plus the causes found underneath. Released as v0.9.790, together with the off-map
+guide arrow (see the NEXT SESSION block).
 
 ### The gold ring was drawn on the WRONG TILE, always
 
@@ -1046,8 +1044,7 @@ Warden afterwards hands over whatever is still missing.
 
 ### Still open from this report
 
-- Nothing outstanding from the owner's list.
-- **NOT released.** Needs a version bump, the release gate, and a server deploy.
+- Nothing outstanding from the owner's list. Released as v0.9.790.
 
 ---
 
