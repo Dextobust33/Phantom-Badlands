@@ -15,6 +15,7 @@ extends SceneTree
 ## and there were five of them.
 const DDB = preload("res://shared/dungeon_database.gd")
 const PowerRank = preload("res://shared/power_rank.gd")
+const DropTables = preload("res://shared/drop_tables.gd")
 
 var fails := 0
 func ck(ok: bool, msg: String) -> void:
@@ -106,7 +107,32 @@ func _init() -> void:
 	ck(bad_names == 0, "every display name is built from the grade the instance actually has")
 
 	print("")
+	print("===== AND THE EGG IS GRADED BY THE DUNGEON, NOT THE SPECIES =====")
+	# Owner 2026-09-14: *"the egg you get from the boss of a dungeon [should be] at a minimum the
+	# same Rank"* and *"they got a C rank egg out of it even though the monsters were only lvl
+	# 29."* Both point the same way: an F-grade Phoenix's Nest has an F-grade boss, and the egg
+	# it leaves should be an F-grade phoenix egg. Reading the SPECIES' tier handed out three
+	# grades of companion for an afternoon's work.
+	var dt = DropTables.new()
+	get_root().add_child(dt)
+	await process_frame
+	var by_species: Dictionary = dt.get_egg_for_monster("Phoenix", {}, 5, 0)
+	var by_dungeon: Dictionary = dt.get_egg_for_monster("Phoenix", {}, 5, 3)
+	var t_species := int(by_species.get("tier", 0))
+	var t_dungeon := int(by_dungeon.get("tier", 0))
+	print("  a Phoenix egg: by species tier %d (%s), from an F-grade dungeon tier %d (%s)"
+		% [t_species, PowerRank.letter(maxi(1, t_species)), t_dungeon, PowerRank.letter(maxi(1, t_dungeon))])
+	ck(t_species == 6, "the species really is C-grade (or this proves nothing)")
+	ck(t_dungeon == 3, "and an F-grade dungeon leaves an F-grade egg")
+	# And the override is OPT-IN: everything with no dungeon behind it keeps the species tier.
+	ck(int(dt.get_egg_for_monster("Phoenix", {}, 5).get("tier", 0)) == 6,
+		"  while a wild or market egg, with no dungeon to speak for it, is unchanged")
+	ck(src.contains("var tier: int = _instance_tier(active_dungeons.get(instance_id, {}))"),
+		"and the floor-loot spawner grades its whole contents from the instance too")
+
+	print("")
 	print("----- what this does NOT claim -----")
+
 	print("  That the OVERWORLD was wrong. It was not - it resolves through _dungeon_data_for")
 	print("  and showed F correctly, and the live log confirms rank inherited (5 -> 5, no")
 	print("  mismatch flag). The C came from the display NAME and from seven behaviour sites")

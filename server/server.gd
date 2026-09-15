@@ -35620,7 +35620,7 @@ func _complete_dungeon(peer_id: int):
 
 	# Give GUARANTEED boss egg (inherits dungeon rank)!
 	var boss_egg_monster = rewards.get("boss_egg", "")
-	var _lead_egg := _grant_boss_egg(peer_id, character, String(boss_egg_monster), inst_sub_tier)
+	var _lead_egg := _grant_boss_egg(peer_id, character, String(boss_egg_monster), inst_sub_tier, _current_dungeon_tier(character))
 	var boss_egg_given: bool = bool(_lead_egg.get("given", false))
 	var boss_egg_name: String = String(_lead_egg.get("name", ""))
 	var boss_egg_lost_to_full: bool = bool(_lead_egg.get("lost", false))
@@ -35819,7 +35819,7 @@ func _complete_dungeon(peer_id: int):
 			var f_xp_result = follower.add_experience(f_rewards.xp)
 
 			# Boss egg for each member
-			var _fol_egg := _grant_boss_egg(pid, follower, String(boss_egg_monster), inst_sub_tier)
+			var _fol_egg := _grant_boss_egg(pid, follower, String(boss_egg_monster), inst_sub_tier, _current_dungeon_tier(follower))
 			var f_egg_given: bool = bool(_fol_egg.get("given", false))
 			var f_egg_name: String = String(_fol_egg.get("name", ""))
 			var f_egg_lost: bool = bool(_fol_egg.get("lost", false))
@@ -36522,7 +36522,11 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 	if dungeon_data.is_empty() or not dungeon_floors.has(instance_id):
 		return
 	dungeon_floor_items[instance_id] = {}
-	var tier: int = int(dungeon_data.get("tier", 1))
+	# The INSTANCE's grade. Everything this function places is sized by `tier` - loot, materials,
+	# the escape scroll, the egg - so reading the TYPE's number graded a whole dungeon's contents
+	# by what its species usually is rather than by what this one actually is. That is how an
+	# F-grade Phoenix's Nest whose monsters were level 29 handed out a C-rank egg.
+	var tier: int = _instance_tier(active_dungeons.get(instance_id, {})) 		if active_dungeons.has(instance_id) else int(dungeon_data.get("tier", 1))
 	var boss_egg_monster: String = String(dungeon_data.get("boss_egg", ""))
 	var sub_tier: int = int(active_dungeons.get(instance_id, {}).get("sub_tier", 1))
 	var floor_grids = dungeon_floors[instance_id]
@@ -36693,10 +36697,10 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		# the boss stay the dungeon's own; only what you find on the floor varies, and it varies
 		# with what really spawned rather than with a fixed list.
 		var egg_species: String = _floor_egg_species(instance_id, boss_egg_monster)
-		var egg = drop_tables.get_egg_for_monster(egg_species, {}, _floor_egg_rank(sub_tier))
+		var egg = drop_tables.get_egg_for_monster(egg_species, {}, _floor_egg_rank(sub_tier), tier)
 		if egg.is_empty() and egg_species != boss_egg_monster:
 			# Not every species can be hatched. Fall back rather than drop nothing.
-			egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _floor_egg_rank(sub_tier))
+			egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _floor_egg_rank(sub_tier), tier)
 		if egg.is_empty():
 			return {}
 		return {"kind": "egg", "char": "◉", "color": "#A335EE", "item_data": egg}
@@ -45126,7 +45130,8 @@ func _best_kennel_level(kennel: Array, indices: Array) -> int:
 const BOSS_EGG_RANK9_CHANCE := 0.15
 
 
-func _grant_boss_egg(pid: int, ch, boss_egg_monster: String, inst_sub_tier: int) -> Dictionary:
+func _grant_boss_egg(pid: int, ch, boss_egg_monster: String, inst_sub_tier: int,
+		dungeon_tier: int = 0) -> Dictionary:
 	"""The guaranteed boss egg for ONE person who cleared the dungeon. Returns {given, lost, name}.
 
 	⛑ ONE definition, because there are two callers - the leader and each follower - and they
@@ -45140,7 +45145,9 @@ func _grant_boss_egg(pid: int, ch, boss_egg_monster: String, inst_sub_tier: int)
 	var out := {"given": false, "lost": false, "name": ""}
 	if boss_egg_monster == "":
 		return out
-	var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _boss_egg_rank(inst_sub_tier))
+	# Graded by the DUNGEON - see get_egg_for_monster. An F-grade instance leaves an F-grade egg
+	# however grand its species is.
+	var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _boss_egg_rank(inst_sub_tier), dungeon_tier)
 	if egg_data.is_empty():
 		return out
 	out["name"] = String(egg_data.get("name", boss_egg_monster + " Egg"))

@@ -2249,7 +2249,8 @@ func get_companion_data(monster_name: String) -> Dictionary:
 	"""Get companion data for a monster. Returns empty dict if none."""
 	return COMPANION_DATA.get(monster_name, {})
 
-func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = {}, sub_tier: int = 1) -> Dictionary:
+func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = {}, sub_tier: int = 1,
+		tier_override: int = 0) -> Dictionary:
 	"""Generate an egg dictionary for a given monster type.
 	If pre_rolled_variant is provided, uses that variant. Otherwise rolls a new one.
 	Variant is determined at egg creation and affects egg display and hatch times.
@@ -2258,7 +2259,22 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 	if companion.is_empty():
 		return {}
 
-	var tier = companion.get("tier", 1)
+	# ⛑ A DUNGEON'S EGG IS GRADED BY THE DUNGEON, NOT BY THE SPECIES.
+	#
+	# Owner 2026-09-14: *"we should make sure that the egg you get from the boss of a dungeon is
+	# at a minimum the same Rank - if it's an F something dungeon an F1 should be the minimum"*
+	# and, on the same run, *"they got a C rank egg out of it even though the monsters were only
+	# lvl 29."*
+	#
+	# Both halves point the same way. Since 2026-09-11 a dungeon's grade belongs to the INSTANCE
+	# - the land decides it - so a Phoenix's Nest can properly stand as an F. Its boss is then an
+	# F-grade phoenix, and the egg it leaves should be an F-grade phoenix egg. Reading the
+	# SPECIES' tier handed out a C egg from a dungeon whose monsters were level 29, which is
+	# three grades of companion for an afternoon's work.
+	#
+	# `tier_override` is 0 everywhere that has no dungeon to speak for it - a wild drop, a
+	# market egg, a quest reward - and those keep the species' own tier, which is right for them.
+	var tier = tier_override if tier_override > 0 else companion.get("tier", 1)
 	var companion_name = companion.get("companion_name", monster_name + " Companion")
 
 	# Roll variant if not provided (variant determines egg appearance and final companion)
