@@ -784,7 +784,10 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    Also for that release (same live session): a Warden (party) fight underground wrote "YOUR TURN"
    and card lines into the dungeon run log, which stayed after the fight - fixed on master, probe
    `dungeon_log_no_fight_text.gd` (red on the old code); and "Floor 2/5" on the starter dungeon
-   (fixed 05992bee, also unreleased).
+   (fixed 05992bee, also unreleased). And card rank-ups earned in a Warden (party) fight, including
+   underground, were held until the party ended - v0.9.791's server only flushed them on item use and
+   disconnect. Fixed d34ea3f0 (flush every resolved party round and at party combat end; dungeon
+   party fights use the same two paths), probe `card_copies_visible.gd`, also unreleased.
 4b. **Default UI scale at 1080p (owner 2026-09-15).** *"We need to take a look at the initial UI Scale.
    1080p players ASCII map has to be scrolled to even see the middle of their map. The Tool panel and
    all of that is too big over there. Ideally they should be able to see their whole ASCII map by
