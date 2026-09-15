@@ -31087,7 +31087,7 @@ func handle_dungeon_exit(peer_id: int):
 	# No free exit — must use escape scroll or complete the dungeon
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#FF6666]You can't leave from here! Use an Escape Scroll or defeat the boss to exit.[/color]"
+		"message": "[color=#FF6666]You can't leave from here.[/color] Use a [color=#87CEEB]Scroll of Escape[/color] — one is on the FIRST FLOOR of every dungeon — or defeat the boss."
 	})
 	return
 

@@ -69,9 +69,14 @@ func _init() -> void:
 	print("===== AND THE REFUSAL TELLS THEM THE WAY OUT =====")
 	# The old message said only what did not work. Every dungeon places a scroll matching its own
 	# grade on the first floor; a player who walked past it had no way to know it existed.
-	ck(src.contains("A matching scroll is on the FIRST FLOOR of every dungeon"),
-		"it names where a scroll that WILL work can be found")
-	ck(src.contains("or defeat the boss to leave"), "  and the other way out")
+	# There is no refusal any more - the gate is gone entirely, so the thing to assert is its
+	# ABSENCE. These two checks used to look for the wording of a better refusal message, which
+	# is a weaker property: a well-worded "no" is still a player who cannot leave.
+	ck(not src.contains("This scroll only reaches tier"),
+		"there is no tier refusal left to word well")
+	ck(not src.contains("dungeon_tier > tier_max"), "  the gate itself is gone")
+	ck(src.contains("one is on the FIRST FLOOR of every dungeon"),
+		"and the no-free-exit notice names where a scroll is")
 
 	print("")
 	print("----- what this does NOT claim -----")
