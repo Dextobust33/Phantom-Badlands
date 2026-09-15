@@ -640,6 +640,10 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    what is broken or needs revised, for example things that give +1 to warrior abilities (does that
    work and what does it do, etc.)"* Same class as item 3 - an item promising what the game does
    not do - and it goes BEFORE the dungeon arc, because dungeon rarity pays out in exactly this loot.
+   **Found while fixing the floor count, belongs here:** `handle_inventory_use` consumes an item
+   BEFORE dispatching to its effect, so a refusal inside any effect branch still eats the item. The
+   Floor Skip Charm is refunded now (`_refund_used_item`); every other refusal branch in that handler
+   needs the same check.
    Method, per CLAUDE.md's equipment rule: walk ACQUISITION PATHS by calling each generator (drop
    tables, hunt, monster-ability drops like `warrior_hoarder`, dungeon floor loot and chests,
    crafting, merchants, uniques/sets), then PROBE each stat by equipping it and diffing what combat
@@ -657,8 +661,12 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    equipment audit (4), which may retire some affixes and change what needs a combined name.
 6. **First-hour polish, all small, all seen by every new player:**
    - the Warden's handout is named like endgame loot (needs a plain-base-item path, below);
-   - the dungeon completion screen says **"Floors Cleared: 2/5"** for the 2-floor starter dungeon
-     (owner screenshot 2026-09-15) - the total comes from the dungeon TYPE, not the instance;
+   - ✅ DONE on master 2026-09-15: **"Floors Cleared: 2/5"** on the starter dungeon. Five places
+     asked the dungeon TYPE (5) for the instance's floor count (2): HUD, floor messages, go-back,
+     completion screen - and the **Floor Skip Charm**, which on the real boss floor spent the charm
+     and skipped the boss to its final chest. One helper `_instance_floor_count` now. XP still
+     divides by the type's count (owner: fix the text, keep the tutorial's pay). A refused charm is
+     now refunded. Probe `instance_floor_count.gd`, proven red on the old code;
    - roads 3 wide -> 2 (owner, 2026-09-14; note the encounter corridor narrows with it).
    - **give a Home Stone (Companion) at the end of Warden's Watch, and teach it** (owner 2026-09-15:
      *"have the player get their home stone companion at the end of the tutorial as well as let
@@ -701,8 +709,7 @@ chain after it), party half two (independent movement + join-in-progress), contr
 - [ ] **The ring can sit under the corner labels** near the top corners of the map. Unverified in pixels.
 - [ ] **Two unfinished starter dungeons could split the ring from the walk** - the mark is chosen once,
       `_escort_goal_for` re-picks. Inferred from code, not observed.
-- [ ] **"Floors Cleared: 2/5" on the starter dungeon's completion screen** (owner screenshot
-      2026-09-15). The total is the dungeon TYPE's floor count; the starter instance has 2.
+- [x] **"Floors Cleared: 2/5" on the starter dungeon's completion screen** - fixed, see RECOMMENDED ORDER item 6.
 - [ ] **Home is the NEAREST post**, which after an eastern starter dungeon is not the Crossroads
       (measured: (65,-9)). Probably right; confirm with the owner if it reads oddly in play.
 - [ ] **`assassinate_pct` now reaches the dice** (v0.9.790): Silver Tongue +15% and one unique work as

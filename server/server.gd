@@ -11221,6 +11221,27 @@ func _get_chest_material_pool(tier: int) -> Array:
 			pool = ["copper_ore", "coal", "oak_log", "small_fish"]
 	return pool
 
+func _refund_used_item(peer_id: int, character, item: Dictionary) -> void:
+	"""Give back ONE use of an item that `handle_inventory_use` already spent, when its effect then
+	refuses to run.
+
+	⛑ 2026-09-15 - this handler consumes the item BEFORE dispatching to its effect, so a refusal
+	inside an effect branch ("only works inside a dungeon", "already on the boss floor") still ate
+	the item. Measured with a Floor Skip Charm (tools/probe/instance_floor_count.gd). One branch had
+	already worked around it with an inline re-insert; this is the shared form. The wider class -
+	every refusal branch in this handler - is logged for the equipment/item audit."""
+	if character == null or item.is_empty():
+		return
+	if int(item.get("remaining_uses", 0)) >= 1 and character.inventory.has(item):
+		item["remaining_uses"] = int(item["remaining_uses"]) + 1   # a multi-use item kept its slot
+	else:
+		var back: Dictionary = item.duplicate(true)
+		if back.get("is_consumable", false):
+			back["quantity"] = 1
+		character.add_item(back)
+	send_character_update(peer_id)
+
+
 func handle_inventory_use(peer_id: int, message: Dictionary):
 	"""Handle using an item from inventory"""
 	if not characters.has(peer_id):
@@ -12010,14 +12031,15 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		# Floor Skip Charm — only valid in a dungeon, on a non-boss floor,
 		# out of combat. Triggers _advance_dungeon_floor immediately.
 		if not character.in_dungeon:
+			_refund_used_item(peer_id, character, item)
 			send_to_peer(peer_id, {
 				"type": "error",
 				"message": "The Floor Skip Charm only works inside a dungeon."
 			})
 			return
-		var skip_dungeon = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
-		var total_floors = int(skip_dungeon.get("floors", 1))
+		var total_floors = _instance_floor_count(character)
 		if character.dungeon_floor >= total_floors - 1:
+			_refund_used_item(peer_id, character, item)
 			send_to_peer(peer_id, {
 				"type": "error",
 				"message": "You're already on the boss floor — nothing to skip to."
@@ -31336,7 +31358,7 @@ func handle_dungeon_go_back(peer_id: int):
 		send_to_peer(peer_id, {
 			"type": "dungeon_floor_change",
 			"floor": character.dungeon_floor + 1,
-			"total_floors": DungeonDatabaseScript.get_dungeon(character.current_dungeon_type).floors,
+			"total_floors": _instance_floor_count(character),
 			"message": "[color=#FFFF00]You ascend back to floor %d...[/color]" % (character.dungeon_floor + 1)
 		})
 
@@ -34809,7 +34831,7 @@ func _send_dungeon_state(peer_id: int):
 		"sub_tier": inst_sub_tier,
 		"hard_mode": is_hard,
 		"floor": character.dungeon_floor + 1,
-		"total_floors": dungeon_data.floors,
+		"total_floors": _instance_floor_count(character),
 		"grid": grid,
 		"player_x": character.dungeon_x,
 		"player_y": character.dungeon_y,
@@ -35338,6 +35360,23 @@ func _open_dungeon_treasure(peer_id: int):
 	send_character_update(peer_id)
 	save_character(peer_id)
 
+func _instance_floor_count(character) -> int:
+	"""How many floors THIS dungeon instance really has.
+
+	⛑ 2026-09-15 - NOT the dungeon TYPE's count. A starter dungeon is capped to
+	STARTER_DUNGEON_FLOORS (2) when it is generated, but five places asked the type (5): the HUD
+	read "Floor 1/5", the completion screen "Floors Cleared: 2/5" (owner screenshot), and the Floor
+	Skip Charm's "already on the boss floor?" guard let a player skip OFF the real boss floor -
+	the advance then found no next floor and completed the dungeon with the boss alive. The
+	generated floors are the truth; the type is only a fallback before they exist."""
+	if character == null:
+		return 1
+	var _iid := String(character.current_dungeon_id)
+	if dungeon_floors.has(_iid) and (dungeon_floors[_iid] as Array).size() > 0:
+		return (dungeon_floors[_iid] as Array).size()
+	return int(DungeonDatabaseScript.get_dungeon(character.current_dungeon_type).get("floors", 1))
+
+
 func _advance_dungeon_floor(peer_id: int):
 	"""Move player to next floor of dungeon"""
 	if not characters.has(peer_id):
@@ -35348,7 +35387,7 @@ func _advance_dungeon_floor(peer_id: int):
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 
 	# Check if this was the last floor
-	if character.dungeon_floor >= dungeon_data.floors - 1:
+	if character.dungeon_floor >= _instance_floor_count(character) - 1:
 		# Dungeon complete!
 		_complete_dungeon(peer_id)
 		return
@@ -35383,7 +35422,7 @@ func _advance_dungeon_floor(peer_id: int):
 	send_to_peer(peer_id, {
 		"type": "dungeon_floor_change",
 		"floor": character.dungeon_floor + 1,
-		"total_floors": dungeon_data.floors,
+		"total_floors": _instance_floor_count(character),
 		"message": "[color=#FFFF00]You descend to floor %d...[/color]\n%s" % [character.dungeon_floor + 1, _telegraph]
 	})
 
@@ -35408,7 +35447,7 @@ func _advance_dungeon_floor(peer_id: int):
 			send_to_peer(pid, {
 				"type": "dungeon_floor_change",
 				"floor": characters[pid].dungeon_floor + 1,
-				"total_floors": dungeon_data.floors,
+				"total_floors": _instance_floor_count(characters[pid]),
 				"message": "[color=#FFFF00]Your party descends to floor %d...[/color]\n%s" % [characters[pid].dungeon_floor + 1, _pt]
 			})
 			_send_dungeon_state(pid)
@@ -35930,7 +35969,9 @@ func _complete_dungeon(peer_id: int):
 	if flawless:
 		completion_msg += "[color=#00FF00]★ FLAWLESS RUN ★[/color]\n"
 	completion_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name
-	completion_msg += "Floors Cleared: %d/%d\n" % [rewards.floors_cleared, rewards.total_floors]
+	# Display the INSTANCE's floors. The XP above still divides by the type's count - owner's call
+	# 2026-09-15: fix the text, keep the starter dungeon's pay where the tutorial was tuned.
+	completion_msg += "Floors Cleared: %d/%d\n" % [rewards.floors_cleared, maxi(1, _cfloors) if _cfloors > 0 else rewards.total_floors]
 	completion_msg += "[color=#00BFFF]+%d XP[/color]" % total_xp
 	if bonus_xp > 0:
 		completion_msg += " [color=#808080](+%d flawless bonus)[/color]" % bonus_xp
