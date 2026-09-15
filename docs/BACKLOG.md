@@ -852,6 +852,56 @@ Render it, execute it, and make the control differ in ONE thing. See
 [[feedback_indentation_is_invisible_to_a_source_probe]] and
 [[feedback_verify_before_building]].
 
+## v0.9.789 SHIPPED (2026-09-14) -- the Warden walks you to your first dungeon
+
+The onboarding arc, released. Everything from v0.9.788 to here was unreleased until tonight.
+
+- **He LEADS you to the starter dungeon** rather than naming it and leaving you in the post.
+  Owner: *"I shouldn't have to press anything. He should be leading/moving us too it."* The walk
+  goes through the REAL `handle_move` with `escorted: true`, so terrain, gates and posts behave
+  exactly as under the player's own hand; encounters are suppressed only while he is leading, and
+  he rests the party before setting off. He leads from the FRONT (offset toward the goal) -- note
+  world y is north and screen y is south, which is what made the first cut walk behind.
+- **He asks first, and waits.** Owner, from a screenshot: *"He does start walking you but you have
+  popups on the screen so you can't tell what's happening."* Teaching pop-ups now carry an `ack`
+  the client returns when the panel closes, so the server can wait on a player instead of acting
+  underneath them. Tutorials switched off means no pop-up can arrive -- the silence is a yes,
+  otherwise they would be stranded at the post forever.
+- **Busy hands pause him.** The walk did not know gathering refuses movement, so it asked three
+  times a tick, every 450ms. Six refusals cancelled the walk and the next tick restarted it,
+  re-announcing him and healing to full each time -- a full heal on tap. Also: arrival now records
+  DONE (the stage stays at 3 until the dungeon is cleared, so arriving never stopped him), a wedge
+  backs off 20s, and the rest is paid once.
+- **The escort now ensures a starter dungeon exists** before promising to walk to one.
+  `_point_at_the_dungeon` had done this since the pointer shipped; `_escort_goal_for` read the
+  same world without it, so he agreed to lead and then stood still.
+- **Type-vs-instance dungeon grade, retired at eight sites.** The owner's F4-shows-C5 report. The
+  grade belongs to the INSTANCE; `_current_dungeon_tier` is now the single source, and the boss
+  egg takes the dungeon's own rank as a floor.
+- One escape scroll for every dungeon; admin rescue to the Crossroads; wish rewards state what
+  they grant; the Trickster HP tax is gone; swift enemies split hits; Sanctuary equipment
+  inspection; new characters are no longer born wounded.
+
+### Two testing tools, because the replays were the real cost
+
+Owner: *"setup a test scenario too where we are about to kill the third enemy in step 2. You're
+exhausting me with all these failures and having to repeat the same steps."*
+
+- **/admin -> Tutorial** jumps to a beat in Warden's Watch (step 2 one kill from the end, or
+  step 3). It lands on a state a player could occupy -- `met_warden`, gear equipped, full health,
+  teaching flags reset -- because a shortcut onto an impossible state makes the thing you went to
+  test fail for a reason that does not exist in the game.
+- **Six admin handlers rejected non-admins in total silence.** The account being tested on was not
+  flagged admin, so every /admin button did nothing and looked unwired. That is how the evening
+  started. They all say so now.
+
+Probes: `tutorial_scenario_jump.gd`, `escort_asks_first.gd` -- both boot the real server and drive
+real handlers; both proven to fire by injecting the fault.
+
+**Still unjudged, and only a playthrough can:** whether the first fight feels dangerous, whether
+all four floor pieces are findable, whether he looks right following, and whether the beats land
+in a sensible order.
+
 ## v0.9.779 SHIPPED (2026-09-12) -- the resource economy, and the curve re-measured behind it
 
 - `cost_percent` doubled uniformly (holds relative card pricing, so it does not re-open which
