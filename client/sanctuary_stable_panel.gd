@@ -39,6 +39,10 @@ const FUSE_MODE_RULES := {
 	"mixed": {"cap": 8, "min_sub_tier": 8, "max_sub_tier": 8},
 }
 
+## client.gd - owner of the companion tooltip and inspect builders, which this panel reuses rather
+## than copies (the Companions screen and the legacy kennel panel call the same two functions).
+var client_ref = null
+
 var _current_tab: String = TAB_KENNEL
 var _current_fuse_mode: String = FUSE_SAME
 
@@ -58,6 +62,16 @@ var _tab_kennel_btn: Button
 var _tab_fuse_btn: Button
 var _close_btn: Button
 var _help_panel: Control = null
+
+# Hover card + inspect page (2026-09-15). Owner: *"When in the sanctuary we need to make it where you
+# can hover your companions in your Companion Kennel to see their ASCII art. Also, players should be
+# able to inspect their companions in their companion kennel."* The Sanctuary's K tile opens THIS
+# panel; the older kennel_panel.gd already had inspect, but nothing in the Sanctuary reaches it.
+var _tooltip: PanelContainer
+var _tooltip_label: RichTextLabel
+var _inspect_view: Control
+var _inspect_text: RichTextLabel
+var _tab_row: Control
 
 # Kennel-tab nodes.
 var _kennel_view: Control
@@ -92,7 +106,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
-			_on_close()
+			if _inspect_view != null and _inspect_view.visible:
+				_set_tab(_current_tab)   # Esc steps back out of an inspect page first
+			else:
+				_on_close()
 
 
 func show_with_data(payload: Dictionary) -> void:
@@ -111,6 +128,9 @@ func show_with_data(payload: Dictionary) -> void:
 		return idx >= 0 and idx < _kennel.size()
 	)
 	_refresh_all()
+	# A refresh from the server (after a register or release) returns to the list: the companion
+	# being inspected may no longer be at that index.
+	_set_tab(_current_tab)
 	visible = true
 
 
@@ -124,6 +144,11 @@ func _refresh_all() -> void:
 
 func _set_tab(tab: String) -> void:
 	_current_tab = tab
+	_hide_tooltip()
+	if _inspect_view:
+		_inspect_view.visible = false
+	if _tab_row:
+		_tab_row.visible = true
 	_kennel_view.visible = (tab == TAB_KENNEL)
 	_fuse_view.visible = (tab == TAB_FUSE)
 	_tab_kennel_btn.button_pressed = (tab == TAB_KENNEL)
@@ -202,7 +227,17 @@ func _build_kennel_row(idx: int) -> Control:
 			int(c.get("level", 1)),
 		]
 	)
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE   # hover belongs to the row, so the art shows over the text
 	hb.add_child(info)
+	_attach_companion_hover(row, c)
+
+	var insp_btn := Button.new()
+	insp_btn.focus_mode = Control.FOCUS_NONE
+	insp_btn.custom_minimum_size = Vector2(90, 28)
+	insp_btn.text = "Inspect"
+	insp_btn.tooltip_text = "Full details: stats, abilities and art."
+	insp_btn.pressed.connect(func(): _show_inspect(c))
+	hb.add_child(insp_btn)
 
 	var reg_btn := Button.new()
 	reg_btn.focus_mode = Control.FOCUS_NONE
@@ -353,7 +388,9 @@ func _build_fuse_candidate_row(cand: Dictionary) -> Control:
 			int(c.get("level", 1)),
 		]
 	)
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hb.add_child(info)
+	_attach_companion_hover(row, c)
 
 	var toggle_btn := Button.new()
 	toggle_btn.focus_mode = Control.FOCUS_NONE
@@ -541,6 +578,7 @@ func _build_layout() -> void:
 	var tab_row := HBoxContainer.new()
 	tab_row.add_theme_constant_override("separation", 6)
 	vb.add_child(tab_row)
+	_tab_row = tab_row
 	_tab_kennel_btn = _make_tab_button("Kennel", TAB_KENNEL)
 	tab_row.add_child(_tab_kennel_btn)
 	_tab_fuse_btn = _make_tab_button("Fuse", TAB_FUSE)
@@ -551,6 +589,9 @@ func _build_layout() -> void:
 	vb.add_child(_kennel_view)
 	_fuse_view = _build_fuse_view()
 	vb.add_child(_fuse_view)
+	_inspect_view = _build_inspect_view()
+	vb.add_child(_inspect_view)
+	_build_tooltip()
 	_set_tab(TAB_KENNEL)
 
 
@@ -695,5 +736,143 @@ func _build_fuse_view() -> Control:
 
 
 func _on_close() -> void:
+	_hide_tooltip()
 	visible = false
 	emit_signal("close_requested")
+
+
+# ===== HOVER CARD + INSPECT =====
+
+func _mono_font() -> FontFile:
+	var path := "res://font/Consolas/consolas.ttf"
+	return load(path) if ResourceLoader.exists(path) else null
+
+
+func _build_tooltip() -> void:
+	"""The Companions screen's hover card: the same look, fed by the same builder."""
+	_tooltip = PanelContainer.new()
+	var tip_sb := StyleBoxFlat.new()
+	tip_sb.bg_color = Color(0.08, 0.06, 0.05, 0.97)
+	tip_sb.border_color = Color(0.55, 0.45, 0.33, 1)
+	tip_sb.set_border_width_all(2)
+	tip_sb.set_corner_radius_all(5)
+	tip_sb.content_margin_left = 8
+	tip_sb.content_margin_top = 6
+	tip_sb.content_margin_right = 8
+	tip_sb.content_margin_bottom = 6
+	_tooltip.add_theme_stylebox_override("panel", tip_sb)
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.top_level = true
+	_tooltip.visible = false
+	_tooltip.z_index = 100
+	add_child(_tooltip)
+	_tooltip_label = RichTextLabel.new()
+	_tooltip_label.bbcode_enabled = true
+	_tooltip_label.fit_content = true
+	_tooltip_label.scroll_active = false
+	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip_label.add_theme_font_size_override("normal_font_size", 12)
+	# No wrap, monospace: ASCII art keeps its columns (wrapping destroys the alignment).
+	_tooltip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_tooltip_label.custom_minimum_size = Vector2(320, 0)
+	var mf := _mono_font()
+	if mf:
+		for slot in ["normal_font", "bold_font", "italics_font", "bold_italics_font"]:
+			_tooltip_label.add_theme_font_override(slot, mf)
+	_tooltip.add_child(_tooltip_label)
+
+
+func _build_inspect_view() -> Control:
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	vb.visible = false
+	var panel := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.08, 0.12, 0.95)
+	sb.border_color = Color(0.3, 0.3, 0.4)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.custom_minimum_size = Vector2(900, 460)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vb.add_child(panel)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panel.add_child(scroll)
+	_inspect_text = RichTextLabel.new()
+	_inspect_text.bbcode_enabled = true
+	_inspect_text.fit_content = true
+	_inspect_text.scroll_active = false
+	_inspect_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_inspect_text.add_theme_font_size_override("normal_font_size", 14)
+	var mf := _mono_font()
+	if mf:
+		for slot in ["normal_font", "bold_font", "italics_font", "bold_italics_font"]:
+			_inspect_text.add_theme_font_override(slot, mf)
+	scroll.add_child(_inspect_text)
+	var back := Button.new()
+	back.text = "< Back to the Kennel"
+	back.focus_mode = Control.FOCUS_NONE
+	back.custom_minimum_size = Vector2(180, 30)
+	back.pressed.connect(func(): _set_tab(_current_tab))
+	vb.add_child(back)
+	return vb
+
+
+func _attach_companion_hover(row: Control, companion: Dictionary) -> void:
+	row.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.mouse_entered.connect(func(): _show_companion_tooltip(companion, row))
+	row.mouse_exited.connect(_hide_tooltip)
+
+
+func _show_companion_tooltip(companion: Dictionary, anchor: Control) -> void:
+	if client_ref == null or not client_ref.has_method("format_companion_tooltip_bbcode") or _tooltip_label == null:
+		return
+	var bbcode := str(client_ref.format_companion_tooltip_bbcode(companion))
+	if bbcode == "":
+		return
+	_tooltip_label.text = bbcode
+	_tooltip.size = Vector2.ZERO
+	_tooltip.visible = true
+	await get_tree().process_frame
+	if not is_instance_valid(_tooltip) or not _tooltip.visible or not is_instance_valid(anchor):
+		return
+	_tooltip.reset_size()
+	# Beside the row, flipped and clamped so a tall card is never cut off by the screen edge.
+	var vp: Vector2 = get_viewport_rect().size
+	var ar := Rect2(anchor.global_position, anchor.size)
+	var ts: Vector2 = _tooltip.size
+	var pos := Vector2(ar.position.x + ar.size.x + 6, ar.position.y)
+	if pos.x + ts.x > vp.x - 4:
+		pos.x = maxf(4.0, ar.position.x + ar.size.x - ts.x - 6)
+		pos.y = ar.position.y + ar.size.y + 4
+	if pos.y + ts.y > vp.y - 4:
+		pos.y = maxf(4.0, vp.y - ts.y - 4)
+	_tooltip.global_position = pos
+
+
+func _hide_tooltip() -> void:
+	if _tooltip:
+		_tooltip.visible = false
+
+
+func _show_inspect(companion: Dictionary) -> void:
+	"""The Companions screen's inspect text, in place of the list, with a way back."""
+	_hide_tooltip()
+	var txt := ""
+	if client_ref and client_ref.has_method("_build_companion_inspect_bbcode"):
+		txt = str(client_ref._build_companion_inspect_bbcode(companion))
+	if txt == "":
+		txt = "[color=#FF6666]Could not read this companion.[/color]"
+	_inspect_text.text = txt
+	_kennel_view.visible = false
+	_fuse_view.visible = false
+	_tab_row.visible = false
+	_inspect_view.visible = true

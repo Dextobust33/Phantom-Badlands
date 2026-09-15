@@ -2857,6 +2857,7 @@ func _ready():
 
 	# v0.9.497 — Unified Sanctuary Companion Stable panel (replaces K + F tile flows).
 	sanctuary_stable_panel = SanctuaryStablePanelScript.new()
+	sanctuary_stable_panel.client_ref = self   # its hover card and inspect page use our builders
 	add_child(sanctuary_stable_panel)
 	sanctuary_stable_panel.release_requested.connect(_on_sanctuary_stable_release)
 	sanctuary_stable_panel.register_requested.connect(_on_sanctuary_stable_register)
