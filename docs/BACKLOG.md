@@ -668,13 +668,16 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      divides by the type's count (owner: fix the text, keep the tutorial's pay). A refused charm is
      now refunded. Probe `instance_floor_count.gd`, proven red on the old code;
    - roads 3 wide -> 2 (owner, 2026-09-14; note the encounter corridor narrows with it).
-   - **give a Home Stone (Companion) at the end of Warden's Watch, and teach it** (owner 2026-09-15:
+   - ✅ DONE on master 2026-09-15 - **give a Home Stone (Companion) at the end of Warden's Watch, and teach it** (owner 2026-09-15:
      *"have the player get their home stone companion at the end of the tutorial as well as let
      players know what it is for and how to use it"*). The reward is one line - chain bonuses
      already take `"home_stones"` (the Goblin King / Alpha Wolf chains use it) - but the lesson must
      be read off the stone's real flow (`home_stone_select` / `home_stone_companion_response` in
      server.gd), not written from memory. Fold it into the "An Egg" / first-hatch beats rather than
-     adding a fourth panel.
+     adding a fourth panel. **Done that way:** a new character had ALREADY been getting the stone at
+     creation since 2026-09-04 as a stopgap, untaught. It moved to the Watch's chain bonus (with the
+     egg), and the first-hatch Companions panel teaches Register (survives death) vs Kennel.
+     tutorial_walkthrough checks none at creation and one with the egg.
 7. **One owner decision, then a small change:** should charm / weakness / slow on the monster be
    SHARED in co-op (see the open item below)? Today they protect only the member who cast them.
 8. **The dungeon arc — the owner's big direction, and most of the list** (Phase 5 + the third

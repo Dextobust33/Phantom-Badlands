@@ -98,8 +98,11 @@ func handle_delete_character")
 
 	print("")
 	print("----- what was deliberately KEPT -----")
-	ck(src.contains('"item_type": "home_stone_companion"'),
-		"the Home Stone stays - it is what makes a companion survive your death, not armour")
+	# 2026-09-15: the Home Stone moved from creation to the END of Warden's Watch (owner), arriving
+	# with the egg it protects. Pinned to where it lives now rather than dropped.
+	var _qsrc2 := FileAccess.get_file_as_string("res://shared/quest_database.gd")
+	ck(_qsrc2.contains('"home_stones": ["home_stone_companion"]') and _qsrc2.contains('"egg": "Wolf", "home_stones"'),
+		"the Home Stone is still given - now by the Watch, beside the egg it exists to protect")
 	ck(src.contains("DropTables.generate_starter_tools()"),
 		"and the gathering tools stay - they are not combat power")
 

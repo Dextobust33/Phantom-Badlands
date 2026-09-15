@@ -1643,7 +1643,7 @@ Three more. You will feel the difference by the third.
 
 Clear it. He is coming with you, and he will take what you cannot.
 
-[color=#9ACD32]STARTER CHAIN: 3 stages | Final reward: a companion egg and 100 valor — and the floor down there is where the rest of your kit is lying[/color]",
+[color=#9ACD32]STARTER CHAIN: 3 stages | Final reward: a companion egg, a Home Stone (Companion) and 100 valor — and the floor down there is where the rest of your kit is lying[/color]",
 		"type": QuestType.DUNGEON_CLEAR,
 		"trading_post": "crossroads",
 		"target": 1,
@@ -1654,7 +1654,7 @@ Clear it. He is coming with you, and he will take what you cannot.
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 100, "egg": "Wolf"},
+		"chain_bonus": {"valor": 100, "egg": "Wolf", "home_stones": ["home_stone_companion"]},
 		"starter_kit_slot": ""
 	}
 }

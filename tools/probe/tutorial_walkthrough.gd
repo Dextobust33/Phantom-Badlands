@@ -71,6 +71,11 @@ func _init() -> void:
 	print("  %s the %s, level %d" % [ch.name, ch.class_type, ch.level])
 	ck(ch.current_hp == ch.get_total_max_hp(),
 		"starts at FULL health (%d/%d)" % [ch.current_hp, ch.get_total_max_hp()])
+	var _stone0 := 0
+	for _it0 in ch.inventory:
+		if _it0 is Dictionary and String(_it0.get("type", "")) == "home_stone_companion":
+			_stone0 += 1
+	ck(_stone0 == 0, "no Home Stone at creation - the Watch gives it, with the egg it protects")
 	ck(ch.equipped.get("weapon", null) == null, "and unarmed - the Warden arms you")
 	var on_chain := false
 	for q in ch.active_quests:
@@ -405,6 +410,11 @@ func _init() -> void:
 	# The egg the Watch pays out, and the lesson about it. Owner 2026-09-15: *"they have no idea
 	# what they are, what to do with them, how to see or manage them."*
 	ck(not ch.incubating_eggs.is_empty(), "  the Watch's egg is in the incubator (%d)" % ch.incubating_eggs.size())
+	var _stones := 0
+	for _it in ch.inventory:
+		if _it is Dictionary and String(_it.get("type", "")) == "home_stone_companion":
+			_stones += int(_it.get("quantity", 1))
+	ck(_stones >= 1, "  and a Home Stone (Companion) came with it (%d)" % _stones)
 	ck(ch.seen_guide_egg_hint, "  and the egg lesson fired with it")
 	ck(not ch.seen_guide_home_hint, "  but NOT the home lesson - they are not home yet")
 	ch.in_dungeon = false

@@ -3258,20 +3258,13 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# the dungeon pays the rest. He also walks the first two fights with you and takes any hit
 	# that would kill you, which is what makes an under-equipped level 1 survivable at all - the
 	# thing that did not exist when the blanket kit was added.
-	if drop_tables:
-		# A HOME STONE (COMPANION) with the kit. Owner 2026-09-04: "Players should also get a
-		# Home Stone (Companion) when they get their starter equipment to help them get started
-		# until we get the tutorial stuff implemented."
-		#
-		# It is the item that REGISTERS a companion to the Sanctuary, so it is what turns the
-		# starter egg into something that survives the character's death. Without it a new
-		# player's first companion dies with them and the loop never starts — which matters more
-		# now that companions are the investment axis and no longer inherit their owner's power.
-		# Same reasoning as the rest of this grant: temporary, and item 7 should supersede it.
-		var starter_stone = drop_tables._generate_item(
-			{"item_type": "home_stone_companion", "rarity": "uncommon"}, 1)
-		if starter_stone is Dictionary and not starter_stone.is_empty():
-			character.add_item(starter_stone)
+	# ⛑ 2026-09-15 - THE HOME STONE (COMPANION) MOVED TO THE END OF WARDEN'S WATCH.
+	# It was handed out here on 2026-09-04 "until we get the tutorial stuff implemented", with
+	# nothing telling the player it existed. The tutorial exists now. Owner 2026-09-15: *"have the
+	# player get their home stone companion at the end of the tutorial as well as let players know
+	# what it is for and how to use it."* It is the Watch's chain bonus (quest_database
+	# wardens_watch_3), arriving with the egg it exists to protect, and the first-hatch Companions
+	# panel teaches it. Veterans' Companion Sanctum stones (below) are unchanged.
 
 	# Give starter gathering tools — equip directly to tool slots
 	var starter_tools = DropTables.generate_starter_tools()
@@ -17656,6 +17649,12 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 		+ "[color=#FFD700]── Keeping it alive ──[/color]\n"
 		+ "  • It heals as you walk, and when you [color=#00FFFF]Rest[/color].\n"
 		+ "  • [color=#FF6666]Knocked out[/color], it heals by neither. Walk into a post's [color=#FFD700]H[/color] tile (the Healer) or use a Companion Revive Potion. The Inn heals only you.\n\n"
+		# 2026-09-15 - the Home Stone, taught where it can first be USED: it registers the ACTIVE
+		# companion, so it means nothing until one is out. Read off handle_home_stone_companion_response
+		# and the choice screen, not remembered.
+		+ "[color=#FFD700]── Keep it past your death ──[/color]\n"
+		+ "  • Warden's Watch gave you a [color=#00FFFF]Home Stone (Companion)[/color]. With this companion out, use the stone from your inventory.\n"
+		+ "  • Choose [color=#00FF00]Register[/color]: it is kept in your Sanctuary and [b]survives your character's death[/b] - any future character can bring it out again. (Kennel stores it there instead.)\n\n"
 		+ "[color=#FFD700]── Active companion ──[/color]\n"
 		+ "  • Only one companion is active at a time. It fights with you and earns 10%% of monster XP.\n"
 		+ "  • Each monster type has unique abilities — passive (always on), active (cast in combat), and threshold (triggers at low HP).\n"
