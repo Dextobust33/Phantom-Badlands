@@ -624,13 +624,16 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    - [ ] **Party fights never apply death curse at all** - a member's killing blow skips the solo
          victory path where the curse lives (`suppress_victory`). The opposite gap; decide whether
          the killer, or everyone, takes it.
-3. **A REAL card-face instrument, then fix what it finds.** Card faces lying was the single most
-   common fault in the 2026-09-15 test (Assassinate, Phantom Strike, partial casts, Wild Swing).
-   `card_vs_server.gd` cannot answer it - it re-implements the client's retired fallback formulas,
-   so its "3-8x LIES" table describes a path combat cards no longer use (see "Two stale
-   instruments" in Phase 3). Build the instrument that can: for every card of every class, compare
-   `_build_ability_effect_info`'s quote with the mean of real casts (defence and variance
-   accounted for), solo AND party. Then fix per card. Cheap, and it closes the class.
+3. **✅ A REAL card-face instrument — DONE on master 2026-09-15, not released.**
+   `tools/probe/card_face_truth.gd`: every class, every deck card that quotes damage, levels 20 and
+   200, engine 0 and 4, server quote vs the mean of real casts (zero defence, level-matched, crits /
+   Chaos Magic / double casts and kill-outright finishers excluded as the quote excludes them).
+   Its first version was itself wrong twice (quote and cast from different randomly-geared
+   characters; lethal finishers averaged as damage). Measured with it fixed: 78 cells, ONE genuine
+   fault - **Barbarian Rampage left out the Rage ramp** (under-quoted ~1.5x at 4 Rage), fixed.
+   Everything else within 15%. `card_vs_server.gd` deleted - it measured the retired client fallback.
+   Not covered yet: party casts (they read the same builder), gear upgrades like Keen, and the cards
+   that quote a non-damage effect (shields, heals, debuffs).
 4. **FULL EQUIPMENT / ITEM AUDIT (owner 2026-09-15).** *"We need to do a FULL equipment/item audit
    covering all equipment possible in the game (including hunt equipment and special drops from
    monsters and dungeons as well as their chests and crafting). We need to see what still works and
@@ -3790,7 +3793,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       26 rows, 0 drift; removing the fix makes 8 rows drift.
       Residual, minor: Magic Bolt at L60 reads 0.83x (card ~17% high), inside tolerance and
       identical on master.
-- [ ] **Two stale instruments.** (1) `card_vs_server.gd` reproduces the client's pre-server
+- [ ] **Two stale instruments.** (1) DONE 2026-09-15 - replaced by `card_face_truth.gd` and deleted. `card_vs_server.gd` reproduced the client's pre-server
       fallback formulas "verbatim", so it prints "LIES" for a path the combat card no longer uses;
       retire it or point it at `_estimate_ability_card_effect`'s server branch. (2)
       `card_upgrade_effects.gd` reports 23 upgrades "not yet wired" from a HAND-TYPED list.

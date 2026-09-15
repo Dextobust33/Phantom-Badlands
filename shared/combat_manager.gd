@@ -4763,8 +4763,13 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 					if _pgap > 0:
 						_pv = maxi(1, _pv - _pgap)
 				dev_note = "%s, %d%% lethal" % [dev_note, _pv]
+			# ⛑ 2026-09-15 - THE RAGE RAMP. Every other damage quote multiplies in
+			# `engine_damage_ramp` (the anchored branch below does); this branch returned first, so a
+			# Barbarian's Rampage quoted its hit WITHOUT the +16%-per-Rage the real hit gets in
+			# `apply_ability_damage_modifiers`. Measured by card_face_truth.gd: at 4 Rage the card
+			# under-quoted by 1.46-1.54x.
 			return {"kind": "damage",
-					"value": apply_skill_damage_bonus(character, name, dev_base, combat, true),
+					"value": int(float(apply_skill_damage_bonus(character, name, dev_base, combat, true)) * engine_damage_ramp(character, combat)),
 					"scales": dev_note}
 		# shield_bash / ambush / gambit / frost_nova are handled by the anchored branch above
 		# now that they are converted. Their temporary attack-based branches are gone with the
