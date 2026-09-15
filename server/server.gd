@@ -31700,15 +31700,27 @@ func _ensure_starter_dungeon_exists():
 	var STARTER_AREA_RADIUS = 40  # Check within this distance of origin
 	var SPAWN_DISTANCE = 30  # Spawn around this distance from origin
 
-	# Check if there's already a tier 1 dungeon near the origin
+	# ⛑ A TIER-1 DUNGEON IS NOT A STARTER DUNGEON.
+	#
+	# This used to return the moment ANY tier-1 dungeon stood within 40 tiles of the origin - so
+	# in any world that already had one (which is every world that has been played in), the
+	# flagged starter dungeon was never created at all. `_nearest_starter_dungeon` then found
+	# nothing, the Warden had nowhere to lead anybody, and the dungeon the player walked into was
+	# an ordinary five-floor one he does not escort.
+	#
+	# Owner 2026-09-14, standing in the post after step two: *"Now I'm standing here with him and
+	# he's not moving or leading me anywhere."* He had nowhere to go.
+	#
+	# The flag is the whole point of this function, so the flag is what it checks for.
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
-		var dungeon_data = _dungeon_data_for(instance)
-		if dungeon_data.tier == 1:
-			var distance = sqrt(instance.world_x * instance.world_x + instance.world_y * instance.world_y)
-			if distance <= STARTER_AREA_RADIUS:
-				# Already have a tier 1 dungeon near spawn
-				return
+		if not bool(instance.get("starter", false)):
+			continue
+		if int(instance.get("completed_at", 0)) > 0:
+			continue
+		var distance = sqrt(instance.world_x * instance.world_x + instance.world_y * instance.world_y)
+		if distance <= STARTER_AREA_RADIUS:
+			return          # a real starter dungeon is already standing near spawn
 
 	# No tier 1 dungeon near origin - spawn one
 	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
@@ -34713,9 +34725,10 @@ func _start_guided_dungeon_combat(peer_id: int, character, monster: Dictionary, 
 	# The combat lesson, on the first fight the guide is actually standing in.
 	_guide_teach(peer_id, "combat")
 	var guide = _make_guide_character(int(character.level))
-	var members: Array = [peer_id, GUIDE_PEER_ID]
-	var chars: Dictionary = {peer_id: character, GUIDE_PEER_ID: guide}
-	var started = combat_mgr.start_party_combat_simul(members, chars, monster, [GUIDE_PEER_ID])
+	var _gid := _guide_peer_id(peer_id)
+	var members: Array = [peer_id, _gid]
+	var chars: Dictionary = {peer_id: character, _gid: guide}
+	var started = combat_mgr.start_party_combat_simul(members, chars, monster, [_gid])
 	if not started.get("success", false):
 		return false
 
@@ -43240,7 +43253,25 @@ func _party_drop_member_after_death(peer_id: int, dead_name: String) -> void:
 ## same dictionaries real peers use without ever colliding with one, and because -1 is already
 ## overloaded as a "not found" sentinel in several places - which is exactly the collision that
 ## broke the aggro rule on first write (see CombatManager._guide_shield_targets).
-const GUIDE_PEER_ID := -9001
+## ⛑ ONE GUIDE ID PER PLAYER, NOT ONE FOR THE SERVER.
+##
+## This was a single constant, -9001, used as the guide's peer id in every escorted fight. That
+## is fine with one player and wrong the moment two are in the tutorial at once: every member of
+## a party combat is written into `party_combat_membership`, so the second player's fight
+## overwrote the first's entry for -9001, and either fight ENDING erased it for both.
+##
+## Owner 2026-09-14: *"this is an online game that will have multiple players online possibly
+## going through the tutorials at pretty much the same time so this need to work for all of them,
+## not just one player or it breaking from another player doing it."*
+##
+## Derived from the player's own peer id, so two tutorials can never share a key. Still negative,
+## which is what every `pid < 0` NPC check in combat keys off, and still far below any real peer.
+const GUIDE_PEER_ID_BASE := -9000
+
+
+func _guide_peer_id(peer_id: int) -> int:
+	"""The guide's id in THIS player's fight. Unique per player - see GUIDE_PEER_ID_BASE."""
+	return GUIDE_PEER_ID_BASE - maxi(1, peer_id)
 ## The guide's name. One constant, because it will end up in dialogue, the party panel, the combat
 ## log and the victory card, and a name that disagrees with itself across four surfaces is the
 ## "one value, two places" defect wearing a hat.
@@ -43457,9 +43488,10 @@ func _tutorial_safe_monster(monster: Dictionary, character) -> Dictionary:
 func _start_guided_overworld_combat(peer_id: int, character, monster: Dictionary) -> bool:
 	"""The Warden steps in for an ordinary encounter while the player is still finding their feet."""
 	var guide = _make_guide_character(int(character.level))
-	var members: Array = [peer_id, GUIDE_PEER_ID]
-	var chars: Dictionary = {peer_id: character, GUIDE_PEER_ID: guide}
-	var started = combat_mgr.start_party_combat_simul(members, chars, monster, [GUIDE_PEER_ID])
+	var _gid := _guide_peer_id(peer_id)
+	var members: Array = [peer_id, _gid]
+	var chars: Dictionary = {peer_id: character, _gid: guide}
+	var started = combat_mgr.start_party_combat_simul(members, chars, monster, [_gid])
 	if not started.get("success", false):
 		return false
 	_send_party_combat_start(peer_id, members, monster, [
@@ -44276,7 +44308,9 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 	# that character at a 76% win rate. Being made to fight twice is the one thing the tutorial
 	# must not do. Keyed on the guide being IN the fight rather than on quest state, so it holds
 	# for every path that puts him there.
-	var _guide_here: bool = GUIDE_PEER_ID in members
+	# Any npc member means the guide is here. Asking for a specific id would have to know WHOSE
+	# fight this is, and the answer is already recorded on the combat.
+	var _guide_here: bool = not (combat.get("npc_members", []) as Array).is_empty()
 	if victory and _dctx.is_empty() and not _survivors.is_empty() 			and not _guide_here and characters.has(leader_id):
 		var _fc: int = combat_mgr.compute_flock_chance(monster, characters[leader_id].level)
 		_flock_incoming = _fc > 0 and (randi() % 100) < _fc

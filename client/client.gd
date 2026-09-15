@@ -46756,12 +46756,16 @@ func _overworld_display(payload: Dictionary) -> String:
 		if not _escort_goal.is_empty():
 			var _gx := int(_escort_goal.get("x", 0)) - _last_map_center.x
 			var _gy := int(_escort_goal.get("y", 0)) - _last_map_center.y
+			# ⛑ WORLD Y IS NOT SCREEN Y. World y increases NORTH (see _get_direction_text:
+			# "north" if dy > 0), and screen rows increase SOUTH - the same inversion
+			# `_trail_offset` already documents. Without the negation he stood on the opposite
+			# side of the player from the place he was pointing at: measured from the owner's
+			# screenshot, goal 39 tiles SOUTHWEST and the Warden drawn due NORTH.
 			if _gx != 0 or _gy != 0:
-				_eo = Vector2i(signi(_gx), signi(_gy)) if absi(_gx) != absi(_gy) 					else Vector2i(signi(_gx), 0)
-				if absi(_gx) < absi(_gy):
-					_eo = Vector2i(0, signi(_gy))
-				elif absi(_gx) > absi(_gy):
+				if absi(_gx) >= absi(_gy):
 					_eo = Vector2i(signi(_gx), 0)
+				else:
+					_eo = Vector2i(0, -signi(_gy))
 		var _ex: int = mid + _eo.x
 		var _ey: int = mid + _eo.y
 		var _ek := "%d,%d" % [_ex, _ey]
