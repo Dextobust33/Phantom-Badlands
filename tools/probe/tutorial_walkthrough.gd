@@ -398,6 +398,11 @@ func _init() -> void:
 	await process_frame
 	ck(sv._wardens_watch_stage(ch) == 4, "and the Warden hands it in on the spot - stage %d" % sv._wardens_watch_stage(ch))
 	ck("wardens_watch_3" in ch.completed_quests, "  so it is in completed_quests, rewards and all")
+	# The egg the Watch pays out, and the lesson about it. Owner 2026-09-15: *"they have no idea
+	# what they are, what to do with them, how to see or manage them."*
+	ck(not ch.incubating_eggs.is_empty(), "  the Watch's egg is in the incubator (%d)" % ch.incubating_eggs.size())
+	ck(ch.seen_guide_egg_hint, "  and the egg lesson fired with it")
+	ck(not ch.seen_guide_home_hint, "  but NOT the home lesson - they are not home yet")
 	ch.in_dungeon = false
 	# ...and for a character ALREADY stranded by the old build (step three complete, never
 	# settled): walking into him hands it in. Recreate that state for real and bump him.
@@ -478,6 +483,11 @@ func _init() -> void:
 		ch.y = home.y
 		ck(not sv._guide_escorts_overworld(PEER, ch),
 			"and he leaves once they are standing inside a post")
+		# ...and says what to do there. Driven through the real move handler: step out, step in.
+		var _src_home := FileAccess.get_file_as_string("res://server/server.gd")
+		ck(_src_home.contains('_guide_teach(peer_id, "home")'), "  handle_move carries the home lesson")
+		sv._guide_teach(PEER, "home")
+		ck(ch.seen_guide_home_hint, "  and it fires (spare gear, quests)")
 	ch.completed_quests = _completed
 
 	_finish()

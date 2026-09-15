@@ -5757,6 +5757,11 @@ func handle_move(peer_id: int, message: Dictionary):
 				"message": "[color=#808080]%s buff has worn off.[/color]" % buff.type
 			})
 
+	# The Warden leaves you at a post once the Watch is finished - and says what to do next.
+	if not character.seen_guide_home_hint and _wardens_watch_stage(character) == 4 \
+			and world_system and world_system._is_npc_post_interior(int(character.x), int(character.y)):
+		_guide_teach(peer_id, "home")
+
 	# Process egg incubation - each movement step counts toward hatching
 	if character.incubating_eggs.size() > 0:
 		var hatched = character.process_egg_steps(1)
@@ -17620,6 +17625,15 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 	var title = "[color=#A335EE]✦ Companions[/color]"
 	var body = (
 		"You just hatched [color=#A335EE]%s[/color] — your first companion. Companions fight beside you in combat, share XP, and grow stronger as you do.\n\n" % comp_name
+		# 2026-09-15 - the essentials FIRST, read off the code. Owner: *"they have no idea ... what
+		# companions are and how to equip, use, or heal them."* A hatched companion is NOT made
+		# active (_hatch_egg only adds it to the roster), and this panel led with aggro roles.
+		+ "[color=#FFD700]── Bring it with you ──[/color]\n"
+		+ "  • It is [b]not[/b] out yet. Open [color=#00FFFF]Companions[/color] (bottom-right row, or More → Companions) and [b]click it[/b].\n"
+		+ "  • In a fight it attacks on your turn by itself; you do not command it.\n\n"
+		+ "[color=#FFD700]── Keeping it alive ──[/color]\n"
+		+ "  • It heals as you walk, and when you [color=#00FFFF]Rest[/color].\n"
+		+ "  • [color=#FF6666]Knocked out[/color], it heals by neither. Walk into a post's [color=#FFD700]H[/color] tile (the Healer) or use a Companion Revive Potion. The Inn heals only you.\n\n"
 		+ "[color=#FFD700]── Active companion ──[/color]\n"
 		+ "  • Only one companion is active at a time. It fights with you and earns 10%% of monster XP.\n"
 		+ "  • Each monster type has unique abilities — passive (always on), active (cast in combat), and threshold (triggers at low HP).\n"
@@ -20681,6 +20695,7 @@ func _warden_settle_steps(peer_id: int, character, updates: Array) -> void:
 				send_to_peer(peer_id, {"type": "mark_tile", "x": int(_home.get("x", 0)), "y": int(_home.get("y", 0)),
 					"label": String(_home.get("name", "the post")), "seconds": 900})
 				_guide_say(peer_id, "That is the Watch done. Back to %s - I will see you as far as the gate, and then the road is yours." % String(_home.get("name", "the post")))
+			_guide_teach(peer_id, "first_egg")
 		if _qid == "wardens_watch_2":
 			_escort_released.erase(peer_id)
 			_mark_the_dungeon(peer_id, character)
@@ -44514,6 +44529,38 @@ func _guide_teach(peer_id: int, topic: String) -> void:
 				+ "[color=#9ACD32]\"Those words under the map — Wary, Scouting, Hunting. Hunting finds you fights faster, Wary finds you fewer. Pick the one that matches how much blood you have left.\"[/color]\n\n"
 				+ "[color=#FFD700]Next:[/color] he is handing you armour now. Put it on, then find the next one.")
 			ring = ["action_0", "travel_stance"]
+		"first_egg":
+			# ⛑ 2026-09-15. Owner, after the starter dungeon: *"We also need to tell players about
+			# eggs once they get one from the dungeon there, they have no idea what they are, what
+			# to do with them, how to see or manage them."* Fires when the Watch pays out its egg.
+			# Every control named here was read off the client (action bar, shortcut row, side
+			# panel) rather than remembered.
+			if ch.seen_guide_egg_hint or ch.incubating_eggs.is_empty():
+				return
+			ch.seen_guide_egg_hint = true
+			var _egg: Dictionary = ch.incubating_eggs[ch.incubating_eggs.size() - 1]
+			title = "[color=#A335EE]An Egg[/color]"
+			body = (("\"That is yours. Keep walking and it will hatch.\"\n\n"
+				+ "Your [color=#A335EE]%s[/color] is in your incubator. Eggs hatch as you [b]walk[/b] - this one needs about [color=#FFD700]%d more steps[/color].\n\n") % [String(_egg.get("name", "egg")), maxi(1, int(_egg.get("steps_remaining", _egg.get("hatch_steps", 50))))]
+				+ "You can see it on the [color=#FFD700]Eggs:[/color] line of your side panel - click an egg there to pause or resume it. The [color=#FFD700]Eggs[/color] button in the row at the bottom right shows them all.\n\n"
+				+ "[color=#9ACD32]When it hatches it becomes a companion, but it does not come out on its own:[/color] open [color=#FFD700]Companions[/color] (same row, or [color=#9ACD32]1[/color] More, then Companions) and click it to bring it with you.")
+			ring = ["eggs_shortcut"]
+		"home":
+			# ⛑ 2026-09-15. Owner: *"We should also show people how to list their equipment they
+			# don't want on the market or salvage it as they will likely have a bunch of extra gear
+			# they have no idea what to do with after getting back to the post."* And the quest log:
+			# *"The warden should probably show me how to check my Quest Log now."* Fires the first
+			# time they are back inside a post with the Watch finished, which is where he leaves.
+			if ch.seen_guide_home_hint:
+				return
+			ch.seen_guide_home_hint = true
+			title = "[color=#9ACD32]Home[/color]"
+			body = ("\"This is where I leave you. You know enough not to die stupidly.\"\n\n"
+				+ "[color=#FFD700]Quests[/color] - the [color=#FFD700]Quests[/color] button (bottom right, or [color=#9ACD32]R[/color] when nothing else is on your tile) shows what you are working on. To take a new one or hand one in, walk into the [color=#FFD700]Q[/color] tile - the Quest Board - inside a post.\n\n"
+				+ "[color=#FFD700]Gear you do not want[/color] - you will be carrying plenty.\n"
+				+ "  - [b]Salvage it[/b] for crafting materials, anywhere: open [color=#FFD700]Inventory[/color] ([color=#9ACD32]Q[/color]) and press [color=#FFD700]Salvage[/color], or use [color=#FFD700]Salvage[/color] in the inventory window.\n"
+				+ "  - [b]Sell it[/b] for valor: walk into the [color=#FFD700]$[/color] tile - the Open Market - and choose [color=#FFD700]List Item[/color], or [color=#FFD700]Sell / Bulk List[/color], then List from Inventory. You are paid the moment it is listed.")
+			ring = ["quests_shortcut", "inventory_shortcut"]
 		"world":
 			# ⛑ RETIRED 2026-09-15 - ABSORBED INTO `_escort_ask_to_lead`, NOT DELETED.
 			#

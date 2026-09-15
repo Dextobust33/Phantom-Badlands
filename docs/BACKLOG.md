@@ -628,8 +628,10 @@ the teaching beats that depend on the Warden behaving):
       post's hand-in list compared "crossroads" with the runtime id "npc_crossroads" (third time that
       prefix has stranded a chain). `_warden_settle_steps` now runs for dungeon progress too, and
       every quest-vs-post comparison goes through `_same_post`. Probe: tutorial_walkthrough 9d.
-- [ ] **After the dungeon the player is teleported out with no idea what to do.** The Warden should
-      show the Quest Log and walk (or point) them back to the post for the turn-in.
+- [x] **After the dungeon the player had no idea what to do.** FIXED on master, not released: the step
+      now settles on the spot, he names and rings the nearest post, and the "Home" lesson fires the
+      first time they are back inside one (quest log + Quest Board tile). He points; he does not
+      auto-walk them home (possible follow-up).
 - [x] **Party per-member state was a WHITELIST, and everything not on it was dropped between rounds.**
       FIXED on master, not released. Enumerated what every class's cards write onto a party view:
       `vanished` (Phantom Strike's crit never landed in party), `analyze_bonus`,
@@ -686,11 +688,14 @@ the teaching beats that depend on the Warden behaving):
       measured: highest Area Level within 40 tiles of the origin (the starter-dungeon ring) + 3 = 9
       on the local seed. Steps that do not climb always pass, so nobody is stranded.
       Probe: tutorial_walkthrough section 10. **Check the live seed gives a sane number too.**
-- [ ] **Teach what to do with spare gear back at the post** - list it on the market or salvage it.
-      Owner: a new player comes home with a pile of extra equipment and no idea what it is for.
-- [ ] **Teach eggs and companions** when the dungeon hands over the first egg: what an egg is, how to
-      see/manage/hatch it, what companions are, and how to equip, use and heal them.
-
+- [x] **Teach what to do with spare gear back at the post.** In the "Home" lesson: Salvage (Inventory
+      Q -> Salvage, anywhere) and Sell ($ tile -> List Item / Sell / Bulk List; paid on listing).
+- [x] **Teach eggs and companions.** "An Egg" lesson when the Watch pays out its egg (hatches by
+      walking, live steps-remaining, Eggs: line click = pause, Eggs button, and that a hatched
+      companion must be CLICKED in Companions to come out). The first-hatch Companions panel now
+      leads with deploying it and keeping it alive (walk/Rest heal; KO needs the H tile or a
+      Revive Potion; the Inn heals only you). All controls read off the client, not remembered.
+      None of the three has been seen in a running client yet.
 ### ⚑ TWO THINGS TO WATCH AFTER THIS RELEASE
 
 - **`assassinate_pct` now reaches the dice.** Silver Tongue (+15%) and one unique moved the card
