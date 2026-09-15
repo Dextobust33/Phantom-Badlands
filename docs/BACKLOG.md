@@ -805,6 +805,22 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    Measure first (a 1920x1080 client screenshot: map viewport vs map content, panel sizes),
    then set the default scale/layout so the whole map fits with no scroll; check the per-element
    resize system (memory: UI Scale system) so saved user scales are not clobbered.
+4c. **Two "what did that do?" gaps (owner 2026-09-15).** Both are the same shape - an action lands
+   and the player is never told what it acted on or what they got. Cheap, and both sit on the
+   onboarding path now that the Warden hands out a Home Stone (Companion).
+   - **Home Stone (Companion)** acts on your EQUIPPED companion and gives no choice. Nothing says so:
+     the prompt reads as though you are about to pick one. Name the companion it will send home in
+     the prompt (and say plainly that it is the equipped one), or refuse with that sentence when no
+     companion is equipped. Read the real flow before writing the text - `home_stone_select` /
+     `home_stone_companion_response` in server.gd - the lesson written for the Warden's handout is
+     the other surface to keep in step (one value, two places).
+   - **Listing an egg on the market** never says what the egg IS or what it will fetch, and gives no
+     confirmation that the listing went up. Show the egg's identity/tier and the price (or the
+     suggested price) on the listing screen, and confirm the listing succeeded - through the
+     pending-action pattern in CLAUDE.md's Player-Visible Output Rule, or the refresh wipes it.
+   Check whether the missing confirmation is egg-specific or every market listing before fixing it
+   at the egg.
+
 5. **Shorter names for stacked affixes (owner 2026-09-15).** *"find a way to shorten those long names
    on items and monsters that have bunches of affixes. Ideally we just create new affixes or names
    for those that have a combination of multiple affixes, for example something that has juggernaut
