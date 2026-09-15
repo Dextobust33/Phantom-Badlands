@@ -933,6 +933,8 @@ const POTION_EFFECTS = {
 	"reclaimer_lantern": {"reclaimer_lantern": true, "extra_drop_pct": 25, "battles": 5},
 	# Floor Skip Charm - Out-of-combat in dungeon, advances current floor instantly.
 	"floor_skip_charm": {"floor_skip": true},
+	# Apex Sigil - full HP and every resource pool, in or out of a fight. 8% from apex kills.
+	"apex_sigil": {"full_restore": true},
 	# === MYSTERY/GAMBLING ITEMS (Tier 4+) ===
 	# Mysterious Box - Opens to random item from same tier or +1 higher
 	"mysterious_box": {"mystery_box": true},
@@ -4481,7 +4483,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type == "apex_crystal" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm"]
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type == "apex_crystal" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm", "apex_sigil"]
 
 	var final_rarity: String
 	var final_level = monster_level
@@ -5925,7 +5927,7 @@ func is_usable_in_combat(item_type: String) -> bool:
 ## Effect keys process_use_item can resolve mid-fight. An item with none of them has no combat effect
 ## and is refused WITHOUT being spent - owner 2026-09-15: *"It should refuse if it doesn't have a
 ## combat effect."* The client's combat menu filter reads `combat_use_effect` too.
-const COMBAT_EFFECT_KEYS := ["heal", "mana", "stamina", "energy", "resource", "buff", "companion_taunt", "revive_companion"]
+const COMBAT_EFFECT_KEYS := ["heal", "mana", "stamina", "energy", "resource", "buff", "companion_taunt", "revive_companion", "full_restore"]
 
 ## A crafted debuff scroll's stat -> the pending_monster_debuffs type the next encounter applies.
 const CRAFTED_DEBUFF_TYPES := {"monster_attack": "weakness", "monster_defense": "vulnerability",

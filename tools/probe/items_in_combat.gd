@@ -34,6 +34,7 @@ var base_dict: Dictionary
 var dungeon_dict: Dictionary
 var client_filter = null
 var dupes := 0   # the one verdict that is never a design question
+var stack_eaten := 0   # one use that removed a whole stack
 # Keys that change on every save/tick and say nothing about the item.
 const NOISE := ["last_saved", "last_active", "play_time", "updated_at", "last_login", "inventory",
 	"in_combat", "combat_log", "last_combat_time", "ability_uses_this_combat", "rng_state"]
@@ -164,7 +165,10 @@ func _run(spec: String, how: String) -> Dictionary:
 	if how != "OUTSIDE":
 		_fight(ch)
 	var proto := _item(t)
-	ch.inventory.append(proto.duplicate(true))
+	var placed := proto.duplicate(true)
+	if mods.contains("qty3"):
+		placed["quantity"] = 3   # a stack: one use must take ONE
+	ch.inventory.append(placed)
 	var idx: int = ch.inventory.size() - 1
 	# DEEP copy: to_dict hands back the live buff/material containers, so a shallow snapshot mutates
 	# along with the character and every effect diffs as "nothing changed". The first run did exactly that.
@@ -203,6 +207,9 @@ func _run(spec: String, how: String) -> Dictionary:
 		verdict = "prompt"
 	else:
 		verdict = "refused"
+	if taken and n0 - n1 > 1 and t != "treasure_chest":
+		verdict += "+ATE-STACK(%d)" % (n0 - n1)
+		stack_eaten += 1
 	if how != "OUTSIDE" and not fight_on:
 		verdict += "+FIGHT-GONE"
 	if how != "OUTSIDE" and bool(after.get("in_dungeon", false)) != bool(before.get("in_dungeon", false)):
@@ -252,7 +259,8 @@ func _init() -> void:
 	types += ["escape_scroll", "dungeon_compass", "apex_sigil", "ability_tome", "treasure_chest",
 		"enhancement_scroll",
 		"potion_revive_companion|ko", "charm_taunt|pet", "health_potion|ko|tgt", "health_potion|pet|tgt",
-		"enhancement_scroll|gear", "enhancement_scroll|capped", "floor_skip_charm|dgn", "escape_scroll|dgn", "home_stone_supplies|dgn", "scroll_time_stop|dgn"]
+		"enhancement_scroll|gear", "enhancement_scroll|capped", "health_potion|qty3", "escape_scroll|dgn|qty3",
+		"dungeon_compass|qty3", "ability_tome|qty3", "apex_sigil|qty3", "tome_strength|qty3", "floor_skip_charm|dgn", "escape_scroll|dgn", "home_stone_supplies|dgn", "scroll_time_stop|dgn"]
 
 	for rid in sv.CraftingDatabaseScript.RECIPES:
 		if String(sv.CraftingDatabaseScript.RECIPES[rid].get("output_type", "")) in ["scroll", "map", "tome", "bestiary", "consumable"]:
@@ -300,5 +308,6 @@ func _init() -> void:
 
 	# Everything else is classified for the owner; a duplication is a failure outright. Proven to fire:
 	# the Enhancement Scroll at its cap reported DUPLICATED on the code before 2026-09-15's fix.
-	print("RESULT: %s (%d duplicating uses, %d unread buff names)" % ["PASS" if dupes == 0 and unread.is_empty() else "FAIL", dupes, unread.size()])
-	quit(0 if dupes == 0 and unread.is_empty() else 1)
+	var ok: bool = dupes == 0 and unread.is_empty() and stack_eaten == 0
+	print("RESULT: %s (%d duplicating uses, %d unread buff names, %d uses that ate a stack)" % ["PASS" if ok else "FAIL", dupes, unread.size(), stack_eaten])
+	quit(0 if ok else 1)

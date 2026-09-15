@@ -11244,6 +11244,18 @@ func _inventory_use_refusal(character, item: Dictionary, effect: Dictionary, mes
 	return ""
 
 
+func _spend_one_item(character, index: int) -> void:
+	"""Spend ONE use of the item at `index`: one from a consumable stack, or the whole entry otherwise.
+
+	⛑ 2026-09-15 - the escape scroll, apex sigil, dungeon compass and ability tome handlers each called
+	remove_item, which pops the whole entry, so using one of a stack of three deleted all three
+	(items_in_combat.gd, the qty3 rows). Crafted escape scrolls are made in stacks."""
+	if character.inventory[index].get("is_consumable", false):
+		character.use_consumable_stack(index)
+	else:
+		character.remove_item(index)
+
+
 func handle_inventory_use(peer_id: int, message: Dictionary):
 	"""Handle using an item from inventory"""
 	if not characters.has(peer_id):
@@ -36327,7 +36339,7 @@ func _use_dungeon_compass(peer_id: int, item_index: int):
 		return
 
 	# Consume the compass
-	character.remove_item(item_index)
+	_spend_one_item(character, item_index)
 
 	var d_color = "#88FF88"
 	var d_data = DungeonDatabaseScript.get_dungeon(nearest.dungeon_type)
@@ -36376,7 +36388,7 @@ func _use_ability_tome(peer_id: int, item_index: int, item: Dictionary):
 	if character.grant_card_copy(gift_ability) == "":
 		send_to_peer(peer_id, {"type": "error", "message": "You already hold the most copies of that card a deck can carry."})
 		return
-	character.remove_item(item_index)
+	_spend_one_item(character, item_index)
 
 	var display_name = drop_tables.get_ability_tome_display(gift_ability)
 	var msg: String
@@ -36422,7 +36434,7 @@ func _use_escape_scroll(peer_id: int, item_index: int):
 	# could not leave, under permadeath.
 
 	# Consume scroll
-	character.remove_item(item_index)
+	_spend_one_item(character, item_index)
 
 	# Clean exit — keep all materials (no collapse penalty)
 	var instance_id = character.current_dungeon_id
@@ -36472,9 +36484,11 @@ func _use_apex_sigil(peer_id: int, item_index: int) -> void:
 	if item_index < 0 or item_index >= character.inventory.size():
 		return
 	var item = character.inventory[item_index]
-	if String(item.get("item_type", "")) != "apex_sigil":
+	# ⛑ 2026-09-15 - read `type` too. The drop generator writes `type: "apex_sigil"` and no `item_type`,
+	# so this returned silently and every Sigil ever dropped did nothing (items_in_combat.gd).
+	if String(item.get("item_type", "")) != "apex_sigil" and String(item.get("type", "")) != "apex_sigil":
 		return
-	character.remove_item(item_index)
+	_spend_one_item(character, item_index)
 	var pre_hp = int(character.current_hp)
 	character.current_hp = character.get_total_max_hp()
 	# Restore all three class resource pools (mana / stamina / energy) —

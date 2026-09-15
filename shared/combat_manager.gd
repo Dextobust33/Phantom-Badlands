@@ -8509,6 +8509,14 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		var comp_name: String = str(recipient.active_companion.get("name", "your companion"))
 		messages.append("[color=#FFD700]You use the %s![/color]" % item_name)
 		messages.append("[color=#00FF00]Your %s rises with %d/%d HP![/color]" % [comp_name, revive_hp, comp_max])
+	elif effect.has("full_restore"):
+		# Apex Sigil - everything back to full. Mirrors server._use_apex_sigil (out of combat).
+		var pre_hp: int = int(recipient.current_hp)
+		recipient.current_hp = recipient.get_total_max_hp()
+		recipient.current_mana = recipient.get_total_max_mana()
+		recipient.current_stamina = recipient.get_total_max_stamina()
+		recipient.current_energy = recipient.get_total_max_energy()
+		messages.append("[color=#9F70FF]✦ The Apex Sigil flares — restored to full HP (+%d) and resources![/color]" % (int(recipient.current_hp) - pre_hp))
 	elif effect.has("heal"):
 		# Phase B1 — a KO'd companion is brought back by a Revive Potion or a Healer, never by a
 		# healing potion. Reject here with a clear msg instead of silently consuming the potion.
