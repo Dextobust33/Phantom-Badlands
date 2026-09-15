@@ -31357,7 +31357,16 @@ func display_changelog():
 	# v0.9.769 — a playtest day. A completed dungeon stayed enterable with its chest still in it;
 	# the boss had been invisible as a boss since sprites landed; the Scroll of Finding worked but
 	# could not say so; and the special rooms finally have art.
-	display_game("[color=#00FF00]v0.9.789[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.790[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE GOLD RING MARKS THE RIGHT TILE.[/color] It was drawn [b]mirrored north-to-south about you[/b], for its whole life. A panel saying “1 tile southwest” put the ring one tile [b]north[/b], on bare road. It now sits on the place it names.")
+	display_game("  [color=#FF8000]★ THE WARDEN PUTS YOU ON THE DOORSTEP.[/color] Three pop-ups in a row (two of them telling you to walk somewhere he walks you) are now [b]one[/b], with a button that says [b]Take me there[/b]. He no longer stops a tile short, and when you arrive he tells you to [b]press R[/b] to go in.")
+	display_game("  [color=#FF4444]★ AND HE STOPS GETTING LOST.[/color] He was walking into post walls, stepping back into the building he had just left, and pacing a lake shore forever without giving up. He leaves by a door now, notices when he is going nowhere, and [b]tells you[/b] before trying again.")
+	display_game("  [color=#FF4444]★ ASSASSINATE SHOWS THE ODDS IT ACTUALLY ROLLS.[/color] The card advertised a kill chance [b]13 points higher[/b] than the one the game rolled, and [b]Silver Tongue[/b] and the unique that raise it moved the card but not the dice. Both now work as written, and the card also shows the damage it deals when it does not kill.")
+	display_game("  [color=#1EFF00]◆ Floor loot looks like what it is.[/color] Every piece of equipment on a dungeon floor was drawn as a shield and every consumable as a potion. There are now pictures for each slot and each kind.")
+	display_game("  [color=#1EFF00]◆ The chat bar no longer grabs your keyboard[/color] when you close a tutorial panel, and [color=#1EFF00]a full pack no longer eats your starter gear[/color] in silence — it says what it could not give, and the Warden hands it over when you have room.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.789[/color]")
 	display_game("  [color=#FF8000]★ WARDEN HOLLIS NOW WALKS YOU TO YOUR FIRST DUNGEON.[/color] The last step of [b]Warden’s Watch[/b] used to end with “the rest of your gear is on the floor of that dungeon” and leave you standing in a post with no idea which one. He now [b]tells you where it is, asks if you are ready, and then leads you there himself[/b] — resting you before you set off, and keeping the road quiet while you walk. Step off on your own at any time and he falls in behind you instead.")
 	display_game("  [color=#FF8000]★ AND HE TEACHES THE FIGHT ONE PIECE AT A TIME.[/color] Your first combat now names the card you are meant to play and [b]rings both the card and the key that plays it[/b], instead of describing a screen you have never seen. He has the health to survive standing next to you while you learn, and he takes the hits that would have ended you.")
 	display_game("  [color=#FF4444]★ YOU CAN CHANGE YOUR MIND IN A PARTY FIGHT.[/color] Picking an action locked it in and left you watching. [b]Pick something else and it replaces it[/b] — no confirmation, no waiting.")
