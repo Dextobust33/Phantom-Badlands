@@ -2455,6 +2455,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_rescue_player(peer_id, message)
 		"gm_tutorial_jump":
 			handle_gm_tutorial_jump(peer_id, message)
+		"tutorial_ack":
+			handle_tutorial_ack(peer_id, message)
 		"gm_world_reset":
 			handle_gm_world_reset(peer_id)
 		"gm_world_reset_confirm":
@@ -15588,7 +15590,7 @@ func handle_set_tutorials(peer_id: int, message: Dictionary) -> void:
 
 
 func _send_hint(peer_id: int, title: String, body: String, opt_out: String = "",
-		highlight: Array = []) -> bool:
+		highlight: Array = [], ack: String = "", dismiss: String = "") -> bool:
 	"""Every teaching pop-up goes through here, so ONE check decides whether they are wanted.
 
 	Before this each hint sent itself, which means turning them off would have meant finding all
@@ -15603,8 +15605,10 @@ func _send_hint(peer_id: int, title: String, body: String, opt_out: String = "",
 	# closes the popup. Owner 2026-09-14: *"There is nothing to draw the players attention to
 	# any of the buttons or things he is referencing."* Naming a button in prose and expecting
 	# someone to find it among forty others is not teaching.
+	# `ack` names something the server is WAITING for the player to agree to. The client sends it
+	# back when the panel closes, so nothing happens underneath a popup they have not read.
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body,
-		"opt_out": opt_out, "highlight": highlight})
+		"opt_out": opt_out, "highlight": highlight, "ack": ack, "dismiss": dismiss})
 	return true
 
 
@@ -41757,7 +41761,13 @@ func handle_gm_tutorial_jump(peer_id: int, message: Dictionary) -> void:
 	reach, and most of those replays found nothing because the bug was further on. `to` picks the
 	beat: "step2_last" leaves them one kill from finishing step two, which is the moment the
 	whole dungeon leg hangs off."""
-	if not _is_admin(peer_id) or not characters.has(peer_id):
+	# Say so out loud. A silent return here cost a test session: every admin button was being
+	# rejected because the account was not flagged, and a button that does nothing looks exactly
+	# like a button that is not wired up.
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
 	var to := String(message.get("to", "step2_last"))
@@ -41824,6 +41834,7 @@ func handle_gm_rescue_player(peer_id: int, message: Dictionary) -> void:
 
 	Leaves the dungeon cleanly rather than collapsing it: a rescue must not also be a punishment."""
 	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
 		return
 	var who := String(message.get("player", "")).strip_edges()
 	if who == "":
@@ -41857,6 +41868,7 @@ func handle_gm_rescue_player(peer_id: int, message: Dictionary) -> void:
 func handle_gm_world_reset(peer_id: int):
 	"""Step 1: report exactly what a reset would destroy, and arm the confirm."""
 	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
 		return
 	var chunk_files := 0
 	var d := DirAccess.open("user://data/world/")
@@ -41900,6 +41912,7 @@ func handle_gm_world_reset(peer_id: int):
 func handle_gm_world_reset_confirm(peer_id: int):
 	"""Step 2: actually do it."""
 	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
 		return
 	var armed: int = int(_world_reset_armed_at.get(peer_id, 0))
 	if armed <= 0 or Time.get_ticks_msec() - armed > 60000:
@@ -43499,6 +43512,46 @@ func _escort_walk_cancel(peer_id: int, why: String = "") -> void:
 
 
 var _escort_released: Dictionary = {}   # peer_id -> true once the player has taken the lead
+var _escort_ready: Dictionary = {}      # peer_id -> true once they have SAID they are ready
+var _escort_asked: Dictionary = {}      # peer_id -> true once we have asked, so we ask once
+var _escort_done: Dictionary = {}       # peer_id -> true once he has delivered them
+var _escort_retry_ms: Dictionary = {}   # peer_id -> when a wedged walk may try again
+var _escort_rested: Dictionary = {}     # peer_id -> true once he has patched them up
+
+
+func handle_tutorial_ack(peer_id: int, message: Dictionary) -> void:
+	"""The player closed a pop-up the server was waiting on."""
+	match String(message.get("ack", "")):
+		"escort_ready":
+			# HE ASKS BEFORE HE MOVES YOU.
+			#
+			# Owner 2026-09-14, watching him set off: *"He does start walking you but you have
+			# popups on the screen so you can't tell what's happening."* And: *"He should instead
+			# talk to you and you have to acknowledge what's about to happen before he starts
+			# moving you."* Having the ground move under an unread popup is worse than not
+			# moving at all, and it is the player's character.
+			_escort_ready[peer_id] = true
+			_escort_asked.erase(peer_id)
+
+
+func _escort_ask_to_lead(peer_id: int, character) -> void:
+	"""Tell them what is about to happen, and wait to be told to go."""
+	if _escort_asked.get(peer_id, false):
+		return
+	_escort_asked[peer_id] = true
+	var goal: Dictionary = _escort_goal_for(peer_id, character)
+	var where := String(goal.get("where", "out there"))
+	var what := String(goal.get("name", "the dungeon"))
+	var sent := _send_hint(peer_id,
+		"[color=#9ACD32]Warden Hollis Will Take You[/color]",
+		"\"The rest of your kit is on the floor of %s, %s of here. I will walk you to the door myself.\"\n\n" % [what, where]
+		+ "He leads from the front. [color=#FFD700]Move on your own at any time[/color] and he "
+		+ "will fall in behind you instead.",
+		"", [], "escort_ready", "Lead the way")
+	if not sent:
+		# Tutorials switched off. Waiting for an acknowledgement that can never arrive would
+		# strand them at the post forever, so take the silence as a yes.
+		_escort_ready[peer_id] = true
 
 
 func _escort_walk_maybe_start_all() -> void:
@@ -43514,10 +43567,20 @@ func _escort_walk_maybe_start_all() -> void:
 	for peer_id in characters:
 		if _escort_walk.has(peer_id) or _escort_released.get(peer_id, false):
 			continue
+		if _escort_done.get(peer_id, false):
+			continue
+		if Time.get_ticks_msec() < int(_escort_retry_ms.get(peer_id, 0)):
+			continue
 		var ch = characters[peer_id]
 		if ch.in_dungeon or combat_mgr.is_in_combat(peer_id) or pending_flocks.has(peer_id):
 			continue
+		# Busy hands. Fishing, mining, chopping - he waits rather than hauling them off a node.
+		if active_gathering.has(peer_id):
+			continue
 		if _wardens_watch_stage(ch) != 3 or not _guide_escorts_overworld(peer_id, ch):
+			continue
+		if not _escort_ready.get(peer_id, false):
+			_escort_ask_to_lead(peer_id, ch)
 			continue
 		_escort_walk_start(peer_id, ch)
 
@@ -43540,12 +43603,25 @@ func _escort_walk_tick() -> void:
 		if ch.in_dungeon or combat_mgr.is_in_combat(peer_id) or pending_flocks.has(peer_id):
 			_escort_walk.erase(peer_id)
 			continue
+		# PAUSE, DO NOT SHOVE. Gathering refuses movement, and the walk had no idea: it kept
+		# asking, three directions a tick, every 450ms. That is what the owner's screenshot
+		# showed - a wall of "You cannot move while gathering!" under a fishing minigame, with
+		# the Warden announcing himself over and over as the walk gave up and instantly
+		# restarted (healing them to full each time it did). He waits now.
+		if active_gathering.has(peer_id):
+			st["next_ms"] = now + ESCORT_STEP_MS
+			_escort_walk[peer_id] = st
+			continue
 		var gx: int = int(st.get("gx", 0))
 		var gy: int = int(st.get("gy", 0))
 		var dx: int = gx - int(ch.x)
 		var dy: int = gy - int(ch.y)
 		if absi(dx) <= 1 and absi(dy) <= 1:
 			_escort_walk.erase(peer_id)
+			# Delivered. Without this he re-starts the walk on the very next tick, arrives
+			# again, and announces it again, forever - the stage stays at 3 until the dungeon
+			# is cleared, so arrival alone never made him stop.
+			_escort_done[peer_id] = true
 			_guide_say(peer_id, "Here it is. Walk in when you are ready - I am right behind you.")
 			continue
 		# Straight at it, then the two next-best directions when the straight one is refused.
@@ -43563,8 +43639,10 @@ func _escort_walk_tick() -> void:
 		st["next_ms"] = now + ESCORT_STEP_MS
 		st["stuck"] = 0 if moved else int(st.get("stuck", 0)) + 1
 		if int(st.get("stuck", 0)) >= 6:
-			# Wedged. Hand the controls back rather than jiggle forever.
+			# Wedged. Hand the controls back rather than jiggle forever - and stay quiet for a
+			# while, because an immediate retry is how six refused steps became an endless one.
 			_escort_walk.erase(peer_id)
+			_escort_retry_ms[peer_id] = now + 20000
 			_guide_say(peer_id, "The ground beats me here. Head %s - I am with you."
 				% String(_escort_goal_for(peer_id, character_or_null(peer_id)).get("where", "on")))
 			continue
@@ -43592,6 +43670,14 @@ func _escort_walk_start(peer_id: int, character) -> void:
 	# have just taken three fights and are about to walk 30 tiles to a dungeon with an unfinished
 	# kit; setting off hurt is how the escort ends up carrying somebody who did not need to be
 	# carried. Free, and only ever here.
+	# Only ever ONCE. A restarting walk that healed every time was a full heal on tap for
+	# anyone standing beside him.
+	var _first: bool = not _escort_rested.get(peer_id, false)
+	_escort_rested[peer_id] = true
+	if not _first:
+		_escort_walk[peer_id] = {"gx": int(goal.get("x", 0)), "gy": int(goal.get("y", 0)),
+			"next_ms": Time.get_ticks_msec(), "stuck": 0}
+		return
 	var _healed: int = character.get_total_max_hp() - character.current_hp
 	character.current_hp = character.get_total_max_hp()
 	character.current_mana = character.get_total_max_mana()
@@ -43619,6 +43705,11 @@ func _escort_goal_for(peer_id: int, character) -> Dictionary:
 		return {}
 	if _wardens_watch_stage(character) != 3:
 		return {}          # only step three is a journey; the others are fought where you stand
+	# Make sure there IS one before promising to walk them to it. `_point_at_the_dungeon` has
+	# ensured this since the pointer shipped; the escort read the same world without it, so a
+	# player who reached step three before any tier-1 instance existed got a Warden who agreed
+	# to lead and then stood still - measured, on the admin jump straight to step three.
+	_ensure_starter_dungeon_exists()
 	var d: Dictionary = _nearest_starter_dungeon(character)
 	if d.is_empty():
 		return {}
@@ -45436,6 +45527,7 @@ func handle_gm_find_hotzone(peer_id: int) -> void:
 	that cannot be reached twice running cannot be checked twice running. This is how the
 	feature stays testable now that it is deliberately not in the same place tomorrow."""
 	if not _is_admin(peer_id) or not characters.has(peer_id):
+		_gm_deny(peer_id)
 		return
 	var character = characters[peer_id]
 	var best := Vector2i(0, 0)
@@ -45489,6 +45581,7 @@ func handle_gm_perf_toggle(peer_id: int) -> void:
 	edit, a rebuild, an export and a deploy, which is why in practice it stayed off and every
 	lag report started from nothing."""
 	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
 		return
 	diag_timing_enabled = not diag_timing_enabled
 	_diag_on_since = 0.0
@@ -45506,6 +45599,7 @@ func handle_gm_perf_toggle(peer_id: int) -> void:
 func handle_gm_perf_report(peer_id: int) -> void:
 	"""Print what is actually slow, to the caller and to the journal."""
 	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
 		return
 	var body := perf_report()
 	send_to_peer(peer_id, {"type": "text", "message": body})

@@ -32,7 +32,8 @@ func _ready() -> void:
 	visible = false
 
 
-func show_hint(title: String, body: String, opt_out_text: String = "") -> void:
+func show_hint(title: String, body: String, opt_out_text: String = "",
+		dismiss_text: String = "") -> void:
 	if _title_label:
 		_title_label.clear()
 		_title_label.append_text(title)
@@ -52,6 +53,9 @@ func show_hint(title: String, body: String, opt_out_text: String = "") -> void:
 		if opt_out_text != "":
 			_opt_out_button.text = opt_out_text
 	if _dismiss_button:
+		# Some hints ask the player to AGREE to something rather than merely read it - the
+		# Warden setting off is the first. "Got it" is a wrong label for a decision.
+		_dismiss_button.text = dismiss_text if dismiss_text != "" else "Got it  (Esc / Enter)"
 		_dismiss_button.grab_focus()
 
 

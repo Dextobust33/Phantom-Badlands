@@ -1754,6 +1754,7 @@ var _pending_guided_intro: bool = false
 # hold the numpad/tour until it has shown (fallback timer clears this).
 var _awaiting_welcome_hint: bool = false
 # UI keys the hint currently on screen wants ringed once the player closes it.
+var _hint_ack_pending: String = ""
 var _hint_highlight_pending: Array = []
 
 # Audit #4 Slice 1A (v0.9.485) — visual panel for the Companion Stable at T5+
@@ -24903,7 +24904,9 @@ func handle_server_message(message: Dictionary):
 				String(message.get("title", "Tip")),
 				String(message.get("body", "")),
 				String(message.get("opt_out", "")),
-				message.get("highlight", []) as Array
+				message.get("highlight", []) as Array,
+				String(message.get("ack", "")),
+				String(message.get("dismiss", ""))
 			)
 
 		"mark_tile":
@@ -43041,14 +43044,17 @@ func _spotlight_ui_controls(controls: Array, seconds: float = 8.0) -> void:
 
 
 func _enqueue_tutorial_hint(title: String, body: String, opt_out: String = "",
-		highlight: Array = []) -> void:
+		highlight: Array = [], ack: String = "", dismiss: String = "") -> void:
 	_hint_queue.append({"title": title, "body": body, "opt_out": opt_out,
-		"highlight": highlight})
+		"highlight": highlight, "ack": ack, "dismiss": dismiss})
 	_drain_new_player_modals()
 
 
 func _on_tutorial_hint_dismissed() -> void:
 	"""Ring the buttons the hint just named - AFTER it closes, not under it."""
+	if _hint_ack_pending != "":
+		send_to_server({"type": "tutorial_ack", "ack": _hint_ack_pending})
+		_hint_ack_pending = ""
 	if not _hint_highlight_pending.is_empty():
 		var keys := _hint_highlight_pending.duplicate()
 		_hint_highlight_pending.clear()
@@ -43072,9 +43078,12 @@ func _drain_new_player_modals() -> void:
 		_awaiting_welcome_hint = false  # the Welcome hint has arrived; show it first
 		var h = _hint_queue.pop_front()
 		_hint_highlight_pending = (h.get("highlight", []) as Array).duplicate()
+		# A hint the server is WAITING on. It does not act until the player closes this panel,
+		# so nothing starts moving underneath a popup they have not read.
+		_hint_ack_pending = String(h.get("ack", ""))
 		if tutorial_hint_panel:
 			tutorial_hint_panel.show_hint(String(h.get("title", "Tip")), String(h.get("body", "")),
-			String(h.get("opt_out", "")))
+			String(h.get("opt_out", "")), String(h.get("dismiss", "")))
 		return
 	# Hold the numpad/tour until the Welcome hint has had its turn.
 	if _awaiting_welcome_hint:
