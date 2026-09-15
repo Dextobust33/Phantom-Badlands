@@ -30026,7 +30026,9 @@ func handle_dungeon_list(peer_id: int):
 			var _floors := int(dungeon_data.get("floors", 1))
 			display_max = int(sub_range.max_level * (1.0 + maxi(0, _floors - 1) * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR))
 			display_max = maxi(display_max, sub_range.max_level)
-			display_name = DungeonDatabaseScript.get_dungeon_display_name(dungeon_type, dungeon_data.tier, inst_sub_tier)
+			# The INSTANCE's grade, not the type's - see the note at the other call site.
+			var _dn_tier: int = _instance_tier(active_dungeons[active_instance]) if active_instance != "" and active_dungeons.has(active_instance) else int(dungeon_data.tier)
+			display_name = DungeonDatabaseScript.get_dungeon_display_name(dungeon_type, _dn_tier, inst_sub_tier)
 
 		dungeon_list.append({
 			"type": dungeon_type,
@@ -34628,7 +34630,15 @@ func _send_dungeon_state(peer_id: int):
 
 	var inst_sub_tier = instance.get("sub_tier", 1)
 	var is_hard = instance.get("hard_mode", false)
-	var display_name = DungeonDatabaseScript.get_dungeon_display_name(character.current_dungeon_type, dungeon_data.tier, inst_sub_tier)
+	# ⛑ THE INSTANCE'S GRADE IN THE NAME, NOT THE TYPE'S.
+	#
+	# This is the F-versus-C the owner reported: a phoenix_nest whose TYPE says tier 6 standing
+	# as an F-grade instance rendered as "Phoenix's Nest [C5]" - the type's letter beside the
+	# instance's rank - while the overworld, which resolves through _dungeon_data_for, correctly
+	# showed F. Owner: *"A player went into a pheonix dungeon that showed as F4 or near that on
+	# the overworld and instead it put them in a C5 phoenix dungeon."* Both numbers were real;
+	# they came from different places.
+	var display_name = DungeonDatabaseScript.get_dungeon_display_name(character.current_dungeon_type, _current_dungeon_tier(character), inst_sub_tier)
 	if is_hard:
 		display_name += " [HARD]"
 

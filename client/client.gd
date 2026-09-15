@@ -9988,44 +9988,18 @@ func update_action_bar():
 			# Add all ability slots
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
-	elif party_combat_active:
-		# Party combat: our turn — same layout as solo combat.
-		# v0.9.739 — items ARE available in co-op now (they used to be a dead "---" slot).
-		# Server rule: each member's FIRST item of the round is free and they may still act;
-		# a second costs that member their own action, never the whole party's round.
-		var ability_actions = _get_combat_ability_actions()
-		var has_items = _has_usable_combat_items()
-		var swap_attack = character_data.get("swap_attack_with_ability", false)
-		var attack_action = {"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true}
-		var first_ability = ability_actions[0] if ability_actions.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
-
-		if swap_attack and ability_actions.size() > 0:
-			current_actions = [
-				first_ability,
-				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
-				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				# 2026-09-05 — Outsmart's slot stays as an inert placeholder ON PURPOSE. The hand
-				# list from _get_combat_hand_actions is fixed to keys [R, 1, 2, 3, 4, 5], so the
-				# ability block has to begin at bar index 4 or every card shifts a key to the
-				# left. Removing Outsmart without this put the cards on R/1/2 instead of 1/2/3.
-				{"label": "—", "action_type": "none", "action_data": "", "enabled": false},
-				attack_action,
-			]
-			for i in range(1, min(6, ability_actions.size())):
-				current_actions.append(ability_actions[i])
-		else:
-			current_actions = [
-				attack_action,
-				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
-				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				# 2026-09-05 — Outsmart's slot stays as an inert placeholder ON PURPOSE. The hand
-				# list from _get_combat_hand_actions is fixed to keys [R, 1, 2, 3, 4, 5], so the
-				# ability block has to begin at bar index 4 or every card shifts a key to the
-				# left. Removing Outsmart without this put the cards on R/1/2 instead of 1/2/3.
-				{"label": "—", "action_type": "none", "action_data": "", "enabled": false},
-			]
-			for i in range(min(6, ability_actions.size())):
-				current_actions.append(ability_actions[i])
+	# ⛑ THE `party_combat_active` BRANCH THAT SAT HERE IS GONE. IT WAS A DECOY.
+	#
+	# Starting a party fight sets BOTH `in_combat` and `party_combat_active`, so `elif in_combat:`
+	# above always won and this branch never ran once. It was label-for-label identical to that
+	# branch, which is why nothing ever looked wrong - and exactly why it had to be removed
+	# rather than left with a comment on it. An unreachable copy of live code is a trap: the next
+	# person to change "the party action bar" edits it, sees no effect, and goes looking for the
+	# bug somewhere else. That shape cost three separate debugging rounds on 2026-09-14 alone.
+	#
+	# Co-op's one genuine difference - the "Change action" row while a round is still open - is
+	# handled by `party_round_submitted and party_combat_active` ABOVE `in_combat`, which is
+	# where it has to be for the same reason.
 	elif party_waiting_for_turn:
 		# Party combat: waiting for another member's turn
 		var wait_label = "Wait: %s" % party_combat_turn_name if party_combat_turn_name != "" else "Waiting..."

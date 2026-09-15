@@ -79,12 +79,38 @@ func _init() -> void:
 		"and the no-free-exit notice names where a scroll is")
 
 	print("")
+	print("===== AND THE NAME ON SCREEN CARRIES THE INSTANCE'S GRADE =====")
+	# ⛑ THIS is the F-versus-C. `get_dungeon_display_name(type, tier, rank)` was being handed the
+	# TYPE's tier beside the INSTANCE's rank, so a phoenix_nest (type 6 = C) standing as an
+	# F-grade instance rendered "Phoenix's Nest [C5]" - while the overworld, resolving through
+	# _dungeon_data_for, correctly said F. Both numbers were real; they came from different
+	# places. Owner: *"showed as F4 or near that on the overworld and instead it put them in a
+	# C5 phoenix dungeon."*
+	var bad_names := 0
+	var nlines := src.split("
+")
+	for i in range(nlines.size()):
+		var ln: String = nlines[i]
+		if not ln.contains("get_dungeon_display_name("):
+			continue
+		# the tier argument must not be a raw type read
+		if ln.contains("dungeon_data.tier"):
+			# only legitimate when dungeon_data came from _dungeon_data_for
+			var from_instance := false
+			for k in range(maxi(0, i - 12), i):
+				if nlines[k].contains("dungeon_data = _dungeon_data_for("):
+					from_instance = true
+			if not from_instance:
+				bad_names += 1
+				print("    line %d passes a TYPE tier into the display name" % (i + 1))
+	ck(bad_names == 0, "every display name is built from the grade the instance actually has")
+
+	print("")
 	print("----- what this does NOT claim -----")
-	print("  That the overworld label and the entrance panel were wrong. Both resolve through")
-	print("  _dungeon_data_for, which already reads the instance. The live log for that entry")
-	print("  shows rank inheriting correctly (5 -> 5, no mismatch flag), so if a C was shown on")
-	print("  screen it came from a surface not yet found - the entry log now prints tier so the")
-	print("  next report names it.")
+	print("  That the OVERWORLD was wrong. It was not - it resolves through _dungeon_data_for")
+	print("  and showed F correctly, and the live log confirms rank inherited (5 -> 5, no")
+	print("  mismatch flag). The C came from the display NAME and from seven behaviour sites")
+	print("  reading the type's tier. The entry log prints tier and its letter now as well.")
 
 	print("")
 	if fails == 0:
