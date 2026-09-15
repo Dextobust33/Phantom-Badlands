@@ -776,6 +776,11 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    actually reads. `-- gearsources` and `docs/design/equipment_reference.md` are the starting point,
    not the answer - they already found stats with no reader once. Deliverable: a table of every stat
    and item family with works / broken / misleading, then fixes in order of how many players carry it.
+4a. **SHIP WITH THE NEXT RELEASE - live bug on v0.9.791 (owner chose to wait, no hotfix):** a second
+   new player's Warden and map ring pointed at the FIRST player's personal copy of the starter
+   dungeon (random spot, no entrance, can be in a hotzone). Fixed on master 69d0f37e, probe
+   `starter_dungeon_two_players.gd` (red on the old code). Workaround until then: walk to the real
+   entrance's coordinates.
 4b. **Default UI scale at 1080p (owner 2026-09-15).** *"We need to take a look at the initial UI Scale.
    1080p players ASCII map has to be scrolled to even see the middle of their map. The Tool panel and
    all of that is too big over there. Ideally they should be able to see their whole ASCII map by
