@@ -168,7 +168,11 @@ All of this came out of the distribution work. Recorded before starting any of i
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
-## ⚑ WHERE THE LIST STANDS — 50 open, 114 done (counted 2026-09-13)
+## ⚑ WHERE THE LIST STANDS — 47 open, 141 done (recounted 2026-09-15)
+
+Counted mechanically (`- [ ]` vs `- [x]` across this file), not estimated. The breakdown
+below is from 2026-09-13 and is now approximate — the onboarding arc closed a large share of
+"everything else" between then and now.
 
     Phase 5 - the dungeon arc            16   the big content direction
     Phase 3 - combat UX debt              6
@@ -576,7 +580,73 @@ companion out. The rest of the batch is still not urgent; this one is. **Owner's
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
 nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-13, after v0.9.781)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-15, after the live tutorial walkthrough)
+
+### ⚑ WHERE THINGS STAND RIGHT NOW (2026-09-15, session ended mid-arc)
+
+**LIVE on the server: v0.9.789.** Nothing since has been released.
+
+**On `master`, committed and UNRELEASED: `e31e1845` — "The Warden points at the right tile, and
+puts you on the doorstep".** That is the whole of the 2026-09-15 work; it is written up in full in
+the `## UNRELEASED (2026-09-15)` block below. Working tree is clean, every probe touched by it is
+green, and the dungeon-art gate passes at 958 lookups.
+
+**▶ THE NEXT ACTION IS A RELEASE.** The work is finished and tested but no player has it. In order:
+
+1. Bump `VERSION.txt` (v0.9.789 is live, so v0.9.790) and **copy it into `builds/windows/`** —
+   it is a SIDECAR, not packed content, and forgetting it is what failed the gate on v0.9.760.
+2. `godot --headless --editor --quit --path .` **first** — the export reuses a stale script cache
+   otherwise and ships old code under a new version number.
+3. Export Windows client + launcher, then `bash build_linux_release.sh`.
+4. `bash tools/verify_release_build.sh builds/windows/PhantomBadlandsClient.exe` — non-zero means
+   do not upload.
+5. Update `display_changelog()` in `client/client.gd` (~line 19938) before building, not after.
+6. Warn players via the shutdown sentinel, **poll MainPID rather than `is-active`** (the unit has
+   `Restart=always`, so it never goes inactive — this cost a double disconnect on v0.9.787), swap
+   the server binary, and verify by hashing `/proc/$PID/exe`.
+7. Four assets on one tag, plus the pck/runtime/manifest split.
+
+**What the release carries**, in the owner's words: the gold ring now points at the tile it means
+(it was mirrored north/south about the player for its entire life), three tutorial pop-ups became
+one, the Warden delivers you ONTO the dungeon tile and tells you to press R, the escort no longer
+wedges in posts or paces forever, the chat bar no longer steals focus mid-lesson, floor loot looks
+like the item instead of like its bucket, and Assassinate stopped advertising a kill chance the
+game never rolled.
+
+### ⚑ TWO THINGS TO WATCH AFTER THIS RELEASE
+
+- **`assassinate_pct` now reaches the dice.** Silver Tongue (+15%) and one unique moved the card
+  and did nothing to the roll; they work now. That is a small **per-class power gain**, so give it
+  a glance on the next `refcal` — it does not warrant a chain run on its own, but it is real and it
+  is the kind of thing that is easy to forget was ever changed. See the top of CLAUDE.md.
+- **`card_vs_server` reports ~7 abilities whose card estimate disagrees with the server by 3-8x**
+  (`magic_bolt` 0.12x, `meteor` 2.33x, `forcefield` 5.8-7.7x, `power_strike` and `cleave` ~0.40x).
+  Pre-existing, nothing to do with the Assassinate fix, and untouched. It is a session of its own
+  and it is the same shape as the Assassinate bug: a card face promising a number the server does
+  not produce. Run `tools/probe/card_vs_server.gd` to see the current table.
+
+### ⚑ THE STARTER KIT IS STILL NAMED LIKE ENDGAME LOOT — verified still live 2026-09-15
+
+Called the real function rather than reading it. `get_starter_kit_item` returns, today:
+
+```
+  weapon     Rusty Weapon of Wisdom
+  armor      Leather Armor of the Ogre
+  helm       Mystic Cloth Helm
+  boots      Trollish Cloth Boots
+  shield     Void-touched Wood Shield
+  accessory  Trollish Copper Ring
+```
+
+`get_starter_kit_item` runs the full affix generator (`_generate_item(entry, 5)`), so the first
+item a new player is ever handed reads like a raid drop. **This got MORE visible on 2026-09-15**,
+not less: the four floor pieces now have their own per-slot sprites, so a player picking up
+"Void-touched Wood Shield" is looking straight at it.
+
+NOT a one-line fix, and do not rename without changing the roll: `_generate_item` has no
+affix-suppression flag, and the affixes carry real bonuses — a plain name over rolled affixes puts
+a name on the item that its own stats contradict, which is the wrong-text class of bug this repo
+keeps paying for. It wants a proper "plain base item" path in `drop_tables`.
 
 ### ⚑ ROADS ARE TOO WIDE — owner 2026-09-14
 
@@ -677,7 +747,7 @@ adding up to a whole kit, so adding a gear slot to the game forces a decision ab
 comes from.
 
 
-- [ ] **The Warden's handout is named like endgame loot.** `get_starter_kit_item("weapon")` runs
+- [ ] **The Warden's handout is named like endgame loot.** (Still open — re-verified by CALLING the generator on 2026-09-15; the current names are listed in the NEXT SESSION block at the top of this file.) `get_starter_kit_item("weapon")` runs
       the full affix generator, so the first item a new player is ever given came out as
       *"Blurred Rusty Weapon of the Elder Lich"*. A tutorial handout should read as a plain
       starter weapon. NOT a one-line fix: `_generate_item` has no affix-suppression flag, and
@@ -731,7 +801,7 @@ which was verified by injecting its own fault.
       just standing here."* Equipping the blade now fires `_maybe_warden_next_step`, which says
       the post is walled and which compass direction the door is.
 
-- [ ] **▶ NEXT: the Warden is still invisible when he escorts you.** Owner: *"I walked out of the
+- [x] **DONE, shipped v0.9.789 — the Warden is visible while he escorts you.** He is drawn as a map FIGURE at player scale, and on step three he stands on the side the dungeon is on so you can simply follow him. (2026-09-15 follow-up: he now WALKS you there and puts you on the tile.) ~~Was:~~ **the Warden is still invisible when he escorts you.** Owner: *"I walked out of the
       post, the Warden didn't follow me, there was no indication he actually joined me or where I
       should go."* He only materialises at combat start (`_start_guided_overworld_combat`); he is
       not a map figure and not in the party panel. The map payload is built in `world_system.gd`
@@ -739,14 +809,14 @@ which was verified by injecting its own fault.
       escort flag threaded to the client. The companion already takes the trailing cell via
       `_trail_offset`, so the flank cell beside the player is free for him.
 
-- [ ] **`party_combat_active` still sits after `elif in_combat:`** in the client action bar
+- [x] **DONE — verified removed 2026-09-15.** `client.gd` now carries a comment at that spot explaining the branch was a DECOY: starting a party fight sets BOTH flags, so `elif in_combat:` always won and the real case is handled by `party_round_submitted and party_combat_active` ABOVE it. ~~Was:~~ **`party_combat_active` still sits after `elif in_combat:`** in the client action bar
       (~9938). The sibling branch `party_confirm_pending` was moved above `in_combat` to fix
       co-op lock-in; this one was left and is likely unreachable for the same reason. Check
       before the next release — it is the same defect that made every new player's first fight
       impossible to lock in.
 
 
-**v0.9.783 IS LIVE** (server hash-verified `074c338c`) - hunting grounds, and the danger guard
+**SUPERSEDED — v0.9.789 has been live since 2026-09-14; see the top of this block for the current state.** The notes below are kept for the deploy-verification detail. **v0.9.783 IS LIVE** (server hash-verified `074c338c`) - hunting grounds, and the danger guard
 taught to read what actually spawns. **v0.9.782 IS LIVE** (server hash-verified `6def650b`, seven assets on the tag, Windows gate
 passed, no script errors). It carries the blindsiding guard, the map level hover, and the
 who-is-online feed. Next up in this block: hotzones.
