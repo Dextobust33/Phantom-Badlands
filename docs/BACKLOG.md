@@ -811,14 +811,6 @@ use must be copied OUT of those folders**, and the check is calling `load()`, ne
 `--buildverify` asserts the state sheet loads for exactly this reason.
 
 **STILL OPEN from this round:**
-- [ ] **Judge the dungeon with a full party** — the owner asked to make that call himself and now
-      has frames at the right tile size. `python tools/test_setup/run.py party5 --noranks
-      --shots=partydungeon` captures the overworld strip and the dungeon floor in one run.
-- [ ] **Effect icons for the remaining eight rows** are unclaimed but unmatched: the game's other
-      effects are stat buffs (strength/defense/speed/damage/crit/lifesteal/thorns/forcefield/
-      damage_reduction) and the sheet has no art for any of them. Either source buff icons or leave
-      them as chips — do not map a spare debuff row onto a buff.
-- [ ] **Nothing has been RELEASED since v0.9.794.** Master carries this whole arc.
 
 
 ### ⛑ v0.9.794 - HOTFIX, and the two things it taught (2026-09-16 morning)
@@ -896,14 +888,14 @@ is `job_close`. Every sub-view of the More menu goes through one exit now.
       something longer than a frame and I have guessed twice. **MEASURE IT**: timestamp the mode
       flip, the panel becoming visible, and the stance bar hiding. The `backtest` shots scene is
       the pattern to copy - drive it, do not ask the owner to reproduce.
-- [ ] **Icons for the effect chips.** `client/sprites/battlers/tf_svbattle/RMMV/system/States.png`
-      is 10 animated states (8 frames of 96x96 each): poison, blind, silence, charm, sleep, doom
-      and more - all DEBUFFS. The positive buffs (strength, defense, haste, forcefield) are not in
-      it, so they stay chips or need a second source. Owner asked for icons; this is the art.
-- [ ] **Dungeon and party-combat screens have not been looked at with the owner.** The dungeon key
-      moved under the map and has never been seen in a screenshot (every `--shots=dungeon` run
-      lands in an entrance ambush). A party strip with four members plus you has never been drawn -
-      the box caps at 150px and scrolls, which is arithmetic, not a look.
+- [x] **Icons for the effect chips — SHIPPED v0.9.795/796.** Poison and blind come from
+      `States.png` (copied out of a `.gdignore`d pack, which is its own recorded trap), and
+      fourteen BUFFS got icons from `items_pack/` - sword, shield, armour, boots, star, heart,
+      spike, rune, cloak, all literal. Chips are icon-only with the value and duration on hover.
+      Unmapped effects keep a lettered chip; see `BUFF_ICONS` before adding more.
+- [x] **Dungeon and party-combat screens — REVIEWED WITH THE OWNER 2026-09-16** across several
+      rounds of captures (party dungeon at 64px tiles, party combat, the completion screen). What
+      came out of it is recorded in the v0.9.795/796 blocks above.
 - [ ] **Hotkey buttons in combat and dungeons** - one styling function, so they should carry over,
       but they have not been SEEN there. That is the "checked the ingredients, never called the
       lookup" trap.
