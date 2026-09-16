@@ -132,6 +132,29 @@ fi
 check "curve_calibrated"     "true"          "$(field curve_calibrated)"
 check "curve_roles"          "true"          "$(field curve_roles)"
 
+# --- does the whole ASCII map fit the box it gets?
+#
+# Owner 2026-09-15: *"1080p players ASCII map has to be scrolled to even see the middle of their
+# map."* The map font was capped to fit ACROSS (since v0.9.391) and never DOWN, so in the live
+# layout - where the Travel row, the Tools overlay and the minimap share the column - a 506px map
+# was drawn into a ~400px box and RichTextLabel simply scrolled. Measured, not modelled: the
+# --uimeasure probe re-fits the map at the box heights a real session gives it and says whether it
+# fits. Cannot be checked headlessly; a first attempt laid the scene out at 1920x1280 and reported
+# that everything was fine.
+UIOUT="$(mktemp)"
+timeout 120 "$EXE" --uimeasure --resolution 1920x1080 > "$UIOUT" 2>&1
+if grep -q '\[UIMEASURE\]' "$UIOUT"; then
+    for h in 400 340; do
+        got="$(grep -m1 "live_box_h=$h" "$UIOUT" | sed 's/.*fits_down=//' | tr -d " ")"
+        check "map_fits_at_${h}px" "true" "$got"
+    done
+else
+    printf '  FAIL  %-22s %s
+' "map fit" "the build printed no [UIMEASURE] lines"
+    fail=1
+fi
+rm -f "$UIOUT"
+
 # --- is the licence-restricted art even PRESENT? It is not in git (docs/ASSET_LICENCES.md),
 # --- so a fresh clone builds a dungeon with letters where the tiles should be and nothing says
 # --- so. Cheapest possible check, and it has to run BEFORE the art lookups below, which would

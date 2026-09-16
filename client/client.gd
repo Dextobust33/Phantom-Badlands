@@ -1019,6 +1019,11 @@ const THEME_BTN_BG = Color(0.165, 0.125, 0.082, 0.8)    # #2A2015
 const THEME_BTN_HOVER = Color(0.22, 0.17, 0.1, 0.9)
 const THEME_BTN_BORDER = Color(0.545, 0.451, 0.333, 0.5) # #8B7355 at 50%
 
+# The overworld map's shape, in cells and in characters. world_system builds it at radius 11, so
+# 23x23 cells, each drawn as two characters wide. Named here because the font-fitting caps below
+# need both numbers and used to carry them as literals inside a comment.
+const MAP_GRID_ROWS = 23
+const MAP_GRID_CHARS = 46
 const MAP_BASE_FONT_SIZE = 14  # Base font size at 720p height
 const MAP_MIN_FONT_SIZE = 10
 const MAP_MAX_FONT_SIZE = 64  # Allow larger scaling for 4K
@@ -2541,6 +2546,65 @@ func _ready():
 		print("[BUILDVERIFY] curve_roles=", not _mdb._calibrated_role_mults.is_empty())
 		get_tree().quit()
 		return
+	# ⚑ DOES THE MAP FIT? Owner 2026-09-15: *"1080p players ASCII map has to be scrolled to even
+	# see the middle of their map... Ideally they should be able to see their whole ASCII map by
+	# default."*
+	#
+	# Layout cannot be measured headlessly - a first attempt laid the scene out at 1920x1280 and
+	# cheerfully reported that everything fit. So this asks the RUNNING client, in a real window
+	# at whatever --resolution it was given, and prints what the map needs against the box it has:
+	#
+	#   PhantomBadlandsClient.exe --uimeasure --resolution 1920x1080
+	if "--uimeasure" in OS.get_cmdline_args():
+		for _i in range(12):
+			await get_tree().process_frame
+		# The font is only ever set by _on_window_resized. At startup that fires while the
+		# containers are still collapsing, so reading the font straight after _ready measures a
+		# transient (it reported 11 in a 679px box). Run it once the layout has settled, which is
+		# what a real player gets the moment anything resizes.
+		_on_window_resized()
+		await get_tree().process_frame
+		var _vp: Vector2 = get_viewport().get_visible_rect().size
+		print("[UIMEASURE] viewport=%dx%d" % [int(_vp.x), int(_vp.y)])
+		# Which scales produced this - a measurement taken on a machine with saved scales is not a
+		# measurement of the DEFAULT a new 1080p player gets.
+		var _pem: float = ui_scale_manager.get_scale("world_map") if ui_scale_manager != null else 1.0
+		print("[UIMEASURE] scales map=%.2f per_elem_map=%.2f status_hud=%.2f game_output=%.2f" % [
+			ui_scale_map, _pem, ui_scale_status_hud, ui_scale_game_output])
+		if map_display:
+			var _fs: int = map_display.get_theme_font_size("normal_font_size")
+			var _f: Font = map_display.get_theme_font("normal_font")
+			var _lh: float = _f.get_height(_fs) if _f != null else float(_fs) * 1.3
+			var _cw: float = _f.get_char_size(32, _fs).x if _f != null else float(_fs) * 0.6
+			print("[UIMEASURE] map_box=%dx%d font=%d line=%.1f char=%.1f" % [
+				int(map_display.size.x), int(map_display.size.y), _fs, _lh, _cw])
+			print("[UIMEASURE] map_needs=%dx%d" % [int(_cw * MAP_GRID_CHARS), int(_lh * MAP_GRID_ROWS)])
+			print("[UIMEASURE] fits_across=%s" % str(_cw * MAP_GRID_CHARS <= map_display.size.x + 1.0))
+			print("[UIMEASURE] fits_down=%s" % str(_lh * MAP_GRID_ROWS <= map_display.size.y + 1.0))
+		if tool_status_overlay:
+			print("[UIMEASURE] tools_box=%dx%d font=%d" % [
+				int(tool_status_overlay.size.x), int(tool_status_overlay.size.y),
+				tool_status_overlay.get_theme_font_size("normal_font_size")])
+		if game_output:
+			print("[UIMEASURE] game_output=%dx%d font=%d" % [
+				int(game_output.size.x), int(game_output.size.y),
+				game_output.get_theme_font_size("normal_font_size")])
+		# An EMPTY client gives the map the whole column. In a live session the Travel row, the
+		# Tools/Status overlay and the minimap sit under it, and the owner's 1080p screenshot shows
+		# the map box at roughly 400 virtual px - which is the case that scrolled. Re-run the fit
+		# against that height so the cap is measured under the condition it exists for, rather than
+		# the roomiest one.
+		for _h in [400, 340]:
+			if map_display:
+				map_display.size.y = _h
+				_on_window_resized()
+				var _f2: Font = map_display.get_theme_font("normal_font")
+				var _fs2: int = map_display.get_theme_font_size("normal_font_size")
+				var _lh2: float = _f2.get_height(_fs2) if _f2 != null else float(_fs2) * 1.3
+				print("[UIMEASURE] live_box_h=%d -> font=%d needs=%d fits_down=%s" % [
+					_h, _fs2, int(_lh2 * MAP_GRID_ROWS), str(_lh2 * MAP_GRID_ROWS <= float(_h) + 1.0)])
+		get_tree().quit()
+		return
 	# 2026-09-05 — enforce vsync HERE rather than in project.godot.
 	#
 	# The 4K-laptop thermal-throttling fix (v0.9.735) set `run/max_fps=60` AND
@@ -3770,9 +3834,24 @@ func _on_window_resized():
 		# ~0.6 × font_size. RichTextLabel has no horizontal scroll, so without
 		# this cap a high zoom truncates the right edge of the map.
 		if map_display.size.x > 0:
-			var max_h_font = int(map_display.size.x / (46.0 * 0.6))
+			var max_h_font = int(map_display.size.x / (float(MAP_GRID_CHARS) * 0.6))
 			if max_h_font >= MAP_MIN_FONT_SIZE:
 				map_font_size = mini(map_font_size, max_h_font)
+		# ...and the matching VERTICAL cap. Owner 2026-09-15: *"1080p players ASCII map has to be
+		# scrolled to even see the middle of their map."* The width cap above has existed since
+		# v0.9.391; there has never been one for height, so on any window shorter than it is wide
+		# the font grew off the bottom of the box and RichTextLabel just scrolled. Measured with
+		# the real font rather than a guessed 1.3 line ratio - the map is the one thing on screen
+		# whose legibility depends on seeing ALL of it at once.
+		if map_display.size.y > 0:
+			var _mf: Font = map_display.get_theme_font("normal_font")
+			if _mf != null:
+				# Step down using the font's REAL height at each size. A line-height ratio
+				# sampled once and multiplied is close but not exact - font metrics are not
+				# linear in size - and it left the map 5px too tall in a 340px box, which is
+				# still a scrollbar. Asking the font costs a handful of iterations.
+				while map_font_size > MAP_MIN_FONT_SIZE 						and _mf.get_height(map_font_size) * MAP_GRID_ROWS > map_display.size.y:
+					map_font_size -= 1
 		map_display.add_theme_font_size_override("normal_font_size", map_font_size)
 		map_display.add_theme_font_size_override("bold_font_size", map_font_size)
 		map_display.add_theme_font_size_override("italics_font_size", map_font_size)
@@ -3782,7 +3861,13 @@ func _on_window_resized():
 	# players can make the status text large without forcing the ASCII map to
 	# grow (and vice versa).
 	if tool_status_overlay:
-		var hud_font_size = int(13 * base_scale * ui_scale_status_hud)
+		# Owner 2026-09-15: *"The Tool panel and all of that is too big over there."* It grew with
+		# the FULL window scale (13 -> 19px at 1080p, +46%), and it shares the right-hand column
+		# with the ASCII map - so every point it gained came out of the map's box. The map is the
+		# element whose legibility depends on seeing all of it at once; the status text is
+		# scannable at any size. Half the growth rate: 16px at 1080p, still readable, and the
+		# rows it gives back go to the map. Players who want it bigger have the slider.
+		var hud_font_size = int(13 * (1.0 + (base_scale - 1.0) * 0.5) * ui_scale_status_hud)
 		hud_font_size = clampi(hud_font_size, 10, 28)
 		tool_status_overlay.add_theme_font_size_override("normal_font_size", hud_font_size)
 		tool_status_overlay.add_theme_font_size_override("bold_font_size", hud_font_size)
