@@ -24,6 +24,48 @@ const OVERWORLD_SPRITE_PX := 32
 ## The band at the top and bottom of the companion panel that its HP and XP gauges stand in.
 ## Held open by the panel stylebox rather than by blank lines - see update_companion_art_overlay.
 const COMPANION_GAUGE_BAND := 16.0
+
+## ⚑ THE STATE ICON SHEET, and an honest note about what it covers.
+##
+## Owner 2026-09-16, of the Effects box: *"Icons are the way to go, we should have some sprites for
+## this purpose that may be mentioned in the to do or history."* The sheet is `States.png` -
+## 768x960, so EIGHT 96px animation frames across by TEN states down.
+##
+## It is a DEBUFF sheet. Frame by frame the ten rows are: bubbling poison, a red X over an eye, a
+## speech bubble, a red cross bursting outward, small marks rising, a beating heart, a shifting
+## block pattern, yellow lightning, falling skulls, blue droplets. There is nothing in it for
+## "+4 strength for 3 rounds", and this box is mostly stat buffs - so the two states the game HAS
+## art for get icons and everything else keeps its coloured chip. Inventing a meaning for a spare
+## row (a heart for lifesteal, a droplet for forcefield) is how the box would end up saying
+## something the art does not.
+##
+## ⛑ COPIED OUT OF THE ASSET PACK. `client/sprites/battlers/tf_svbattle/` carries a `.gdignore`,
+## so Godot never imports anything under it, none of it reaches the `.pck`, and `load()` returns
+## null at runtime - while `ResourceLoader.exists()` still returns TRUE, because the `.import`
+## sidecar is sitting there. An `[img]` tag whose texture fails to load draws NOTHING: no gap, no
+## placeholder, so the box looks exactly as it did before the icons were added. That cost a round
+## of A/B/C-ing three `[img]` tag forms in two different labels, when the question that settled it
+## in one command was whether `.godot/imported/` held a `.ctex`. Existence is the ingredient;
+## `load()` is the function, and `--buildverify` now calls it.
+const STATE_SHEET := "res://client/sprites/states/States.png"
+const STATE_FRAME_PX := 96
+
+## `frame` is ONE frame, not the animation: these effects are meant to play OVER a battler, where a
+## wisp fading to two dots reads as smoke - as a status chip it reads as an icon that keeps
+## vanishing. Measured by opaque-pixel count per frame, poison runs 801 px down to 90 and back, so
+## half the cycle is invisible at chip size. The fullest frame of each row is used instead.
+##
+## `rect` is the mark's TIGHT bounds inside that 96px cell (x, y, w, h), because the mark is only
+## ~35px of it - the rest is the room the animation expands into - and drawing the whole cell at
+## 26px rendered a mark about nine pixels wide, which read as nothing having been added at all.
+## Measured with a per-frame alpha bbox scan, not by eye. A fixed frame means a fixed crop, so
+## there is no jitter to pay for it.
+##
+## A new state claims a row by name here; the rows listed above and not claimed below are free.
+const STATE_ICONS := {
+	"poison": {"row": 0, "frame": 0, "rect": [30, 19, 39, 36]},
+	"blind": {"row": 1, "frame": 3, "rect": [33, 13, 30, 30]},
+}
 ## Temporary: prints what the dungeon tile fit measured. Set by --dungeonfit.
 var _dungeon_fit_debug: bool = false
 ## A literal newline, for building multi-line hover text without embedding real line breaks in
@@ -2608,6 +2650,12 @@ func _ready():
 		print("[BUILDVERIFY] mark_arrow=", _mark_arrow_live)
 		# v0.9.791: the Warden walks the starter dungeon with you.
 		print("[BUILDVERIFY] dungeon_warden=", has_method("_dungeon_warden_img"))
+		# The STATE ICON SHEET, loaded by PATH like the Sanctuary art - and its first home was a
+		# directory with a `.gdignore` in it, so nothing under it was imported or packed and
+		# `load()` returned null while `ResourceLoader.exists()` said true. An `[img]` tag whose
+		# texture fails to load draws NOTHING - no gap, no placeholder - so the Effects box looks
+		# exactly as it did before the icons existed. Calling the loader is the only check.
+		print("[BUILDVERIFY] state_icons=", load(STATE_SHEET) != null)
 		# Perf guards for the 4K-laptop thermal-throttling report (v0.9.735). These live in
 		# project.godot, which is baked into the pck — so the only way to know a shipped build
 		# still has them is to ask the running engine.
@@ -3306,7 +3354,12 @@ func _ready():
 		# the label it is on.
 		if buff_display_label != null and buff_display_label is RichTextLabel:
 			buff_display_label.mouse_filter = Control.MOUSE_FILTER_PASS
-			if not buff_display_label.meta_hover_started.is_connected(_on_log_meta_hover):
+			# ⚑ NO UNDERLINE. The chips are `[url]` runs so they can be hovered for an explanation,
+		# and RichTextLabel underlines a meta run by default - which is the same 1px line the
+		# owner reported straight through the overworld map, for the same reason. Hovering works
+		# without it.
+		buff_display_label.meta_underlined = false
+		if not buff_display_label.meta_hover_started.is_connected(_on_log_meta_hover):
 				buff_display_label.meta_hover_started.connect(_on_log_meta_hover)
 				buff_display_label.meta_hover_ended.connect(_on_log_meta_unhover)
 		if _ss_parent:
@@ -6312,6 +6365,27 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "move", "direction": 6})
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("stance_scouting")
+
+			"states":
+				# ⚑ THE EFFECTS BOX, WITH SOMETHING IN IT. The animated state icons could otherwise
+				# only be photographed by getting poisoned or blinded by a monster roll - the
+				# "verify by luck" gap. `gm_apply_state` reaches both on demand.
+				send_to_server({"type": "gm_apply_state", "state": "poison", "value": 7, "duration": 14})
+				await get_tree().create_timer(0.6).timeout
+				send_to_server({"type": "gm_apply_state", "state": "blind", "duration": 11})
+				await get_tree().create_timer(0.6).timeout
+				# A couple of stat buffs beside them, because the box has to read well MIXED - the
+				# sheet is debuffs only, so buffs stay as coloured chips and the two sit side by side.
+				send_to_server({"type": "gm_apply_buff", "buff_type": "strength", "value": 6, "duration": 4})
+				await get_tree().create_timer(0.4).timeout
+				send_to_server({"type": "move", "direction": "east"})
+				await get_tree().create_timer(1.5).timeout
+				await _dev_shot_clear_overlays()
+				print("[STATES] sheet_loads=%s" % str(load(STATE_SHEET) != null))
+				await _dev_shot_capture("states")
+				print("[STATES] poison=%s blind=%s" % [
+					str(character_data.get("poison_active", false)),
+					str(character_data.get("blind_active", false))])
 
 			"partymargin":
 				# The party STRIP and the companion panel share the right margin, and the strip grows
@@ -23534,6 +23608,63 @@ func _inert_buff_reason(buff_type: String) -> String:
 	return "This buff has no effect for your class."
 
 
+func _state_icon(key: String, h: int = 22) -> String:
+	"""A state icon, or "" when the sheet has nothing for this effect.
+
+	One inline image with a `region` into `States.png`, cropped to the mark and scaled to `h` with
+	the region's own aspect - so poison (39x36) and blind (30x30) come out the same height rather
+	than the same fraction of an empty cell. Returning "" for an unknown key is what lets the chips
+	and the icons share one box: the caller just prefixes whatever this gives it.
+
+	See `STATE_ICONS` for why the frame is fixed and why the region is tight."""
+	if not STATE_ICONS.has(key):
+		return ""
+	# CALL the loader; do not ask whether the path exists. See the note on STATE_SHEET - an [img]
+	# whose texture will not load draws nothing at all, which is indistinguishable from no icon.
+	if load(STATE_SHEET) == null:
+		return ""
+	var d: Dictionary = STATE_ICONS[key]
+	var r: Array = d["rect"]
+	var w: int = maxi(1, int(round(float(h) * float(r[2]) / float(r[3]))))
+	return "[img=%dx%d region=%d,%d,%d,%d]%s[/img]" % [w, h,
+		int(d["frame"]) * STATE_FRAME_PX + int(r[0]), int(d["row"]) * STATE_FRAME_PX + int(r[1]),
+		int(r[2]), int(r[3]), STATE_SHEET]
+
+
+func _state_chip(key: String, body: String) -> String:
+	"""Icon + text for one effect, hoverable as a unit. No icon: just the text, unchanged."""
+	# ⚑ THE IMAGE GOES OUTSIDE THE `[url]`. Measured: the chip string reaching the box was
+	# exactly right - `[url=fx:poison][img=26x26 region=0,0,96,96]...[/img][color=...]` - and the
+	# icon rendered as nothing at all. RichTextLabel does not draw an inline image nested inside
+	# a meta run. The text stays hoverable, which is the half that carries the explanation.
+	var icon := _state_icon(key)
+	if icon == "":
+		return body
+	return "%s[url=fx:%s]%s[/url]" % [icon, key, body]
+
+
+func _show_state_hover(key: String) -> void:
+	"""What a state actually does to you, on hover - in the same popup the cards use.
+
+	The numbers are already on the chip; this is the part a player cannot infer from "[BL:13]"."""
+	var title := ""
+	var body := ""
+	match key:
+		"poison":
+			title = "Poisoned"
+			body = ("Loses health every combat turn, and does not wear off with rest - it runs for "
+				+ "its remaining turns wherever you are. An antidote clears it outright.")
+		"blind":
+			title = "Blinded"
+			body = ("Your attacks miss far more often, and the overworld map shrinks to the tiles "
+				+ "next to you. Counts down in turns.")
+		_:
+			return
+	var txt := "%s  [b]%s[/b]\n%s" % [_state_icon(key, 28), title, body]
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(txt)
+
+
 func update_buff_display():
 	"""Update the buff/debuff display panel in the bottom right of GameOutput"""
 	if not buff_display_label:
@@ -23545,12 +23676,12 @@ func update_buff_display():
 	if character_data.get("poison_active", false):
 		var poison_dmg = character_data.get("poison_damage", 0)
 		var poison_turns = character_data.get("poison_turns_remaining", 0)
-		parts.append("[color=#FF00FF][P%d:%d][/color]" % [poison_dmg, poison_turns])
+		parts.append(_state_chip("poison", "[color=#FF00FF][P%d:%d][/color]" % [poison_dmg, poison_turns]))
 
 	# Blind (debuff) - gray
 	if character_data.get("blind_active", false):
 		var blind_turns = character_data.get("blind_turns_remaining", 0)
-		parts.append("[color=#808080][BL:%d][/color]" % blind_turns)
+		parts.append(_state_chip("blind", "[color=#808080][BL:%d][/color]" % blind_turns))
 
 	# Forcefield/Shield (combat) - cyan
 	if current_forcefield > 0:
@@ -39855,6 +39986,9 @@ func _on_log_meta_hover(meta) -> void:
 			var cbody := _build_map_companion_tooltip(data)
 			if cbody != "":
 				_show_map_tooltip(cbody, null, {})
+		return
+	if m.begins_with("fx:"):
+		_show_state_hover(m.substr(3))
 		return
 	if m.begins_with("tile:"):
 		# A theme tile, hovered either in the side-panel key or on the floor itself.

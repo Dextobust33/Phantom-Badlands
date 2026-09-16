@@ -121,6 +121,10 @@ check "sanctuary_sprites"    "true"          "$(field sanctuary_sprites)"
 check "mark_arrow"           "true"          "$(field mark_arrow)"
 # v0.9.791: the dungeon Warden figure (client._dungeon_warden_img).
 check "dungeon_warden"       "true"          "$(field dungeon_warden)"
+# The state-icon sheet, loaded BY PATH. Its first home was a directory carrying a .gdignore, so
+# nothing under it was imported or packed - and `ResourceLoader.exists()` still said true, while
+# an [img] tag whose texture will not load draws nothing at all. A silent, invisible failure.
+check "state_icons"          "true"          "$(field state_icons)"
 # The multi-cell tile manifest is a raw .json, not an imported resource - if it misses the .pck
 # the map silently falls back to the shrunken 32px tiles and nothing else looks wrong.
 BIG_TILES="$(field big_tiles)"

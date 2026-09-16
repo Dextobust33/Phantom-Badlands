@@ -2503,6 +2503,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_spring_trap(peer_id, message)
 		"gm_apply_buff":
 			handle_gm_apply_buff(peer_id, message)
+		"gm_apply_state":
+			handle_gm_apply_state(peer_id, message)
 		"gm_build_test_post":
 			handle_gm_build_test_post(peer_id, message)
 		"gm_hire_test_guard":
@@ -41552,6 +41554,43 @@ func handle_gm_apply_buff(peer_id: int, message: Dictionary) -> void:
 	characters[peer_id].add_buff(btype, value, duration)
 	send_to_peer(peer_id, {"type": "text",
 		"message": "[color=#808080]buff: %s %d for %d turns[/color]" % [btype, value, duration]})
+
+
+func handle_gm_apply_state(peer_id: int, message: Dictionary) -> void:
+	"""Put a STATUS STATE - poison, blind - on the player, for testing what the Effects box shows.
+
+	Same reason `gm_apply_buff` exists, one layer down: `add_buff` writes `active_buffs`, and
+	poison and blind are not buffs - they are their own flags with their own turn counters, so
+	nothing could reach them on demand. Both are applied by monster abilities on a roll, which
+	makes "verify by luck" the only option and is precisely the gap CLAUDE.md warns about: the
+	animated state icons added on 2026-09-16 could not be photographed at all without this.
+
+	Goes through `apply_poison` / `apply_blind` rather than writing the fields, so a test state is
+	the same state the game produces and cannot drift from it."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var which := String(message.get("state", ""))
+	var duration := int(message.get("duration", 12))
+	match which:
+		"poison":
+			ch.apply_poison(maxi(1, int(message.get("value", 5))), duration)
+		"blind":
+			ch.apply_blind(duration)
+		"clear":
+			ch.cure_poison()
+			ch.blind_active = false
+			ch.blind_turns_remaining = 0
+		_:
+			send_to_peer(peer_id, {"type": "text",
+				"message": "[color=#FF4444]state: want poison | blind | clear[/color]"})
+			return
+	send_to_peer(peer_id, {"type": "text",
+		"message": "[color=#808080]state: %s for %d turns[/color]" % [which, duration]})
+	send_character_update(peer_id)
 
 
 func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
