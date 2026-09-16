@@ -844,6 +844,25 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      upscaling**: nearest-neighbour is crisp only at whole multiples, so the next step is 64, which
      needs a smaller view. That is a gameplay decision (how far you can see) and is NOT done.
    - Shots harness: `worldpet` (overworld with a companion out) and `menus` (a page over the canvas).
+   **SECOND ROUND, 2026-09-16 (`9220fd1b`, unreleased).** Owner asked what all this does to combat
+   and dungeons - and a capture of each answered: badly. The status panel floated over the dungeon
+   floor and the chat box over the combat log, because `_margin_widgets_shown()` returned true
+   whenever the map was not eligible for the canvas, which is exactly what those modes are. Now:
+   - dungeon / combat / Sanctuary are checked FIRST; the chat log RELOCATES to the bottom strip for
+     them (a mode lasts minutes; a page over the canvas is a second) with a real minimum height.
+   - the right column runs floor to ceiling: canvas, enemy bar, status row, action bar and input in
+     a stack on the LEFT, MapPanel beside it. This broke three hard-coded
+     `RootContainer/BottomStrip/...` lookups - one `_bottom_node()` finder by name now.
+   - the column is TWO things: a pinned WHERE YOU ARE block (rebuilt each step, cleared on leaving
+     the post) and a rolling log that scrolls with the newest at the bottom. The post block used to
+     be printed by the client the instant a key was pressed and wiped by the server's location
+     message a round trip later.
+   - shortcuts ride in the travel row (falling back to the column top wherever that row is hidden,
+     so they are still there underground); the player list is the third chat tab, tall and
+     scrollable; the companion portrait wears the margin frame in its variant colour and is hidden
+     underground; the dungeon KEY moved under the map with its avatar at tile size.
+   - [ ] **NOT SEEN IN PIXELS: the dungeon key under the map.** Every `--shots=dungeon` run on this
+     character lands in a Troll ambush, so the captures show the fight, not the floor.
    - [ ] Still open here: the companion art panel in the right margin has no frame; and a TEXT page
      on the canvas is still overwritten by the next map redraw (a visual panel is not - it sits on
      top). Movement is blocked in most such modes, so it needs a party-member push to show.
