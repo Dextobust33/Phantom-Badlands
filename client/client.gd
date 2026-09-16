@@ -32554,9 +32554,18 @@ func display_changelog():
 	# two-player session. Monster curve re-calibrated after the player-side changes.
 	# v0.9.793 - the UI reflow: the map takes the main canvas, the HUD moves into its margins,
 	# the right column becomes the log, and text stops flashing on screen and vanishing.
+	# v0.9.796 - the deck screen becomes a builder you can drag cards around in, every copy
+	# of a card is its own card, and three widgets stopped floating over the dungeon screen.
+	display_game("[color=#00FF00]v0.9.796[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ BUILD YOUR DECK BY DRAGGING CARDS.[/color] Your deck is shown as real cards at the top of the screen now, with everything else below it. [b]Drag a card up[/b] to play it and [b]drag one down[/b] to bench it — the [b]−[/b] and [b]+[/b] buttons still work if you prefer them, and both halves scroll.")
+	display_game("  [color=#FF8000]★ EVERY COPY OF A CARD IS ITS OWN CARD.[/color] Two Ambush cards are now [b]two separate cards[/b]: each is added to your deck on its own, each ranks up on [b]its own uses[/b], and each keeps its own upgrades. Copies only share a tile when they are [b]genuinely identical[/b] — same rank, same uses, same upgrades. Before this they looked like one card with a number beside it, and the − button removed whichever copy it felt like.")
+	display_game("  [color=#1EFF00]◆ Upgrade screens say WHICH copy.[/color] Two upgrade screens in a row for \"the same card\" were two DIFFERENT copies, each owed its own milestone — the screen just never said so. It does now, as does the card detail box and the hover.")
+	display_game("  [color=#FF4444]★ FIXED: leftovers on the dungeon screen.[/color] The [b]companion portrait, party strip and dungeon key[/b] were floating over the dungeon-completion screen, and the party strip cut through the companion box after you left a dungeon. The key also flashed under the overworld map. All introduced last release; all gone.")
+	display_game("")
+
 	# v0.9.795 - the party/dungeon round: party members drawn and tracked underground, the
 	# dungeon floor four times the area, real gauges everywhere, and icons for effects.
-	display_game("[color=#00FF00]v0.9.795[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#808080]v0.9.795[/color]")
 	display_game("  [color=#FF4444]★ YOUR PARTY IS VISIBLE UNDERGROUND.[/color] In a dungeon you could see [b]yourself and your companion and nobody else[/b] — the other members were never sent to your client at all. They are drawn on the floor now, as their own sprites, and the strip under the floor shows every member's [b]health and resource[/b].")
 	display_game("  [color=#FF8000]★ THE DUNGEON FLOOR IS FOUR TIMES THE AREA.[/color] The tiles had quietly halved to half size, and the floor was drawn in two-thirds of a window that sat empty below it. Tiles are back to [b]full size[/b] and the view is [b]taller[/b]: 19x11 instead of 19x9, filling the canvas. The chat log moved into the dungeon side panel, which is what was taking the room.")
 	display_game("  [color=#FF8000]★ PARTY HEALTH BARS THAT ACTUALLY MOVE.[/color] The party strip is under your map now, with a real [b]health and resource gauge[/b] for each member — and they update as people take damage. Before this they were a snapshot from the moment you grouped up, which is worse than no bars at all. Your [b]companion[/b] has a health gauge too.")
