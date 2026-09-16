@@ -1022,6 +1022,10 @@ const THEME_BTN_BORDER = Color(0.545, 0.451, 0.333, 0.5) # #8B7355 at 50%
 # The overworld map's shape, in cells and in characters. world_system builds it at radius 11, so
 # 23x23 cells, each drawn as two characters wide. Named here because the font-fitting caps below
 # need both numbers and used to carry them as literals inside a comment.
+# How much of the right-hand column belongs to the MAP before anything else gets a say. At 1080p
+# the column is ~640px, so this reserves ~480 - 20px tiles for a 23-row map, against the 14px it
+# was getting when the map took only what the status block left over.
+const MAP_COLUMN_SHARE := 0.75
 const MAP_GRID_ROWS = 23
 const MAP_GRID_CHARS = 46
 const MAP_BASE_FONT_SIZE = 14  # Base font size at 720p height
@@ -2581,6 +2585,14 @@ func _ready():
 			print("[UIMEASURE] map_needs=%dx%d" % [int(_cw * MAP_GRID_CHARS), int(_lh * MAP_GRID_ROWS)])
 			print("[UIMEASURE] fits_across=%s" % str(_cw * MAP_GRID_CHARS <= map_display.size.x + 1.0))
 			print("[UIMEASURE] fits_down=%s" % str(_lh * MAP_GRID_ROWS <= map_display.size.y + 1.0))
+		if map_display != null and map_display.get_parent() is Control:
+			var _col2: Control = map_display.get_parent()
+			print("[UIMEASURE] column=%dx%d  map_min_h=%d" % [
+				int(_col2.size.x), int(_col2.size.y), int(map_display.custom_minimum_size.y)])
+			for _ch in _col2.get_children():
+				if _ch is Control:
+					print("[UIMEASURE]   child %-18s %dx%d" % [
+						String(_ch.name), int((_ch as Control).size.x), int((_ch as Control).size.y)])
 		if tool_status_overlay:
 			print("[UIMEASURE] tools_box=%dx%d font=%d" % [
 				int(tool_status_overlay.size.x), int(tool_status_overlay.size.y),
@@ -2589,20 +2601,25 @@ func _ready():
 			print("[UIMEASURE] game_output=%dx%d font=%d" % [
 				int(game_output.size.x), int(game_output.size.y),
 				game_output.get_theme_font_size("normal_font_size")])
-		# An EMPTY client gives the map the whole column. In a live session the Travel row, the
-		# Tools/Status overlay and the minimap sit under it, and the owner's 1080p screenshot shows
-		# the map box at roughly 400 virtual px - which is the case that scrolled. Re-run the fit
-		# against that height so the cap is measured under the condition it exists for, rather than
-		# the roomiest one.
-		for _h in [400, 340]:
-			if map_display:
-				map_display.size.y = _h
-				_on_window_resized()
-				var _f2: Font = map_display.get_theme_font("normal_font")
-				var _fs2: int = map_display.get_theme_font_size("normal_font_size")
-				var _lh2: float = _f2.get_height(_fs2) if _f2 != null else float(_fs2) * 1.3
-				print("[UIMEASURE] live_box_h=%d -> font=%d needs=%d fits_down=%s" % [
-					_h, _fs2, int(_lh2 * MAP_GRID_ROWS), str(_lh2 * MAP_GRID_ROWS <= float(_h) + 1.0)])
+		# WHAT THE MAP IS GUARANTEED. An empty client gives the map the whole column; a live one
+		# has the Travel row, the tools+minimap row and the status labels in it too. Since the map
+		# now RESERVES `MAP_COLUMN_SHARE` of the column rather than taking what is left, the honest
+		# check is whether 23 rows fit inside that reservation - which holds in any session,
+		# however full the status block gets.
+		#
+		# The previous version forced the box to a small height and re-ran the layout, which the
+		# reservation immediately undid - so it reported a failure that could not happen.
+		if map_display:
+			var _rf: Font = map_display.get_theme_font("normal_font")
+			var _rfs: int = map_display.get_theme_font_size("normal_font_size")
+			var _rlh: float = _rf.get_height(_rfs) if _rf != null else float(_rfs) * 1.3
+			var _res: int = int(map_display.custom_minimum_size.y)
+			print("[UIMEASURE] reserved_h=%d ascii_needs=%d fits_reserved=%s" % [
+				_res, int(_rlh * MAP_GRID_ROWS), str(_rlh * MAP_GRID_ROWS <= float(_res) + 1.0)])
+			# And what a sprite tile would be at that reservation, which is what a player sees.
+			print("[UIMEASURE] sprite_px=%d (art is %dpx native)" % [
+				clampi(int(floor((float(_res) - 6.0) / float(MAP_GRID_ROWS))), 8, OVERWORLD_SPRITE_PX),
+				OVERWORLD_SPRITE_PX])
 		get_tree().quit()
 		return
 	# 2026-09-05 — enforce vsync HERE rather than in project.godot.
@@ -3857,6 +3874,22 @@ func _on_window_resized():
 		map_display.add_theme_font_size_override("italics_font_size", map_font_size)
 		map_display.add_theme_font_size_override("bold_italics_font_size", map_font_size)
 
+	# ⚑ THE MAP CLAIMS ITS SHARE FIRST.
+	#
+	# MapDisplay is the only expanding child of MapPanel, so it got whatever the Travel row, the
+	# tools+minimap row and the status labels left behind - and those size themselves from their
+	# CONTENT, so a longer quest name or a fuller backpack quietly took rows off the map. Measured
+	# from the owner's 1080p screenshots: the column is ~640px and the map was left ~340, which is
+	# 14px tiles for art drawn at 32. Owner: *"the map needs more space, it's too small and
+	# doesn't have enough space on a 1080p."*
+	#
+	# Inverted: the map reserves MAP_COLUMN_SHARE of the column and the rest share what is left.
+	# The map is the element that becomes unreadable when it is squeezed - status text stays
+	# perfectly legible a line shorter - so it should not be the one that yields.
+	if map_display != null and map_display.get_parent() is Control:
+		var _col: Control = map_display.get_parent()
+		if _col.size.y > 100.0:
+			map_display.custom_minimum_size.y = floor(_col.size.y * MAP_COLUMN_SHARE)
 	# Scale the merged Tools/Status overlay with its own independent slider so
 	# players can make the status text large without forcing the ASCII map to
 	# grow (and vice versa).
@@ -47026,6 +47059,28 @@ func _overworld_display(payload: Dictionary) -> String:
 	if map_display != null and rows_n > 0 and map_display.size.y > 32.0:
 		var fit_h: int = int(floor((map_display.size.y - 6.0) / float(rows_n)))
 		px = mini(px, clampi(fit_h, 8, OVERWORLD_SPRITE_PX))
+	# ⚑ AND THE LINE HAS TO BE AS SHORT AS THE TILE.
+	#
+	# A row of the map is a row of INLINE IMAGES inside a line of text, so the line is as tall as
+	# the TALLER of the image and the font. While tiles were 27px and the font 22px the font never
+	# showed; the moment the height fit above made tiles smaller than the font, every row grew a
+	# band of empty line under it. Owner 2026-09-15, with a screenshot: *"still a scrollbar and
+	# lines through the map now."*
+	#
+	# Both symptoms, one cause: those bands are also what kept the map taller than its box, so
+	# shrinking the tiles alone could never stop the scrolling - it added height as fast as it
+	# removed it. The font is measured down until a line is no taller than a tile.
+	if map_display != null and px > 0:
+		var _mf: Font = map_display.get_theme_font("normal_font")
+		if _mf != null:
+			var _fs: int = map_display.get_theme_font_size("normal_font_size")
+			while _fs > 6 and _mf.get_height(_fs) > float(px):
+				_fs -= 1
+			if _fs != map_display.get_theme_font_size("normal_font_size"):
+				map_display.add_theme_font_size_override("normal_font_size", _fs)
+				map_display.add_theme_font_size_override("bold_font_size", _fs)
+				map_display.add_theme_font_size_override("italics_font_size", _fs)
+				map_display.add_theme_font_size_override("bold_italics_font_size", _fs)
 	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
 	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With

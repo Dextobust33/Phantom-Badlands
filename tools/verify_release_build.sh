@@ -144,10 +144,8 @@ check "curve_roles"          "true"          "$(field curve_roles)"
 UIOUT="$(mktemp)"
 timeout 120 "$EXE" --uimeasure --resolution 1920x1080 > "$UIOUT" 2>&1
 if grep -q '\[UIMEASURE\]' "$UIOUT"; then
-    for h in 400 340; do
-        got="$(grep -m1 "live_box_h=$h" "$UIOUT" | sed 's/.*fits_down=//' | tr -d " ")"
-        check "map_fits_at_${h}px" "true" "$got"
-    done
+    check "map_fits_its_column" "true" "$(grep -m1 'fits_reserved=' "$UIOUT" | sed 's/.*fits_reserved=//' | tr -d ' ')"
+    check "map_fits_across"     "true" "$(grep -m1 'fits_across=' "$UIOUT" | sed 's/.*fits_across=//' | tr -d ' ')"
 else
     printf '  FAIL  %-22s %s
 ' "map fit" "the build printed no [UIMEASURE] lines"
