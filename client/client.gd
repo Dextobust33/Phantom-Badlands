@@ -6289,6 +6289,73 @@ func _dev_run_shots() -> void:
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("stance_scouting")
 
+			"partymargin":
+				# The party STRIP and the companion panel share the right margin, and the strip grows
+				# with the party. Owner 2026-09-16: *"test002's party overlay is covering up part of
+				# his wight companion."* This waits for the party to fill before capturing, because
+				# the leader is launched FIRST and a capture taken straight away shows "Party none" -
+				# which is what the first attempt at this photographed.
+				for _w in range(90):
+					if in_party and party_members.size() >= 4:
+						break
+					await get_tree().create_timer(1.0).timeout
+				await _dev_shot_ensure_companion()
+				print("[PARTYMARGIN] party=%s members=%d" % [str(in_party), party_members.size()])
+				send_to_server({"type": "move", "direction": "east"})
+				await get_tree().create_timer(1.5).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("party_margin")
+
+			"partyfight":
+				# ⚑ A PARTY FIGHT, PHOTOGRAPHED FROM INSIDE A MEMBER'S CLIENT.
+				#
+				# The party screens shipped in v0.9.793 unlooked at because a co-op fight needed two
+				# people at two keyboards. It does not: `run.py party5 --shots=partyfight` forms the
+				# party through the dev auto-party hook, and this scene starts the fight itself with
+				# a GM spawn (these test accounts are admin) rather than waiting on the leader.
+				#
+				# Godmode on the CLIENT and a monster scaled to the character, for the reason the
+				# `combat` scene records twice over: a harness that can kill its own subject
+				# photographs a victory card instead of the thing it was sent to look at.
+				# ⚑ WAIT FOR THE PARTY. The shots client is the LEADER, which run.py launches FIRST -
+				# and the others follow six seconds apart. The first two attempts hunted immediately and
+				# fought alone thirty seconds before anyone else had connected, then filed the result as
+				# "party combat". Measured, not assumed: the probe printed party=false members=0.
+				for _w in range(90):
+					if in_party and party_members.size() >= 3:
+						break
+					await get_tree().create_timer(1.0).timeout
+				print("[PARTYFIGHT] before hunting: party=%s members=%d" % [str(in_party), party_members.size()])
+				send_to_server({"type": "gm_godmode"})
+				await get_tree().create_timer(0.6).timeout
+				# HUNT, do not spawn. A GM spawn opens a SOLO fight for the peer that asked - the
+				# first attempt at this scene photographed exactly that and answered nothing about
+				# party combat. An encounter the LEADER walks into is what pulls the party in, so
+				# this scene runs on the leader (see run.py) and hunts until a fight starts.
+				for _try in range(25):
+					if in_combat:
+						break
+					_on_hunt_button()
+					await get_tree().create_timer(1.1).timeout
+				if not in_combat:
+					print("[SHOTS] party fight never started - hunted 25 times")
+				# Say WHICH KIND of fight this is, so a solo encounter cannot be photographed and
+				# filed as party combat - which is exactly what the first two attempts did.
+				print("[PARTYFIGHT] in_combat=%s coop=%s party=%s members=%d coop_members=%d" % [
+					str(in_combat), str(party_combat_active), str(in_party), party_members.size(),
+					_party_combat_members.size()])
+				await get_tree().create_timer(2.0).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("party_combat_round1")
+				# A second frame a few rounds in: the first round has no damage numbers, no
+				# teammate actions in the log and no buff chips, which is most of what a party
+				# fight is being judged on.
+				for _i in range(3):
+					trigger_action(0)
+					await get_tree().create_timer(2.5).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("party_combat_rounds")
+
 			"backtest":
 				# ⚑ WHAT DOES BACK ACTUALLY DO? Owner 2026-09-16: *"Back on pouch screen still takes
 				# 2 presses."* Driven here rather than asked of the owner again: open each screen the
@@ -6570,6 +6637,12 @@ func _dev_run_shots() -> void:
 						await get_tree().create_timer(0.4).timeout
 					await _dev_shot_capture("combat")
 			"dungeon":
+				# GODMODE FIRST. Every dungeon capture on 2026-09-16 landed in the entrance ambush and
+				# photographed the fight - twice it killed the test character outright, once with
+				# permadeath. The `combat` scene records the same lesson: a harness must not be able to
+				# lose its own subject.
+				send_to_server({"type": "gm_godmode"})
+				await get_tree().create_timer(0.5).timeout
 				# gm_enter_dungeon is REFUSED while in combat, which silently produced a
 				# duplicate of the combat shot. Leave any fight first, and run this scene
 				# BEFORE "combat" (see DEFAULT_SCENES in shots.py).
@@ -34516,7 +34589,12 @@ func _place_map_widgets(on_canvas: bool) -> void:
 				canvas.add_child(buff_display_label)
 			if not buff_display_label.has_theme_stylebox_override("normal"):
 				buff_display_label.add_theme_stylebox_override("normal", _margin_box_style())
-			buff_display_label.fit_content = true
+			# fit_content OFF for both stacked boxes. It raises a Control's MINIMUM size, and a
+			# Control is never smaller than its minimum whatever the anchors say - so these boxes
+			# drew taller than the rect this function set, and the companion panel (which has the
+			# same flag and an ASCII portrait for content) could not be pushed down out of the way.
+			# Two attempts were spent on the arithmetic before reading what was actually drawn.
+			buff_display_label.fit_content = false
 			buff_display_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			buff_display_label.scroll_active = true
 			buff_display_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -34550,12 +34628,65 @@ func _place_map_widgets(on_canvas: bool) -> void:
 		# Capped like the effects box - a full party is six lines, and the companion panel below
 		# has a fixed place at the bottom of the margin. Past the cap it scrolls.
 		_margin_party_label.scroll_active = true
-		_margin_party_label.offset_bottom = stack_top + clampf(_margin_party_label.get_content_height() + 14.0, 34.0, 150.0)
-		# The companion panel keeps its own bottom-right anchor; it just matches the margin now.
+		_margin_party_label.fit_content = false
+		# ⚑ THE PARTY STRIP YIELDS TO THE COMPANION, not the other way round.
+		#
+		# Owner 2026-09-16: *"test002's party overlay is covering up part of his wight
+		# companion."* The companion panel is an ASCII portrait that cannot be squeezed - shrink
+		# its box and it simply draws over the edges - so the strip takes what is left above it
+		# and scrolls when a full party needs more. Five members fit in 150px; the clamp only
+		# binds on a narrow window, and then the strip scrolls rather than covering the portrait.
+		var comp_room: float = 290.0 + _stance_bar_h + 28.0
+		var party_max: float = maxf(34.0, canvas.size.y - comp_room - stack_top)
+		_margin_party_label.offset_bottom = stack_top + clampf(
+			_margin_party_label.get_content_height() + 14.0, 34.0, minf(150.0, party_max))
+	# ⚑ THE COMPANION IS PLACED LAST, because it is the only box measured against the others.
+	# Placed before the Party strip, it read LAST FRAME's party height - so a party that had
+	# just grown still covered it for a frame, and with a steady party it covered it forever.
+	if on_canvas and canvas != null:
+		# The companion panel keeps its own bottom-right anchor, matches the margin width, and
+		# STARTS BELOW WHATEVER IS ABOVE IT.
+		#
+		# Owner 2026-09-16, watching a five-person party: *"test002's party overlay is covering
+		# up part of his wight companion."* The panel was bottom-anchored with the fixed height
+		# it has carried since it was a corner overlay, so it knew nothing about the boxes now
+		# stacked above it - and a party of five grows the Party box down into it. Its top is
+		# measured from the lowest box above it, so the art shrinks to the space left rather
+		# than being sat on. Nothing here is a guessed constant.
 		if companion_art_overlay != null and is_instance_valid(companion_art_overlay):
+			# fit_content OFF here too: with it on, the label refuses to be shorter than its ASCII
+			# portrait and grows UPWARD past the rect set below - which is the last ten pixels of
+			# the overlap, after the party strip had already been capped out of the way.
+			companion_art_overlay.fit_content = false
+			companion_art_overlay.scroll_active = false
 			companion_art_overlay.offset_left = -(margin_w + 8.0)
 			companion_art_overlay.offset_right = -8.0
 			companion_art_overlay.offset_bottom = -(_stance_bar_h + 8.0)
+			# ⚑ MEASURE THE DRAWN RECT, NOT THE OFFSETS I SET.
+			#
+			# These labels have `fit_content`, which raises their MINIMUM size - and a Control is
+			# never smaller than its minimum, whatever the anchors say. The party box is 34px by
+			# the offsets this function writes and about 90px on screen with four members in it,
+			# so reading `offset_bottom` put the companion under a box half its real height and
+			# the strip kept sitting on the portrait. Two rounds of this were spent arguing with
+			# the arithmetic instead of reading what was drawn.
+			var above: float = 0.0
+			for n in [region_label, minimap_display, buff_display_label, _margin_party_label]:
+				if n != null and is_instance_valid(n) and (n as Control).visible:
+					var c2: Control = n as Control
+					above = maxf(above, maxf(c2.offset_bottom, c2.position.y + c2.size.y))
+			if above > 0.0:
+				var room: float = canvas.size.y + companion_art_overlay.offset_bottom - above - 10.0
+				# Never smaller than a portrait you can read; below that the margin is simply full
+				# and the panel hides rather than being drawn as a sliver.
+				if room < 90.0:
+					companion_art_overlay.visible = false
+				else:
+					# As tall as the room allows, up to its designed 280 - and measured AFTER the party
+					# strip is placed, since it is the box that grows. Placed before it, this read last
+					# frame's party height and a steady four-member strip covered the portrait forever.
+					companion_art_overlay.offset_top = -minf(room, 280.0)
+					companion_art_overlay.visible = true
 	# ...and the CHAT LOG below the status panel, in the same margin. Owner 2026-09-15: *"What if
 	# we move the Chatbox to the area under the status panel[?]"* Its tab bar rides with it, so
 	# the two are wrapped in one box that can be anchored, framed and hidden as a unit.
@@ -37185,7 +37316,14 @@ func display_game(text: String):
 		# back: an underline is the only cue that a damage number or an item name has something
 		# behind it, and the same restore is already done at combat start and dungeon exit for
 		# the dungeon renderer's copy of this.
-		game_output.meta_underlined = true
+		# ⛑ BUT NEVER UNDERGROUND. The dungeon renderer turns the underline off and then draws
+		# the floor THROUGH THIS FUNCTION (`_dungeon_rendering` is set, so the branch above lets
+		# it fall through to here) - so this restore undid it on the way in and every url-wrapped
+		# tile got a line across it. Owner 2026-09-16: *"there is a line through the item sprites
+		# and floor glyphs in the dungeon."* The same defect as the overworld map lines,
+		# introduced by the fix for them.
+		if not dungeon_mode:
+			game_output.meta_underlined = true
 		game_output.append_text(text + "\n")
 
 func open_admin_menu() -> void:

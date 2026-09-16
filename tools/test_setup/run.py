@@ -148,10 +148,18 @@ def main():
     only = ""
     noranks = False
     want_ranks = 0
+    shots = ""
     argv = []
     for a in sys.argv[1:]:
         if a.startswith("--only="):
             only = a.split("=", 1)[1]
+        elif a.startswith("--shots="):
+            # 2026-09-16 - hand the LAST client a `--shots` scene so the run photographs itself.
+            # Judging a party screen used to mean alt-tabbing into one of five windows and
+            # pressing F12, or moving windows around on the owner's desktop to see one - which is
+            # its own annoyance. The scene captures from inside the client, at the client's own
+            # resolution, with the party already formed by the auto-party hook.
+            shots = a.split("=", 1)[1]
         elif a == "--noranks":
             noranks = True
         elif a.startswith("--ranks="):
@@ -227,7 +235,12 @@ def main():
         clog = open(os.path.join(logdir, "%s.log" % cname), "w", encoding="utf-8", errors="replace")
         subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
                           "--resolution", "1280x720", "client/client.tscn", "--",
-                          "--user=%s" % user, "--pass=%s" % DEV_PASSWORD, "--char=%s" % cname,
+                          "--user=%s" % user, "--pass=%s" % DEV_PASSWORD, "--char=%s" % cname]
+                         # The LEADER gets the shots scene. A party fight can only be STARTED by the leader -
+                         # a GM spawn on a member opens a solo fight instead, which is what the
+                         # first party capture photographed. The leader is the first client.
+                         + (["--shots=%s" % shots] if (shots and i == 0) else [])
+                         + [
                           # Force the LOCAL server. The client remembers the last host it used,
                           # so one manual connect to production silently sends every later test
                           # run there - where these accounts do not exist.
