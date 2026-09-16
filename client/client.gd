@@ -8758,28 +8758,58 @@ func setup_action_bar():
 			action_cost_labels.append(cost_label)
 
 func _style_action_button(btn: Button):
-	"""Apply parchment theme to an action bar button"""
+	"""Make an action bar slot look like a BUTTON.
+
+	Owner 2026-09-16: *"our hotkey buttons need reworked, they don't look like buttons and are
+	too easy for a player to miss."* They were a 1px hairline around a flat fill the same
+	darkness as the panel behind them - at a glance, a row of words.
+
+	What makes a thing read as pressable: a raised edge (a lighter top border against a darker
+	bottom one), a drop shadow under it, and enough padding that the label is not touching the
+	frame. Pressing SINKS it - the shadow goes and the content shifts down a pixel - so the
+	click has an answer. A disabled slot keeps the shape and loses the relief, which is how a
+	player can tell "nothing here" from "something I have not noticed"."""
 	var style_normal = StyleBoxFlat.new()
-	style_normal.bg_color = THEME_BTN_BG
-	style_normal.border_color = THEME_BTN_BORDER
-	style_normal.set_border_width_all(1)
-	style_normal.set_corner_radius_all(4)
-	style_normal.set_content_margin_all(2)
+	style_normal.bg_color = Color(0.16, 0.13, 0.10, 1.0)
+	style_normal.border_color = Color(0.55, 0.45, 0.28, 1.0)
+	style_normal.set_border_width_all(2)
+	style_normal.border_width_top = 3
+	style_normal.border_width_bottom = 1
+	style_normal.set_corner_radius_all(6)
+	style_normal.set_content_margin_all(6)
+	style_normal.shadow_color = Color(0, 0, 0, 0.55)
+	style_normal.shadow_size = 3
+	style_normal.shadow_offset = Vector2(0, 2)
 	var style_hover = StyleBoxFlat.new()
-	style_hover.bg_color = THEME_BTN_HOVER
+	style_hover.bg_color = Color(0.26, 0.21, 0.14, 1.0)
 	style_hover.border_color = THEME_BORDER_GOLD
-	style_hover.set_border_width_all(1)
-	style_hover.set_corner_radius_all(4)
-	style_hover.set_content_margin_all(2)
+	style_hover.set_border_width_all(2)
+	style_hover.border_width_top = 3
+	style_hover.border_width_bottom = 1
+	style_hover.set_corner_radius_all(6)
+	style_hover.set_content_margin_all(6)
+	style_hover.shadow_color = Color(0, 0, 0, 0.7)
+	style_hover.shadow_size = 4
+	style_hover.shadow_offset = Vector2(0, 2)
+	var style_pressed = StyleBoxFlat.new()
+	style_pressed.bg_color = Color(0.11, 0.09, 0.07, 1.0)
+	style_pressed.border_color = THEME_BORDER_GOLD
+	style_pressed.set_border_width_all(2)
+	style_pressed.border_width_top = 1
+	style_pressed.border_width_bottom = 3
+	style_pressed.set_corner_radius_all(6)
+	style_pressed.set_content_margin_all(6)
+	style_pressed.content_margin_top = 8
+	style_pressed.content_margin_bottom = 4
 	var style_disabled = StyleBoxFlat.new()
-	style_disabled.bg_color = Color(0.1, 0.08, 0.06, 0.5)
-	style_disabled.border_color = Color(0.3, 0.25, 0.2, 0.3)
+	style_disabled.bg_color = Color(0.09, 0.08, 0.07, 0.55)
+	style_disabled.border_color = Color(0.3, 0.26, 0.2, 0.45)
 	style_disabled.set_border_width_all(1)
-	style_disabled.set_corner_radius_all(4)
-	style_disabled.set_content_margin_all(2)
+	style_disabled.set_corner_radius_all(6)
+	style_disabled.set_content_margin_all(6)
 	btn.add_theme_stylebox_override("normal", style_normal)
 	btn.add_theme_stylebox_override("hover", style_hover)
-	btn.add_theme_stylebox_override("pressed", style_hover)
+	btn.add_theme_stylebox_override("pressed", style_pressed)
 	btn.add_theme_stylebox_override("disabled", style_disabled)
 	btn.add_theme_color_override("font_color", THEME_TEXT)
 	btn.add_theme_color_override("font_hover_color", THEME_BORDER_GOLD)
@@ -15755,12 +15785,10 @@ func execute_local_action(action: String):
 		"market_browse_back":
 			pending_market_action = ""
 			market_listings = []
-			display_market_main()
-			update_action_bar()
+			_market_back_to_main()
 		"market_list_back":
 			pending_market_action = ""
-			display_market_main()
-			update_action_bar()
+			_market_back_to_main()
 		"market_matqty_back":
 			pending_market_action = "list_material"
 			market_selected_material = ""
@@ -15817,8 +15845,7 @@ func execute_local_action(action: String):
 			pending_market_action = ""
 			market_listings = []
 			market_my_page = 0
-			display_market_main()
-			update_action_bar()
+			_market_back_to_main()
 		"market_list_prev":
 			market_list_page = maxi(0, market_list_page - 1)
 			display_market_list_select()
@@ -15887,8 +15914,7 @@ func execute_local_action(action: String):
 			market_network_mode = false
 			market_listings = []
 			market_inspected_listing = {}
-			display_market_main()
-			update_action_bar()
+			_market_back_to_main()
 		"market_network_to_local":
 			# Switch from network view to current-post Local browse without leaving the market.
 			pending_market_action = "browse"
@@ -29169,6 +29195,22 @@ func update_action_bar_hotkeys():
 	for i in range(min(action_hotkey_labels.size(), 10)):
 		var label = action_hotkey_labels[i]
 		if label != null:
+			# The key gets a CAP rather than bare grey text, so the row reads as "button + the key
+			# that presses it" instead of a caption nobody looks at.
+			if not label.has_theme_stylebox_override("normal"):
+				var cap := StyleBoxFlat.new()
+				cap.bg_color = Color(0.10, 0.09, 0.08, 1.0)
+				cap.border_color = Color(0.42, 0.36, 0.26, 1.0)
+				cap.set_border_width_all(1)
+				cap.set_corner_radius_all(4)
+				cap.content_margin_left = 6
+				cap.content_margin_right = 6
+				cap.content_margin_top = 1
+				cap.content_margin_bottom = 1
+				label.add_theme_stylebox_override("normal", cap)
+				label.add_theme_color_override("font_color", Color(0.78, 0.70, 0.55))
+				label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			# All 10 action bar slots use action_0 through action_9
 			var action_key = "action_%d" % i
 			var keycode = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
@@ -42039,7 +42081,12 @@ func update_map(map_text: String):
 		# we accidentally hide one guard/water cell on the same screen.
 		main_text = _strip_remote_player_glyphs(main_text)
 		_map_target.append_text(main_text)
-		if show_map_legend:
+		# ⚑ NO KEY WHEN THE MAP IS ART. Owner 2026-09-16: *"the Map Key is worthless as it's
+		# stale information as well."* It reads "T Tree  * Ore  ~ Water" - letters the map
+		# stopped drawing when the sprite pass landed. Every square is hoverable and says what
+		# it is, which is the key that cannot go stale. The ASCII fallback still needs it, and
+		# there it is still true.
+		if show_map_legend and not _ow_canvas:
 			# CENTRED under the map rather than left-aligned in the label: the margins either side
 			# of the map hold panels now, and a left-aligned legend ran under the chat box.
 			_map_target.append_text("\n[center][color=#8B7355][font_size=13]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water  [/font_size][/color][color=#FFAA00][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Threat  [/font_size][/color][color=#FFD700][font_size=13]?[/font_size][/color][color=#8B7355][font_size=13] Bounty  [/font_size][/color][color=#FF4444][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Hotzone  X Corpse  $ Sack[/font_size][/color][/center]")
@@ -49762,6 +49809,23 @@ func exit_market():
 	set_meta("hotkey_0_pressed", true)
 	_display_trading_post_ui()
 	update_action_bar()
+
+func _market_back_to_main() -> void:
+	"""Back out of a market sub-screen.
+
+	With the panel as the market, there IS no main menu to go back TO - the keyboard main menu
+	stopped rendering, so this step left the panel showing an emptied list. Owner 2026-09-16:
+	*"it shows consumable when I open it. When I press spacebar it goes to no listing found.
+	When I press spacebar again it exits it."* That middle screen is the ghost of a menu.
+
+	So: with the panel present, Back from a top-level sub-screen leaves the market outright.
+	Without it (the old keyboard flow) the main menu is real and still the right destination."""
+	if market_panel != null and is_instance_valid(market_panel):
+		exit_market()
+		return
+	display_market_main()
+	update_action_bar()
+
 
 func display_market_main():
 	"""Display the market main menu."""

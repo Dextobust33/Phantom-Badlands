@@ -44,12 +44,23 @@ func _init() -> void:
 		# the scripted runs only survived because the shots harness turns godmode on. A character
 		# built to be LOOKED at has to survive being looked at.
 		ch.level = 60
-		for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-			var gear: Dictionary = sv.drop_tables._generate_item({"slot": slot, "rarity": "epic"}, 60)
+		# ⚑ REAL BASE TYPES, NOT A "slot" KEY THE GENERATOR DOES NOT READ. The first version
+		# passed {"slot": "weapon"}; `_generate_item` ignores that, so it produced typeless
+		# items that came out named "Healthy Pristine Unknown of the Sphinx" and could only be
+		# worn because this probe forced them into slots - the game could not work out where
+		# they went, so taking one off was a one-way trip. Owner found it by unequipping one.
+		var slot_bases := {
+			"weapon": "weapon_mythic", "armor": "armor_mythic", "helm": "helm_mythic",
+			"shield": "shield_mythic", "boots": "boots_mythic", "ring": "ring_mythic",
+			"amulet": "amulet_mythic",
+		}
+		for slot in slot_bases.keys():
+			var gear: Dictionary = sv.drop_tables._generate_item(
+				{"item_type": String(slot_bases[slot]), "rarity": "epic"}, 60)
 			if gear.is_empty():
-				gear = sv.drop_tables._generate_item({}, 60)
-			if not gear.is_empty():
-				ch.equip_item(gear, slot)
+				continue
+			ch.equip_item(gear, slot)
+			print("  equipped %s: %s" % [slot, String(gear.get("name", "?"))])
 		ch.current_hp = ch.get_total_max_hp()
 		for t in ["pickaxe", "axe", "sickle", "fishing_rod"]:
 			var tool_item: Dictionary = sv.drop_tables._generate_item({"item_type": t, "rarity": "uncommon"}, 30)
@@ -73,6 +84,22 @@ func _init() -> void:
 	if not sv.characters.has(PEER) and not chars.is_empty():
 		sv.handle_select_character(PEER, {"name": String(chars[0].get("name", "Looker"))})
 		await process_frame
+	# Strip anything the broken first version left worn: an item with no `item_type` cannot be
+	# re-equipped once removed, so it is not gear, it is a trap.
+	var chr_fix = sv.characters.get(PEER, null)
+	if chr_fix != null:
+		var bases := {"weapon": "weapon_mythic", "armor": "armor_mythic", "helm": "helm_mythic",
+			"shield": "shield_mythic", "boots": "boots_mythic", "ring": "ring_mythic",
+			"amulet": "amulet_mythic"}
+		for slot in bases.keys():
+			var worn = chr_fix.equipped.get(slot, null)
+			if worn == null or not (worn is Dictionary) or String(worn.get("item_type", "")) == "":
+				var fresh: Dictionary = sv.drop_tables._generate_item(
+					{"item_type": String(bases[slot]), "rarity": "epic"}, 60)
+				if not fresh.is_empty():
+					chr_fix.equip_item(fresh, slot)
+					print("  replaced typeless %s with %s" % [slot, String(fresh.get("name", "?"))])
+		sv.save_character(PEER)
 	var chr2 = sv.characters.get(PEER, null)
 	if chr2 != null:
 		if chr2.collected_companions.is_empty():
