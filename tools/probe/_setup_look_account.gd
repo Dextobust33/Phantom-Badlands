@@ -38,7 +38,18 @@ func _init() -> void:
 			print("character creation failed"); quit(1); return
 		# Enough level that the HUD has real numbers in it, and tools so the Tools panel is
 		# populated the way a played character's is - an empty panel is not the thing being judged.
-		ch.level = 30
+		# ⚑ LEVEL AND GEAR, BOTH. 2026-09-16: the first version made a level-30 character and put
+		# six items in its BACKPACK. Every dungeon capture then died in the entrance ambush -
+		# "Damage Dealt: 0, Damage Taken: 130" - because a naked level 30 is not a level 30, and
+		# the scripted runs only survived because the shots harness turns godmode on. A character
+		# built to be LOOKED at has to survive being looked at.
+		ch.level = 60
+		for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+			var gear: Dictionary = sv.drop_tables._generate_item({"slot": slot, "rarity": "epic"}, 60)
+			if gear.is_empty():
+				gear = sv.drop_tables._generate_item({}, 60)
+			if not gear.is_empty():
+				ch.equip_item(gear, slot)
 		ch.current_hp = ch.get_total_max_hp()
 		for t in ["pickaxe", "axe", "sickle", "fishing_rod"]:
 			var tool_item: Dictionary = sv.drop_tables._generate_item({"item_type": t, "rarity": "uncommon"}, 30)
@@ -52,5 +63,27 @@ func _init() -> void:
 		print("created character 'Looker' (Fighter, level %d, %d items)" % [ch.level, ch.inventory.size()])
 	else:
 		print("character already exists: %s" % str(chars))
+
+	# A COMPANION, OUT AND WALKING. Owner 2026-09-16, looking at the overworld: *"I have no
+	# companion so I can't judge that correctly."* The companion has its own art panel in the
+	# map's margin and its own sprite trailing you, so a screen built to be judged has to have one.
+	# The character is only loaded into `sv.characters` when this run CREATED it. On a re-run
+	# it has to be selected first, or every line below silently does nothing - which is what
+	# happened the first time (no companion, no message, exit 0).
+	if not sv.characters.has(PEER) and not chars.is_empty():
+		sv.handle_select_character(PEER, {"name": String(chars[0].get("name", "Looker"))})
+		await process_frame
+	var chr2 = sv.characters.get(PEER, null)
+	if chr2 != null:
+		if chr2.collected_companions.is_empty():
+			sv.handle_gm_givecompanion(PEER, {"monster_type": "Wolf"})
+			await process_frame
+		if chr2.active_companion == null or chr2.active_companion.is_empty():
+			if not chr2.collected_companions.is_empty():
+				var comp: Dictionary = chr2.collected_companions[0]
+				chr2.active_companion = comp.duplicate(true)
+				chr2.active_companion["current_hp"] = 9999
+				sv.save_character(PEER)
+		print("companion: %s" % str(chr2.active_companion.get("name", "(none)")))
 	print("READY - log in as  look / looklook")
 	quit(0)

@@ -1862,6 +1862,14 @@ var _ow_side_lines: Array = []
 ## The WHERE YOU ARE block - the post description and anything else the location pass prints.
 ## Replaced every step rather than appended, and drawn in a pinned label above the log.
 var _ow_side_location: Array = []
+## How many times the LAST log line has repeated, shown as a count rather than as copies.
+var _ow_side_repeat: int = 0
+## The party strip in the right margin - who is with you, built from the party payload.
+var _margin_party_label: RichTextLabel = null
+## True while a station PAGE owns the pinned section of the column (see `_page_clear`).
+var _ow_page_active: bool = false
+## True while a WIDE text page (Help, the character sheet) owns the canvas and the map waits.
+var _ow_wide_page: bool = false
 ## That label. Built on first use, directly above `map_display` in the side column.
 var _ow_side_place: RichTextLabel = null
 const OW_SIDE_MAX_LINES := 60
@@ -3999,6 +4007,7 @@ func _on_window_resized():
 
 func _process(delta):
 	_sync_margin_widgets()
+	_ow_heal_canvas()
 	_dungeon_idle_tick(delta)
 	# v0.9.695 — F12 screenshot via a polled edge, so NO UI/combat state can eat
 	# the key (the _input path + the top-bar button both get consumed in combat).
@@ -4311,7 +4320,7 @@ func _process(delta):
 			# If rebinding a key, cancel the rebind
 			if rebinding_action != "":
 				rebinding_action = ""
-				game_output.clear()
+				_page_clear()
 				if settings_submenu == "action_keys":
 					display_action_keybinds()
 				elif settings_submenu == "movement_keys":
@@ -4340,7 +4349,7 @@ func _process(delta):
 		if Input.is_action_just_pressed("ui_cancel"):
 			if rebinding_action != "":
 				rebinding_action = ""
-				game_output.clear()
+				_page_clear()
 				if settings_submenu == "action_keys":
 					display_action_keybinds()
 				elif settings_submenu == "movement_keys":
@@ -5502,7 +5511,14 @@ func _process(delta):
 					# In build mode, redraw the active build prompt so the menu
 					# stays on screen as the player walks to a new anchor tile.
 					if at_trading_post:
-						_display_trading_post_ui()
+						# NOT while the map owns the canvas - the location pass redraws the post block at
+						# the end of the step, into the pinned WHERE YOU ARE label. Printing it here as
+						# well put a SECOND copy into the rolling log a round trip earlier, which is what
+						# the owner saw: *"the crossroads is showing on the right and another flashes under
+						# it every time I take a step while in the post."* The button path had this guard
+						# already; this is the keyboard one, and keyboard is how people actually walk.
+						if not _ow_canvas_eligible():
+							_display_trading_post_ui()
 					elif build_mode:
 						if build_demolish_mode:
 							display_demolish_direction()
@@ -5510,7 +5526,8 @@ func _process(delta):
 							display_build_direction()
 						else:
 							display_build_items()
-					else:
+					elif not _ow_canvas_intact():
+						# ...and do not blank the MAP on a step, same as the button path.
 						clear_game_output()
 					last_move_time = current_time
 				elif is_hunt:
@@ -5683,7 +5700,7 @@ func _input(event):
 		if keycode == KEY_ESCAPE:
 			# Cancel rebinding
 			rebinding_action = ""
-			game_output.clear()
+			_page_clear()
 			if settings_submenu == "action_keys":
 				display_action_keybinds()
 			elif settings_submenu == "movement_keys":
@@ -5771,7 +5788,7 @@ func _input(event):
 			# behaved correctly). hotkey_0_pressed above guarantees this Space
 			# press never falls through to Rest.
 			if game_output and is_instance_valid(game_output):
-				game_output.clear()
+				_page_clear()
 			if not flock_pending:
 				reset_combat_background()
 			if at_trading_post:
@@ -5853,24 +5870,24 @@ func _input(event):
 
 			if keycode == key_action_1:
 				settings_submenu = "action_keys"
-				game_output.clear()
+				_page_clear()
 				display_action_keybinds()
 				update_action_bar()
 			elif keycode == key_action_2:
 				settings_submenu = "movement_keys"
-				game_output.clear()
+				_page_clear()
 				display_movement_keybinds()
 				update_action_bar()
 			elif keycode == key_action_3:
 				settings_submenu = "item_keys"
-				game_output.clear()
+				_page_clear()
 				display_item_keybinds()
 				update_action_bar()
 			elif keycode == key_action_4:
 				reset_keybinds_to_defaults()
 			elif keycode == key_action_5:
 				settings_submenu = "game"
-				game_output.clear()
+				_page_clear()
 				display_game_settings()
 				update_action_bar()
 			elif keycode == key_action_7:
@@ -5882,12 +5899,12 @@ func _input(event):
 				enter_ability_mode()
 			elif keycode == keybinds.get("action_8", default_keybinds.get("action_8", KEY_4)):
 				settings_submenu = "ui_scale"
-				game_output.clear()
+				_page_clear()
 				display_ui_scale_settings()
 				update_action_bar()
 			elif keycode == keybinds.get("action_9", default_keybinds.get("action_9", KEY_5)):
 				settings_submenu = "sound"
-				game_output.clear()
+				_page_clear()
 				display_sound_settings()
 				update_action_bar()
 			elif keycode == key_action_0:
@@ -5903,7 +5920,7 @@ func _input(event):
 				start_rebinding("action_%d" % index)
 			elif keycode == back_key:
 				settings_submenu = ""
-				game_output.clear()
+				_page_clear()
 				display_settings_menu()
 				update_action_bar()
 			get_viewport().set_input_as_handled()
@@ -5915,7 +5932,7 @@ func _input(event):
 				start_rebinding("item_%d" % (index + 1))  # item_1 through item_9
 			elif keycode == back_key:
 				settings_submenu = ""
-				game_output.clear()
+				_page_clear()
 				display_settings_menu()
 				update_action_bar()
 			get_viewport().set_input_as_handled()
@@ -5959,7 +5976,7 @@ func _input(event):
 				start_rebinding("move_right")
 			elif keycode == back_key:
 				settings_submenu = ""
-				game_output.clear()
+				_page_clear()
 				display_settings_menu()
 				update_action_bar()
 			get_viewport().set_input_as_handled()
@@ -5998,7 +6015,7 @@ func _input(event):
 				reset_ui_scales()
 			elif keycode == back_key:
 				settings_submenu = ""
-				game_output.clear()
+				_page_clear()
 				display_settings_menu()
 				update_action_bar()
 			get_viewport().set_input_as_handled()
@@ -6016,11 +6033,11 @@ func _input(event):
 				sfx_muted = not sfx_muted
 				_apply_volume_settings()
 				_save_keybinds()
-				game_output.clear()
+				_page_clear()
 				display_sound_settings()
 			elif keycode == back_key:
 				settings_submenu = ""
-				game_output.clear()
+				_page_clear()
 				display_settings_menu()
 				update_action_bar()
 			get_viewport().set_input_as_handled()
@@ -6036,11 +6053,11 @@ func _input(event):
 					else:
 						comparison_pinned_stats.append(stat_key)
 					_save_keybinds()  # Persist via local settings
-					game_output.clear()
+					_page_clear()
 					_display_stat_priority_settings()
 			elif keycode == back_key:
 				settings_submenu = "game"
-				game_output.clear()
+				_page_clear()
 				display_game_settings()
 				update_action_bar()
 			get_viewport().set_input_as_handled()
@@ -6052,7 +6069,7 @@ func _input(event):
 				# Refresh the game settings display after toggle
 				await get_tree().create_timer(1.5).timeout
 				if settings_mode and settings_submenu == "game":
-					game_output.clear()
+					_page_clear()
 					display_game_settings()
 			elif keycode == KEY_2:
 				_toggle_skip_craft_minigame()
@@ -6071,11 +6088,11 @@ func _input(event):
 				_toggle_overworld_sprites()
 			elif keycode == KEY_8:
 				settings_submenu = "stat_priority"
-				game_output.clear()
+				_page_clear()
 				_display_stat_priority_settings()
 			elif keycode == back_key:
 				settings_submenu = ""
-				game_output.clear()
+				_page_clear()
 				display_settings_menu()
 				update_action_bar()
 			get_viewport().set_input_as_handled()
@@ -6933,7 +6950,7 @@ func display_death_screen(message: Dictionary):
 	"""Render the enhanced death screen into game_output with full character eulogy."""
 	if not game_output:
 		return
-	game_output.clear()
+	_page_clear()
 
 	var char_name = message.get("character_name", "Unknown")
 	var level = int(message.get("level", 1))
@@ -8273,7 +8290,7 @@ func display_leaderboard_death_screen(message: Dictionary):
 	# Hide the leaderboard panel so the death screen is visible
 	if leaderboard_panel:
 		leaderboard_panel.visible = false
-	game_output.clear()
+	_page_clear()
 
 	var death_data = message.get("death_data", {})
 	var char_name = death_data.get("character_name", message.get("character_name", "Unknown"))
@@ -15176,7 +15193,7 @@ func execute_local_action(action: String):
 			# Enter release selection mode
 			_pre_mark_held_selection_keys("companionkey_")
 			pending_companion_action = "release_select"
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#FF6666]═══════ RELEASE COMPANION ═══════[/color]")
 			display_game("")
 			display_game("[color=#FFAA00]Select a companion to release (PERMANENTLY DELETE):[/color]")
@@ -15199,7 +15216,7 @@ func execute_local_action(action: String):
 			if release_target_companion.is_empty():
 				return
 			pending_companion_action = "release_final"
-			game_output.clear()
+			_page_clear()
 			var _final_name = release_target_companion.get("name", "Unknown")
 			var _final_variant = release_target_companion.get("variant", "Normal")
 			var _final_variant_color = _ensure_readable_color(release_target_companion.get("variant_color", "#FFFFFF"))
@@ -15231,7 +15248,7 @@ func execute_local_action(action: String):
 				display_game("[color=#FF0000]You need more than 1 companion to use Release All.[/color]")
 				return
 			pending_companion_action = "release_all_warn"
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#FF0000]══════ WARNING ══════[/color]")
 			display_game("")
 			display_game("[color=#FFAA00]You are about to release ALL %d companions![/color]" % collected.size())
@@ -15246,7 +15263,7 @@ func execute_local_action(action: String):
 			# Second/final confirmation
 			var collected = character_data.get("collected_companions", [])
 			pending_companion_action = "release_all_confirm"
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#FF0000]══════ FINAL CONFIRMATION ══════[/color]")
 			display_game("")
 			display_game("[color=#FF0000]ARE YOU ABSOLUTELY SURE?[/color]")
@@ -15269,7 +15286,7 @@ func execute_local_action(action: String):
 			# Enter inspect selection mode - use number keys to select companion
 			_pre_mark_held_selection_keys("companionkey_")
 			pending_companion_action = "inspect_select"
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#00FFFF]═══════ INSPECT COMPANION ═══════[/color]")
 			display_game("")
 			var _inspect_count = min(COMPANIONS_PAGE_SIZE, character_data.get("collected_companions", []).size())
@@ -15329,7 +15346,7 @@ func execute_local_action(action: String):
 			build_active_structure_type = ""
 			build_active_is_kit = false
 			pending_build_result = false
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#888888]Exited build mode.[/color]")
 			update_action_bar()
 		"build_demolish":
@@ -15354,7 +15371,7 @@ func execute_local_action(action: String):
 		"storage_close":
 			storage_mode = false
 			pending_storage_action = ""
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#888888]Closed storage.[/color]")
 			update_action_bar()
 		"storage_deposit_mode":
@@ -15479,7 +15496,7 @@ func execute_local_action(action: String):
 		"salvage_all_confirmed":
 			pending_inventory_action = "awaiting_salvage_result"
 			send_to_server({"type": "inventory_salvage", "mode": "all"})
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#AA66FF]Salvaging all items...[/color]")
 			update_action_bar()
 		"salvage_below_level":
@@ -15491,7 +15508,7 @@ func execute_local_action(action: String):
 		"salvage_below_confirmed":
 			pending_inventory_action = "awaiting_salvage_result"
 			send_to_server({"type": "inventory_salvage", "mode": "below_level"})
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#AA66FF]Salvaging items below level threshold...[/color]")
 			update_action_bar()
 		"salvage_cancel":
@@ -15526,7 +15543,7 @@ func execute_local_action(action: String):
 		"salvage_consumables":
 			pending_inventory_action = "awaiting_salvage_result"
 			send_to_server({"type": "inventory_salvage", "mode": "consumables"})
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#AA66FF]Salvaging consumables...[/color]")
 			update_action_bar()
 		"affix_filter":
@@ -15586,7 +15603,7 @@ func execute_local_action(action: String):
 		"unequip_prev_page":
 			if unequip_page > 0:
 				unequip_page -= 1
-				game_output.clear()
+				_page_clear()
 				_display_unequip_page()
 				update_action_bar()
 		"unequip_next_page":
@@ -15594,7 +15611,7 @@ func execute_local_action(action: String):
 			var unequip_total = max(1, int(ceil(float(unequip_slots.size()) / INVENTORY_PAGE_SIZE)))
 			if unequip_page < unequip_total - 1:
 				unequip_page += 1
-				game_output.clear()
+				_page_clear()
 				_display_unequip_page()
 				update_action_bar()
 		"equip_prev_page":
@@ -15637,7 +15654,7 @@ func execute_local_action(action: String):
 			acknowledge_continue()
 		"leaderboard_death_back":
 			viewing_leaderboard_death = false
-			game_output.clear()
+			_page_clear()
 			show_leaderboard_panel()
 			update_action_bar()
 		"merchant_leave":
@@ -15962,7 +15979,7 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"tutorial_start_no":
 			pending_tutorial_prompt = false
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#808080]Tutorial skipped. Type /help for a quick reference.[/color]")
 			update_action_bar()
 		# Quest actions
@@ -16006,7 +16023,7 @@ func execute_local_action(action: String):
 		"home_stone_prev_page":
 			if home_stone_page > 0:
 				home_stone_page -= 1
-				game_output.clear()
+				_page_clear()
 				display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
 				_display_home_stone_options()
 				update_action_bar()
@@ -16014,7 +16031,7 @@ func execute_local_action(action: String):
 			var total_pages = max(1, int(ceil(float(home_stone_options.size()) / 9.0)))
 			if home_stone_page < total_pages - 1:
 				home_stone_page += 1
-				game_output.clear()
+				_page_clear()
 				display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
 				_display_home_stone_options()
 				update_action_bar()
@@ -16089,7 +16106,7 @@ func execute_local_action(action: String):
 		"dungeon_warning_cancel":
 			# Cancel entering dungeon
 			pending_dungeon_warning = {}
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#808080]Dungeon entry cancelled.[/color]")
 			update_action_bar()
 		"dungeon_enter_hard":
@@ -16109,7 +16126,7 @@ func execute_local_action(action: String):
 		"hotzone_cancel":
 			# Cancel entering hotzone
 			pending_hotzone_warning = {}
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#808080]You stay back from the danger zone.[/color]")
 			update_action_bar()
 		"corpse_loot":
@@ -16130,7 +16147,7 @@ func execute_local_action(action: String):
 		"corpse_loot_cancel":
 			# Cancel looting
 			pending_corpse_loot = {}
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#808080]Loot cancelled.[/color]")
 			update_action_bar()
 		"ability_equip":
@@ -16159,44 +16176,44 @@ func execute_local_action(action: String):
 			close_settings()
 		"settings_action_keys":
 			settings_submenu = "action_keys"
-			game_output.clear()
+			_page_clear()
 			display_action_keybinds()
 			update_action_bar()
 		"settings_movement_keys":
 			settings_submenu = "movement_keys"
-			game_output.clear()
+			_page_clear()
 			display_movement_keybinds()
 			update_action_bar()
 		"settings_item_keys":
 			settings_submenu = "item_keys"
-			game_output.clear()
+			_page_clear()
 			display_item_keybinds()
 			update_action_bar()
 		"settings_ui_scale":
 			settings_submenu = "ui_scale"
-			game_output.clear()
+			_page_clear()
 			display_ui_scale_settings()
 			update_action_bar()
 		"settings_sound":
 			settings_submenu = "sound"
-			game_output.clear()
+			_page_clear()
 			display_sound_settings()
 			update_action_bar()
 		"settings_reset":
 			reset_keybinds_to_defaults()
 		"settings_game":
 			settings_submenu = "game"
-			game_output.clear()
+			_page_clear()
 			display_game_settings()
 			update_action_bar()
 		"settings_game_back":
 			settings_submenu = ""
-			game_output.clear()
+			_page_clear()
 			display_settings_menu()
 			update_action_bar()
 		"settings_back_to_main":
 			settings_submenu = ""
-			game_output.clear()
+			_page_clear()
 			display_settings_menu()
 			update_action_bar()
 		"settings_rebind_move_up":
@@ -16278,7 +16295,7 @@ func execute_local_action(action: String):
 
 		"party_disband":
 			party_disband_confirm = true
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#FF6666]═══════ DISBAND PARTY ═══════[/color]")
 			display_game("")
 			display_game("[color=#FFAA00]Are you sure you want to disband the party?[/color]")
@@ -16293,7 +16310,7 @@ func execute_local_action(action: String):
 			_open_party_menu()
 		"party_leave":
 			party_leave_confirm = true
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#FF6666]═══════ LEAVE PARTY ═══════[/color]")
 			display_game("")
 			display_game("[color=#FFAA00]Are you sure you want to leave the party?[/color]")
@@ -16311,7 +16328,7 @@ func execute_local_action(action: String):
 			for i in range(9):
 				if is_item_select_key_pressed(i):
 					_consume_item_select_key(i)
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#FFD700]═══════ APPOINT LEADER ═══════[/color]")
 			display_game("")
 			var idx = 0
@@ -16434,7 +16451,7 @@ func execute_local_action(action: String):
 		"guard_post_back":
 			at_guard_post = false
 			guard_post_data = {}
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#808080]You step away from the guard post.[/color]")
 			update_action_bar()
 		"guard_hire":
@@ -16495,7 +16512,7 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"crafting_temper_cancel":
 			crafting_temper_mode = false
-			game_output.clear()
+			_page_clear()
 			display_craft_recipe_details()
 			update_action_bar()
 		"craft_qty_down":
@@ -16537,7 +16554,7 @@ func execute_local_action(action: String):
 				if crafting_recipes[ri].get("id", "") == last_crafted_recipe_id:
 					crafting_selected_recipe = ri
 					# Show intermediate feedback so player knows attempt went through
-					game_output.clear()
+					_page_clear()
 					var rname = crafting_recipes[ri].get("name", "item")
 					display_game("[color=#FFD700]Crafting %s...[/color]" % rname)
 					awaiting_craft_result = true
@@ -16554,7 +16571,7 @@ func execute_local_action(action: String):
 		"dungeon_list_cancel":
 			dungeon_list_mode = false
 			dungeon_available = []
-			game_output.clear()
+			_page_clear()
 			update_action_bar()
 		"dungeon_exit":
 			send_to_server({"type": "dungeon_exit"})
@@ -17350,7 +17367,7 @@ func acknowledge_continue():
 	_pending_quest_abandon_index = -1
 	_pending_quest_abandon_at_time = 0.0
 	# Keep recent XP gain highlight visible until next XP gain
-	game_output.clear()
+	_page_clear()
 	# Reset combat background when player continues (not during flock)
 	if not flock_pending:
 		reset_combat_background()
@@ -17409,7 +17426,7 @@ func acknowledge_continue():
 
 func _display_post_combat_context() -> void:
 	"""A short 'where you are now' summary for the game window after a fight in open terrain."""
-	game_output.clear()
+	_page_clear()
 	var region := str(hud_region_name)
 	var cx := int(character_data.get("x", 0))
 	var cy := int(character_data.get("y", 0))
@@ -17623,7 +17640,7 @@ func handle_merchant_buy_success(message: Dictionary):
 		bought_item_inventory_index = inv_index
 		pending_merchant_action = "buy_equip_prompt"
 
-		game_output.clear()
+		_page_clear()
 		var rarity_color = _get_item_rarity_color(item.get("rarity", "common"))
 		display_game("[color=#00FF00]Purchase successful![/color]")
 		display_game("")
@@ -17639,7 +17656,7 @@ func handle_merchant_buy_success(message: Dictionary):
 		# merchant data just before this message).
 		var item_name = message.get("item_name", item.get("name", "Item"))
 		pending_merchant_action = "buy"
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#00FF00]Purchased %s![/color]" % item_name)
 		display_game("")
 		display_shop_inventory()
@@ -17661,7 +17678,7 @@ func skip_equip_bought_item():
 	bought_item_pending_equip = {}
 	bought_item_inventory_index = -1
 	pending_merchant_action = ""
-	game_output.clear()
+	_page_clear()
 	show_merchant_menu()
 	update_action_bar()
 
@@ -17790,7 +17807,7 @@ func select_merchant_buy_item(index: int):
 
 	selected_shop_item = index
 	pending_merchant_action = "buy_inspect"
-	game_output.clear()
+	_page_clear()
 	display_shop_item_details(shop_items[index])
 	update_action_bar()
 
@@ -17826,7 +17843,7 @@ func cancel_shop_inspection():
 	"""Cancel shop item inspection and return to shop list"""
 	selected_shop_item = -1
 	pending_merchant_action = "buy"
-	game_output.clear()
+	_page_clear()
 	display_shop_inventory()
 	update_action_bar()
 
@@ -19196,7 +19213,7 @@ func _exit_trade_mode():
 
 func display_trade_window():
 	"""Display the trade window showing both offers."""
-	game_output.clear()
+	_page_clear()
 
 	var my_class = character_data.get("class", "")
 	var inventory = character_data.get("inventory", [])
@@ -19502,7 +19519,7 @@ func close_inventory():
 	# clearing here avoids a one-frame flash of stale inventory text.
 	if game_output and not game_output.visible:
 		game_output.visible = true
-		game_output.clear()
+		_page_clear()
 	if dungeon_mode:
 		display_dungeon_floor()
 	else:
@@ -19791,7 +19808,7 @@ func open_sort_menu():
 
 func _display_sort_menu():
 	"""Display the sort menu based on current page"""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== SORT INVENTORY =====[/color]")
 	display_game("")
 	if sort_menu_page == 0:
@@ -19841,7 +19858,7 @@ func open_salvage_menu():
 		if item_level < threshold:
 			below_level_count += 1
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== SALVAGE ITEMS =====[/color]")
 	display_game("")
 	display_game("Break down items into [color=#AA66FF]crafting materials[/color].")
@@ -20020,7 +20037,7 @@ func _display_affix_filter_page():
 	"""Display current page of affix filter selection with category headers"""
 	var affix_stats = get_meta("affix_stats", {})
 	var affix_strength = get_meta("affix_strength", {})
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== KEEP AFFIX FILTER =====[/color]")
 	display_game("")
 	display_game("[color=#FFFFFF]Select affixes to KEEP. Equipment with these affixes[/color]")
@@ -20114,7 +20131,7 @@ func display_materials():
 	if not has_character:
 		return
 
-	game_output.clear()
+	_page_clear()
 	var materials = character_data.get("crafting_materials", {})
 
 	display_game("[color=#FFD700]===== MATERIAL POUCH =====[/color]")
@@ -20650,7 +20667,7 @@ func display_ability_menu():
 		return
 	_populate_ability_panel()
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== ABILITY LOADOUT =====[/color]")
 	display_game("")
 
@@ -22479,7 +22496,7 @@ func select_inventory_item(index: int):
 		var item = inventory[actual_index]
 		selected_item_index = actual_index
 		pending_inventory_action = "equip_confirm"
-		game_output.clear()
+		_page_clear()
 		display_equip_comparison(item, actual_index)
 		update_action_bar()
 		return
@@ -22583,7 +22600,7 @@ func _display_equippable_items_page():
 	var start_idx = equip_page * INVENTORY_PAGE_SIZE
 	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, equippable_items.size())
 
-	game_output.clear()
+	_page_clear()
 	if total_pages > 1:
 		display_game("[color=#FFD700]===== EQUIPPABLE ITEMS (Page %d/%d) =====[/color]" % [equip_page + 1, total_pages])
 	else:
@@ -22633,7 +22650,7 @@ func _display_usable_items_page():
 	var start_idx = use_page * INVENTORY_PAGE_SIZE
 	var end_idx = min(start_idx + INVENTORY_PAGE_SIZE, usable_items.size())
 
-	game_output.clear()
+	_page_clear()
 	if total_pages > 1:
 		display_game("[color=#FFD700]===== USABLE ITEMS (Page %d/%d) =====[/color]" % [use_page + 1, total_pages])
 	else:
@@ -22666,7 +22683,7 @@ func _display_rune_apply_slots(rune_item: Dictionary):
 	"""Display equipped gear slots that match a rune's target_slot"""
 	var allowed_slots = rune_item.get("target_slot", "").split(",")
 	var equipped = character_data.get("equipped", {})
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#A335EE]===== APPLY RUNE =====[/color]")
 	display_game("")
 	var rune_info = ""
@@ -23230,10 +23247,22 @@ func update_buff_display():
 		var letter = _get_buff_letter(buff_type)
 		parts.append("[color=%s][%s+%d:%dB][/color]" % [color, letter, buff_value, battles])
 
+	# ⚑ A LABELLED BOX THAT SAYS "NONE" RATHER THAN AN EMPTY ONE. Owner 2026-09-16: *"Rather
+	# than leave them empty they should say something like Party: none. Buffs/Debuffs: none."*
+	# An empty frame reads as something broken; a frame that says none reads as an answer.
+	#
+	# The chips ARE the compact form the owner asked about - one bracket per effect, coloured
+	# by kind, each carrying its own hover explanation already (`meta_hover_started` is wired
+	# to this label). They wrap, and the box scrolls past four rows.
+	var header: String = "[color=#808080][font_size=11]Effects[/font_size][/color]  "
 	if parts.is_empty():
 		buff_display_label.text = ""
+		buff_display_label.clear()
+		buff_display_label.append_text(header + "[color=#6A6A6A]none[/color]")
 	else:
-		buff_display_label.text = "".join(parts)
+		buff_display_label.text = ""
+		buff_display_label.clear()
+		buff_display_label.append_text(header + " ".join(parts))
 
 func _get_buff_display_name(buff_type: String) -> String:
 	"""Get display name for a buff type"""
@@ -24294,7 +24323,7 @@ func handle_server_message(message: Dictionary):
 			if inventory_mode:
 				inventory_mode = false
 				pending_inventory_action = ""
-			game_output.clear()
+			_page_clear()
 			var hs_comp_name = message.get("companion_name", "Companion")
 			var hs_can_register = message.get("can_register", false)
 			var hs_can_kennel = message.get("can_kennel", false)
@@ -24636,7 +24665,7 @@ func handle_server_message(message: Dictionary):
 
 		"corpse_looted":
 			# Display loot results from looting a corpse
-			game_output.clear()
+			_page_clear()
 			var loot_msg = message.get("message", "Corpse looted.")
 			display_game(loot_msg)
 			# Reset corpse state
@@ -24690,8 +24719,12 @@ func handle_server_message(message: Dictionary):
 			if _ow_trace:
 				print("[OWFLASH] --- location message, pass=%s" % str(_ow_location_pass))
 			if _ow_location_pass:
-				# The location block is rewritten from scratch each step; the LOG below it is not.
+				# The location block is rewritten from scratch each step; the LOG below it is not. This
+				# is also what makes a station page vanish when you walk away from the station.
 				_ow_side_location.clear()
+				_ow_page_active = false
+				# Walking away closes a wide page too - it was a screen you opened, not a place.
+				_ow_wide_page = false
 			# Who is walking with you. Read before anything draws, so the escort appears on the
 			# same frame as the move rather than one behind it.
 			_escort_kind = String(message.get("escort", ""))
@@ -25175,7 +25208,7 @@ func handle_server_message(message: Dictionary):
 			if message.get("clear_output", false):
 				if _ow_trace:
 					print("[OWFLASH] clear_output wipes the canvas :: %s" % String(message.get("message", "")).substr(0, 90))
-				game_output.clear()
+				_page_clear()
 			if _ow_trace:
 				print("[OWFLASH] text msg pass=%s showing=%s :: %s" % [str(_ow_location_pass), str(_ow_canvas_showing), String(message.get("message", "")).substr(0, 110)])
 			var text_msg = message.get("message", "")
@@ -25215,7 +25248,7 @@ func handle_server_message(message: Dictionary):
 
 		"lucky_find":
 			# Lucky find requires acknowledgment before moving again
-			game_output.clear()
+			_page_clear()
 			var find_msg = message.get("message", "You found something!")
 			display_game(find_msg)
 			display_game("")
@@ -25238,7 +25271,7 @@ func handle_server_message(message: Dictionary):
 
 		"special_encounter":
 			# Special encounters (legendary adventurer, etc.) require acknowledgment
-			game_output.clear()
+			_page_clear()
 			var encounter_msg = message.get("message", "Something special happened!")
 			display_game(encounter_msg)
 			display_game("")
@@ -25259,7 +25292,7 @@ func handle_server_message(message: Dictionary):
 
 		"npc_encounter":
 			# NPC encounters (tax collector, etc.) require acknowledgment before continuing
-			game_output.clear()
+			_page_clear()
 			# Display appropriate art based on NPC type
 			var npc_type = message.get("npc_type", "")
 			if npc_type == "tax_collector":
@@ -25372,7 +25405,7 @@ func handle_server_message(message: Dictionary):
 								equippable_items.append({"index": ii, "item": itm})
 						set_meta("equippable_items", equippable_items)
 						if equippable_items.size() > 0:
-							game_output.clear()
+							_page_clear()
 							display_game("[color=#FFD700]===== EQUIPPABLE ITEMS =====[/color]")
 							for j in range(equippable_items.size()):
 								var entry = equippable_items[j]
@@ -25451,7 +25484,7 @@ func handle_server_message(message: Dictionary):
 						update_action_bar()
 					elif pending_inventory_action == "unequip_item":
 						# Refresh unequip slot list after unequipping
-						game_output.clear()
+						_page_clear()
 						_show_unequip_slots()
 					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "affix_filter_select", "rune_apply"]:
 						# Player is in a sub-view — don't refresh, keep current display
@@ -26358,7 +26391,7 @@ func handle_server_message(message: Dictionary):
 				for i in range(min(9, home_stone_options.size())):
 					if is_item_select_key_pressed(i):
 						set_meta("homestonekey_%d_pressed" % i, true)
-				game_output.clear()
+				_page_clear()
 				display_game(message.get("message", "Choose a target:"))
 				_display_home_stone_options()
 				update_action_bar()
@@ -26369,7 +26402,7 @@ func handle_server_message(message: Dictionary):
 			is_road_merchant = message.get("road_merchant", false)
 			# Display trader art for wandering merchants
 			if merchant_data.get("destination", "") != "" or is_road_merchant:
-				game_output.clear()
+				_page_clear()
 				var merchant_hash = merchant_data.get("hash", randi())
 				var trader_art = _get_trader_art().get_trader_art_for_id(merchant_hash)
 				display_game(trader_art)
@@ -26411,7 +26444,12 @@ func handle_server_message(message: Dictionary):
 			handle_trading_post_end(message)
 
 		"trading_post_message":
-			display_game(message.get("message", ""))
+			# A STATION'S ANSWER, not an event. Owner 2026-09-16: *"The Inn I think it is leaves
+			# You are already fully rested on my screen even after walking away from it."* It was
+			# going into the rolling log, which keeps everything on purpose - but "you are already
+			# rested" is only true of the inn you are standing at, so it belongs with the station
+			# page and goes when you walk away.
+			_station_line(String(message.get("message", "")))
 
 		# Audit #12 UI remediation — post status panel data feed
 		"post_status_data":
@@ -26700,6 +26738,7 @@ func handle_server_message(message: Dictionary):
 			in_party = true
 			var leader_name = message.get("leader", "")
 			party_members = message.get("members", [])
+			_refresh_margin_party()
 			var my_name = character_data.get("name", "")
 			is_party_leader = (leader_name == my_name)
 			display_game("")
@@ -26722,6 +26761,7 @@ func handle_server_message(message: Dictionary):
 		"party_update":
 			var leader_name = message.get("leader", "")
 			party_members = message.get("members", [])
+			_refresh_margin_party()
 			party_control_mode = String(message.get("control_mode", party_control_mode))
 			var my_name = character_data.get("name", "")
 			is_party_leader = (leader_name == my_name)
@@ -26937,7 +26977,7 @@ func handle_server_message(message: Dictionary):
 			input_field.placeholder_text = ""
 
 		"inn_rest_result":
-			game_output.clear()
+			_page_clear()
 			display_game(message.get("message", "Rested at the inn."))
 			update_action_bar()
 
@@ -26949,7 +26989,7 @@ func handle_server_message(message: Dictionary):
 				storage_mode = true
 				pending_storage_action = ""
 			if storage_msg != "":
-				game_output.clear()
+				_page_clear()
 				display_game(storage_msg)
 				display_game("")
 			display_storage_contents()
@@ -27104,7 +27144,7 @@ func _process_combat_start(message: Dictionary):
 		xp_before_combat = character_data.get("experience", 0)
 
 	# Always clear game output for fresh combat display
-	game_output.clear()
+	_page_clear()
 
 	# Apply combat background color immediately
 	var combat_bg_color = message.get("combat_bg_color", "")
@@ -28181,7 +28221,7 @@ func process_command(text: String):
 		"help":
 			show_help()
 		"clear":
-			game_output.clear()
+			_page_clear()
 			chat_output.clear()
 		"testfx":
 			# v0.9.415 — step-through by default. Subcommands:
@@ -29291,7 +29331,7 @@ func open_settings():
 	settings_submenu = ""
 	rebinding_action = ""
 	pending_rebind_conflict = {}
-	game_output.clear()
+	_page_clear()
 	display_settings_menu()
 	_mode_transition_fade()
 	update_action_bar()
@@ -29301,7 +29341,7 @@ func close_settings():
 	settings_mode = false
 	settings_submenu = ""
 	rebinding_action = ""
-	game_output.clear()
+	_page_clear()
 	if game_state == GameState.HOUSE_SCREEN:
 		display_house_main()
 	update_action_bar()
@@ -29427,7 +29467,7 @@ func adjust_ui_scale(element: String, delta: float):
 	_on_window_resized()
 
 	# Redisplay the menu
-	game_output.clear()
+	_page_clear()
 	display_ui_scale_settings()
 
 func reset_ui_scales():
@@ -29445,7 +29485,7 @@ func reset_ui_scales():
 	_on_window_resized()
 
 	# Redisplay the menu
-	game_output.clear()
+	_page_clear()
 	display_ui_scale_settings()
 
 func display_sound_settings():
@@ -29471,13 +29511,13 @@ func adjust_sound_volume(target: String, delta: float):
 		music_volume = clampf(music_volume + delta, 0.0, 1.0)
 	_apply_volume_settings()
 	_save_keybinds()
-	game_output.clear()
+	_page_clear()
 	display_sound_settings()
 
 func start_rebinding(action: String):
 	"""Start the rebinding process for an action"""
 	rebinding_action = action
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== REBINDING =====[/color]")
 	display_game("")
 	var action_display = action.replace("_", " ").capitalize()
@@ -29532,7 +29572,7 @@ func _apply_rebind(new_keycode: int, displacements: Dictionary):
 	keybinds[action_to_bind] = new_keycode
 	_save_keybinds()
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#00FF00]Bound %s to %s[/color]" % [action_to_bind.replace("_", " ").capitalize(), get_key_name(new_keycode)])
 	for displaced_action in displacements:
 		var new_key = int(displacements[displaced_action])
@@ -29546,7 +29586,7 @@ func _apply_rebind(new_keycode: int, displacements: Dictionary):
 
 	rebinding_action = ""
 	pending_rebind_conflict = {}
-	game_output.clear()
+	_page_clear()
 	if settings_submenu == "action_keys":
 		display_action_keybinds()
 	elif settings_submenu == "movement_keys":
@@ -29563,7 +29603,7 @@ func _display_rebind_conflict_prompt():
 	var action_label = String(pending_rebind_conflict.get("action", "")).replace("_", " ").capitalize()
 	var new_key = int(pending_rebind_conflict.get("new_keycode", 0))
 	var displacements: Dictionary = pending_rebind_conflict.get("displacements", {})
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFA500]===== KEY CONFLICT =====[/color]")
 	display_game("")
 	display_game("[color=#FFD700]%s[/color] would be bound to [color=#FFD700]%s[/color]." % [action_label, get_key_name(new_key)])
@@ -29599,7 +29639,7 @@ func _cancel_rebind_conflict():
 		start_rebinding(action)
 	else:
 		rebinding_action = ""
-		game_output.clear()
+		_page_clear()
 		display_settings_menu()
 
 func _collect_used_keycodes() -> Dictionary:
@@ -29636,7 +29676,7 @@ func reset_keybinds_to_defaults():
 	"""Reset all keybinds to default values"""
 	keybinds = default_keybinds.duplicate()
 	_save_keybinds()
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#00FF00]All keybinds reset to defaults![/color]")
 	await get_tree().create_timer(1.0).timeout
 	display_settings_menu()
@@ -29650,7 +29690,7 @@ func toggle_swap_attack_setting():
 	# Send to server to persist
 	send_to_server({"type": "toggle_swap_attack", "enabled": new_value})
 	# Refresh settings display
-	game_output.clear()
+	_page_clear()
 	var status = "[color=#00FF00]ENABLED[/color]" if new_value else "[color=#FF6666]DISABLED[/color]"
 	display_game("[color=#00FF00]Swap Attack with First Ability: %s[/color]" % status)
 	if new_value:
@@ -29726,7 +29766,7 @@ func _toggle_skip_craft_minigame():
 	pref_skip_craft = new_value        # remember for the ACCOUNT, not just this character
 	_save_keybinds()
 	_refresh_minigame_skip_toggle_visuals()
-	game_output.clear()
+	_page_clear()
 	if new_value:
 		display_game("[color=#00FF00]Skip Craft Minigame: ENABLED[/color]")
 		display_game("[color=#FFFF00]Warning: Skipping crafting minigames gives lower quality results.[/color]")
@@ -29736,7 +29776,7 @@ func _toggle_skip_craft_minigame():
 		display_game("[color=#808080]Crafting minigames will play normally.[/color]")
 	await get_tree().create_timer(1.5).timeout
 	if settings_mode and settings_submenu == "game":
-		game_output.clear()
+		_page_clear()
 		display_game_settings()
 
 func _toggle_skip_gather_minigame():
@@ -29748,7 +29788,7 @@ func _toggle_skip_gather_minigame():
 	pref_skip_gather = new_value        # remember for the ACCOUNT, not just this character
 	_save_keybinds()
 	_refresh_minigame_skip_toggle_visuals()
-	game_output.clear()
+	_page_clear()
 	if new_value:
 		display_game("[color=#00FF00]Skip Gather Minigame: ENABLED[/color]")
 		display_game("[color=#FFFF00]Warning: Skipping gathering minigames gives ~50% average rewards.[/color]")
@@ -29758,7 +29798,7 @@ func _toggle_skip_gather_minigame():
 		display_game("[color=#808080]Gathering minigames will play normally.[/color]")
 	await get_tree().create_timer(1.5).timeout
 	if settings_mode and settings_submenu == "game":
-		game_output.clear()
+		_page_clear()
 		display_game_settings()
 
 func _toggle_autoskip_loot_reveal():
@@ -29770,7 +29810,7 @@ func _toggle_autoskip_loot_reveal():
 	autoskip_loot_reveal = not autoskip_loot_reveal
 	_save_keybinds()
 	_refresh_minigame_skip_toggle_visuals()
-	game_output.clear()
+	_page_clear()
 	if autoskip_loot_reveal:
 		display_game("[color=#00FF00]Autoskip Combat Loot Reveal: ENABLED[/color]")
 		display_game("[color=#FFFF00]Loot reveal will auto-complete instead of waiting for clicks.[/color]")
@@ -29780,7 +29820,7 @@ func _toggle_autoskip_loot_reveal():
 		display_game("[color=#808080]You'll click each tile yourself.[/color]")
 	await get_tree().create_timer(1.5).timeout
 	if settings_mode and settings_submenu == "game":
-		game_output.clear()
+		_page_clear()
 		display_game_settings()
 
 
@@ -29788,14 +29828,14 @@ func _toggle_disable_tutorial():
 	"""Toggle whether tutorial shows on new character creation."""
 	disable_tutorial = not disable_tutorial
 	_save_keybinds()
-	game_output.clear()
+	_page_clear()
 	if disable_tutorial:
 		display_game("[color=#FF6666]Tutorial on New Character: DISABLED[/color]")
 	else:
 		display_game("[color=#00FF00]Tutorial on New Character: ENABLED[/color]")
 	await get_tree().create_timer(1.5).timeout
 	if settings_mode and settings_submenu == "game":
-		game_output.clear()
+		_page_clear()
 		display_game_settings()
 
 func _create_connection_panel():
@@ -30186,7 +30226,7 @@ func display_character_entry_summary(is_new: bool) -> void:
 	# click away via the "Status" action-bar button.
 	if not has_character:
 		return
-	game_output.clear()
+	_page_clear()
 	_set_game_output_background(Color(0.08, 0.07, 0.06, 1.0))
 	var char = character_data
 	var text = ""
@@ -30227,7 +30267,7 @@ func display_character_status():
 		return
 
 	# Clear output and set contrasting background
-	game_output.clear()
+	_page_clear(true)   # wide: too big for the column
 	_set_game_output_background(Color(0.08, 0.07, 0.06, 1.0))
 
 	var char = character_data
@@ -30774,12 +30814,12 @@ func close_more_menu():
 	pending_more_action = ""
 	pending_inventory_action = ""
 	set_meta("hotkey_0_pressed", true)
-	game_output.clear()
+	_page_clear()
 	update_action_bar()
 
 func display_more_menu():
 	"""Display the More menu options"""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]═══════ MORE ═══════[/color]")
 	display_game("")
 	display_game("[%s] [color=#00FFFF]Companions[/color] - View and manage your companions" % get_action_key_name(1))
@@ -30803,7 +30843,7 @@ func _open_party_menu():
 	more_mode = false
 	pending_more_action = ""
 	party_menu_mode = true
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#00BFFF]═══════ PARTY ═══════[/color]")
 	display_game("")
 	display_game("[color=#FFD700]Members:[/color]")
@@ -30826,6 +30866,8 @@ func _clear_party_state():
 	in_party = false
 	is_party_leader = false
 	party_members = []
+	# ...including the strip in the margin, which otherwise still lists a party you left.
+	_refresh_margin_party()
 	pending_party_invite = ""
 	pending_party_invite_level = 0
 	pending_party_invite_class = ""
@@ -30914,7 +30956,7 @@ func _handle_party_combat_start(message: Dictionary):
 	_mark_all_held_hotkeys()
 
 	# Display combat start
-	game_output.clear()
+	_page_clear()
 	if message.get("use_client_art", false):
 		var local_art = _get_monster_art().get_bordered_art_with_font(monster_name, ui_scale_monster_art)
 		if local_art != "":
@@ -31375,7 +31417,7 @@ func close_jobs_menu():
 
 func display_job_overview():
 	"""Display jobs with pagination: page 0 = gathering, page 1 = specialty."""
-	game_output.clear()
+	_page_clear()
 
 	var jlevels = character_data.get("job_levels", {})
 	var jxp = character_data.get("job_xp", {})
@@ -31488,7 +31530,7 @@ func _display_job_entry(jname: String, jlevels: Dictionary, jxp: Dictionary, is_
 
 func display_job_commit_confirm(job_name: String, category: String):
 	"""Show commitment confirmation dialog."""
-	game_output.clear()
+	_page_clear()
 	_render_breadcrumb(["More", "Jobs", "Commit"])
 	display_game("[color=#FFD700]═══════ COMMIT TO JOB ═══════[/color]")
 	display_game("")
@@ -31543,7 +31585,7 @@ func _get_job_bonus_text(job_name: String, level: int, is_committed: bool) -> St
 
 func display_changelog():
 	"""Display recent changes and updates"""
-	game_output.clear()
+	_page_clear(true)   # wide: too big for the column
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
@@ -32747,7 +32789,7 @@ func display_changelog():
 
 func display_bestiary():
 	"""Display monster tiers and Home Stone drop information"""
-	game_output.clear()
+	_page_clear()
 	_render_breadcrumb(["Sanctuary", "Bestiary"])
 	display_game("[color=#FFD700]═══════ BESTIARY ═══════[/color]")
 	display_game("")
@@ -32927,7 +32969,7 @@ func display_companions():
 	"""Display the companions list with level, XP, abilities, and variant info"""
 	# Push state into the visual companions panel; the text below stays for sub-modes.
 	_populate_companions_panel()
-	game_output.clear()
+	_page_clear()
 
 	var active_companion = character_data.get("active_companion", {})
 	var incubating_eggs = character_data.get("incubating_eggs", [])
@@ -33481,6 +33523,27 @@ func update_companion_art_overlay():
 		# No art found - show text-only display
 		overlay_text += "[center][font_size=7][color=#00FFFF]♦ Active ♦[/color][/font_size][/center]"
 
+	# ⚑ THE DETAIL BELONGS WITH THE PORTRAIT, not in a fourth box about the same animal.
+	# Owner 2026-09-16 wanted the companion detail in the margin; the panel that already
+	# carries its name, level, variant and HP grows two lines instead: how close it is to the
+	# next level, and what it actually does for you.
+	var comp_level: int = int(level)
+	var comp_xp: int = int(active_companion.get("xp", 0))
+	var xp_next: int = int(pow(comp_level + 1, 2.0) * 15)
+	if xp_next > 0:
+		var filled: int = clampi(int(round(float(comp_xp) / float(xp_next) * 10.0)), 0, 10)
+		var xp_bar := ""
+		for _i in range(10):
+			xp_bar += "[color=#00FF88]|[/color]" if _i < filled else "[color=#404040]|[/color]"
+		overlay_text += "[center][font_size=10]%s [color=#808080]%d/%d[/color][/font_size][/center]" % [xp_bar, comp_xp, xp_next]
+	var bonus_bits: Array[String] = []
+	var comp_bonuses: Dictionary = active_companion.get("bonuses", {})
+	for k in comp_bonuses.keys():
+		var v = comp_bonuses[k]
+		if typeof(v) in [TYPE_INT, TYPE_FLOAT] and float(v) != 0.0:
+			bonus_bits.append("%s +%s" % [String(k).replace("_", " "), str(v)])
+	if not bonus_bits.is_empty():
+		overlay_text += "\n[center][font_size=10][color=#9ACD32]%s[/color][/font_size][/center]" % ", ".join(bonus_bits)
 	companion_art_overlay.clear()
 	companion_art_overlay.append_text(overlay_text)
 	companion_art_overlay.visible = true
@@ -33904,6 +33967,36 @@ func _ensure_side_column_layout() -> void:
 	_place_map_widgets(_ow_canvas_eligible())
 
 
+func _refresh_margin_party() -> void:
+	"""Who is with you, in the right margin - hidden entirely when you are alone.
+
+	Built from `party_members`, the payload the party messages already cache, so there is no
+	second idea anywhere of who is in the party. The leader is marked; the entry for YOU is
+	marked too, because in a five-person list that is the first thing you look for."""
+	if _margin_party_label == null or not is_instance_valid(_margin_party_label):
+		return
+	var head: String = "[color=#808080][font_size=11]Party[/font_size][/color]  "
+	if not in_party or party_members.is_empty():
+		_margin_party_label.clear()
+		_margin_party_label.append_text(head + "[color=#6A6A6A]none[/color]")
+		_margin_party_label.visible = _margin_widgets_shown()
+		return
+	var me: String = String(character_data.get("name", ""))
+	var lines: Array[String] = [head.strip_edges()]
+	for m in party_members:
+		if not (m is Dictionary):
+			continue
+		var nm: String = String(m.get("name", "?"))
+		var mark: String = "[color=#FFD700]*[/color] " if bool(m.get("is_leader", false)) else "  "
+		var who: String = "[color=#9ACD32]%s[/color]" % nm if nm == me else nm
+		lines.append("%s%s [color=#808080]Lv%d %s[/color]" % [
+			mark, who, int(m.get("level", 1)), _cls(String(m.get("class_type", "")))])
+	_margin_party_label.clear()
+	_margin_party_label.append_text("
+".join(lines))
+	_margin_party_label.visible = _margin_widgets_shown()
+
+
 func _margin_box_style() -> StyleBoxFlat:
 	"""The framed box the margin widgets share - dark panel, gold border, rounded.
 
@@ -33946,17 +34039,32 @@ func _margin_widgets_shown() -> bool:
 		return false
 	if not _ow_canvas_eligible():
 		return true
-	if not _ow_canvas_intact():
-		return false
+	# NOT "has the canvas text changed" any more. Text lives in the column now, so a page's
+	# clear no longer means a page owns the canvas - only a visible panel does.
 	if game_output == null:
 		return false
-	var canvas: Node = game_output.get_parent()
-	if canvas == null:
-		return true
-	for ch in canvas.get_children():
-		if ch is Control and (ch as Control).visible and String(ch.name).ends_with("Panel"):
-			return false
-	return true
+	return not _canvas_panel_open()
+
+
+func _ow_heal_canvas() -> void:
+	"""Redraw the map if something cleared the canvas out from under it.
+
+	Pages clear `game_output` before they print - 230 places do - and with text now routed to
+	the column that clear leaves the canvas blank rather than handing it over. Rather than
+	guard every one of them, the map simply comes back: it is one redraw from a payload that
+	is already cached for the walk animation, and the player sees at most a single frame."""
+	if not _ow_canvas_showing or _ow_rendering or game_output == null:
+		return
+	if _ow_wide_page:
+		return
+	if not _ow_canvas_eligible() or _last_map_payload.is_empty():
+		return
+	# A visible panel means a menu owns the canvas; leave it alone.
+	if _canvas_panel_open():
+		return
+	if game_output.get_parsed_text().length() >= _ow_canvas_mark:
+		return
+	update_map(_overworld_display(_last_map_payload))
 
 
 func _sync_margin_widgets() -> void:
@@ -34004,7 +34112,8 @@ func _map_widgets_visible(v: bool) -> void:
 
 	They float over the canvas now, so a page that takes the canvas has to take it from them too
 	- otherwise the Coords box sits on top of the inventory."""
-	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay, _margin_chat_box]:
+	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay, _margin_chat_box,
+		buff_display_label, _margin_party_label]:
 		if n != null and is_instance_valid(n):
 			(n as Control).visible = v
 
@@ -34049,29 +34158,26 @@ func _place_map_widgets(on_canvas: bool) -> void:
 		coord_post_label.offset_top = 8.0
 		coord_post_label.offset_right = 8.0 + margin_w
 		coord_post_label.offset_bottom = 60.0
-	if region_label != null and is_instance_valid(region_label):
-		region_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		region_label.offset_left = -(margin_w + 8.0)
-		region_label.offset_top = 8.0
-		region_label.offset_right = -8.0
-		region_label.offset_bottom = 60.0
-	# The minimap sits under the Area box in the right margin, and is placed from that box's own
-	# measured height rather than a guessed constant - the region name already wraps to three
-	# lines in places, and weather adds a fourth.
 	if minimap_display != null and is_instance_valid(minimap_display):
 		if on_canvas and canvas != null:
 			if minimap_display.get_parent() != canvas:
 				if minimap_display.get_parent() != null:
 					minimap_display.get_parent().remove_child(minimap_display)
 				canvas.add_child(minimap_display)
-			var below: float = 76.0
-			if region_label != null and is_instance_valid(region_label) and region_label.visible:
-				below = region_label.position.y + region_label.size.y + 10.0
+			# ⚑ THE MINIMAP GOES ON TOP, AND HUGS ITS OWN CONTENT.
+			#
+			# Owner 2026-09-16: *"I wonder if we should move the minimap to above the Area overlay.
+			# Also, the minimap seems like it's got some wasted space around the left right and
+			# bottom inside the border."* It was stretched to the full margin width while its ASCII
+			# is about 250px wide, so the frame stood well clear of the picture on three sides.
+			# Measured from the label rather than guessed - the minimap font is on its own slider.
+			var mm_w: float = clampf(minimap_display.get_content_width() + 22.0, 120.0, margin_w)
+			var mm_h: float = clampf(minimap_display.get_content_height() + 16.0, 80.0, 320.0)
 			minimap_display.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-			minimap_display.offset_left = -(margin_w + 8.0)
-			minimap_display.offset_top = below
+			minimap_display.offset_left = -(mm_w + 8.0)
+			minimap_display.offset_top = 8.0
 			minimap_display.offset_right = -8.0
-			minimap_display.offset_bottom = below + 260.0
+			minimap_display.offset_bottom = 8.0 + mm_h
 		else:
 			var row: Node = map_display.get_parent().get_node_or_null("BottomRow") if map_display != null and map_display.get_parent() != null else null
 			if row != null and minimap_display.get_parent() != row:
@@ -34086,6 +34192,22 @@ func _place_map_widgets(on_canvas: bool) -> void:
 	# under the Coords box in the LEFT margin. Owner 2026-09-15: *"If we do it right we may even
 	# be able to move the status into a panel in those margins as well."* With it out of the
 	# column, the column is nothing but the log, which is what the post description needs.
+	if region_label != null and is_instance_valid(region_label):
+		# Under the minimap now: the map picture first, the words about it second.
+		var area_top: float = 8.0
+		if minimap_display != null and is_instance_valid(minimap_display) and minimap_display.visible and on_canvas:
+			area_top = minimap_display.offset_bottom + 10.0
+		region_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		region_label.offset_left = -(margin_w + 8.0)
+		region_label.offset_top = area_top
+		region_label.offset_right = -8.0
+		# Sized from its CONTENT. A fixed 52px was shorter than the three-to-four lines it
+		# actually holds (weather adds a fourth), so the box below it started inside this one -
+		# owner 2026-09-16: *"those boxes you added are overlapping currently."*
+		region_label.offset_bottom = area_top + maxf(52.0, region_label.get_content_height() + 14.0)
+	# The minimap sits under the Area box in the right margin, and is placed from that box's own
+	# measured height rather than a guessed constant - the region name already wraps to three
+	# lines in places, and weather adds a fourth.
 	if tool_status_overlay != null and is_instance_valid(tool_status_overlay):
 		# Framed like the others. It is the same kind of thing - a panel of information floating
 		# over the map - and it was the only one without a box around it.
@@ -34118,6 +34240,68 @@ func _place_map_widgets(on_canvas: bool) -> void:
 				trow.add_child(tool_status_overlay)
 				trow.move_child(tool_status_overlay, 0)
 			tool_status_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	# ⚑ THE RIGHT MARGIN, TOP TO BOTTOM: minimap, Area, ACTIVE EFFECTS, PARTY, companion.
+	#
+	# Owner 2026-09-16, on the gap between the Area box and the companion: *"We have some dead
+	# space above the companion, any ideas for what would work well there?"* - and, of the four
+	# proposed: *"it would be great if we found a way to fit 1, 2, and 4."* So: what is on you,
+	# who is with you, and the companion detail grown into the panel that already exists rather
+	# than a fourth box about the same subject.
+	#
+	# Both of these are EXISTING nodes moved, not new renderers: `buff_display_label` already
+	# builds the effect chips (with their hover explanations), and the party payload is already
+	# cached in `party_members`.
+	if on_canvas and canvas != null:
+		var stack_top: float = 8.0
+		if region_label != null and is_instance_valid(region_label) and region_label.visible:
+			stack_top = region_label.offset_bottom + 10.0
+		if buff_display_label != null and is_instance_valid(buff_display_label):
+			if buff_display_label.get_parent() != canvas:
+				if buff_display_label.get_parent() != null:
+					buff_display_label.get_parent().remove_child(buff_display_label)
+				canvas.add_child(buff_display_label)
+			if not buff_display_label.has_theme_stylebox_override("normal"):
+				buff_display_label.add_theme_stylebox_override("normal", _margin_box_style())
+			buff_display_label.fit_content = true
+			buff_display_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			buff_display_label.scroll_active = true
+			buff_display_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+			buff_display_label.offset_left = -(margin_w + 8.0)
+			buff_display_label.offset_top = stack_top
+			buff_display_label.offset_right = -8.0
+			# Capped at four rows: a stacked fight can put a dozen effects on you, and the chips
+			# wrap, so without a ceiling this box would push the party strip and the companion off
+			# the bottom of the margin. Past the cap it scrolls.
+			buff_display_label.offset_bottom = stack_top + clampf(buff_display_label.get_content_height() + 14.0, 34.0, 120.0)
+			stack_top = buff_display_label.offset_bottom + 8.0
+		if _margin_party_label == null or not is_instance_valid(_margin_party_label):
+			_margin_party_label = RichTextLabel.new()
+			_margin_party_label.name = "MarginParty"
+			_margin_party_label.bbcode_enabled = true
+			_margin_party_label.fit_content = true
+			_margin_party_label.scroll_active = false
+			_margin_party_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_margin_party_label.add_theme_font_size_override("normal_font_size", 13)
+			_margin_party_label.add_theme_stylebox_override("normal", _margin_box_style())
+			canvas.add_child(_margin_party_label)
+		elif _margin_party_label.get_parent() != canvas:
+			if _margin_party_label.get_parent() != null:
+				_margin_party_label.get_parent().remove_child(_margin_party_label)
+			canvas.add_child(_margin_party_label)
+		_refresh_margin_party()
+		_margin_party_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		_margin_party_label.offset_left = -(margin_w + 8.0)
+		_margin_party_label.offset_top = stack_top
+		_margin_party_label.offset_right = -8.0
+		# Capped like the effects box - a full party is six lines, and the companion panel below
+		# has a fixed place at the bottom of the margin. Past the cap it scrolls.
+		_margin_party_label.scroll_active = true
+		_margin_party_label.offset_bottom = stack_top + clampf(_margin_party_label.get_content_height() + 14.0, 34.0, 150.0)
+		# The companion panel keeps its own bottom-right anchor; it just matches the margin now.
+		if companion_art_overlay != null and is_instance_valid(companion_art_overlay):
+			companion_art_overlay.offset_left = -(margin_w + 8.0)
+			companion_art_overlay.offset_right = -8.0
+			companion_art_overlay.offset_bottom = -(_stance_bar_h + 8.0)
 	# ...and the CHAT LOG below the status panel, in the same margin. Owner 2026-09-15: *"What if
 	# we move the Chatbox to the area under the status panel[?]"* Its tab bar rides with it, so
 	# the two are wrapped in one box that can be anchored, framed and hidden as a unit.
@@ -34553,14 +34737,14 @@ func _get_egg_display_name(egg_type: String) -> String:
 func _refresh_companions_display():
 	"""Refresh companion display based on current pending_companion_action state."""
 	if pending_companion_action == "release_select":
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#FF6666]═══════ RELEASE COMPANION ═══════[/color]")
 		display_game("")
 		display_game("[color=#FFAA00]Select a companion to release (PERMANENTLY DELETE):[/color]")
 		display_game("")
 		_display_companions_for_release()
 	elif pending_companion_action == "inspect_select":
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#00FFFF]═══════ INSPECT COMPANION ═══════[/color]")
 		display_game("")
 		var _inspect_count2 = min(COMPANIONS_PAGE_SIZE, character_data.get("collected_companions", []).size())
@@ -34602,7 +34786,7 @@ func activate_companion_by_index(index: int):
 
 		release_target_companion = companion
 		pending_companion_action = "release_confirm"
-		game_output.clear()
+		_page_clear()
 		var comp_name = companion.get("name", "Unknown")
 		var variant = companion.get("variant", "Normal")
 		var variant_color = _ensure_readable_color(companion.get("variant_color", "#FFFFFF"))
@@ -34724,7 +34908,7 @@ func _display_companions_for_selection():
 
 func display_companion_inspection(companion: Dictionary):
 	"""Display detailed info about a companion including abilities, with art on the right"""
-	game_output.clear()
+	_page_clear()
 
 	var comp_name = companion.get("name", "Unknown")
 	var comp_level = companion.get("level", 1)
@@ -35096,7 +35280,7 @@ func _format_single_effect(effect: String, value: int, chance: int, damage: int,
 func display_eggs():
 	"""Display the eggs page with ASCII art"""
 	_populate_companions_panel()
-	game_output.clear()
+	_page_clear()
 
 	var eggs = character_data.get("incubating_eggs", [])
 	var egg_cap = character_data.get("egg_capacity", 3)
@@ -35513,7 +35697,7 @@ func _tier_rank_help() -> String:
 
 func show_help():
 	# Clear output before showing help
-	game_output.clear()
+	_page_clear(true)   # wide: too big for the column
 	display_game(_main_help_text())
 
 	# New features section (added separately to avoid format string complexity)
@@ -36198,7 +36382,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 
 func search_help(search_term: String):
 	"""Search the help text and display matching sections with context"""
-	game_output.clear()
+	_page_clear()
 
 	var term = search_term.to_lower().strip_edges()
 	if term.is_empty():
@@ -36450,11 +36634,100 @@ func _ow_canvas_eligible() -> bool:
 	return overworld_sprites and _OverworldRoom.available() 		and not dungeon_mode and not _house_room_active() 		and not in_combat and not _combat_ui_busy() 		and game_output != null and map_display != null
 
 
+func _canvas_panel_open() -> bool:
+	"""Is a visual MENU panel covering the canvas?
+
+	Matched by name - every one is a `*Panel` child of the canvas - so no list of the ones that
+	exist today has to be kept in step."""
+	if game_output == null or game_output.get_parent() == null:
+		return false
+	for ch in game_output.get_parent().get_children():
+		if ch is Control and (ch as Control).visible and String(ch.name).ends_with("Panel"):
+			return true
+	return false
+
+
+func _ow_text_in_column() -> bool:
+	"""Is the overworld MAP what the canvas is holding, so text belongs in the column?
+
+	Owner 2026-09-16: *"Gathering flashes in the same screen as the map and then goes away as
+	well. We need to ensure this doesn't happen, all of those things were meant to be in the
+	right column."* - and, asked where text pages should live: *"If they will fit in the right
+	column they can go there. Menus like Inventory, companions, eggs, etc. will likely need to
+	still use the main big screen."*
+
+	The old test was "has anything cleared the canvas since the map drew it", measured by text
+	length. That made a page's own `_page_clear()` hand it the canvas - which is exactly
+	what the gathering prompt and the post block did: clear, print, and get painted over by the
+	next map redraw. There are 230 such clears in this file, so guarding them one at a time was
+	never going to hold.
+
+	Now ownership is not a measurement: while the overworld map is on the canvas, TEXT goes to
+	the column, full stop. The big MENUS keep the canvas because they are visual panels drawn
+	over it, not text - nothing here has to know their names.
+
+	A stray clear does wipe the map for a frame; `_ow_heal_canvas` puts it straight back."""
+	# ...but NOT while a menu panel is up. Those panels keep a keyboard text menu underneath
+	# them as a fallback, and routing it to the column published a menu the player cannot use:
+	# owner 2026-09-16, with the market open, *"the market on the right there says press 4 to
+	# list all materials (non-food). I tried pressing 4 and it does nothing"* - because the
+	# panel's own action bar owns 1-5 while it is open. Behind the panel is where that text
+	# belongs, which is where it went before the column existed.
+	return _ow_canvas_eligible() and _ow_canvas_showing and not _canvas_panel_open() and not _ow_wide_page
+
+
 func _ow_canvas_intact() -> bool:
 	"""Is the map still the thing on the canvas? False once any page has cleared it away."""
 	if not _ow_canvas_showing or game_output == null:
 		return false
 	return game_output.get_parsed_text().length() >= _ow_canvas_mark
+
+
+func _page_clear(wide: bool = false) -> void:
+	"""What `_page_clear()` means now: START A NEW PAGE, wherever the text is going.
+
+	Owner 2026-09-16: *"After walking away from the Dungeon Atlas, Market, etc that text should
+	clear. It also still builds up if I walk into the Dungeon Atlas multiple times."*
+
+	Both are one missing idea. A station tells you what it IS - the Atlas's dungeon count, the
+	market's services - and that is a STATE, not an event: bumping it twice does not mean it
+	happened twice, and walking away makes it untrue. It was going into the rolling log, which
+	only ever grows.
+
+	So the clear these pages already do - every one of them opens with it - starts a PAGE in the
+	column instead: the page replaces whatever page was there, and the next step clears it.
+	Events (you found this, you gained that) still go to the log under it and still accumulate.
+
+	Off the overworld canvas this is exactly the clear it always was."""
+	# ⚑ WIDE PAGES TAKE THE CANVAS. Owner 2026-09-16: *"The Help screen takes up way too much
+	# space and doesn't work in the column. Same with Status - they stretch the screen and
+	# spill over vertically."* Some screens are simply bigger than a 300px column: Help is
+	# pages of prose, the character sheet is a wide table. They say so, and while one is open
+	# the map stands aside rather than painting over it (`_ow_heal_canvas` checks this flag).
+	if wide:
+		_ow_wide_page = true
+		if game_output:
+			game_output.clear()
+		return
+	if not _ow_text_in_column():
+		if game_output:
+			game_output.clear()
+		return
+	_ow_side_location.clear()
+	_ow_page_active = true
+	_ow_side_refresh()
+
+
+func _station_line(text: String) -> void:
+	"""A line that belongs to the place you are standing, not to the log.
+
+	It joins the pinned page section, so it is replaced by the next station page and cleared by
+	your next step - the same lifetime as the station itself."""
+	if _ow_text_in_column():
+		_ow_side_location.append(text)
+		_ow_side_refresh()
+		return
+	display_game(text)
 
 
 func _ow_side_add(text: String) -> void:
@@ -36468,12 +36741,22 @@ func _ow_side_add(text: String) -> void:
 
 	They are different things and behave differently now: the location block is REPLACED each
 	step and stays pinned at the top, the log below it accumulates and scrolls."""
-	if _ow_location_pass:
+	if _ow_location_pass or _ow_page_active:
 		_ow_side_location.append(text)
 	else:
-		_ow_side_lines.append(text)
-		while _ow_side_lines.size() > OW_SIDE_MAX_LINES:
-			_ow_side_lines.pop_front()
+		# THE SAME LINE TWICE IS ONE LINE AND A COUNT. Owner 2026-09-16, after walking into the
+		# Dungeon Atlas a few times: *"I don't think we should allow the same text to pile up
+		# like that."* The Atlas prints an eight-line block per bump; three bumps filled the
+		# column with the same block three times and pushed everything else out of it.
+		if not _ow_side_lines.is_empty() and String(_ow_side_lines[-1]) == text:
+			_ow_side_repeat += 1
+		elif _ow_side_lines.size() >= 2 and String(_ow_side_lines[-2]) == text and _ow_side_repeat > 0:
+			pass
+		else:
+			_ow_side_repeat = 0
+			_ow_side_lines.append(text)
+			while _ow_side_lines.size() > OW_SIDE_MAX_LINES:
+				_ow_side_lines.pop_front()
 	_ow_side_refresh()
 
 
@@ -36513,14 +36796,31 @@ func _ow_side_refresh() -> void:
 		_ow_side_place.clear()
 		_ow_side_place.append_text("\n".join(_ow_side_location))
 		_ow_side_place.visible = not _ow_side_location.is_empty()
+	# WAS THE PLAYER READING BACK? Owner 2026-09-16: *"I tried to scroll up on that text and it
+	# just keeps grabbing my scrollbar and pulling it to the bottom."* `scroll_following` does
+	# that unconditionally, and this label is rebuilt from scratch on every line. So: follow the
+	# bottom only while the player is AT the bottom, and otherwise put the scrollbar back where
+	# they left it.
+	var sb: VScrollBar = map_display.get_v_scroll_bar()
+	var was_at_bottom: bool = true
+	var keep_at: float = 0.0
+	if sb != null:
+		keep_at = sb.value
+		was_at_bottom = sb.value >= (sb.max_value - sb.page - 4.0)
+	map_display.scroll_following = false
 	map_display.clear()
-	map_display.append_text("\n".join(_ow_side_lines))
-	# Newest visible, history reachable. Owner 2026-09-15: *"verify that if the right column
-	# overflows that players can still see the newest items, maybe even leave a scroll so they
-	# can scroll up to see some history."* `scroll_following` holds it at the bottom until the
-	# player scrolls up, which is how every chat log behaves.
+	var shown: Array = _ow_side_lines.duplicate()
+	if _ow_side_repeat > 0 and not shown.is_empty():
+		shown[-1] = "%s [color=#808080](x%d)[/color]" % [String(shown[-1]), _ow_side_repeat + 1]
+	map_display.append_text("\n".join(shown))
+	if sb != null:
+		await get_tree().process_frame
+		if is_instance_valid(map_display) and is_instance_valid(sb):
+			sb.value = sb.max_value if was_at_bottom else keep_at
+	# Scrolling stays available - the history is the point - but the FOLLOWING is done by hand
+	# above, only when the player was already at the bottom. `scroll_following` would drag
+	# them back down mid-read on the next line that arrives.
 	map_display.scroll_active = true
-	map_display.scroll_following = true
 
 
 func display_game(text: String):
@@ -36562,11 +36862,9 @@ func display_game(text: String):
 	if _ow_location_pass and not _ow_rendering:
 		_ow_side_add(text)
 		return
-	if _ow_canvas_showing and not _ow_rendering:
-		if _ow_canvas_intact():
-			_ow_side_add(text)
-			return
-		_ow_canvas_showing = false
+	if _ow_text_in_column() and not _ow_rendering:
+		_ow_side_add(text)
+		return
 		# The canvas is text again: give it back the rows the travel row was holding, and take
 		# the floating map widgets off the page that just claimed it.
 		_place_stance_bar(_ow_canvas_eligible(), false)
@@ -37482,7 +37780,7 @@ func _on_paths_panel_learn(node_id: String) -> void:
 
 func display_dungeon_atlas(message: Dictionary) -> void:
 	"""Dungeon Atlas (P1) — render the server's state-gated dungeon view in game_output."""
-	game_output.clear()
+	_page_clear()
 	var entries: Array = message.get("entries", [])
 	var discovered: int = int(message.get("discovered", 0))
 	var total: int = int(message.get("total", entries.size()))
@@ -38006,7 +38304,7 @@ func _on_admin_panel_action(action_id: String) -> void:
 
 func display_gm_help():
 	"""Display all available GM/Admin commands"""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
 	display_game("[color=#FF4444]         GM COMMAND REFERENCE[/color]")
 	display_game("[color=#FF4444]═══════════════════════════════════════[/color]")
@@ -38084,7 +38382,7 @@ func clear_game_output():
 	"""Clear game output and reset any special background"""
 	_reset_game_output_background()
 	if game_output:
-		game_output.clear()
+		_page_clear()
 
 func _get_variant_border_color(variant_type: String) -> String:
 	"""Map a server variant_type to the BBCode color used for the monster
@@ -38146,7 +38444,7 @@ func _render_legacy_combat_log() -> void:
 	Footer offers ← / → to flip between fights, [L] to close."""
 	if combat_scene_panel == null:
 		return
-	game_output.clear()
+	_page_clear()
 	var history: Array = []
 	if combat_scene_panel.has_method("get_flock_history"):
 		history = combat_scene_panel.get_flock_history()
@@ -41198,13 +41496,13 @@ func _toggle_map_legend():
 	"""Toggle map legend display"""
 	show_map_legend = not show_map_legend
 	_save_keybinds()
-	game_output.clear()
+	_page_clear()
 	var status = "ENABLED" if show_map_legend else "DISABLED"
 	var color = "#00FF00" if show_map_legend else "#FF6666"
 	display_game("[color=%s]Map Legend: %s[/color]" % [color, status])
 	await get_tree().create_timer(1.0).timeout
 	if settings_mode and settings_submenu == "game":
-		game_output.clear()
+		_page_clear()
 		display_game_settings()
 
 func _toggle_overworld_sprites():
@@ -41215,14 +41513,14 @@ func _toggle_overworld_sprites():
 	git, machines differ, and a player who does not like it should not have to."""
 	overworld_sprites = not overworld_sprites
 	_save_keybinds()
-	game_output.clear()
+	_page_clear()
 	var status = "SPRITES" if overworld_sprites else "TEXT"
 	var color = "#00FF00" if overworld_sprites else "#FF6666"
 	display_game("[color=%s]Overworld Map: %s[/color]" % [color, status])
 	display_game("[color=#808080]Take a step to redraw the map.[/color]")
 	await get_tree().create_timer(1.0).timeout
 	if settings_submenu == "game_settings":
-		game_output.clear()
+		_page_clear()
 		display_game_settings()
 
 
@@ -41232,7 +41530,7 @@ func _toggle_condensed_combat_log():
 	# Drop any half-buffered lines so neither display style leaks into the other.
 	_round_message_buffer.clear()
 	_save_keybinds()
-	game_output.clear()
+	_page_clear()
 	var status = "ON" if condensed_combat_log else "OFF"
 	var color = "#00FF00" if condensed_combat_log else "#FF6666"
 	display_game("[color=%s]Condensed Combat Log: %s[/color]" % [color, status])
@@ -41242,7 +41540,7 @@ func _toggle_condensed_combat_log():
 		display_game("[color=#808080]Showing the full per-message combat log (firehose mode).[/color]")
 	await get_tree().create_timer(1.5).timeout
 	if settings_mode and settings_submenu == "game":
-		game_output.clear()
+		_page_clear()
 		display_game_settings()
 
 static func _is_word_char(c: String) -> bool:
@@ -41657,6 +41955,11 @@ func update_map(map_text: String):
 	# needs more space, it's too small and doesn't have enough space on a 1080p"* - the column is
 	# ~640px shared four ways, and the canvas is 711px shared with nothing.
 	var _ow_canvas: bool = _ow_canvas_eligible()
+	# A WIDE page owns the canvas until the player walks away. The idle walk animation
+	# redraws the map every ~0.4s, so without this the map would paint over Help before the
+	# player finished the first paragraph.
+	if _ow_canvas and _ow_wide_page:
+		return
 	if _ow_trace:
 		print("[OWFLASH] update_map canvas=%s" % str(_ow_canvas))
 	var _map_target: RichTextLabel = game_output if _ow_canvas else map_display
@@ -42874,7 +43177,7 @@ func handle_blacksmith_encounter(message: Dictionary):
 		set_meta("hotkey_%d_pressed" % i, true)  # Mark as pressed so release is required first
 		set_meta("blacksmithkey_%d_pressed" % i, true)
 
-	game_output.clear()
+	_page_clear()
 
 	# Display random trader ASCII art (persist for upgrade screens)
 	if blacksmith_trader_art == "":
@@ -42940,7 +43243,7 @@ func handle_blacksmith_upgrade_select_item(message: Dictionary):
 	blacksmith_upgrade_items = message.get("items", [])
 	var player_gold = message.get("player_valor", 0)
 
-	game_output.clear()
+	_page_clear()
 	if blacksmith_trader_art != "":
 		display_game(blacksmith_trader_art)
 		display_game("")
@@ -42967,7 +43270,7 @@ func handle_blacksmith_upgrade_select_affix(message: Dictionary):
 	var player_gold = message.get("player_valor", 0)
 	var player_materials = message.get("player_materials", {})
 
-	game_output.clear()
+	_page_clear()
 	if blacksmith_trader_art != "":
 		display_game(blacksmith_trader_art)
 		display_game("")
@@ -43023,7 +43326,7 @@ func handle_healer_encounter(message: Dictionary):
 	for i in range(10):
 		set_meta("hotkey_%d_pressed" % i, true)  # Mark as pressed so release is required first
 
-	game_output.clear()
+	_page_clear()
 
 	# Display random trader ASCII art
 	var trader_art = _get_trader_art().get_random_trader_art()
@@ -43106,7 +43409,7 @@ func handle_rescue_npc_encounter(message: Dictionary):
 		set_meta("hotkey_%d_pressed" % i, true)
 		set_meta("rescuekey_%d_pressed" % i, true)
 
-	game_output.clear()
+	_page_clear()
 
 	# Display random trader ASCII art
 	var trader_art = _get_trader_art().get_random_trader_art()
@@ -43205,7 +43508,7 @@ func handle_gathering_round(message: Dictionary):
 
 func display_gathering_round():
 	"""Display the 3-choice gathering interface with per-type unique mechanics."""
-	game_output.clear()
+	_page_clear()
 	var job_label = gathering_job_type.capitalize()
 	var tier_label = "node tier %d" % gathering_tier
 	var color = _get_gathering_color(gathering_job_type)
@@ -43315,7 +43618,7 @@ func handle_gathering_result(message: Dictionary):
 	gathering_discoveries = message.get("discoveries", gathering_discoveries)
 	gathering_last_correct = message.get("correct_index", -1)
 
-	game_output.clear()
+	_page_clear()
 	var color = _get_gathering_color(gathering_job_type)
 
 	# Show visual art with result markers (chosen + correct indicators)
@@ -43425,7 +43728,7 @@ func handle_gathering_complete(message: Dictionary):
 	var new_job_level = message.get("new_job_level", 0)
 
 	gathering_phase = "complete"
-	game_output.clear()
+	_page_clear()
 	var color = _get_gathering_color(gathering_job_type)
 
 	display_game("[color=%s]═══════ GATHERING COMPLETE ═══════[/color]" % color)
@@ -43641,7 +43944,7 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 		_:
 			pass
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=%s]═══ %s — Ticket Cashed ═══[/color]" % [header_color, job_upper])
 	display_game("")
 	display_game("[color=#FFD700]Revealed:[/color]")
@@ -44207,7 +44510,7 @@ func open_crafting():
 		"workbench": "construction"
 	}
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== CRAFTING =====[/color]")
 	display_game("")
 	display_game("Select a crafting skill:")
@@ -44291,7 +44594,7 @@ func display_craft_recipe_list():
 	"""Display the list of available recipes"""
 	# Push state into the visual crafting panel
 	_populate_craft_panel()
-	game_output.clear()
+	_page_clear()
 
 	var skill_display = crafting_skill.capitalize()
 	var skill_color = "#FFFFFF"
@@ -44459,7 +44762,7 @@ func display_craft_recipe_details():
 	else:
 		craft_quantity = 1
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== %s =====[/color]" % name)
 	display_game("")
 	display_game("Skill Required: %d" % skill_req)
@@ -45860,14 +46163,14 @@ func _on_comp_panel_close() -> void:
 	# Use whichever close path is currently appropriate
 	if eggs_mode:
 		eggs_mode = false
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#808080]Closed eggs view.[/color]")
 		update_action_bar()
 		return
 	if companions_mode:
 		companions_mode = false
 		pending_companion_action = ""
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#808080]Closed companions view.[/color]")
 		update_action_bar()
 
@@ -46195,7 +46498,7 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 
 func _display_temper_target_selection():
 	"""Display temper target stat options for resource gambling craft."""
-	game_output.clear()
+	_page_clear()
 	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
 		return
 	var recipe = crafting_recipes[crafting_selected_recipe]
@@ -46292,7 +46595,7 @@ func handle_craft_result(message: Dictionary):
 	var quality_name_log := String(message.get("quality_name", "Standard"))
 	var recipe_name_log := String(message.get("recipe_name", "item"))
 	var quality_color_log := String(message.get("quality_color", "#FFFFFF"))
-	game_output.clear()
+	_page_clear()
 	display_game("[color=%s]✦ %s %s crafted ✦[/color]" % [quality_color_log, quality_name_log, recipe_name_log])
 
 	# Open the panel — the panel renders the full transparent breakdown.
@@ -46329,7 +46632,7 @@ func _on_craft_reveal_again() -> void:
 			break
 	can_craft_another = false
 	awaiting_craft_result = true
-	game_output.clear()
+	_page_clear()
 	var rname := ""
 	if crafting_selected_recipe >= 0 and crafting_selected_recipe < crafting_recipes.size():
 		rname = String(crafting_recipes[crafting_selected_recipe].get("name", "item"))
@@ -46360,7 +46663,7 @@ func close_crafting():
 	if at_trading_post:
 		_display_trading_post_ui()
 	else:
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#888888]Closed crafting.[/color]")
 	update_action_bar()
 
@@ -46385,7 +46688,7 @@ func handle_dungeon_list(message: Dictionary):
 			set_meta("dungeonkey_%d_pressed" % i, true)
 
 	dungeon_list_mode = true
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== NEARBY DUNGEONS =====[/color]")
 	display_game("")
 
@@ -46499,7 +46802,7 @@ func handle_dungeon_floor_change(message: Dictionary):
 	dungeon_data["floor"] = new_floor
 	dungeon_data["total_floors"] = total_floors
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFFF00]===== FLOOR %d =====[/color]" % new_floor)
 	display_game("")
 	if ascending:
@@ -46571,7 +46874,7 @@ func _display_dungeon_complete(message: Dictionary):
 
 	Reported 2026-09-10: *"the player doesn't get to see what they got out of it because it
 	teleports them out of the dungeon and shows the screen that gives them the egg."*"""
-	game_output.clear()
+	_page_clear()
 	var body := String(message.get("message", ""))
 	if body != "":
 		for line in body.split("
@@ -46602,7 +46905,7 @@ func handle_dungeon_level_warning(message: Dictionary):
 		"player_level": message.get("player_level", 1)
 	}
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FF4444]═══════ WARNING ═══════[/color]")
 	display_game("")
 	display_game("[color=#FFAA00]%s[/color]" % message.get("message", "This dungeon may be too dangerous!"))
@@ -46879,7 +47182,7 @@ func handle_hotzone_warning(message: Dictionary):
 	var needs_confirm := bool(message.get("confirm", true))
 	var mins := int(message.get("minutes_left", 0))
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFAA33]═══════ HUNTING GROUND ═══════[/color]")
 	display_game("")
 	display_game("[color=#FFD700]Something has drawn the phantoms here.[/color]")
@@ -46946,7 +47249,7 @@ func handle_dungeon_exit(message: Dictionary):
 	var collapsed = message.get("collapsed", false)
 	var exit_message = message.get("message", "")
 
-	game_output.clear()
+	_page_clear()
 
 	if exit_message != "":
 		display_game(exit_message)
@@ -46997,7 +47300,7 @@ func handle_egg_hatched(message: Dictionary):
 		return
 
 	# Display hatching celebration
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FF69B4]═══════════════════════════════════════[/color]")
 	display_game("")
 	display_game("[color=#FFD700]✦ ✦ ✦  EGG HATCHED!  ✦ ✦ ✦[/color]")
@@ -47306,7 +47609,7 @@ func display_dungeon_floor():
 	# default, and every monster is url-wrapped so it can be hovered - so the underline drew a
 	# line straight through the sprite. Hovering still works without it.
 	game_output.meta_underlined = false
-	game_output.clear()
+	_page_clear()
 	# Centred, on the owner's call. [center] applies per line, and every grid row is padded to the
 	# same width by the renderer, so the block centres as a block rather than raggedly.
 	# No [font_size] wrapper: the label's own size IS the tile font (see DUNGEON_TILE_FONT_SIZE),
@@ -47347,7 +47650,7 @@ func display_dungeon_floor():
 func display_dungeon_food_select():
 	"""Display food selection for dungeon rest - in the SIDE PANEL, not over the map.
 
-	2026-09-09. This used to `game_output.clear()` and draw the list across the whole canvas.
+	2026-09-09. This used to `_page_clear()` and draw the list across the whole canvas.
 	Rebuilding the buffer from empty each call is what makes paging work: every redraw replaces
 	the menu rather than appending a second copy of it below the first."""
 	_dungeon_panel_menu.clear()
@@ -49089,7 +49392,7 @@ func enter_dungeon_at_location():
 	var min_level = dungeon_entrance_info.get("min_level", 1)
 
 	# Show dungeon info before entering
-	game_output.clear()
+	_page_clear()
 	var color = dungeon_entrance_info.get("color", "#FFFFFF")
 	display_game("[color=%s]===== %s =====[/color]" % [color, dungeon_name])
 	display_game("")
@@ -49152,7 +49455,7 @@ func _display_trading_post_ui():
 	# trace on every write to the canvas (`--owtrace`), because the first fix was aimed at the
 	# wrong writer: the location handler was marked, and this block is NOT in it. The server
 	# re-sends `trading_post_start` on every step taken inside a post, so this function ran on
-	# every step, wiped the canvas with `game_output.clear()` - which is also what made
+	# every step, wiped the canvas with `_page_clear()` - which is also what made
 	# `_ow_canvas_intact()` false, so the eighteen lines after it went to the canvas as well -
 	# and then the next `update_map` painted the map back over the lot. One frame of
 	# "===== Crossroads =====", every step.
@@ -49160,13 +49463,20 @@ func _display_trading_post_ui():
 	# It belongs where the rest of the arrival text goes: the side column, which is exactly what
 	# the pass flag already does. Nothing is lost - the post block is 18 lines against a 60-line
 	# log - and the canvas keeps the map, which now draws the post's own rooms anyway.
+	# ⚑ NOT SHOWN AT ALL WHILE THE MAP IS DRAWN. Owner 2026-09-16: *"I don't think we need the
+	# post displayed in that column actually, it's all stale information that isn't even
+	# correct anymore now that we have sprites."* The block is a list of buildings to walk
+	# into, and the map now DRAWS those buildings - the forge, the market, the inn - each with
+	# its own art and its own hover. A written index of a picture is the "one value, two
+	# places" shape this repo keeps paying for, and this copy was the stale one.
+	#
+	# Kept for the ASCII fallback, where there are no sprites and the list is all there is.
 	var _ow_side: bool = _ow_canvas_eligible()
 	var _ow_side_was: bool = _ow_location_pass
 	if _ow_side:
-		_ow_location_pass = true
-		_ow_side_lines.clear()
+		return
 	else:
-		game_output.clear()
+		_page_clear()
 
 	# The post's ASCII sign only in the canvas layout. In the side column it is a 5pt smudge that
 	# filled the whole log and pushed every readable line out of sight (seen in a screenshot), and
@@ -49241,7 +49551,7 @@ func handle_trading_post_end(message: Dictionary):
 	market_selected_listing = {}
 
 	# Clear the trading post UI from game output
-	game_output.clear()
+	_page_clear()
 
 	var msg = message.get("message", "")
 	if msg != "":
@@ -49316,7 +49626,7 @@ func _handle_guard_post_interact(message: Dictionary):
 
 func _display_guard_post():
 	"""Display guard post status in game output."""
-	game_output.clear()
+	_page_clear()
 	var has_guard = guard_post_data.get("has_guard", false)
 	var gx = guard_post_data.get("guard_x", 0)
 	var gy = guard_post_data.get("guard_y", 0)
@@ -49377,7 +49687,7 @@ func _handle_guard_result(message: Dictionary):
 		# Close guard post UI on success
 		at_guard_post = false
 		guard_post_data = {}
-	game_output.clear()
+	_page_clear()
 	display_game(msg)
 	update_action_bar()
 
@@ -49458,9 +49768,19 @@ func display_market_main():
 	# Push state into the visual panel — when the player opens the market we land
 	# on Browse by default; the keyboard main menu still renders below for fallback.
 	_populate_market_panel()
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 	var tp_name = trading_post_data.get("name", "Trading Post")
 	display_game("[color=#FFD700]===== Open Market - %s =====[/color]" % tp_name)
 	display_game("")
@@ -49488,9 +49808,19 @@ func display_market_main():
 func display_market_browse():
 	"""Display market browse listings."""
 	_populate_market_panel()
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 	var tp_name = trading_post_data.get("name", "Trading Post")
 	var sort_label = MARKET_SORT_LABELS.get(market_sort, "Category")
 	display_game("[color=#FFD700]===== Market - %s (Page %d/%d) =====[/color]" % [tp_name, market_page + 1, max(1, market_total_pages)])
@@ -49583,12 +49913,22 @@ func display_market_browse():
 	update_action_bar()
 
 func display_market_network_browse():
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
 	# Audit #9 Slice 1 — cross-post network browse view. Read-only listing index
 	# across all trading posts. Each row shows item, price-at-that-post, seller,
 	# post name, and distance from player. To buy, the player must travel.
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 	var sort_label = MARKET_NETWORK_SORT_LABELS.get(market_network_sort, "Price ▲")
 	display_game("[color=#FFD700]===== Market Network — All Posts (Page %d/%d) =====[/color]" % [market_page + 1, max(1, market_total_pages)])
 	display_game("[color=#808080]Category: %s | Sort: %s | Read-only — travel to the post to buy.[/color]" % [market_category.capitalize(), sort_label])
@@ -49638,9 +49978,19 @@ func display_market_network_browse():
 
 func display_market_list_select():
 	"""Display inventory for selecting an item to list on the market."""
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== List Item on Market =====[/color]")
 	if not market_list_flash.is_empty():
 		display_game(market_list_flash)
@@ -49685,7 +50035,7 @@ func display_market_list_select():
 
 func _display_market_material_qty_prompt():
 	"""Show quantity prompt after selecting a material to list."""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== List Material on Market =====[/color]")
 	display_game("")
 	display_game("  Material: [color=#00FF00]%s[/color]" % market_selected_material)
@@ -49698,7 +50048,7 @@ func _display_market_material_qty_prompt():
 
 func _display_market_consumable_qty_prompt():
 	"""Show quantity prompt after selecting a stackable inventory item to list."""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== List Item on Market =====[/color]")
 	display_game("")
 	display_game("  Item: [color=#00FF00]%s[/color]" % market_selected_inv_name)
@@ -49711,7 +50061,7 @@ func _display_market_consumable_qty_prompt():
 
 func _display_market_pull_qty_prompt():
 	"""Show quantity prompt after selecting one of the player's own stackable listings to pull."""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== Pull Listing =====[/color]")
 	display_game("")
 	var item = market_pull_listing.get("item", {})
@@ -49730,9 +50080,19 @@ func _display_market_pull_qty_prompt():
 
 func display_market_list_materials():
 	"""Display materials for selecting to list on the market."""
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== List Materials on Market =====[/color]")
 	if not market_list_flash.is_empty():
 		display_game(market_list_flash)
@@ -49769,9 +50129,19 @@ func display_market_list_materials():
 
 func display_market_list_eggs():
 	"""Display incubating eggs for listing on the market."""
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== List Egg on Market =====[/color]")
 	if not market_list_flash.is_empty():
 		display_game(market_list_flash)
@@ -49811,9 +50181,19 @@ func display_market_list_eggs():
 func display_market_inspect():
 	"""Display detailed inspection of a market listing before buying."""
 	_populate_market_panel()
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 
 	var item = market_inspected_listing.get("item", {})
 	var item_name = item.get("name", "Unknown")
@@ -49871,11 +50251,21 @@ func display_market_inspect():
 	display_game("[color=#FFD700]%s[/color] Buy  |  [color=#FFD700]%s[/color] Back" % [get_action_key_name(0), get_action_key_name(1)])
 
 func display_market_network_inspect():
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
 	# Audit #9 Slice 1 — read-only inspection of a remote (cross-post) listing.
 	# Shows full item details + seller + price-at-that-post + travel hint. No buy button.
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 
 	var item = market_inspected_listing.get("item", {})
 	var item_name = item.get("name", "Unknown")
@@ -49941,7 +50331,17 @@ func display_market_network_inspect():
 
 func display_market_buy_confirm():
 	"""Display buy confirmation for selected listing."""
-	game_output.clear()
+	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
+	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
+	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
+	# stale information that isn't correct."* Printed only when there is no panel to use.
+	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
+	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
+	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
+	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
+	if market_panel != null and is_instance_valid(market_panel):
+		return
+	_page_clear()
 	display_game("[color=#FFD700]===== Confirm Purchase =====[/color]")
 	display_game("")
 
@@ -50012,7 +50412,7 @@ func display_market_my_listings():
 	_populate_market_panel()
 	input_field.release_focus()
 	input_field.placeholder_text = ""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== My Market Listings (%d) =====[/color]" % market_listings.size())
 	display_game("[color=#00FF00]Your Valor: %s[/color]" % format_number(account_valor))
 	display_game("")
@@ -50186,7 +50586,7 @@ func _handle_market_buy_success(message: Dictionary):
 	account_valor = new_valor
 	pending_market_action = ""
 	market_selected_listing = {}
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#00FF00]Purchase successful![/color]")
 	display_game("[color=#00FF00]Bought: %s[/color]" % item_name)
 	display_game("[color=#00FF00]Spent: %s Valor[/color]" % format_number(price))
@@ -50242,7 +50642,7 @@ func _handle_market_list_all_success(message: Dictionary):
 		# Refresh the panel so the listings list + valor labels update.
 		send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
 		return
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#00FF00]Bulk listed %d items for %s Valor![/color]" % [count, format_number(total_valor)])
 	display_game("[color=#00FF00]Total Valor: %s[/color]" % format_number(new_valor))
 	display_game("")
@@ -50408,7 +50808,7 @@ func handle_quest_list(message: Dictionary):
 	quest_view_mode = true
 	update_action_bar()
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== %s - %s =====[/color]" % [quest_giver, tp_name])
 
 	# Show area level info if available (from scaled quests)
@@ -50637,7 +51037,7 @@ func display_monster_select_page():
 		return
 
 	# Fallback — legacy game_output flow.
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FF00FF]===== SCROLL OF SUMMONING =====[/color]")
 	display_game("[color=#FFD700]Select a creature to summon for your next encounter![/color]")
 	display_game("[color=#808080]The chosen monster will appear at your level when you next hunt or move.[/color]")
@@ -50666,7 +51066,7 @@ func select_monster_from_scroll(index: int):
 	monster_select_pending = monster_name
 	monster_select_confirm_mode = true
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FF00FF]===== CONFIRM SUMMON =====[/color]")
 	display_game("")
 	display_game("[color=#FFD700]You have selected: [color=#FFFFFF]%s[/color][/color]" % monster_name)
@@ -50691,7 +51091,7 @@ func confirm_monster_select():
 	if combat_scene_panel:
 		combat_scene_panel.hide_picker()
 	send_to_server({"type": "monster_select_confirm", "monster_name": monster_name})
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FF00FF]The scroll glows brightly![/color]")
 	display_game("[color=#FFD700]A %s will appear on your next encounter![/color]" % monster_name)
 	update_action_bar()
@@ -50756,7 +51156,7 @@ func select_target_farm_ability(index: int):
 	if combat_scene_panel:
 		combat_scene_panel.hide_picker()
 	send_to_server({"type": "target_farm_select", "ability": ability, "encounters": target_farm_encounters})
-	game_output.clear()
+	_page_clear()
 	update_action_bar()
 
 func cancel_target_farm():
@@ -50869,7 +51269,7 @@ func _select_home_stone_option(index: int):
 			display_game("[color=#FF0000]Maximum 10 items selected![/color]")
 			return
 		# Refresh display and action bar (so Send button count updates)
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
 		_display_home_stone_options()
 		update_action_bar()
@@ -50887,7 +51287,7 @@ func _select_home_stone_option(index: int):
 	home_stone_type = ""
 	home_stone_options = []
 	home_stone_selected = {}
-	game_output.clear()
+	_page_clear()
 	update_action_bar()
 
 func _cancel_home_stone():
@@ -50903,7 +51303,7 @@ func _cancel_home_stone():
 	home_stone_selected = {}
 	home_stone_page = 0
 	pending_home_stone_choice = false
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#808080]Home Stone use cancelled.[/color]")
 	update_action_bar()
 
@@ -50928,7 +51328,7 @@ func _confirm_home_stone_supplies():
 	home_stone_options = []
 	home_stone_selected = {}
 	home_stone_page = 0
-	game_output.clear()
+	_page_clear()
 	update_action_bar()
 
 func _select_all_home_stone_supplies():
@@ -50942,7 +51342,7 @@ func _select_all_home_stone_supplies():
 		for i in range(min(10, home_stone_options.size())):
 			var max_qty = int(home_stone_options[i].get("quantity", 1))
 			home_stone_selected[i] = max_qty
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#00FFFF]Choose supplies to send to your Sanctuary (up to 10):[/color]")
 	_display_home_stone_options()
 
@@ -50959,7 +51359,7 @@ func handle_quest_turned_in(message: Dictionary):
 	if quest_id != "" and quests_sound_played.has(quest_id):
 		quests_sound_played.erase(quest_id)
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== Quest Complete! =====[/color]")
 	display_game("[color=#00FF00]%s[/color]" % message.get("message", "Quest turned in!"))
 	display_game("")
@@ -51032,7 +51432,7 @@ func handle_quest_log(message: Dictionary):
 	quest_log_quests = active_quests
 	quest_log_mode = active_quests.size() > 0
 
-	game_output.clear()
+	_page_clear()
 	display_game(log_text)
 	display_game("")
 
@@ -51182,7 +51582,7 @@ func stop_watching():
 	send_to_server({"type": "watch_stop"})
 	display_game("[color=#00FFFF]Stopped watching %s.[/color]" % watching_player)
 	watching_player = ""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#00FF00]Returned to your own game.[/color]")
 	update_action_bar()
 	# Restore own character UI
@@ -51231,7 +51631,7 @@ func handle_watch_approved(message: Dictionary):
 		return
 
 	watching_player = target
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]===== Watching %s =====[/color]" % target)
 	display_game("[color=#808080]You are now observing their game. Press [Escape] or type 'unwatch' to stop.[/color]")
 	display_game("")
@@ -51257,7 +51657,7 @@ func handle_watch_combat_start(message: Dictionary):
 		return
 
 	# Clear game output for fresh combat display (like the actual player gets)
-	game_output.clear()
+	_page_clear()
 
 	# Apply combat background color
 	var combat_bg_color = message.get("combat_bg_color", "")
@@ -51294,7 +51694,7 @@ func handle_watched_player_left(message: Dictionary):
 	if watching_player != "":
 		display_game("[color=#FF4444]%s has disconnected.[/color]" % player)
 		watching_player = ""
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#00FF00]Returned to your own game.[/color]")
 		update_action_bar()
 		restore_own_character_ui()
@@ -51671,7 +52071,7 @@ func handle_title_menu(message: Dictionary):
 
 func display_title_menu():
 	"""Display the title menu"""
-	game_output.clear()
+	_page_clear()
 
 	var current_title = title_menu_data.get("current_title", "")
 	var claimable = title_menu_data.get("claimable", [])
@@ -51911,7 +52311,7 @@ func handle_title_key_input(key: int) -> bool:
 
 func _display_target_selection():
 	"""Display list of online players for targeting"""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FFD700]Select a target:[/color]")
 	display_game("")
 
@@ -51927,7 +52327,7 @@ func _display_target_selection():
 
 func _display_stat_selection():
 	"""Display stat selection for Bless ability"""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#00FFFF]═══ BLESS ═══[/color]")
 	display_game("")
 	display_game("Choose which stat to grant [color=#00FF00]+5[/color] to [color=#FFD700]%s[/color]:" % pending_bless_target)
@@ -52025,7 +52425,7 @@ func _display_corpse_loot_confirmation():
 	var corpse_name = corpse_info.get("character_name", "Unknown")
 	var contents = corpse_info.get("contents", {})
 
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FF6666]═══════ LOOT CORPSE ═══════[/color]")
 	display_game("[color=#AAAAAA]Loot the remains of [/color][color=#FFFFFF]%s[/color][color=#AAAAAA]?[/color]" % corpse_name)
 	display_game("")
@@ -52294,7 +52694,7 @@ func _render_house_room() -> void:
 		rows.append(row)
 	game_output.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_house_room_rendering = true
-	game_output.clear()
+	_page_clear()
 	# A tiny font so the TEXT line is shorter than a 32px image: rows are then exactly one tile tall.
 	display_game("[center][font_size=6]%s[/font_size][/center]" % "\n".join(rows))
 	_house_room_rendering = false
@@ -52306,7 +52706,7 @@ func display_house_mirror() -> void:
 	Owner 2026-09-11: *"add a mirror or something where the player can change their default
 	sprite their sanctuary loads up for their account."* The choices are BattlerPools.all_ids(),
 	the same list the server validates against, so the page cannot offer a look it will refuse."""
-	game_output.clear()
+	_page_clear()
 	house_mode = "mirror"
 	_update_house_map()   # the side panel names this page, not whatever was open before
 	game_output.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -52519,7 +52919,7 @@ func _render_breadcrumb(parts: Array) -> void:
 
 func display_house_main():
 	"""Display the main house/sanctuary view"""
-	game_output.clear()
+	_page_clear()
 	_house_side_lines.clear()
 	house_mode = "main"
 	pending_house_action = ""
@@ -52638,7 +53038,7 @@ func display_house_storage():
 	"""Display house storage with items and withdraw options"""
 	# Push state to the visual sanctuary panel; text below stays for fallback
 	_populate_sanctuary_panel()
-	game_output.clear()
+	_page_clear()
 	house_mode = "storage"
 	_update_house_map()
 
@@ -52706,7 +53106,7 @@ func display_house_storage():
 
 func display_house_companions():
 	"""Display registered companions in the house"""
-	game_output.clear()
+	_page_clear()
 	house_mode = "companions"
 	_update_house_map()
 
@@ -52773,7 +53173,7 @@ func display_house_stable():
 	the SanctuaryStablePanel with kennel + capacity data from house_data."""
 	if sanctuary_stable_panel == null:
 		return
-	game_output.clear()
+	_page_clear()
 	house_mode = "stable"
 	_update_house_map()
 	var kennel = house_data.get("companion_kennel", {})
@@ -52795,7 +53195,7 @@ func display_house_stable():
 func display_house_kennel():
 	"""Display the companion kennel (bulk storage for fusion)"""
 	_populate_kennel_panel()
-	game_output.clear()
+	_page_clear()
 	house_mode = "kennel"
 	_update_house_map()
 
@@ -52857,7 +53257,7 @@ func display_house_kennel():
 func display_house_fusion():
 	"""Display the fusion station"""
 	_populate_fusion_panel()
-	game_output.clear()
+	_page_clear()
 	house_mode = "fusion"
 	_update_house_map()
 
@@ -53083,7 +53483,7 @@ func _is_upgrade_affordable(upgrade_id: String) -> bool:
 func display_house_upgrades():
 	"""Display available house upgrades with pagination"""
 	_populate_sanctuary_panel()
-	game_output.clear()
+	_page_clear()
 	house_mode = "upgrades"
 	_update_house_map()
 
@@ -53230,7 +53630,7 @@ func display_house_mastery():
 	cost to bump one rank. Number keys 1-5 cycle the row's rank
 	(R0 → R1 → … → cap → R0). Server validates and refunds BP on wrap-back."""
 	_populate_sanctuary_panel()
-	game_output.clear()
+	_page_clear()
 	house_mode = "mastery"
 	_update_house_map()
 
@@ -53536,7 +53936,7 @@ func display_house_imprints():
 	Read-only — imprints can only be earned via rank-up popup with active
 	companion. Empty state hints at how to earn them."""
 	_populate_sanctuary_panel()
-	game_output.clear()
+	_page_clear()
 	house_mode = "imprints"
 	_update_house_map()
 
@@ -53620,7 +54020,7 @@ func display_house_mastery_atlas():
 	(pending_headstarts). All four are already pushed to the client; this
 	function only reformats them — no new server traffic."""
 	_populate_sanctuary_panel()
-	game_output.clear()
+	_page_clear()
 	house_mode = "mastery_atlas"
 	_update_house_map()
 
@@ -53783,7 +54183,7 @@ func open_build_mode():
 
 func display_build_items():
 	"""Show buildable structure items in inventory."""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#AA7744]===== BUILD MODE =====[/color]")
 	display_game("")
 	display_game("Select a structure to place:")
@@ -53811,7 +54211,7 @@ func display_build_direction():
 	"""Show direction selection for placing a structure. The post-placement
 	redraw lives inside handle_build_result; this is just the first-frame
 	display when the player picks an item."""
-	game_output.clear()
+	_page_clear()
 	var item = character_data.inventory[build_selected_item]
 	var remaining = int(item.get("quantity", 1))
 	display_game("[color=#AA7744]===== PLACE: %s (x%d) =====[/color]" % [item.get("name", "Structure"), remaining])
@@ -53837,7 +54237,7 @@ func display_build_direction():
 
 func display_demolish_direction():
 	"""Show direction selection for demolishing."""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#FF8800]===== DEMOLISH =====[/color]")
 	display_game("")
 	display_game("Select direction to demolish:")
@@ -53890,7 +54290,7 @@ func handle_build_result(message: Dictionary):
 	# If build mode was already cancelled while we were waiting on the
 	# server response, just dump the result and bail.
 	if not build_mode:
-		game_output.clear()
+		_page_clear()
 		display_game(msg)
 		update_action_bar()
 		return
@@ -53908,19 +54308,19 @@ func handle_build_result(message: Dictionary):
 			build_active_structure_type = ""
 			build_active_is_kit = false
 			build_mode = false
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#00FF00]%s[/color]" % msg)
 			display_game("")
 			display_game("[color=#888888]Build mode closed. Settler-bubble metadata is set; hire guards to suppress the local tier.[/color]")
 		else:
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#FF8800]%s[/color]" % msg)
 			display_game("")
 			display_game("[color=#888888]Try a different anchor tile, or press Cancel ([%s]) to back out.[/color]" % get_action_key_name(0))
 	elif build_direction_mode and build_active_structure_type != "":
 		# Persistent placement loop — re-render the direction prompt with the
 		# recent placement result inlined at the top.
-		game_output.clear()
+		_page_clear()
 		var item = _get_inventory_item_by_structure_type(build_active_structure_type)
 		var label = build_active_structure_type.replace("_", " ").capitalize()
 		if not item.is_empty():
@@ -53941,7 +54341,7 @@ func handle_build_result(message: Dictionary):
 	elif build_demolish_mode:
 		# Same loop for demolish — stay in mode so the player can keep
 		# tearing things down without re-entering demolish.
-		game_output.clear()
+		_page_clear()
 		display_game("[color=#FF8800]===== DEMOLISH =====[/color]")
 		display_game("")
 		if success:
@@ -53958,7 +54358,7 @@ func handle_build_result(message: Dictionary):
 	else:
 		# Item-selection mode — show the result and let the player pick
 		# another structure or back out.
-		game_output.clear()
+		_page_clear()
 		display_game(msg)
 		display_game("")
 		display_game("[color=#888888]Press [%s] to exit build mode.[/color]" % get_action_key_name(0))
@@ -54031,7 +54431,7 @@ func _handle_build_direction_key(event: InputEventKey):
 			var depleted_type = build_active_structure_type
 			build_active_structure_type = ""
 			build_active_is_kit = false
-			game_output.clear()
+			_page_clear()
 			display_game("[color=#FF8800]Out of %s — pick another structure.[/color]" % depleted_type.replace("_", " "))
 			display_game("")
 			display_build_items()
@@ -54058,7 +54458,7 @@ func _handle_build_direction_key(event: InputEventKey):
 
 func display_storage_contents():
 	"""Show storage chest contents."""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#AAAAFF]===== STORAGE CHEST (%d/%d) =====[/color]" % [storage_items.size(), storage_max_slots])
 	display_game("")
 	if storage_items.size() == 0:
@@ -54074,7 +54474,7 @@ func display_storage_contents():
 
 func display_storage_deposit():
 	"""Show inventory items for depositing."""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#AAAAFF]===== DEPOSIT TO STORAGE =====[/color]")
 	display_game("[color=#888888]Storage: %d/%d slots[/color]" % [storage_items.size(), storage_max_slots])
 	display_game("")
@@ -54099,7 +54499,7 @@ func display_storage_deposit():
 
 func display_storage_withdraw():
 	"""Show storage items for withdrawing."""
-	game_output.clear()
+	_page_clear()
 	display_game("[color=#AAAAFF]===== WITHDRAW FROM STORAGE =====[/color]")
 	display_game("")
 	display_game("Select an item to withdraw:")

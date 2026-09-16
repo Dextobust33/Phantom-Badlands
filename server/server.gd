@@ -14057,11 +14057,17 @@ func send_character_update(peer_id: int):
 	"""Queue character data update for client. Actual send happens at end of frame."""
 	if not characters.has(peer_id):
 		return
-	# Audit #3 Slice 3 — one-time tutorial hint about the Progression Vectors
-	# dashboard. Fires after the FIRST level-up (when unspent_stat_points first
-	# ticks > 0) once per character. Cheap check; skipped immediately after
-	# the flag is set.
-	_maybe_send_progression_hint(peer_id)
+	# ⚑ NO PROGRESSION POPUP. Owner 2026-09-16: *"I really don't like the progression reminder
+	# popup, it's intrusive and pops up too much or at bad times. We should instead find a
+	# more obvious way to make it apparent that the player has stats to put on. We just need
+	# to draw their attention to it but not take over what they are doing."*
+	#
+	# A modal that takes the screen to say "you have a point to spend" interrupts whatever the
+	# player was doing to tell them something that is true for as long as they leave it
+	# unspent - which is exactly what a persistent marker is for, and the Stats shortcut
+	# already carries one (it reads "Stats +N" and pulses). The hint is retired; the marker
+	# stays. `_maybe_send_progression_hint` is left in place, called by nothing, so the text
+	# is still there if a calmer surface ever wants it.
 	if USE_DELTA_UPDATES:
 		# Batch: mark dirty, flush at end of _process()
 		pending_char_updates[peer_id] = true
