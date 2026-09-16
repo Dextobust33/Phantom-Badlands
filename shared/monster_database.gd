@@ -2214,15 +2214,71 @@ func _calculate_experience_reward(hp: int, strength: int, defense: int, level: i
 	# comment is the record of why.
 	var base_xp = pow(level + 1, 2.2) * 1.11
 
-	# Lethality bonus: weak monsters (0.7x) to tough monsters (1.4x)
-	# Expected lethality at level L is roughly 50 + L*10
-	var expected_lethality = 50.0 + level * 10.0
-	var lethality_ratio = float(lethality) / expected_lethality
-	# Multiplier: 0.3 means 30% variance per 100% deviation from expected
-	var lethality_bonus = 1.0 + (lethality_ratio - 1.0) * 0.3
-	lethality_bonus = clamp(lethality_bonus, 0.7, 1.4)
+	# DANGER PAYS. How much tougher this monster is than an ordinary one OF ITS OWN LEVEL.
+	#
+	# 2026-09-15: this term was DEAD. It compared lethality against a hand-written
+	# `50 + level * 10` written before the monster curve was ever calibrated - 2.5x low at L1 and
+	# 75x low at L250 - so every monster at every level pinned the 1.4 clamp and a species six
+	# times deadlier than another paid exactly the same XP. Measured across 60 real monsters at
+	# each of 11 levels (tools/probe/xp_lethality_term.gd), 660 of 660 clamped.
+	#
+	# The expectation now comes from `_expected_lethality`, which asks the same function that
+	# builds a real monster what this level's own spawn pool looks like. It cannot go stale the
+	# way a constant did, because it reads the curve the calibration writes.
+	var expected_lethality: float = _expected_lethality(level)
+	var lethality_ratio: float = float(lethality) / maxf(1.0, expected_lethality)
+	var lethality_bonus: float = clampf(
+		XP_DANGER_CENTRE + (lethality_ratio - 1.0) * XP_DANGER_SLOPE,
+		XP_DANGER_MIN, XP_DANGER_MAX)
 
 	return max(5, int(base_xp * lethality_bonus))
+
+
+# The danger term's shape. CENTRE is what an ORDINARY monster of its level pays, so it is also
+# the knob that sets the overall pace: the old formula paid a flat 1.40 to everything, and the
+# owner asked (2026-09-15) for danger to pay AND for the average kill to be worth ~15-20% more.
+# SLOPE is how fast the reward moves with danger, MIN/MAX the band it can reach.
+const XP_DANGER_CENTRE := 1.62
+const XP_DANGER_SLOPE := 0.60
+const XP_DANGER_MIN := 1.30
+const XP_DANGER_MAX := 2.10
+
+var _expected_lethality_cache: Dictionary = {}
+
+
+func _expected_lethality(level: int) -> float:
+	"""What an ORDINARY monster of `level` is worth, in lethality (hp + 2*str + def).
+
+	The mean over that level's own weighted spawn pool - the same tiers and the same weights
+	`select_monster_type` draws from - with each species' stats produced by `compute_anchored_stats`,
+	the very function that builds a real monster. So the expectation tracks the calibrated curve,
+	the per-species power corrections and the flock division automatically, and there is no second
+	hand-written number to go stale. That staleness is the whole fault being fixed here.
+
+	Deliberately EXCLUDES the 7% tier bleed. A monster bled in from the tier above really is
+	tougher than its level's normal fare, and should be paid for it - folding it into the
+	expectation would raise the bar for everything else instead.
+
+	Safe to call from the XP formula: compute_anchored_stats produces stats only and never asks
+	for XP, so there is no cycle."""
+	if _expected_lethality_cache.has(level):
+		return float(_expected_lethality_cache[level])
+	var target_tier: int = PowerRank.tier_for_level(level)
+	var sum := 0.0
+	var weight_sum := 0.0
+	for tier in range(1, target_tier + 1):
+		var tiers_below: int = target_tier - tier
+		var w: float = 100.0 if tiers_below == 0 else float(maxi(1, int(100.0 / pow(3.0, tiers_below))))
+		for mtype in _get_tier_monsters(tier):
+			var bs: Dictionary = get_monster_base_stats(mtype)
+			if bs.is_empty():
+				continue
+			var st: Dictionary = compute_anchored_stats(bs, level)
+			sum += w * (float(st.get("max_hp", 0)) + 2.0 * float(st.get("strength", 0)) + float(st.get("defense", 0)))
+			weight_sum += w
+	var out: float = (sum / weight_sum) if weight_sum > 0.0 else (50.0 + float(level) * 10.0)
+	_expected_lethality_cache[level] = out
+	return out
 
 func _get_intelligence_modifier(monster_name: String) -> int:
 	"""Per-monster intelligence adjustment for thematic accuracy.
