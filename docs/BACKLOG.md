@@ -542,28 +542,35 @@ Asked because the arc had run out of defects and into design. All four answered.
       `military1-3` (24) have pose only; `npc1-2` (16) have nothing but walk frames.
       Worth doing as authored art when there is appetite. Not worth generating.
 
-- [ ] **⛑ INSTANCED CARDS ARE NOT WORKING. Live, reported 2026-09-14.** Owner:
-      *"They aren't working properly. Players aren't seeing or understanding what cards they are
-      getting for completing dungeons. Sometimes they notice that two upgrade screens pop up back
-      to back for the same card but it's nowhere to be found in their deck. They also have no way
-      to differentiate between them even if it was."*
-      Three separate complaints, and they may not share a cause:
-        1. **The award is invisible.** Clearing a dungeon can hand back a card and the player does
-           not register that it happened, or what they got. `_roll_dungeon_card_reward` exists and
-           was confirmed to fire (`tools/probe/dungeon_card_reward.gd`) - so this is presentation,
-           not the roll.
-        2. **Two upgrade screens for the same card, and then no card.** Two popups back to back
-           for one card is the symptom of a DOUBLE GRANT or a double-prompt; the card then being
-           absent from the deck says the grant did not land at all. Both halves point at the
-           rank-up / instance path rather than the drop.
-        3. **Two copies are indistinguishable.** The whole point of per-INSTANCE cards is that
-           duplicates level independently and can be re-rolled or sold
-           (`project_card_instances_chase_loop`). If the deck screen cannot tell one copy from
-           another, that feature is invisible even when it works.
-      **Start by reproducing 2** - it is the one that sounds like a real defect rather than a
-      presentation gap, and a double grant that loses the card is the sort of thing that also
-      loses a player's upgrade choice. `tools/probe/card_instances.gd` already exists; check
-      whether it covers the grant path or only the market/merge rules.
+- [~] **⛑ INSTANCED CARDS — two of the three complaints ANSWERED 2026-09-16, one still open.**
+      Owner, live 2026-09-14: *"Players aren't seeing or understanding what cards they are getting
+      for completing dungeons. Sometimes they notice that two upgrade screens pop up back to back
+      for the same card but it's nowhere to be found in their deck. They also have no way to
+      differentiate between them even if it was."*
+
+      Driven through the real model by `tools/probe/card_reward_visible.gd`:
+
+      - [x] **"Two upgrade screens for the same card" is NOT a double grant — it is BY DESIGN, and
+            it was unreadable.** Measured: a legacy card owned 3x with 60 uses and no stored picks
+            migrates to three instances each carrying 60 uses, so each independently owes 2
+            milestones — **6 popups for what the player sees as one card**. Every one is an upgrade
+            they are genuinely entitled to (per-instance levelling is the feature), so the defect
+            was purely that nothing said WHICH copy.
+      - [x] **And `_card_copy_label` had been added to some surfaces only.** The 2026-09-15 fix put
+            it on the milestone-overlay title and two other spots but missed
+            **`_show_rank_choice_popup`** — the actual screen a player is looking at when two
+            arrive — plus `show_card_desc_box` and `_get_ability_tooltip`. Textbook "a rename
+            touches SEVEN surfaces". All three now carry it, and the probe SWEEPS client.gd for
+            any player-facing card label that forgets, so it cannot land partially again.
+      - [x] **The grant itself is sound.** One grant adds exactly one copy, and a fresh copy owes
+            no milestones, so it raises no popup. The roll was never the problem.
+      - [ ] **STILL OPEN — complaint 1: the award is invisible.** The card is announced only as
+            two lines appended to `completion_msg`, a long dungeon-completion text block
+            (`server.gd` ~35946). That is almost certainly why *"players aren't seeing what cards
+            they are getting"*: it scrolls past inside a wall of rewards. **Next step: capture a
+            dungeon completion that forces a card (`gm_force_dungeon_card` + `gm_finish_dungeon`)
+            and look at where the line lands** before deciding the surface. Do not redesign it
+            from the source — look at the frame first.
 
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 

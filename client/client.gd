@@ -21754,7 +21754,7 @@ func show_card_desc_box(ability_name: String, anchor_rect: Rect2) -> void:
 		return
 	_ensure_card_desc_box()
 	_card_desc_over_card = true
-	var title := _ability_display_name(ability_name)
+	var title := _ability_display_name(ability_name) + _card_copy_label(ability_name)
 	var cost_raw := _get_ability_cost_text(ability_name)
 	var body := _ability_desc_bbcode(ability_name)
 	_card_desc_rtl.text = "[b][color=#FFE1A3]%s[/color][/b]   %s\n%s\n[color=#7A6E58]Hover a number for its formula[/color]" % [title, cost_raw, body]
@@ -21792,7 +21792,7 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	progress to next rank."""
 	if ability_name == "":
 		return ""
-	var display = _ability_display_name(ability_name)
+	var display = _ability_display_name(ability_name) + _card_copy_label(ability_name)
 	# Strip BBCode from cost text for tooltip plain text
 	var cost_raw = _get_ability_cost_text(ability_name)
 	var bb_re = RegEx.new()
@@ -22626,7 +22626,13 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 		return
 	_rank_choice_pending_ability = ability_name
 	_ensure_milestone_overlay()
-	var ability_label = _ability_display_name(ability_name)
+	# ⛑ THE COPY NUMBER BELONGS HERE MOST OF ALL. Owner, live 2026-09-14: *"two upgrade
+	# screens pop up back to back for the same card ... They also have no way to differentiate
+	# between them."* `_card_copy_label` was added on 2026-09-15 and put on the milestone
+	# overlay title and two other places - but NOT on this popup, which is the screen the
+	# player is actually looking at when two of them arrive. Two copies still read identically.
+	# Exactly the "a rename touches SEVEN surfaces" failure in CLAUDE.md: fixed on some.
+	var ability_label = _ability_display_name(ability_name) + _card_copy_label(ability_name)
 	var cat: Dictionary = get_ability_category_info(ability_name)
 	var cat_color := str(cat.get("color", "#8C7656"))
 	var glyph := str(cat.get("glyph", ""))
