@@ -8689,6 +8689,11 @@ func _scale_action_bar_fonts(base_scale: float):
 func update_action_bar():
 	current_actions.clear()
 	_update_shortcut_buttons_visibility()
+	# The Travel stances belong to the overworld. Set here rather than at the ten places that
+	# flip `dungeon_mode`, because this runs after every state change by house rule and so cannot
+	# fall out of step with one of them.
+	if _stance_bar != null and is_instance_valid(_stance_bar):
+		_stance_bar.visible = not dungeon_mode
 
 	# Reset status page background if active (gets set in display_character_status)
 	_reset_game_output_background()
@@ -33461,6 +33466,12 @@ func _refresh_stance_bar() -> void:
 
 	Colour is not the only signal - the active button is also the only one that is DISABLED, so
 	which stance is live is legible without relying on hue."""
+	# Not underground. Travel stances change what the OVERWORLD does to you - ambush odds, what
+	# you spot, how fast you move between tiles - and none of that exists on a dungeon floor.
+	# Owner 2026-09-15: *"showing Travel modes is unnecessary in a dungeon as they don't do
+	# anything."* It was also taking a row of the one column the run log has to live in.
+	if _stance_bar != null and is_instance_valid(_stance_bar):
+		_stance_bar.visible = not dungeon_mode
 	for sid in _stance_buttons:
 		var b: Button = _stance_buttons[sid]
 		if not is_instance_valid(b):
@@ -46577,7 +46588,7 @@ func _dungeon_side_panel_text() -> String:
 	# 53/53 by `tools/probe/monster_sprite_gaps.gd`), so the only letters left on a floor are
 	# this dungeon's THEME tiles. The old line pointed the player at exactly the wrong reading
 	# of them: it said a bull-rune was a goblin.
-	out += "\n[color=#808080]%s You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nSprites = Monsters  (hover any tile)[/color]" % _dungeon_player_glyph(14)
+	out += "\n[color=#808080]%s You   $ Loot\n> Stairs  E Start\n· Floor\n[color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap\nSprites = Monsters  (hover any tile)[/color]" % _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, "", false)
 	# This floor's own special glyphs, compactly - and each one HOVERABLE for the full effect.
 	# Owner 2026-09-09: *"the player can't hover the special dungeon tiles in the key to see what
 	# they do (like a poison tile, or one that heals etc.)"*. Same `[url=]` + `meta_hover_started`
@@ -47001,6 +47012,20 @@ func _overworld_display(payload: Dictionary) -> String:
 		# panel has padding and a fractional width rounds the wrong way often enough to matter.
 		var fit: int = int(floor((map_display.size.x - 6.0) / float(cols_n)))
 		px = clampi(fit, 8, OVERWORLD_SPRITE_PX)
+	# ...AND IT HAS TO FIT DOWNWARD TOO. Owner 2026-09-15, with a screenshot: *"There is still a
+	# scrollbar for my map."*
+	#
+	# Fitting the width alone is what put it there. At 1080p the panel is ~639 wide, so 23 columns
+	# fit at 27px - and 23 ROWS at 27px is 621px tall in a box about 390 tall, because the Travel
+	# row, the Tools/minimap row and the status labels are siblings in the same VBox and take
+	# their share first. RichTextLabel then does the only thing it can: it scrolls, hiding the
+	# middle of the map, which is where the player is standing.
+	#
+	# The same fault as the ASCII path's missing height cap, in the sprite renderer, and it
+	# survived that fix because the overworld has not been ASCII since the sprite pass.
+	if map_display != null and rows_n > 0 and map_display.size.y > 32.0:
+		var fit_h: int = int(floor((map_display.size.y - 6.0) / float(rows_n)))
+		px = mini(px, clampi(fit_h, 8, OVERWORLD_SPRITE_PX))
 	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
 	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With
@@ -47028,7 +47053,7 @@ func _overworld_display(payload: Dictionary) -> String:
 		return "[url=owlv:%s]%s[/url]" % [dkey, img], crop)
 
 
-func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "") -> String:
+func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "", as_tile: bool = true) -> String:
 	"""You, on the dungeon floor - your actual overworld sprite rather than an "@".
 
 	Owner 2026-09-08: *"the player sprite should replace the @ while in dungeons. It should match
@@ -47098,7 +47123,13 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: Str
 	var f: Font = game_output.get_theme_font("normal_font") if game_output else null
 	if f == null:
 		return fallback
-	var cell_w: int = _DungeonTiles.TILE_PX if at_font_size == DUNGEON_TILE_FONT_SIZE 		else int(round(f.get_string_size("@", HORIZONTAL_ALIGNMENT_LEFT, -1, at_font_size).x))
+	# ⚑ ASK, don't INFER. This used to read `TILE_PX if at_font_size == DUNGEON_TILE_FONT_SIZE`,
+	# and the legend called it with a literal 14 - which is exactly DUNGEON_TILE_FONT_SIZE - so the
+	# key drew the avatar at full FLOOR-TILE size next to 14px text. Owner 2026-09-15: *"the
+	# picture of my sprite in the key is already big and taking up most of the right side not
+	# leaving room for things to pop up there."* The comment at the call site said "at the panel's
+	# own font size", which is what it meant to do; one number doing two jobs is what stopped it.
+	var cell_w: int = _DungeonTiles.TILE_PX if as_tile 		else int(round(f.get_string_size("@", HORIZONTAL_ALIGNMENT_LEFT, -1, at_font_size).x))
 	var line_h: int = maxi(cell_w, int(f.get_height(at_font_size)))
 	if cell_w <= 0 or line_h <= 0:
 		return fallback
