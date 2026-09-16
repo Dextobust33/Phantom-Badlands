@@ -42508,11 +42508,29 @@ func _build_party_member_info(peer_id: int) -> Dictionary:
 	if not characters.has(peer_id):
 		return {}
 	var ch = characters[peer_id]
+	# ⚑ HP AND RESOURCE, not just a name. Owner 2026-09-16: *"where are the HP and resource
+	# bars you had originally proposed for party members, just having a name isn't very
+	# useful."* A party strip that cannot tell you a teammate is nearly dead is a list of
+	# people, not a status panel - and out of combat this is the only place that state
+	# exists on another client. The resource is whichever pool that class actually spends,
+	# so a Fighter shows stamina and a Wizard mana rather than a bar that is always full.
+	# The character already knows which pool it spends and how full it is - three helpers
+	# that exist precisely so nothing else has to match on class. Using them means this
+	# cannot drift from what the player's own bar shows.
+	var res_name: String = String(ch.get_primary_resource())
+	var res_cur: int = int(ch.get_primary_resource_current())
+	var res_max: int = int(ch.get_primary_resource_max())
 	return {
 		"name": ch.name,
 		"level": ch.level,
 		"class_type": ch.class_type,
-		"is_leader": _is_party_leader(peer_id)
+		"is_leader": _is_party_leader(peer_id),
+		"hp": int(ch.current_hp),
+		"max_hp": int(ch.get_total_max_hp()),
+		"resource": res_name,
+		"resource_cur": res_cur,
+		"resource_max": res_max,
+		"in_combat": bool(ch.in_combat),
 	}
 
 func _send_party_update(leader_id: int):

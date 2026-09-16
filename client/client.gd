@@ -1868,6 +1868,9 @@ var _ow_side_location: Array = []
 var _ow_side_repeat: int = 0
 ## The party strip in the right margin - who is with you, built from the party payload.
 var _margin_party_label: RichTextLabel = null
+## How much height the party strip is taking under the map right now (0 when solo). The map
+## fits itself above it, the way it already does for the travel row.
+var _ow_party_h: float = 0.0
 ## True while a station PAGE owns the pinned section of the column (see `_page_clear`).
 var _ow_page_active: bool = false
 ## True while a WIDE text page (Help, the character sheet) owns the canvas and the map waits.
@@ -6305,6 +6308,42 @@ func _dev_run_shots() -> void:
 				await get_tree().create_timer(1.5).timeout
 				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("party_margin")
+
+			"partydungeon":
+				# ⚑ A DUNGEON WITH A FULL PARTY, which the owner asked to judge for himself:
+				# *"Regarding Dungeons being good I'd like to see a full party and make that call
+				# myself."* The leader takes the party underground, walks a few cells so the floor is
+				# partly explored, and captures - the same waits and godmode as the party fight scene,
+				# for the same reasons (the leader launches first; an ambush must not kill the subject).
+				for _w in range(90):
+					if in_party and party_members.size() >= 3:
+						break
+					await get_tree().create_timer(1.0).timeout
+				print("[PARTYDUNGEON] party=%s members=%d" % [str(in_party), party_members.size()])
+				send_to_server({"type": "gm_godmode"})
+				await _dev_shot_ensure_companion()
+				send_to_server({"type": "gm_enter_dungeon", "tier": 3})
+				await get_tree().create_timer(4.0).timeout
+				# An entrance ambush is the norm down here, and it is a PARTY fight - worth a frame of
+				# its own, and then it has to be finished before the FLOOR can be photographed. The
+				# first run captured the ambush and reported dungeon=true in_combat=true, which is how
+				# it was caught rather than filed as "the dungeon with a party".
+				if in_combat:
+					await _dev_shot_clear_overlays()
+					await _dev_shot_capture("party_dungeon_fight")
+					for _r in range(40):
+						if not in_combat and not _combat_ui_busy():
+							break
+						trigger_action(0)
+						await get_tree().create_timer(1.2).timeout
+				for _d in ["e", "e", "s", "e", "e", "s", "s", "e"]:
+					if in_combat:
+						break
+					send_to_server({"type": "dungeon_move", "direction": _d})
+					await get_tree().create_timer(0.5).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("party_dungeon")
+				print("[PARTYDUNGEON] dungeon=%s in_combat=%s" % [str(dungeon_mode), str(in_combat)])
 
 			"partyfight":
 				# ⚑ A PARTY FIGHT, PHOTOGRAPHED FROM INSIDE A MEMBER'S CLIENT.
@@ -34150,7 +34189,8 @@ func _place_stance_bar(on_canvas: bool, map_showing: bool = true) -> void:
 	# bouncing it into the side column for as long as the page is open.
 	_stance_bar.visible = not dungeon_mode and (map_showing or target != canvas)
 	if game_output != null:
-		game_output.offset_bottom = -_stance_bar_h if (target == canvas and _stance_bar.visible) else 0.0
+		# Both rows of furniture: the travel row and, in a party, the party strip above it.
+		game_output.offset_bottom = -(_stance_bar_h + _ow_party_h) if (target == canvas and _stance_bar.visible) else -_ow_party_h
 
 
 func _refresh_stance_bar() -> void:
@@ -34245,34 +34285,79 @@ func _ensure_side_column_layout() -> void:
 	_place_map_widgets(_ow_canvas_eligible())
 
 
-func _refresh_margin_party() -> void:
-	"""Who is with you, in the right margin - hidden entirely when you are alone.
+func _party_bar(cur: int, mx: int, filled_col: String, width: int = 8) -> String:
+	"""A tiny bar for the party strip: filled blocks in colour, the rest dim."""
+	if mx <= 0:
+		return ""
+	var f: int = clampi(int(round(float(cur) / float(mx) * float(width))), 0, width)
+	var out := ""
+	for i in range(width):
+		out += "[color=%s]|[/color]" % (filled_col if i < f else "#3A3A3A")
+	return out
 
-	Built from `party_members`, the payload the party messages already cache, so there is no
-	second idea anywhere of who is in the party. The leader is marked; the entry for YOU is
-	marked too, because in a five-person list that is the first thing you look for."""
+
+func _refresh_margin_party() -> void:
+	"""Who is with you, ACROSS the bottom of the map - with HP and resource, not just a name.
+
+	Owner 2026-09-16: *"where are the HP and resource bars you had originally proposed for
+	party members, just having a name isn't very useful."* Fair: a strip that cannot tell you
+	a teammate is nearly dead is a list of people. The server now ships hp/max_hp and
+	whichever resource that class actually spends with every party update, read through the
+	character's own helpers so it cannot drift from the bar that player sees.
+
+	Laid out across rather than stacked: five members fit on one line under the map, where a
+	column of five did not fit beside it."""
 	if _margin_party_label == null or not is_instance_valid(_margin_party_label):
 		return
 	var head: String = "[color=#808080][font_size=11]Party[/font_size][/color]  "
 	if not in_party or party_members.is_empty():
+		# HIDDEN when you are alone, not shown as "none". It said none while it was a box in
+		# the margin, where an empty frame reads as an answer; under the map it is furniture,
+		# and furniture for a party you do not have is a framed sliver across the screen -
+		# owner 2026-09-16: *"check what it looks like with no party as well because it looked
+		# off."* The Effects box keeps its "none" because that one is still a margin box.
 		_margin_party_label.clear()
-		_margin_party_label.append_text(head + "[color=#6A6A6A]none[/color]")
-		_margin_party_label.visible = _margin_widgets_shown()
+		_margin_party_label.visible = false
 		return
 	var me: String = String(character_data.get("name", ""))
-	var lines: Array[String] = [head.strip_edges()]
+	var cells: Array[String] = []
 	for m in party_members:
 		if not (m is Dictionary):
 			continue
 		var nm: String = String(m.get("name", "?"))
-		var mark: String = "[color=#FFD700]*[/color] " if bool(m.get("is_leader", false)) else "  "
+		var mark: String = "[color=#FFD700]*[/color]" if bool(m.get("is_leader", false)) else " "
 		var who: String = "[color=#9ACD32]%s[/color]" % nm if nm == me else nm
-		lines.append("%s%s [color=#808080]Lv%d %s[/color]" % [
-			mark, who, int(m.get("level", 1)), _cls(String(m.get("class_type", "")))])
+		var hp: int = int(m.get("hp", 0))
+		var hp_max: int = int(m.get("max_hp", 0))
+		# Colour by how much is left, because the point of the bar is spotting trouble.
+		var hp_col: String = "#44DD55"
+		if hp_max > 0:
+			var frac: float = float(hp) / float(hp_max)
+			if frac <= 0.25:
+				hp_col = "#FF4444"
+			elif frac <= 0.6:
+				hp_col = "#FFAA33"
+		var res_col: String = _resource_bar_color(String(m.get("resource", "")))
+		var bars: String = _party_bar(hp, hp_max, hp_col)
+		if int(m.get("resource_max", 0)) > 0:
+			bars += " " + _party_bar(int(m.get("resource_cur", 0)), int(m.get("resource_max", 0)), res_col)
+		var fight: String = " [color=#FF6666]⚔[/color]" if bool(m.get("in_combat", false)) else ""
+		cells.append("%s%s [color=#808080]L%d[/color]%s  %s" % [mark, who, int(m.get("level", 1)), fight, bars])
 	_margin_party_label.clear()
-	_margin_party_label.append_text("
-".join(lines))
+	_margin_party_label.append_text(head + "   ".join(cells))
 	_margin_party_label.visible = _margin_widgets_shown()
+
+
+func _resource_bar_color(res: String) -> String:
+	"""The colour the game already uses for each pool, so the strip matches the player's bar."""
+	match res:
+		"mana":
+			return "#5599FF"
+		"stamina":
+			return "#FFD24A"
+		"energy":
+			return "#44DDCC"
+	return "#8888AA"
 
 
 func _margin_box_style() -> StyleBoxFlat:
@@ -34555,15 +34640,25 @@ func _place_map_widgets(on_canvas: bool) -> void:
 			# map."* The fill is transparent and the node ignores the mouse, so drawing it on top
 			# costs the map nothing: hovering a tile still works through it.
 			canvas.move_child(_ow_map_frame, maxi(0, game_output.get_index() + 1))
+		# ⚑ WHERE THE MAP ACTUALLY STARTS, not where I guessed it did. Owner 2026-09-16: *"the
+		# border around the main map is off a bit, I can see a bit of a water tile poking out
+		# underneath it."* The map begins after the label's own top padding (its stylebox content
+		# margin) AND the leading blank paragraph kept for the sprite overlay's row maths - the
+		# first version counted only the second, so the whole frame sat a few pixels high and the
+		# bottom row of tiles hung out below it.
 		var lead: float = 8.0
 		var gf: Font = game_output.get_theme_font("normal_font")
 		if gf != null:
 			lead = gf.get_height(game_output.get_theme_font_size("normal_font_size"))
+		var pad_top: float = 0.0
+		var gsb: StyleBox = game_output.get_theme_stylebox("normal")
+		if gsb != null:
+			pad_top = gsb.content_margin_top if gsb.content_margin_top > 0.0 else gsb.get_margin(SIDE_TOP)
 		_ow_map_frame.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		_ow_map_frame.offset_left = (canvas.size.x - _ow_map_px_w) * 0.5 - 6.0
-		_ow_map_frame.offset_top = lead - 4.0
+		_ow_map_frame.offset_top = pad_top + lead - 5.0
 		_ow_map_frame.offset_right = _ow_map_frame.offset_left + _ow_map_px_w + 12.0
-		_ow_map_frame.offset_bottom = _ow_map_frame.offset_top + _ow_map_px_h + 8.0
+		_ow_map_frame.offset_bottom = _ow_map_frame.offset_top + _ow_map_px_h + 10.0
 		_ow_map_frame.visible = true
 	elif _ow_map_frame != null and is_instance_valid(_ow_map_frame):
 		_ow_map_frame.visible = false
@@ -34597,15 +34692,33 @@ func _place_map_widgets(on_canvas: bool) -> void:
 			buff_display_label.fit_content = false
 			buff_display_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			buff_display_label.scroll_active = true
+			# ⚑ EFFECTS GO IN THE GAP BESIDE THE MAP. Owner 2026-09-16: *"Effects could possibly fit
+			# vertically in the area to the left of the minimap and right of the main map."* The gap
+			# is real: the minimap hugs its own content, so 40-60px of margin beside it goes unused,
+			# and a column of chips is the one thing shaped for it. Measured off the minimap, so it
+			# follows whenever that box changes size.
+			var mm_left: float = -(margin_w + 8.0)
+			var mm_bottom: float = 200.0
+			if minimap_display != null and is_instance_valid(minimap_display) and minimap_display.visible:
+				mm_left = minimap_display.offset_left
+				mm_bottom = minimap_display.offset_bottom
+			var gap: float = absf(-(margin_w + 8.0) - mm_left)
 			buff_display_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-			buff_display_label.offset_left = -(margin_w + 8.0)
-			buff_display_label.offset_top = stack_top
-			buff_display_label.offset_right = -8.0
-			# Capped at four rows: a stacked fight can put a dozen effects on you, and the chips
-			# wrap, so without a ceiling this box would push the party strip and the companion off
-			# the bottom of the margin. Past the cap it scrolls.
-			buff_display_label.offset_bottom = stack_top + clampf(buff_display_label.get_content_height() + 14.0, 34.0, 120.0)
-			stack_top = buff_display_label.offset_bottom + 8.0
+			if gap >= 40.0:
+				buff_display_label.offset_left = -(margin_w + 8.0)
+				buff_display_label.offset_right = mm_left - 6.0
+				buff_display_label.offset_top = 8.0
+				buff_display_label.offset_bottom = maxf(120.0, mm_bottom)
+			else:
+				# No usable gap (wide minimap, narrow window): back under the Area box as before.
+				buff_display_label.offset_left = -(margin_w + 8.0)
+				buff_display_label.offset_top = stack_top
+				buff_display_label.offset_right = -8.0
+				# Capped at four rows here, and it scrolls past that: a stacked fight can put a
+				# dozen effects on you, and without a ceiling this box would push what is below
+				# it off the bottom of the margin.
+				buff_display_label.offset_bottom = stack_top + clampf(buff_display_label.get_content_height() + 14.0, 34.0, 120.0)
+				stack_top = buff_display_label.offset_bottom + 8.0
 		if _margin_party_label == null or not is_instance_valid(_margin_party_label):
 			_margin_party_label = RichTextLabel.new()
 			_margin_party_label.name = "MarginParty"
@@ -34621,25 +34734,30 @@ func _place_map_widgets(on_canvas: bool) -> void:
 				_margin_party_label.get_parent().remove_child(_margin_party_label)
 			canvas.add_child(_margin_party_label)
 		_refresh_margin_party()
-		_margin_party_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		_margin_party_label.offset_left = -(margin_w + 8.0)
-		_margin_party_label.offset_top = stack_top
-		_margin_party_label.offset_right = -8.0
-		# Capped like the effects box - a full party is six lines, and the companion panel below
-		# has a fixed place at the bottom of the margin. Past the cap it scrolls.
-		_margin_party_label.scroll_active = true
-		_margin_party_label.fit_content = false
-		# ⚑ THE PARTY STRIP YIELDS TO THE COMPANION, not the other way round.
+		# ⚑ THE PARTY STRIP GOES UNDER THE MAP, not beside it. Owner 2026-09-16: *"Party could
+		# maybe go under the main map where the key used to be."* Measured, five members stacked
+		# in a 300px margin needed 110px it did not have - 34px were left after the boxes above
+		# it, so it scrolled at four. Laid out ACROSS, under the map, the same five fit on one
+		# line in the space the stale key used to waste, with room for bars beside each name.
+		# ⚑ THE STRIP IS CANVAS FURNITURE, like the travel row: it sits above that row, spans the
+		# space between the margins, and the MAP FITS ITSELF ABOVE IT (`_ow_party_h` is added to
+		# the canvas's bottom inset in `_place_stance_bar`).
 		#
-		# Owner 2026-09-16: *"test002's party overlay is covering up part of his wight
-		# companion."* The companion panel is an ASCII portrait that cannot be squeezed - shrink
-		# its box and it simply draws over the edges - so the strip takes what is left above it
-		# and scrolls when a full party needs more. Five members fit in 150px; the clamp only
-		# binds on a narrow window, and then the strip scrolls rather than covering the portrait.
-		var comp_room: float = 290.0 + _stance_bar_h + 28.0
-		var party_max: float = maxf(34.0, canvas.size.y - comp_room - stack_top)
-		_margin_party_label.offset_bottom = stack_top + clampf(
-			_margin_party_label.get_content_height() + 14.0, 34.0, minf(150.0, party_max))
+		# Five members do not fit on one line at this width - measured, they wrap - and the first
+		# version gave the box one line's height, so the second line was clipped and the whole
+		# thing sat over the map's bottom row. Height comes from the content now, and the map
+		# gives up the rows rather than being drawn under it.
+		_margin_party_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		_margin_party_label.offset_left = margin_w + 18.0
+		_margin_party_label.offset_right = -(margin_w + 18.0)
+		_margin_party_label.fit_content = false
+		_margin_party_label.scroll_active = false
+		var party_h: float = 0.0
+		if in_party and not party_members.is_empty():
+			party_h = clampf(_margin_party_label.get_content_height() + 12.0, 34.0, 86.0)
+		_ow_party_h = party_h
+		_margin_party_label.offset_bottom = -(_stance_bar_h + 4.0)
+		_margin_party_label.offset_top = -(_stance_bar_h + 4.0 + party_h)
 	# ⚑ THE COMPANION IS PLACED LAST, because it is the only box measured against the others.
 	# Placed before the Party strip, it read LAST FRAME's party height - so a party that had
 	# just grown still covered it for a frame, and with a steady party it covered it forever.
@@ -34654,10 +34772,13 @@ func _place_map_widgets(on_canvas: bool) -> void:
 		# measured from the lowest box above it, so the art shrinks to the space left rather
 		# than being sat on. Nothing here is a guessed constant.
 		if companion_art_overlay != null and is_instance_valid(companion_art_overlay):
-			# fit_content OFF here too: with it on, the label refuses to be shorter than its ASCII
-			# portrait and grows UPWARD past the rect set below - which is the last ten pixels of
-			# the overlap, after the party strip had already been capped out of the way.
-			companion_art_overlay.fit_content = false
+			# fit_content back ON. It was turned off to stop the panel growing upward over the party
+			# strip - and then the owner got the other half of that trade: *"the companion boxes...
+			# are too short and the ASCII art is being cutoff vertically now."* The strip has since
+			# moved out of this margin entirely (it lives under the map), so there is nothing above
+			# the portrait to protect and it can size itself to its art again. The room check below
+			# stays as the guard for a narrow window.
+			companion_art_overlay.fit_content = true
 			companion_art_overlay.scroll_active = false
 			companion_art_overlay.offset_left = -(margin_w + 8.0)
 			companion_art_overlay.offset_right = -8.0
@@ -34671,7 +34792,11 @@ func _place_map_widgets(on_canvas: bool) -> void:
 			# the strip kept sitting on the portrait. Two rounds of this were spent arguing with
 			# the arithmetic instead of reading what was drawn.
 			var above: float = 0.0
-			for n in [region_label, minimap_display, buff_display_label, _margin_party_label]:
+			# Only the boxes that share this margin. The party strip moved out from under the
+			# minimap to under the MAP, and counting it here put its bottom (~800px, near the
+			# canvas floor) above the companion - which left no room and hid the portrait
+			# entirely. A measurement is only as good as the list of things it measures.
+			for n in [region_label, minimap_display, buff_display_label]:
 				if n != null and is_instance_valid(n) and (n as Control).visible:
 					var c2: Control = n as Control
 					above = maxf(above, maxf(c2.offset_bottom, c2.position.y + c2.size.y))
@@ -34682,10 +34807,15 @@ func _place_map_widgets(on_canvas: bool) -> void:
 				if room < 90.0:
 					companion_art_overlay.visible = false
 				else:
-					# As tall as the room allows, up to its designed 280 - and measured AFTER the party
-					# strip is placed, since it is the box that grows. Placed before it, this read last
-					# frame's party height and a steady four-member strip covered the portrait forever.
-					companion_art_overlay.offset_top = -minf(room, 280.0)
+					# ⚑ AS TALL AS ITS ART NEEDS, up to the room available. A flat 280 was the owner's next
+					# report - *"the companion boxes... are too short and the ASCII art is being cutoff
+					# vertically now"* - because turning `fit_content` off (which is what stopped the box
+					# growing UPWARD over the party strip) also stopped it growing to fit the portrait.
+					# So the height is the CONTENT's, clamped by what the margin has left.
+					# The offsets ask for the content's height; fit_content guarantees it is never less,
+					# so the art is whole and the frame is around it rather than through it.
+					var want_h: float = companion_art_overlay.get_content_height() + 18.0
+					companion_art_overlay.offset_top = -maxf(120.0, minf(want_h, room))
 					companion_art_overlay.visible = true
 	# ...and the CHAT LOG below the status panel, in the same margin. Owner 2026-09-15: *"What if
 	# we move the Chatbox to the area under the status panel[?]"* Its tab bar rides with it, so
