@@ -1626,8 +1626,21 @@ func _process(delta):
 			peer.disconnect_from_host()
 			return
 
+		# ⛑ LOOPBACK IS EXEMPT FROM THE RATE LIMIT IN DEV BUILDS, for the same reason it is
+		# already exempt from the per-IP COUNT limit twenty lines down.
+		#
+		# Owner 2026-09-16, of a five-client test: *"I couldn't check Testing2 because it didn't
+		# connect."* The server log had it - `Security: Rejecting rapid connection from ::1`.
+		# `run.py` spaces its launches 6s apart against a 5s limit, which is one second of margin
+		# against Godot startup jitter where each client loads the whole project; and a rejected
+		# client does not retry, so it just never appears. Widening the sleep would only lengthen
+		# the odds while adding seconds to every run.
+		#
+		# Exported servers keep the limit exactly as-is, loopback included - this is gated on
+		# `OS.has_feature("editor")`, so it cannot reach a shipped build.
+		var _dev_loopback: bool = OS.has_feature("editor") and (peer_ip in ["127.0.0.1", "::1", "0:0:0:0:0:0:0:1"])
 		# Security: Rate limiting - check if IP is connecting too fast
-		if ip_connection_times.has(peer_ip):
+		if ip_connection_times.has(peer_ip) and not _dev_loopback:
 			var last_connect = ip_connection_times[peer_ip]
 			if current_time - last_connect < CONNECTION_RATE_LIMIT:
 				log_message("Security: Rejecting rapid connection from %s" % peer_ip)
@@ -1639,7 +1652,6 @@ func _process(delta):
 		# test comes from 127.0.0.1, so a 5-player party silently lost its 4th and 5th members to
 		# this limit (they connected, were dropped, and simply never appeared). Exported servers
 		# keep the limit exactly as-is, including for loopback.
-		var _dev_loopback: bool = OS.has_feature("editor") and (peer_ip in ["127.0.0.1", "::1", "0:0:0:0:0:0:0:1"])
 		var current_count = ip_connection_counts.get(peer_ip, 0)
 		if current_count >= MAX_CONNECTIONS_PER_IP and not _dev_loopback:
 			log_message("Security: Rejecting connection from %s (max %d per IP)" % [peer_ip, MAX_CONNECTIONS_PER_IP])

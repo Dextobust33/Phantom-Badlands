@@ -62,6 +62,60 @@ const STATE_FRAME_PX := 96
 ## there is no jitter to pay for it.
 ##
 ## A new state claims a row by name here; the rows listed above and not claimed below are free.
+## ⚑ BUFF ICONS, from the game's OWN item pack - no new art, and nothing invented.
+##
+## Owner 2026-09-16: *"regarding buffs you can look through our sprites in the project and see if
+## you can find suitable ones for those. Ideally we don't need both the icon and the lettering and
+## number. The icon should be enough as long as the player can hover it and find out the turns it
+## lasts and what it does."*
+##
+## `client/sprites/items_pack/` is already imported and already used by the game, and every pick
+## below is LITERALLY the thing the buff is: a sword for damage, a shield for defense, armour for
+## damage reduction, boots for speed, a star for crit, a heart for lifesteal, a spike for thorns, a
+## glowing rune for the forcefield, a cloak for cloak. Compared against the alternatives on a
+## contact sheet at 4x rather than picked from a filename.
+##
+## The two PENALTY chips are the same icon tinted red (`[img color=]`), because a penalty is the
+## buff running backwards and two more pieces of art would be two more things to recognise.
+##
+## Deliberately NOT mapped: anything whose art would be a guess. An unmapped buff keeps its
+## lettered chip, which is honest about being a number.
+const BUFF_ICONS := {
+	"damage": {"path": "res://client/sprites/items_pack/Equip/Set/FineBlade0.png"},
+	"strength": {"path": "res://client/sprites/items_pack/Equip/Hands/Gloves0.png"},
+	"defense": {"path": "res://client/sprites/items_pack/Equip/Shield/Shield5.png"},
+	"damage_reduction": {"path": "res://client/sprites/items_pack/Equip/Chest/ChestA0.png"},
+	"speed": {"path": "res://client/sprites/items_pack/Equip/Feet/BootsA0.png"},
+	"crit_chance": {"path": "res://client/sprites/items_pack/Star0.png"},
+	"crit": {"path": "res://client/sprites/items_pack/Star0.png"},
+	"lifesteal": {"path": "res://client/sprites/items_pack/Heart.png"},
+	"thorns": {"path": "res://client/sprites/items_pack/ArrowHead.png"},
+	"forcefield": {"path": "res://client/sprites/items_pack/RuneStone/RuneStone12.png"},
+	"evasion": {"path": "res://client/sprites/items_pack/Equip/Feet/BootsA0.png"},
+	"cloak": {"path": "res://client/sprites/items_pack/Equip/Back/CloakA0.png"},
+	"damage_penalty": {"path": "res://client/sprites/items_pack/Equip/Set/FineBlade0.png", "tint": "#FF7070"},
+	"defense_penalty": {"path": "res://client/sprites/items_pack/Equip/Shield/Shield5.png", "tint": "#FF7070"},
+}
+
+## What each one actually DOES, read off `combat_manager` rather than written from intuition - the
+## numbers in here are the lines that consume the buff, so the hover cannot drift from the fight.
+const BUFF_HELP := {
+	"damage": ["Damage up", "Your ability damage is multiplied by +%d%%."],
+	"strength": ["Strength up", "+%d attack power on basic attacks."],
+	"defense": ["Defense up", "Incoming damage cut by %d%%."],
+	"damage_reduction": ["Damage reduction", "Incoming damage cut by %d%%."],
+	"speed": ["Hastened", "Monsters are about %d%% less likely to hit you."],
+	"crit_chance": ["Crit up", "+%d%% chance to crit."],
+	"crit": ["Crit up", "+%d%% chance to crit."],
+	"lifesteal": ["Lifesteal", "You heal %d%% of the damage you deal."],
+	"thorns": ["Thorns", "Anything that hits you takes %d damage back."],
+	"forcefield": ["Forcefield", "A %d point shield soaks damage before your health does."],
+	"evasion": ["Evasive", "Monsters are %d%% less likely to hit you."],
+	"cloak": ["Cloaked", "Nothing on the overworld starts a fight with you - and your pools do not refill while it holds. Hunting drops it."],
+	"damage_penalty": ["Damage down", "Your damage is reduced by %d%%."],
+	"defense_penalty": ["Defense down", "You take %d%% more damage."],
+}
+
 const STATE_ICONS := {
 	"poison": {"row": 0, "frame": 0, "rect": [30, 19, 39, 36]},
 	"blind": {"row": 1, "frame": 3, "rect": [33, 13, 30, 30]},
@@ -6434,10 +6488,20 @@ func _dev_run_shots() -> void:
 				# will look when blinded which makes new problems."* It does: vision drops to a couple of
 				# tiles, so the map is ~160px wide and every widget that measures itself against the map
 				# is suddenly in the degenerate case. Photographed on purpose rather than by accident.
+				# A couple of BUFFS as well as the debuff, so the box is photographed with a mix - the
+				# icons come from two different sources and half-and-half is the case that reads badly.
+				for _b in [["damage", 25], ["defense", 15], ["speed", 20], ["lifesteal", 10]]:
+					send_to_server({"type": "gm_apply_buff", "buff_type": _b[0], "value": _b[1], "duration": 9})
+					await get_tree().create_timer(0.3).timeout
 				send_to_server({"type": "gm_apply_state", "state": "blind", "duration": 20})
 				await get_tree().create_timer(1.2).timeout
-				send_to_server({"type": "move", "direction": "west"})
-				await get_tree().create_timer(1.5).timeout
+				# ⛑ TELEPORT, DO NOT WALK. Blind vision is applied in `send_location_update`, which runs
+				# on a move that SUCCEEDS - and the party5 spawn at (57,-11) is hemmed in, so a step west
+				# was refused and then all four compass directions were refused too. Two captures got
+				# filed as "blinded" while showing a full-vision map. `gm_teleport` cannot be blocked by
+				# terrain, so it cannot quietly produce the wrong picture.
+				send_to_server({"type": "gm_teleport", "x": 0, "y": 0})
+				await get_tree().create_timer(2.0).timeout
 				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("party_overworld_blind")
 				send_to_server({"type": "gm_apply_state", "state": "clear"})
@@ -23654,19 +23718,99 @@ func _state_icon(key: String, h: int = 22) -> String:
 		int(r[2]), int(r[3]), STATE_SHEET]
 
 
-func _state_chip(key: String, body: String) -> String:
-	"""Icon + text for one effect, hoverable as a unit. No icon: just the text, unchanged."""
-	# ⚑ THE IMAGE GOES OUTSIDE THE `[url]`. Measured: the chip string reaching the box was
-	# exactly right - `[url=fx:poison][img=26x26 region=0,0,96,96]...[/img][color=...]` - and the
-	# icon rendered as nothing at all. RichTextLabel does not draw an inline image nested inside
-	# a meta run. The text stays hoverable, which is the half that carries the explanation.
+func _buff_icon(btype: String, h: int = 22) -> String:
+	"""A buff's icon, or "" when nothing in the pack honestly represents it.
+
+	The art is 16x16 so it is drawn whole - no region, no cropping - at whatever height the caller
+	wants. `load()` is CALLED rather than `ResourceLoader.exists()` asked: see the note on
+	STATE_SHEET for why that distinction cost an afternoon."""
+	var key := btype.to_lower()
+	if not BUFF_ICONS.has(key):
+		return ""
+	var d: Dictionary = BUFF_ICONS[key]
+	var path := String(d["path"])
+	if load(path) == null:
+		return ""
+	var tint := String(d.get("tint", ""))
+	if tint != "":
+		return "[img=%dx%d color=%s]%s[/img]" % [h, h, tint, path]
+	return "[img=%dx%d]%s[/img]" % [h, h, path]
+
+
+func _buff_chip(btype: String, value: int, duration: int, unit: String, inert: bool) -> String:
+	"""ONE effect, as an icon you can hover - not an icon AND a letter AND two numbers.
+
+	Owner 2026-09-16: *"Ideally we don't need both the icon and the lettering and number. The icon
+	should be enough as long as the player can hover it and find out the turns it lasts and what it
+	does."* So the chip is the picture, and the meta carries the value, the duration and its unit
+	for the hover to spell out.
+
+	A buff with no icon keeps its lettered chip: half a box of pictures and half of codes is worse
+	than either, but a blank where an effect should be is worse than both.
+
+	An INERT buff (a crit buff on a class whose cards cannot crit) stays struck through and grey,
+	because that is the one case where the chip has to say the effect is doing nothing."""
+	var icon := _buff_icon(btype)
+	var meta := "buff:%s:%d:%d:%s" % [btype, value, duration, unit]
+	if icon == "":
+		var letter := _get_buff_letter(btype)
+		var col := _get_buff_color(btype)
+		if inert:
+			return "[url=%s][color=#6A6A6A][s][%s+%d:%d%s][/s][/color][/url]" % [
+				meta, letter, value, duration, unit]
+		return "[url=%s][color=%s][%s+%d:%d%s][/color][/url]" % [meta, col, letter, value, duration, unit]
+	if inert:
+		# Greyed to half alpha, which is the picture's way of saying the same thing the strike
+		# through said: this is on you and it is doing nothing.
+		icon = "[img=%dx%d color=#FFFFFF60]%s[/img]" % [22, 22, String(BUFF_ICONS[btype.to_lower()]["path"])]
+	return "[url=%s]%s[/url]" % [meta, icon]
+
+
+func _show_buff_hover(meta: String) -> void:
+	"""Name, effect, and how long is left - the three things the icon cannot say by itself."""
+	var parts: PackedStringArray = meta.split(":")
+	if parts.size() < 4:
+		return
+	var btype := String(parts[0])
+	var value := int(parts[1])
+	var duration := int(parts[2])
+	var unit := String(parts[3])
+	var help: Array = BUFF_HELP.get(btype.to_lower(), [])
+	var title := String(help[0]) if help.size() > 0 else btype.capitalize().replace("_", " ")
+	var body := ""
+	if help.size() > 1:
+		body = String(help[1])
+		if body.contains("%d"):
+			body = body % value
+	var left := ""
+	if duration > 0:
+		if unit == "B":
+			left = "\n[color=#808080]%d more battle%s[/color]" % [duration, "" if duration == 1 else "s"]
+		else:
+			left = "\n[color=#808080]%d turn%s left[/color]" % [duration, "" if duration == 1 else "s"]
+	var icon := _buff_icon(btype, 28)
+	var txt := "%s  [b]%s[/b]\n%s%s" % [icon, title, body, left]
+	if _buff_is_inert(btype):
+		txt += "\n[color=#FF8888]Doing nothing for your class - %s[/color]" % _inert_buff_reason(btype)
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(txt)
+
+
+func _state_chip(key: String, fallback: String, turns: int = 0) -> String:
+	"""ONE state, as an icon you can hover - no letter, no number beside it.
+
+	Same rule as `_buff_chip`, owner 2026-09-16: *"Ideally we do not need both the icon and the
+	lettering and number."* The remaining turns ride in the meta for the hover to say.
+
+	`fallback` is what to draw when the sheet has no row for this state - and empty means the
+	state is simply not shown, which is right for anything the player cannot act on."""
 	var icon := _state_icon(key)
 	if icon == "":
-		return body
-	return "%s[url=fx:%s]%s[/url]" % [icon, key, body]
+		return fallback
+	return "[url=fx:%s:%d]%s[/url]" % [key, turns, icon]
 
 
-func _show_state_hover(key: String) -> void:
+func _show_state_hover(key: String, turns: int = 0) -> void:
 	"""What a state actually does to you, on hover - in the same popup the cards use.
 
 	The numbers are already on the chip; this is the part a player cannot infer from "[BL:13]"."""
@@ -23683,7 +23827,10 @@ func _show_state_hover(key: String) -> void:
 				+ "next to you. Counts down in turns.")
 		_:
 			return
-	var txt := "%s  [b]%s[/b]\n%s" % [_state_icon(key, 28), title, body]
+	var left := ""
+	if turns > 0:
+		left = "\n[color=#808080]%d turn%s left[/color]" % [turns, "" if turns == 1 else "s"]
+	var txt := "%s  [b]%s[/b]\n%s%s" % [_state_icon(key, 28), title, body, left]
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(txt)
 
@@ -23699,20 +23846,20 @@ func update_buff_display():
 	if character_data.get("poison_active", false):
 		var poison_dmg = character_data.get("poison_damage", 0)
 		var poison_turns = character_data.get("poison_turns_remaining", 0)
-		parts.append(_state_chip("poison", "[color=#FF00FF][P%d:%d][/color]" % [poison_dmg, poison_turns]))
+		parts.append(_state_chip("poison", "", poison_turns))
 
 	# Blind (debuff) - gray
 	if character_data.get("blind_active", false):
 		var blind_turns = character_data.get("blind_turns_remaining", 0)
-		parts.append(_state_chip("blind", "[color=#808080][BL:%d][/color]" % blind_turns))
+		parts.append(_state_chip("blind", "", blind_turns))
 
 	# Forcefield/Shield (combat) - cyan
 	if current_forcefield > 0:
-		parts.append("[color=#00FFFF][FF:%d][/color]" % current_forcefield)
+		parts.append(_buff_chip("forcefield", current_forcefield, 0, "", false))
 
 	# Cloak (world movement) - purple
 	if character_data.get("cloak_active", false):
-		parts.append("[color=#9932CC][CLK][/color]")
+		parts.append(_buff_chip("cloak", 0, 0, "", false))
 
 	# Active combat buffs (round-based)
 	var active_buffs = character_data.get("active_buffs", [])
@@ -23720,13 +23867,7 @@ func update_buff_display():
 		var buff_type = buff.get("type", "")
 		var buff_value = buff.get("value", 0)
 		var buff_dur = buff.get("duration", 0)
-		var color = _get_buff_color(buff_type)
-		var letter = _get_buff_letter(buff_type)
-		if _buff_is_inert(buff_type):
-			parts.append("[url=%s][color=#6A6A6A][s][%s+%d:%d][/s][/color][/url]" % [
-				_inert_buff_reason(buff_type), letter, buff_value, buff_dur])
-		else:
-			parts.append("[color=%s][%s+%d:%d][/color]" % [color, letter, buff_value, buff_dur])
+		parts.append(_buff_chip(buff_type, buff_value, buff_dur, "", _buff_is_inert(buff_type)))
 
 	# Persistent buffs (battle-based)
 	var persistent_buffs = character_data.get("persistent_buffs", [])
@@ -23734,9 +23875,7 @@ func update_buff_display():
 		var buff_type = buff.get("type", "")
 		var buff_value = buff.get("value", 0)
 		var battles = buff.get("battles_remaining", 0)
-		var color = _get_buff_color(buff_type)
-		var letter = _get_buff_letter(buff_type)
-		parts.append("[color=%s][%s+%d:%dB][/color]" % [color, letter, buff_value, battles])
+		parts.append(_buff_chip(buff_type, buff_value, battles, "B", false))
 
 	# ⚑ A LABELLED BOX THAT SAYS "NONE" RATHER THAN AN EMPTY ONE. Owner 2026-09-16: *"Rather
 	# than leave them empty they should say something like Party: none. Buffs/Debuffs: none."*
@@ -34586,8 +34725,13 @@ func _strip_label(text: String, font_size: int = 11) -> RichTextLabel:
 	lbl.fit_content = true
 	lbl.scroll_active = false
 	lbl.autowrap_mode = TextServer.AUTOWRAP_OFF
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lbl.add_theme_font_size_override("normal_font_size", font_size)
+	# These carry `[url=fx:...]` state icons in the dungeon dock, so they need the hover wired
+	# and the default meta underline off - the same 1px line the owner reported through the map.
+	lbl.meta_underlined = false
+	lbl.mouse_filter = Control.MOUSE_FILTER_PASS
+	lbl.meta_hover_started.connect(_on_log_meta_hover)
+	lbl.meta_hover_ended.connect(_on_log_meta_unhover)
 	lbl.append_text(text)
 	return lbl
 
@@ -34612,16 +34756,25 @@ func _overlay_gauge(host: Control, key: String, w: int, h: int, col: String, fra
 		old.queue_free()
 	var bar := _gauge(w, h, col, frac)
 	bar.name = key
-	bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	bar.offset_left = (host.size.x - float(w)) * 0.5
-	bar.offset_right = bar.offset_left + float(w)
+	# ⚑ CENTRED BY ANCHOR, not by arithmetic on `host.size.x`.
+	#
+	# Owner 2026-09-16: *"the bars on companion should be centered in its box."* They were
+	# offset from the left by `(host.size.x - w) * 0.5` - read at the moment this runs, which is
+	# while the panel is being re-laid out, so it is last frame's width or none at all. Anchoring
+	# both edges to the middle and hanging half the bar either side is correct on the first
+	# frame and stays correct when the margin width changes underneath it.
+	bar.anchor_left = 0.5
+	bar.anchor_right = 0.5
+	bar.offset_left = -float(w) * 0.5
+	bar.offset_right = float(w) * 0.5
 	if from_bottom >= 0.0:
-		bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-		bar.offset_left = (host.size.x - float(w)) * 0.5
-		bar.offset_right = bar.offset_left + float(w)
+		bar.anchor_top = 1.0
+		bar.anchor_bottom = 1.0
 		bar.offset_bottom = -from_bottom
 		bar.offset_top = bar.offset_bottom - float(h)
 	else:
+		bar.anchor_top = 0.0
+		bar.anchor_bottom = 0.0
 		bar.offset_top = maxf(from_top, 0.0)
 		bar.offset_bottom = bar.offset_top + float(h)
 	host.add_child(bar)
@@ -34695,11 +34848,9 @@ func _active_state_chips() -> String:
 	finished reading them, and the Effects box already carries them where there is room."""
 	var out: Array[String] = []
 	if character_data.get("poison_active", false):
-		out.append(_state_chip("poison", "[color=#FF00FF]%d[/color]" % int(
-			character_data.get("poison_turns_remaining", 0))))
+		out.append(_state_chip("poison", "", int(character_data.get("poison_turns_remaining", 0))))
 	if character_data.get("blind_active", false):
-		out.append(_state_chip("blind", "[color=#B0B0B0]%d[/color]" % int(
-			character_data.get("blind_turns_remaining", 0))))
+		out.append(_state_chip("blind", "", int(character_data.get("blind_turns_remaining", 0))))
 	return "  ".join(out)
 
 
@@ -35293,13 +35444,22 @@ func _place_map_widgets(on_canvas: bool) -> void:
 		if companion_art_overlay != null and is_instance_valid(companion_art_overlay) and not _has_companion:
 			companion_art_overlay.visible = false
 		elif companion_art_overlay != null and is_instance_valid(companion_art_overlay):
-			# fit_content back ON. It was turned off to stop the panel growing upward over the party
-			# strip - and then the owner got the other half of that trade: *"the companion boxes...
-			# are too short and the ASCII art is being cutoff vertically now."* The strip has since
-			# moved out of this margin entirely (it lives under the map), so there is nothing above
-			# the portrait to protect and it can size itself to its art again. The room check below
-			# stays as the guard for a narrow window.
-			companion_art_overlay.fit_content = true
+			# ⛑ fit_content OFF, and this is the third time round the same trap.
+			#
+			# `fit_content` raises a Control's MINIMUM size, and a Control is never smaller than its
+			# minimum whatever the anchors say. So with it on, `offset_top` below is advice the panel
+			# ignores: a tall portrait grows UPWARD from its bottom anchor and slides under the boxes
+			# above it. Owner 2026-09-16, of a five-person party: *"your party member with the wight,
+			# the box is being covered at the top by the area box."* The wight's art is taller than
+			# the room this margin has left, which is exactly when the minimum wins.
+			#
+			# It was turned back ON earlier today to fix the other half - *"the companion boxes are
+			# too short and the ASCII art is being cutoff vertically"* - which was a FLAT 280px box.
+			# That is the real fix and it is below: the height is the CONTENT's, measured, clamped by
+			# the room available. `get_content_height` works with fit_content off, so nothing is given
+			# up by turning it off; art taller than the whole margin is clipped at the bottom rather
+			# than covering the Area box, which is the lesser of the two.
+			companion_art_overlay.fit_content = false
 			companion_art_overlay.scroll_active = false
 			companion_art_overlay.offset_left = -(margin_w + 8.0)
 			companion_art_overlay.offset_right = -8.0
@@ -40064,8 +40224,12 @@ func _on_log_meta_hover(meta) -> void:
 			if cbody != "":
 				_show_map_tooltip(cbody, null, {})
 		return
+	if m.begins_with("buff:"):
+		_show_buff_hover(m.substr(5))
+		return
 	if m.begins_with("fx:"):
-		_show_state_hover(m.substr(3))
+		var _fxp: PackedStringArray = m.substr(3).split(":")
+		_show_state_hover(String(_fxp[0]), int(_fxp[1]) if _fxp.size() > 1 else 0)
 		return
 	if m.begins_with("tile:"):
 		# A theme tile, hovered either in the side-panel key or on the floor itself.
