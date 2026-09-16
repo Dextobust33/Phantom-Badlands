@@ -8,10 +8,19 @@ const MapPayload = preload("res://shared/map_payload.gd")
 
 ## The overworld drawn as sprites rather than letters (Phase 2.95 PHASE 2).
 const _OverworldRoom = preload("res://client/overworld_room.gd")
-## How wide a map square is on screen when it is drawn as art. The tiles are 32px, so this is a
-## straight downscale; the text map's own cell is about this wide, which is what keeps the panel
-## the same size and the header aligned.
-const OVERWORLD_SPRITE_PX := 26
+## How wide a map square is on screen when it is drawn as art.
+##
+## 32 is the size the tiles ARE - `_OverworldRoom.CELL` slices the composed map into 32px cells -
+## so this is now 1:1 and every pixel of the art is a pixel on screen. It was 26, a 19% downscale
+## chosen when the map lived in the side panel and had to match the text map's cell width. On the
+## canvas there is no text cell to match and the room to draw them properly, and the owner's
+## report is exactly what a downscale does: *"the map sprites ... are hard to see or tell what
+## they are on the 1080p monitor."*
+##
+## Bigger than this means UPSCALING. Nearest-neighbour keeps it crisp at whole multiples only, so
+## the next honest step up is 64 - which at 21 rows needs more height than the canvas has, i.e. a
+## smaller view. That is a gameplay decision (how far you can see), not a display one.
+const OVERWORLD_SPRITE_PX := 32
 ## A literal newline, for building multi-line hover text without embedding real line breaks in
 ## the middle of a format string - which is how the stance tooltips were written and is easy to
 ## break with an edit.
@@ -598,7 +607,7 @@ var _stats_reminder_tween: Tween = null
 @onready var status_hud_quests = $RootContainer/TopSection/MapPanel/StatusHUD/QuestsLabel
 @onready var status_hud_eggs = $RootContainer/TopSection/MapPanel/StatusHUD/EggsLabel
 @onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
-var shortcut_buttons_container: HBoxContainer = null
+var shortcut_buttons_container: Container = null
 @onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
 const _TravelStance = preload("res://shared/travel_stance.gd")
 ## The stance bar under the map. Built in code rather than in the scene so the buttons come from
@@ -751,7 +760,16 @@ var _map_tooltip_gen: int = 0
 @onready var chat_tab_bar = $RootContainer/BottomStrip/ChatPanel/ChatTabBar
 @onready var chat_tab_button = $RootContainer/BottomStrip/ChatPanel/ChatTabBar/ChatTab
 @onready var players_tab_button = $RootContainer/BottomStrip/ChatPanel/ChatTabBar/PlayersTab
-var chat_tab: String = "chat"  # "chat" or "players"
+## Which chat channel the log is showing: "chat" (what people said) or "system" (what the realm
+## announced). Owner 2026-09-15: *"The chatbox also needs two tabs, one for actual chat and the
+## other for system messages."* The old second tab was the online-player list, which has had a
+## panel of its own since the bottom strip was rearranged.
+var chat_tab: String = "chat"
+## One buffer per channel, so switching tabs re-renders rather than losing what was said.
+var _chat_lines: Dictionary = {"chat": [], "system": []}
+const CHAT_LINES_MAX := 300
+## Set when a line arrives on the channel that is not being shown, cleared when you look at it.
+var _chat_unread: Dictionary = {"chat": false, "system": false}
 
 # UI References - Login Panel
 @onready var login_panel = $LoginPanel
@@ -1834,6 +1852,10 @@ var _ow_location_pass: bool = false
 var _ow_trace: bool = "--owtrace" in OS.get_cmdline_args()
 ## The width, in pixels, of the map as it was last drawn - see `_place_map_widgets`.
 var _ow_map_px_w: float = 0.0
+## Last value applied by `_sync_margin_widgets`; -1 means "not decided yet".
+var _margin_widgets_last: int = -1
+## The framed box in the left margin holding the chat tabs and the chat log.
+var _margin_chat_box: Control = null
 var _ow_side_lines: Array = []
 const OW_SIDE_MAX_LINES := 60
 var market_list_flash: String = ""  # Brief success message shown in listing view
@@ -3358,7 +3380,10 @@ func _ready():
 	if chat_tab_button:
 		chat_tab_button.pressed.connect(_on_chat_tab_pressed.bind("chat"))
 	if players_tab_button:
-		players_tab_button.pressed.connect(_on_chat_tab_pressed.bind("players"))
+		# Repurposed: the players list has its own panel now, so the second tab is the system
+		# channel. Renamed here rather than in the .tscn so every existing node path still works.
+		players_tab_button.text = "System"
+		players_tab_button.pressed.connect(_on_chat_tab_pressed.bind("system"))
 
 	# Defer music generation to not block startup
 	call_deferred("_start_background_music")
@@ -3904,8 +3929,12 @@ func _on_window_resized():
 		# element whose legibility depends on seeing all of it at once; the status text is
 		# scannable at any size. Half the growth rate: 16px at 1080p, still readable, and the
 		# rows it gives back go to the map. Players who want it bigger have the slider.
-		var hud_font_size = int(13 * (1.0 + (base_scale - 1.0) * 0.5) * ui_scale_status_hud)
-		hud_font_size = clampi(hud_font_size, 10, 28)
+		# ...and smaller again by default, now that the panel floats in the map's margin rather
+		# than owning a column. Owner 2026-09-15: *"The status panel text can be smaller by
+		# default so it can take up less vertical space as well as needed."* 11 at base, ~13 at
+		# 1080p; the slider still takes it back up for anyone who wants it.
+		var hud_font_size = int(11 * (1.0 + (base_scale - 1.0) * 0.5) * ui_scale_status_hud)
+		hud_font_size = clampi(hud_font_size, 9, 28)
 		# The minimap and the status labels are the map's real competition: both use fit_content,
 		# so their HEIGHT is their font size, and every point they take is a row off the map. They
 		# are reference material read at a glance - the map is the thing you navigate by - so they
@@ -3958,6 +3987,7 @@ func _on_window_resized():
 		call_deferred("_sync_map_sprites_overlay")
 
 func _process(delta):
+	_sync_margin_widgets()
 	_dungeon_idle_tick(delta)
 	# v0.9.695 — F12 screenshot via a polled edge, so NO UI/combat state can eat
 	# the key (the _input path + the top-bar button both get consumed in combat).
@@ -6229,6 +6259,28 @@ func _dev_run_shots() -> void:
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("stance_scouting")
 
+			"worldpet":
+				# ⚑ THE OVERWORLD WITH A COMPANION OUT. Owner 2026-09-15: *"when testing you
+				# should also equip a companion so we can see where/how that art shows up."* The
+				# companion art is its own overlay on the canvas, so any layout change that moves
+				# things into the canvas margins has to be judged with it on screen.
+				await _dev_shot_ensure_companion()
+				send_to_server({"type": "move", "direction": "east"})
+				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_capture("worldpet")
+
+			"menus":
+				# ⚑ A PAGE OVER THE CANVAS. The margin widgets float on it, so the question every
+				# time is whether they get out of the way - owner 2026-09-15: *"make sure those
+				# overlays hide when menus like the inventory are displayed."*
+				open_inventory()
+				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_capture("menu_inventory")
+				if inventory_mode:
+					close_inventory()
+				await get_tree().create_timer(1.0).timeout
+				await _dev_shot_capture("menu_closed")
+
 			"postart":
 				# ⚑ THE MULTI-TILE ART, INSIDE A POST. Owner 2026-09-13: *"I believe post doors
 				# may suffer from the same problem"* - they did, worse than the rest: the cell
@@ -7433,22 +7485,33 @@ func _get_title_display_info(title_id: String) -> Dictionary:
 	return title_data.get(title_id, {"name": title_id.capitalize(), "color": "#FFFFFF", "prefix": ""})
 
 func _on_chat_tab_pressed(tab: String):
-	"""Switch between chat and players tab"""
+	"""Switch the log between what people said and what the realm announced."""
+	if not _chat_lines.has(tab):
+		tab = "chat"
 	chat_tab = tab
-	if chat_tab == "chat":
-		chat_output.visible = true
-		online_players_list.visible = false
-	else:
-		chat_output.visible = false
-		online_players_list.visible = true
+	_chat_unread[tab] = false
+	_render_chat_tab()
 	_update_chat_tab_style()
+
+
+func _render_chat_tab() -> void:
+	if chat_output == null or not is_instance_valid(chat_output):
+		return
+	chat_output.visible = true
+	chat_output.clear()
+	for line in _chat_lines.get(chat_tab, []):
+		chat_output.append_text(String(line) + "\n")
 
 func _update_chat_tab_style():
 	"""Update chat tab button appearances based on active tab"""
 	if not chat_tab_button or not players_tab_button:
 		return
+	# A dot marks a channel with something unread on it - a tab you are not looking at is
+	# otherwise indistinguishable from an empty one.
+	chat_tab_button.text = "Chat" + (" *" if bool(_chat_unread.get("chat", false)) else "")
+	players_tab_button.text = "System" + (" *" if bool(_chat_unread.get("system", false)) else "")
 	for btn in [chat_tab_button, players_tab_button]:
-		var is_active = (btn == chat_tab_button and chat_tab == "chat") or (btn == players_tab_button and chat_tab == "players")
+		var is_active = (btn == chat_tab_button and chat_tab == "chat") or (btn == players_tab_button and chat_tab == "system")
 		btn.add_theme_color_override("font_color", THEME_BORDER_GOLD if is_active else THEME_TEXT_DIM)
 		var style = StyleBoxFlat.new()
 		style.bg_color = THEME_BTN_HOVER if is_active else THEME_BTN_BG
@@ -11906,32 +11969,53 @@ func _move_chat_into_center_panel():
 	if chat_output == null or input_field == null:
 		return
 
-	# Move ChatOutput from ChatPanel → CenterPanel
-	var chat_parent = chat_output.get_parent()
-	if chat_parent != center_panel:
-		chat_parent.remove_child(chat_output)
-		center_panel.add_child(chat_output)
-
-	# Move InputRow (the HBox wrapping InputField + SendButton) with it
+	# ⚑ THE BOTTOM STRIP IS THE ACTION BAR AND THE PLAYER LIST, AND NOTHING ELSE.
+	#
+	# Owner 2026-09-15: *"What if we move the Chatbox to the area under the status panel and the
+	# action bar moves to the bottom of the screen? ... Since the Action bar is moving down the
+	# Players online area can shrink to the same width as the column above it so the gameoutput
+	# area can be larger vertically which should allow the sprites to be a bit bigger."*
+	#
+	# So the chat LOG goes to the canvas margin under the status panel (placed by
+	# `_place_map_widgets`, which also hides it when a page takes the canvas), and the rows it
+	# used to occupy under the action bar go back to TopSection - which is the map, drawn as big
+	# as its box allows.
+	#
+	# The INPUT ROW deliberately stays here at the bottom of the window rather than following the
+	# log into the margin. It is how commands are typed, and a margin widget that hides itself
+	# whenever the inventory is open would take typing with it.
 	var input_row = input_field.get_parent() if input_field else null
 	if input_row and input_row.get_parent() != center_panel:
 		input_row.get_parent().remove_child(input_row)
 		center_panel.add_child(input_row)
-
-	# Layout: ActionBar stays at the top of CenterPanel, ChatOutput fills the
-	# space below it (expand), InputRow sits at the very bottom.
-	chat_output.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	if input_row:
 		input_row.size_flags_vertical = Control.SIZE_SHRINK_END
 
-	# Hide the old Chat/Players tab bar — it's pointless now since chat and
-	# players live in separate panels.
+	chat_output.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# The strip used to take a quarter of the window on a stretch ratio, most of it chat. With
+	# the log gone it keeps only what the action bar, the input row and a few player names
+	# need, and the rows it gives up go to TopSection - which is the map, drawn as big as its
+	# box allows. That is the point of the move.
+	var strip: Control = get_node_or_null("RootContainer/BottomStrip") as Control
+	if strip != null:
+		strip.size_flags_vertical = Control.SIZE_SHRINK_END
+	if online_players_list != null and is_instance_valid(online_players_list):
+		# Enough for a handful of names; it scrolls past that.
+		online_players_list.custom_minimum_size.y = 84.0
+
+	# The player list column matches the map column above it: TopSection splits 2:1, so this row
+	# does too, and the two right-hand edges line up.
+	center_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center_panel.size_flags_stretch_ratio = 2.0
+	chat_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chat_panel.size_flags_stretch_ratio = 1.0
+
+	# The Chat / System tabs live above the log in the margin (see `_place_map_widgets`).
 	if chat_tab_bar:
-		chat_tab_bar.visible = false
+		chat_tab_bar.visible = true
 	# Players list is always visible in its own ChatPanel now.
 	if online_players_list:
 		online_players_list.visible = true
-	# Ensure chat is always visible (no more tab toggle).
 	chat_output.visible = true
 
 	# Add a header label at the top of the Players panel so the list doesn't
@@ -11998,17 +12082,24 @@ func _create_shortcut_buttons():
 	if not chat_output:
 		return
 
-	# Create a container for the shortcut buttons. Preferred: go inside the
-	# StatusRow built by _create_status_row_with_mini_bars so the buttons share
-	# a row with the mini HP/Mana bars. Legacy fallback: direct child of
-	# RootContainer just above BottomStrip.
-	shortcut_buttons_container = HBoxContainer.new()
+	# ⚑ THE SHORTCUTS SIT AT THE TOP OF THE RIGHT COLUMN.
+	#
+	# Owner 2026-09-15: *"All of the shortcut buttons like companions, eggs, stat, inv, etc.
+	# could probably move to the top of the column on the right instead of where they are."* They
+	# used to share the StatusRow with the mini HP/Mana bars, one row of fourteen buttons across
+	# the full window.
+	#
+	# A FLOW container, not an HBox: fourteen buttons do not fit across a 640px column, and a
+	# flow wraps them onto as many rows as it needs at whatever width the column ends up. An
+	# HBox would squeeze them past readability instead.
+	shortcut_buttons_container = HFlowContainer.new()
 	shortcut_buttons_container.name = "ShortcutButtons"
 
 	var root_container = $RootContainer
-	var status_row = root_container.get_node_or_null("StatusRow")
-	if status_row:
-		status_row.add_child(shortcut_buttons_container)
+	var column: Node = map_display.get_parent() if map_display != null else null
+	if column != null:
+		column.add_child(shortcut_buttons_container)
+		column.move_child(shortcut_buttons_container, 0)
 	else:
 		root_container.add_child(shortcut_buttons_container)
 		var bottom_strip = root_container.get_node_or_null("BottomStrip")
@@ -12016,18 +12107,21 @@ func _create_shortcut_buttons():
 			root_container.move_child(shortcut_buttons_container, bottom_strip.get_index())
 
 	shortcut_buttons_container.layout_mode = 2
-	# Inside StatusRow we share space 2:1 with the MiniBarsLabel so the buttons'
-	# right edge matches MapPanel's right edge. Outside StatusRow (legacy
-	# fallback) they shrink to their content on the right.
-	if status_row:
-		shortcut_buttons_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		shortcut_buttons_container.size_flags_stretch_ratio = 1.0
-		shortcut_buttons_container.alignment = BoxContainer.ALIGNMENT_END
-	else:
-		shortcut_buttons_container.size_flags_horizontal = Control.SIZE_SHRINK_END
-	shortcut_buttons_container.custom_minimum_size = Vector2(0, 22)
-	shortcut_buttons_container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	shortcut_buttons_container.set("theme_override_constants/separation", 2)
+	shortcut_buttons_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	shortcut_buttons_container.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	shortcut_buttons_container.set("theme_override_constants/h_separation", 2)
+	shortcut_buttons_container.set("theme_override_constants/v_separation", 2)
+
+	# The mini HP/Mana bars kept their right edge aligned with GameOutput by sharing StatusRow
+	# 2:1 with these buttons. With the buttons gone the row would be all bars, right-aligned to
+	# the window edge instead - so the empty third stays behind as a spacer.
+	var status_row_now = root_container.get_node_or_null("StatusRow")
+	if status_row_now != null and status_row_now.get_node_or_null("StatusRowSpacer") == null:
+		var spacer := Control.new()
+		spacer.name = "StatusRowSpacer"
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spacer.size_flags_stretch_ratio = 1.0
+		status_row_now.add_child(spacer)
 
 	# Define shortcut buttons: [label, action]
 	var shortcuts = [
@@ -12233,12 +12327,10 @@ func _update_shortcut_buttons_visibility():
 	# occupy its 1/3 slice of StatusRow so the mini HP/Mana bars stay aligned
 	# with the GameOutput right edge. Hiding the whole container would collapse
 	# its cell and let the bars extend to the window edge.
-	if shortcut_buttons_container.get_parent() == $RootContainer.get_node_or_null("StatusRow"):
-		shortcut_buttons_container.visible = true
-		for child in shortcut_buttons_container.get_children():
-			child.visible = should_show
-	else:
-		shortcut_buttons_container.visible = should_show
+	# In the column it is just a block of buttons - nothing downstream depends on it holding its
+	# cell, so the whole container goes. (It used to have to stay visible to keep its third of
+	# StatusRow; a spacer holds that now.)
+	shortcut_buttons_container.visible = should_show
 
 func _scale_shortcut_buttons(base_scale: float):
 	"""Scale shortcut button fonts based on window size and chat scale."""
@@ -24434,7 +24526,7 @@ func handle_server_message(message: Dictionary):
 			var char_name = message.get("character_name", "Unknown")
 			var level = message.get("level", 1)
 			var hero_rank = message.get("rank", 1)
-			display_chat("[color=#FFD700]*** %s (Level %d) has entered the Hall of Heroes at #%d! ***[/color]" % [char_name, level, hero_rank])
+			display_chat("[color=#FFD700]*** %s (Level %d) has entered the Hall of Heroes at #%d! ***[/color]" % [char_name, level, hero_rank], "system")
 			play_top5_sound()
 
 		"corpse_looted":
@@ -24671,7 +24763,8 @@ func handle_server_message(message: Dictionary):
 			var sender_tag = String(message.get("sender_clan_tag", ""))
 			var sender_color = String(message.get("sender_clan_color", "#A335EE"))
 			var sender_label = ("[color=%s][%s][/color] %s" % [sender_color, sender_tag, sender]) if sender_tag != "" else sender
-			display_chat("[color=#00FFFF]%s:[/color] %s" % [sender_label, text])
+			display_chat("[color=#00FFFF]%s:[/color] %s" % [sender_label, text],
+				"system" if sender in ["System", "SYSTEM", "Server"] else "chat")
 			# Refresh player list when someone joins, leaves, or dies
 			if "entered the realm" in text or "left the realm" in text or "has fallen" in text:
 				request_player_list()
@@ -24744,7 +24837,7 @@ func handle_server_message(message: Dictionary):
 			var login_tag_prefix = ""
 			if login_clan_tag != "":
 				login_tag_prefix = "[color=%s][%s][/color] " % [login_clan_color, login_clan_tag]
-			display_chat("[color=#66FF66]●[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged in.[/color]" % [login_tag_prefix, login_sender])
+			display_chat("[color=#66FF66]●[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged in.[/color]" % [login_tag_prefix, login_sender], "system")
 
 		"clan_logout":
 			# Audit #14 v0.9.532 — mirror of clan_login. Gray dot for offline.
@@ -24754,7 +24847,7 @@ func handle_server_message(message: Dictionary):
 			var logout_tag_prefix = ""
 			if logout_clan_tag != "":
 				logout_tag_prefix = "[color=%s][%s][/color] " % [logout_clan_color, logout_clan_tag]
-			display_chat("[color=#666666]○[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged out.[/color]" % [logout_tag_prefix, logout_sender])
+			display_chat("[color=#666666]○[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged out.[/color]" % [logout_tag_prefix, logout_sender], "system")
 
 		"friend_list_result":
 			# Audit #14 v0.9.540 — /friend list response. Renders friends
@@ -25351,7 +25444,7 @@ func handle_server_message(message: Dictionary):
 				display_game("[color=#FF4444]========================================[/color]")
 				display_game("")
 				# Also show in chat
-				display_chat("[color=#FF4444][SERVER] %s[/color]" % broadcast_msg)
+				display_chat("[color=#FF4444][SERVER] %s[/color]" % broadcast_msg, "system")
 				# Play announcement sound
 				play_server_announcement()
 
@@ -33658,18 +33751,8 @@ func _ensure_coord_post_label() -> void:
 	coord_post_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	coord_post_label.add_theme_font_size_override("normal_font_size", 15)
 	coord_post_label.add_theme_color_override("default_color", Color.WHITE)
-	# Match region_label's StyleBoxFlat_region_frame so the two boxes are
-	# visually paired.
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.05, 0.08, 0.92)
-	sb.border_color = Color(0.85, 0.7, 0.2, 1)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(8)
-	sb.content_margin_left = 10
-	sb.content_margin_right = 10
-	sb.content_margin_top = 6
-	sb.content_margin_bottom = 6
-	coord_post_label.add_theme_stylebox_override("normal", sb)
+	# Match region_label's StyleBoxFlat_region_frame so the boxes are visually paired.
+	coord_post_label.add_theme_stylebox_override("normal", _margin_box_style())
 	map_display.add_child(coord_post_label)
 	_ensure_side_column_layout()
 
@@ -33679,13 +33762,82 @@ func _ensure_side_column_layout() -> void:
 	_place_map_widgets(_ow_canvas_eligible())
 
 
+func _margin_box_style() -> StyleBoxFlat:
+	"""The framed box the margin widgets share - dark panel, gold border, rounded.
+
+	One function rather than a copy per widget: the Coords box built its own and the status panel
+	had none at all, which is what the owner saw (*"Status should be in a bordered panel just like
+	coord, area, and the minimap are"*)."""
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.05, 0.08, 0.92)
+	sb.border_color = Color(0.85, 0.7, 0.2, 1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	return sb
+
+
 func _margin_widgets_shown() -> bool:
 	"""Are the margin widgets allowed on screen right now?
 
-	They float over the canvas, so they are only welcome while the MAP is what is on it. Their
-	own updaters run on every character_update, and without this a page that had just taken the
-	canvas would have the Coords box and the status panel pop back on top of it a moment later."""
-	return (not _ow_canvas_eligible()) or _ow_canvas_intact()
+	They float over the canvas, so they are only welcome while the MAP is what is on it. Two ways
+	it stops being: a page CLEARS the canvas and prints itself (caught by `_ow_canvas_intact`),
+	or a visual PANEL is shown on top of it - the inventory, the market, a companion screen - in
+	which case the canvas text is untouched and only the panel's visibility says so. Owner
+	2026-09-15: *"we will also need to make sure those overlays hide when menus like the
+	inventory are displayed so they aren't covering up what's behind it."*
+
+	The panels are matched by NAME rather than by a list of the ones that exist today - every one
+	of them is a `*Panel` child of the canvas, and a list is wrong the first time somebody adds
+	the tenth. Same reasoning as the text routing: no whitelist to forget."""
+	if not _ow_canvas_eligible():
+		return true
+	if not _ow_canvas_intact():
+		return false
+	if game_output == null:
+		return false
+	var canvas: Node = game_output.get_parent()
+	if canvas == null:
+		return true
+	for ch in canvas.get_children():
+		if ch is Control and (ch as Control).visible and String(ch.name).ends_with("Panel"):
+			return false
+	return true
+
+
+func _sync_margin_widgets() -> void:
+	"""Apply `_margin_widgets_shown()` when it changes.
+
+	Polled rather than hooked into each panel's open/close, because there are a dozen of those and
+	a missed one leaves the Coords box sitting on top of a page. One boolean and a short loop over
+	the canvas's children per frame, and it cannot be forgotten by whatever panel is added next."""
+	var want: int = 1 if _margin_widgets_shown() else 0
+	if want == _margin_widgets_last:
+		return
+	_margin_widgets_last = want
+	if _ow_trace:
+		var _panels := ""
+		if game_output != null and game_output.get_parent() != null:
+			for ch in game_output.get_parent().get_children():
+				if ch is Control and (ch as Control).visible and String(ch.name).ends_with("Panel"):
+					_panels += String(ch.name) + " "
+		print("[OWFLASH] margins want=%d eligible=%s intact=%s panels=[%s]" % [
+			want, str(_ow_canvas_eligible()), str(_ow_canvas_intact()), _panels])
+	# The travel row is one of these too: it sat over the inventory's own footer text until it
+	# was included here.
+	_place_stance_bar(_ow_canvas_eligible(), want == 1)
+	if want == 1:
+		# Their own rules decide the rest (no tools underground, no minimap without one).
+		update_tool_status_overlay()
+		update_coord_post_label()
+		update_region_label()
+		if minimap_display != null and is_instance_valid(minimap_display):
+			minimap_display.visible = minimap_display.get_parsed_text().strip_edges() != ""
+	else:
+		_map_widgets_visible(false)
 
 
 func _map_widgets_visible(v: bool) -> void:
@@ -33693,7 +33845,7 @@ func _map_widgets_visible(v: bool) -> void:
 
 	They float over the canvas now, so a page that takes the canvas has to take it from them too
 	- otherwise the Coords box sits on top of the inventory."""
-	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay]:
+	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay, _margin_chat_box]:
 		if n != null and is_instance_valid(n):
 			(n as Control).visible = v
 
@@ -33776,6 +33928,10 @@ func _place_map_widgets(on_canvas: bool) -> void:
 	# be able to move the status into a panel in those margins as well."* With it out of the
 	# column, the column is nothing but the log, which is what the post description needs.
 	if tool_status_overlay != null and is_instance_valid(tool_status_overlay):
+		# Framed like the others. It is the same kind of thing - a panel of information floating
+		# over the map - and it was the only one without a box around it.
+		if tool_status_overlay.get_theme_stylebox("normal", "") == null or not tool_status_overlay.has_theme_stylebox_override("normal"):
+			tool_status_overlay.add_theme_stylebox_override("normal", _margin_box_style())
 		if on_canvas and canvas != null:
 			if tool_status_overlay.get_parent() != canvas:
 				if tool_status_overlay.get_parent() != null:
@@ -33788,7 +33944,13 @@ func _place_map_widgets(on_canvas: bool) -> void:
 			tool_status_overlay.offset_left = 8.0
 			tool_status_overlay.offset_top = under
 			tool_status_overlay.offset_right = 8.0 + margin_w
-			tool_status_overlay.offset_bottom = under + 420.0
+			# Hug the content rather than reserving a fixed block - the panel shrank when its
+			# font did, and an empty half of framed box under it reads as a bug. Measured from
+			# the label itself, which settles a frame later; this runs on every map draw.
+			var status_h: float = tool_status_overlay.get_content_height() + 18.0
+			if status_h < 40.0:
+				status_h = 160.0
+			tool_status_overlay.offset_bottom = under + clampf(status_h, 60.0, canvas.size.y * 0.55)
 		else:
 			var trow: Node = map_display.get_parent().get_node_or_null("BottomRow") if map_display != null and map_display.get_parent() != null else null
 			if trow != null and tool_status_overlay.get_parent() != trow:
@@ -33797,6 +33959,57 @@ func _place_map_widgets(on_canvas: bool) -> void:
 				trow.add_child(tool_status_overlay)
 				trow.move_child(tool_status_overlay, 0)
 			tool_status_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	# ...and the CHAT LOG below the status panel, in the same margin. Owner 2026-09-15: *"What if
+	# we move the Chatbox to the area under the status panel[?]"* Its tab bar rides with it, so
+	# the two are wrapped in one box that can be anchored, framed and hidden as a unit.
+	if chat_output != null and is_instance_valid(chat_output):
+		if on_canvas and canvas != null:
+			var chat_box: VBoxContainer = canvas.get_node_or_null("MarginChat") as VBoxContainer
+			if chat_box == null:
+				chat_box = VBoxContainer.new()
+				chat_box.name = "MarginChat"
+				chat_box.add_theme_constant_override("separation", 2)
+				canvas.add_child(chat_box)
+			_margin_chat_box = chat_box
+			if chat_tab_bar != null and is_instance_valid(chat_tab_bar) and chat_tab_bar.get_parent() != chat_box:
+				if chat_tab_bar.get_parent() != null:
+					chat_tab_bar.get_parent().remove_child(chat_tab_bar)
+				chat_box.add_child(chat_tab_bar)
+			if chat_output.get_parent() != chat_box:
+				if chat_output.get_parent() != null:
+					chat_output.get_parent().remove_child(chat_output)
+				chat_box.add_child(chat_output)
+			chat_output.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			if not chat_output.has_theme_stylebox_override("normal"):
+				chat_output.add_theme_stylebox_override("normal", _margin_box_style())
+			var chat_top: float = 8.0
+			if tool_status_overlay != null and is_instance_valid(tool_status_overlay) and tool_status_overlay.visible:
+				chat_top = tool_status_overlay.offset_bottom + 10.0
+			chat_box.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+			chat_box.offset_left = 8.0
+			chat_box.offset_right = 8.0 + margin_w
+			chat_box.offset_top = chat_top
+			chat_box.offset_bottom = -(STANCE_BAR_H + 8.0)
+		else:
+			# Sprites off: the map is drawn in the column and the canvas is plain text, so a
+			# framed chat box floating on it would cover the text. It goes back under the action
+			# bar, which is where it lived before the margins existed.
+			var center: Node = get_node_or_null("RootContainer/BottomStrip/CenterPanel")
+			if center != null:
+				if chat_tab_bar != null and is_instance_valid(chat_tab_bar) and chat_tab_bar.get_parent() != center:
+					if chat_tab_bar.get_parent() != null:
+						chat_tab_bar.get_parent().remove_child(chat_tab_bar)
+					center.add_child(chat_tab_bar)
+				if chat_output.get_parent() != center:
+					if chat_output.get_parent() != null:
+						chat_output.get_parent().remove_child(chat_output)
+					center.add_child(chat_output)
+				# ...above the input row, which never left.
+				var _ir: Node = input_field.get_parent() if input_field != null else null
+				if _ir != null and _ir.get_parent() == center:
+					center.move_child(_ir, center.get_child_count() - 1)
+			if _margin_chat_box != null and is_instance_valid(_margin_chat_box):
+				_margin_chat_box.visible = false
 
 
 func update_coord_post_label() -> void:
@@ -37221,7 +37434,7 @@ func _handle_bounty_posted_on_you(message: Dictionary) -> void:
 	var poster = String(message.get("poster_name", "Someone"))
 	var amount = int(message.get("amount", 0))
 	var total = int(message.get("total_bounty", amount))
-	display_chat("[color=#FF2020]$ %s placed a [color=#FFD700]%d valor[/color] bounty on you (total %d).[/color]" % [poster, amount, total])
+	display_chat("[color=#FF2020]$ %s placed a [color=#FFD700]%d valor[/color] bounty on you (total %d).[/color]" % [poster, amount, total], "system")
 
 func _handle_bounty_list_result(message: Dictionary) -> void:
 	"""v0.9.568 — Route bounty_list to the BountyBoardPanel when it's open OR
@@ -41150,12 +41363,27 @@ func _trigger_combat_sounds(msg: String):
 		play_combat_ability_sound()
 		return
 
-func display_chat(text: String):
-	if chat_output:
-		# Add timestamp to chat messages
-		var time_dict = Time.get_time_dict_from_system()
-		var timestamp = "[color=#808080][%02d:%02d][/color] " % [time_dict.hour, time_dict.minute]
-		chat_output.append_text(timestamp + text + "\n")
+func display_chat(text: String, channel: String = "chat"):
+	"""One line into the chat log, on one of its two channels.
+
+	`channel` is "chat" for what a PERSON said - global, whisper, clan, party, a duel challenge -
+	and "system" for what the realm announced: server broadcasts, hall-of-heroes entries, clan
+	logins, bounties. They are separated because the second kind arrives constantly and buries
+	the first, which is the thing you were waiting to read."""
+	var ch: String = channel if _chat_lines.has(channel) else "chat"
+	var time_dict = Time.get_time_dict_from_system()
+	var timestamp = "[color=#808080][%02d:%02d][/color] " % [time_dict.hour, time_dict.minute]
+	var line: String = timestamp + text
+	var buf: Array = _chat_lines[ch]
+	buf.append(line)
+	while buf.size() > CHAT_LINES_MAX:
+		buf.pop_front()
+	if ch == chat_tab:
+		if chat_output:
+			chat_output.append_text(line + "\n")
+	else:
+		_chat_unread[ch] = true
+		_update_chat_tab_style()
 
 func _get_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""
@@ -41197,13 +41425,21 @@ func update_map(map_text: String):
 	if _ow_canvas:
 		# The side column takes over the text, so whatever was there stays readable.
 		_ow_side_refresh()
-	# The travel row, the Coords / Area boxes and the minimap all go wherever the map goes.
-	_place_stance_bar(_ow_canvas)
+	# The travel row, the Coords / Area boxes, the minimap, the status panel and the chat log
+	# all go wherever the map goes - and none of them are shown over a page that has taken
+	# the canvas. The travel row was passed the default `true` here at first, which is what
+	# left it printing across the inventory's own footer.
+	var _show_margins: bool = _margin_widgets_shown()
+	_place_stance_bar(_ow_canvas, _show_margins)
 	_place_map_widgets(_ow_canvas)
 	if _ow_canvas:
-		# The map is back, so the margin widgets come back with it. The minimap's own rule (it
-		# hides when the server sent no minimap) is applied further down and wins.
-		_map_widgets_visible(true)
+		# The map is back, so the margin widgets come back with it - UNLESS a page is on top of
+		# it. This ran unconditionally at first and was exactly what put the status panel and the
+		# Area box back over an open inventory: the hide was correct and a map refresh a moment
+		# later undid it. Traced with `--owtrace`, which reported want=0 panels=[InventoryPanel]
+		# while the boxes were plainly on screen.
+		_map_widgets_visible(_show_margins)
+		_margin_widgets_last = 1 if _show_margins else 0
 	if _map_target:
 		if _ow_canvas:
 			_ow_rendering = true
@@ -41263,7 +41499,9 @@ func update_map(map_text: String):
 		main_text = _strip_remote_player_glyphs(main_text)
 		_map_target.append_text(main_text)
 		if show_map_legend:
-			_map_target.append_text("\n[color=#8B7355][font_size=13]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water  [/font_size][/color][color=#FFAA00][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Threat  [/font_size][/color][color=#FFD700][font_size=13]?[/font_size][/color][color=#8B7355][font_size=13] Bounty  [/font_size][/color][color=#FF4444][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Hotzone  X Corpse  $ Sack[/font_size][/color]")
+			# CENTRED under the map rather than left-aligned in the label: the margins either side
+			# of the map hold panels now, and a left-aligned legend ran under the chat box.
+			_map_target.append_text("\n[center][color=#8B7355][font_size=13]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water  [/font_size][/color][color=#FFAA00][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Threat  [/font_size][/color][color=#FFD700][font_size=13]?[/font_size][/color][color=#8B7355][font_size=13] Bounty  [/font_size][/color][color=#FF4444][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Hotzone  X Corpse  $ Sack[/font_size][/color][/center]")
 
 		if _ow_canvas:
 			_ow_rendering = false
@@ -41280,7 +41518,9 @@ func update_map(map_text: String):
 				# under the minimap - which is exactly what the first attempt shipped.
 				minimap_text = minimap_text.replace("[right]", "[center]").replace("[/right]", "[/center]")
 			minimap_display.append_text(minimap_text)
-			minimap_display.visible = true
+			# ...and not over an open page. This line was the last one re-showing a margin widget
+			# on top of the inventory after the hide had correctly fired.
+			minimap_display.visible = _margin_widgets_shown()
 		else:
 			minimap_display.visible = false
 
@@ -47426,6 +47666,9 @@ func _overworld_display(payload: Dictionary) -> String:
 	# against a guessed constant - the tile size changes with the window, the vision radius and
 	# the stance, and a hand-picked margin width would be wrong the first time any of those moved.
 	_ow_map_px_w = float(px * cols_n)
+	if _ow_trace:
+		print("[OWFLASH] tiles px=%d cols=%d rows=%d box=%dx%d" % [px, cols_n, rows_n,
+			int(_fitbox.size.x) if _fitbox != null else -1, int(_fitbox.size.y) if _fitbox != null else -1])
 	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
 	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With
