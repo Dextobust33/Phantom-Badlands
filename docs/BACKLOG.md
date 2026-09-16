@@ -820,6 +820,32 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    starter post; companion sprites that FACE the way they walk on the overworld and in dungeons
    (release held for it).
 4b. **◐ PARTLY DONE 2026-09-15 (unreleased) - default UI scale at 1080p.**
+   **THE OVERWORLD MAP MOVED TO THE MAIN CANVAS (2026-09-15 night, unreleased), and took the
+   Coords box, the Area box, the minimap, the status panel and the travel row with it.** Owner,
+   after three attempts to win rows inside the side column: *"the map needs more space"*, then
+   *"the Coords, Area, and Minimap boxes should be moved to the unused margins by the map"*, then
+   *"we may even be able to move the status into a panel in those margins as well."* The map is
+   square and the canvas is not - ~510px of map in a 1277px canvas - so there are ~370px of empty
+   canvas either side. Both boxes, the minimap and `tool_status_overlay` (which is the whole
+   status block; the StatusHUD VBox under it has been hidden for a long time) are anchored into
+   those margins, measured from the map's own drawn width so they follow it when the tile size
+   changes. The side column is now nothing but the log, which it had to be: the post description
+   moved into it and that is eighteen lines.
+   Two reported faults survived the first cut and were both found by MEASURING rather than
+   reasoning, after a fix aimed at the wrong writer each time:
+   - *"lines are still there"* - they were never line spacing. Measured off the owner's
+     screenshot: 1-2px of #6A6250 at the ROW pitch, full width, vanishing under tall tiles. That
+     is the `[url]` UNDERLINE (every map square is url-wrapped so it can be hovered for its area
+     level). `map_display` has had `meta_underlined = false` since the figures went in and the
+     dungeon renderer sets it false two lines before it draws; the canvas never did. One value,
+     two places.
+   - *"Crossroads still flashing in place of the map"* - the location handler was marked, and the
+     post block is not in it. A trace on every canvas write (`--owtrace`, kept) named the writer
+     in one run: the client redraws `_display_trading_post_ui` on EVERY step taken inside a post,
+     and it opened with `game_output.clear()`. It goes to the side column now. The same step also
+     ran `clear_game_output()` outside posts, blanking the map for a network round trip - gone
+     too.
+
    ✅ The MAP fits now. The font was capped to fit ACROSS since v0.9.391 and never DOWN; in the live
    layout the map box is ~400 virtual px and the map wanted 506, so RichTextLabel scrolled and the
    middle - where the player stands - sat under the fold. The cap steps down using the font's real

@@ -1825,6 +1825,15 @@ var _ow_rendering: bool = false
 ## True while a location message is being handled, so its text goes to the side column from the
 ## first line rather than flashing on the canvas until the map redraws over it.
 var _ow_location_pass: bool = false
+## `--owtrace`: print where every line lands while the map owns the canvas, and every wipe of it.
+##
+## This is what found the "Crossroads flashes on every step" report after a fix aimed at the
+## wrong writer. Two theories had already been wrong; the trace named the writer in one run
+## (`_display_trading_post_ui`, via the client's own per-step redraw). Kept, because the next
+## report of this shape will be the same question: who wrote on the canvas, and what wiped it.
+var _ow_trace: bool = "--owtrace" in OS.get_cmdline_args()
+## The width, in pixels, of the map as it was last drawn - see `_place_map_widgets`.
+var _ow_map_px_w: float = 0.0
 var _ow_side_lines: Array = []
 const OW_SIDE_MAX_LINES := 60
 var market_list_flash: String = ""  # Brief success message shown in listing view
@@ -6226,7 +6235,10 @@ func _dev_run_shots() -> void:
 				# baked as `tile:door` was a FRAGMENT out of the middle of a 3x2 door. A post is
 				# where the multi-cell art is densest (doors, forge, market, inn, well), so this
 				# is the frame that shows whether the change worked.
-				send_to_server({"type": "gm_teleport", "x": -6, "y": -6})
+				# (0, 0) is the Crossroads' own tile. It used to be (-6, -6), which the
+				# 2026-09-13 world reshape left OUTSIDE the walls - the scene was still called
+				# postart and was photographing open ground.
+				send_to_server({"type": "gm_teleport", "x": 0, "y": 0})
 				await get_tree().create_timer(2.0).timeout
 				_dev_shot_clear_overlays()
 				await _dev_shot_capture("postart")
@@ -24478,6 +24490,8 @@ func handle_server_message(message: Dictionary):
 			# the pass is enough: display_game sends anything printed inside it to the side column,
 			# whether or not the map happens to be on the canvas yet.
 			_ow_location_pass = _ow_canvas_eligible()
+			if _ow_trace:
+				print("[OWFLASH] --- location message, pass=%s" % str(_ow_location_pass))
 			if _ow_location_pass:
 				_ow_side_lines.clear()
 			# Who is walking with you. Read before anything draws, so the escort appears on the
@@ -24956,7 +24970,11 @@ func handle_server_message(message: Dictionary):
 		"text":
 			# Clear game output if requested (e.g., rest command)
 			if message.get("clear_output", false):
+				if _ow_trace:
+					print("[OWFLASH] clear_output wipes the canvas :: %s" % String(message.get("message", "")).substr(0, 90))
 				game_output.clear()
+			if _ow_trace:
+				print("[OWFLASH] text msg pass=%s showing=%s :: %s" % [str(_ow_location_pass), str(_ow_canvas_showing), String(message.get("message", "")).substr(0, 110)])
 			var text_msg = message.get("message", "")
 			# If awaiting item use result, store it instead of displaying immediately
 			if awaiting_item_use_result:
@@ -29901,7 +29919,11 @@ func _on_move_button(direction: int):
 		# Don't clear trading post UI - server will notify if we leave
 		if at_trading_post:
 			_display_trading_post_ui()
-		else:
+		elif not _ow_canvas_intact():
+			# ...and do not wipe the MAP either. This clear ran on every step taken outside a
+			# post, which since the map moved to the canvas meant blanking the map and waiting a
+			# network round trip for the redraw - a blink on every step. The map already replaces
+			# itself wholesale when the next `location` arrives; there is nothing to clear.
 			clear_game_output()
 		last_move_time = current_time
 
@@ -33429,7 +33451,7 @@ func update_tool_status_overlay():
 		combined += "\n\n" + "\n".join(sections.slice(1))
 	tool_status_overlay.clear()
 	tool_status_overlay.append_text(combined)
-	tool_status_overlay.visible = true
+	tool_status_overlay.visible = _margin_widgets_shown()
 
 func hide_tool_status_overlay():
 	if tool_status_overlay:
@@ -33455,7 +33477,6 @@ func _ensure_stance_bar() -> void:
 	_stance_bar.add_theme_constant_override("separation", 4)
 	_stance_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.add_child(_stance_bar)
-	# Directly under the map, above the minimap row.
 	panel.move_child(_stance_bar, mini(map_display.get_index() + 1, panel.get_child_count() - 1))
 
 	var title := Label.new()
@@ -33511,6 +33532,50 @@ func _on_stance_pressed(stance_id: String) -> void:
 	if stance_id == _travel_stance:
 		return
 	send_to_server({"type": "set_travel_stance", "stance": stance_id})
+
+
+## How tall the travel row is when it sits on the canvas. The bar is anchored rather than in a
+## container there, so it needs a number; the canvas is shortened by exactly this much so the map
+## never draws under it.
+const STANCE_BAR_H := 28.0
+
+
+func _place_stance_bar(on_canvas: bool, map_showing: bool = true) -> void:
+	"""Put the travel row with the MAP, wherever the map currently is.
+
+	Owner 2026-09-15: *"the Travel options should be on the same area as the map, not stuck over
+	on the right still."* The row was built under `map_display` back when the map lived there. The
+	map moved to the canvas and the row did not follow, which left the one control that changes
+	how you travel sitting in a column of text.
+
+	Both parents are real cases, so this moves it rather than picking one: with sprites off the
+	map is still drawn in the column, and the row belongs under it there. On the canvas it is
+	anchored to the bottom and the canvas is shortened to match, so it never overlaps the map or
+	the log rather than floating on top of them."""
+	if _stance_bar == null or not is_instance_valid(_stance_bar):
+		return
+	var canvas: Control = (game_output.get_parent() as Control) if game_output != null else null
+	var column: Control = (map_display.get_parent() as Control) if map_display != null else null
+	var target: Control = canvas if (on_canvas and canvas != null) else column
+	if target == null:
+		return
+	if _stance_bar.get_parent() != target:
+		if _stance_bar.get_parent() != null:
+			_stance_bar.get_parent().remove_child(_stance_bar)
+		target.add_child(_stance_bar)
+		if target == column and map_display != null:
+			column.move_child(_stance_bar, mini(map_display.get_index() + 1, column.get_child_count() - 1))
+	if target == canvas:
+		_stance_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		_stance_bar.offset_left = 8.0
+		_stance_bar.offset_right = -8.0
+		_stance_bar.offset_top = -STANCE_BAR_H
+		_stance_bar.offset_bottom = 0.0
+	# On the canvas it belongs to the map: a page that takes the canvas hides it rather than
+	# bouncing it into the side column for as long as the page is open.
+	_stance_bar.visible = not dungeon_mode and (map_showing or target != canvas)
+	if game_output != null:
+		game_output.offset_bottom = -STANCE_BAR_H if (target == canvas and _stance_bar.visible) else 0.0
 
 
 func _refresh_stance_bar() -> void:
@@ -33591,12 +33656,6 @@ func _ensure_coord_post_label() -> void:
 	coord_post_label.fit_content = true
 	coord_post_label.scroll_active = false
 	coord_post_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Anchor top-LEFT (region_label is top-right, this one is top-left).
-	coord_post_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	coord_post_label.offset_left = 8.0
-	coord_post_label.offset_top = 8.0
-	coord_post_label.offset_right = 248.0
-	coord_post_label.offset_bottom = 60.0
 	coord_post_label.add_theme_font_size_override("normal_font_size", 15)
 	coord_post_label.add_theme_color_override("default_color", Color.WHITE)
 	# Match region_label's StyleBoxFlat_region_frame so the two boxes are
@@ -33612,6 +33671,132 @@ func _ensure_coord_post_label() -> void:
 	sb.content_margin_bottom = 6
 	coord_post_label.add_theme_stylebox_override("normal", sb)
 	map_display.add_child(coord_post_label)
+	_ensure_side_column_layout()
+
+
+func _ensure_side_column_layout() -> void:
+	"""Compatibility shim: the boxes are placed by `_place_map_widgets` now."""
+	_place_map_widgets(_ow_canvas_eligible())
+
+
+func _margin_widgets_shown() -> bool:
+	"""Are the margin widgets allowed on screen right now?
+
+	They float over the canvas, so they are only welcome while the MAP is what is on it. Their
+	own updaters run on every character_update, and without this a page that had just taken the
+	canvas would have the Coords box and the status panel pop back on top of it a moment later."""
+	return (not _ow_canvas_eligible()) or _ow_canvas_intact()
+
+
+func _map_widgets_visible(v: bool) -> void:
+	"""Show/hide the three margin widgets as a set.
+
+	They float over the canvas now, so a page that takes the canvas has to take it from them too
+	- otherwise the Coords box sits on top of the inventory."""
+	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay]:
+		if n != null and is_instance_valid(n):
+			(n as Control).visible = v
+
+
+func _place_map_widgets(on_canvas: bool) -> void:
+	"""The Coords box, the Area box and the minimap live in the MARGINS BESIDE THE MAP.
+
+	Owner 2026-09-15: *"we should move the Coords box, area box and minimap into the margins that
+	are wasted right"*, and then, when the first cut put them in the side column: *"the Coords,
+	Area, and Minimap boxes should be moved to the unused margins by the map."*
+
+	The map is square and the canvas is not: 23 tiles at 26px is ~600 wide in a 1277px canvas, so
+	there are ~340px of empty canvas either side of it. That is the wasted margin, and it is where
+	these three belong - beside the thing they describe, instead of over the top of the column of
+	text or stacked above it.
+
+	They follow the map. With sprites off the map is drawn in the side column, and they go back to
+	floating over its corners, which is where they were built to sit."""
+	var canvas: Control = (game_output.get_parent() as Control) if game_output != null else null
+	var target: Control = canvas if (on_canvas and canvas != null) else (map_display as Control)
+	if target == null:
+		return
+	# The usable margin either side of the map, measured from the map's own drawn width.
+	var margin_w: float = 240.0
+	if on_canvas and canvas != null and _ow_map_px_w > 0.0:
+		margin_w = clampf((canvas.size.x - _ow_map_px_w) * 0.5 - 16.0, 160.0, 420.0)
+	var boxes: Array = []
+	if coord_post_label != null and is_instance_valid(coord_post_label):
+		boxes.append(coord_post_label)
+	if region_label != null and is_instance_valid(region_label):
+		boxes.append(region_label)
+	for b in boxes:
+		var c: Control = b as Control
+		if c.get_parent() != target:
+			if c.get_parent() != null:
+				c.get_parent().remove_child(c)
+			target.add_child(c)
+	# Coords top-LEFT of the margin, Area top-RIGHT - the pairing they have always had.
+	if coord_post_label != null and is_instance_valid(coord_post_label):
+		coord_post_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		coord_post_label.offset_left = 8.0
+		coord_post_label.offset_top = 8.0
+		coord_post_label.offset_right = 8.0 + margin_w
+		coord_post_label.offset_bottom = 60.0
+	if region_label != null and is_instance_valid(region_label):
+		region_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		region_label.offset_left = -(margin_w + 8.0)
+		region_label.offset_top = 8.0
+		region_label.offset_right = -8.0
+		region_label.offset_bottom = 60.0
+	# The minimap sits under the Area box in the right margin, and is placed from that box's own
+	# measured height rather than a guessed constant - the region name already wraps to three
+	# lines in places, and weather adds a fourth.
+	if minimap_display != null and is_instance_valid(minimap_display):
+		if on_canvas and canvas != null:
+			if minimap_display.get_parent() != canvas:
+				if minimap_display.get_parent() != null:
+					minimap_display.get_parent().remove_child(minimap_display)
+				canvas.add_child(minimap_display)
+			var below: float = 76.0
+			if region_label != null and is_instance_valid(region_label) and region_label.visible:
+				below = region_label.position.y + region_label.size.y + 10.0
+			minimap_display.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+			minimap_display.offset_left = -(margin_w + 8.0)
+			minimap_display.offset_top = below
+			minimap_display.offset_right = -8.0
+			minimap_display.offset_bottom = below + 260.0
+		else:
+			var row: Node = map_display.get_parent().get_node_or_null("BottomRow") if map_display != null and map_display.get_parent() != null else null
+			if row != null and minimap_display.get_parent() != row:
+				if minimap_display.get_parent() != null:
+					minimap_display.get_parent().remove_child(minimap_display)
+				row.add_child(minimap_display)
+			minimap_display.set_anchors_preset(Control.PRESET_TOP_LEFT)
+			minimap_display.size_flags_horizontal = Control.SIZE_SHRINK_END
+			minimap_display.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	# ...and the STATUS panel - Tools, Backpack, Pouch, Quests, Eggs, all of which render into
+	# `tool_status_overlay` (the StatusHUD VBox beneath it has been hidden for a long time) - goes
+	# under the Coords box in the LEFT margin. Owner 2026-09-15: *"If we do it right we may even
+	# be able to move the status into a panel in those margins as well."* With it out of the
+	# column, the column is nothing but the log, which is what the post description needs.
+	if tool_status_overlay != null and is_instance_valid(tool_status_overlay):
+		if on_canvas and canvas != null:
+			if tool_status_overlay.get_parent() != canvas:
+				if tool_status_overlay.get_parent() != null:
+					tool_status_overlay.get_parent().remove_child(tool_status_overlay)
+				canvas.add_child(tool_status_overlay)
+			var under: float = 76.0
+			if coord_post_label != null and is_instance_valid(coord_post_label) and coord_post_label.visible:
+				under = coord_post_label.position.y + coord_post_label.size.y + 10.0
+			tool_status_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT)
+			tool_status_overlay.offset_left = 8.0
+			tool_status_overlay.offset_top = under
+			tool_status_overlay.offset_right = 8.0 + margin_w
+			tool_status_overlay.offset_bottom = under + 420.0
+		else:
+			var trow: Node = map_display.get_parent().get_node_or_null("BottomRow") if map_display != null and map_display.get_parent() != null else null
+			if trow != null and tool_status_overlay.get_parent() != trow:
+				if tool_status_overlay.get_parent() != null:
+					tool_status_overlay.get_parent().remove_child(tool_status_overlay)
+				trow.add_child(tool_status_overlay)
+				trow.move_child(tool_status_overlay, 0)
+			tool_status_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT)
 
 
 func update_coord_post_label() -> void:
@@ -33651,7 +33836,7 @@ func update_coord_post_label() -> void:
 
 	coord_post_label.clear()
 	coord_post_label.append_text("\n".join(lines))
-	coord_post_label.visible = true
+	coord_post_label.visible = _margin_widgets_shown()
 
 
 func _format_compass_line(compass: Dictionary) -> String:
@@ -33821,7 +34006,7 @@ func update_region_label():
 
 	region_label.clear()
 	region_label.append_text("\n".join(lines))
-	region_label.visible = true
+	region_label.visible = _margin_widgets_shown()
 
 func hide_status_hud():
 	if status_hud:
@@ -35874,22 +36059,6 @@ func _ow_side_add(text: String) -> void:
 	_ow_side_refresh()
 
 
-func _ow_side_top_rows() -> int:
-	"""Blank rows needed to clear the Coords / Area boxes floating over the side column.
-
-	Measured from the boxes rather than guessed, because they grow with their own text - a long
-	region name already wraps to three lines."""
-	var tallest := 0.0
-	for n in [coord_post_label, region_label]:
-		if n != null and is_instance_valid(n) and (n as Control).visible:
-			tallest = maxf(tallest, (n as Control).position.y + (n as Control).size.y)
-	if tallest <= 0.0 or map_display == null:
-		return 0
-	var f: Font = map_display.get_theme_font("normal_font")
-	var lh: float = f.get_height(map_display.get_theme_font_size("normal_font_size")) if f != null else 16.0
-	return clampi(int(ceil(tallest / maxf(1.0, lh))), 0, 12)
-
-
 func _ow_side_refresh() -> void:
 	"""The side column: what used to fill the main panel - where you are, who greets you, what you
 	just picked up. Newest at the bottom, the way the dungeon run log reads."""
@@ -35897,9 +36066,10 @@ func _ow_side_refresh() -> void:
 		return
 	map_display.remove_theme_constant_override("line_separation")
 	map_display.clear()
-	# Start BELOW the Coords / Area boxes that float over the top of this column. Text drawn under
-	# them is unreadable - the owner caught a "Screenshot saved" line doing exactly that.
-	map_display.append_text("\n".repeat(_ow_side_top_rows()) + "\n".join(_ow_side_lines))
+	# No blank rows to dodge the Coords / Area boxes any more: they are laid out ABOVE this label
+	# rather than floating over it (see `_ensure_side_column_layout`), so the log starts at the
+	# top of the space it actually owns.
+	map_display.append_text("\n".join(_ow_side_lines))
 
 
 func display_game(text: String):
@@ -35946,7 +36116,21 @@ func display_game(text: String):
 			_ow_side_add(text)
 			return
 		_ow_canvas_showing = false
+		# The canvas is text again: give it back the rows the travel row was holding, and take
+		# the floating map widgets off the page that just claimed it.
+		_place_stance_bar(_ow_canvas_eligible(), false)
+		if _ow_canvas_eligible():
+			_map_widgets_visible(false)
 	if game_output:
+		if _ow_trace and _ow_canvas_eligible():
+			print("[OWFLASH] canvas<- showing=%s intact=%s mark=%d len=%d :: %s" % [
+				str(_ow_canvas_showing), str(_ow_canvas_intact()), _ow_canvas_mark,
+				game_output.get_parsed_text().length(), text.substr(0, 110)])
+		# The map turned the `[url]` underline off (see update_map). Text on the canvas wants it
+		# back: an underline is the only cue that a damage number or an item name has something
+		# behind it, and the same restore is already done at combat start and dungeon exit for
+		# the dungeon renderer's copy of this.
+		game_output.meta_underlined = true
 		game_output.append_text(text + "\n")
 
 func open_admin_menu() -> void:
@@ -41007,10 +41191,19 @@ func update_map(map_text: String):
 	# needs more space, it's too small and doesn't have enough space on a 1080p"* - the column is
 	# ~640px shared four ways, and the canvas is 711px shared with nothing.
 	var _ow_canvas: bool = _ow_canvas_eligible()
+	if _ow_trace:
+		print("[OWFLASH] update_map canvas=%s" % str(_ow_canvas))
 	var _map_target: RichTextLabel = game_output if _ow_canvas else map_display
 	if _ow_canvas:
 		# The side column takes over the text, so whatever was there stays readable.
 		_ow_side_refresh()
+	# The travel row, the Coords / Area boxes and the minimap all go wherever the map goes.
+	_place_stance_bar(_ow_canvas)
+	_place_map_widgets(_ow_canvas)
+	if _ow_canvas:
+		# The map is back, so the margin widgets come back with it. The minimap's own rule (it
+		# hides when the server sent no minimap) is applied further down and wins.
+		_map_widgets_visible(true)
 	if _map_target:
 		if _ow_canvas:
 			_ow_rendering = true
@@ -41018,6 +41211,23 @@ func update_map(map_text: String):
 		# theme's line_separation is added between lines - a constant stripe of panel background
 		# under every row that no tile size can close. Owner: *"Lines on the map."*
 		_map_target.add_theme_constant_override("line_separation", 0)
+		# ...AND NO LINK UNDERLINE, which is what the lines actually were. Owner, with a
+		# screenshot after the separation fix: *"you're wrong, lines are still there."*
+		#
+		# MEASURED off that screenshot rather than reasoned about: the stripes are 1-2px of
+		# #6A6250 at a 24.3px pitch - the ROW pitch - running the full width of the map and
+		# disappearing exactly where a tall tile covers them. That is a text underline, not a
+		# gap: a gap would show the label's background (26,21,16), and this is a foreground
+		# colour drawn over black tiles.
+		#
+		# Every map cell is wrapped in `[url=owlv:...]` so the square can be hovered for its area
+		# level, and RichTextLabel underlines meta tags by default. `map_display` has had
+		# `meta_underlined = false` since the figures went in (the underline cut through the
+		# player at knee height); the canvas never did, and the dungeon renderer sets it false
+		# for the same reason two lines before it draws. Moving the map onto the canvas moved it
+		# onto the one label that still underlines. One value, two places - again.
+		if _ow_canvas:
+			_map_target.meta_underlined = false
 		_map_target.clear()
 		# v0.9.397 — strip the inline coord / post header that the server
 		# emits above the [center]...[/center] map block. We now render that
@@ -41062,6 +41272,13 @@ func update_map(map_text: String):
 	if minimap_display:
 		minimap_display.clear()
 		if minimap_text != "":
+			# The server right-aligns it, from when it hung off the end of the map block. In the
+			# margin it has a frame of its own, and right-aligned content inside a framed box
+			# leaves an empty half - so it is centred in the box it now owns.
+			if _ow_canvas_eligible():
+				# Both ends, or the unmatched closing tag prints as the literal text "[/right]"
+				# under the minimap - which is exactly what the first attempt shipped.
+				minimap_text = minimap_text.replace("[right]", "[center]").replace("[/right]", "[/center]")
 			minimap_display.append_text(minimap_text)
 			minimap_display.visible = true
 		else:
@@ -47205,6 +47422,10 @@ func _overworld_display(payload: Dictionary) -> String:
 				_fitbox.add_theme_font_size_override("bold_font_size", _fs)
 				_fitbox.add_theme_font_size_override("italics_font_size", _fs)
 				_fitbox.add_theme_font_size_override("bold_italics_font_size", _fs)
+	# How wide the map actually came out. The margin widgets are placed against THIS rather than
+	# against a guessed constant - the tile size changes with the window, the vision radius and
+	# the stance, and a hand-picked margin width would be wrong the first time any of those moved.
+	_ow_map_px_w = float(px * cols_n)
 	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
 	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With
@@ -48427,11 +48648,34 @@ func _display_trading_post_ui():
 	var avail_quests = trading_post_data.get("available_quests", 0)
 	var ready_quests = trading_post_data.get("quests_to_turn_in", 0)
 
-	game_output.clear()
+	# ⚑ THE POST DESCRIPTION IS A LOCATION PASS TOO - and it was the flash.
+	#
+	# Owner 2026-09-15, twice: *"Crossroads still flashing in place of the map."* MEASURED with a
+	# trace on every write to the canvas (`--owtrace`), because the first fix was aimed at the
+	# wrong writer: the location handler was marked, and this block is NOT in it. The server
+	# re-sends `trading_post_start` on every step taken inside a post, so this function ran on
+	# every step, wiped the canvas with `game_output.clear()` - which is also what made
+	# `_ow_canvas_intact()` false, so the eighteen lines after it went to the canvas as well -
+	# and then the next `update_map` painted the map back over the lot. One frame of
+	# "===== Crossroads =====", every step.
+	#
+	# It belongs where the rest of the arrival text goes: the side column, which is exactly what
+	# the pass flag already does. Nothing is lost - the post block is 18 lines against a 60-line
+	# log - and the canvas keeps the map, which now draws the post's own rooms anyway.
+	var _ow_side: bool = _ow_canvas_eligible()
+	var _ow_side_was: bool = _ow_location_pass
+	if _ow_side:
+		_ow_location_pass = true
+		_ow_side_lines.clear()
+	else:
+		game_output.clear()
 
-	# Display trading post ASCII art
-	var post_art = _get_trading_post_art().get_trading_post_art(tp_id)
-	display_game(post_art)
+	# The post's ASCII sign only in the canvas layout. In the side column it is a 5pt smudge that
+	# filled the whole log and pushed every readable line out of sight (seen in a screenshot), and
+	# the map on the canvas is now drawing the post itself, walls, doors and all.
+	if not _ow_side:
+		var post_art = _get_trading_post_art().get_trading_post_art(tp_id)
+		display_game(post_art)
 
 	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
 	display_game("[color=#87CEEB]%s greets you.[/color]" % quest_giver)
@@ -48476,6 +48720,7 @@ func _display_trading_post_ui():
 
 	display_game("")
 	display_game("[color=#808080]Walk outside to leave.[/color]")
+	_ow_location_pass = _ow_side_was
 
 func handle_trading_post_end(message: Dictionary):
 	"""Handle leaving a Trading Post"""
