@@ -32,11 +32,12 @@ echo "[0/5] Recompiling scripts (client + launcher projects)..."
 # Step 1: Export Linux client (single binary, PCK embedded)
 echo "[1/5] Exporting Linux client..."
 mkdir -p builds/linux
-"$GODOT" --path "$PROJECT" --export-release "Phantom-Badlands-Linux" "builds/linux/PhantomBadlandsClient.x86_64" 2>&1 | tail -1
+# --headless, or this opens a full editor window on the primary monitor mid-build.
+"$GODOT" --headless --path "$PROJECT" --export-release "Phantom-Badlands-Linux" "builds/linux/PhantomBadlandsClient.x86_64" 2>&1 | tail -1
 
 # Step 2: Export Linux launcher (single binary)
 echo "[2/5] Exporting Linux launcher..."
-"$GODOT" --path "$PROJECT/launcher" --export-release "Linux" "../builds/PhantomBadlandsLauncher.x86_64" 2>&1 | tail -1
+"$GODOT" --headless --path "$PROJECT/launcher" --export-release "Linux" "../builds/PhantomBadlandsLauncher.x86_64" 2>&1 | tail -1
 
 # Step 3: Stage client payload (binary + sqlite .so + metadata)
 echo "[3/5] Staging client payload..."

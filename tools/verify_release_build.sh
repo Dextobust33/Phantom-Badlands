@@ -75,7 +75,13 @@ if [ "$IS_ELF" = "1" ] && [ "$HOST_IS_LINUX" = "0" ]; then
 fi
 
 # The client quits itself after printing, but cap it so a hang cannot wedge a release.
-timeout 120 "$EXE" --buildverify > "$OUT" 2>&1
+#
+# --headless, because this is the LAST thing in the release chain that opened a window.
+# Owner 2026-09-16: *"I still have phantom badlands windows opening very briefly whenever
+# you're doing whatever you're doing."* Verified the probe reports the same values either
+# way - vsync_mode=1 and max_fps=60 are set from code in _ready, not from the window - so
+# nothing the gate asserts is lost by not drawing anything.
+timeout 120 "$EXE" --headless --buildverify > "$OUT" 2>&1
 
 echo "--- $EXE"
 grep '\[BUILDVERIFY\]' "$OUT" || true

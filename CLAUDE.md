@@ -390,6 +390,35 @@ tell you or correct it each time."* A check nobody runs is not a check — this 
 it. When adding a new perf setting or a risky new surface, add a line to `--buildverify` in
 `client.gd` and a `check` to the script; that is how the gate stays worth having.
 
+### ⚑ ONE CALL SHIPS A RELEASE — `tools/release.sh`, and NOTHING may open a window
+
+```bash
+bash tools/release.sh 0.9.794                # client only
+bash tools/release.sh 0.9.794 --with-server  # ...and deploy the server with a warned countdown
+bash tools/release.sh 0.9.794 --dry-run      # build + gate, publish nothing
+```
+
+It runs the whole chain in order, stops at the first failure, and prints one line per step:
+version → **mandatory script recompile** → Windows exports → **release gate** → Linux exports →
+zips → manifest → push → GitHub release → optional server deploy. The hand-run steps below are
+kept as the reference for what it does and for recovering a half-finished release.
+
+**EVERY Godot call in the release path is `--headless`.** Owner 2026-09-16: *"They do take a while
+and randomly pop up godot multiple times on my screen taking over whatever I'm doing on my primary
+monitor."* Three separate window sources were found: `build_linux_release.sh` ran two
+`--export-release` calls without `--headless` (a full editor window each), and
+`verify_release_build.sh` ran the packaged client windowed to read its `--buildverify` output. The
+probe reports the same values headless — `vsync_mode` and `max_fps` are set from code in `_ready`,
+not from the window — so nothing the gate asserts is lost. **If you add a Godot call anywhere in a
+build or check script, add `--headless` with it.** An export does not need a window and will steal
+focus mid-sentence.
+
+The server deploy lives in `tools/deploy_server_warned.sh`, which fixes the swap race by ORDER:
+upload the `.new` file BEFORE writing the countdown sentinel, `mv` the moment the PID changes, and
+verify by hashing `/proc/$PID/exe`. Done the other way round on v0.9.793, systemd's
+`Restart=always` brought the old binary back first and it took a second restart — two disconnects
+for anyone online.
+
 ### Creating a release
 
 Every release ships **FOUR assets under ONE `vX.Y.Z` tag**: Windows client + Windows launcher + Linux client + Linux launcher. NEVER ship a Windows-only release — the website serves both platforms, and a missing launcher ZIP breaks new-player downloads.
