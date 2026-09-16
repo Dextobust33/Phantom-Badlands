@@ -1917,7 +1917,7 @@ var _ow_side_repeat: int = 0
 # The party strip is a real framed WIDGET with real gauges in it, not a line of BBCode - see
 # `_ensure_party_strip`. Typed Control because only its placement code cares what it is.
 var _margin_party_label: Control = null
-var _party_cells_row: HBoxContainer = null
+var _party_cells_row: HFlowContainer = null
 # The dungeon's bottom dock: the key, and the party strip above it. Its height is reserved by
 # `_dungeon_pick_tile_px` so the floor is drawn above it rather than under it.
 var _dungeon_key_label: RichTextLabel = null
@@ -6430,6 +6430,18 @@ func _dev_run_shots() -> void:
 				await get_tree().create_timer(1.5).timeout
 				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("party_overworld")
+				# ⚑ AND THE SAME SCREEN BLINDED. Owner 2026-09-16: *"test005's screen also shows how it
+				# will look when blinded which makes new problems."* It does: vision drops to a couple of
+				# tiles, so the map is ~160px wide and every widget that measures itself against the map
+				# is suddenly in the degenerate case. Photographed on purpose rather than by accident.
+				send_to_server({"type": "gm_apply_state", "state": "blind", "duration": 20})
+				await get_tree().create_timer(1.2).timeout
+				send_to_server({"type": "move", "direction": "west"})
+				await get_tree().create_timer(1.5).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("party_overworld_blind")
+				send_to_server({"type": "gm_apply_state", "state": "clear"})
+				await get_tree().create_timer(1.0).timeout
 				send_to_server({"type": "gm_enter_dungeon", "tier": 3})
 				await get_tree().create_timer(4.0).timeout
 				# An entrance ambush is the norm down here, and it is a PARTY fight - worth a frame of
@@ -34611,10 +34623,19 @@ func _ensure_party_strip(host: Node) -> void:
 		pc.name = "MarginParty"
 		pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		pc.add_theme_stylebox_override("panel", _margin_box_style())
-		_party_cells_row = HBoxContainer.new()
+		# ⚑ A FLOW container, so five members WRAP instead of overflowing.
+		#
+		# An HBox with fixed-width gauges cannot get narrower than its content, so whenever the
+		# strip was narrow the last member was simply drawn outside the frame. That happens for
+		# real: BLINDED, vision drops to a couple of tiles, the map is ~160px wide, the margins go
+		# to their clamp and the strip between them is about 500px with five members in it.
+		# Wrapping costs a second row of a box whose height is already content-driven, and it is
+		# correct at every width rather than at the widths I thought to check.
+		_party_cells_row = HFlowContainer.new()
 		_party_cells_row.name = "Cells"
-		_party_cells_row.alignment = BoxContainer.ALIGNMENT_CENTER
-		_party_cells_row.set("theme_override_constants/separation", 14)
+		_party_cells_row.alignment = FlowContainer.ALIGNMENT_CENTER
+		_party_cells_row.set("theme_override_constants/h_separation", 14)
+		_party_cells_row.set("theme_override_constants/v_separation", 4)
 		pc.add_child(_party_cells_row)
 		_margin_party_label = pc
 	if _margin_party_label.get_parent() != host:
@@ -34939,7 +34960,11 @@ func _place_map_widgets(on_canvas: bool) -> void:
 	# The usable margin either side of the map, measured from the map's own drawn width.
 	var margin_w: float = 240.0
 	if on_canvas and canvas != null and _ow_map_px_w > 0.0:
-		margin_w = clampf((canvas.size.x - _ow_map_px_w) * 0.5 - 16.0, 160.0, 420.0)
+		# The upper clamp is 320, not 420, and blindness is why: with vision cut to a couple of
+		# tiles the map is ~160px wide, so half the leftover is ~600 and the margins took every
+		# pixel they were allowed - which walked the minimap and the Area box into the middle of
+		# the canvas. A margin wider than a quarter of the screen is not a margin.
+		margin_w = clampf((canvas.size.x - _ow_map_px_w) * 0.5 - 16.0, 160.0, minf(320.0, canvas.size.x * 0.25))
 	var boxes: Array = []
 	if coord_post_label != null and is_instance_valid(coord_post_label):
 		boxes.append(coord_post_label)
@@ -35179,6 +35204,10 @@ func _place_map_widgets(on_canvas: bool) -> void:
 		# So it hangs off the frame instead: top = frame bottom + 6, and the leftover falls
 		# below it next to the travel row where it reads as spacing. Clamped so it can never
 		# reach down into that row on a window where the map overruns.
+		# BETWEEN THE MARGINS, because the margin panels are drawn over the canvas either side of
+		# the map and a full-width strip runs underneath them - its left end disappeared behind
+		# the chat box and its right end behind the Effects box. Narrow is handled by the cells
+		# WRAPPING (see `_ensure_party_strip`), not by the frame growing into its neighbours.
 		_margin_party_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
 		_margin_party_label.offset_left = margin_w + 18.0
 		_margin_party_label.offset_right = -(margin_w + 18.0)
