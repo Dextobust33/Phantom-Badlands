@@ -584,6 +584,52 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-16 early hours, mid UI-ARC)
 
+### ⚑ 2026-09-16 afternoon — the party/dungeon round (commit `fc6542d2`, UNRELEASED)
+
+Worked from the owner's frames of a five-person party run. All of it is on master, none released.
+
+**DONE, each verified in a capture:**
+- Shortcut buttons have ONE home, above the action bar, on every screen. They rode the travel row
+  (overworld-only), so underground they fell back to the top of the side column.
+- Party members are DRAWN on the dungeon floor. Nothing on that wire had ever described another
+  player: the overworld reads world x/y and underground everyone's coordinates are instance-local,
+  so `get_nearby_players` cannot see them. `dungeon_state` carries an `allies` list now.
+- The party strip and the dungeon key sit at the BOTTOM of the dungeon canvas as anchored Controls,
+  not as text printed after the floor.
+- The dungeon uses its canvas again: 64px tiles, matching `shot_26639`, which the owner named as the
+  reference. Measured `avail=662 h_room=578 tile=32` against the 576 a 64px tile needs — two causes,
+  a stale 56px headroom for the retired step counter and `game_output` being shrunk by the party
+  strip's band. The tile now comes from the WIDTH and the row count from the height that is left.
+- The canvas frame contains everything. Measured: canvas 792, bordered label 722, and three widgets
+  anchored at 756/762/792. Shrinking the bordered box to make room *inside* it can only look wrong.
+- Party gauges MOVE: `party_update` used to be sent only when the membership changed, so the bars
+  were a snapshot from the moment you grouped up. It flushes with the batched character updates.
+- "Party none" when solo; companion box hidden when there is no companion (two functions owned one
+  `visible` and the later one won); one `_hp_bar_color` for every health bar; companion HP gauge.
+- The party capture scenes wait for FIVE (`PARTY_MAX_SIZE`), not three.
+
+**THE BARS TOOK FOUR ATTEMPTS. Read this before touching them again.**
+Pipes (`|`) read as a dashed line. `[bgcolor]` runs are LINE-height slabs, and on the dungeon canvas
+— whose font is the tile font — they were enormous. Block glyphs (`█`/`░`) were rejected too. The
+shared cause is that all three were CHARACTERS, and the owner's reference (*"closer to Lufia 2 or
+dothack"*) is a thin slab with a dark outline, a recessed track and a rounded bright fill, which no
+glyph can be. They are `ProgressBar`s with two `StyleBoxFlat`es now. The companion's gauges are
+Controls pinned into bands its stylebox holds open — blank lines do NOT work, because `fit_content`
+will not grow a label for an empty trailing paragraph, so a bottom-anchored bar lands on real text.
+
+**STILL OPEN from this round:**
+- [ ] **The dungeon canvas is ~120px shorter than the overworld one** (`avail.y` 662 vs 792, both
+      measured). Recovering it would not change the row count (11 rows at 64px needs 704) but it is
+      120px of dead space and nobody has found what claims it. `_dev_print_rects()` under `--shots`
+      is the instrument.
+- [ ] **Judge the dungeon with a full party** — the owner asked to make that call himself and now
+      has frames at the right tile size. `python tools/test_setup/run.py party5 --noranks
+      --shots=partydungeon` captures the overworld strip and the dungeon floor in one run.
+- [ ] **Effect ICONS.** `client/sprites/battlers/tf_svbattle/RMMV/system/States.png` — 10 animated
+      debuff states, 8 frames of 96x96, positive buffs not included. Owner: *"Icons are the way to
+      go."* The Effects box is still text.
+
+
 ### ⛑ v0.9.794 - HOTFIX, and the two things it taught (2026-09-16 morning)
 
 **I shipped the Deck screen empty.** The guard that stops the old keyboard ability screen printing
