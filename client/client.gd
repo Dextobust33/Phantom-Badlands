@@ -32598,9 +32598,16 @@ func display_changelog():
 	# two-player session. Monster curve re-calibrated after the player-side changes.
 	# v0.9.793 - the UI reflow: the map takes the main canvas, the HUD moves into its margins,
 	# the right column becomes the log, and text stops flashing on screen and vanishing.
+	# v0.9.797 - fights far below you resolve where you stand, and the map stops doubling up
+	# behind a Continue prompt.
+	display_game("[color=#00FF00]v0.9.797[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ FIGHTS FAR BELOW YOU RESOLVE THEMSELVES.[/color] Walk through country [b]10 or more levels under you[/b] and a wandering monster no longer opens the combat screen — you get [b]one line and the full reward[/b], exactly what killing it would have paid. It is not a discount: same XP, same job and companion XP, same gems and drops. [b]Elites and bosses still fight[/b], and so does anything you go looking for with [b]Hunt[/b] — if you asked for a fight, you get one.")
+	display_game("  [color=#FF4444]★ FIXED: two maps at once.[/color] While a [b]Continue[/b] prompt was up — after any victory, a lucky find, or a wandering adventurer — the map was redrawn in the side column while the main screen [b]kept its own copy[/b], so you got two maps and no HUD. The main screen hands its copy back now, and the map returns the moment you press Continue instead of waiting for your next step.")
+	display_game("")
+
 	# v0.9.796 - the deck screen becomes a builder you can drag cards around in, every copy
 	# of a card is its own card, and three widgets stopped floating over the dungeon screen.
-	display_game("[color=#00FF00]v0.9.796[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#808080]v0.9.796[/color]")
 	display_game("  [color=#FF8000]★ BUILD YOUR DECK BY DRAGGING CARDS.[/color] Your deck is shown as real cards at the top of the screen now, with everything else below it. [b]Drag a card up[/b] to play it and [b]drag one down[/b] to bench it — the [b]−[/b] and [b]+[/b] buttons still work if you prefer them, and both halves scroll.")
 	display_game("  [color=#FF8000]★ EVERY COPY OF A CARD IS ITS OWN CARD.[/color] Two Ambush cards are now [b]two separate cards[/b]: each is added to your deck on its own, each ranks up on [b]its own uses[/b], and each keeps its own upgrades. Copies only share a tile when they are [b]genuinely identical[/b] — same rank, same uses, same upgrades. Before this they looked like one card with a number beside it, and the − button removed whichever copy it felt like.")
 	display_game("  [color=#1EFF00]◆ Upgrade screens say WHICH copy.[/color] Two upgrade screens in a row for \"the same card\" were two DIFFERENT copies, each owed its own milestone — the screen just never said so. It does now, as does the card detail box and the hover.")
