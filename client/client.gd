@@ -1854,8 +1854,17 @@ var _ow_location_pass: bool = false
 var _ow_trace: bool = "--owtrace" in OS.get_cmdline_args()
 ## The width, in pixels, of the map as it was last drawn - see `_place_map_widgets`.
 var _ow_map_px_w: float = 0.0
+## ...and its height, for the frame drawn around it.
+var _ow_map_px_h: float = 0.0
+## The frame behind the map - the one thing on the canvas that had no edge of its own.
+var _ow_map_frame: Panel = null
 ## Last value applied by `_sync_margin_widgets`; -1 means "not decided yet".
 var _margin_widgets_last: int = -1
+## Guards against queueing one margin re-check per message in a busy frame.
+var _margin_sync_depth: int = 0
+## True while the screen on display was opened from a SHORTCUT button rather than from the More
+## menu. Closing returns you where you came from - see `_close_menu_to_origin`.
+var _menu_from_shortcut: bool = false
 ## The framed box in the left margin holding the chat tabs and the chat log.
 var _margin_chat_box: Control = null
 var _ow_side_lines: Array = []
@@ -12293,30 +12302,68 @@ func _create_shortcut_buttons():
 		["Help", "help_shortcut"],
 	]
 
+	# ⚑ A COLOUR PER GROUP, so the row can be navigated by shape rather than by reading it.
+	# Owner 2026-09-16: *"Shortcut buttons could probably use different colors or textures than
+	# each other to help players remember which is which without having to read through them
+	# all."* Grouped rather than fourteen unrelated colours - your creatures are green, your
+	# stuff is amber, the places you go are blue, people are violet, and what you are becoming
+	# is gold. Fourteen arbitrary hues would be as hard to learn as fourteen words.
+	var shortcut_accents := {
+		"companions": Color(0.50, 0.82, 0.42), "eggs_shortcut": Color(0.50, 0.82, 0.42),
+		"jobs_shortcut": Color(0.86, 0.64, 0.30), "pouch_shortcut": Color(0.86, 0.64, 0.30),
+		"inventory_shortcut": Color(0.86, 0.64, 0.30), "stones_shortcut": Color(0.86, 0.64, 0.30),
+		"build_shortcut": Color(0.45, 0.70, 0.95), "atlas_shortcut": Color(0.45, 0.70, 0.95),
+		"post_shortcut": Color(0.45, 0.70, 0.95), "quests_shortcut": Color(0.95, 0.80, 0.35),
+		"deck_shortcut": Color(0.78, 0.55, 0.95), "stats_shortcut": Color(0.95, 0.80, 0.35),
+		"clan_shortcut": Color(0.78, 0.55, 0.95), "help_shortcut": Color(0.70, 0.70, 0.70),
+	}
 	for shortcut in shortcuts:
+		var accent: Color = shortcut_accents.get(shortcut[1], Color(0.52, 0.43, 0.27))
 		var btn = Button.new()
 		btn.text = shortcut[0]
 		btn.flat = true
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.custom_minimum_size = Vector2(0, 20)
-		# Style: small, parchment themed
+		# The same relief the action bar got, at shortcut scale. Owner 2026-09-16: *"the shortcut
+		# buttons like Companions, Eggs, Stats, Inv, etc. need a treatment to make them obvious
+		# clickable buttons, they blend in currently."* `flat` and a 1px hairline is what made
+		# them read as a row of words; a raised edge and a shadow is what makes a thing look
+		# pressable, and pressing sinks it.
+		btn.flat = false
 		var style_normal = StyleBoxFlat.new()
-		style_normal.bg_color = THEME_BTN_BG
-		style_normal.border_color = THEME_BTN_BORDER
+		style_normal.bg_color = Color(0.16, 0.13, 0.10, 1.0)
+		style_normal.border_color = accent
 		style_normal.set_border_width_all(1)
-		style_normal.set_corner_radius_all(3)
-		style_normal.set_content_margin_all(3)
+		style_normal.border_width_top = 2
+		style_normal.set_corner_radius_all(5)
+		style_normal.set_content_margin_all(5)
+		style_normal.shadow_color = Color(0, 0, 0, 0.5)
+		style_normal.shadow_size = 2
+		style_normal.shadow_offset = Vector2(0, 2)
 		var style_hover = StyleBoxFlat.new()
-		style_hover.bg_color = THEME_BTN_HOVER
+		style_hover.bg_color = Color(0.27, 0.22, 0.14, 1.0)
 		style_hover.border_color = THEME_BORDER_GOLD
 		style_hover.set_border_width_all(1)
-		style_hover.set_corner_radius_all(3)
-		style_hover.set_content_margin_all(3)
+		style_hover.border_width_top = 2
+		style_hover.set_corner_radius_all(5)
+		style_hover.set_content_margin_all(5)
+		style_hover.shadow_color = Color(0, 0, 0, 0.65)
+		style_hover.shadow_size = 3
+		style_hover.shadow_offset = Vector2(0, 2)
+		var style_pressed = StyleBoxFlat.new()
+		style_pressed.bg_color = Color(0.11, 0.09, 0.07, 1.0)
+		style_pressed.border_color = THEME_BORDER_GOLD
+		style_pressed.set_border_width_all(1)
+		style_pressed.border_width_bottom = 2
+		style_pressed.set_corner_radius_all(5)
+		style_pressed.set_content_margin_all(5)
+		style_pressed.content_margin_top = 6
+		style_pressed.content_margin_bottom = 4
 		btn.add_theme_stylebox_override("normal", style_normal)
 		btn.add_theme_stylebox_override("hover", style_hover)
-		btn.add_theme_stylebox_override("pressed", style_hover)
+		btn.add_theme_stylebox_override("pressed", style_pressed)
 		btn.add_theme_font_size_override("font_size", 11)
-		btn.add_theme_color_override("font_color", THEME_TEXT_ACCENT)
+		btn.add_theme_color_override("font_color", accent)
 		btn.add_theme_color_override("font_hover_color", THEME_BORDER_GOLD)
 		btn.pressed.connect(_on_shortcut_button_pressed.bind(shortcut[1]))
 		# Named by ACTION ID so the spotlight can be told "flash inventory_shortcut" without
@@ -12332,6 +12379,8 @@ func _create_shortcut_buttons():
 
 func _on_shortcut_button_pressed(action: String):
 	"""Handle quick-access shortcut button clicks."""
+	# Opened from the row, so Back goes to the world and not to the More menu.
+	_menu_from_shortcut = true
 	# Only respond during normal gameplay
 	if game_state != GameState.PLAYING:
 		return
@@ -12469,12 +12518,23 @@ func _on_shortcut_button_pressed(action: String):
 			show_help()
 			update_action_bar()
 
+func _free_to_roam() -> bool:
+	"""Is the player just PLAYING - no menu, no fight, no prompt holding their attention?
+
+	One test, read by the shortcut row and by the margin widgets. They were answering the same
+	question differently: the margin waited for a PANEL to become visible, and a panel appears
+	a server round trip after the player asks for it, so the travel row and the shortcuts sat
+	there through the wait. Owner 2026-09-16: *"seems like the Travel stances and shortcut
+	buttons are being hid late when I access it."* The MODE flips the instant the key is
+	pressed, which is when the player expects the screen to change."""
+	return game_state == GameState.PLAYING and has_character and not in_combat and not flock_pending and not pending_continue and not at_merchant and not settings_mode and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not gathering_mode and not crafting_mode and not build_mode and not storage_mode and not quest_view_mode and not at_guard_post and not market_mode and not inventory_mode and not ability_mode and not admin_mode and not more_mode
+
+
 func _update_shortcut_buttons_visibility():
 	"""Show/hide shortcut buttons based on game state."""
 	if not shortcut_buttons_container:
 		return
-	# Show during normal gameplay, hide during combat/login/house/etc.
-	var should_show = game_state == GameState.PLAYING and has_character and not in_combat and not flock_pending and not pending_continue and not at_merchant and not settings_mode and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not gathering_mode and not crafting_mode and not build_mode and not storage_mode and not quest_view_mode and not at_guard_post
+	var should_show = _free_to_roam()
 	# Hide the BUTTONS, not the container — the container still needs to
 	# occupy its 1/3 slice of StatusRow so the mini HP/Mana bars stay aligned
 	# with the GameOutput right edge. Hiding the whole container would collapse
@@ -15147,9 +15207,8 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"pouch_back":
 			pending_inventory_action = ""
-			more_mode = true
-			set_meta("hotkey_0_pressed", true)
-			display_more_menu()
+			_close_menu_to_origin()
+			return
 			update_action_bar()
 		"more_menu":
 			open_more_menu()
@@ -15353,9 +15412,10 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"eggs_close":
 			eggs_mode = false
-			more_mode = true
-			set_meta("hotkey_0_pressed", true)
-			display_more_menu()
+			if companions_panel != null and is_instance_valid(companions_panel):
+				companions_panel.visible = false
+			_close_menu_to_origin()
+			return
 			update_action_bar()
 		"eggs_prev":
 			eggs_page = max(0, eggs_page - 1)
@@ -24230,6 +24290,16 @@ func process_raw_buffer():
 
 func handle_server_message(message: Dictionary):
 	var msg_type = message.get("type", "")
+	# ⚑ DECIDE ABOUT THE MARGIN IN THE SAME FRAME THE SCREEN CHANGES.
+	#
+	# Owner 2026-09-16, twice: *"Market timing on hiding the travel stances is still off."* The
+	# margin was decided by a poll in `_process`, so a panel raised by THIS message was on
+	# screen for a frame - or however long the poll took to come round - with the travel row
+	# and shortcuts still sitting under it. Deciding after the message is handled means the
+	# screen only ever draws one of the two states, never the mix.
+	if _margin_sync_depth == 0:
+		_margin_sync_depth += 1
+		call_deferred("_margin_sync_after_message")
 
 	match msg_type:
 		"welcome":
@@ -30843,8 +30913,33 @@ func _format_tool_bonuses(bonuses: Dictionary) -> String:
 		return ""
 	return "(" + ", ".join(parts) + ")"
 
+func _close_menu_to_origin() -> void:
+	"""Leave a menu screen the way you came into it.
+
+	Owner 2026-09-16: *"Opened Companions Page, pressed space to go back, it showed the map,
+	have to press space a second time... Eggs and the other same problem."* Every one of these
+	screens closed with `more_mode = true; display_more_menu()` - they were built as children of
+	the More menu, and going up one level was right when that was the only way in. It is not:
+	the shortcut row opens them directly, and returning a player to a menu they never opened
+	reads as a press that did nothing.
+
+	So: opened from More, back to More. Opened from a shortcut, back to the world."""
+	set_meta("hotkey_0_pressed", true)
+	if _menu_from_shortcut:
+		_menu_from_shortcut = false
+		more_mode = false
+		pending_more_action = ""
+		_page_clear()
+		update_action_bar()
+		return
+	more_mode = true
+	display_more_menu()
+	update_action_bar()
+
+
 func open_more_menu():
 	"""Open the More menu"""
+	_menu_from_shortcut = false
 	more_mode = true
 	set_meta("hotkey_0_pressed", true)
 	display_more_menu()
@@ -31449,12 +31544,11 @@ func open_jobs_menu():
 	update_action_bar()
 
 func close_jobs_menu():
-	"""Close the Jobs menu and return to More"""
+	"""Close the Jobs screen, back to wherever it was opened from."""
 	job_mode = false
 	pending_job_action = ""
-	more_mode = true
-	set_meta("hotkey_0_pressed", true)
-	display_more_menu()
+	_close_menu_to_origin()
+	return
 	update_action_bar()
 
 func display_job_overview():
@@ -34082,7 +34176,14 @@ func _margin_widgets_shown() -> bool:
 	if not _ow_canvas_eligible():
 		return true
 	# NOT "has the canvas text changed" any more. Text lives in the column now, so a page's
-	# clear no longer means a page owns the canvas - only a visible panel does.
+	# clear no longer means a page owns the canvas - only a visible panel does, or a MODE that
+	# is about to raise one (the mode flips on the keypress, the panel a round trip later).
+	if not _free_to_roam():
+		return false
+	# A WIDE page is on the canvas the same way a panel is. Owner 2026-09-16: *"Status and help
+	# pages don't hide the overlays so you can't read them."*
+	if _ow_wide_page:
+		return false
 	if game_output == null:
 		return false
 	return not _canvas_panel_open()
@@ -34107,6 +34208,12 @@ func _ow_heal_canvas() -> void:
 	if game_output.get_parsed_text().length() >= _ow_canvas_mark:
 		return
 	update_map(_overworld_display(_last_map_payload))
+
+
+func _margin_sync_after_message() -> void:
+	"""Run the margin decision once, at the end of the frame that changed the screen."""
+	_margin_sync_depth = 0
+	_sync_margin_widgets()
 
 
 func _sync_margin_widgets() -> void:
@@ -34155,7 +34262,7 @@ func _map_widgets_visible(v: bool) -> void:
 	They float over the canvas now, so a page that takes the canvas has to take it from them too
 	- otherwise the Coords box sits on top of the inventory."""
 	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay, _margin_chat_box,
-		buff_display_label, _margin_party_label]:
+		buff_display_label, _margin_party_label, _ow_map_frame]:
 		if n != null and is_instance_valid(n):
 			(n as Control).visible = v
 
@@ -34282,6 +34389,46 @@ func _place_map_widgets(on_canvas: bool) -> void:
 				trow.add_child(tool_status_overlay)
 				trow.move_child(tool_status_overlay, 0)
 			tool_status_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	# ⚑ A FRAME FOR THE MAP. Owner 2026-09-16: *"Is there a cool border or effect we can use for
+	# the Map as well since it's the only thing without one in that window?"* Everything else
+	# on the canvas wears the same dark-and-gold box; the map sat in open space, which read as
+	# unfinished rather than as deliberate.
+	#
+	# Drawn as a panel BEHIND the text, sized from the map's own measured rect and inflated a
+	# few pixels, so the border sits just outside the tiles and the tiles cover its fill. It
+	# follows the map when the tile size changes, because it is measured rather than placed.
+	if on_canvas and canvas != null and _ow_map_px_w > 0.0 and _ow_map_px_h > 0.0:
+		if _ow_map_frame == null or not is_instance_valid(_ow_map_frame):
+			_ow_map_frame = Panel.new()
+			_ow_map_frame.name = "MapFrame"
+			_ow_map_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var fr := StyleBoxFlat.new()
+			fr.bg_color = Color(0, 0, 0, 0)
+			fr.border_color = Color(0.85, 0.7, 0.2, 0.85)
+			fr.set_border_width_all(2)
+			fr.set_corner_radius_all(10)
+			fr.shadow_color = Color(0, 0, 0, 0.6)
+			fr.shadow_size = 6
+			_ow_map_frame.add_theme_stylebox_override("panel", fr)
+			canvas.add_child(_ow_map_frame)
+			# IN FRONT of the canvas label, not behind it. Behind, `game_output` draws its own
+			# opaque background over the whole rect and the frame was never visible - owner
+			# 2026-09-16: *"I don't see any cool border or animated frame or anything around the
+			# map."* The fill is transparent and the node ignores the mouse, so drawing it on top
+			# costs the map nothing: hovering a tile still works through it.
+			canvas.move_child(_ow_map_frame, maxi(0, game_output.get_index() + 1))
+		var lead: float = 8.0
+		var gf: Font = game_output.get_theme_font("normal_font")
+		if gf != null:
+			lead = gf.get_height(game_output.get_theme_font_size("normal_font_size"))
+		_ow_map_frame.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		_ow_map_frame.offset_left = (canvas.size.x - _ow_map_px_w) * 0.5 - 6.0
+		_ow_map_frame.offset_top = lead - 4.0
+		_ow_map_frame.offset_right = _ow_map_frame.offset_left + _ow_map_px_w + 12.0
+		_ow_map_frame.offset_bottom = _ow_map_frame.offset_top + _ow_map_px_h + 8.0
+		_ow_map_frame.visible = true
+	elif _ow_map_frame != null and is_instance_valid(_ow_map_frame):
+		_ow_map_frame.visible = false
 	# ⚑ THE RIGHT MARGIN, TOP TO BOTTOM: minimap, Area, ACTIVE EFFECTS, PARTY, companion.
 	#
 	# Owner 2026-09-16, on the gap between the Area box and the companion: *"We have some dead
@@ -34797,13 +34944,12 @@ func _refresh_companions_display():
 		display_companions()
 
 func close_companions():
-	"""Close companions menu and return to More menu"""
+	"""Close the companions screen, back to wherever it was opened from."""
 	companions_mode = false
 	companions_page = 0
-	more_mode = true
-	set_meta("hotkey_0_pressed", true)
-	display_more_menu()
-	update_action_bar()
+	if companions_panel != null and is_instance_valid(companions_panel):
+		companions_panel.visible = false
+	_close_menu_to_origin()
 
 func activate_companion_by_index(index: int):
 	"""Activate a companion from sorted companion list by index (or select for release)"""
@@ -36746,6 +36892,21 @@ func _page_clear(wide: bool = false) -> void:
 	# spill over vertically."* Some screens are simply bigger than a 300px column: Help is
 	# pages of prose, the character sheet is a wide table. They say so, and while one is open
 	# the map stands aside rather than painting over it (`_ow_heal_canvas` checks this flag).
+	# EVERY page starts on the default background. `display_character_status` and the entry
+	# view dim the canvas deliberately, and the undimming used to ride on `clear_game_output`
+	# - which the 233-clear conversion routed past, so the dim set at login stayed for the
+	# whole session. Owner 2026-09-16: *"It made the map a lot darker. Everything looks darker
+	# now like it's low brightness."* A page that wants it dark sets it after clearing, which
+	# is what those two already do.
+	_reset_game_output_background()
+	# A NON-wide clear while a wide page is up means that page just CLOSED. Owner 2026-09-16:
+	# *"After clicking help or status and then pressing space the map and the screen goes away
+	# as well."* Back clears the canvas, and with the flag still set the map was forbidden
+	# from redrawing - so the screen went blank and stayed blank. Dropping the flag here puts
+	# the map back on the next frame, through the same heal that covers every other stray
+	# clear.
+	if not wide and _ow_wide_page:
+		_ow_wide_page = false
 	if wide:
 		_ow_wide_page = true
 		if game_output:
@@ -36758,6 +36919,46 @@ func _page_clear(wide: bool = false) -> void:
 	_ow_side_location.clear()
 	_ow_page_active = true
 	_ow_side_refresh()
+
+
+func _maybe_widen_page() -> void:
+	"""IF IT FITS IN THE COLUMN IT STAYS THERE; IF IT DOES NOT, IT TAKES THE CANVAS.
+
+	Owner 2026-09-16, after Help and Status: *"Same with jobs, pouch, build, etc."* - which is
+	the tell that naming the big screens one at a time was the wrong instrument. Any list of
+	them is wrong the first time somebody adds a screen, and this repo has paid for that list
+	before.
+
+	So the page is MEASURED as it is built: the moment it is taller than the column can show,
+	it moves to the canvas and takes the margin widgets off the screen with it. A short screen
+	never leaves the column; a long one never gets squeezed into it; and nothing has to know
+	the names."""
+	if _ow_wide_page or not _ow_page_active:
+		return
+	if _ow_side_place == null or not is_instance_valid(_ow_side_place) or map_display == null:
+		return
+	var room: float = map_display.get_parent().size.y if map_display.get_parent() != null else 0.0
+	if room <= 0.0:
+		return
+	# Two thirds of the column: the log underneath needs somewhere to live, and a page that
+	# fills the whole column has already stopped being glanceable.
+	#
+	# Counted AS WELL as measured, because `get_content_height` only catches up after the next
+	# layout pass - a page printed in one burst would be fully written before the measurement
+	# noticed, and never promote. The count is the floor, the measurement is the fit.
+	var too_tall: bool = _ow_side_place.get_content_height() > room * 0.66
+	var too_many: bool = _ow_side_location.size() > 22
+	if not (too_tall or too_many):
+		return
+	var page: Array = _ow_side_location.duplicate()
+	_ow_side_location.clear()
+	_ow_page_active = false
+	_ow_wide_page = true
+	_ow_side_refresh()
+	if game_output:
+		game_output.clear()
+		for line in page:
+			game_output.append_text(String(line) + "\n")
 
 
 func _station_line(text: String) -> void:
@@ -36785,6 +36986,8 @@ func _ow_side_add(text: String) -> void:
 	step and stays pinned at the top, the log below it accumulates and scrolls."""
 	if _ow_location_pass or _ow_page_active:
 		_ow_side_location.append(text)
+		if _ow_page_active:
+			_maybe_widen_page()
 	else:
 		# THE SAME LINE TWICE IS ONE LINE AND A COUNT. Owner 2026-09-16, after walking into the
 		# Dungeon Atlas a few times: *"I don't think we should allow the same text to pile up
@@ -46207,6 +46410,13 @@ func format_egg_tooltip_bbcode(egg: Dictionary) -> String:
 	return "\n".join(lines)
 
 func _on_comp_panel_close() -> void:
+	# ⚑ ONE PRESS CLOSES IT. Owner 2026-09-16: *"Opened Companions Page, pressed space to go
+	# back, it showed the map, have to press space a second time to get the overlays to pop
+	# up. Eggs and the other same problem."* The mode was cleared here but the PANEL was left
+	# visible, and a visible panel is what tells the margin widgets to stay out of the way - so
+	# the map came back while the overlays waited for a second press to hide the panel.
+	if companions_panel != null and is_instance_valid(companions_panel):
+		companions_panel.visible = false
 	# Use whichever close path is currently appropriate
 	if eggs_mode:
 		eggs_mode = false
@@ -48271,6 +48481,7 @@ func _overworld_display(payload: Dictionary) -> String:
 	# against a guessed constant - the tile size changes with the window, the vision radius and
 	# the stance, and a hand-picked margin width would be wrong the first time any of those moved.
 	_ow_map_px_w = float(px * cols_n)
+	_ow_map_px_h = float(px * rows_n)
 	if _ow_trace:
 		print("[OWFLASH] tiles px=%d cols=%d rows=%d box=%dx%d" % [px, cols_n, rows_n,
 			int(_fitbox.size.x) if _fitbox != null else -1, int(_fitbox.size.y) if _fitbox != null else -1])
