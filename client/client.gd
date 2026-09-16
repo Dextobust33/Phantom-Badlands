@@ -1845,13 +1845,6 @@ var _ow_rendering: bool = false
 ## True while a location message is being handled, so its text goes to the side column from the
 ## first line rather than flashing on the canvas until the map redraws over it.
 var _ow_location_pass: bool = false
-## `--owtrace`: print where every line lands while the map owns the canvas, and every wipe of it.
-##
-## This is what found the "Crossroads flashes on every step" report after a fix aimed at the
-## wrong writer. Two theories had already been wrong; the trace named the writer in one run
-## (`_display_trading_post_ui`, via the client's own per-step redraw). Kept, because the next
-## report of this shape will be the same question: who wrote on the canvas, and what wiped it.
-var _ow_trace: bool = "--owtrace" in OS.get_cmdline_args()
 ## The width, in pixels, of the map as it was last drawn - see `_place_map_widgets`.
 var _ow_map_px_w: float = 0.0
 ## ...and its height, for the frame drawn around it.
@@ -6295,6 +6288,30 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "move", "direction": 6})
 				await get_tree().create_timer(1.2).timeout
 				await _dev_shot_capture("stance_scouting")
+
+			"backtest":
+				# ⚑ WHAT DOES BACK ACTUALLY DO? Owner 2026-09-16: *"Back on pouch screen still takes
+				# 2 presses."* Driven here rather than asked of the owner again: open each screen the
+				# way the shortcut row does, press its Back once, and print the state that decides
+				# whether the world is back - the modes, the wide-page flag, and whether the margin
+				# widgets are allowed on screen.
+				for probe in [["pouch_shortcut", "pouch_back"], ["companions", "companions_close"],
+					["eggs_shortcut", "eggs_close"], ["jobs_shortcut", "job_close"],
+					["deck_shortcut", "ability_exit"]]:
+					_on_shortcut_button_pressed(String(probe[0]))
+					await get_tree().create_timer(0.8).timeout
+					print("[BACKTEST] %s OPEN  more=%s pend_more=%s pend_inv=%s wide=%s panel=%s margin=%s" % [
+						String(probe[0]), str(more_mode), pending_more_action, pending_inventory_action,
+						str(_ow_wide_page), str(_canvas_panel_open()), str(_margin_widgets_shown())])
+					execute_local_action(String(probe[1]))
+					await get_tree().create_timer(0.8).timeout
+					print("[BACKTEST] %s BACK1 more=%s pend_more=%s pend_inv=%s wide=%s panel=%s margin=%s" % [
+						String(probe[0]), str(more_mode), pending_more_action, pending_inventory_action,
+						str(_ow_wide_page), str(_canvas_panel_open()), str(_margin_widgets_shown())])
+					if not _margin_widgets_shown():
+						print("[BACKTEST]   ^ STILL NOT BACK after one press")
+					execute_local_action("back")
+					await get_tree().create_timer(0.6).timeout
 
 			"worldpet":
 				# ⚑ THE OVERWORLD WITH A COMPANION OUT. Owner 2026-09-15: *"when testing you
@@ -20733,22 +20750,32 @@ func enter_ability_mode():
 	update_action_bar()
 
 func exit_ability_mode():
-	"""Exit ability management mode"""
+	"""Exit the Deck screen, back to wherever it was opened from.
+
+	Owner 2026-09-16: *"Deck back button goes to a legacy ability loadout instead of back to
+	the map with overlays."* The deck is a PANEL; the keyboard ability screen is still printed
+	on the canvas underneath it, so closing the panel simply revealed the older screen. Hiding
+	the panel and clearing the page shows the map, which is what Back means everywhere else."""
 	ability_mode = false
 	pending_ability_action = ""
 	selected_ability_slot = -1
 	ability_data.clear()
+	if ability_panel != null and is_instance_valid(ability_panel):
+		ability_panel.visible = false
 
 	# Return to settings if we entered from there
 	if ability_entered_from_settings:
 		ability_entered_from_settings = false
 		open_settings()
 	else:
-		display_game("[color=#808080]Exited ability management.[/color]")
-		update_action_bar()
+		_close_menu_to_origin()
 
 func display_ability_menu():
 	"""Display the ability loadout management screen"""
+	# The panel IS the deck. This keyboard screen is the pre-panel fallback, and printing it
+	# underneath is what Back used to reveal.
+	if ability_panel != null and is_instance_valid(ability_panel):
+		return
 	if not ability_mode or ability_data.is_empty():
 		return
 	_populate_ability_panel()
@@ -24812,8 +24839,6 @@ func handle_server_message(message: Dictionary):
 			# the pass is enough: display_game sends anything printed inside it to the side column,
 			# whether or not the map happens to be on the canvas yet.
 			_ow_location_pass = _ow_canvas_eligible()
-			if _ow_trace:
-				print("[OWFLASH] --- location message, pass=%s" % str(_ow_location_pass))
 			if _ow_location_pass:
 				# The location block is rewritten from scratch each step; the LOG below it is not. This
 				# is also what makes a station page vanish when you walk away from the station.
@@ -25302,11 +25327,7 @@ func handle_server_message(message: Dictionary):
 		"text":
 			# Clear game output if requested (e.g., rest command)
 			if message.get("clear_output", false):
-				if _ow_trace:
-					print("[OWFLASH] clear_output wipes the canvas :: %s" % String(message.get("message", "")).substr(0, 90))
 				_page_clear()
-			if _ow_trace:
-				print("[OWFLASH] text msg pass=%s showing=%s :: %s" % [str(_ow_location_pass), str(_ow_canvas_showing), String(message.get("message", "")).substr(0, 110)])
 			var text_msg = message.get("message", "")
 			# If awaiting item use result, store it instead of displaying immediately
 			if awaiting_item_use_result:
@@ -31548,8 +31569,6 @@ func close_jobs_menu():
 	job_mode = false
 	pending_job_action = ""
 	_close_menu_to_origin()
-	return
-	update_action_bar()
 
 func display_job_overview():
 	"""Display jobs with pagination: page 0 = gathering, page 1 = specialty."""
@@ -34226,14 +34245,6 @@ func _sync_margin_widgets() -> void:
 	if want == _margin_widgets_last:
 		return
 	_margin_widgets_last = want
-	if _ow_trace:
-		var _panels := ""
-		if game_output != null and game_output.get_parent() != null:
-			for ch in game_output.get_parent().get_children():
-				if ch is Control and (ch as Control).visible and String(ch.name).ends_with("Panel"):
-					_panels += String(ch.name) + " "
-		print("[OWFLASH] margins want=%d eligible=%s intact=%s panels=[%s]" % [
-			want, str(_ow_canvas_eligible()), str(_ow_canvas_intact()), _panels])
 	# The travel row is one of these too: it sat over the inventory's own footer text until it
 	# was included here.
 	_place_stance_bar(_ow_canvas_eligible(), want == 1)
@@ -34407,8 +34418,12 @@ func _place_map_widgets(on_canvas: bool) -> void:
 			fr.border_color = Color(0.85, 0.7, 0.2, 0.85)
 			fr.set_border_width_all(2)
 			fr.set_corner_radius_all(10)
-			fr.shadow_color = Color(0, 0, 0, 0.6)
-			fr.shadow_size = 6
+			# NO SHADOW. A StyleBoxFlat shadow is a filled rounded rect expanded around the box -
+			# INCLUDING the area under it. With an opaque box you never see that; with this one,
+			# whose fill is transparent so the map shows through, the shadow showed through too:
+			# a black 60% wash over every tile inside the frame. Owner 2026-09-16: *"It made the
+			# map a lot darker. Everything looks darker now like it's low brightness."* The frame
+			# and the dimming arrived in the same change, which is what named the culprit.
 			_ow_map_frame.add_theme_stylebox_override("panel", fr)
 			canvas.add_child(_ow_map_frame)
 			# IN FRONT of the canvas label, not behind it. Behind, `game_output` draws its own
@@ -37116,10 +37131,6 @@ func display_game(text: String):
 		if _ow_canvas_eligible():
 			_map_widgets_visible(false)
 	if game_output:
-		if _ow_trace and _ow_canvas_eligible():
-			print("[OWFLASH] canvas<- showing=%s intact=%s mark=%d len=%d :: %s" % [
-				str(_ow_canvas_showing), str(_ow_canvas_intact()), _ow_canvas_mark,
-				game_output.get_parsed_text().length(), text.substr(0, 110)])
 		# The map turned the `[url]` underline off (see update_map). Text on the canvas wants it
 		# back: an underline is the only cue that a damage number or an item name has something
 		# behind it, and the same restore is already done at combat start and dungeon exit for
@@ -42205,8 +42216,6 @@ func update_map(map_text: String):
 	# player finished the first paragraph.
 	if _ow_canvas and _ow_wide_page:
 		return
-	if _ow_trace:
-		print("[OWFLASH] update_map canvas=%s" % str(_ow_canvas))
 	var _map_target: RichTextLabel = game_output if _ow_canvas else map_display
 	if _ow_canvas:
 		# The side column takes over the text, so whatever was there stays readable.
@@ -48482,9 +48491,6 @@ func _overworld_display(payload: Dictionary) -> String:
 	# the stance, and a hand-picked margin width would be wrong the first time any of those moved.
 	_ow_map_px_w = float(px * cols_n)
 	_ow_map_px_h = float(px * rows_n)
-	if _ow_trace:
-		print("[OWFLASH] tiles px=%d cols=%d rows=%d box=%dx%d" % [px, cols_n, rows_n,
-			int(_fitbox.size.x) if _fitbox != null else -1, int(_fitbox.size.y) if _fitbox != null else -1])
 	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
 	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With

@@ -582,7 +582,58 @@ companion out. The rest of the batch is still not urgent; this one is. **Owner's
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
 nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-15 evening, after v0.9.791)
+## ▶ NEXT SESSION — START HERE (rewritten 2026-09-16 early hours, mid UI-ARC)
+
+### ⛑ WHERE THE UI ARC STOPPED (2026-09-16 ~02:00, owner went to bed)
+
+**Nothing is released. Master carries an unreleased UI reflow** built live with the owner over one
+session, screen by screen: they drove a local client, said what was wrong, and each fix was checked
+against what they saw rather than against what the code implied. Commits `1073a558`, `121019c9`,
+`9220fd1b`, `c4553326`, `59de13fa` and the ones after them.
+
+**The shape of it.** The overworld map owns the main canvas. Its margins - the ~300px either side
+of a square map in a wide canvas - hold the HUD: Coords and the status panel and the chat box on
+the left; the minimap, Area, Effects, Party and the companion on the right. The right column is the
+LOG, full height, and the bottom strip is the action bar and the input row only. Text follows one
+rule: **if it fits in the column it goes there, and if it does not it takes the canvas** - measured
+as the page is built, never a list of screen names. Visual menu panels (Inventory, Companions,
+Market...) keep the canvas as they always did.
+
+**What the owner still has open, in their words:**
+- [ ] *"Market and alchemy crafting still display Travel stances for a brief second before it hides
+      when they are opened, the stances need to hide before those menus are drawn, not after."*
+      The margin decision moved from a `_process` poll to the end of the frame that handled the
+      message (`_margin_sync_after_message`), which closes the frame-lag - but the owner reports
+      something longer than a frame and I have guessed twice. **MEASURE IT**: timestamp the mode
+      flip, the panel becoming visible, and the stance bar hiding. The `backtest` shots scene is
+      the pattern to copy - drive it, do not ask the owner to reproduce.
+- [ ] **Icons for the effect chips.** `client/sprites/battlers/tf_svbattle/RMMV/system/States.png`
+      is 10 animated states (8 frames of 96x96 each): poison, blind, silence, charm, sleep, doom
+      and more - all DEBUFFS. The positive buffs (strength, defense, haste, forcefield) are not in
+      it, so they stay chips or need a second source. Owner asked for icons; this is the art.
+- [ ] **Dungeon and party-combat screens have not been looked at with the owner.** The dungeon key
+      moved under the map and has never been seen in a screenshot (every `--shots=dungeon` run
+      lands in an entrance ambush). A party strip with four members plus you has never been drawn -
+      the box caps at 150px and scrolls, which is arithmetic, not a look.
+- [ ] **Hotkey buttons in combat and dungeons** - one styling function, so they should carry over,
+      but they have not been SEEN there. That is the "checked the ingredients, never called the
+      lookup" trap.
+
+### ⛑ WHAT THIS SESSION COST, AND THE TWO LESSONS WORTH KEEPING
+
+**Every wrong fix this session came from reasoning about the code instead of measuring the screen.**
+Three in a row: the map "lines" were a `[url]` underline, not line spacing; the "Crossroads flash"
+was the client's own per-step redraw, not the location handler; the darkness was a StyleBoxFlat
+SHADOW - a filled rounded rect drawn under the box as well as around it, which is invisible behind
+an opaque fill and a black wash behind a transparent one. Each was found in one run by looking at
+pixels or by printing state, after two or more failed attempts at reading.
+
+**A list of screen names is always the wrong instrument here.** It was wrong for which pages take
+the canvas (`jobs, pouch, build, etc.` was the owner pointing at the gap), wrong for which text is
+a station page, and wrong for which menus are panels. Every one of those is now a property the code
+can ASK: is it taller than the column, did it clear the canvas, is there a visible `*Panel` child.
+
+## ▶ PREVIOUS SESSION BLOCK (2026-09-15 evening, after v0.9.791)
 
 ### ⚑ WHERE THINGS STAND
 
