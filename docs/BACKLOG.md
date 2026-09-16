@@ -584,7 +584,18 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-16 early hours, mid UI-ARC)
 
-### ⛑ v0.9.793 SHIPPED THE UI ARC UNFINISHED - ON THE OWNER'S CALL (2026-09-16 ~02:30)
+### ⛑ v0.9.793 IS LIVE (2026-09-16 02:10) - UI ARC SHIPPED UNFINISHED, ON THE OWNER'S CALL
+
+Released and deployed: seven assets under `v0.9.793` (Windows + Linux client and launcher, the pck
+and runtime split, the generated manifest), release gate PASS on the Windows client, and the server
+swapped and verified by hashing `/proc/$PID/exe` against the local build.
+
+**The swap needed a second restart.** The countdown ran, systemd's `Restart=always` brought the
+server back on the OLD binary before the `mv` landed, and the running hash proved it - so the
+restart was done again and re-verified. Two disconnects for anyone who was online at 06:09 UTC.
+The runbook's advice (swap DURING the window) is right but the window is smaller than it reads:
+**stage the `.new` file BEFORE writing the sentinel, and do the `mv` the moment the sentinel is
+consumed, not after polling for a PID change.**
 
 Owner, going to bed: *"make sure to document and update everything properly. Go ahead and push a
 release as well. We will work through the bugs in the morning."* So v0.9.793 is the UI reflow as it
