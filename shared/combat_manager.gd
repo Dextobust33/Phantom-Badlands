@@ -2059,7 +2059,15 @@ func resolve_without_fight(peer_id: int, character: Character, monster: Dictiona
 	# path reads all of those with `.get` defaults, so it sees an untouched fight that is over.
 	combat.monster.current_hp = 0
 	var messages: Array = []
+	# ⛑ MEASURED, NOT PARSED. The caller used to scrape the XP out of the victory MESSAGES,
+	# and the first number in `[color=#808080]...` is 808080 - which is exactly what the player
+	# was shown: "+808080 XP". Reading a value out of formatted text finds the formatting.
+	#
+	# The banked delta is the true answer and cannot be fooled by markup: it is what the
+	# character actually gained, multiplier and all.
+	var xp_before: int = int(character.experience)
 	var out: Dictionary = _process_victory_with_abilities(combat, messages)
+	out["xp_gained"] = int(character.experience) - xp_before
 	# ⛑ AND THE FIGHT HAS TO BE TORN DOWN. `_process_victory_with_abilities` does not do it -
 	# the server does, after deciding about flock chains and buffs. Without this the player is
 	# left `in_combat` with a registered combat they were never shown, which is a stuck

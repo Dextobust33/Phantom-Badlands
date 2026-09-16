@@ -65,6 +65,11 @@ func _init() -> void:
 	var twin_before: int = int(twin.experience)
 	twin.add_experience(expected)
 	var through_mult: int = int(twin.experience) - twin_before
+	# ⛑ AND THE NUMBER THE PLAYER IS SHOWN MUST BE THE NUMBER THEY GOT. The line used to
+	# scrape it out of the victory messages and printed "+808080 XP" - the colour hex.
+	ck(int(res.get("xp_gained", -1)) == banked,
+		"the resolve REPORTS the xp it banked (said %d, banked %d)" % [
+			int(res.get("xp_gained", -1)), banked])
 	ck(banked == through_mult,
 		"banked (%d) == kill_xp through add_experience (%d) - no second reward site" % [banked, through_mult])
 

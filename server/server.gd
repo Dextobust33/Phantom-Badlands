@@ -9460,11 +9460,9 @@ func _auto_resolve_encounter(peer_id: int, character, monster: Dictionary) -> vo
 		# The fight refused to start (already in combat, dead, mid-flock). Leave it alone rather
 		# than inventing a reward for an encounter that never happened.
 		return
-	var gained := 0
-	for m in result.get("messages", []):
-		var t := String(m)
-		if t.contains("EXP") or t.contains("XP"):
-			gained = maxi(gained, _first_int_in(t))
+	# The resolve reports what was banked. It used to be scraped out of the victory messages,
+	# which showed the player "+808080 XP" - the first number in `[color=#808080]`.
+	var gained := int(result.get("xp_gained", 0))
 	# ⛑ LOUD ENOUGH TO NOTICE. The first version was grey-on-grey in the rolling log, and the
 	# owner walked a level 30 character around and reported *"couldn't find any encounters"* -
 	# while the server log showed the resolve firing. A resolved encounter that reads as nothing
@@ -9480,19 +9478,6 @@ func _auto_resolve_encounter(peer_id: int, character, monster: Dictionary) -> vo
 	send_to_peer(peer_id, {"type": "text", "message": line})
 	save_character(peer_id)
 	send_character_update(peer_id)
-
-
-func _first_int_in(text: String) -> int:
-	"""The first whole number in a string, or 0. Used to quote the XP the victory path reported
-	rather than recomputing it here - which would be the second reward site all over again."""
-	var cur := ""
-	for i in range(text.length()):
-		var c := text[i]
-		if c >= "0" and c <= "9":
-			cur += c
-		elif cur != "":
-			break
-	return int(cur) if cur != "" else 0
 
 
 func trigger_encounter(peer_id: int, hunted: bool = false):
