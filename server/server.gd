@@ -36641,7 +36641,8 @@ func _use_dungeon_compass(peer_id: int, item_index: int):
 		d_color = d_data.get("color", d_color)
 
 	var msg = "[color=#FFD700]The compass needle steadies and glows![/color]\n"
-	msg += "[color=%s]%s[/color] [color=#808080](T%d)[/color] lies %s." % [d_color, nearest.dungeon_name, int(d_data.get("tier", 1)) if not d_data.is_empty() else 1, nearest.direction_text]
+	# The GRADE, not the numeric tier. A bearing names a dungeon TYPE, so it has no rank.
+	msg += "[color=%s]%s[/color] [color=#808080](%s)[/color] lies %s." % [d_color, nearest.dungeon_name, PowerRank.rich_grade(int(d_data.get("tier", 1)) if not d_data.is_empty() else 1), nearest.direction_text]
 	send_to_peer(peer_id, {"type": "text", "message": msg})
 
 	# Send a compass_reveal payload so the client can flash a marker on the
@@ -41835,9 +41836,9 @@ func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
 
 	send_to_peer(peer_id, {
 		"type": "text",
-		"message": "[color=#00FF00][GM] Entering %s (T%d)...[/color]" % [
+		"message": "[color=#00FF00][GM] Entering %s (%s)...[/color]" % [
 			str(DungeonDatabaseScript.DUNGEON_TYPES[dungeon_type].get("name", dungeon_type)),
-			int(DungeonDatabaseScript.DUNGEON_TYPES[dungeon_type].get("tier", 0))
+			PowerRank.rich_grade(int(DungeonDatabaseScript.DUNGEON_TYPES[dungeon_type].get("tier", 1)))
 		]
 	})
 	# Pre-confirmed so the standard warning popup is skipped — admin path.

@@ -234,6 +234,37 @@ static func pips(tier: int) -> String:
 	return "▰".repeat(n) + "▱".repeat(LADDER.size() - n)
 
 
+static func grade_hover(tier: int) -> String:
+	"""The ladder in words for a GRADE whose rank is not decided.
+
+	A dungeon TYPE has a grade but no rank - the rank is rolled per INSTANCE, by distance from
+	origin (`get_sub_tier_for_distance`). So the Atlas, a rumour and a compass bearing can only
+	honestly name the letter, and saying so is better than printing a rank nobody has rolled."""
+	var t: int = clampi(tier, 1, LADDER.size())
+	var chain := ""
+	for i in range(LADDER.size()):
+		if i > 0:
+			chain += " "
+		chain += (">%s<" % LADDER[i]) if i == t - 1 else LADDER[i]
+	return "Tier %s — %s  (weakest → strongest)  %s  Rank within the tier is set per dungeon, when one exists to enter." % [
+		letter(t), chain, pips(t)]
+
+
+static func rich_grade(tier: int) -> String:
+	"""⚑ THE GRADE, COLOURED AND HOVERABLE - and NEVER as a number.
+
+	Owner 2026-09-16: *"T# dungeons shouldn't exist anymore as all dungeons are now on the letter
+	number format."* Seven surfaces were still printing the raw numeric tier - a GM line reading
+	"(T3)", a compass bearing reading "(T5)", and the Atlas printing a bare `2` because an int was
+	interpolated through `%s`. The letter ladder replaced that in 2026-09-11 and the numeric form
+	had simply outlived it in the places nobody re-read.
+
+	This is the counterpart to `rich_label` for a surface that describes a KIND of dungeon rather
+	than one you can walk into. Same rule as the header of this file: never render a bare label."""
+	return "[url=%s][color=%s]%s[/color][/url]" % [
+		_url_safe(grade_hover(tier)), color(tier), letter(tier)]
+
+
 static func hover(tier: int, rank: int) -> String:
 	"""The ladder, in words, with this tier marked. Never assume the letters are obvious."""
 	var t: int = clampi(tier, 1, LADDER.size())

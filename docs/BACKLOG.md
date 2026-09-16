@@ -657,6 +657,35 @@ player power, so the `speciescal`/`refcal`/`rolecal` chain does not apply.
 - [x] The sticky player/companion hover — one label, two fill mechanisms, one of them caching.
 - [x] Dev loopback exempt from the connection rate limit, so a 5-client test stops losing a member.
 
+### ✅ 2026-09-16 — NO DUNGEON SHOWS A NUMERIC TIER ANY MORE
+
+Owner: *"T# dungeons shouldn't exist anymore as all dungeons are now on the letter number format."*
+
+The letter ladder (H G F E D C B A S) replaced the numeric tier on 2026-09-11 and **seven surfaces
+never got the message** - the exact shape of CLAUDE.md's "a rename touches SEVEN surfaces" rule.
+Swept, not spot-fixed:
+
+- [x] GM dungeon entry read `(T3)` — the line the owner saw.
+- [x] The compass bearing read `(T5)`.
+- [x] The Atlas SPOTTED row printed a bare `2` — an int interpolated straight through a `%s`.
+- [x] The Atlas DISCOVERED row rendered a bare letter with no colour and no hover, against
+      PowerRank's own standing rule (*"Never render a bare label"*).
+- [x] The Atlas RUMOURED row said "a Tier G dungeon".
+- [x] The dungeon LIST and the ENTRANCE panel both fell back to "Tier G" when no instance exists.
+
+`PowerRank.rich_grade(tier)` is the new formatter for a surface that names a KIND of dungeon rather
+than one you can walk into. A dungeon TYPE has a grade but **no rank** - the rank is rolled per
+INSTANCE, by distance from origin (`get_sub_tier_for_distance`) - so those surfaces show the letter
+with a hover that says so, and every instance-level surface shows the full `F7`.
+
+**⛑ The detector was a silent no-op on its first run, and only re-injecting the fault found it.**
+It flagged a line carrying `T%d` *and* the word "dungeon"; on the GM line the dungeon NAME is on the
+next source line, so the token sat there and the probe said PASS. Proximity was the wrong unit. The
+token is BANNED now and the legitimate non-dungeon uses (gathering nodes, tools, trading posts, the
+region readout, monster tier, one admin diagnostic) are NAMED individually - unsafe unless listed.
+Re-proven by re-injecting `(T%d)` into the GM line: FAIL, then PASS on revert.
+Probe: `tools/probe/dungeon_grade_format.gd` (49 checks).
+
 ### ✅ 2026-09-16 — THE DUNGEON ENTRANCE SCREEN, SKIMMABLE
 
 Owner: *"The current Dungeon warning screens are a wall of text though. They need to be able to be

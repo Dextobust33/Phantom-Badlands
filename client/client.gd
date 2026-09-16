@@ -39615,17 +39615,17 @@ func display_dungeon_atlas(message: Dictionary) -> void:
 		if st >= 3:  # discovered — full detail (name is click-to-locate)
 			shown += 1
 			var comp := String(e.get("companion", ""))
-			display_game("[color=%s]◆ %s[/color] [color=#808080](%s · Lv %d-%d · %d clears)[/color]  [url=atlas_locate:%s][color=#5AC8FF][b][‹ Locate ›][/b][/color][/url]" % [tcol, String(e.get("name", "?")), PowerRank.letter(tier), int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), String(e.get("id", ""))])
+			display_game("[color=%s]◆ %s[/color] [color=#808080](%s · Lv %d-%d · %d clears)[/color]  [url=atlas_locate:%s][color=#5AC8FF][b][‹ Locate ›][/b][/color][/url]" % [tcol, String(e.get("name", "?")), PowerRank.rich_grade(tier), int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), String(e.get("id", ""))])
 			var monsters: Array = e.get("monsters", [])
 			if monsters.size() > 0:
 				display_game("   [color=#909090]Monsters:[/color] %s" % ", ".join(monsters))
 			display_game("   [color=#909090]Boss:[/color] %s   [color=#A335EE]Companion egg:[/color] %s" % [String(e.get("boss", "?")), (comp if comp != "" else "—")])
 		elif st == 2:  # spotted
 			shown += 1
-			display_game("[color=%s]◇ %s[/color] [color=#808080](%s · seen near %d,%d — not yet explored)[/color]" % [tcol, String(e.get("name", "?")), tier, int(e.get("x", 0)), int(e.get("y", 0))])
+			display_game("[color=%s]◇ %s[/color] [color=#808080](%s · seen near %d,%d — not yet explored)[/color]" % [tcol, String(e.get("name", "?")), PowerRank.rich_grade(tier), int(e.get("x", 0)), int(e.get("y", 0))])
 		elif st == 1:  # rumored
 			shown += 1
-			display_game("[color=#808080]? [i]??? — a Tier %s dungeon, whispered of nearby[/i][/color]" % PowerRank.letter(tier))
+			display_game("[color=#808080]? [i]??? — a %s dungeon, whispered of nearby[/i][/color]" % PowerRank.rich_grade(tier))
 		else:
 			unknown += 1
 	if shown == 0:
@@ -48614,7 +48614,9 @@ func handle_dungeon_list(message: Dictionary):
 		if int(sub_tier) > 0:
 			display_game("    %s | Levels %d-%d | Distance: %d tiles" % [PowerRank.rich_label(tier, sub_tier), min_level, max_level, distance])
 		else:
-			display_game("    Tier %s | Levels %d-%d | Distance: %d tiles" % [PowerRank.letter(tier), min_level, max_level, distance])
+			# No instance exists, so there is no RANK yet - only the grade. Named as the grade
+			# rather than "Tier F", which reads as a different scale from the F7 on the row above.
+			display_game("    %s [color=#808080](rank set on entry)[/color] | Levels %d-%d | Distance: %d tiles" % [PowerRank.rich_grade(tier), min_level, max_level, distance])
 		display_game("")
 		idx += 1
 
@@ -51456,7 +51458,7 @@ func _display_dungeon_entrance_info():
 	if int(sub_tier) > 0:
 		display_game("%s Dungeon | Levels %d-%d" % [PowerRank.rich_label(tier, sub_tier), min_level, max_level])
 	else:
-		display_game("Tier %s Dungeon | Levels %d-%d [color=#808080](exact depth is set when you enter)[/color]" % [PowerRank.letter(tier), min_level, max_level])
+		display_game("%s Dungeon | Levels %d-%d [color=#808080](rank is set when you enter)[/color]" % [PowerRank.rich_grade(tier), min_level, max_level])
 
 	# Show level requirement warning if player is too low
 	if player_level < min_level:
@@ -51488,7 +51490,7 @@ func enter_dungeon_at_location():
 	if int(entry_sub_tier) > 0:
 		display_game("%s Dungeon" % PowerRank.rich_label(int(dungeon_entrance_info.get("tier", 1)), entry_sub_tier))
 	else:
-		display_game("Tier %s Dungeon" % PowerRank.letter(int(dungeon_entrance_info.get("tier", 1))))
+		display_game("%s Dungeon [color=#808080](rank is set on entry)[/color]" % PowerRank.rich_grade(int(dungeon_entrance_info.get("tier", 1))))
 	display_game("Level Range: %d - %d" % [min_level, dungeon_entrance_info.get("max_level", 100)])
 	display_game("")
 	display_game("[color=#FFFF00]Entering dungeon...[/color]")
