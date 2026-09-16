@@ -819,7 +819,7 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    Measure first (a 1920x1080 client screenshot: map viewport vs map content, panel sizes),
    then set the default scale/layout so the whole map fits with no scroll; check the per-element
    resize system (memory: UI Scale system) so saved user scales are not clobbered.
-4d. **XP BY DANGER - owner decided 2026-09-15, DO THIS FIRST after the release.** The XP formula
+4d. **✅ DONE 2026-09-15 (unreleased) - XP BY DANGER.** The XP formula
    scales a kill by lethality (hp + 2*str + def) against `expected_lethality = 50 + level * 10`,
    clamped to 0.7-1.4. That constant predates the calibrated monster curve. MEASURED
    (`tools/probe/xp_lethality_term.gd`, 60 real monsters at each of 11 levels): **every monster at
@@ -835,12 +835,16 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    - the rest is that only low-tier species spawn at low levels, so "expected" has to be the mean
      over the level's **weighted eligible pool** (`select_monster_type`'s tier weights, bleed
      included), not over all 47 species
-   Build it as `_expected_lethality(level)` reading the curve + the eligible pool, cached per level,
-   with NO new hand-written constant (that is the whole fault being fixed), then re-centre so the
-   average kill pays ~1.18x today's flat 1.4, and VERIFY kills-per-level at L1 / L10 / L50 / L250 /
-   L1000 before and after - the early game is deliberately ~19 kills per level and must not drift.
-   Beware the recursion: expected-lethality must not call `scale_monster_to_level`, which calls the
-   XP formula. XP does not feed the monster curve, so this needs no re-calibration.
+   **BUILT as `_expected_lethality(level)`**: the mean of that level's own weighted spawn pool (the
+   tiers and weights `select_monster_type` draws from), each species costed through
+   `compute_anchored_stats` - the function that builds a real monster - so it tracks the calibrated
+   curve, the species power corrections and the flock division by itself, with no new hand-written
+   number to go stale. The 7% tier bleed is excluded on purpose: a bled-in monster IS tougher than
+   its level's normal fare and should be paid for it.
+   MEASURED (80 monsters at each of 11 levels): the multiplier runs **1.30..2.10, mean 1.656**
+   against the old flat 1.40 - the average kill is worth **+18.3%**, it varies at every level, only
+   ~4% of monsters reach a clamp and no level's average sits on one. Kills per level move with it
+   (L10 22.4 -> 18.3, L1000 16.2 -> 13.7). No refit needed - XP does not feed fight outcomes.
 
 4c. **Two "what did that do?" gaps (owner 2026-09-15).** Both are the same shape - an action lands
    and the player is never told what it acted on or what they got. Cheap, and both sit on the
