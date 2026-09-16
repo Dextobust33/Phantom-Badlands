@@ -1810,6 +1810,23 @@ var market_buy_quantity: int = 0  # 0 = buy full stack
 var market_list_page: int = 0
 var market_mat_page: int = 0
 var market_my_page: int = 0
+## ⚑ THE OVERWORLD CANVAS (2026-09-15). The map is drawn in the BIG left panel, as the dungeon
+## floor and the sprite Sanctuary already are, and the text moves to the side column.
+##
+## The dungeon needed a list of "full-screen menus" to decide where its text should go, and the
+## overworld has forty-odd mode flags - a list like that is wrong the first time somebody adds a
+## mode. So the rule here is not a flag at all: text goes to the side column only while the MAP IS
+## STILL ON THE CANVAS. Any page that clears game_output to draw itself releases the canvas by
+## doing so, and text flows back to it exactly as it always did. `_ow_canvas_mark` is how that is
+## detected - the canvas length right after the map was drawn.
+var _ow_canvas_showing: bool = false
+var _ow_canvas_mark: int = 0
+var _ow_rendering: bool = false
+## True while a location message is being handled, so its text goes to the side column from the
+## first line rather than flashing on the canvas until the map redraws over it.
+var _ow_location_pass: bool = false
+var _ow_side_lines: Array = []
+const OW_SIDE_MAX_LINES := 60
 var market_list_flash: String = ""  # Brief success message shown in listing view
 # What each incubating egg would fetch, index-aligned, as the SERVER computes it (market_egg_values).
 var _market_egg_valors: Array = []
@@ -24452,6 +24469,17 @@ func handle_server_message(message: Dictionary):
 				display_examine_result(message)
 
 		"location":
+			# ⚑ THE WHOLE LOCATION PASS BELONGS TO THE SIDE COLUMN.
+			#
+			# Its text is printed before update_map redraws, so each of those lines spent a frame
+			# on the canvas before the map painted over it - a flash of "===== Crossroads =====" on
+			# every step. Owner 2026-09-15: *"Everytime I take a step it also displays the
+			# crossroads text on the left for a brief moment before redrawing the map."* Marking
+			# the pass is enough: display_game sends anything printed inside it to the side column,
+			# whether or not the map happens to be on the canvas yet.
+			_ow_location_pass = _ow_canvas_eligible()
+			if _ow_location_pass:
+				_ow_side_lines.clear()
 			# Who is walking with you. Read before anything draws, so the escort appears on the
 			# same frame as the move rather than one behind it.
 			_escort_kind = String(message.get("escort", ""))
@@ -24620,6 +24648,7 @@ func handle_server_message(message: Dictionary):
 				update_action_bar()
 			_check_tutorial_trigger("move")
 
+			_ow_location_pass = false
 		"chat":
 			var sender = message.get("sender", "Unknown")
 			var text = message.get("message", "")
@@ -35822,6 +35851,57 @@ func _dungeon_panel_menu_open() -> bool:
 	return dungeon_mode and (dungeon_food_select or dungeon_resource_prompt)
 
 
+func _ow_canvas_eligible() -> bool:
+	"""Should the overworld map own the main canvas right now?
+
+	Sprites only: the ASCII fallback's player-marker overlay measures itself against map_display,
+	so moving that map would put the marker in the wrong place - and a map made of letters is the
+	thing that has to keep working when everything else fails."""
+	return overworld_sprites and _OverworldRoom.available() 		and not dungeon_mode and not _house_room_active() 		and not in_combat and not _combat_ui_busy() 		and game_output != null and map_display != null
+
+
+func _ow_canvas_intact() -> bool:
+	"""Is the map still the thing on the canvas? False once any page has cleared it away."""
+	if not _ow_canvas_showing or game_output == null:
+		return false
+	return game_output.get_parsed_text().length() >= _ow_canvas_mark
+
+
+func _ow_side_add(text: String) -> void:
+	_ow_side_lines.append(text)
+	while _ow_side_lines.size() > OW_SIDE_MAX_LINES:
+		_ow_side_lines.pop_front()
+	_ow_side_refresh()
+
+
+func _ow_side_top_rows() -> int:
+	"""Blank rows needed to clear the Coords / Area boxes floating over the side column.
+
+	Measured from the boxes rather than guessed, because they grow with their own text - a long
+	region name already wraps to three lines."""
+	var tallest := 0.0
+	for n in [coord_post_label, region_label]:
+		if n != null and is_instance_valid(n) and (n as Control).visible:
+			tallest = maxf(tallest, (n as Control).position.y + (n as Control).size.y)
+	if tallest <= 0.0 or map_display == null:
+		return 0
+	var f: Font = map_display.get_theme_font("normal_font")
+	var lh: float = f.get_height(map_display.get_theme_font_size("normal_font_size")) if f != null else 16.0
+	return clampi(int(ceil(tallest / maxf(1.0, lh))), 0, 12)
+
+
+func _ow_side_refresh() -> void:
+	"""The side column: what used to fill the main panel - where you are, who greets you, what you
+	just picked up. Newest at the bottom, the way the dungeon run log reads."""
+	if map_display == null:
+		return
+	map_display.remove_theme_constant_override("line_separation")
+	map_display.clear()
+	# Start BELOW the Coords / Area boxes that float over the top of this column. Text drawn under
+	# them is unreadable - the owner caught a "Screenshot saved" line doing exactly that.
+	map_display.append_text("\n".repeat(_ow_side_top_rows()) + "\n".join(_ow_side_lines))
+
+
 func display_game(text: String):
 	# 2026-09-08 — in a dungeon, `game_output` IS the map. Anything appended to it pushes the
 	# floor up and eventually scrolls it off. Reported: "screenshot output is going in the
@@ -35854,6 +35934,18 @@ func display_game(text: String):
 		else:
 			_dungeon_log_add(text)
 		return
+	# The overworld canvas, same idea as the dungeon's: while the MAP is what is on the main
+	# panel, a line appended there would land under it, unread - so it goes to the side column.
+	# The moment a page clears the canvas to draw itself, `_ow_canvas_intact` goes false and
+	# everything below behaves exactly as it always has.
+	if _ow_location_pass and not _ow_rendering:
+		_ow_side_add(text)
+		return
+	if _ow_canvas_showing and not _ow_rendering:
+		if _ow_canvas_intact():
+			_ow_side_add(text)
+			return
+		_ow_canvas_showing = false
 	if game_output:
 		game_output.append_text(text + "\n")
 
@@ -37382,6 +37474,13 @@ func _on_game_output_meta_clicked(meta) -> void:
 	"""v0.9.612 — dispatch clicks on BBCode [url=...] links in game_output.
 	Currently the L-view flock pagination links are the only consumers."""
 	var meta_str: String = str(meta)
+	# The overworld map is drawn HERE now, so its own links arrive here too. Handed to the map's
+	# handler rather than copied into this one - clicking a player on the map has to do the same
+	# thing whichever panel the map happens to be living in.
+	if meta_str.begins_with("owfig:") or meta_str.begins_with("owdg:") or meta_str.begins_with("tile:"):
+		_on_map_meta_clicked(meta)
+		return
+	
 	if meta_str.begins_with("avatar_pick:"):
 		# The Sanctuary mirror. Applied locally at once so the page answers the click, and sent so
 		# it is kept; the server's house_update redraws the page with the saved value.
@@ -40899,8 +40998,27 @@ func update_map(map_text: String):
 		main_text = map_text.substr(0, split_idx).strip_edges(false, true)
 		minimap_text = map_text.substr(split_idx)
 
-	if map_display:
-		map_display.clear()
+	# ⚑ WHICH PANEL IS THE MAP'S? The big one, when the overworld owns the canvas.
+	#
+	# The dungeon made this move on 2026-09-08 ("presentation pass E") for exactly this reason:
+	# it was "drawn in the small side panel, about 115x165 pixels, while the whole main canvas
+	# held six lines of status and then sat empty". The overworld is the case that never got the
+	# pass. Owner 2026-09-15, after three attempts to win rows inside the side column: *"the map
+	# needs more space, it's too small and doesn't have enough space on a 1080p"* - the column is
+	# ~640px shared four ways, and the canvas is 711px shared with nothing.
+	var _ow_canvas: bool = _ow_canvas_eligible()
+	var _map_target: RichTextLabel = game_output if _ow_canvas else map_display
+	if _ow_canvas:
+		# The side column takes over the text, so whatever was there stays readable.
+		_ow_side_refresh()
+	if _map_target:
+		if _ow_canvas:
+			_ow_rendering = true
+		# NO GAP BETWEEN MAP ROWS. Each row is a line of TEXT holding inline images, and the
+		# theme's line_separation is added between lines - a constant stripe of panel background
+		# under every row that no tile size can close. Owner: *"Lines on the map."*
+		_map_target.add_theme_constant_override("line_separation", 0)
+		_map_target.clear()
 		# v0.9.397 — strip the inline coord / post header that the server
 		# emits above the [center]...[/center] map block. We now render that
 		# data in the styled coord_post_label box at top-left, so showing it
@@ -40933,10 +41051,14 @@ func update_map(map_text: String):
 		# a name starting with G or ~ — extremely rare, and worst case
 		# we accidentally hide one guard/water cell on the same screen.
 		main_text = _strip_remote_player_glyphs(main_text)
-		map_display.append_text(main_text)
+		_map_target.append_text(main_text)
 		if show_map_legend:
-			map_display.append_text("\n[color=#8B7355][font_size=13]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water  [/font_size][/color][color=#FFAA00][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Threat  [/font_size][/color][color=#FFD700][font_size=13]?[/font_size][/color][color=#8B7355][font_size=13] Bounty  [/font_size][/color][color=#FF4444][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Hotzone  X Corpse  $ Sack[/font_size][/color]")
+			_map_target.append_text("\n[color=#8B7355][font_size=13]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water  [/font_size][/color][color=#FFAA00][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Threat  [/font_size][/color][color=#FFD700][font_size=13]?[/font_size][/color][color=#8B7355][font_size=13] Bounty  [/font_size][/color][color=#FF4444][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Hotzone  X Corpse  $ Sack[/font_size][/color]")
 
+		if _ow_canvas:
+			_ow_rendering = false
+			_ow_canvas_showing = true
+			_ow_canvas_mark = game_output.get_parsed_text().length()
 	if minimap_display:
 		minimap_display.clear()
 		if minimap_text != "":
@@ -47029,11 +47151,13 @@ func _overworld_display(payload: Dictionary) -> String:
 	# was built for - and weather, blindness and any future vision change move that number too,
 	# so pinning the tile size was always going to break on the first one that made it bigger.
 	# It now shrinks to fit and never exceeds the designed 26px.
+	# Measure the panel the map will be DRAWN in, not the one it used to live in.
+	var _fitbox: RichTextLabel = game_output if _ow_canvas_eligible() else map_display
 	var px: int = OVERWORLD_SPRITE_PX
-	if map_display != null and cols_n > 0 and map_display.size.x > 32.0:
+	if _fitbox != null and cols_n > 0 and _fitbox.size.x > 32.0:
 		# A couple of pixels of slack: BBCode adds no spacing between inline images, but the
 		# panel has padding and a fractional width rounds the wrong way often enough to matter.
-		var fit: int = int(floor((map_display.size.x - 6.0) / float(cols_n)))
+		var fit: int = int(floor((_fitbox.size.x - 6.0) / float(cols_n)))
 		px = clampi(fit, 8, OVERWORLD_SPRITE_PX)
 	# ...AND IT HAS TO FIT DOWNWARD TOO. Owner 2026-09-15, with a screenshot: *"There is still a
 	# scrollbar for my map."*
@@ -47046,17 +47170,17 @@ func _overworld_display(payload: Dictionary) -> String:
 	#
 	# The same fault as the ASCII path's missing height cap, in the sprite renderer, and it
 	# survived that fix because the overworld has not been ASCII since the sprite pass.
-	if map_display != null and rows_n > 0 and map_display.size.y > 32.0:
+	if _fitbox != null and rows_n > 0 and _fitbox.size.y > 32.0:
 		# What else lives in this label: the leading blank paragraph (kept so the sprite overlay's
 		# row maths stay aligned) and, when it is on, the legend line. Neither was counted, so a
 		# map fitted exactly to the box still overflowed by a line or two and scrolled - which is
 		# why a scrollbar survived the first height fit.
 		var _extra_rows: float = 1.0 + (1.0 if show_map_legend else 0.0)
 		var _lh2: float = 14.0
-		var _mf2: Font = map_display.get_theme_font("normal_font")
+		var _mf2: Font = _fitbox.get_theme_font("normal_font")
 		if _mf2 != null:
-			_lh2 = _mf2.get_height(map_display.get_theme_font_size("normal_font_size"))
-		var _avail: float = map_display.size.y - 6.0 - _extra_rows * _lh2
+			_lh2 = _mf2.get_height(_fitbox.get_theme_font_size("normal_font_size"))
+		var _avail: float = _fitbox.size.y - 6.0 - _extra_rows * _lh2
 		var fit_h: int = int(floor(maxf(32.0, _avail) / float(rows_n)))
 		px = mini(px, clampi(fit_h, 8, OVERWORLD_SPRITE_PX))
 	# ⚑ AND THE LINE HAS TO BE AS SHORT AS THE TILE.
@@ -47070,17 +47194,17 @@ func _overworld_display(payload: Dictionary) -> String:
 	# Both symptoms, one cause: those bands are also what kept the map taller than its box, so
 	# shrinking the tiles alone could never stop the scrolling - it added height as fast as it
 	# removed it. The font is measured down until a line is no taller than a tile.
-	if map_display != null and px > 0:
-		var _mf: Font = map_display.get_theme_font("normal_font")
+	if _fitbox != null and px > 0:
+		var _mf: Font = _fitbox.get_theme_font("normal_font")
 		if _mf != null:
-			var _fs: int = map_display.get_theme_font_size("normal_font_size")
+			var _fs: int = _fitbox.get_theme_font_size("normal_font_size")
 			while _fs > 6 and _mf.get_height(_fs) > float(px):
 				_fs -= 1
-			if _fs != map_display.get_theme_font_size("normal_font_size"):
-				map_display.add_theme_font_size_override("normal_font_size", _fs)
-				map_display.add_theme_font_size_override("bold_font_size", _fs)
-				map_display.add_theme_font_size_override("italics_font_size", _fs)
-				map_display.add_theme_font_size_override("bold_italics_font_size", _fs)
+			if _fs != _fitbox.get_theme_font_size("normal_font_size"):
+				_fitbox.add_theme_font_size_override("normal_font_size", _fs)
+				_fitbox.add_theme_font_size_override("bold_font_size", _fs)
+				_fitbox.add_theme_font_size_override("italics_font_size", _fs)
+				_fitbox.add_theme_font_size_override("bold_italics_font_size", _fs)
 	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
 	# entrances are hoverable and sprited once we get all of the overworld spriting in."* With
