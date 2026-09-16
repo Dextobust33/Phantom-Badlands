@@ -582,7 +582,62 @@ companion out. The rest of the batch is still not urgent; this one is. **Owner's
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
 nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
-## ▶ NEXT SESSION — START HERE (rewritten 2026-09-16 early hours, mid UI-ARC)
+## ▶ NEXT SESSION — START HERE
+
+### ✅ v0.9.795 IS LIVE (2026-09-16) — client AND server, verified
+
+Seven assets under `v0.9.795`, release gate PASS (including the new `state_icons` line), and the
+server swapped **in one restart** and verified by hashing `/proc/$PID/exe` against the local build
+(`3f62bbd5a238f9fe`). `tools/deploy_server_warned.sh`'s ordering held — stage the `.new` before
+writing the countdown, `mv` the moment the PID changes — so players took ONE disconnect, not the
+two that v0.9.793 cost.
+
+**The server side mattered this time.** 131 lines of `server.gd`: `allies` on `dungeon_state`
+(party members drawn underground), the `party_update` flush on batched character updates (gauges
+that move), follower placement ordered before notification, `gm_apply_state`, and the dev-loopback
+rate-limit exemption. A client-only release would have shipped a changelog making claims the server
+could not honour.
+
+**No re-calibration was needed and that was checked, not assumed:** nothing in the arc touched
+player power, so the `speciescal`/`refcal`/`rolecal` chain does not apply.
+
+### Shipped in v0.9.795
+
+- [x] Shortcut buttons have ONE home, above the action bar, on every screen.
+- [x] Party members drawn on the dungeon floor (`allies` on the wire) + the party strip underground.
+- [x] Dungeon floor at 4x the area: 19x11 at 64px, from 19x9 at 32px. Two causes, both measured —
+      a stale 56px headroom for the retired step counter, and `game_output` being shrunk by the
+      chat log, which moved to the dungeon side column.
+- [x] Real gauges (`ProgressBar` + two `StyleBoxFlat`es) for party HP/resource, companion HP and XP,
+      after three text attempts were rejected. **Read `_gauge` before proposing a fourth.**
+- [x] `party_update` flushes with character updates — the bars were a snapshot from grouping up.
+- [x] Effects as ICONS, hoverable, no letter codes: poison/blind from `States.png`, fourteen buffs
+      from `items_pack/`. **Read `STATE_ICONS` / `BUFF_ICONS` before adding more.**
+- [x] Companion art trimmed of its dead rows (355 across 56 entries; the Wight 118 → 98 rows).
+- [x] The sticky player/companion hover — one label, two fill mechanisms, one of them caching.
+- [x] Dev loopback exempt from the connection rate limit, so a 5-client test stops losing a member.
+
+### ⛑ NOT VERIFIED IN v0.9.795 — look at these first
+
+- [ ] **The dungeon key's tile hover.** The key moved into its own label (`_dungeon_key_label`) and
+      the `meta_hover_started` signals are connected, but nobody has hovered a theme tile since.
+- [ ] **The buff-icon hover popups.** Wired the same way as every other hover; never captured.
+- [ ] **ONE canvas size only.** Everything in this arc was measured at 1367x792. The dock heights
+      and margin widths are computed, and the dungeon tile fit degrades to 32px if 64 will not fit —
+      so on a 1080p or 1440p window the dungeon may land on a different tile size than the frames
+      the owner reviewed. Five-minute check: `--shots=dungeon` at a couple of resolutions.
+
+### Open, in order
+
+- [ ] **Blinded, the overworld map is a 5x5 cross at 30px** — vision working as designed, but a
+      postage stamp. The view is tiny, so the tiles could be drawn at 64px there (5x64 = 320, room
+      to spare) and blindness would be legible instead of merely small. Contained to the tile fit.
+- [ ] **Buff icons for the rest.** The remaining combat buffs have no art that honestly represents
+      them; `BUFF_ICONS` records what is mapped and why. Either source icons or leave them as
+      lettered chips — do NOT map a spare debuff row onto a buff.
+- [ ] **Judge the dungeon with a full party.** The owner has frames at the right tile size now
+      (`shot_38675`, `shot_50715`); the call is theirs.
+
 
 ### ⚑ 2026-09-16 afternoon — the party/dungeon round (commit `fc6542d2`, UNRELEASED)
 
