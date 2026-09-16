@@ -820,6 +820,33 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    starter post; companion sprites that FACE the way they walk on the overworld and in dungeons
    (release held for it).
 4b. **◐ PARTLY DONE 2026-09-15 (unreleased) - default UI scale at 1080p.**
+   **THE HUD MOVED INTO THE MAP'S MARGINS (2026-09-15 night, unreleased).** Owner, over one
+   screenshot round: overlays must hide when a menu like the inventory is up; the status wants a
+   bordered panel like the others; the chatbox moves under the status panel and the action bar to
+   the bottom of the screen; the chatbox needs Chat and System tabs; the players-online area
+   shrinks to the column width so the game output grows vertically; the shortcut buttons move to
+   the top of the right column; the status text can be smaller; the map sprites are hard to read
+   at 1080p. All done (`121019c9`):
+   - Coords, Area, minimap, the status panel (framed now, font 11 base) and the chat log all float
+     in the ~300px margins either side of the map, placed against the map's measured width and
+     each other's measured heights.
+   - They hide over a page. Two things take the canvas and only one was noticed: a text page CLEARS
+     it, a visual PANEL is just shown on top. Panels are matched by NAME (`*Panel` child of the
+     canvas), polled in `_process`. Three separate things put them back a frame later - update_map,
+     the minimap's own `visible = true`, and the travel row's default argument.
+   - The bottom strip is the action bar, the input row and the player list, shrunk to that content
+     instead of a quarter of the window: the canvas is ~120px taller. The INPUT ROW stayed at the
+     bottom on purpose - it is how commands are typed, and a margin widget hides with the rest.
+   - Chat has two channels with their own buffers and an unread dot; "system" is server broadcasts,
+     hall-of-heroes, clan logins, bounties and anything the server sends as System.
+   - `OVERWORLD_SPRITE_PX` 26 -> 32, which is what the tiles ARE (`_OverworldRoom.CELL`) - the old
+     value was a 19% downscale from when the map lived in the side panel. **Bigger than that is
+     upscaling**: nearest-neighbour is crisp only at whole multiples, so the next step is 64, which
+     needs a smaller view. That is a gameplay decision (how far you can see) and is NOT done.
+   - Shots harness: `worldpet` (overworld with a companion out) and `menus` (a page over the canvas).
+   - [ ] Still open here: the companion art panel in the right margin has no frame; and a TEXT page
+     on the canvas is still overwritten by the next map redraw (a visual panel is not - it sits on
+     top). Movement is blocked in most such modes, so it needs a party-member push to show.
    **THE OVERWORLD MAP MOVED TO THE MAIN CANVAS (2026-09-15 night, unreleased), and took the
    Coords box, the Area box, the minimap, the status panel and the travel row with it.** Owner,
    after three attempts to win rows inside the side column: *"the map needs more space"*, then
