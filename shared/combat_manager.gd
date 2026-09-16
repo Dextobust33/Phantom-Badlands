@@ -2033,6 +2033,45 @@ func _apply_combat_wear(character, messages: Array):
 func _ready():
 	print("Combat Manager initialized")
 
+func resolve_without_fight(peer_id: int, character: Character, monster: Dictionary) -> Dictionary:
+	"""Award a kill exactly as a WIN would, without ever opening the combat screen.
+
+	Owner 2026-09-13, accepting trivial-encounter auto-resolve: *"low level meaningless
+	encounters"* should not interrupt you - and, on acceptance, **"FULL rewards, not token XP"**,
+	because anything less quietly taxes the player the feature exists to help.
+
+	⚑ SO IT DOES NOT COMPUTE A REWARD. It starts the real fight and then wins it on round zero,
+	which means XP, job XP, companion XP and battle count, monster gems, path effects, card gifts,
+	quest credit and the bestiary all come from the same code a real victory runs - by
+	construction, not by being kept in step.
+
+	That matters more here than anywhere: the co-op payout paid raw base XP for the life of party
+	combat because a SECOND reward site existed beside `kill_xp`, and nobody noticed for months.
+	A third site, reached only when you out-level the ground, would have been quieter still.
+
+	The client is never told a fight began, so there is no screen to dismiss - which is the whole
+	point of the feature."""
+	var res := start_combat(peer_id, character, monster)
+	if not bool(res.get("success", false)) or not active_combats.has(peer_id):
+		return {"success": false, "messages": []}
+	var combat = active_combats[peer_id]
+	# Round zero: nothing has acted, so no ability, no damage taken, no engine spent. The victory
+	# path reads all of those with `.get` defaults, so it sees an untouched fight that is over.
+	combat.monster.current_hp = 0
+	var messages: Array = []
+	var out: Dictionary = _process_victory_with_abilities(combat, messages)
+	# ⛑ AND THE FIGHT HAS TO BE TORN DOWN. `_process_victory_with_abilities` does not do it -
+	# the server does, after deciding about flock chains and buffs. Without this the player is
+	# left `in_combat` with a registered combat they were never shown, which is a stuck
+	# character. The probe caught it on the first run; nothing on screen would have.
+	#
+	# No flock chain: a trivial encounter that summons a second trivial encounter is the
+	# interruption this feature exists to remove.
+	end_combat(peer_id, true)
+	out["success"] = true
+	return out
+
+
 func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Dictionary:
 	"""Initialize a new combat encounter"""
 

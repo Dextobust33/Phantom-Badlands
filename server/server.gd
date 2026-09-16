@@ -9393,6 +9393,83 @@ func _exit_tree():
 	save_all_active_characters()
 	server.stop()
 
+## How far below you the ground has to be before a fight resolves itself: your level divided by
+## this. At 3.0 a level 30 character stops being interrupted by level 10 country - which is the
+## band where the owner reported the encounters as meaningless.
+const TRIVIAL_ENCOUNTER_LEVEL_DIVISOR := 3.0
+## ...and never below this, so a level 3 character is not handed free kills while everything is
+## still a real fight for them. The feature is for people who have outgrown the ground, and at low
+## level nobody has.
+const TRIVIAL_ENCOUNTER_MIN_LEVEL := 12
+
+
+func _encounter_is_trivial(character, monster: Dictionary, area_level: int) -> bool:
+	"""Is this a fight not worth opening a screen for?
+
+	Judged on the MONSTER's own level rather than the area average, because the area is a range and
+	the roll inside it is what the player would actually have faced - an area that averages trivial
+	can still roll something that is not.
+
+	Every exclusion here is a fight that is an EVENT rather than an interruption."""
+	if int(character.level) < TRIVIAL_ENCOUNTER_MIN_LEVEL:
+		return false
+	if String(character.forced_next_monster) != "":
+		return false                                  # you asked for this one
+	# `is_elite` / `is_boss`, measured - there is no "role" key on a generated monster. The
+	# first version tested one and the probe caught it: an ELITE Goblin resolved itself.
+	if bool(monster.get("is_elite", false)) or bool(monster.get("is_boss", false)):
+		return false
+	if String(monster.get("variant_type", "")) != "":
+		return false                                  # any rare variant is an event, not noise
+	if String(monster.get("threat_source", "")) != "":
+		return false                                  # spilled out of a dungeon threat
+	if float(monster.get("hotspot_intensity", 0.0)) > 0.0:
+		return false                                  # a hunting ground is chosen ground
+	var cutoff: float = float(character.level) / TRIVIAL_ENCOUNTER_LEVEL_DIVISOR
+	return float(monster.get("level", area_level)) <= cutoff
+
+
+func _auto_resolve_encounter(peer_id: int, character, monster: Dictionary) -> void:
+	"""Resolve a trivial encounter where the player stands, in one line.
+
+	The rewards come from `CombatManager.resolve_without_fight`, which wins a REAL fight rather
+	than computing a payout - see the note there for why a second reward site was not an option.
+
+	The line names the monster, because "you scatter something" tells the player nothing about the
+	ground they are standing on, and the XP, because a reward nobody sees reads as no reward."""
+	var mname := String(monster.get("name", "something"))
+	var result: Dictionary = combat_mgr.resolve_without_fight(peer_id, character, monster)
+	if not bool(result.get("success", false)):
+		# The fight refused to start (already in combat, dead, mid-flock). Leave it alone rather
+		# than inventing a reward for an encounter that never happened.
+		return
+	var gained := 0
+	for m in result.get("messages", []):
+		var t := String(m)
+		if t.contains("EXP") or t.contains("XP"):
+			gained = maxi(gained, _first_int_in(t))
+	var line := "[color=#808080]You brush past a %s without breaking stride." % mname
+	if gained > 0:
+		line += " [color=#9ACD32]+%d XP[/color][color=#808080]" % gained
+	line += ".[/color]"
+	send_to_peer(peer_id, {"type": "text", "message": line})
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+
+func _first_int_in(text: String) -> int:
+	"""The first whole number in a string, or 0. Used to quote the XP the victory path reported
+	rather than recomputing it here - which would be the second reward site all over again."""
+	var cur := ""
+	for i in range(text.length()):
+		var c := text[i]
+		if c >= "0" and c <= "9":
+			cur += c
+		elif cur != "":
+			break
+	return int(cur) if cur != "" else 0
+
+
 func trigger_encounter(peer_id: int):
 	"""Trigger a random encounter - usually monster, but rarely loot or legendary adventurer"""
 	if not characters.has(peer_id):
@@ -9476,6 +9553,21 @@ func trigger_encounter(peer_id: int):
 				if randf() < HOTZONE_ELITE_CHANCE_MIN + hz_i * (HOTZONE_ELITE_CHANCE_MAX - HOTZONE_ELITE_CHANCE_MIN):
 					forced_role = "elite"
 			monster = monster_db.generate_monster(level_range.min, level_range.max, encounter_biome, forced_role)
+
+	# ⚑ TRIVIAL ENCOUNTERS RESOLVE THEMSELVES.
+	#
+	# Owner 2026-09-13: *"low level meaningless encounters"*, accepted as: when the ground is
+	# far below you, do not open combat at all - one line, and FULL rewards. This is the game
+	# not wasting your time, and it complements travel stances rather than replacing them:
+	# a stance is a choice you make, this is a fight that was never worth making one about.
+	#
+	# Deliberately NOT applied to a fight you chose or one that chose you: an elite or boss, a
+	# threat-corridor spill, a monster summoned by a Selection Scroll, or anything carrying a
+	# hotspot intensity. Those are events, and skipping an event is not the same as skipping
+	# an interruption.
+	if _encounter_is_trivial(character, monster, area_level):
+		_auto_resolve_encounter(peer_id, character, monster)
+		return
 
 	# Slice 6i — tag the monster with hotspot intensity (0.0 outside, 0.0-1.0
 	# inside) so victory processing can apply XP + loot bonuses. We attach

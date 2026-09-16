@@ -80,15 +80,30 @@ All of this came out of the distribution work. Recorded before starting any of i
       FLOORED AT 10%. That floor is the real complaint - at +18 levels a player still rolls
       encounters at a tenth of base, which over a 500-tile walk is many interruptions.
 
-- [ ] **TRIVIAL-ENCOUNTER AUTO-RESOLVE — ACCEPTED by the owner 2026-09-13.** When the ground
-      is far below the player (say area level under a third of theirs), do not open combat at
-      all - print one line ("you scatter a pack of rats") and grant token XP. This removes the
-      INTERRUPTION without removing the world, and it targets the owner's exact words: *"low
-      level meaningless encounters"*. Complements stances rather than replacing them: stances are
-      a choice the player makes, this is the game not wasting their time.
-      **Owner's acceptance changed one thing: FULL rewards, not token XP.** A resolved encounter
-      pays what fighting it would have paid - otherwise the feature quietly taxes anyone who
-      out-levels their surroundings, which is precisely the player it is meant to help.
+- [x] **TRIVIAL-ENCOUNTER AUTO-RESOLVE — BUILT 2026-09-16, unreleased.** When the ground is far
+      below you the fight resolves where you stand: one line, and the FULL reward, exactly as the
+      owner accepted it.
+
+      **It does not compute a payout.** `CombatManager.resolve_without_fight` starts the real
+      fight and wins it on round zero, so XP, job XP, companion XP and battle count, gems, path
+      effects, card gifts, quest credit and the bestiary all come from the code a real victory
+      runs — by construction, not by being kept in step. A third reward site is precisely how the
+      co-op payout paid raw base XP for months.
+
+      Trivial means: monster level at or under your level / 3, you are level 12+, and the fight is
+      not an EVENT — no elite, no boss, no rare variant, no threat-corridor spill, no hunting
+      ground, nothing summoned by a Selection Scroll.
+
+      `tools/probe/trivial_encounter.gd` verifies the payout against `kill_xp` passed through the
+      character's own `add_experience`, and **found three real faults doing it**: the fight was
+      left registered and the character left `in_combat` (a stuck character nothing on screen
+      would have shown); ELITE was tested with a `role` key that does not exist on a generated
+      monster; and the probe's own first expectation was wrong, because `kill_xp` is the
+      pre-multiplier sum and `add_experience` applies race + Sanctuary on top.
+
+      - [ ] **Not yet seen in a running game.** The probe drives the model; nobody has walked a
+            level 30 character through level 8 country and watched the line appear. Do that before
+            it ships.
 
 - [ ] **POST-TO-POST ROAD TRAVEL — ACCEPTED by the owner 2026-09-13** (held as a separate
       decision, and answered separately).
