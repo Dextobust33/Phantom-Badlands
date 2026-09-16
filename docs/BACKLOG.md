@@ -615,8 +615,18 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    - checked and RULED OUT on the way: picks failing on dungeon/companion cards (they land fine),
      and double-queueing on login reconcile (idempotent). Live saves (18 characters) hold no
      dungeon card and no second copy of anything, so complaint 1 is still unexplained.
-   **Still open: complaint 1, the dungeon card award being invisible.** Not reproduced; start from
-   the completion screen text and whether a copy-drop is ever rolled for a starter dungeon.
+   **✅ RESOLVED 2026-09-15 (unreleased) - complaint 1, the dungeon card award being "invisible".**
+   It was never invisible: `_roll_dungeon_card_reward` pays a card with probability
+   `min(0.30, (0.05 + tier*0.02) * (1 + (rank-1)*0.1))` and the completion screen only ever spoke
+   when one DROPPED. MEASURED over 4000 clears a cell (`tools/probe/dungeon_card_odds_spoken.gd`):
+   the STARTER dungeon pays **7.2%** of the time (stated 7.0%), tier 5 rank 1 14.6%, tier 9 rank 9
+   29.6%. So 93 runs in 100 the honest answer was silence - which reads exactly like a bug, and
+   fits the live saves holding no dungeon card across 18 characters. Nobody was losing cards;
+   almost nobody was being given one. The screen now speaks either way, naming the odds and the
+   card this dungeon is the only source of, with the odds carried back from the roll so the two
+   cannot drift. Party members get the same answer on their own copy.
+   Follow-up worth a decision: only 4 dungeon types have an exclusive card, so most dungeons fall
+   back to a generic copy-drop and have no named thing to chase.
 2. **✅ DEATH CURSE resized — DONE on master 2026-09-15, not released.** Owner: *"It often puts a
    player to 1 hp meaning it could be death in a flock or if they can't heal."* Measured: it was 10%
    of the MONSTER's max HP - from ~40% of a real player's bar at the low end to 100-500% for most
