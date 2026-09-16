@@ -6810,6 +6810,24 @@ func _dev_run_shots() -> void:
 					companions_panel.hide()
 				update_action_bar()
 
+			"deckcopies":
+				# ⚑ THE DECK SCREEN WITH COPIES THAT DIFFER, AND COPIES THAT DO NOT.
+				#
+				# Owner 2026-09-16: *"get rid of the + on the deck screen unless the player has two exact
+				# copies of a card (same rank, same number of uses, same upgrades, etc.). If not all
+				# cards should appear individually."* Both halves of that rule need to be in ONE frame
+				# or the screenshot cannot show it working: a card whose copies differ (three tiles) and
+				# a card whose copies are identical (one tile, stacked).
+				send_to_server({"type": "gm_card_copies", "card": "cleave", "copies": 3, "uses": [4, 60, 250]})
+				await get_tree().create_timer(1.2).timeout
+				send_to_server({"type": "gm_card_copies", "card": "dungeon_card_venom_fang", "copies": 2, "uses": [7, 7]})
+				await get_tree().create_timer(1.2).timeout
+				enter_ability_mode()
+				await get_tree().create_timer(2.0).timeout
+				await _dev_shot_capture("deck_copies")
+				ability_mode = false
+				update_action_bar()
+
 			"deck":
 				enter_ability_mode()
 				await get_tree().create_timer(1.8).timeout
@@ -46736,20 +46754,62 @@ func _push_copy_data_to_ability_panel() -> void:
 	if ability_panel == null:
 		return
 	ability_panel.owned_counts = _owned_counts_by_card()
+	# ⚑ EVERY card, not only the doubled ones. Owner 2026-09-16: *"all cards should appear
+	# individually"* unless two copies are genuinely identical - so the panel needs per-instance
+	# truth for every card it draws, and it is the panel that decides what stacks.
 	var _inst := {}
 	for _card in ability_panel.owned_counts.keys():
-		if int(ability_panel.owned_counts[_card]) > 1:
-			_inst[_card] = _card_instances_sorted(String(_card))
+		_inst[String(_card)] = _card_instances_sorted(String(_card))
 	ability_panel.instances_by_card = _inst
 
 
+func _mastery_rank_for_uses(uses: int) -> int:
+	"""Mastery rank for a use count, off `Character.MASTERY_RANK_THRESHOLDS`.
+
+	Reads the shared constant rather than restating 10/50/200/1000 here: a second copy of a
+	threshold table is the "one value, two places" shape that has caused most of the wrong-text
+	bugs in this project."""
+	var r := 0
+	for t in Character.MASTERY_RANK_THRESHOLDS:
+		if uses >= int(t):
+			r += 1
+		else:
+			break
+	return r
+
+
 func _card_instances_sorted(card_id: String) -> Array:
-	"""This card's owned copies in copy order: [{key, n, in_deck}]. `key` is the stored key (the
-	first copy is bare); commands for a single copy use `card#n`, see Character._explicit_copy_key."""
+	"""This card's owned copies in copy order, each with its OWN progress.
+
+	`key` is the stored key (the first copy is bare); commands for a single copy use `card#n`,
+	see Character._explicit_copy_key.
+
+	⚑ THE PROGRESS FIELDS ARE WHAT LETS TWO COPIES BE TOLD APART. Owner 2026-09-16: *"get rid
+	of the + on the deck screen unless the player has two exact copies of a card (same rank,
+	same number of uses, same upgrades, etc.). If not all cards should appear individually."*
+	Picks are SORTED before they go out: two copies that chose the same two upgrades in a
+	different order are the same card, and comparing the raw arrays would call them different.
+	Uses are the copy's own count - the game already records them per instance (proven by
+	`tools/probe/deck_starts_with_one.gd`), so this is reading the truth, not inventing it."""
 	var out: Array = []
 	var coll = character_data.get("combat_deck_collection", {})
+	var _uses = character_data.get("ability_uses", {})
+	var _picks = character_data.get("ability_milestone_picks", {})
+	var _eranks = character_data.get("ability_effect_ranks", {})
 	for iid in _card_instances_of(card_id):
-		out.append({"key": iid, "n": Character.card_copy_n(iid), "in_deck": int(coll.get(iid, 0)) > 0 if coll is Dictionary else false})
+		var _u: int = int(_uses.get(iid, 0)) if _uses is Dictionary else 0
+		var _pk: Array = []
+		if _picks is Dictionary and _picks.get(iid, null) is Array:
+			_pk = (_picks[iid] as Array).duplicate()
+			_pk.sort()
+		out.append({
+			"key": iid, "n": Character.card_copy_n(iid),
+			"in_deck": int(coll.get(iid, 0)) > 0 if coll is Dictionary else false,
+			"uses": _u,
+			"rank": _mastery_rank_for_uses(_u),
+			"picks": _pk,
+			"effect_rank": int(_eranks.get(iid, 0)) if _eranks is Dictionary else 0,
+		})
 	out.sort_custom(func(a, b): return int(a["n"]) < int(b["n"]))
 	return out
 

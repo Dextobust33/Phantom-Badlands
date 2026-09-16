@@ -624,6 +624,48 @@ player power, so the `speciescal`/`refcal`/`rolecal` chain does not apply.
 - [x] The sticky player/companion hover — one label, two fill mechanisms, one of them caching.
 - [x] Dev loopback exempt from the connection rate limit, so a 5-client test stops losing a member.
 
+### ✅ 2026-09-16 — INSTANCED CARDS: the deck screen now manages CARDS, not counts
+
+Owner: *"All classes should only start with 1 copy of each of their cards... get rid of the + on
+the deck screen unless the player has two exact copies of a card (same rank, same number of uses,
+same upgrades, etc.). If not all cards should appear individually... they should not both track
+usage for the skill itself being used, it should instead track the number of times that unique card
+has been used."*
+
+**Two of the three were already true, and that was MEASURED before changing anything**
+(`tools/probe/deck_starts_with_one.gd`):
+
+- [x] **Starting copies are already correct.** All nine classes: 5 cards, 5 copies, no duplicates.
+      The earlier fix the owner remembered is `repair_deck_once()` (commit `3ac2e08c`), which
+      repaired deck SIZE on live saves (6-13 cards against a designed 5) — a different number.
+- [x] **Use tracking is already per-instance.** Proven both ways: a cast addressed by instance id
+      (`record_mastery_use(hand_key)`, which is what combat does) and a bare-name cast while the
+      active instance is announced. Both land on the copy, neither on the shared card name.
+
+**The deck screen was the real gap, and it is fixed:**
+
+- [x] One tile per INSTANCE, always. It used to split a card only when more than one copy was
+      owned, and then split every copy unconditionally.
+- [x] Identical copies STACK into one tile with `×N`. "Identical" is `_stack_signature`: mastery
+      rank, exact use count, milestone picks (sorted), effect rank, and in-deck state. Uses are in
+      there deliberately — two rank-1 copies at 12 and 40 uses are not interchangeable.
+- [x] `−` and `+` address the SPECIFIC copy. Both bound the bare card name before, so `−` on
+      "copy 2" asked the server to bench whichever copy it liked. `cull_ability_card` already
+      accepted `cleave#2`; the key just had to be sent.
+- [x] The permanently-disabled `+` is gone. It appeared on every card, unpressable, to explain
+      where copies come from.
+- [x] Tiles read "In deck" / "In deck ×N" / "Benched" instead of "Deck × 1/3", and the draw strip
+      shows one tile per physical card rather than N tiles each labelled `×N`.
+- [x] `gm_card_copies` + `--shots=deckcopies` reach the state on demand: a card whose copies differ
+      AND a card whose copies match, in one frame (`shot_11668`). Verified 4/60/250-use Cleaves draw
+      as three tiles at R0/R2/R3, and two 7-use Venom Fangs as one `×2`.
+
+- [ ] **OPEN, and needs the owner's call: EXISTING characters may still carry duplicates** from the
+      old always-on roster backfill. `repair_deck_once` is version-guarded and has already run, so
+      a second pass would need a new version stamp — and it must not delete dungeon or companion
+      cards, which are earned drops rather than a reset preference (the reason the first pass
+      deliberately kept them). Audit the live saves for duplicate ROSTER cards before touching it.
+
 ### ⛑ NOT VERIFIED IN v0.9.795 — look at these first
 
 - [ ] **The dungeon key's tile hover.** The key moved into its own label (`_dungeon_key_label`) and

@@ -142,7 +142,7 @@ func _build_layout() -> void:
 	rules_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rules_lbl.add_theme_font_size_override("normal_font_size", 12)
 	rules_lbl.add_theme_color_override("default_color", Color("#B8A98C"))
-	rules_lbl.text = "[color=#D4A017]Deck rules:[/color]  Max [b]3[/b] copies per card  ·  minimum [b]5[/b] cards  ·  [b]click a card to flip[/b] for details  ·  thin cards you don't use so favourites draw more often  ·  extra copies come from [b]dungeon rewards[/b] & [b]companion cards[/b]."
+	rules_lbl.text = "[color=#D4A017]Deck rules:[/color]  Max [b]3[/b] copies per card  ·  minimum [b]5[/b] cards  ·  [b]click a card to flip[/b] for details  ·  [b]every copy is its own card[/b] — it levels on its own uses, so bench the ones you are not building  ·  extra copies come from [b]dungeon rewards[/b] & [b]companion cards[/b]."
 	root_vbox.add_child(rules_lbl)
 
 	# v0.9.688 — live deck-size counter; updates as you +/- cards.
@@ -248,7 +248,9 @@ func _build_layout() -> void:
 	root_vbox.add_child(action_row)
 
 	var hint := Label.new()
-	hint.text = "Multi-copy cards stay in your hand longer. Click − Cull to remove one copy (min 1 always remains)."
+	# Reworded with the tiles. "Click − Cull to remove one copy" described a per-card COUNTER,
+	# and a tile is one card now - − benches the card it sits under, by name.
+	hint.text = "Each copy is its own card and ranks up on its own uses. − benches that card, + puts it back. Your deck keeps at least 5."
 	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 	hint.add_theme_font_size_override("font_size", 12)
 	action_row.add_child(hint)
@@ -513,19 +515,42 @@ func _rebuild_abilities() -> void:
 			# absent from the collection is BENCHED (addable), not in the deck.
 			var deck_count := int(_deck_collection.get(ab_name, 0))
 			deck_total += max(0, deck_count)
-			# ⛑ 2026-09-15 - ONE TILE PER COPY. A card owned twice used to be ONE tile with "x2",
-			# whose - thinned an unnamed copy. Owner: players *"had no way of seeing a second copy of
-			# the card"* - so two upgrade screens for two copies looked like one card twice.
+			# ⚑ ONE TILE PER CARD YOU CAN ACT ON — which is per INSTANCE, unless two instances are
+			# genuinely identical.
+			#
+			# Owner 2026-09-16: *"If not all cards should appear individually. This will allow the
+			# players to manage their deck properly. Say for example they have 2 Ambush cards each of
+			# them should be separate cards that would need added to the deck and used to start
+			# ranking up."* The 2026-09-15 version only split a card when MORE than one copy was
+			# owned, and then split every copy unconditionally - so two untouched duplicates showed
+			# as two tiles you could not tell apart, while a single copy kept a "x N/3" counter and a
+			# dead "+". Grouping by `_stack_signature` gets both right from one rule.
 			var _copies: Array = instances_by_card.get(ab_name, [])
-			if _copies.size() > 1:
-				for _cp in _copies:
+			if not _copies.is_empty():
+				var _groups: Array = _group_copies(_copies)
+				for _g in _groups:
+					var _rep: Dictionary = _g["rep"]
+					var _n_in_group: int = int((_g["copies"] as Array).size())
 					var _cp_ab: Dictionary = ability.duplicate()
-					_cp_ab["display"] = "%s · copy %d" % [str(ability.get("display", _humanize(ab_name))), int(_cp["n"])]
-					var _cp_entry := _make_deck_entry(_cp_ab, 1 if bool(_cp["in_deck"]) else 0, _cp)
+					var _base_disp := str(ability.get("display", _humanize(ab_name)))
+					# Named by copy number only when there is more than one tile to tell apart; a
+					# stack of identical copies is named by its count, because that is what it is.
+					if _n_in_group > 1:
+						_cp_ab["display"] = "%s ×%d" % [_base_disp, _n_in_group]
+					elif _groups.size() > 1:
+						_cp_ab["display"] = "%s · copy %d" % [_base_disp, int(_rep.get("n", 1))]
+					var _cp_entry := _make_deck_entry(_cp_ab, _n_in_group if bool(_rep.get("in_deck", false)) else 0, _rep)
 					if _cp_entry != null:
 						_ability_grid.add_child(_cp_entry)
-					if _deck_strip != null and bool(_cp["in_deck"]):
-						_deck_strip.add_child(_make_deck_pile_tile(_cp_ab, 1, false, _cp))
+					# The STRIP gets one tile per physical card, and those tiles must NOT carry the
+					# stack's "×N" suffix - a group of two drew two tiles each labelled "×2", which
+					# reads as four cards. The strip is the draw pile: one tile is one card.
+					if _deck_strip != null and bool(_rep.get("in_deck", false)):
+						var _strip_ab: Dictionary = ability.duplicate()
+						if _groups.size() > 1:
+							_strip_ab["display"] = "%s · copy %d" % [_base_disp, int(_rep.get("n", 1))]
+						for _i in range(_n_in_group):
+							_deck_strip.add_child(_make_deck_pile_tile(_strip_ab, 1, false, _rep))
 				continue
 			var entry := _make_deck_entry(ability, deck_count)
 			if entry != null:
@@ -773,13 +798,16 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 		var deck_lbl := Label.new()
 		deck_lbl.add_theme_font_size_override("font_size", 11)
 		# v0.9.678 — show copies out of the cap of 3; 0 = thinned out of the deck.
-		deck_lbl.text = "Deck × %d/3" % deck_count
+		# A tile is ONE card now, or a stack of identical ones - so it says whether it is in the
+		# deck, not "x 1/3" out of a per-card cap the tile no longer represents.
 		if deck_count >= 2:
+			deck_lbl.text = "In deck ×%d" % deck_count
 			deck_lbl.add_theme_color_override("font_color", Color("#9ACD32"))
 		elif deck_count == 1:
+			deck_lbl.text = "In deck"
 			deck_lbl.add_theme_color_override("font_color", Color("#888888"))
 		else:
-			deck_lbl.text = "Not in deck"
+			deck_lbl.text = "Benched"
 			deck_lbl.add_theme_color_override("font_color", Color("#B05050"))
 		deck_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		deck_row.add_child(deck_lbl)
@@ -792,31 +820,81 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 		# v0.9.678 slice 3 — thin (−) down to 0, and restore (+) 0→1 for free.
 		# Extra copies (2nd/3rd) come from dungeon rewards / companion cards, so the
 		# + is disabled (with an explanatory tooltip) once a card is already in.
+		# Same two corrections as the deck entry above: no button that cannot be pressed, and
+		# − sends the card id it is sitting under.
 		if deck_count >= 1:
 			var cull_btn := Button.new()
 			cull_btn.text = "−"
-			cull_btn.tooltip_text = "Thin: remove a copy from your deck (deck keeps at least 5 cards)."
+			cull_btn.tooltip_text = "Bench this card (your deck keeps at least 5)."
 			cull_btn.focus_mode = Control.FOCUS_NONE
 			cull_btn.custom_minimum_size = Vector2(28, 20)
 			cull_btn.add_theme_font_size_override("font_size", 12)
 			cull_btn.pressed.connect(_on_cull_pressed.bind(ab_name))
 			deck_row.add_child(cull_btn)
-		if deck_count < 3:
+		else:
 			var add_btn := Button.new()
 			add_btn.text = "+"
 			add_btn.focus_mode = Control.FOCUS_NONE
 			add_btn.custom_minimum_size = Vector2(28, 20)
 			add_btn.add_theme_font_size_override("font_size", 12)
-			if deck_count == 0:
-				add_btn.tooltip_text = "Put this card back in your deck."
-				add_btn.pressed.connect(_on_add_pressed.bind(ab_name))
-			else:
-				add_btn.tooltip_text = "Extra copies come from dungeon rewards & companion cards."
-				add_btn.disabled = true
+			add_btn.tooltip_text = "Put this card in your deck."
+			add_btn.pressed.connect(_on_add_pressed.bind(ab_name))
 			deck_row.add_child(add_btn)
 
 	card.gui_input.connect(_on_ability_card_input.bind(ab_name, is_unlocked))
 	return card
+
+
+func _copy_target(ab_name: String, copy: Dictionary) -> String:
+	"""The id a −/+ press should act on: this COPY when the tile is one, else the card.
+
+	The first copy is stored bare ("cleave"), later ones as "cleave#2" - see
+	`Character._explicit_copy_key`, which both the cull and add handlers already understand."""
+	if copy.is_empty():
+		return ab_name
+	return String(copy.get("key", ab_name))
+
+
+func _stack_signature(copy: Dictionary) -> String:
+	"""What makes two copies THE SAME CARD, and therefore stackable under one tile.
+
+	Owner 2026-09-16: *"get rid of the + on the deck screen unless the player has two exact copies
+	of a card (same rank, same number of uses, same upgrades, etc.). If not all cards should appear
+	individually. This will allow the players to manage their deck properly."*
+
+	So the test is equality of everything that makes a copy worth keeping over its sibling: mastery
+	rank, the exact use count, the milestone picks, the effect rank, and whether it is in the deck.
+	Uses are in here deliberately - two copies at rank 1 with 12 and 40 uses are not
+	interchangeable, because one is much closer to its next milestone.
+
+	Picks arrive already sorted (see `client._card_instances_sorted`), so two copies that chose the
+	same upgrades in a different order sign the same."""
+	return "r%d|u%d|e%d|d%d|%s" % [
+		int(copy.get("rank", 0)), int(copy.get("uses", 0)), int(copy.get("effect_rank", 0)),
+		1 if bool(copy.get("in_deck", false)) else 0,
+		",".join(PackedStringArray(copy.get("picks", [])))]
+
+
+func _group_copies(copies: Array) -> Array:
+	"""Copies grouped into what the screen should draw: [{copies:[...], rep:{...}}].
+
+	Identical copies collapse into ONE tile carrying a count; anything that differs by so much as a
+	single use gets its own tile. Order is preserved by first appearance, so copy 1 stays leftmost."""
+	var order: Array = []
+	var by_sig := {}
+	for c in copies:
+		if not (c is Dictionary):
+			continue
+		var sig := _stack_signature(c as Dictionary)
+		if not by_sig.has(sig):
+			by_sig[sig] = []
+			order.append(sig)
+		(by_sig[sig] as Array).append(c)
+	var out: Array = []
+	for sig in order:
+		var grp: Array = by_sig[sig]
+		out.append({"copies": grp, "rep": grp[0]})
+	return out
 
 
 func _make_deck_entry(ability: Dictionary, deck_count: int, copy: Dictionary = {}) -> Control:
@@ -901,29 +979,33 @@ func _make_deck_entry(ability: Dictionary, deck_count: int, copy: Dictionary = {
 			cplus.pressed.connect(_on_add_pressed.bind(_cmd))
 			ctl.add_child(cplus)
 	else:
+		# ⚑ THE BUTTONS ADDRESS THIS COPY, AND THERE IS NO DEAD "+".
+		#
+		# Both used to bind the BARE card name, so pressing − on "copy 2" asked the server to
+		# thin "whichever copy" - the tile said which card it was and then acted on another.
+		# `Character.cull_ability_card` already accepts a specific copy ("cleave#2"), so the key
+		# just had to be sent. Owner 2026-09-16: *"This will allow the players to manage their
+		# deck properly."* It cannot, if the control does not name its target.
+		#
+		# And the "+" is only drawn when there is something to add. It used to appear on EVERY
+		# card, disabled, explaining where copies come from - a button that cannot be pressed on
+		# a screen about managing your deck. Owner: *"get rid of the + on the deck screen."*
+		var _key: String = _copy_target(ab_name, copy)
 		if deck_count >= 1:
 			var minus := Button.new()
 			minus.text = "−"
 			minus.custom_minimum_size = Vector2(30, 22)
 			minus.focus_mode = Control.FOCUS_NONE
-			minus.tooltip_text = "Thin: remove a copy (deck keeps at least 5 cards)."
-			minus.pressed.connect(_on_cull_pressed.bind(ab_name))
+			minus.tooltip_text = "Bench this card (your deck keeps at least 5)."
+			minus.pressed.connect(_on_cull_pressed.bind(_key))
 			ctl.add_child(minus)
-		if deck_count < 3:
+		else:
 			var plus := Button.new()
 			plus.text = "+"
 			plus.custom_minimum_size = Vector2(30, 22)
 			plus.focus_mode = Control.FOCUS_NONE
-			var _benched: int = int(owned_counts.get(ab_name, deck_count)) - deck_count
-			if deck_count == 0:
-				plus.tooltip_text = "Add this card to your deck."
-				plus.pressed.connect(_on_add_pressed.bind(ab_name))
-			elif _benched > 0:
-				plus.tooltip_text = "Put a benched copy back in your deck (it keeps its own upgrades)."
-				plus.pressed.connect(_on_add_pressed.bind(ab_name))
-			else:
-				plus.tooltip_text = "Extra copies come from dungeon rewards & companion cards."
-				plus.disabled = true
+			plus.tooltip_text = "Put this card in your deck (it keeps its own upgrades)."
+			plus.pressed.connect(_on_add_pressed.bind(_key))
 			ctl.add_child(plus)
 	entry.add_child(ctl)
 	return entry

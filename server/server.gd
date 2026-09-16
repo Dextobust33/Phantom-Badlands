@@ -2517,6 +2517,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_apply_buff(peer_id, message)
 		"gm_apply_state":
 			handle_gm_apply_state(peer_id, message)
+		"gm_card_copies":
+			handle_gm_card_copies(peer_id, message)
 		"gm_build_test_post":
 			handle_gm_build_test_post(peer_id, message)
 		"gm_hire_test_guard":
@@ -40352,6 +40354,47 @@ func handle_gm_toggle_coop(peer_id: int, message: Dictionary):
 	var state := "ON" if party_coop_enabled else "OFF"
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFB347][GM] Co-op party combat is now %s. Form a party (2+), then the leader hits a monster to start a shared fight. (OFF = each member fights solo.)[/color]" % state})
 	log_message("[GM] party_coop_enabled -> %s (by peer %d)" % [state, peer_id])
+
+func handle_gm_card_copies(peer_id: int, message: Dictionary) -> void:
+	"""Give a card N copies and set each copy's OWN use count, for looking at the deck screen.
+
+	The deck screen's stacking rule turns on whether two copies are identical - same rank, same
+	uses, same upgrades - so the only frame that proves it works is one where a player owns copies
+	that DIFFER. That state is otherwise reachable only by casting one copy a few dozen times and
+	hoping the deck drew the one you meant.
+
+	Same reasoning as `gm_apply_state` and `gm_force_dungeon_card`: a screen whose behaviour
+	depends on a rare state needs that state on a button, or it gets verified by luck.
+
+	`uses` is a list applied to copies in order; a short list leaves the rest at whatever they had.
+	Goes through `grant_card_copy` so the copies are made the way the game makes them."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var card := String(message.get("card", ""))
+	if card == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]cards: no card id[/color]"})
+		return
+	var want := clampi(int(message.get("copies", 2)), 1, int(ch.MAX_ABILITY_COPIES))
+	while ch.card_copies_owned(card) < want:
+		if ch.grant_card_copy(card) == "":
+			break
+	var insts: Array = ch.card_instances(card)
+	var uses = message.get("uses", [])
+	if uses is Array:
+		for i in range(mini(insts.size(), (uses as Array).size())):
+			ch.ability_uses[String(insts[i])] = maxi(0, int((uses as Array)[i]))
+	save_character(peer_id)
+	send_character_update(peer_id)
+	var _report: Array = []
+	for iid in insts:
+		_report.append("%s=%d uses" % [iid, int(ch.ability_uses.get(String(iid), 0))])
+	send_to_peer(peer_id, {"type": "text",
+		"message": "[color=#808080][GM] %s: %s[/color]" % [card, ", ".join(_report)]})
+
 
 func handle_gm_give_test_card(peer_id: int, message: Dictionary):
 	# #39/#40 test helper — grant permanent, TRADEABLE cards (2 dungeon + 2 companion) so
