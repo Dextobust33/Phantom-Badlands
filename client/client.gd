@@ -6442,6 +6442,10 @@ func _dev_run_shots() -> void:
 				await _dev_shot_capture("party_overworld_blind")
 				send_to_server({"type": "gm_apply_state", "state": "clear"})
 				await get_tree().create_timer(1.0).timeout
+				# Poisoned on the way down, so the dungeon dock is photographed WITH its state chips -
+				# underground the dock is the only thing that reports them.
+				send_to_server({"type": "gm_apply_state", "state": "poison", "value": 7, "duration": 30})
+				await get_tree().create_timer(0.8).timeout
 				send_to_server({"type": "gm_enter_dungeon", "tier": 3})
 				await get_tree().create_timer(4.0).timeout
 				# An entrance ambush is the norm down here, and it is a PARTY fight - worth a frame of
@@ -6569,9 +6573,16 @@ func _dev_run_shots() -> void:
 				# companion art is its own overlay on the canvas, so any layout change that moves
 				# things into the canvas margins has to be judged with it on screen.
 				await _dev_shot_ensure_companion()
+				# Clean slate: these dev characters carry whatever the last scene left on them, and a
+				# blinded capture of "the overworld with a companion" answers a different question.
+				send_to_server({"type": "gm_apply_state", "state": "clear"})
+				await get_tree().create_timer(0.8).timeout
 				send_to_server({"type": "move", "direction": "east"})
 				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("worldpet")
+				if _dungeon_fit_debug:
+					_dev_print_rects()
 
 			"menus":
 				# ⚑ A PAGE OVER THE CANVAS. The margin widgets float on it, so the question every
@@ -34482,6 +34493,12 @@ func update_status_hud():
 	# Keep tool overlay content in sync with any status change that used to
 	# drive this function.
 	update_tool_status_overlay()
+	# ...and the dungeon dock, which carries the same states underground. A character update is
+	# what moves poison and blind, and `_refresh_margin_party` was only ever called from the
+	# party path - so the chips would have appeared on the next party change and never on the
+	# step that poisoned you.
+	if dungeon_mode:
+		_refresh_margin_party()
 	update_region_label()
 	update_coord_post_label()
 
@@ -34670,6 +34687,22 @@ func _party_cell(m: Dictionary, me: String) -> Control:
 	return col
 
 
+func _active_state_chips() -> String:
+	"""The states worth showing OUTSIDE combat, as icon chips - or "" when there are none.
+
+	Only the two that persist between fights: poison ticks on every step, and blind cuts how far
+	you can see. Combat-round buffs are not in here on purpose - they are gone before you have
+	finished reading them, and the Effects box already carries them where there is room."""
+	var out: Array[String] = []
+	if character_data.get("poison_active", false):
+		out.append(_state_chip("poison", "[color=#FF00FF]%d[/color]" % int(
+			character_data.get("poison_turns_remaining", 0))))
+	if character_data.get("blind_active", false):
+		out.append(_state_chip("blind", "[color=#B0B0B0]%d[/color]" % int(
+			character_data.get("blind_turns_remaining", 0))))
+	return "  ".join(out)
+
+
 func _refresh_margin_party() -> void:
 	"""Who is with you - with HP and resource gauges, not just a name.
 
@@ -34688,6 +34721,21 @@ func _refresh_margin_party() -> void:
 	for ch in _party_cells_row.get_children():
 		_party_cells_row.remove_child(ch)
 		ch.queue_free()
+	# ⚑ UNDERGROUND THE STRIP ALSO CARRIES YOUR OWN STATES.
+	#
+	# The Effects box is an overworld MARGIN widget and stands down in a dungeon, so down there
+	# a poisoned or blinded player had nothing on screen telling them - and both matter more
+	# underground, where poison ticks on every step and blind cuts the floor view. The dock is
+	# already there and its height is already reserved by the tile fit, so this costs the floor
+	# no tile size, which is the whole point after fighting for those pixels.
+	#
+	# Dungeon only: up top the box has room and says it better.
+	if dungeon_mode:
+		var chips := _active_state_chips()
+		if chips != "":
+			var fx := _strip_label(chips)
+			fx.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			_party_cells_row.add_child(fx)
 	if not in_party or party_members.is_empty():
 		_party_cells_row.add_child(_strip_label("[color=#808080]Party[/color]  [color=#6A6A72]none[/color]"))
 		return
