@@ -686,11 +686,28 @@ that displays above to add it or drag from their deck down into All cards to rem
       that the discoverable control comes first and the gesture is a supplement. Both paths end in
       the same two signals.
 
-- [ ] **⛑ THE GESTURE ITSELF IS UNVERIFIED.** The layout, the zones and the routing are confirmed
-      in `shot_11668`, but a headless capture cannot perform a drag - there is no mouse automation
-      in this harness. **The owner needs to try it once.** If a drop does nothing, the first
-      suspects are `mouse_filter` on the ScrollContainers (a scroll that grabs the mouse stops the
-      zone beneath seeing the drop) and whether `_can_drop_data` is reached at all.
+- [x] **THE GESTURE IS VERIFIED BOTH WAYS, by synthesised input.** `--shots=deckdrag` presses on a
+      card, moves past the drag threshold and releases over the other zone, then asserts the card
+      actually changed halves. Both directions PASS with `drop: 1`. It is a regression test, not a
+      one-off: run it after anything that touches this screen.
+
+      **It also found the two causes that reading the code had missed, and the counter pattern is
+      what named each one:**
+      - *all three counters zero* → the drag never STARTED. Godot asks for drag data from the
+        control that TOOK THE PRESS and does **not** walk up for a parent that implements
+        `_get_drag_data`. A wrapper can never be a drag source. The card watches its own
+        `gui_input` and calls `force_drag` instead.
+      - *`drop` missing, the others firing* → the drop WALK broke. Godot finds a drop target by
+        walking up from the cursor and **stops at the first `MOUSE_FILTER_STOP` control**, so the
+        tiles were swallowing every release. Everything inside a zone is demoted to PASS after each
+        rebuild (`_open_zone_for_drops`) - a PASS control still receives its own input, it just
+        stops ending the search.
+
+      ⛑ **Any STOP control inside a drop zone is a dead patch** where a release silently does
+      nothing. That is how the collection zone failed one run and passed the next: the probe aimed
+      at the zone's centre, and the centre landed on different content each time. Dead patches you
+      can only find by aiming at them are worse than a total failure - which is why the fix sweeps
+      the whole subtree rather than naming the controls that were STOP that day.
 
 ### ⛑ NOT VERIFIED IN v0.9.795 — look at these first
 

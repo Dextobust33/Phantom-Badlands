@@ -6810,6 +6810,27 @@ func _dev_run_shots() -> void:
 					companions_panel.hide()
 				update_action_bar()
 
+			"deckdrag":
+				# ⚑ PERFORM REAL DRAGS, BOTH WAYS, because a gesture cannot be debugged by reading.
+				#
+				# Owner 2026-09-16: *"Drag and drop isn't working."* The layout had been verified from a
+				# screenshot and the routing from the source, and neither can say whether Godot ever
+				# calls `_get_drag_data`. `Viewport.push_input` can. It found TWO separate causes that
+				# reading had missed - see `CardDrag` - and each showed as a different counter pattern:
+				#   all zero        -> the drag never STARTED (a wrapper cannot be a drag source)
+				#   drop missing    -> the drop walk BROKE on a MOUSE_FILTER_STOP tile
+				# which is precisely the narrowing that guessing cannot do.
+				send_to_server({"type": "gm_card_copies", "card": "cleave", "copies": 3, "uses": [4, 60, 250]})
+				await get_tree().create_timer(1.2).timeout
+				enter_ability_mode()
+				await get_tree().create_timer(2.0).timeout
+				if ability_panel == null:
+					print("[DECKDRAG] no ability_panel")
+					return
+				await _dev_drag_card(true)     # collection -> deck
+				await _dev_drag_card(false)    # deck -> collection
+				await _dev_shot_capture("deck_drag")
+
 			"deckcopies":
 				# ⚑ THE DECK SCREEN WITH COPIES THAT DIFFER, AND COPIES THAT DO NOT.
 				#
@@ -7096,6 +7117,61 @@ func _dev_shot_force_companion(monster_type: String) -> void:
 			break
 	send_to_server({"type": "gm_revive_companion"})
 	await get_tree().create_timer(1.0).timeout
+
+
+func _dev_drag_card(into_deck: bool) -> void:
+	"""Drag the first card of one half onto the other, with synthesised input, and report.
+
+	One helper for both directions: the two are the same gesture with the source and target
+	swapped, and writing them out twice is how one direction would end up tested and the other
+	assumed. `into_deck` picks which way."""
+	if ability_panel == null:
+		return
+	var src_grid: Node = ability_panel._ability_grid if into_deck else ability_panel._deck_strip
+	var dst: Control = ability_panel._zone_deck if into_deck else ability_panel._zone_avail
+	var label := "UP  (collection -> deck)" if into_deck else "DOWN (deck -> collection)"
+	if src_grid == null or src_grid.get_child_count() == 0 or dst == null:
+		print("[DECKDRAG] %s  skipped - nothing to drag" % label)
+		return
+	var src: Control = src_grid.get_child(0) as Control
+	# Read the key NOW: a successful drop rebuilds the panel and frees this tile. Asking it
+	# afterwards raised "Cannot call method on a previously freed instance" - the probe broke
+	# because the fix worked.
+	var key := String(src.get("key"))
+	ability_panel._drag_debug.clear()
+	var from: Vector2 = src.get_global_rect().get_center()
+	var to: Vector2 = dst.get_global_rect().get_center()
+	var vp := get_viewport()
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = from
+	press.global_position = from
+	vp.push_input(press)
+	await get_tree().process_frame
+	# Several motions: a drag only begins once the pointer has travelled past a threshold.
+	for i in range(12):
+		var mm := InputEventMouseMotion.new()
+		mm.position = from.lerp(to, float(i + 1) / 12.0)
+		mm.global_position = mm.position
+		mm.relative = (to - from) / 12.0
+		mm.button_mask = MOUSE_BUTTON_MASK_LEFT
+		vp.push_input(mm)
+		await get_tree().process_frame
+	var rel := InputEventMouseButton.new()
+	rel.button_index = MOUSE_BUTTON_LEFT
+	rel.pressed = false
+	rel.position = to
+	rel.global_position = to
+	vp.push_input(rel)
+	await get_tree().create_timer(1.2).timeout
+	# The counters say the virtuals ran; the collection says the CARD moved, which is the
+	# thing the player cares about. Both, or it is not verified.
+	var coll = character_data.get("combat_deck_collection", {})
+	var in_deck_now: bool = int(coll.get(key, 0)) > 0 if coll is Dictionary else false
+	var ok: bool = (in_deck_now == into_deck) and int(ability_panel._drag_debug.get("drop", 0)) > 0
+	print("[DECKDRAG] %s  %-22s counters=%s in_deck=%s  %s" % [label, key,
+		str(ability_panel._drag_debug), str(in_deck_now), "PASS" if ok else "FAIL"])
 
 
 func _dev_shot_ensure_companion() -> void:

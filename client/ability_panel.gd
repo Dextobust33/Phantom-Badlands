@@ -79,9 +79,29 @@ var _race_trait: Dictionary = {}             # #69 — {name, description, color
 class CardDrag extends PanelContainer:
 	## One card tile, picked up by the mouse. `key` is the exact copy ("cleave#2"), so a drag moves
 	## the card the player grabbed rather than "one of those".
+	##
+	## ⛑ A WRAPPER CANNOT BE A DRAG SOURCE, and that cost the first attempt.
+	##
+	## Godot asks for drag data from the control that TOOK THE PRESS - `gui.mouse_focus` - and does
+	## not walk up the tree looking for a parent that implements `_get_drag_data`. (It does walk up
+	## for drop TARGETS, which is why the zones work as containers.) The card tile itself is
+	## `MOUSE_FILTER_STOP`, so it took every press and this wrapper was never asked. Measured, not
+	## guessed: a synthesised drag (`--shots=deckdrag`) reported all three counters at zero, and the
+	## hover chain showed `DeckCard(Control,mf=0) < VBoxContainer(mf=1) < PanelContainer(mf=1)` -
+	## the wrapper present, in the chain, and skipped.
+	##
+	## So the press is watched on the CARD's own `gui_input` signal - which fires however the filter
+	## is set - and once the pointer has moved far enough, `force_drag` starts a real Godot drag
+	## from here. The tile keeps its click-to-flip, because a click that does not travel is still
+	## a click.
 	var key: String = ""
 	var in_deck: bool = false
 	var title: String = ""
+	var panel_ref = null
+
+	var _press_pos: Vector2 = Vector2.ZERO
+	var _armed: bool = false
+	const DRAG_SLOP := 8.0
 
 	func _init() -> void:
 		# Draws nothing: the tile inside supplies the whole look. A PanelContainer is used only
@@ -89,10 +109,46 @@ class CardDrag extends PanelContainer:
 		add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		mouse_filter = Control.MOUSE_FILTER_PASS
 
-	func _get_drag_data(_at: Vector2) -> Variant:
-		if key == "":
-			return null
-		# The preview follows the cursor, so it has to read at a glance and cost nothing to build.
+	func watch(card: Control) -> void:
+		"""Listen to the tile's own input, since the tile is what the mouse actually hits."""
+		if card == null or not is_instance_valid(card):
+			return
+		if not card.gui_input.is_connected(_on_card_input):
+			card.gui_input.connect(_on_card_input)
+		# ⛑ AND THE TILE MUST NOT *STOP* THE MOUSE, or nothing can be dropped ON it.
+		#
+		# Godot finds a drop target by walking UP from the control under the cursor - and that
+		# walk BREAKS at the first `MOUSE_FILTER_STOP` control it meets. The tile was STOP, so a
+		# release anywhere over a card (which is most of a full zone) stopped dead on that card
+		# and the zone behind it was never asked. Measured: the synthesised drag reported
+		# `get_drag_data: 1, can_drop: 2` and no `drop` - it could be picked up and hovered, and
+		# only the release did nothing, which is exactly the shape of that break.
+		#
+		# PASS keeps everything the tile had: it still receives its own input (click-to-flip, and
+		# the signal this class listens to) and still becomes the mouse focus, but the walk can
+		# now continue past it to the zone.
+		card.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	func _on_card_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			_armed = event.pressed
+			_press_pos = (event as InputEventMouseButton).position
+			return
+		if not _armed or key == "":
+			return
+		if not (event is InputEventMouseMotion):
+			return
+		# Far enough to be a drag rather than a click. Godot has its own threshold for native
+		# drags; this one guards the click-to-flip the tile already had.
+		if ((event as InputEventMouseMotion).position - _press_pos).length() < DRAG_SLOP:
+			return
+		_armed = false
+		if panel_ref != null:
+			panel_ref._drag_debug["get_drag_data"] = int(panel_ref._drag_debug.get("get_drag_data", 0)) + 1
+		force_drag({"kind": "pbcard", "key": key, "in_deck": in_deck}, _make_preview())
+
+	func _make_preview() -> Control:
+		# Follows the cursor, so it has to read at a glance and cost nothing to build.
 		var prev := PanelContainer.new()
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(0.06, 0.06, 0.09, 0.95)
@@ -105,8 +161,7 @@ class CardDrag extends PanelContainer:
 		lbl.text = ("↓ " if in_deck else "↑ ") + title
 		lbl.add_theme_font_size_override("font_size", 12)
 		prev.add_child(lbl)
-		set_drag_preview(prev)
-		return {"kind": "pbcard", "key": key, "in_deck": in_deck}
+		return prev
 
 
 class CardZone extends PanelContainer:
@@ -117,6 +172,8 @@ class CardZone extends PanelContainer:
 	var wants_in_deck: bool = false
 
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+		if panel_ref != null:
+			panel_ref._drag_debug["can_drop"] = int(panel_ref._drag_debug.get("can_drop", 0)) + 1
 		if not (data is Dictionary):
 			return false
 		if String((data as Dictionary).get("kind", "")) != "pbcard":
@@ -126,6 +183,8 @@ class CardZone extends PanelContainer:
 		return bool((data as Dictionary).get("in_deck", false)) != wants_in_deck
 
 	func _drop_data(_at: Vector2, data: Variant) -> void:
+		if panel_ref != null:
+			panel_ref._drag_debug["drop"] = int(panel_ref._drag_debug.get("drop", 0)) + 1
 		if panel_ref == null or not (data is Dictionary):
 			return
 		var k := String((data as Dictionary).get("key", ""))
@@ -138,6 +197,11 @@ class CardZone extends PanelContainer:
 
 
 var _deck_strip_label: RichTextLabel = null   # v0.9.716 — "Your Deck" strip header
+## TEMP: which drag/drop virtuals actually fired. Read by `--shots=deckdrag`.
+var _drag_debug: Dictionary = {}
+## The two drop zones, so a probe can address them without walking the tree by index.
+var _zone_deck: Control = null
+var _zone_avail: Control = null
 var _deck_strip: HFlowContainer = null        # v0.9.716 — at-a-glance visual of the cards actually in your deck
 var _path_label_node: RichTextLabel
 var _slots_row: HBoxContainer
@@ -281,6 +345,7 @@ func _build_layout() -> void:
 	# ~30, and the panel adds 6px of padding top and bottom. At 180 the control row was cut
 	# off the bottom of every deck card - the tiles were there and the − was not.
 	deck_zone.custom_minimum_size = Vector2(0, 215)
+	_zone_deck = deck_zone
 	root_vbox.add_child(deck_zone)
 	var deck_scroll := ScrollContainer.new()
 	deck_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -325,6 +390,7 @@ func _build_layout() -> void:
 	# The collection gets the larger share: it holds everything you are not playing, and it is
 	# the half the owner asked to be able to scroll through.
 	avail_panel.size_flags_stretch_ratio = 1.5
+	_zone_avail = avail_panel
 	root_vbox.add_child(avail_panel)
 
 	var avail_scroll := ScrollContainer.new()
@@ -711,6 +777,11 @@ func _rebuild_abilities() -> void:
 		else:
 			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#B8A98C]— the cards you'll draw from. [i]Drag one down into All Cards to bench it[/i], or press its −.[/color]"
 
+	# Every rebuild makes new tiles, so the zones have to be re-opened for drops each time -
+	# a STOP control anywhere inside one is a patch where a release silently does nothing.
+	_open_zone_for_drops(_zone_deck)
+	_open_zone_for_drops(_zone_avail)
+
 
 func _make_deck_pile_tile(ability: Dictionary, count: int, is_loaner: bool = false, copy: Dictionary = {}) -> Control:
 	"""v0.9.716/717 — compact tile for the visual deck strip: category-tinted, shows
@@ -970,16 +1041,68 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	return card
 
 
+func _open_zone_for_drops(zone: Control) -> void:
+	"""Make sure a release ANYWHERE inside a drop zone actually lands.
+
+	⛑ Godot finds a drop target by walking UP from the control under the cursor, and that walk
+	BREAKS at the first `MOUSE_FILTER_STOP` control it meets. So any STOP control inside a zone
+	is a dead patch: release over it and nothing happens, with no feedback at all.
+
+	That is not hypothetical. The card tiles were STOP and swallowed every drop until they were
+	demoted; then a synthesised drag onto the collection failed once and passed the next run,
+	because the zone's centre happened to land on different content each time. Dead patches you
+	can only find by aiming at them are worse than a total failure.
+
+	So every descendant is demoted to PASS, which changes nothing about what they receive - a
+	PASS control still gets its own input and still becomes the mouse focus - it only stops them
+	ENDING the search. The zone itself stays STOP, because it is the thing that must be found.
+
+	Called after every rebuild, since the tiles are new nodes each time."""
+	if zone == null or not is_instance_valid(zone):
+		return
+	var stack: Array = zone.get_children()
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is Control and (n as Control).mouse_filter == Control.MOUSE_FILTER_STOP:
+			(n as Control).mouse_filter = Control.MOUSE_FILTER_PASS
+		stack.append_array(n.get_children())
+
+
+func _find_deck_card(root: Node) -> Control:
+	"""The built card tile inside an entry - the node the mouse actually lands on.
+
+	`combat_scene_panel.build_deck_card` names it "DeckCard"; the fallback is the first
+	descendant that STOPS the mouse, which is the same thing by definition."""
+	if root == null:
+		return null
+	if root is Control and String(root.name) == "DeckCard":
+		return root as Control
+	for c in root.get_children():
+		var got := _find_deck_card(c)
+		if got != null:
+			return got
+	if root is Control and (root as Control).mouse_filter == Control.MOUSE_FILTER_STOP:
+		return root as Control
+	return null
+
+
 func _add_card_tile(entry: Control, key: String, in_deck: bool, title: String) -> void:
 	"""Put a built tile in the right grid, wrapped so it can be dragged.
 
 	ONE function decides which half of the screen a card lives in. Two call sites choosing that
 	for themselves is how a card would end up in both grids, or in neither."""
 	var drag := CardDrag.new()
+	drag.panel_ref = self
 	drag.key = key
 	drag.in_deck = in_deck
 	drag.title = title
 	drag.add_child(entry)
+	# The tile itself is what the mouse hits, so the wrapper has to watch ITS input. Found by
+	# name rather than by index: `_make_deck_entry` builds a small tree and the card is not
+	# always its first child.
+	var _card := _find_deck_card(entry)
+	if _card != null:
+		drag.watch(_card)
 	if in_deck and _deck_strip != null:
 		_deck_strip.add_child(drag)
 	else:
