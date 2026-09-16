@@ -683,19 +683,11 @@ has been used."*
       AND a card whose copies match, in one frame (`shot_11668`). Verified 4/60/250-use Cleaves draw
       as three tiles at R0/R2/R3, and two 7-use Venom Fangs as one `×2`.
 
-- [ ] **OPEN, and needs the owner's call: EXISTING characters may still carry duplicates** from the
-      old always-on roster backfill. `repair_deck_once` is version-guarded and has already run, so
-      a second pass would need a new version stamp — and it must not delete dungeon or companion
-      cards, which are earned drops rather than a reset preference (the reason the first pass
-      deliberately kept them). Audit the live saves for duplicate ROSTER cards before touching it.
-
-### ✅ 2026-09-16 — THE DECK SCREEN IS A DRAG-AND-DROP BUILDER
-
-Owner: *"It would be nice to be able to drag and drop into and out of your deck on the deck screen.
-Maybe we can see the cards you have in your deck similar to how we see All Cards currently.
-Players should be able to scroll down if needed through their All Cards and Drag up into their Deck
-that displays above to add it or drag from their deck down into All cards to remove the card."*
-
+- [x] **Existing characters keep their duplicate roster cards — owner decided 2026-09-16:**
+      *"I'm not concerned with current characters you can leave those as is."* No second
+      `repair_deck_once` pass, which also means nothing is written that could delete an earned
+      dungeon or companion card. New characters already start with one copy of each (measured
+      across all nine classes, `tools/probe/deck_starts_with_one.gd`).
 - [x] **Your Deck is a card GRID**, built by the same `_make_deck_entry` as the collection, so the
       two halves read as one screen you move cards between. It scrolls, and so does All Cards.
 - [x] **A card is in ONE half, never both.** That is what makes the gesture unambiguous. The old
@@ -1354,10 +1346,15 @@ chain after it), party half two (independent movement + join-in-progress), contr
 
 ### ⚑ SMALL OPEN ITEMS LEFT BY THE 2026-09-15 WORK
 
-- [ ] **Co-op monster debuffs: shared or per-member? (owner decision)** `monster_charmed`,
-      `monster_weakness`, `monster_slowed` + durations are outside `_PARTY_SHARED_MONSTER_KEYS`, so
-      since v0.9.791 they carry PER MEMBER (before: dropped after the action). A charm protects only
-      its caster. If shared, they must tick once per round, not once per member (see `_PARTY_DOT_KEYS`).
+- [x] **Co-op monster debuffs: SHARED — owner decided 2026-09-16, built.** `monster_charmed`,
+      `monster_weakness` and `monster_slowed` (and their durations) now sit in
+      `_PARTY_SHARED_MONSTER_KEYS`, so a debuff one member lands protects the whole party rather
+      than only its caster. They are ALSO in `_PARTY_DOT_KEYS`, which is the half that is easy to
+      miss: the monster acts once per MEMBER, and all three tick down inside that turn, so shared
+      without de-duplication would spend a 1-turn charm on the first member and expire a 2-round
+      weakness in one round of a four-party. The magnitude keys are deliberately NOT de-duplicated
+      — zeroing those per action would remove the debuff from everyone after the first, the
+      opposite mistake. `tools/probe/coop_shared_debuffs.gd` asserts both halves.
 - [ ] **Text-map fallback draws no gold ring or arrow** (sprite toggle off, or licence art missing).
 - [ ] **The ring can sit under the corner labels** near the top corners of the map. Unverified in pixels.
 - [ ] **Two unfinished starter dungeons could split the ring from the walk** - the mark is chosen once,

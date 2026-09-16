@@ -12892,9 +12892,24 @@ func _party_redraw_hands(combat: Dictionary) -> void:
 		st["discard"] = view.get("combat_discard", [])
 
 # ---- #64 Slice 2: round resolution (simultaneous) ----
+## ⚑ CHARM, WEAKNESS AND SLOW ARE SHARED - owner decision 2026-09-16.
+##
+## They used to be per-MEMBER, so a charm protected only its caster: the monster stood motionless
+## for one player and hit the other four in the same round. Owner, asked directly, picked shared -
+## which is what "the party weakened it" plainly means, and what a player watching the log expects
+## when someone else lands a debuff on the thing attacking them.
+##
+## They go in the DOT list below as well, and that is not optional. The monster acts once per
+## MEMBER in simultaneous co-op, and all three tick down inside that turn: weakness and slow in
+## `_process_monster_dots`, charm in `process_monster_turn` itself. Shared but not de-duplicated,
+## a 1-turn charm would be spent by the first member and a 2-round weakness would expire in one
+## round of a four-party.
 const _PARTY_SHARED_MONSTER_KEYS := ["monster_poison", "monster_poison_duration", "monster_burn",
 	"monster_burn_duration", "monster_bleed", "monster_bleed_duration", "monster_stunned",
-	"monster_sabotaged", "enemy_distracted", "cc_resistance", "consec_stuns"]
+	"monster_sabotaged", "enemy_distracted", "cc_resistance", "consec_stuns",
+	"monster_charmed", "monster_charmed_duration",
+	"monster_weakness", "monster_weakness_duration",
+	"monster_slowed", "monster_slow_duration"]
 
 # #76 — the party member VIEW must be a FULL solo-shaped combat dict. The solo card engine
 # reads these keys DIRECTLY (not via .get), so a missing one aborts the whole ability with a
@@ -12907,8 +12922,12 @@ const _PARTY_SHARED_MONSTER_KEYS := ["monster_poison", "monster_poison_duration"
 # once per member, these must be neutralised on every action after the first, or a poison
 # would tick once PER MEMBER (4x damage in a 4-party) and burn/bleed durations would burn
 # down N times faster.
+## The three debuffs above join this list for the reason written there: each of them ticks inside
+## the monster's turn, and the monster takes one turn per member. Without this a shared charm is
+## consumed by whoever acts first and the rest of the party fights an un-charmed monster.
 const _PARTY_DOT_KEYS := ["monster_poison", "monster_poison_duration", "monster_burn",
-	"monster_burn_duration", "monster_bleed", "monster_bleed_duration"]
+	"monster_burn_duration", "monster_bleed", "monster_bleed_duration",
+	"monster_charmed", "monster_weakness_duration", "monster_slow_duration"]
 
 const _PARTY_VIEW_SOLO_DEFAULTS := {
 	# #65/#76 — the free item use is PER MEMBER per round in co-op: five members can each
