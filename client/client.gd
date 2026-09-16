@@ -6848,6 +6848,26 @@ func _dev_run_shots() -> void:
 				await get_tree().create_timer(2.5).timeout
 				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("after_dungeon_exit")
+				# ⚑ A FLICKER NEEDS SAMPLING, NOT A SNAPSHOT. Owner: *"the old map key flashing under my
+				# map off and on."* One reading after the fact would have called it fixed either way, so
+				# this walks the overworld and counts the frames each leftover is visible on.
+				var _key_seen := 0
+				var _strip_bad := 0
+				var _frames := 0
+				for _step in range(3):
+					send_to_server({"type": "move", "direction": "east"})
+					for _f in range(40):
+						await get_tree().process_frame
+						_frames += 1
+						if _dungeon_key_label != null and is_instance_valid(_dungeon_key_label) and _dungeon_key_label.visible:
+							_key_seen += 1
+						var _pr: Rect2 = (_margin_party_label as Control).get_global_rect() if _margin_party_label != null else Rect2()
+						var _cr: Rect2 = (companion_art_overlay as Control).get_global_rect() if companion_art_overlay != null else Rect2()
+						if _margin_party_label != null and companion_art_overlay != null and _margin_party_label.visible and companion_art_overlay.visible and _pr.intersects(_cr):
+							_strip_bad += 1
+				print("[DUNGEONCARD] walked %d frames: key visible on %d, strip/companion overlap on %d  %s" % [
+					_frames, _key_seen, _strip_bad, "PASS" if (_key_seen == 0 and _strip_bad == 0) else "FAIL"])
+				await _dev_shot_capture("overworld_after_dungeon")
 				if _margin_party_label != null and companion_art_overlay != null:
 					var _ps: Rect2 = (_margin_party_label as Control).get_global_rect()
 					var _cs: Rect2 = (companion_art_overlay as Control).get_global_rect()
@@ -35311,16 +35331,25 @@ func _map_widgets_visible(v: bool) -> void:
 	# drawn, so leaving one left the key on screen.
 	#
 	# One list, so "what hides when a page takes the canvas" is answered in one place.
+	# ⛑ THE DUNGEON KEY IS NOT IN THIS LIST, and putting it here was a regression.
+	#
+	# This list SETS visibility to `v` - so on the overworld, where `v` is true, it was
+	# SHOWING the dungeon key, while `_place_dungeon_dock` hid it on the same frame. Two
+	# writers, once per frame each. Owner, immediately: *"I just moved and now I'm seeing the
+	# old map key flashing under my map off and on."*
+	#
+	# The key belongs to the DOCK, which is its only owner and already runs every frame you are
+	# not underground. Third "one value, two owners" bug in a row, and the fix is the same each
+	# time: remove an owner rather than add a guard.
 	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay, _margin_chat_box,
-		buff_display_label, _margin_party_label, _ow_map_frame, companion_art_overlay,
-		_dungeon_key_label]:
+		buff_display_label, _margin_party_label, _ow_map_frame, companion_art_overlay]:
 		if n == null or not is_instance_valid(n):
 			continue
 		# The party strip and the key are the two the DUNGEON dock owns while you are underground
 		# (`_place_dungeon_dock`). Hiding them as part of this overworld set down there is what
 		# would make them flicker: the dock shows them, the next map refresh hides them again.
 		# Above ground this set is their only owner, which is what stops them surviving an exit.
-		if dungeon_mode and (n == _margin_party_label or n == _dungeon_key_label):
+		if dungeon_mode and n == _margin_party_label:
 			continue
 		(n as Control).visible = v
 
