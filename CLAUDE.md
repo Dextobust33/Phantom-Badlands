@@ -159,6 +159,28 @@ the class was fine — `overload` in the Sorcerer's deck (20% max HP a cast) was
 and the simulated Oracle re-stunned for five straight turns because the monster's turn decrements
 the stun, so an "is it stunned?" gate is true again every round.
 
+## ⚑ A `.gdignore` makes `ResourceLoader.exists()` LIE — art must be copied OUT
+
+Nine folders under `client/sprites/` are raw asset-pack sources carrying a **`.gdignore`**
+(`battlers/tf_svbattle`, `battlers/tf_monsters_assetpack`, `battlers/timefantasy_characters`,
+`darkcave_tiles`, `godot-pixel-*`, `RageTileMap-master`, ...). Godot never imports anything under
+them, none of it reaches the `.pck`, and `load()` on any path inside returns **null** at runtime.
+
+**But `ResourceLoader.exists()` returns `true`**, because the `.import` sidecar is sitting there —
+and an `[img]` BBCode tag whose texture fails to load draws **nothing at all**: no gap, no
+placeholder, no error. So a HUD that was supposed to gain icons looks byte-identical to the one
+that never had them, and every theory points at the tag syntax instead of the asset.
+
+2026-09-16: that cost a round of A/B/C-ing three `[img]` forms in two different labels. The
+question that settled it in one command was `ls .godot/imported/ | grep States`.
+
+- **To use pack art, copy the file out** into a normal folder (e.g. `client/sprites/states/`) and
+  leave a README there saying where it came from and why it moved.
+- **The check is calling `load()`, never `exists()`** — same rule as "verify the FUNCTION, not the
+  ingredients" in the release gate above.
+- Add a `--buildverify` line for any art loaded BY PATH, so a packaged build cannot ship it
+  invisible. `state_icons` and `sanctuary_sprites` are both there for this reason.
+
 ## ⚑ A rename touches SEVEN surfaces
 
 Card face, action bar, combat log, hover text, buff panel, gear-affix tokens, help pages. Miss one

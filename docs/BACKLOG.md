@@ -617,17 +617,38 @@ glyph can be. They are `ProgressBar`s with two `StyleBoxFlat`es now. The compani
 Controls pinned into bands its stylebox holds open — blank lines do NOT work, because `fit_content`
 will not grow a label for an empty trailing paragraph, so a bottom-anchored bar lands on real text.
 
+**ALSO DONE this round (commits `bafc9ba8`, `724108b0`):**
+- [x] **The dungeon canvas got its 130px back, and the floor grew to 1216x704.** The canvas was 662
+      tall underground against 792 up top, and the missing height was in BottomStrip (h_min 256 vs
+      126) — the chat log moving there is what claimed it, so the FLOOR was paying for the chat box
+      out of its tile size. Underground the chat now goes in the dungeon's own side column, which
+      carried the floor status in its top third and nothing in the other ~680px. A fight and the
+      Sanctuary room still send it to the bottom strip. Measured after: `h_room=718 tile=64 rows=11`.
+- [x] **Effect ICONS for poison and blind**, hoverable, with `gm_apply_state` + `--shots=states` to
+      photograph them on demand. **Read `STATE_ICONS` in client.gd before adding more:** the sheet is
+      ten DEBUFF states with no positive buffs, the frame is deliberately FIXED (half the animation
+      cycle is invisible at chip size — measured, 801 opaque px down to 90), and the region is the
+      mark's tight bounds because the mark is only ~35px of its 96px cell.
+
+**⛑ AND THE LESSON THAT COST THE MOST TIME TODAY — a `.gdignore` makes `exists()` lie.**
+`client/sprites/battlers/tf_svbattle/` (and eight other asset-pack folders) carry a `.gdignore`, so
+nothing under them is imported, nothing reaches the `.pck`, and `load()` returns null — while
+`ResourceLoader.exists()` returns **true**, because the `.import` sidecar is there. An `[img]` tag
+whose texture fails to load draws **nothing at all**: no gap, no placeholder. So the Effects box
+looked byte-identical to before the icons were added, and three `[img]` tag forms were A/B/C-ed in
+two labels before anyone asked whether `.godot/imported/` held a `.ctex` for it. **Art you want to
+use must be copied OUT of those folders**, and the check is calling `load()`, never `exists()`.
+`--buildverify` asserts the state sheet loads for exactly this reason.
+
 **STILL OPEN from this round:**
-- [ ] **The dungeon canvas is ~120px shorter than the overworld one** (`avail.y` 662 vs 792, both
-      measured). Recovering it would not change the row count (11 rows at 64px needs 704) but it is
-      120px of dead space and nobody has found what claims it. `_dev_print_rects()` under `--shots`
-      is the instrument.
 - [ ] **Judge the dungeon with a full party** — the owner asked to make that call himself and now
       has frames at the right tile size. `python tools/test_setup/run.py party5 --noranks
       --shots=partydungeon` captures the overworld strip and the dungeon floor in one run.
-- [ ] **Effect ICONS.** `client/sprites/battlers/tf_svbattle/RMMV/system/States.png` — 10 animated
-      debuff states, 8 frames of 96x96, positive buffs not included. Owner: *"Icons are the way to
-      go."* The Effects box is still text.
+- [ ] **Effect icons for the remaining eight rows** are unclaimed but unmatched: the game's other
+      effects are stat buffs (strength/defense/speed/damage/crit/lifesteal/thorns/forcefield/
+      damage_reduction) and the sheet has no art for any of them. Either source buff icons or leave
+      them as chips — do not map a spare debuff row onto a buff.
+- [ ] **Nothing has been RELEASED since v0.9.794.** Master carries this whole arc.
 
 
 ### ⛑ v0.9.794 - HOTFIX, and the two things it taught (2026-09-16 morning)
