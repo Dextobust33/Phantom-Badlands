@@ -586,11 +586,14 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ### ⚑ WHERE THINGS STAND
 
-**LIVE: v0.9.791. Nothing is held on master.** The whole onboarding arc is out: Warden's Watch
-runs start to finish (he arms you, teaches the fight, walks a real route to the starter dungeon,
-follows you through it, settles the last step, walks you home and teaches eggs / companions /
-spare gear), and party fights stopped dropping per-member state. Full write-up in the v0.9.790 and
-"LIVE TEST OF v0.9.790" sections below.
+**LIVE: v0.9.792 (2026-09-15 night). Nothing is held on master.** The equipment/item audit and
+everything it found is out, gear now reaches your cards, the monster curve was re-calibrated for
+it (speciescal -> refcal -> rolecal, one pass each, every level inside +/-10pp and the death column
+at or below 0.9%), and a kill in a party finally pays what it is worth. Full write-up in the
+v0.9.792 section below; the onboarding arc that preceded it is in the v0.9.790/791 sections.
+
+The server binary was swapped DURING the countdown, so players took one warned disconnect; the
+running process was verified by hashing /proc/$PID/exe against the local build.
 
 **Seen only in probes, not yet in a running client:** teammate damage numbers in co-op, the party
 status strip, the Warden in the dungeon and his walk home, and the three new lessons. The owner's
@@ -787,7 +790,7 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    actually reads. `-- gearsources` and `docs/design/equipment_reference.md` are the starting point,
    not the answer - they already found stats with no reader once. Deliverable: a table of every stat
    and item family with works / broken / misleading, then fixes in order of how many players carry it.
-4a. **SHIP WITH THE NEXT RELEASE - live bug on v0.9.791 (owner chose to wait, no hotfix):** a second
+4a. **SHIPPED in v0.9.792.** (Kept for the record of what the live two-player session found.) a second
    new player's Warden and map ring pointed at the FIRST player's personal copy of the starter
    dungeon (random spot, no entrance, can be in a hotzone). Fixed on master 69d0f37e, probe
    `starter_dungeon_two_players.gd` (red on the old code). Workaround until then: walk to the real
