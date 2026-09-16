@@ -809,7 +809,23 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    Owner, before this release too: the road width fix (item 6, roads 3 -> 2) and FEWER DOORS on the
    starter post; companion sprites that FACE the way they walk on the overworld and in dungeons
    (release held for it).
-4b. **Default UI scale at 1080p (owner 2026-09-15).** *"We need to take a look at the initial UI Scale.
+4b. **◐ PARTLY DONE 2026-09-15 (unreleased) - default UI scale at 1080p.**
+   ✅ The MAP fits now. The font was capped to fit ACROSS since v0.9.391 and never DOWN; in the live
+   layout the map box is ~400 virtual px and the map wanted 506, so RichTextLabel scrolled and the
+   middle - where the player stands - sat under the fold. The cap steps down using the font's real
+   height at each size. The Tools/Status overlay grew at the full window scale (13 -> 19px at
+   1080p) and every point came out of the map, so it grows at half that rate now (16px).
+   Measured through a new `--uimeasure` flag on the running client, and the release gate asserts
+   the fit at both live box heights. THREE instruments were wrong first: a headless probe laid out
+   at 1920x1280; reading the font after `_ready` caught a transient; and `--resolution` changes
+   nothing because the project stretches `canvas_items` from a 1920x1080 base, so layout is ALWAYS
+   in 1080p virtual units.
+   - [ ] **STILL OPEN: the DUNGEON side panel** (*"their area on the right for where the dungeon
+     text goes is pretty cramped"*). Same column, different mode; needs a live dungeon session to
+     measure, since an empty client gives that panel the whole column.
+   - [ ] **Needs an eyeball**, not a number: whether 16px Tools / the resulting map size actually
+     look right to the owner at 1080p.
+   Original report: *"We need to take a look at the initial UI Scale.
    1080p players ASCII map has to be scrolled to even see the middle of their map. The Tool panel and
    all of that is too big over there. Ideally they should be able to see their whole ASCII map by
    default."* And, same report from a live player: *"Their area on the right for where the dungeon
