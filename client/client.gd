@@ -122,6 +122,11 @@ const STATE_ICONS := {
 }
 ## Temporary: prints what the dungeon tile fit measured. Set by --dungeonfit.
 var _dungeon_fit_debug: bool = false
+## Whether an icon path loads, answered ONCE per path. `_state_icon` and `_buff_icon` run for
+## every chip on every Effects refresh, and a character update fires several times a second in
+## a fight - `load()` is a cache hit after the first call, but asking it 60 times a second for
+## an answer that cannot change is work for nothing.
+var _icon_loadable: Dictionary = {}
 ## A literal newline, for building multi-line hover text without embedding real line breaks in
 ## the middle of a format string - which is how the stance tooltips were written and is easy to
 ## break with an edit.
@@ -23766,7 +23771,7 @@ func _state_icon(key: String, h: int = 22) -> String:
 		return ""
 	# CALL the loader; do not ask whether the path exists. See the note on STATE_SHEET - an [img]
 	# whose texture will not load draws nothing at all, which is indistinguishable from no icon.
-	if load(STATE_SHEET) == null:
+	if not _icon_art_ok(STATE_SHEET):
 		return ""
 	var d: Dictionary = STATE_ICONS[key]
 	var r: Array = d["rect"]
@@ -23774,6 +23779,18 @@ func _state_icon(key: String, h: int = 22) -> String:
 	return "[img=%dx%d region=%d,%d,%d,%d]%s[/img]" % [w, h,
 		int(d["frame"]) * STATE_FRAME_PX + int(r[0]), int(d["row"]) * STATE_FRAME_PX + int(r[1]),
 		int(r[2]), int(r[3]), STATE_SHEET]
+
+
+func _icon_art_ok(path: String) -> bool:
+	"""Does this icon art actually LOAD - asked once per path, then remembered.
+
+	`ResourceLoader.exists()` is not the question: a `.gdignore`d file answers true to that and
+	null to `load()`, and an `[img]` tag whose texture will not load draws nothing at all. So
+	the loader is called - but only the first time, because the answer cannot change at runtime
+	and these run per chip per Effects refresh."""
+	if not _icon_loadable.has(path):
+		_icon_loadable[path] = load(path) != null
+	return bool(_icon_loadable[path])
 
 
 func _buff_icon(btype: String, h: int = 22) -> String:
@@ -23787,7 +23804,7 @@ func _buff_icon(btype: String, h: int = 22) -> String:
 		return ""
 	var d: Dictionary = BUFF_ICONS[key]
 	var path := String(d["path"])
-	if load(path) == null:
+	if not _icon_art_ok(path):
 		return ""
 	var tint := String(d.get("tint", ""))
 	if tint != "":
@@ -32371,9 +32388,17 @@ func display_changelog():
 	# two-player session. Monster curve re-calibrated after the player-side changes.
 	# v0.9.793 - the UI reflow: the map takes the main canvas, the HUD moves into its margins,
 	# the right column becomes the log, and text stops flashing on screen and vanishing.
-	# v0.9.794 - hotfix: the Deck screen shipped empty (a guard placed above the call that
-	# fills the panel), and the travel row was being re-shown over open menus.
-	display_game("[color=#00FF00]v0.9.794[/color] [color=#808080](Current)[/color]")
+	# v0.9.795 - the party/dungeon round: party members drawn and tracked underground, the
+	# dungeon floor four times the area, real gauges everywhere, and icons for effects.
+	display_game("[color=#00FF00]v0.9.795[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ YOUR PARTY IS VISIBLE UNDERGROUND.[/color] In a dungeon you could see [b]yourself and your companion and nobody else[/b] — the other members were never sent to your client at all. They are drawn on the floor now, as their own sprites, and the strip under the floor shows every member's [b]health and resource[/b].")
+	display_game("  [color=#FF8000]★ THE DUNGEON FLOOR IS FOUR TIMES THE AREA.[/color] The tiles had quietly halved to half size, and the floor was drawn in two-thirds of a window that sat empty below it. Tiles are back to [b]full size[/b] and the view is [b]taller[/b]: 19x11 instead of 19x9, filling the canvas. The chat log moved into the dungeon side panel, which is what was taking the room.")
+	display_game("  [color=#FF8000]★ PARTY HEALTH BARS THAT ACTUALLY MOVE.[/color] The party strip is under your map now, with a real [b]health and resource gauge[/b] for each member — and they update as people take damage. Before this they were a snapshot from the moment you grouped up, which is worse than no bars at all. Your [b]companion[/b] has a health gauge too.")
+	display_game("  [color=#1EFF00]◆ Effects are pictures you can hover.[/color] [b]Poison, blindness[/b] and every combat buff now show as an [b]icon[/b] instead of a letter code like [P7:14] — hover one to read what it does and how long it lasts. Underground they sit with the party strip, because the dungeon had no effects display at all.")
+	display_game("  [color=#1EFF00]◆ The shortcut buttons stay put.[/color] Companions, Eggs, Stats, Inv and the rest sit [b]above the action bar[/b] on every screen — they used to move to the top-right corner the moment you went underground. The map keeps its whole frame, nothing hangs out the bottom of it, and a [b]hover that got stuck[/b] on your own sprite when you moved between it and your companion is fixed.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.794[/color]")
 	display_game("  [color=#FF4444]★ THE DECK SCREEN SHOWS YOUR CARDS AGAIN.[/color] v0.9.793 shipped it [b]empty[/b] — the change that stopped an older text version of the screen printing underneath was put in front of the code that fills the panel. Fixed, and the check that opens every menu screen now also asks whether the deck actually has cards in it.")
 	display_game("  [color=#1EFF00]◆ Travel stances stay out of the way.[/color] Opening the market or a crafting bench hid them and then put them straight back for a quarter of a second. Measured and fixed: they now stay hidden until you leave the menu. Six market sub-screens that could have opened blank were also put right.")
 	display_game("")
@@ -32388,7 +32413,7 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ One press means back.[/color] Companions, Eggs, Jobs, the Pouch, the Deck and the Market all took two presses to leave — the first returned you to a menu you never opened. The [b]stat-point popup is gone[/b]; the Stats button already says how many you have. A kill now pays [b]more for a deadlier monster[/b], and about 18% more on average.")
 	display_game("")
 
-	display_game("[color=#00FF00]v0.9.792[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#808080]v0.9.792[/color]")
 	display_game("  [color=#FF4444]★ PARTY FIGHTS PAY WHAT THE KILL IS WORTH.[/color] A kill in a party — including every fight beside the Warden — paid only the monster’s [b]base XP[/b]. No Danger Zone bonus, no bonus for fighting above your level, no apex bonus, no Hunter’s Mark, no Insight potion, and your [b]companion earned nothing at all[/b]. A level 7 hotzone kill that pays 361 solo was paying 195. [b]Perfect Heist[/b] was short too. One sum now, whoever swung.")
 	display_game("  [color=#FF8000]★ YOUR GEAR NOW POWERS YOUR CARDS.[/color] Gear [b]+% damage[/b], [b]crit damage[/b], [b]lifesteal[/b], [b]Shocking[/b] and [b]Execute[/b] used to work on basic attacks only — about one action in a hundred. They now work on your cards, and your weapon's [b]attack[/b] adds to card damage too, at half the share it gives a swing, so attacking still has its place. Monsters were re-sized to match.")
 	display_game("  [color=#FF8000]★ CARD GEAR REPLACES “+1 TO ABILITIES”.[/color] Epic and better gear can now carry a bonus for [b]one card[/b]: [b]+15/30/45% power[/b] (damage, shield or buff strength), [b]cheaper cost[/b], or [b]longer duration[/b] — and only the kinds that card can actually use. Your old “+N” items keep their value as card power. Skill tomes work the same way, one for every card.")
