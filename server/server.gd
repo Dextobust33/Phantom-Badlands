@@ -35547,7 +35547,7 @@ func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "", 
 	has no themed card, or you already own the max (3) copies, it FALLS BACK to the legacy
 	'copy-drop' (+1 copy of an ability you use). Returns {granted, ability, display,
 	new_count, exclusive}."""
-	var out := {"granted": false, "ability": "", "display": "", "new_count": 0, "exclusive": false}
+	var out := {"granted": false, "ability": "", "display": "", "new_count": 0, "exclusive": false, "chance": 0.0}
 	# ⚑ RANK COUNTS HERE TOO. This was tier-only, so a rank-1 and a rank-9 dungeon of the same
 	# tier had identical card odds - the last completion reward that ignored the ladder, after xp,
 	# materials, the chest's gear and valor were all made to follow it. Same `1.0 + (rank-1)*0.1`
@@ -35557,6 +35557,8 @@ func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "", 
 	# a card faucet.
 	var _rank_mult: float = 1.0 + float(clampi(rank, 1, 9) - 1) * 0.1
 	var chance: float = min(0.30, (0.05 + float(tier) * 0.02) * _rank_mult)
+	# Carried out so the completion screen can state the odds without a second copy of them.
+	out["chance"] = chance
 	if not force and randf() >= chance:
 		return out
 	# Prefer the themed dungeon-exclusive card for this dungeon type.
@@ -35874,6 +35876,21 @@ func _complete_dungeon(peer_id: int):
 			completion_msg += "\n\n[color=#FF66FF]★ DUNGEON CARD EARNED! ★[/color]\n[color=#FF99FF]You claim [b]%s[/b] — a card found ONLY in this dungeon (×%d/3). Add it to your deck in the Deck screen![/color]" % [str(_card_reward.get("display", "")), int(_card_reward.get("new_count", 1))]
 		else:
 			completion_msg += "\n\n[color=#FF66FF]★ RARE CARD DROP! ★[/color]\n[color=#FF99FF]+1 copy of [b]%s[/b] (deck ×%d/3) — thin & build in the Deck screen![/color]" % [str(_card_reward.get("display", "")), int(_card_reward.get("new_count", 2))]
+	else:
+		# SAY SO WHEN IT DOESN'T DROP. Owner 2026-09-15: "Where does it show what card I got for
+		# the dungeon or is it not a guarantee?" - and a live report that the card award was
+		# "invisible". It was not hidden: at tier 1 rank 1 the chance is SEVEN PERCENT, so the
+		# honest answer 93 times in 100 was total silence, which reads exactly like a bug. Naming
+		# the odds, and the card this dungeon is the only source of, turns a non-event into a
+		# reason to come back. The odds come back from the roll itself - see `chance` in
+		# _roll_dungeon_card_reward - rather than being restated here.
+		var _odds: int = maxi(1, int(round(float(_card_reward.get("chance", 0.0)) * 100.0)))
+		var _themed: String = DropTablesScript.dungeon_card_id_for_dungeon(dungeon_type) if dungeon_type != "" else ""
+		if _themed != "":
+			completion_msg += "\n\n[color=#808080]No card this run — [b]%s[/b] drops here about %d%% of the time, and nowhere else. Deeper and higher-rank dungeons pay more often.[/color]" % [
+				DropTablesScript.card_display_name(_themed), _odds]
+		else:
+			completion_msg += "\n\n[color=#808080]No card this run — about %d%% of runs here pay a card copy. Deeper and higher-rank dungeons pay more often.[/color]" % _odds
 
 	if xp_result.leveled_up:
 		completion_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % character.level
@@ -35978,6 +35995,10 @@ func _complete_dungeon(peer_id: int):
 					f_msg += "\n[color=#FF66FF]★ DUNGEON CARD EARNED! ★[/color]\n[color=#FF99FF]You claim [b]%s[/b] — found ONLY here (×%d/3)[/color]\n" % [str(f_card_reward.get("display", "")), int(f_card_reward.get("new_count", 1))]
 				else:
 					f_msg += "\n[color=#FF66FF]★ RARE CARD DROP! ★[/color]\n[color=#FF99FF]+1 copy of [b]%s[/b] (deck ×%d/3)[/color]\n" % [str(f_card_reward.get("display", "")), int(f_card_reward.get("new_count", 2))]
+			else:
+				# Party members read the same screen, so they get the same answer when nothing drops.
+				var _f_odds: int = maxi(1, int(round(float(f_card_reward.get("chance", 0.0)) * 100.0)))
+				f_msg += "\n[color=#808080]No card this run — about %d%% of runs here pay one. Deeper and higher-rank dungeons pay more often.[/color]\n" % _f_odds
 			if f_xp_result.leveled_up:
 				f_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % follower.level
 
