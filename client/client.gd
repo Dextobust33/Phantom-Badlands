@@ -1022,10 +1022,6 @@ const THEME_BTN_BORDER = Color(0.545, 0.451, 0.333, 0.5) # #8B7355 at 50%
 # The overworld map's shape, in cells and in characters. world_system builds it at radius 11, so
 # 23x23 cells, each drawn as two characters wide. Named here because the font-fitting caps below
 # need both numbers and used to carry them as literals inside a comment.
-# How much of the right-hand column belongs to the MAP before anything else gets a say. At 1080p
-# the column is ~640px, so this reserves ~480 - 20px tiles for a 23-row map, against the 14px it
-# was getting when the map took only what the status block left over.
-const MAP_COLUMN_SHARE := 0.75
 const MAP_GRID_ROWS = 23
 const MAP_GRID_CHARS = 46
 const MAP_BASE_FONT_SIZE = 14  # Base font size at 720p height
@@ -2601,24 +2597,22 @@ func _ready():
 			print("[UIMEASURE] game_output=%dx%d font=%d" % [
 				int(game_output.size.x), int(game_output.size.y),
 				game_output.get_theme_font_size("normal_font_size")])
-		# WHAT THE MAP IS GUARANTEED. An empty client gives the map the whole column; a live one
-		# has the Travel row, the tools+minimap row and the status labels in it too. Since the map
-		# now RESERVES `MAP_COLUMN_SHARE` of the column rather than taking what is left, the honest
-		# check is whether 23 rows fit inside that reservation - which holds in any session,
-		# however full the status block gets.
+		# DOES THE MAP FIT THE BOX IT HAS - counting everything else in the same label.
 		#
-		# The previous version forced the box to a small height and re-ran the layout, which the
-		# reservation immediately undid - so it reported a failure that could not happen.
+		# The map is not alone in map_display: a leading blank paragraph keeps the sprite
+		# overlay's row maths aligned, and the legend adds another line. A fit that ignored them
+		# overflowed by exactly those lines, which is why a scrollbar survived the first attempt.
 		if map_display:
 			var _rf: Font = map_display.get_theme_font("normal_font")
 			var _rfs: int = map_display.get_theme_font_size("normal_font_size")
 			var _rlh: float = _rf.get_height(_rfs) if _rf != null else float(_rfs) * 1.3
-			var _res: int = int(map_display.custom_minimum_size.y)
-			print("[UIMEASURE] reserved_h=%d ascii_needs=%d fits_reserved=%s" % [
-				_res, int(_rlh * MAP_GRID_ROWS), str(_rlh * MAP_GRID_ROWS <= float(_res) + 1.0)])
-			# And what a sprite tile would be at that reservation, which is what a player sees.
+			var _extra: float = 1.0 + (1.0 if show_map_legend else 0.0)
+			var _need: float = _rlh * (float(MAP_GRID_ROWS) + _extra)
+			print("[UIMEASURE] map_h=%d needs_with_extras=%d fits_reserved=%s" % [
+				int(map_display.size.y), int(_need), str(_need <= map_display.size.y + 1.0)])
+			var _avail: float = map_display.size.y - 6.0 - _extra * _rlh
 			print("[UIMEASURE] sprite_px=%d (art is %dpx native)" % [
-				clampi(int(floor((float(_res) - 6.0) / float(MAP_GRID_ROWS))), 8, OVERWORLD_SPRITE_PX),
+				clampi(int(floor(maxf(32.0, _avail) / float(MAP_GRID_ROWS))), 8, OVERWORLD_SPRITE_PX),
 				OVERWORLD_SPRITE_PX])
 		get_tree().quit()
 		return
@@ -3874,22 +3868,6 @@ func _on_window_resized():
 		map_display.add_theme_font_size_override("italics_font_size", map_font_size)
 		map_display.add_theme_font_size_override("bold_italics_font_size", map_font_size)
 
-	# ⚑ THE MAP CLAIMS ITS SHARE FIRST.
-	#
-	# MapDisplay is the only expanding child of MapPanel, so it got whatever the Travel row, the
-	# tools+minimap row and the status labels left behind - and those size themselves from their
-	# CONTENT, so a longer quest name or a fuller backpack quietly took rows off the map. Measured
-	# from the owner's 1080p screenshots: the column is ~640px and the map was left ~340, which is
-	# 14px tiles for art drawn at 32. Owner: *"the map needs more space, it's too small and
-	# doesn't have enough space on a 1080p."*
-	#
-	# Inverted: the map reserves MAP_COLUMN_SHARE of the column and the rest share what is left.
-	# The map is the element that becomes unreadable when it is squeezed - status text stays
-	# perfectly legible a line shorter - so it should not be the one that yields.
-	if map_display != null and map_display.get_parent() is Control:
-		var _col: Control = map_display.get_parent()
-		if _col.size.y > 100.0:
-			map_display.custom_minimum_size.y = floor(_col.size.y * MAP_COLUMN_SHARE)
 	# Scale the merged Tools/Status overlay with its own independent slider so
 	# players can make the status text large without forcing the ASCII map to
 	# grow (and vice versa).
@@ -3902,6 +3880,18 @@ func _on_window_resized():
 		# rows it gives back go to the map. Players who want it bigger have the slider.
 		var hud_font_size = int(13 * (1.0 + (base_scale - 1.0) * 0.5) * ui_scale_status_hud)
 		hud_font_size = clampi(hud_font_size, 10, 28)
+		# The minimap and the status labels are the map's real competition: both use fit_content,
+		# so their HEIGHT is their font size, and every point they take is a row off the map. They
+		# are reference material read at a glance - the map is the thing you navigate by - so they
+		# scale at the status slider's rate and no faster.
+		if minimap_display:
+			minimap_display.add_theme_font_size_override("normal_font_size",
+				clampi(int(9.0 * ui_scale_status_hud), 6, 16))
+		for _lbl in [status_hud_backpack, status_hud_area, status_hud_compass,
+				status_hud_pouch, status_hud_quests, status_hud_eggs]:
+			if _lbl != null and is_instance_valid(_lbl):
+				_lbl.add_theme_font_size_override("normal_font_size",
+					clampi(int(12.0 * ui_scale_status_hud), 8, 22))
 		tool_status_overlay.add_theme_font_size_override("normal_font_size", hud_font_size)
 		tool_status_overlay.add_theme_font_size_override("bold_font_size", hud_font_size)
 
@@ -47057,7 +47047,17 @@ func _overworld_display(payload: Dictionary) -> String:
 	# The same fault as the ASCII path's missing height cap, in the sprite renderer, and it
 	# survived that fix because the overworld has not been ASCII since the sprite pass.
 	if map_display != null and rows_n > 0 and map_display.size.y > 32.0:
-		var fit_h: int = int(floor((map_display.size.y - 6.0) / float(rows_n)))
+		# What else lives in this label: the leading blank paragraph (kept so the sprite overlay's
+		# row maths stay aligned) and, when it is on, the legend line. Neither was counted, so a
+		# map fitted exactly to the box still overflowed by a line or two and scrolled - which is
+		# why a scrollbar survived the first height fit.
+		var _extra_rows: float = 1.0 + (1.0 if show_map_legend else 0.0)
+		var _lh2: float = 14.0
+		var _mf2: Font = map_display.get_theme_font("normal_font")
+		if _mf2 != null:
+			_lh2 = _mf2.get_height(map_display.get_theme_font_size("normal_font_size"))
+		var _avail: float = map_display.size.y - 6.0 - _extra_rows * _lh2
+		var fit_h: int = int(floor(maxf(32.0, _avail) / float(rows_n)))
 		px = mini(px, clampi(fit_h, 8, OVERWORLD_SPRITE_PX))
 	# ⚑ AND THE LINE HAS TO BE AS SHORT AS THE TILE.
 	#
