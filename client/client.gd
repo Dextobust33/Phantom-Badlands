@@ -6300,6 +6300,21 @@ func _dev_run_shots() -> void:
 					["deck_shortcut", "ability_exit"]]:
 					_on_shortcut_button_pressed(String(probe[0]))
 					await get_tree().create_timer(0.8).timeout
+					# ...and for the DECK, whether the panel actually got its cards. Owner 2026-09-16 on the
+					# live build: *"Looks like you broke the Deck screen completely last night. Can't see
+					# any cards on it."* The guard that skips the keyboard fallback had been placed above
+					# the call that FILLS the panel, so the screen opened empty. A probe that only asked
+					# "did Back work" could never have caught that, which is why it asks now.
+					if String(probe[0]) == "deck_shortcut" and ability_panel != null and is_instance_valid(ability_panel):
+						var eq: Array = ability_panel._equipped if "_equipped" in ability_panel else []
+						var named: int = 0
+						for e in eq:
+							if String(e) != "":
+								named += 1
+						print("[BACKTEST]   deck panel: %d slots, %d filled, collection=%d" % [
+							eq.size(), named, ability_panel._deck_collection.size() if "_deck_collection" in ability_panel else -1])
+						if named == 0:
+							print("[BACKTEST]   ^ DECK IS EMPTY - the panel was never populated")
 					print("[BACKTEST] %s OPEN  more=%s pend_more=%s pend_inv=%s wide=%s panel=%s margin=%s" % [
 						String(probe[0]), str(more_mode), pending_more_action, pending_inventory_action,
 						str(_ow_wide_page), str(_canvas_panel_open()), str(_margin_widgets_shown())])
@@ -8933,8 +8948,15 @@ func update_action_bar():
 	# The Travel stances belong to the overworld. Set here rather than at the ten places that
 	# flip `dungeon_mode`, because this runs after every state change by house rule and so cannot
 	# fall out of step with one of them.
+	#
+	# ...and NOT while a menu owns the screen. This line said only "not in a dungeon", so it
+	# put the row back on top of the market and the alchemy bench every time the action bar
+	# refreshed. MEASURED: the row was correctly hidden 15ms after the market opened, shown
+	# again by this line, and hidden a second time 230ms later - which is exactly the owner's
+	# *"display Travel stances for a brief second before it hides"*, and is why two fixes
+	# aimed at the hiding path changed nothing. The flash was a RE-SHOW, not a late hide.
 	if _stance_bar != null and is_instance_valid(_stance_bar):
-		_stance_bar.visible = not dungeon_mode
+		_stance_bar.visible = not dungeon_mode and _margin_widgets_shown()
 
 	# Reset status page background if active (gets set in display_character_status)
 	_reset_game_output_background()
@@ -20780,14 +20802,24 @@ func exit_ability_mode():
 		_close_menu_to_origin()
 
 func display_ability_menu():
-	"""Display the ability loadout management screen"""
-	# The panel IS the deck. This keyboard screen is the pre-panel fallback, and printing it
-	# underneath is what Back used to reveal.
-	if ability_panel != null and is_instance_valid(ability_panel):
-		return
+	"""Display the ability loadout management screen.
+
+	⛑ 2026-09-16, LIVE REGRESSION, MINE. The guard below skips the keyboard fallback because
+	the PANEL is the deck - but it was placed ABOVE `_populate_ability_panel()`, which is
+	what fills that panel. So the screen opened empty: owner, on the live build, *"Looks like
+	you broke the Deck screen completely last night. Can't see any cards on it."*
+
+	This is the SAME mistake I had fixed in `display_market_main` an hour earlier, in the
+	same session - the guard has to sit after the populate, because the populate is the part
+	the panel needs. Writing the fix once did not stop me repeating the bug; ordering the
+	populate FIRST and the guard second, in both places, is what stops it."""
 	if not ability_mode or ability_data.is_empty():
 		return
 	_populate_ability_panel()
+	# The panel is the deck; this keyboard screen is the pre-panel fallback, and printing it
+	# underneath is what Back used to reveal.
+	if ability_panel != null and is_instance_valid(ability_panel):
+		return
 
 	_page_clear()
 	display_game("[color=#FFD700]===== ABILITY LOADOUT =====[/color]")
@@ -31805,7 +31837,14 @@ func display_changelog():
 	# two-player session. Monster curve re-calibrated after the player-side changes.
 	# v0.9.793 - the UI reflow: the map takes the main canvas, the HUD moves into its margins,
 	# the right column becomes the log, and text stops flashing on screen and vanishing.
-	display_game("[color=#00FF00]v0.9.793[/color] [color=#808080](Current)[/color]")
+	# v0.9.794 - hotfix: the Deck screen shipped empty (a guard placed above the call that
+	# fills the panel), and the travel row was being re-shown over open menus.
+	display_game("[color=#00FF00]v0.9.794[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ THE DECK SCREEN SHOWS YOUR CARDS AGAIN.[/color] v0.9.793 shipped it [b]empty[/b] — the change that stopped an older text version of the screen printing underneath was put in front of the code that fills the panel. Fixed, and the check that opens every menu screen now also asks whether the deck actually has cards in it.")
+	display_game("  [color=#1EFF00]◆ Travel stances stay out of the way.[/color] Opening the market or a crafting bench hid them and then put them straight back for a quarter of a second. Measured and fixed: they now stay hidden until you leave the menu. Six market sub-screens that could have opened blank were also put right.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.793[/color]")
 	display_game("  [color=#FF8000]★ THE MAP TAKES THE BIG SCREEN.[/color] The overworld map was drawn in the small side panel while the main window held six lines of status and then sat empty. It now fills the main canvas and the tiles are drawn at their [b]real size[/b] — they were being shrunk by a fifth, which is most of why they were hard to read at 1080p.")
 	display_game("  [color=#FF8000]★ YOUR HUD MOVED INTO THE MARGINS.[/color] A square map in a wide window leaves room either side, and that is where the HUD now lives: [b]coordinates[/b] and your [b]tools, backpack, quests and eggs[/b] on the left with the [b]chat box[/b] under them, and the [b]minimap, area, active effects, party[/b] and your [b]companion[/b] on the right. Everything wears the same frame, including the map.")
 	display_game("  [color=#FF8000]★ THE RIGHT COLUMN IS A LOG THAT KEEPS ITS PLACE.[/color] It runs the full height of the window now. The [b]newest line is always visible[/b], scrolling up for history no longer drags you back to the bottom, and the same line arriving five times reads [b](x5)[/b] instead of five copies. Text that is too big for the column takes the main screen instead of being squeezed into it.")
@@ -34051,7 +34090,8 @@ func _refresh_stance_bar() -> void:
 	# Owner 2026-09-15: *"showing Travel modes is unnecessary in a dungeon as they don't do
 	# anything."* It was also taking a row of the one column the run log has to live in.
 	if _stance_bar != null and is_instance_valid(_stance_bar):
-		_stance_bar.visible = not dungeon_mode
+		# Same rule as the action bar refresh above: not underground, and not over a menu.
+		_stance_bar.visible = not dungeon_mode and _margin_widgets_shown()
 	for sid in _stance_buttons:
 		var b: Button = _stance_buttons[sid]
 		if not is_instance_valid(b):
@@ -50204,16 +50244,6 @@ func display_market_browse():
 	update_action_bar()
 
 func display_market_network_browse():
-	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
-	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
-	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
-	# stale information that isn't correct."* Printed only when there is no panel to use.
-	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
-	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
-	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
-	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
-	if market_panel != null and is_instance_valid(market_panel):
-		return
 	# Audit #9 Slice 1 — cross-post network browse view. Read-only listing index
 	# across all trading posts. Each row shows item, price-at-that-post, seller,
 	# post name, and distance from player. To buy, the player must travel.
@@ -50269,16 +50299,6 @@ func display_market_network_browse():
 
 func display_market_list_select():
 	"""Display inventory for selecting an item to list on the market."""
-	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
-	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
-	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
-	# stale information that isn't correct."* Printed only when there is no panel to use.
-	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
-	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
-	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
-	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
-	if market_panel != null and is_instance_valid(market_panel):
-		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	_page_clear()
@@ -50371,16 +50391,6 @@ func _display_market_pull_qty_prompt():
 
 func display_market_list_materials():
 	"""Display materials for selecting to list on the market."""
-	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
-	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
-	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
-	# stale information that isn't correct."* Printed only when there is no panel to use.
-	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
-	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
-	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
-	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
-	if market_panel != null and is_instance_valid(market_panel):
-		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	_page_clear()
@@ -50420,16 +50430,6 @@ func display_market_list_materials():
 
 func display_market_list_eggs():
 	"""Display incubating eggs for listing on the market."""
-	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
-	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
-	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
-	# stale information that isn't correct."* Printed only when there is no panel to use.
-	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
-	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
-	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
-	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
-	if market_panel != null and is_instance_valid(market_panel):
-		return
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	_page_clear()
@@ -50542,16 +50542,6 @@ func display_market_inspect():
 	display_game("[color=#FFD700]%s[/color] Buy  |  [color=#FFD700]%s[/color] Back" % [get_action_key_name(0), get_action_key_name(1)])
 
 func display_market_network_inspect():
-	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
-	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
-	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
-	# stale information that isn't correct."* Printed only when there is no panel to use.
-	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
-	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
-	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
-	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
-	if market_panel != null and is_instance_valid(market_panel):
-		return
 	# Audit #9 Slice 1 — read-only inspection of a remote (cross-post) listing.
 	# Shows full item details + seller + price-at-that-post + travel hint. No buy button.
 	input_field.release_focus()
@@ -50622,16 +50612,6 @@ func display_market_network_inspect():
 
 func display_market_buy_confirm():
 	"""Display buy confirmation for selected listing."""
-	# ⚑ THE PANEL IS THE MARKET. This keyboard menu is the pre-panel fallback, and its key
-	# list is no longer true: the panel owns 1-5 while it is open, so the "[4] List All
-	# Materials" it advertises does nothing. Owner 2026-09-16: *"we need to get rid of the
-	# stale information that isn't correct."* Printed only when there is no panel to use.
-	# Gated on the panel EXISTING, not on it being visible this instant: the panel is shown a
-	# step after this runs, so a `.visible` test was false here and the menu printed anyway -
-	# owner 2026-09-16: *"the market still mentions press 4 for Bulk listing Materials so not
-	# sure what you removed."* With the panel in the scene, this keyboard menu is dead code.
-	if market_panel != null and is_instance_valid(market_panel):
-		return
 	_page_clear()
 	display_game("[color=#FFD700]===== Confirm Purchase =====[/color]")
 	display_game("")

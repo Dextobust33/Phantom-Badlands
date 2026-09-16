@@ -584,6 +584,30 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-16 early hours, mid UI-ARC)
 
+### ⛑ v0.9.794 - HOTFIX, and the two things it taught (2026-09-16 morning)
+
+**I shipped the Deck screen empty.** The guard that stops the old keyboard ability screen printing
+under the panel was placed ABOVE `_populate_ability_panel()` - the call that fills the panel. Owner,
+on the live build: *"Looks like you broke the Deck screen completely last night. Can't see any cards
+on it."* It is the SAME mistake I had fixed in `display_market_main` an hour earlier in the same
+session: populate first, guard second. Writing the fix once did not stop me repeating the bug.
+
+**And the sweep found six more of it.** Auditing every guard I had added showed six market
+sub-screens (list select, materials, eggs, network browse, network inspect, buy confirm) where the
+panel renders nothing of the kind - so the guard would have opened them blank. Those guards are
+gone; the three the panel really does render (main, browse, inspect) populate first.
+
+**The stance flash was a RE-SHOW, not a late hide** - which is why two fixes aimed at the hiding
+path changed nothing. Measured with timestamps: the row was correctly hidden 15ms after the market
+opened, then `update_action_bar` put it back (its rule was only "not in a dungeon"), and it hid
+again 230ms later. Both unconditional `_stance_bar.visible = not dungeon_mode` sites now also ask
+`_margin_widgets_shown()`. Re-measured: hidden the whole time the menu is open, back on exit.
+
+**Both lessons are the same one, and it is already in this file:** when a fix does not take, the
+question is not "is my logic right" but "what else writes to this". The instrument that answered it
+in one run each time was a probe that pressed the real button and printed the real state - and it
+also caught its own wrong action id, which reading the code had not.
+
 ### ⛑ v0.9.793 IS LIVE (2026-09-16 02:10) - UI ARC SHIPPED UNFINISHED, ON THE OWNER'S CALL
 
 Released and deployed: seven assets under `v0.9.793` (Windows + Linux client and launcher, the pck
