@@ -1806,6 +1806,11 @@ var market_list_page: int = 0
 var market_mat_page: int = 0
 var market_my_page: int = 0
 var market_list_flash: String = ""  # Brief success message shown in listing view
+# What each incubating egg would fetch, index-aligned, as the SERVER computes it (market_egg_values).
+var _market_egg_valors: Array = []
+# Set when a listing succeeds: the picker must be rebuilt from the server's next character_update,
+# not from the stale local copy that still holds the thing just sold.
+var _market_picker_stale: bool = false
 var market_sort: String = "category"
 var market_egg_page: int = 0
 # Audit #9 Slice 1 — Network browse (cross-post listings index, read-only)
@@ -23961,6 +23966,11 @@ func handle_server_message(message: Dictionary):
 			_render_breadcrumb(["Inventory", "Home Stone (Companion)"])
 			display_game("[color=#FFD700]═══════ HOME STONE (COMPANION) ═══════[/color]")
 			display_game("[color=#FFFFFF]Choose what to do with [b]%s[/b]:[/color]" % hs_comp_name)
+			# Owner 2026-09-15: *"using the home stone companion should be more obvious that it
+			# works on the equipped companion and doesn't let you choose."* The prompt named the
+			# companion but never said WHY that one, so it read like a picker was coming.
+			display_game("[color=#808080]This is the companion you have out — the stone has no picker.[/color]")
+			display_game("[color=#808080]Cancel and summon a different one if this is not the one you meant.[/color]")
 			display_game("")
 			if hs_can_register:
 				display_game("[color=#00FF00]✦ Register[/color] — lock into a [color=#FF80FF]death-resistant slot[/color] in your Sanctuary.")
@@ -24934,6 +24944,24 @@ func handle_server_message(message: Dictionary):
 				update_player_xp_bar()
 				update_currency_display()
 				update_companion_art_overlay()
+				# A listing just went through: the picker was redrawn from the copy that still
+				# held the sold item, so this is the first moment it can show the truth. Keep
+				# the success line - it is the confirmation the player is looking for.
+				if _market_picker_stale and market_panel and is_instance_valid(market_panel) 						and market_panel.is_picker_open():
+					_market_picker_stale = false
+					var _mstatus: String = market_panel.get_status()
+					match market_panel.picker_mode():
+						"egg":
+							market_panel.open_egg_picker(character_data.get("incubating_eggs", []), _market_egg_valors)
+							send_to_server({"type": "market_egg_values"})
+						"material":
+							market_panel.open_material_picker(character_data.get("crafting_materials", {}))
+						"card":
+							market_panel.open_card_picker(_tradeable_cards())
+						"inventory":
+							market_panel.open_inventory_picker(character_data.get("inventory", []))
+					if _mstatus != "":
+						market_panel.set_status(_mstatus)
 				# v0.9.610 — server-side skip_craft / skip_gather are character
 				# fields, so the top-bar toggle colors need to reflect any
 				# server-driven change (e.g., legacy chat command on another
@@ -25120,7 +25148,8 @@ func handle_server_message(message: Dictionary):
 						update_action_bar()
 					elif pending_market_action == "list_egg":
 						if market_panel and market_panel.is_picker_open():
-							market_panel.open_egg_picker(character_data.get("incubating_eggs", []))
+							market_panel.open_egg_picker(character_data.get("incubating_eggs", []), _market_egg_valors)
+							send_to_server({"type": "market_egg_values"})
 						update_action_bar()
 					elif pending_market_action == "list_card":
 						if market_panel and market_panel.is_picker_open():
@@ -26102,6 +26131,15 @@ func handle_server_message(message: Dictionary):
 			_handle_market_list_all_success(message)
 		"market_list_preview_result":
 			_handle_market_list_preview_result(message)
+		"market_egg_values":
+			# What each incubating egg is worth, so the picker can say so before anything is sold.
+			_market_egg_valors = message.get("valors", [])
+			if market_panel and is_instance_valid(market_panel) and market_panel.is_picker_open() \
+					and market_panel.picker_mode() == "egg":
+				var _keep_status: String = market_panel.get_status() if market_panel.has_method("get_status") else ""
+				market_panel.open_egg_picker(character_data.get("incubating_eggs", []), _market_egg_valors)
+				if _keep_status != "":
+					market_panel.set_status(_keep_status)
 		# Audit #9 Slice 2 — buy orders
 		"market_orders_browse_result":
 			_handle_market_orders_browse_result(message)
@@ -27711,7 +27749,9 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 	elif item_type == "home_stone_equipment":
 		return "Send one equipment item from inventory to your Sanctuary storage"
 	elif item_type == "home_stone_companion":
-		return "Register your active companion at your Sanctuary"
+		# Owner 2026-09-15: it must be OBVIOUS this acts on the companion you have out and
+		# offers no picker. Naming the rule here, at the refusal and in the prompt.
+		return "Register the companion you currently have OUT at your Sanctuary (no picker - summon the one you want first)"
 	# Tomes - stat tomes
 	elif item_type == "tome_strength":
 		return "Permanently increases Strength by 1"
@@ -44040,7 +44080,8 @@ func _on_market_panel_list_action(action_id: String) -> void:
 			pending_market_action = "list_egg"
 			market_egg_page = 0
 			if market_panel:
-				market_panel.open_egg_picker(character_data.get("incubating_eggs", []))
+				market_panel.open_egg_picker(character_data.get("incubating_eggs", []), _market_egg_valors)
+				send_to_server({"type": "market_egg_values"})
 			update_action_bar()
 		"list_card":
 			# #39 — list an earned combat card (companion / dungeon).
@@ -49061,6 +49102,11 @@ func _handle_market_list_success(message: Dictionary):
 	# in-panel picker is up, refresh its row cache (the chat displays go to a
 	# hidden game_output behind the panel). Set status for the success flash.
 	var picker_open: bool = market_panel and market_panel.is_picker_open()
+	# The rebuild below runs BEFORE the server's character_update lands, so it redraws from a copy
+	# that still contains the thing just sold - the list visibly did not change, which is why
+	# listing an egg read as "nothing happened" (owner 2026-09-15). Rebuild again when the real
+	# state arrives.
+	_market_picker_stale = picker_open
 	if was_card:
 		pending_market_action = "list_card"
 		if picker_open:
@@ -49068,7 +49114,8 @@ func _handle_market_list_success(message: Dictionary):
 	elif was_egg:
 		pending_market_action = "list_egg"
 		if picker_open:
-			market_panel.open_egg_picker(character_data.get("incubating_eggs", []))
+			market_panel.open_egg_picker(character_data.get("incubating_eggs", []), _market_egg_valors)
+			send_to_server({"type": "market_egg_values"})
 		else:
 			display_market_list_eggs()
 	elif was_material:

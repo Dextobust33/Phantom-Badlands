@@ -136,6 +136,7 @@ var _title_label: Label
 # v0.9.594 — listing picker overlay state.
 var _picker_panel: PanelContainer = null
 var _picker_mode: String = ""  # "" / "inventory" / "material" / "egg"
+var _picker_egg_valors: Array = []   # index-aligned with _picker_eggs_cache; server-computed
 var _picker_title_label: Label = null
 var _picker_items_vbox: VBoxContainer = null
 var _picker_selected_label: RichTextLabel = null
@@ -651,6 +652,10 @@ func set_status(text: String) -> void:
 		_status_label.text = text
 
 
+func get_status() -> String:
+	return _status_label.text if _status_label else ""
+
+
 func populate_browse(post_name: String, valor: int, listings: Array, category: String, sort: String, page: int, total_pages: int, specialty_summary: String = "") -> void:
 	if not is_inside_tree():
 		return
@@ -1157,11 +1162,15 @@ func open_material_picker(crafting_materials: Dictionary) -> void:
 	_picker_panel.visible = true
 
 
-func open_egg_picker(incubating_eggs: Array) -> void:
+func open_egg_picker(incubating_eggs: Array, egg_valors: Array = []) -> void:
 	"""v0.9.594 — replaces display_market_list_eggs. Renders incubating eggs
-	as clickable rows. Eggs are non-stackable (one egg per listing)."""
+	as clickable rows. Eggs are non-stackable (one egg per listing).
+
+	`egg_valors` is what each egg would fetch, index-aligned, straight from the server's own
+	payout helper - the player should not have to list one to find out what it is worth."""
 	_picker_mode = "egg"
 	_picker_eggs_cache = incubating_eggs if incubating_eggs is Array else []
+	_picker_egg_valors = egg_valors if egg_valors is Array else []
 	_picker_title_label.text = "List Egg from Incubator"
 	_rebuild_picker_rows()
 	_clear_picker_selection()
@@ -1190,6 +1199,18 @@ func refresh_picker() -> void:
 		_clear_picker_selection()
 
 
+func picker_mode() -> String:
+	return _picker_mode
+
+
+func _fmt_valor(v: int) -> String:
+	if v >= 1000000:
+		return "%.1fM" % (float(v) / 1000000.0)
+	if v >= 1000:
+		return "%.1fk" % (float(v) / 1000.0)
+	return str(v)
+
+
 func close_picker() -> void:
 	if _picker_panel == null:
 		return
@@ -1198,6 +1219,7 @@ func close_picker() -> void:
 	_picker_inventory_cache = []
 	_picker_materials_cache = {}
 	_picker_eggs_cache = []
+	_picker_egg_valors = []
 	_picker_cards_cache = []
 	_picker_selected_card_id = ""
 	_clear_picker_selection()
@@ -1368,7 +1390,10 @@ func _build_egg_rows() -> void:
 		var tier := int(egg.get("tier", 1))
 		var sub_tier := int(egg.get("sub_tier", 1))
 		var frozen_tag := "  [FROZEN]" if bool(egg.get("frozen", false)) else ""
-		btn.text = "%s %s Egg  (%s)%s" % [variant, comp_name, PowerRank.label(tier, sub_tier), frozen_tag]
+		var worth := ""
+		if idx < _picker_egg_valors.size():
+			worth = "   →  %s Valor" % _fmt_valor(int(_picker_egg_valors[idx]))
+		btn.text = "%s %s Egg  (%s)%s%s" % [variant, comp_name, PowerRank.label(tier, sub_tier), frozen_tag, worth]
 		btn.add_theme_color_override("font_color", Color.from_string(variant_color, Color.WHITE))
 		var captured_idx := idx
 		btn.pressed.connect(func(): _on_picker_egg_row_pressed(captured_idx))

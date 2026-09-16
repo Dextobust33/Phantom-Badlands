@@ -2546,6 +2546,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_market_list_preview(peer_id, message)
 		"market_list_egg":
 			handle_market_list_egg(peer_id, message)
+		"market_egg_values":
+			handle_market_egg_values(peer_id, message)
 		"market_list_card":
 			handle_market_list_card(peer_id, message)
 		# Audit #9 Slice 2 — buy orders (demand-side mirror of listings)
@@ -11526,7 +11528,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			# until the response actually fires (Register/Kennel) — Cancel
 			# leaves it untouched, no restore needed.
 			if character.active_companion.is_empty():
-				send_to_peer(peer_id, {"type": "error", "message": "You have no active companion to register!"})
+				send_to_peer(peer_id, {"type": "error", "message": "A Home Stone (Companion) acts on the companion you have OUT, and cannot pick one for you. Summon the companion you want to keep, then use the stone."})
 				return
 			if character.active_companion.get("house_slot", -1) >= 0:
 				send_to_peer(peer_id, {"type": "error", "message": "This companion is already registered to your house!"})
@@ -12034,7 +12036,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			"companion":
 				# Send choice to player: Register or Store in Kennel
 				if character.active_companion.is_empty():
-					send_to_peer(peer_id, {"type": "error", "message": "You have no active companion to register!"})
+					send_to_peer(peer_id, {"type": "error", "message": "A Home Stone (Companion) acts on the companion you have OUT, and cannot pick one for you. Summon the companion you want to keep, then use the stone."})
 					return
 				if character.active_companion.get("house_slot", -1) >= 0:
 					send_to_peer(peer_id, {"type": "error", "message": "This companion is already registered to your house!"})
@@ -18190,6 +18192,35 @@ func _get_material_tier(material_name: String) -> int:
 
 	return 1  # Default to tier 1
 
+func _egg_listing_valor(character, egg: Dictionary) -> int:
+	"""What listing this egg pays. THE one definition - `handle_market_list_egg` awards it and
+	`handle_market_egg_values` shows it in the picker beforehand, so the number a player is quoted
+	is the number they get."""
+	var v: int = drop_tables.calculate_egg_valor(egg)
+	# Market bonuses (Halfling +15%, Knight +10%)
+	var bonus: float = character.get_market_bonus() + character.get_knight_market_bonus()
+	if bonus > 0:
+		v = int(v * (1.0 + bonus))
+	return v
+
+
+func handle_market_egg_values(peer_id: int, _message: Dictionary):
+	"""What each incubating egg would fetch, so the picker can say so BEFORE anything is listed.
+
+	Owner 2026-09-15: listing an egg *"doesn't tell the player what they got or will get for it."*
+	Computed on the server through the same helper that pays out, rather than shipped to the client
+	as a second copy of the sum."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var valors: Array = []
+	for raw in character.incubating_eggs:
+		var egg: Dictionary = (raw as Dictionary).duplicate(true)
+		egg["type"] = "egg"
+		valors.append(_egg_listing_valor(character, egg))
+	send_to_peer(peer_id, {"type": "market_egg_values", "valors": valors})
+
+
 func handle_market_list_egg(peer_id: int, message: Dictionary):
 	"""List an incubating egg on the market. Awards base valor immediately."""
 	if not characters.has(peer_id):
@@ -18218,13 +18249,8 @@ func handle_market_list_egg(peer_id: int, message: Dictionary):
 		else:
 			egg["name"] = egg.get("monster_type", "Unknown") + " Egg"
 
-	# Calculate valor
-	var base_valor = drop_tables.calculate_egg_valor(egg)
-
-	# Apply market bonuses (Halfling +15%, Knight +10%)
-	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
-	if bonus > 0:
-		base_valor = int(base_valor * (1.0 + bonus))
+	# One sum, shared with the picker's preview - see _egg_listing_valor.
+	var base_valor = _egg_listing_valor(character, egg)
 
 	# Create listing
 	var listing = {
