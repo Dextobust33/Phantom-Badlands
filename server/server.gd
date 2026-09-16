@@ -14405,12 +14405,28 @@ func _compute_character_delta(old_state: Dictionary, new_state: Dictionary) -> D
 	return delta
 
 func _flush_pending_character_updates():
-	"""Called at end of _process() to send batched character updates."""
+	"""Called at end of _process() to send batched character updates.
+
+	⚑ AND THE PARTY HUD WITH THEM. The party strip under the map draws every member's HP and
+	resource, and `party_update` was only ever sent when the MEMBERSHIP changed - join, leave,
+	promote, disband. So the bars were a snapshot from the moment you grouped up: a teammate
+	could be dying beside you and their bar would still read full. Bars that do not move are
+	worse than no bars, because they are read as current.
+
+	Piggy-backed on this flush rather than given its own timer: this is already the one place
+	that knows whose state changed this frame, coalesced per frame, so a party sees an update
+	exactly when one of its members actually changed and never otherwise."""
 	if pending_char_updates.is_empty():
 		return
+	var touched_parties: Dictionary = {}
 	for peer_id in pending_char_updates:
 		_send_character_update_immediate(peer_id, false)
+		if party_membership.has(peer_id):
+			touched_parties[party_membership[peer_id]] = true
 	pending_char_updates.clear()
+	for leader_id in touched_parties:
+		if active_parties.has(leader_id):
+			_send_party_update(leader_id)
 
 func force_full_character_update(peer_id: int):
 	"""Force a full (non-delta) character update. Use on login, character load, etc."""
@@ -34675,6 +34691,39 @@ func _send_dungeon_state(peer_id: int):
 				"amount": int(it.get("item_data", {}).get("valor", 0))
 			})
 
+	# ⚑ WHO ELSE IS DOWN HERE. Owner 2026-09-16, of a five-person dungeon run: *"The dungeon
+	# map shows one player sprite and its companion, no party members."* Nothing on this wire
+	# had ever described another player: the overworld gets them from `get_nearby_players`,
+	# which walks world x/y, and underground everyone's x/y are their DUNGEON coordinates in
+	# an instance, so that function cannot see them. A party that walks into a dungeon together
+	# and then cannot see each other is not a party.
+	#
+	# Same instance, same floor, and it carries what the floor needs to DRAW them (battler id,
+	# facing, appearance) plus what the strip needs to show (hp/level), so the client needs no
+	# second lookup for a player it has never otherwise heard of.
+	var ally_list = []
+	for other_pid in characters.keys():
+		if other_pid == peer_id:
+			continue
+		var oc = characters[other_pid]
+		if not oc.in_dungeon or oc.current_dungeon_id != instance_id:
+			continue
+		if oc.dungeon_floor != character.dungeon_floor:
+			continue
+		var o_comp: Dictionary = oc.get_active_companion() if oc.has_method("get_active_companion") else {}
+		ally_list.append({
+			"x": oc.dungeon_x, "y": oc.dungeon_y,
+			"name": oc.name, "level": oc.level, "class": oc.class_type,
+			"battler_id": oc.battler_id,
+			"appearance_color": oc.appearance_color,
+			"hp": int(oc.current_hp), "max_hp": int(oc.get_total_max_hp()),
+			"in_combat": bool(oc.in_combat),
+			"in_my_party": (party_membership.has(other_pid) and party_membership.has(peer_id)
+				and party_membership[other_pid] == party_membership[peer_id]),
+			"companion_type": String(o_comp.get("monster_type", "")) if not o_comp.is_empty() else "",
+			"companion_color": String(o_comp.get("variant_color", "")) if not o_comp.is_empty() else "",
+		})
+
 	# Get rescue NPCs on current floor
 	var npc_list = []
 	if dungeon_npcs.has(instance_id):
@@ -34719,6 +34768,7 @@ func _send_dungeon_state(peer_id: int):
 		"color": dungeon_data.color,
 		"monsters": monster_list,
 		"npcs": npc_list,
+		"allies": ally_list,
 		# The Warden walks the starter dungeon with you (owner 2026-09-15: *"The warden sprite
 		# doesn't draw while walking around in the Dungeon, he should be following you like he
 		# does on the overworld."*). The overworld escort reports false in here on purpose, so
@@ -45604,8 +45654,14 @@ func _move_party_followers_dungeon(leader_peer_id: int, old_leader_x: int, old_l
 		# Egg steps
 		follower.process_egg_steps(1)
 
-		# Send dungeon state to follower
-		_send_dungeon_state(pid)
+	# ⚑ EVERYONE IS PLACED BEFORE ANYONE IS TOLD. The state send used to sit inside the loop
+	# above, so follower 1 was sent a floor on which followers 2..n had not moved yet - each
+	# member saw the ones behind them a step in the past. Harmless while nobody was DRAWN,
+	# which was true until `dungeon_state` started carrying `allies`; now it is a party whose
+	# sprites lag by one step for everyone but the leader.
+	for i in range(1, members.size()):
+		if characters.has(members[i]) and characters[members[i]].in_dungeon:
+			_send_dungeon_state(members[i])
 
 # ===== ROAD PATHS & MERCHANT EQUALIZATION =====
 

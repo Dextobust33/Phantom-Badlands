@@ -21,6 +21,11 @@ const _OverworldRoom = preload("res://client/overworld_room.gd")
 ## the next honest step up is 64 - which at 21 rows needs more height than the canvas has, i.e. a
 ## smaller view. That is a gameplay decision (how far you can see), not a display one.
 const OVERWORLD_SPRITE_PX := 32
+## The band at the top and bottom of the companion panel that its HP and XP gauges stand in.
+## Held open by the panel stylebox rather than by blank lines - see update_companion_art_overlay.
+const COMPANION_GAUGE_BAND := 16.0
+## Temporary: prints what the dungeon tile fit measured. Set by --dungeonfit.
+var _dungeon_fit_debug: bool = false
 ## A literal newline, for building multi-line hover text without embedding real line breaks in
 ## the middle of a format string - which is how the stance tooltips were written and is easy to
 ## break with an edit.
@@ -1867,10 +1872,20 @@ var _ow_side_location: Array = []
 ## How many times the LAST log line has repeated, shown as a count rather than as copies.
 var _ow_side_repeat: int = 0
 ## The party strip in the right margin - who is with you, built from the party payload.
-var _margin_party_label: RichTextLabel = null
+# The party strip is a real framed WIDGET with real gauges in it, not a line of BBCode - see
+# `_ensure_party_strip`. Typed Control because only its placement code cares what it is.
+var _margin_party_label: Control = null
+var _party_cells_row: HBoxContainer = null
+# The dungeon's bottom dock: the key, and the party strip above it. Its height is reserved by
+# `_dungeon_pick_tile_px` so the floor is drawn above it rather than under it.
+var _dungeon_key_label: RichTextLabel = null
+var _dungeon_dock_h: float = 0.0
 ## How much height the party strip is taking under the map right now (0 when solo). The map
 ## fits itself above it, the way it already does for the travel row.
 var _ow_party_h: float = 0.0
+# How much of the canvas the travel row and the party strip claim at the bottom. The MAP fits
+# itself above this; `game_output` itself is never shrunk (see `_place_stance_bar`).
+var _ow_canvas_reserve: float = 0.0
 ## True while a station PAGE owns the pinned section of the column (see `_page_clear`).
 var _ow_page_active: bool = false
 ## True while a WIDE text page (Help, the character sheet) owns the canvas and the map waits.
@@ -1929,6 +1944,7 @@ var dungeon_floor_grid: Array = []  # 2D array of tile types
 var awaiting_final_chest: bool = false
 var dungeon_monsters_data: Array = []  # Monster entities on current floor
 var dungeon_floor_items_data: Array = []  # Floor loot pickups on current floor (Azure Dreams style)
+var dungeon_allies_data: Array = []  # Other players on this dungeon floor (see _send_dungeon_state)
 var dungeon_available: Array = []  # List of available dungeons to enter
 var dungeon_list_mode: bool = false  # Viewing dungeon list
 var dungeon_triggered_traps: Array = []  # Triggered trap positions for map display
@@ -6258,6 +6274,8 @@ func _dev_auto_args() -> Dictionary:
 const SHOT_SETTLE_S: float = 1.4   # let art, sprites and tweens finish before the grab
 
 func _dev_shots_requested() -> Array:
+	if _dev_auto.has("shots"):
+		_dungeon_fit_debug = true
 	if not _dev_auto.has("shots"):
 		return []
 	return String(_dev_auto["shots"]).split(",", false)
@@ -6278,7 +6296,10 @@ func _dev_run_shots() -> void:
 				# and a screenshot of a black panel sells nothing.
 				send_to_server({"type": "move", "direction": "east"})
 				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("world")
+				if _dungeon_fit_debug:
+					_dev_print_rects()
 			"scouting":
 				# ⚑ SCOUTING, LOOKED AT. Owner 2026-09-13: *"Scouting is busted"* - the map drew
 				# as horizontal bands separated by black, because +2 vision made the row of
@@ -6298,8 +6319,8 @@ func _dev_run_shots() -> void:
 				# his wight companion."* This waits for the party to fill before capturing, because
 				# the leader is launched FIRST and a capture taken straight away shows "Party none" -
 				# which is what the first attempt at this photographed.
-				for _w in range(90):
-					if in_party and party_members.size() >= 4:
+				for _w in range(120):
+					if in_party and party_members.size() >= 5:
 						break
 					await get_tree().create_timer(1.0).timeout
 				await _dev_shot_ensure_companion()
@@ -6315,13 +6336,26 @@ func _dev_run_shots() -> void:
 				# myself."* The leader takes the party underground, walks a few cells so the floor is
 				# partly explored, and captures - the same waits and godmode as the party fight scene,
 				# for the same reasons (the leader launches first; an ambush must not kill the subject).
-				for _w in range(90):
-					if in_party and party_members.size() >= 3:
+				# ⚑ FIVE, NOT THREE. Owner 2026-09-16, of the party-combat frame: *"A 3 person party
+				# isn't a maximum party, parties go up to 5."* `PARTY_MAX_SIZE` is 5 and `party5`
+				# launches five clients; the wait said three, so the scene stopped waiting as soon as
+				# the third connected and photographed a partial party as if it were the widest case.
+				for _w in range(120):
+					if in_party and party_members.size() >= 5:
 						break
 					await get_tree().create_timer(1.0).timeout
 				print("[PARTYDUNGEON] party=%s members=%d" % [str(in_party), party_members.size()])
 				send_to_server({"type": "gm_godmode"})
 				await _dev_shot_ensure_companion()
+				# ⚑ THE OVERWORLD FRAME FIRST, from the same run. The party strip under the map and the
+				# strip under the dungeon floor are the same builder, and judging one without the other
+				# is how they drifted apart in the first place. It also halves the waiting: forming a
+				# five-person party takes ~30s of client launches, and doing it twice to photograph two
+				# screens is the "you always take a good bit of extra time" the owner named.
+				send_to_server({"type": "move", "direction": "east"})
+				await get_tree().create_timer(1.5).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("party_overworld")
 				send_to_server({"type": "gm_enter_dungeon", "tier": 3})
 				await get_tree().create_timer(4.0).timeout
 				# An entrance ambush is the norm down here, and it is a PARTY fight - worth a frame of
@@ -6360,8 +6394,12 @@ func _dev_run_shots() -> void:
 				# and the others follow six seconds apart. The first two attempts hunted immediately and
 				# fought alone thirty seconds before anyone else had connected, then filed the result as
 				# "party combat". Measured, not assumed: the probe printed party=false members=0.
-				for _w in range(90):
-					if in_party and party_members.size() >= 3:
+				# ⚑ FIVE, NOT THREE. Owner 2026-09-16, of the party-combat frame: *"A 3 person party
+				# isn't a maximum party, parties go up to 5."* `PARTY_MAX_SIZE` is 5 and `party5`
+				# launches five clients; the wait said three, so the scene stopped waiting as soon as
+				# the third connected and photographed a partial party as if it were the widest case.
+				for _w in range(120):
+					if in_party and party_members.size() >= 5:
 						break
 					await get_tree().create_timer(1.0).timeout
 				print("[PARTYFIGHT] before hunting: party=%s members=%d" % [str(in_party), party_members.size()])
@@ -12686,10 +12724,41 @@ func _free_to_roam() -> bool:
 	return game_state == GameState.PLAYING and has_character and not in_combat and not flock_pending and not pending_continue and not at_merchant and not settings_mode and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not gathering_mode and not crafting_mode and not build_mode and not storage_mode and not quest_view_mode and not at_guard_post and not market_mode and not inventory_mode and not ability_mode and not admin_mode and not more_mode
 
 
+func _place_shortcut_row() -> void:
+	"""⚑ THE SHORTCUTS HAVE ONE HOME: ABOVE THE ACTION BAR.
+
+	Owner 2026-09-16, of a dungeon frame: *"The Shortcut keys are in the top right instead of
+	above the action bar like they should be."* They used to ride the travel row, which is
+	overworld-only, so underground they fell back to the top of the side column - and a control
+	that sits somewhere different depending on where you are standing is one the hand never
+	learns. Above the action bar they are in the same place on every screen, beside the other
+	thing the mouse goes for, and neither the map nor the dungeon floor gives up room for them.
+
+	This is called from `_update_shortcut_buttons_visibility`, not from the map code, because
+	that runs on every state change - overworld, dungeon, combat and menus alike. Parenting them
+	in `_place_stance_bar` was the whole bug: that function is about where the MAP is."""
+	if shortcut_buttons_container == null or not is_instance_valid(shortcut_buttons_container):
+		return
+	var bar_owner: Node = _bottom_node("CenterPanel")
+	if bar_owner == null:
+		return
+	if shortcut_buttons_container.get_parent() != bar_owner:
+		if shortcut_buttons_container.get_parent() != null:
+			shortcut_buttons_container.get_parent().remove_child(shortcut_buttons_container)
+		bar_owner.add_child(shortcut_buttons_container)
+	# First child: the row directly above the action bar.
+	if shortcut_buttons_container.get_index() != 0:
+		bar_owner.move_child(shortcut_buttons_container, 0)
+	shortcut_buttons_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	shortcut_buttons_container.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	shortcut_buttons_container.alignment = FlowContainer.ALIGNMENT_CENTER
+
+
 func _update_shortcut_buttons_visibility():
 	"""Show/hide shortcut buttons based on game state."""
 	if not shortcut_buttons_container:
 		return
+	_place_shortcut_row()
 	var should_show = _free_to_roam()
 	# Hide the BUTTONS, not the container — the container still needs to
 	# occupy its 1/3 slice of StatusRow so the mini HP/Mana bars stay aligned
@@ -33779,6 +33848,13 @@ func update_companion_art_overlay():
 	var new_style: StyleBoxFlat = _margin_box_style()
 	new_style.bg_color = bg_color
 	new_style.border_color = Color(variant_color)
+	# Room for the two gauges, held open by the PANEL rather than by blank lines in the text.
+	# The first attempt pinned them over a leading and a trailing "\n" and both landed on real
+	# text - the HP line and the bonuses line - because `fit_content` does not grow the label
+	# for an empty trailing paragraph, so the bottom gauge simply sat on the last line. A
+	# content margin is space the text can never be laid out in, which is the actual guarantee.
+	new_style.content_margin_top = COMPANION_GAUGE_BAND
+	new_style.content_margin_bottom = COMPANION_GAUGE_BAND
 	companion_art_overlay.add_theme_stylebox_override("normal", new_style)
 
 	# Get art using helper function
@@ -33821,6 +33897,15 @@ func update_companion_art_overlay():
 	else:
 		hp_color = "#FF6666"
 		hp_text = "HP %d / %d" % [comp_combat_hp, comp_max_hp]
+	# ⚑ AND A GAUGE, not just the numbers. Owner 2026-09-16: *"Companion should have an hp
+	# bar as well."* Every party member under the map has one; the animal fighting beside you
+	# had a line of text, so its health was the one thing on that screen you had to read rather
+	# than glance at. The gauge is a Control pinned over the blank first line below (see
+	# `_overlay_gauge`), because this panel is a RichTextLabel and a text bar is what the owner
+	# has now rejected three times.
+	_overlay_gauge(companion_art_overlay, "CompHpGauge", 96, 9,
+		_hp_bar_color(comp_combat_hp, comp_max_hp),
+		float(comp_combat_hp) / float(comp_max_hp) if comp_max_hp > 0 else 0.0, 5.0)
 	var hp_header: String = "[center][font_size=10][color=%s]%s[/color][/font_size][/center]\n" % [hp_color, hp_text]
 	var overlay_text = hp_header + "[center][font_size=14][color=%s]%s[/color] [color=#FFFF00]Lv%d[/color][/font_size]\n[font_size=11][color=%s]%s[/color][/font_size][/center]\n" % [variant_color, companion_name, level, variant_color, variant_name]
 
@@ -33847,11 +33932,7 @@ func update_companion_art_overlay():
 	var comp_xp: int = int(active_companion.get("xp", 0))
 	var xp_next: int = int(pow(comp_level + 1, 2.0) * 15)
 	if xp_next > 0:
-		var filled: int = clampi(int(round(float(comp_xp) / float(xp_next) * 10.0)), 0, 10)
-		var xp_bar := ""
-		for _i in range(10):
-			xp_bar += "[color=#00FF88]|[/color]" if _i < filled else "[color=#404040]|[/color]"
-		overlay_text += "[center][font_size=10]%s [color=#808080]%d/%d[/color][/font_size][/center]" % [xp_bar, comp_xp, xp_next]
+		overlay_text += "[center][font_size=9][color=#808080]XP %d/%d[/color][/font_size][/center]\n" % [comp_xp, xp_next]
 	var bonus_bits: Array[String] = []
 	var comp_bonuses: Dictionary = active_companion.get("bonuses", {})
 	for k in comp_bonuses.keys():
@@ -33862,6 +33943,10 @@ func update_companion_art_overlay():
 		overlay_text += "\n[center][font_size=10][color=#9ACD32]%s[/color][/font_size][/center]" % ", ".join(bonus_bits)
 	companion_art_overlay.clear()
 	companion_art_overlay.append_text(overlay_text)
+	# The XP gauge stands in the bottom band the stylebox holds open.
+	if xp_next > 0:
+		_overlay_gauge(companion_art_overlay, "CompXpGauge", 96, 7, "#00FF88",
+			float(comp_xp) / float(xp_next), -1.0, 4.0)
 	companion_art_overlay.visible = true
 
 func hide_companion_art_overlay():
@@ -34163,34 +34248,33 @@ func _place_stance_bar(on_canvas: bool, map_showing: bool = true) -> void:
 		target.add_child(_stance_bar)
 		if target == column and map_display != null:
 			column.move_child(_stance_bar, mini(map_display.get_index() + 1, column.get_child_count() - 1))
-	# ⚑ THE SHORTCUT BUTTONS RIDE IN THIS ROW.
-	#
-	# Owner 2026-09-15: *"It looks like we may have room for the shortcut buttons to the right
-	# of the travel stances instead of up at the top right of the column."* There is: the
-	# stances use ~230px of a ~1350px row. Putting them here gives the right column back to
-	# the log, and the two things a player reaches for while walking sit on one line.
-	if shortcut_buttons_container != null and is_instance_valid(shortcut_buttons_container):
-		var want_parent: Node = _stance_bar if target == canvas else column
-		if shortcut_buttons_container.get_parent() != want_parent and want_parent != null:
-			if shortcut_buttons_container.get_parent() != null:
-				shortcut_buttons_container.get_parent().remove_child(shortcut_buttons_container)
-			want_parent.add_child(shortcut_buttons_container)
-			if want_parent == column:
-				column.move_child(shortcut_buttons_container, 0)
-		shortcut_buttons_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	if target == canvas:
 		_stance_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 		_stance_bar.offset_left = 8.0
 		_stance_bar.offset_right = -8.0
 		_stance_bar_h = maxf(STANCE_BAR_H, _stance_bar.get_combined_minimum_size().y + 4.0)
-		_stance_bar.offset_top = -_stance_bar_h
-		_stance_bar.offset_bottom = 0.0
+		# Four pixels up off the frame, so the row sits INSIDE the border rather than on it.
+		_stance_bar.offset_top = -(_stance_bar_h + 4.0)
+		_stance_bar.offset_bottom = -4.0
 	# On the canvas it belongs to the map: a page that takes the canvas hides it rather than
 	# bouncing it into the side column for as long as the page is open.
 	_stance_bar.visible = not dungeon_mode and (map_showing or target != canvas)
+	# ⚑ THE FRAME CONTAINS EVERYTHING; THE MAP GIVES UP THE ROOM.
+	#
+	# Owner 2026-09-16: *"on the overworld it looks like the border that contains the map and
+	# all the overlays isn't the correct size, they are spilling over the bottom of it."*
+	# Measured: the canvas is 792 tall, `game_output` was shrunk to 722 to make room for the
+	# travel row and the party strip - and `game_output`'s stylebox IS that border, while the
+	# chat box (756), the companion panel (762) and the travel row itself (764-792) are
+	# siblings anchored to the CANVAS. So three of them legitimately hung below their own
+	# frame. Shrinking the bordered box to make room inside it can only ever look like that.
+	#
+	# So the box keeps the whole canvas and the reservation moves to the one thing that
+	# actually needed it: the MAP's tile-height fit, which reads this number (see the height
+	# fit in the map builder). Nothing is drawn under the strip, and nothing hangs out.
+	_ow_canvas_reserve = (_stance_bar_h + 4.0 + _ow_party_h) if (target == canvas and _stance_bar.visible) else 0.0
 	if game_output != null:
-		# Both rows of furniture: the travel row and, in a party, the party strip above it.
-		game_output.offset_bottom = -(_stance_bar_h + _ow_party_h) if (target == canvas and _stance_bar.visible) else -_ow_party_h
+		game_output.offset_bottom = 0.0
 
 
 func _refresh_stance_bar() -> void:
@@ -34285,67 +34369,197 @@ func _ensure_side_column_layout() -> void:
 	_place_map_widgets(_ow_canvas_eligible())
 
 
-func _party_bar(cur: int, mx: int, filled_col: String, width: int = 8) -> String:
-	"""A tiny bar for the party strip: filled blocks in colour, the rest dim."""
-	if mx <= 0:
-		return ""
-	var f: int = clampi(int(round(float(cur) / float(mx) * float(width))), 0, width)
-	var out := ""
-	for i in range(width):
-		out += "[color=%s]|[/color]" % (filled_col if i < f else "#3A3A3A")
-	return out
+func _gauge(w: int, h: int, col: String, frac: float) -> ProgressBar:
+	"""ONE real gauge: an inset dark track with a bright bevelled fill.
+
+	Fourth attempt at these bars, and the first that is not text. The three text versions and why
+	each failed:
+
+	  1. `|` glyphs, light for filled and dark for empty. The gaps read as a dashed line, and full
+	     versus half-empty looked much the same at a glance.
+	  2. `[bgcolor]` over non-breaking spaces. A bgcolor run is as tall as the whole LINE, so it
+	     drew a fat slab; on the dungeon canvas, whose font is the TILE font, it was enormous.
+	  3. Block glyphs. Owner: *"I'd like some type of bar but I haven't liked the style you've used
+	     for any of those so far. I'd shoot for closer to Lufia 2 or dothack."*
+
+	The shared cause is that all three were CHARACTERS. A Lufia/.hack gauge is a thin slab with a
+	dark outline, a recessed track and a rounded bright fill - none of which a glyph can be,
+	whatever glyph you pick. So this is a `ProgressBar` with two `StyleBoxFlat`es: the track is
+	near-black with a rounded 1px edge, the fill is the colour with a darker border under and
+	beside it for the bevel. Pixel dimensions, not font-relative, so it is the same gauge under the
+	overworld map and under the dungeon floor.
+
+	A fill with ANYTHING left keeps a couple of pixels: a gauge that empties completely at 3% reads
+	as dead."""
+	var bar := ProgressBar.new()
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(w, h)
+	bar.min_value = 0.0
+	bar.max_value = 1000.0
+	bar.value = clampf(frac, 0.0, 1.0) * 1000.0
+	if frac > 0.0 and bar.value < 25.0:
+		bar.value = 25.0
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(0.04, 0.04, 0.06, 1.0)
+	track.border_color = Color(0.0, 0.0, 0.0, 1.0)
+	track.set_border_width_all(1)
+	track.set_corner_radius_all(2)
+	bar.add_theme_stylebox_override("background", track)
+	var c := Color(col)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = c
+	fill.border_color = c.darkened(0.55)
+	fill.border_width_bottom = 1
+	fill.border_width_right = 1
+	fill.set_corner_radius_all(2)
+	bar.add_theme_stylebox_override("fill", fill)
+	return bar
+
+
+func _strip_label(text: String, font_size: int = 11) -> RichTextLabel:
+	"""A one-line BBCode label sized to its text - the strip is built of these."""
+	var lbl := RichTextLabel.new()
+	lbl.bbcode_enabled = true
+	lbl.fit_content = true
+	lbl.scroll_active = false
+	lbl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.add_theme_font_size_override("normal_font_size", font_size)
+	lbl.append_text(text)
+	return lbl
+
+
+func _overlay_gauge(host: Control, key: String, w: int, h: int, col: String, frac: float,
+		from_top: float = -1.0, from_bottom: float = -1.0) -> void:
+	"""Pin one gauge inside a RichTextLabel overlay, replacing the one it had before.
+
+	The companion panel is a RichTextLabel, so its bars cannot be `[bgcolor]` runs or block glyphs
+	any more than the party strip's could - owner 2026-09-16 rejected all three text styles. A
+	Control child of the label, anchored and centred, IS the same gauge the strip uses, and the
+	text reserves a blank line for it so nothing is drawn over.
+
+	Rebuilt rather than updated because the colour, the width and whether the bar exists at all
+	can each change between frames, and a stale gauge left behind is exactly the kind of second
+	copy that goes on showing an old number."""
+	if host == null or not is_instance_valid(host):
+		return
+	var old: Node = host.get_node_or_null(NodePath(key))
+	if old != null:
+		host.remove_child(old)
+		old.queue_free()
+	var bar := _gauge(w, h, col, frac)
+	bar.name = key
+	bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	bar.offset_left = (host.size.x - float(w)) * 0.5
+	bar.offset_right = bar.offset_left + float(w)
+	if from_bottom >= 0.0:
+		bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		bar.offset_left = (host.size.x - float(w)) * 0.5
+		bar.offset_right = bar.offset_left + float(w)
+		bar.offset_bottom = -from_bottom
+		bar.offset_top = bar.offset_bottom - float(h)
+	else:
+		bar.offset_top = maxf(from_top, 0.0)
+		bar.offset_bottom = bar.offset_top + float(h)
+	host.add_child(bar)
+
+
+func _ensure_party_strip(host: Node) -> void:
+	"""Build (or re-home) the framed party strip.
+
+	A PanelContainer wearing the same frame as the other margin boxes, holding one cell per member
+	laid out ACROSS: a name line, and under it the HP and resource gauges. Across rather than
+	stacked because five members stacked needed 110px of a 300px margin that had 34px left - and
+	one row is also what lets it sit at the bottom of the dungeon canvas without costing the floor
+	a whole tile size."""
+	if _margin_party_label == null or not is_instance_valid(_margin_party_label):
+		var pc := PanelContainer.new()
+		pc.name = "MarginParty"
+		pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pc.add_theme_stylebox_override("panel", _margin_box_style())
+		_party_cells_row = HBoxContainer.new()
+		_party_cells_row.name = "Cells"
+		_party_cells_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		_party_cells_row.set("theme_override_constants/separation", 14)
+		pc.add_child(_party_cells_row)
+		_margin_party_label = pc
+	if _margin_party_label.get_parent() != host:
+		if _margin_party_label.get_parent() != null:
+			_margin_party_label.get_parent().remove_child(_margin_party_label)
+		host.add_child(_margin_party_label)
+
+
+func _party_cell(m: Dictionary, me: String) -> Control:
+	"""One member: their name and level over their two gauges."""
+	var col := VBoxContainer.new()
+	col.set("theme_override_constants/separation", 1)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var nm := String(m.get("name", "?"))
+	var mark: String = "[color=#FFD700]*[/color]" if bool(m.get("is_leader", false)) else ""
+	var who: String = "[color=#9ACD32]%s[/color]" % nm if nm == me else nm
+	var fight: String = " [color=#FF6666]⚔[/color]" if bool(m.get("in_combat", false)) else ""
+	col.add_child(_strip_label("%s%s [color=#808080]L%d[/color]%s" % [
+		mark, who, int(m.get("level", 1)), fight]))
+	var bars := HBoxContainer.new()
+	bars.set("theme_override_constants/separation", 3)
+	bars.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var hp: int = int(m.get("hp", 0))
+	var hp_max: int = int(m.get("max_hp", 0))
+	bars.add_child(_gauge(72, 9, _hp_bar_color(hp, hp_max),
+		float(hp) / float(hp_max) if hp_max > 0 else 0.0))
+	var r_max: int = int(m.get("resource_max", 0))
+	if r_max > 0:
+		bars.add_child(_gauge(48, 7, _resource_bar_color(String(m.get("resource", ""))),
+			float(int(m.get("resource_cur", 0))) / float(r_max)))
+	col.add_child(bars)
+	return col
 
 
 func _refresh_margin_party() -> void:
-	"""Who is with you, ACROSS the bottom of the map - with HP and resource, not just a name.
+	"""Who is with you - with HP and resource gauges, not just a name.
 
-	Owner 2026-09-16: *"where are the HP and resource bars you had originally proposed for
-	party members, just having a name isn't very useful."* Fair: a strip that cannot tell you
-	a teammate is nearly dead is a list of people. The server now ships hp/max_hp and
-	whichever resource that class actually spends with every party update, read through the
-	character's own helpers so it cannot drift from the bar that player sees.
+	Owner 2026-09-16: *"where are the HP and resource bars you had originally proposed for party
+	members, just having a name isn't very useful."* Fair: a strip that cannot tell you a teammate
+	is nearly dead is a list of people. The server ships hp/max_hp and whichever resource that
+	class actually spends with every party update, read through the character's own helpers so it
+	cannot drift from the bar that player sees - and `party_update` now goes out whenever a member
+	CHANGES, not only when the membership does, or the gauges would be a snapshot from the moment
+	you grouped up.
 
-	Laid out across rather than stacked: five members fit on one line under the map, where a
-	column of five did not fit beside it."""
-	if _margin_party_label == null or not is_instance_valid(_margin_party_label):
+	It says "none" when you are alone rather than vanishing: owner *"When there is no party this
+	bar should still say Party: none."*"""
+	if _party_cells_row == null or not is_instance_valid(_party_cells_row):
 		return
-	var head: String = "[color=#808080][font_size=11]Party[/font_size][/color]  "
+	for ch in _party_cells_row.get_children():
+		_party_cells_row.remove_child(ch)
+		ch.queue_free()
 	if not in_party or party_members.is_empty():
-		# HIDDEN when you are alone, not shown as "none". It said none while it was a box in
-		# the margin, where an empty frame reads as an answer; under the map it is furniture,
-		# and furniture for a party you do not have is a framed sliver across the screen -
-		# owner 2026-09-16: *"check what it looks like with no party as well because it looked
-		# off."* The Effects box keeps its "none" because that one is still a margin box.
-		_margin_party_label.clear()
-		_margin_party_label.visible = false
+		_party_cells_row.add_child(_strip_label("[color=#808080]Party[/color]  [color=#6A6A72]none[/color]"))
 		return
+	var head := _strip_label("[color=#808080]Party[/color]")
+	head.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_party_cells_row.add_child(head)
 	var me: String = String(character_data.get("name", ""))
-	var cells: Array[String] = []
 	for m in party_members:
-		if not (m is Dictionary):
-			continue
-		var nm: String = String(m.get("name", "?"))
-		var mark: String = "[color=#FFD700]*[/color]" if bool(m.get("is_leader", false)) else " "
-		var who: String = "[color=#9ACD32]%s[/color]" % nm if nm == me else nm
-		var hp: int = int(m.get("hp", 0))
-		var hp_max: int = int(m.get("max_hp", 0))
-		# Colour by how much is left, because the point of the bar is spotting trouble.
-		var hp_col: String = "#44DD55"
-		if hp_max > 0:
-			var frac: float = float(hp) / float(hp_max)
-			if frac <= 0.25:
-				hp_col = "#FF4444"
-			elif frac <= 0.6:
-				hp_col = "#FFAA33"
-		var res_col: String = _resource_bar_color(String(m.get("resource", "")))
-		var bars: String = _party_bar(hp, hp_max, hp_col)
-		if int(m.get("resource_max", 0)) > 0:
-			bars += " " + _party_bar(int(m.get("resource_cur", 0)), int(m.get("resource_max", 0)), res_col)
-		var fight: String = " [color=#FF6666]⚔[/color]" if bool(m.get("in_combat", false)) else ""
-		cells.append("%s%s [color=#808080]L%d[/color]%s  %s" % [mark, who, int(m.get("level", 1)), fight, bars])
-	_margin_party_label.clear()
-	_margin_party_label.append_text(head + "   ".join(cells))
-	_margin_party_label.visible = _margin_widgets_shown()
+		if m is Dictionary:
+			_party_cells_row.add_child(_party_cell(m, me))
+
+
+func _hp_bar_color(cur: int, mx: int) -> String:
+	"""Green, amber, red - by how much is LEFT, because spotting trouble is the point.
+
+	Shared with the companion panel, whose bar was taking the colour of its HP TEXT - and that
+	text is red at full health on purpose (it is styling the words "HP 119 / 119", not
+	reporting danger), so a healthy companion was drawn with a full red bar."""
+	if mx <= 0:
+		return "#44DD55"
+	var frac: float = float(cur) / float(mx)
+	if frac <= 0.25:
+		return "#FF4444"
+	if frac <= 0.6:
+		return "#FFAA33"
+	return "#44DD55"
 
 
 func _resource_bar_color(res: String) -> String:
@@ -34482,8 +34696,93 @@ func _map_widgets_visible(v: bool) -> void:
 	- otherwise the Coords box sits on top of the inventory."""
 	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay, _margin_chat_box,
 		buff_display_label, _margin_party_label, _ow_map_frame]:
-		if n != null and is_instance_valid(n):
-			(n as Control).visible = v
+		if n == null or not is_instance_valid(n):
+			continue
+		# The party strip is the one widget the DUNGEON also uses - it moves to the bottom dock
+		# down there (`_place_dungeon_dock`). Hiding it as part of this overworld set is what
+		# would make it flicker: the dock shows it, the next map refresh hides it again.
+		if n == _margin_party_label and dungeon_mode:
+			continue
+		(n as Control).visible = v
+
+
+func _place_dungeon_dock() -> void:
+	"""⚑ THE PARTY STRIP AND THE KEY LIVE AT THE BOTTOM OF THE DUNGEON CANVAS.
+
+	Owner 2026-09-16, of the party-dungeon frame: *"when in the Dungeon the party strip should be
+	under the map window, not in it making the map display smaller"*, and asked for it *"At the
+	bottom of the canvas like it is for the overworld"*, with the key *"near the bottom of the
+	canvas as well (either above or under the party strip)"*.
+
+	They were printed as TEXT lines after the grid, which is why they were "in it": the dungeon
+	canvas is one RichTextLabel and the floor is text in it, so anything printed after the floor
+	is part of the same block. As anchored Controls they are furniture the floor is drawn above.
+
+	And the other half of that report - *"the tiles and player sprites were way smaller than they
+	used to be"* - was measured, not guessed: `_dungeon_pick_tile_px` picks the largest tile whose
+	whole 11x11 viewport fits `game_output`, and `game_output` was being SHRUNK by the party
+	strip's reserved band. 11 x 64 = 704 needs 760px of canvas; the shrink left 750, so every tile
+	dropped to 32 - exactly half. The canvas is full height again and this dock's measured height
+	is what the tile fit subtracts, so the floor knows what the dock costs instead of finding out.
+
+	The key goes at the very bottom (reference material, furthest from the eye) with the party
+	strip directly above it, nearer the floor, because a teammate at 10% HP is the thing you need
+	to catch without looking for it."""
+	var canvas: Control = (game_output.get_parent() as Control) if game_output != null else null
+	if canvas == null:
+		_dungeon_dock_h = 0.0
+		return
+	if not dungeon_mode or not _dungeon_dock_wanted():
+		if _margin_party_label != null and is_instance_valid(_margin_party_label) and dungeon_mode:
+			_margin_party_label.visible = false
+		if _dungeon_key_label != null and is_instance_valid(_dungeon_key_label):
+			_dungeon_key_label.visible = false
+		_dungeon_dock_h = 0.0
+		return
+	# The key, in its own label so it can be anchored - and hoverable, because the theme tiles it
+	# lists carry `[url=tile:N]` and that only works on a label with the hover signals connected.
+	if _dungeon_key_label == null or not is_instance_valid(_dungeon_key_label):
+		_dungeon_key_label = RichTextLabel.new()
+		_dungeon_key_label.name = "DungeonKey"
+		_dungeon_key_label.bbcode_enabled = true
+		_dungeon_key_label.fit_content = true
+		_dungeon_key_label.scroll_active = false
+		_dungeon_key_label.meta_underlined = false
+		_dungeon_key_label.add_theme_font_size_override("normal_font_size", 13)
+		_dungeon_key_label.meta_hover_started.connect(_on_log_meta_hover)
+		_dungeon_key_label.meta_hover_ended.connect(_on_log_meta_unhover)
+		canvas.add_child(_dungeon_key_label)
+	elif _dungeon_key_label.get_parent() != canvas:
+		if _dungeon_key_label.get_parent() != null:
+			_dungeon_key_label.get_parent().remove_child(_dungeon_key_label)
+		canvas.add_child(_dungeon_key_label)
+	_dungeon_key_label.clear()
+	_dungeon_key_label.append_text("[center]%s[/center]" % _dungeon_key_text(13, false))
+	_dungeon_key_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_dungeon_key_label.offset_left = 12.0
+	_dungeon_key_label.offset_right = -12.0
+	var key_h: float = maxf(20.0, _dungeon_key_label.get_content_height() + 4.0)
+	_dungeon_key_label.offset_bottom = -6.0
+	_dungeon_key_label.offset_top = -(6.0 + key_h)
+	_dungeon_key_label.visible = true
+	# ...and the party strip immediately above it.
+	_ensure_party_strip(canvas)
+	_refresh_margin_party()
+	_margin_party_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_margin_party_label.offset_left = 12.0
+	_margin_party_label.offset_right = -12.0
+	var strip_h: float = maxf(28.0, _margin_party_label.get_combined_minimum_size().y)
+	_margin_party_label.offset_bottom = -(6.0 + key_h + 4.0)
+	_margin_party_label.offset_top = _margin_party_label.offset_bottom - strip_h
+	_margin_party_label.visible = true
+	_dungeon_dock_h = 6.0 + key_h + 4.0 + strip_h + 6.0
+
+
+func _dungeon_dock_wanted() -> bool:
+	"""The dock belongs to the FLOOR, so it stands down whenever something else owns the canvas -
+	a menu panel, a fight, a page printed over the floor. Same test the overworld margin uses,
+	minus its `dungeon_mode` veto (which exists to keep the overworld boxes out of here)."""
+	return not in_combat and not _combat_ui_busy() and not _canvas_panel_open()
 
 
 func _place_map_widgets(on_canvas: bool) -> void:
@@ -34719,20 +35018,7 @@ func _place_map_widgets(on_canvas: bool) -> void:
 				# it off the bottom of the margin.
 				buff_display_label.offset_bottom = stack_top + clampf(buff_display_label.get_content_height() + 14.0, 34.0, 120.0)
 				stack_top = buff_display_label.offset_bottom + 8.0
-		if _margin_party_label == null or not is_instance_valid(_margin_party_label):
-			_margin_party_label = RichTextLabel.new()
-			_margin_party_label.name = "MarginParty"
-			_margin_party_label.bbcode_enabled = true
-			_margin_party_label.fit_content = true
-			_margin_party_label.scroll_active = false
-			_margin_party_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			_margin_party_label.add_theme_font_size_override("normal_font_size", 13)
-			_margin_party_label.add_theme_stylebox_override("normal", _margin_box_style())
-			canvas.add_child(_margin_party_label)
-		elif _margin_party_label.get_parent() != canvas:
-			if _margin_party_label.get_parent() != null:
-				_margin_party_label.get_parent().remove_child(_margin_party_label)
-			canvas.add_child(_margin_party_label)
+		_ensure_party_strip(canvas)
 		_refresh_margin_party()
 		# ⚑ THE PARTY STRIP GOES UNDER THE MAP, not beside it. Owner 2026-09-16: *"Party could
 		# maybe go under the main map where the key used to be."* Measured, five members stacked
@@ -34747,17 +35033,33 @@ func _place_map_widgets(on_canvas: bool) -> void:
 		# version gave the box one line's height, so the second line was clipped and the whole
 		# thing sat over the map's bottom row. Height comes from the content now, and the map
 		# gives up the rows rather than being drawn under it.
-		_margin_party_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		# ⚑ GLUED TO THE BOTTOM OF THE MAP FRAME, not floated off the bottom of the canvas.
+		#
+		# Owner 2026-09-16, of the overworld with a party: *"there is wasted space above the
+		# party strip and under the map"*, and solo: *"Currently it sits too low and looks bad."*
+		# Both are one bug. The strip was anchored to the CANVAS bottom, just above the travel
+		# row, while the map above it is fitted to a whole number of tile rows - so whatever the
+		# tile fit rounded away (up to a row, ~25px, plus the leading line) opened as a gap
+		# between the map and the strip. Two things measured from opposite ends of the same
+		# space will always leave the slack in the middle, which is exactly where it shows.
+		#
+		# So it hangs off the frame instead: top = frame bottom + 6, and the leftover falls
+		# below it next to the travel row where it reads as spacing. Clamped so it can never
+		# reach down into that row on a window where the map overruns.
+		_margin_party_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
 		_margin_party_label.offset_left = margin_w + 18.0
 		_margin_party_label.offset_right = -(margin_w + 18.0)
-		_margin_party_label.fit_content = false
-		_margin_party_label.scroll_active = false
-		var party_h: float = 0.0
-		if in_party and not party_members.is_empty():
-			party_h = clampf(_margin_party_label.get_content_height() + 12.0, 34.0, 86.0)
-		_ow_party_h = party_h
-		_margin_party_label.offset_bottom = -(_stance_bar_h + 4.0)
-		_margin_party_label.offset_top = -(_stance_bar_h + 4.0 + party_h)
+		# The strip is a container now, so it can be ASKED how tall it needs to be rather than
+		# having a height guessed for it - one line when you are alone, two when the gauges are
+		# there, and correct on its own if a cell ever grows a third row.
+		var party_h: float = maxf(28.0, _margin_party_label.get_combined_minimum_size().y)
+		# The band the map gives up: the strip plus the 6px above it and a little under.
+		_ow_party_h = party_h + 12.0
+		var strip_top: float = canvas.size.y - _stance_bar_h - 10.0 - party_h
+		if _ow_map_frame != null and is_instance_valid(_ow_map_frame) and _ow_map_frame.visible:
+			strip_top = minf(_ow_map_frame.offset_bottom + 6.0, strip_top)
+		_margin_party_label.offset_top = maxf(strip_top, 0.0)
+		_margin_party_label.offset_bottom = _margin_party_label.offset_top + party_h
 	# ⚑ THE COMPANION IS PLACED LAST, because it is the only box measured against the others.
 	# Placed before the Party strip, it read LAST FRAME's party height - so a party that had
 	# just grown still covered it for a frame, and with a steady party it covered it forever.
@@ -34771,7 +35073,16 @@ func _place_map_widgets(on_canvas: bool) -> void:
 		# stacked above it - and a party of five grows the Party box down into it. Its top is
 		# measured from the lowest box above it, so the art shrinks to the space left rather
 		# than being sat on. Nothing here is a guessed constant.
-		if companion_art_overlay != null and is_instance_valid(companion_art_overlay):
+		# ⚑ NO COMPANION, NO BOX. Owner 2026-09-16, of a five-person party frame: *"test005's
+		# box for a companion shouldn't even display if there is no companion."*
+		# `update_companion_art_overlay` already hides it when there is nothing to draw - and
+		# then this function turned it back on, because the room check below ends in
+		# `visible = true` and knew only whether the margin had SPACE, never whether there was
+		# anything to put in it. Two functions owning one `visible`, and the later one winning.
+		var _has_companion: bool = not (character_data.get("active_companion", {}) as Dictionary).is_empty()
+		if companion_art_overlay != null and is_instance_valid(companion_art_overlay) and not _has_companion:
+			companion_art_overlay.visible = false
+		elif companion_art_overlay != null and is_instance_valid(companion_art_overlay):
 			# fit_content back ON. It was turned off to stop the panel growing upward over the party
 			# strip - and then the owner got the other half of that trade: *"the companion boxes...
 			# are too short and the ASCII art is being cutoff vertically now."* The strip has since
@@ -34814,7 +35125,9 @@ func _place_map_widgets(on_canvas: bool) -> void:
 					# So the height is the CONTENT's, clamped by what the margin has left.
 					# The offsets ask for the content's height; fit_content guarantees it is never less,
 					# so the art is whole and the frame is around it rather than through it.
-					var want_h: float = companion_art_overlay.get_content_height() + 18.0
+					# `get_content_height` is the TEXT only, so the two gauge bands the stylebox holds
+					# open have to be added or the panel is short by exactly them and the art is clipped.
+					var want_h: float = companion_art_overlay.get_content_height() + 18.0 + 2.0 * COMPANION_GAUGE_BAND
 					companion_art_overlay.offset_top = -maxf(120.0, minf(want_h, room))
 					companion_art_overlay.visible = true
 	# ...and the CHAT LOG below the status panel, in the same margin. Owner 2026-09-15: *"What if
@@ -47318,6 +47631,7 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_floor_grid = message.get("grid", [])
 	dungeon_monsters_data = message.get("monsters", [])
 	dungeon_npcs_data = message.get("npcs", [])
+	dungeon_allies_data = message.get("allies", [])
 	dungeon_floor_items_data = message.get("floor_items", [])
 	dungeon_triggered_traps = message.get("triggered_traps", [])
 	awaiting_final_chest = bool(message.get("awaiting_final_chest", false))
@@ -47426,6 +47740,7 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
 	dungeon_npcs_data = []
+	dungeon_allies_data = []
 	dungeon_floor_items_data = []
 	awaiting_final_chest = false
 
@@ -47818,6 +48133,7 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
 	dungeon_npcs_data = []
+	dungeon_allies_data = []
 	dungeon_floor_items_data = []
 	dungeon_triggered_traps = []
 	dungeon_resource_prompt = false
@@ -48156,6 +48472,9 @@ func display_dungeon_floor():
 	var player_y = dungeon_data.get("player_y", 0)
 	var encounters_cleared = dungeon_data.get("encounters_cleared", 0)
 
+	# The dock first: `_dungeon_pick_tile_px` (inside the renderer) subtracts its height, so a
+	# tile size chosen before the dock is measured is a tile size chosen against the wrong box.
+	_place_dungeon_dock()
 	# Render the dungeon grid
 	var grid_display = _render_dungeon_grid(dungeon_floor_grid, player_x, player_y)
 
@@ -48199,8 +48518,6 @@ func display_dungeon_floor():
 	# No [font_size] wrapper: the label's own size IS the tile font (see DUNGEON_TILE_FONT_SIZE),
 	# and inflating it is what forced the negative line spacing that squashed the tiles.
 	display_game("[center]%s[/center]" % grid_display)
-	# ...and the key directly under it, where the marks it explains are.
-	display_game("[center]%s[/center]" % _dungeon_key_text())
 
 	# Step pressure counter — C2: the step budget is retired (server sends step_limit
 	# <= 0). Hide the counter; wandering monsters are the pressure now.
@@ -48327,7 +48644,7 @@ func _dungeon_side_panel_text() -> String:
 	return out
 
 
-func _dungeon_key_text() -> String:
+func _dungeon_key_text(at_font_size: int = DUNGEON_TILE_FONT_SIZE, as_tile: bool = true) -> String:
 	"""The floor KEY - what each mark means - drawn UNDER THE MAP on the canvas.
 
 	Owner 2026-09-16: *"The player sprite is too small to see in the dungeon key. The dungeon
@@ -48338,12 +48655,17 @@ func _dungeon_key_text() -> String:
 
 	The theme tiles stay hoverable - `game_output` carries the same `meta_hover_started`
 	handler the side panel did, so `[url=tile:N]` works unchanged."""
-	var out := "[color=#808080]%s You   $ Loot   > Stairs   E Start   · Floor   [color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap   Sprites = Monsters  (hover any tile)[/color]" % _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, "", true)
+	var out := "[color=#808080]%s You   $ Loot   > Stairs   E Start   · Floor   [color=#00FFCC]&[/color] Node   [color=#FF4444]×[/color] Trap   Sprites = Monsters  (hover any tile)[/color]" % _dungeon_player_glyph(at_font_size, "", as_tile)
 	var dt := String(dungeon_data.get("dungeon_type", ""))
 	if dt != "" and DUNGEON_THEME_LEGEND.has(dt):
 		var entries: Array = DUNGEON_THEME_LEGEND[dt]
 		if not entries.is_empty():
-			out += "\n"
+			# ONE LINE, not two. The dock at the bottom of the dungeon canvas is paid for out of
+			# the tile size (see `_dungeon_pick_tile_px`): 11 rows at 64px need 704 of a 792px
+			# canvas, so every line the key spends is measured against a 88px budget - and a
+			# second line was enough to drop every tile to 32. The theme marks join the main key
+			# instead; measured, the whole thing is ~95 characters and fits one line at 13px.
+			out += "   "
 			for i in range(entries.size()):
 				var e: Dictionary = entries[i]
 				var d := String(e.get("desc", ""))
@@ -48779,7 +49101,12 @@ func _overworld_display(payload: Dictionary) -> String:
 		var _mf2: Font = _fitbox.get_theme_font("normal_font")
 		if _mf2 != null:
 			_lh2 = _mf2.get_height(_fitbox.get_theme_font_size("normal_font_size"))
-		var _avail: float = _fitbox.size.y - 6.0 - _extra_rows * _lh2
+		# ...and the furniture standing on the canvas below the map: the travel row and the
+		# party strip. They used to be made room for by shrinking this label, which put its
+		# border above them (see `_place_stance_bar`); the label is full-height now, so the
+		# rows they occupy have to be subtracted HERE or the map would be drawn under them.
+		var _res: float = _ow_canvas_reserve if _fitbox == game_output else 0.0
+		var _avail: float = _fitbox.size.y - 6.0 - _extra_rows * _lh2 - _res
 		var fit_h: int = int(floor(maxf(32.0, _avail) / float(rows_n)))
 		px = mini(px, clampi(fit_h, 8, OVERWORLD_SPRITE_PX))
 	# ⚑ AND THE LINE HAS TO BE AS SHORT AS THE TILE.
@@ -48836,7 +49163,8 @@ func _overworld_display(payload: Dictionary) -> String:
 		return "[url=owlv:%s]%s[/url]" % [dkey, img], crop)
 
 
-func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "", as_tile: bool = true) -> String:
+func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: String = "", as_tile: bool = true,
+		bid_override: String = "", facing_override: String = "", tint_override: String = "") -> String:
 	"""You, on the dungeon floor - your actual overworld sprite rather than an "@".
 
 	Owner 2026-09-08: *"the player sprite should replace the @ while in dungeons. It should match
@@ -48857,11 +49185,20 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: Str
 	of all characters standing underground as an "@" - which is how the first version of this
 	rendered, caught in a screenshot rather than assumed to work."""
 	var fallback := "[color=#00FF00]@[/color]"
-	if character_data.is_empty():
-		return fallback
-	var bid := BattlerSprite.id_from_data(character_data)
+	# ⚑ THE THREE OVERRIDES ARE WHAT MAKES THIS DRAW A PARTY MEMBER TOO.
+	# Owner 2026-09-16: *"The dungeon map shows one player sprite and its companion, no party
+	# members."* Everything below - the floor-backed frame, the padded-32 tier, the cropped
+	# battler fallback, the width pinning that keeps a monospace row from shearing - is exactly
+	# as true for a teammate as for you, and a second copy of it would be a second place for
+	# the shear bug to come back. Left empty it is still you, so every existing call is unchanged.
+	var bid := bid_override
+	if bid == "":
+		if character_data.is_empty():
+			return fallback
+		bid = BattlerSprite.id_from_data(character_data)
 	if bid == "":
 		return fallback
+	var facing: String = facing_override if facing_override != "" else _local_map_facing
 	# 2026-09-08 (tile pass) - PRE-PADDED 32x32 frames. A dungeon cell is now square, and the
 	# overworld sprites are 17x31: scaling one to fill a 32px width makes it 58px tall and the row
 	# grows, while fitting it by height makes it 20px wide and the row shears. Both break the
@@ -48877,12 +49214,12 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: Str
 		# so the floor is baked UNDER each frame offline (see `overworld_floor32/`, generated from
 		# `overworld_pad32/` and the solid floor tile). Still 32x32, so a 64px cell is a clean 2x.
 		var padded := "res://client/sprites/overworld_floor32/%s/%s%s.png" % [
-			bid, _local_map_facing,
+			bid, facing,
 			["_stand", "_walk1", "_walk2"][clampi(posmod(_dungeon_anim_tick, 3), 0, 2)]]
 		if ResourceLoader.exists(padded):
 			path = padded
 		else:
-			path = BattlerSprite.overworld_path_by_id(bid, _local_map_facing, _dungeon_walk_frame)
+			path = BattlerSprite.overworld_path_by_id(bid, facing, _dungeon_walk_frame)
 	if path == "":
 		# No overworld twin - the side-view battler, the map's second tier. Only 32 of the 80
 		# battler ids HAVE an overworld twin, so this is the common case, not the rare one, and it
@@ -48894,7 +49231,7 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: Str
 		# facing one way underground. Owner: "There are no walk animations triggering, my sprite
 		# is always facing left." A mirrored copy at least gives left/right, the same trick the
 		# overworld map uses with flip_h - which BBCode cannot do, hence a baked flip.
-		var _suffix := "_flip" if _local_map_facing == "right" else ""
+		var _suffix := "_flip" if facing == "right" else ""
 		var backed := "res://client/sprites/battler_floor32/%s%s.png" % [bid, _suffix]
 		path = backed if ResourceLoader.exists(backed) else BattlerSprite.idle_path_by_id(bid)
 	if path == "" or not ResourceLoader.exists(path):
@@ -48940,7 +49277,7 @@ func _dungeon_player_glyph(at_font_size: int = DUNGEON_TILE_FONT_SIZE, prop: Str
 	if reg.size.x <= 0 or reg.size.y <= 0:
 		return fallback
 	var h: int = mini(int(round(float(cell_w) * float(reg.size.y) / float(reg.size.x))), line_h)
-	var tint := BattlerSprite.tint_hex(String(character_data.get("appearance_color", "")))
+	var tint := BattlerSprite.tint_hex(tint_override if tint_override != "" else String(character_data.get("appearance_color", "")))
 	return "[img=%dx%d region=%d,%d,%d,%d color=%s]%s[/img]" % [
 		cell_w, h, reg.position.x, reg.position.y, reg.size.x, reg.size.y, tint, path]
 
@@ -48997,6 +49334,46 @@ func _dungeon_warden_img(prop: String = "") -> String:
 		return _dungeon_glyph_cell("W", "#9ACD32", "", prop)
 	return "[img=%dx%d]%s[/img]" % [_DungeonTiles.TILE_PX, _DungeonTiles.TILE_PX,
 		_DungeonComposite.over_prop(path, prop)]
+
+
+func _dev_print_rects() -> void:
+	"""Print the drawn rect of the canvas and everything anchored to it.
+
+	Kept rather than deleted with the bug it found. Owner 2026-09-16: *"the border that
+	contains the map and all the overlays isn't the correct size, they are spilling over the
+	bottom of it."* Two minutes of this answered it exactly - the canvas was 792 tall, the
+	bordered label inside it 722, and the three widgets that hung out were at 756, 762 and 792
+	- where reading the placement code had already produced one wrong theory. Dev builds only,
+	and only under `--shots`."""
+	var canvas: Control = (game_output.get_parent() as Control) if game_output != null else null
+	if canvas == null:
+		return
+	print("[RECTS] canvas %s  pos=%s size=%s" % [canvas.name, str(canvas.position), str(canvas.size)])
+	for ch in canvas.get_children():
+		if ch is Control:
+			var c: Control = ch as Control
+			print("[RECTS]   %-18s vis=%s y=%.0f..%.0f x=%.0f..%.0f" % [c.name, str(c.visible),
+				c.position.y, c.position.y + c.size.y, c.position.x, c.position.x + c.size.x])
+
+
+func _dungeon_ally_cell(al: Dictionary, prop: String = "") -> String:
+	"""A PARTY MEMBER standing on the floor, drawn with their own sprite.
+
+	Owner 2026-09-16, of a five-person dungeon run: *"The dungeon map shows one player sprite
+	and its companion, no party members."* They were never on the wire; `dungeon_state` now
+	carries an `allies` list (same instance, same floor) and this draws each one through the
+	same builder the local player uses, so a teammate is the same size, stands on the same
+	baked floor, and cannot shear the monospace row.
+
+	Facing "down", because the server does not track anyone else's facing and guessing it from
+	their last move would need a history this payload does not carry. Facing the camera is the
+	one direction that is never obviously wrong."""
+	var bid := String(al.get("battler_id", ""))
+	var col := String(al.get("appearance_color", ""))
+	if bid != "":
+		return _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, prop, true, bid, "down", col)
+	# No battler id at all (a very old character): a letter, tinted by whether they are with you.
+	return _dungeon_glyph_cell("@", "#66CCFF" if bool(al.get("in_my_party", false)) else "#AAAAAA", "", prop)
 
 
 func _dungeon_companion_at(x: int, y: int) -> bool:
@@ -49222,7 +49599,7 @@ func _update_dungeon_light(view_x1: int, view_y1: int, view_w: int, view_h: int,
 	_dungeon_light_overlay.visible = true
 
 
-func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
+func _dungeon_pick_tile_px(view_w: int, view_h: int) -> int:
 	"""Choose the largest crisp tile size that fits the whole viewport in the canvas.
 
 	Constrained to multiples of THIRTY-TWO, not 16. Both sheets have to land on a whole-number
@@ -49231,18 +49608,53 @@ func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
 	8, so a font-14 Consolas character (exactly 8px) fits a whole number of times and a text cell
 	can be padded to match an image cell."""
 	if game_output == null or not is_instance_valid(game_output):
-		return
+		return view_h
 	var avail: Vector2 = game_output.size
 	if avail.x < 64.0 or avail.y < 64.0:
-		return                                   # not laid out yet; keep the last good size
-	# A little headroom: the canvas also carries the step counter and tile messages under the map.
+		return view_h                            # not laid out yet; keep the last good size
+	# A little headroom: the canvas also carries the step counter and tile messages under the
+	# map - plus the bottom dock (party strip + key), whose height is measured rather than
+	# assumed. Before the dock existed the strip was paid for by SHRINKING `game_output`, and
+	# `avail` is `game_output.size`: 11 x 64 = 704 needs 760px of canvas, the shrink left 750,
+	# and every tile silently halved to 32. Owner: *"the tiles and player sprites were way
+	# smaller than they used to be."*
 	var w_room: float = avail.x - 24.0
-	var h_room: float = avail.y - 56.0
+	# 8, not 56. The 56 was reserving room for the STEP COUNTER and tile messages printed under
+	# the map, and the step budget was retired in C2 (the server sends step_limit <= 0 and the
+	# counter is not drawn) - 48px of nothing, taken out of the tile size at a granularity where
+	# 48px is the difference between a 64px tile and a 32px one. What the bottom of the canvas
+	# actually holds is the dock, and that is measured.
+	var h_room: float = avail.y - 8.0 - _dungeon_dock_h
+	# ⚑ THE WIDTH PICKS THE TILE, AND THE HEIGHT THEN PICKS THE ROW COUNT.
+	#
+	# Owner 2026-09-16, of two dungeon frames: *"Do you not see all of the wasted space in the
+	# canvas? The map should be taking advantage of all that unused space."*
+	#
+	# It could not. The view was a FIXED 19x9 and the tile had to satisfy both axes, so the
+	# row count decided the tile size as much as the canvas did: at 19x9 the 64px step needs
+	# 1216x576, and any reservation that pushed the height under 576 dropped every tile to 32 -
+	# a quarter of the area - while leaving 400px of canvas empty underneath. One number doing
+	# two jobs, which is the shape this file keeps getting wrong.
+	#
+	# Separated: the tile is the largest crisp step that fits 19 columns of the canvas WIDTH,
+	# and the number of ROWS is however many of those tiles the remaining height holds. So the
+	# floor grows to the space instead of a constant deciding how much of it goes unused.
+	# Columns stay fixed because the owner's design for this view is limited sight - filling
+	# the canvas comes from drawing the same width LARGER, not from seeing further sideways.
 	var best := 32
 	for px in [32, 64, 96, 128]:
-		if float(view_w * px) <= w_room and float(view_h * px) <= h_room:
+		if float(view_w * px) <= w_room:
 			best = px
 	_DungeonTiles.TILE_PX = best
+	# Odd, so the player sits on the middle row, and bounded so a very tall or very short
+	# canvas cannot turn the view into a letterbox or a column.
+	var rows: int = int(floor(h_room / float(best)))
+	rows = clampi(rows, 7, 15)
+	if rows % 2 == 0:
+		rows -= 1
+	if _dungeon_fit_debug:
+		print("[DUNGEONFIT] avail=%s w_room=%.0f h_room=%.0f dock=%.0f tile=%d rows=%d" % [
+			str(avail), w_room, h_room, _dungeon_dock_h, best, rows])
 	# Pick the GLYPH font too. Reported by the owner on seeing slice 1: "the glyphs make the floor
 	# very uneven in the dungeon, look at the borders and around the glyphs". Two causes, both
 	# here:
@@ -49265,6 +49677,7 @@ func _dungeon_pick_tile_px(view_w: int, view_h: int) -> void:
 				break
 	DUNGEON_GLYPH_FONT_SIZE = g_size
 	DUNGEON_TEXT_CELL_CHARS = g_chars
+	return rows
 
 
 ## {"x,y": room_id} for every ROOM cell on the current floor, from `DungeonTiles.label_rooms`.
@@ -49554,6 +49967,8 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	# suits the design: "most of the time you only see a room and corridors, only corridors or the
 	# corridor you are in". A narrower window is more dungeon-like, not less.
 	var view_w = 19
+	# A starting value only: `_dungeon_pick_tile_px` returns how many rows the canvas actually
+	# holds at the tile size it picked, and that is what is drawn.
 	var view_h = 9
 	# 2026-09-08 - size the TILE to the canvas rather than the canvas to the tile. Owner: "the
 	# Dungeon looks like it's only taking up a small portion of the game output window. Could we
@@ -49564,7 +49979,7 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 	# "most of the time you only see a room and corridors, only corridors or the corridor you are
 	# in" - so filling the canvas has to come from drawing the same view LARGER, not from showing
 	# more of the floor.
-	_dungeon_pick_tile_px(view_w, view_h)
+	view_h = _dungeon_pick_tile_px(view_w, view_h)
 	_dungeon_anim_tick += 1
 	# Track the step so the companion has somewhere to stand. Only moves when the player actually
 	# moves; a redraw in place must not make the companion jump onto the player.
@@ -49614,6 +50029,12 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 		var key = "%d,%d" % [fi.get("x", -1), fi.get("y", -1)]
 		item_map[key] = fi
 
+	# Build the OTHER PLAYERS lookup - everyone else on this floor of this instance.
+	var ally_map = {}
+	for al in dungeon_allies_data:
+		if al is Dictionary:
+			ally_map["%d,%d" % [int(al.get("x", -1)), int(al.get("y", -1))]] = al
+
 	# Top border
 
 	# Grid rows (viewport only)
@@ -49644,7 +50065,11 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 				line += _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, _prop)
 			else:
 				var mkey = "%d,%d" % [x, y]
-				if npc_map.has(mkey):
+				if ally_map.has(mkey):
+					# A teammate outranks everything else that can share a cell: they are the only
+					# thing on this floor that will move on its own while you are reading it.
+					line += _dungeon_ally_cell(ally_map[mkey], _prop)
+				elif npc_map.has(mkey):
 					# Render rescue NPC entity (green ? marker)
 					var npc = npc_map[mkey]
 					var nchar = npc.get("display_char", "?")
