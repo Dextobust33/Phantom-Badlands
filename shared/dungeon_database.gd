@@ -3109,16 +3109,59 @@ static func modifier_effects(mods: Array) -> Dictionary:
 	return out
 
 
-static func modifier_lines(mods: Array) -> Array:
-	"""Player-facing description of each modifier, for the entry screen and the dungeon list.
-	A modifier nobody can see before entering is just an unexplained death."""
+static func modifier_rows(mods: Array) -> Array:
+	"""Each modifier as {name, color, cost, pay, blurb} - THE TRADE, in numbers.
+
+	⚑ A RISK/REWARD TRADE HAS TO STATE BOTH HALVES AS NUMBERS. Owner direction: modifiers are
+	a trade, not a punishment. `modifier_lines` below gave the name and the flavour blurb -
+	"What died here did not finish dying" - and never once said 40% more HP or +20% XP. A player
+	deciding whether to walk in cannot weigh a sentence about dying.
+
+	The wording is DERIVED from the same fields `modifier_effects` folds, so a tuning change moves
+	the screen with it. Hand-written copy beside a number is the one-value-two-places fault that
+	has cost this codebase repeatedly: the number changes, the sentence does not, and the screen
+	confidently lies."""
 	var out: Array = []
 	for m in mods:
 		var d: Dictionary = DUNGEON_MODIFIERS.get(String(m), {})
 		if d.is_empty():
 			continue
-		out.append("[color=%s]%s[/color] - %s" % [
-			String(d.get("color", "#FFFFFF")), String(d.get("name", m)), String(d.get("blurb", ""))])
+		var cost: Array = []
+		if float(d.get("hp_mult", 1.0)) != 1.0:
+			cost.append("%d%% more HP" % int(round((float(d["hp_mult"]) - 1.0) * 100.0)))
+		if float(d.get("str_mult", 1.0)) != 1.0:
+			cost.append("hit %d%% harder" % int(round((float(d["str_mult"]) - 1.0) * 100.0)))
+		if float(d.get("def_mult", 1.0)) != 1.0:
+			cost.append("%d%% more armour" % int(round((float(d["def_mult"]) - 1.0) * 100.0)))
+		if float(d.get("count_mult", 1.0)) != 1.0:
+			cost.append("%d%% more of them" % int(round((float(d["count_mult"]) - 1.0) * 100.0)))
+		var pay: Array = []
+		if float(d.get("xp_mult", 1.0)) != 1.0:
+			pay.append("+%d%% XP" % int(round((float(d["xp_mult"]) - 1.0) * 100.0)))
+		if float(d.get("loot_bonus", 0.0)) != 0.0:
+			pay.append("+%d%% loot" % int(round(float(d["loot_bonus"]) * 100.0)))
+		out.append({
+			"key": String(m),
+			"name": String(d.get("name", m)),
+			"color": String(d.get("color", "#FFFFFF")),
+			"cost": ", ".join(cost),
+			"pay": ", ".join(pay),
+			"blurb": String(d.get("blurb", "")),
+		})
+	return out
+
+
+static func modifier_lines(mods: Array) -> Array:
+	"""One prose line per modifier, for surfaces that want a sentence (the dungeon list).
+
+	Built from `modifier_rows` so the numbers cannot drift away from the entry screen's."""
+	var out: Array = []
+	for r in modifier_rows(mods):
+		var trade := String(r.get("cost", ""))
+		if String(r.get("pay", "")) != "":
+			trade += (", " if trade != "" else "") + String(r["pay"])
+		out.append("[color=%s]%s[/color] - %s (%s)" % [
+			String(r["color"]), String(r["name"]), String(r["blurb"]), trade])
 	return out
 
 

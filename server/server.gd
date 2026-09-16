@@ -30334,6 +30334,16 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	# Always require confirmation — warn about escape-only exit
 	var confirmed = message.get("confirmed", false)
 	if not confirmed:
+		# ⚑ FIELDS, NOT A PARAGRAPH. This built a seven-line prose blob and the client printed it
+		# whole, under a WARNING banner, above two more prose sections of its own. Owner 2026-09-16:
+		# *"The current Dungeon warning screens are a wall of text though. They need to be able to
+		# be skimmed and know what you're getting into."*
+		#
+		# Reformatting the blob on the client would not have fixed it - the sentences are built
+		# HERE, so the client could only ever re-wrap them. The screen is a table of facts now, and
+		# a table needs values. `message` is still sent, as a ONE-LINE summary, because a client
+		# from before this release has nothing else to show and an empty warning is worse than a
+		# wordy one.
 		var warning_text = "[color=#FF6666]WARNING: There is NO free exit from dungeons![/color]\n"
 		warning_text += "[color=#FFAA00]To leave early, use an Escape Scroll (every dungeon holds at least one — search its treasures). You can also exit by defeating the boss.[/color]\n"
 		warning_text += "[color=#808080]The longer you linger on a floor, the more monsters wander in — keep moving forward.[/color]\n"
@@ -30375,12 +30385,29 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 				warning_text += "  " + String(_ml) + "\n"
 			warning_text += "[color=#808080]Harder, and it pays for it.[/color]\n"
 		warning_text += "\nAre you sure you want to enter?"
+		var _mod_rows: Array = DungeonDatabaseScript.modifier_rows(
+			active_dungeons.get(_mod_inst, {}).get("modifiers", []))
 		send_to_peer(peer_id, {
 			"type": "dungeon_level_warning",
 			"dungeon_type": dungeon_type,
 			"dungeon_name": dungeon_data.name,
 			"min_level": dungeon_data.min_level,
 			"player_level": character.level,
+			# The four numbers the decision actually turns on. `entry`/`deepest` come from
+			# `_dungeon_expected_levels`, which is the ONE helper that knows the instance's rolled
+			# level - `min_level` is a static field on the dungeon TYPE and has advertised a
+			# different number than the monsters twice now.
+			"entry_level": _entry_level,
+			"deepest_level": _deepest,
+			"floors": int(dungeon_data.get("floors", 0)),
+			# The rank, because it is what decides how many modifiers a dungeon may roll
+			# (`MODIFIER_COUNT_BY_RANK`) and the owner asked for rarity to be legible BEFORE the
+			# door. Read off the instance where there is one - `sub_tier` on the dungeon TYPE is
+			# the template's depth, which is the same class of mistake as `min_level`.
+			"tier": int(dungeon_data.get("tier", 1)),
+			"sub_tier": int(active_dungeons.get(_mod_inst, {}).get("sub_tier",
+				_get_dungeon_at_location(character.x, character.y, peer_id).get("sub_tier", 0))),
+			"modifiers": _mod_rows,
 			"message": warning_text
 		})
 		return
@@ -41814,7 +41841,28 @@ func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
 		]
 	})
 	# Pre-confirmed so the standard warning popup is skipped — admin path.
-	handle_dungeon_enter(peer_id, {"dungeon_type": dungeon_type, "confirmed": true})
+	#
+	# ...unless the caller asked for the WARNING itself. The entry screen is a real surface with
+	# no other way to reach it headlessly: every GM path pre-confirms, and the player path needs
+	# a `D` tile within walking distance of wherever the harness happens to stand. `warn: true`
+	# is how the shots harness photographs the screen it is redesigning.
+	var want_warning: bool = bool(message.get("warn", false))
+	var enter_msg: Dictionary = {"dungeon_type": dungeon_type}
+	if want_warning and bool(message.get("modified", false)):
+		# Photograph the screen with its MODIFIER rows filled in. A type-only entry has no
+		# instance, so it has no rolled modifiers and the row never appears - which would leave
+		# the one part of the screen that reports a risk/reward trade unverified. Borrow a real
+		# world dungeon that already rolled some rather than fabricating an instance: a half-built
+		# entry in `active_dungeons` is not in the tile index and shows up as a `D` you cannot walk
+		# into (see `_register_dungeon`).
+		for _iid in active_dungeons.keys():
+			if not active_dungeons[_iid].get("modifiers", []).is_empty():
+				enter_msg["instance_id"] = _iid
+				enter_msg["dungeon_type"] = String(active_dungeons[_iid].get("dungeon_type", dungeon_type))
+				break
+	if not want_warning:
+		enter_msg["confirmed"] = true
+	handle_dungeon_enter(peer_id, enter_msg)
 
 # ===== ADMIN — POST-ANCHORED WORLD TESTING (Slice 4) =====
 

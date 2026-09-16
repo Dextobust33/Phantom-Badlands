@@ -253,10 +253,20 @@ Asked because the arc had run out of defects and into design. All four answered.
           armour x1.35, floor population x1.40 - and the least-paying triple still pays 1.51
         * shown on the ENTRY WARNING before you commit, which under permadeath is the whole cost
           of the feature
-      **Known gap, deliberately recorded:** the probe proves `modifier_lines` and the effects, but
-      does NOT execute `handle_dungeon_enter`, so the warning CALL SITE is unverified - the same
-      shape that let the v0.9.774 figure fix ship twice under a dead branch. Needs a live check:
-      walk onto a rank 6+ dungeon and read the prompt.
+      **✅ Known gap CLOSED 2026-09-16.** The probe proved `modifier_lines` and the effects but
+      never executed `handle_dungeon_enter`, so the warning CALL SITE was unverified - the same
+      shape that let the v0.9.774 figure fix ship twice under a dead branch. There was no headless
+      route to that screen (every GM entry pre-confirms; the player route needs a `D` tile in
+      walking distance), so `gm_enter_dungeon` gained `warn` / `modified` and the shots harness
+      gained a `dungeonwarn` scene. Captured on a real modified instance: the rows render, off
+      live rolled modifiers, with the numbers the table holds.
+
+      **✅ And the modifiers now state the TRADE in numbers.** `modifier_lines` gave the name and
+      the flavour blurb - "What died here did not finish dying" - and never once said 40% more HP
+      or +20% XP, which is not something a player can weigh. `modifier_rows()` DERIVES the wording
+      from the same fields `modifier_effects` folds, so a tuning change moves the screen with it;
+      `modifier_lines` is built from it, so the dungeon list cannot drift from the entry screen.
+      Probe: `tools/probe/dungeon_modifier_rows.gd` (31 checks, all PASS).
 
       **✅ AXIS THREE (rarer monsters / guaranteed unique) BUILT 2026-09-13, unreleased.**
       `DUNGEON_BOSS_UNIQUE_CHANCE` - a table, not a curve, so any single step can be retuned
@@ -646,6 +656,49 @@ player power, so the `speciescal`/`refcal`/`rolecal` chain does not apply.
 - [x] Companion art trimmed of its dead rows (355 across 56 entries; the Wight 118 → 98 rows).
 - [x] The sticky player/companion hover — one label, two fill mechanisms, one of them caching.
 - [x] Dev loopback exempt from the connection rate limit, so a 5-client test stops losing a member.
+
+### ✅ 2026-09-16 — THE DUNGEON ENTRANCE SCREEN, SKIMMABLE
+
+Owner: *"The current Dungeon warning screens are a wall of text though. They need to be able to be
+skimmed and know what you're getting into."*
+
+It ran past twenty lines. A seven-line prose paragraph built on the SERVER, then a five-line
+recovery lecture, then a full sentence for every theme tile - and the two numbers the decision
+actually turns on, what level the monsters are and what level you are, buried in the middle of it.
+
+**Reformatting it on the client could never have fixed it.** The sentences are built server-side
+and shipped as one `message` string, so the client could only re-wrap them. The payload carries
+FIELDS now (`entry_level`, `deepest_level`, `floors`, `modifiers`, `tier`, `sub_tier`) and the
+screen is a table: one fact per row, fixed label column, ordered by what the decision turns on.
+`message` is still sent as a one-line fallback, because a client from before this release has
+nothing else to show and an empty warning is worse than a wordy one.
+
+Measured, not reasoned about — `python tools/test_setup/shots.py dungeonwarn`:
+
+```
+═══ FORGOTTEN CRYPT ═══  H7
+  Monsters   Lv 4453-5618  — far above you   (you are 20)
+  Unusual    Ironbound   35% more armour              +15% XP
+  Floors     5  - the boss is on the last one
+  Ground     % Bone scatter  (hover)
+  Food       559 - resting inside spends it; nothing else heals you
+  Exit       Escape Scroll or kill the boss - there is no free way out
+  Hard mode  available  +50% monster stats   +75% XP, bonus loot
+```
+
+- [x] Nothing was cut - the theme-tile prose moved to HOVER, on the same `[url=tile:N]` the
+      in-floor key uses. That needed a fix of its own: the resolver reads `dungeon_data`, which is
+      empty until you are inside, so every glyph on the one screen where the description matters
+      most was a **dead link**. Falls back to `pending_dungeon_warning` now, captured working.
+- [x] The food lecture only argues with you when you have none. A warning that fires every time is
+      one you stop reading.
+- [x] The dungeon's RANK rides in the header (`H7`), because rank is what decides how many
+      modifiers a place may roll and the owner asked for rarity to be legible before the door.
+- [x] Modifiers state the trade in NUMBERS (red cost, green pay), derived from the same fields
+      `modifier_effects` folds - see the axis-two entry above.
+- [x] `gm_enter_dungeon` learned `warn` / `modified`, and the shots harness a `dungeonwarn` scene.
+      There was no headless route to this screen at all, which is why its call site had sat
+      unverified since 2026-09-13.
 
 ### ✅ 2026-09-16 — INSTANCED CARDS: the deck screen now manages CARDS, not counts
 

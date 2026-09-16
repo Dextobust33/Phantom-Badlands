@@ -7115,6 +7115,32 @@ func _dev_run_shots() -> void:
 				if _dungeon_fit_debug:
 					_dev_print_rects()
 
+			"dungeonwarn":
+				# The screen you read BEFORE you commit. Owner 2026-09-16: the old one was a wall of
+				# text. There is no other headless route to it - every GM entry pre-confirms and the
+				# player route needs a `D` tile in walking distance - so `warn` was added to
+				# gm_enter_dungeon for exactly this capture.
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				send_to_server({"type": "gm_enter_dungeon", "tier": 3, "warn": true})
+				await get_tree().create_timer(1.5).timeout
+				await _dev_shot_capture("dungeonwarn")
+				# ...and again on a dungeon that actually rolled modifiers, because the Unusual row is
+				# the one that reports the risk/reward trade and a plain dungeon never prints it.
+				send_to_server({"type": "gm_enter_dungeon", "tier": 3, "warn": true, "modified": true})
+				await get_tree().create_timer(1.5).timeout
+				await _dev_shot_capture("dungeonwarn_modified")
+				# ⛑ AND THE GROUND LINK HAS TO RESOLVE HERE. `tile:N` looks the theme up in
+				# `dungeon_data`, which is EMPTY on the entry screen because you have not gone in
+				# yet - so every glyph on the one screen where the description matters most was a
+				# dead link until the pending-warning fallback was added. Drive the real handler.
+				if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+					combat_scene_panel._show_formula_popup("")
+				_on_log_meta_hover("tile:0")
+				await get_tree().create_timer(0.6).timeout
+				await _dev_shot_capture("dungeonwarn_tilehover")
+
 			"dungeontrap":
 				# What a sprung trap looks like. 2026-09-09: this screen showed a BLANK canvas
 				# because the ack flag was set after the text was written, and the only reason
@@ -40681,8 +40707,13 @@ func _on_log_meta_hover(meta) -> void:
 		_show_state_hover(String(_fxp[0]), int(_fxp[1]) if _fxp.size() > 1 else 0)
 		return
 	if m.begins_with("tile:"):
-		# A theme tile, hovered either in the side-panel key or on the floor itself.
+		# A theme tile, hovered in the side-panel key, on the floor itself, or on the ENTRY
+		# screen - where `dungeon_data` is still empty because you have not gone in yet. The
+		# entry screen is the one place the description matters most, so falling back to the
+		# pending warning is not a nicety: without it every glyph there is a dead link.
 		var dt := String(dungeon_data.get("dungeon_type", ""))
+		if dt == "":
+			dt = String(pending_dungeon_warning.get("dungeon_type", ""))
 		if dt == "" or not DUNGEON_THEME_LEGEND.has(dt):
 			return
 		var entries: Array = DUNGEON_THEME_LEGEND[dt]
@@ -48770,48 +48801,164 @@ func _display_dungeon_complete(message: Dictionary):
 	update_action_bar()
 
 func handle_dungeon_level_warning(message: Dictionary):
-	"""Handle warning about entering a dungeon below recommended level"""
+	"""What you are about to walk into, as a table you can read at a glance.
+
+	⚑ A WARNING YOU HAVE TO READ IS NOT A WARNING. Owner 2026-09-16: *"The current Dungeon
+	warning screens are a wall of text though. They need to be able to be skimmed and know what
+	you're getting into."* It ran past twenty lines: a seven-line server paragraph, a five-line
+	recovery lecture, a full sentence for every theme tile, and the two numbers that actually
+	decide it - what level the monsters are and what level you are - buried in the middle of it.
+
+	One fact per ROW now, in a fixed label column, ordered by what the decision turns on: how hard
+	it hits, what is strange about it, how deep it goes, then the housekeeping. Nothing was cut.
+	The theme-tile prose moved to HOVER, on the same `[url=tile:N]` mechanism the in-floor key
+	already uses; the food lecture only argues with you when you have none, because a warning that
+	fires every time is one you stop reading.
+
+	The blob is still accepted and shown when a server predates the structured fields - an empty
+	warning is worse than a wordy one."""
+	var dtype := String(message.get("dungeon_type", ""))
 	pending_dungeon_warning = {
-		"dungeon_type": message.get("dungeon_type", ""),
+		"dungeon_type": dtype,
 		"dungeon_name": message.get("dungeon_name", "Dungeon"),
 		"min_level": message.get("min_level", 1),
 		"player_level": message.get("player_level", 1)
 	}
 
 	_page_clear()
-	display_game("[color=#FF4444]═══════ WARNING ═══════[/color]")
-	display_game("")
-	display_game("[color=#FFAA00]%s[/color]" % message.get("message", "This dungeon may be too dangerous!"))
-	display_game("")
-	# 2026-09-07 - the server's `message` text now states the levels actually present, computed
-	# from the INSTANCE. `min_level` is a static field on the dungeon TYPE and described a
-	# different number entirely, so a dungeon could advertise 3 and hold level-6 monsters.
-	display_game("[color=#808080]Dungeon tier baseline: level %d[/color]" % message.min_level)
-	display_game("[color=#AAAAAA]Your Level: %d[/color]" % message.player_level)
+	var dname := String(message.get("dungeon_name", "Dungeon"))
+	# The rank rides in the header rather than taking a row of its own: it is an attribute of the
+	# name, and it is how a player reads "how modified is this likely to be" at a glance.
+	var rank_tag := ""
+	if int(message.get("sub_tier", 0)) > 0:
+		rank_tag = "  " + PowerRank.rich_label(int(message.get("tier", 1)), int(message.get("sub_tier", 1)))
+	display_game("[color=#FF8800]═══ %s ═══[/color]%s" % [dname.to_upper(), rank_tag])
 	display_game("")
 
-	# Recovery / food section — dungeons don't auto-heal between fights the
-	# way the overworld does. Resting consumes food materials and that's the
-	# only in-dungeon recovery method short of consumables. Show the player
-	# their food stockpile + how to acquire more BEFORE they commit.
-	_display_dungeon_food_warning_section()
-
-	# Map legend — surfaces any non-standard terrain glyphs this dungeon will
-	# have (e.g., Spider Nest's webbed tiles). Players were getting confused
-	# by purple w tiles with no key; this makes it obvious before entry.
-	var warn_dtype = String(message.get("dungeon_type", ""))
-	_display_dungeon_theme_legend_section(warn_dtype)
-
-	# Check if hard mode is available
-	var warn_completions = character_data.get("dungeons_completed", {})
-	if warn_completions.get(warn_dtype, 0) > 0:
-		display_game("[color=#FF8800]★ Hard Mode available! +50% monster stats, +75% XP, bonus loot[/color]")
-		display_game("")
-		display_game("[%s] Enter | [%s] Cancel | [%s] [color=#FF8800]Hard Mode[/color]" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
+	var plv := int(message.get("player_level", 1))
+	var entry := int(message.get("entry_level", 0))
+	if entry <= 0:
+		# Older server: it sent prose and nothing else. Print it rather than invent numbers.
+		display_game("[color=#FFAA00]%s[/color]" % message.get("message", "This dungeon may be too dangerous!"))
 	else:
-		display_game("[color=#808080]Press [%s] to enter anyway, or [%s] to cancel.[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+		var deepest: int = maxi(entry, int(message.get("deepest_level", entry)))
+		var span := ("Lv %d" % entry) if deepest == entry else ("Lv %d-%d" % [entry, deepest])
+		var gap := entry - plv
+		# Captured 2026-09-16: without the dash this read "Lv 19-25 your level", which parses as
+		# one phrase and says nothing. The verdict is a separate judgement about the range.
+		var verdict := "[color=#9ACD32]— below you[/color]"
+		if gap >= 8:
+			verdict = "[color=#FF2A2A]— far above you[/color]"
+		elif gap >= 3:
+			verdict = "[color=#FF5555]— above you[/color]"
+		elif gap >= -2:
+			verdict = "[color=#FFAA00]— about your level[/color]"
+		_warn_row("Monsters", "[b]%s[/b]  %s  [color=#707070](you are %d)[/color]" % [span, verdict, plv])
+
+		# What makes THIS one different, straight after the level - it is the other half of the
+		# same question, and the half a player cannot find out any other way.
+		var mods: Array = message.get("modifiers", [])
+		var first := true
+		for m in mods:
+			var r: Dictionary = m
+			# Same padding-before-markup rule as the name. The widest cost in the table is
+			# "10% more HP, hit 10% harder" at 27 characters.
+			var trade := "[color=#FF8888]%s[/color]" % ("%-28s" % String(r.get("cost", "")))
+			if String(r.get("pay", "")) != "":
+				trade += "   [color=#88FF88]%s[/color]" % String(r["pay"])
+			# Padded BEFORE the colour tags go on, or the tags count toward the width and the
+			# second modifier's cost starts in a different column than the first's (Pitfall #4).
+			var mname := "%-11s" % String(r.get("name", "?"))
+			_warn_row("Unusual" if first else "", "[color=%s][b]%s[/b][/color] %s" % [
+				String(r.get("color", "#FFFFFF")), mname, trade])
+			first = false
+
+		var floors := int(message.get("floors", 0))
+		if floors > 0:
+			_warn_row("Floors", "%d  [color=#707070]- the boss is on the last one[/color]" % floors)
+
+	_display_dungeon_tiles_row(dtype)
+	_display_dungeon_food_row()
+	_warn_row("Exit", "[color=#FFAA00]Escape Scroll or kill the boss[/color] [color=#707070]- there is no free way out[/color]")
+
+	var warn_completions = character_data.get("dungeons_completed", {})
+	var has_hard: bool = int(warn_completions.get(dtype, 0)) > 0
+	if has_hard:
+		_warn_row("Hard mode", "[color=#FF8800]available[/color]  [color=#FF8888]+50% monster stats[/color]   [color=#88FF88]+75% XP, bonus loot[/color]")
+
+	display_game("")
+	if has_hard:
+		display_game("[color=#808080][%s] Enter   [%s] Cancel   [%s] [color=#FF8800]Hard Mode[/color][/color]" % [
+			get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
+	else:
+		display_game("[color=#808080][%s] Enter   [%s] Cancel[/color]" % [
+			get_action_key_name(0), get_action_key_name(1)])
 
 	update_action_bar()
+
+
+func _warn_row(label: String, body: String) -> void:
+	"""One fact, in the fixed label column that makes the screen skimmable.
+
+	The label is padded BEFORE any markup is added to it - Pitfall #4: BBCode counts toward a
+	`%-9s` width and displays nothing, so padding a string that already carries tags silently
+	ragged the column."""
+	display_game("  [color=#707070]%-9s[/color]  %s" % [label, body])
+
+
+func _display_dungeon_tiles_row(dungeon_type: String) -> void:
+	"""The unusual ground, as glyph + short name on ONE row - hover for what each does.
+
+	This was `── Map legend ──` plus a full sentence per tile: "Spider webs — clinging silk drags
+	at you. Crossing one costs you TIME: the floor stirs sooner, so wandering spiders arrive
+	faster. Persistent." Four lines of paragraph to say a purple w slows you down.
+
+	The sentence still exists and is still shown - on the same `tile:N` hover the in-floor key
+	uses, so it stopped being compulsory reading without being lost. Same short-name derivation as
+	`_dungeon_key_text`: the clause before the em dash."""
+	if not DUNGEON_THEME_LEGEND.has(dungeon_type):
+		return
+	var entries: Array = DUNGEON_THEME_LEGEND[dungeon_type]
+	if entries.is_empty():
+		return
+	var bits: Array[String] = []
+	for i in range(entries.size()):
+		var e: Dictionary = entries[i]
+		var d := String(e.get("desc", ""))
+		var dash := d.find(" — ")
+		var short_name := d.substr(0, dash) if dash > 0 else d.substr(0, 22)
+		bits.append("[url=tile:%d][color=%s][b]%s[/b][/color] %s[/url]" % [
+			i, String(e.get("color", "#FFFFFF")), String(e.get("glyph", "?")), short_name])
+	_warn_row("Ground", "%s  [color=#606060](hover)[/color]" % "   ".join(bits))
+
+
+func _display_dungeon_food_row() -> void:
+	"""Food, as a number - and prose ONLY when the answer is bad.
+
+	It used to open with a sentence explaining that dungeons do not auto-heal, then a stack count,
+	then a per-type breakdown, then a paragraph on where to forage - every time, whether you were
+	carrying forty or none. A player with food needs none of it. Now: the count, coloured, and the
+	advice only when it is zero, which is the only case where it is advice rather than noise."""
+	var food_types := ["plant", "herb", "fungus", "fish"]
+	var mats: Dictionary = character_data.get("crafting_materials", {})
+	var total := 0
+	for mat_id in mats.keys():
+		var qty := int(mats[mat_id])
+		if qty <= 0:
+			continue
+		var mat_info: Dictionary = CraftingDatabase.MATERIALS.get(mat_id, {})
+		if String(mat_info.get("type", "")) in food_types:
+			total += qty
+	var col := "#9ACD32"
+	if total == 0:
+		col = "#FF4444"
+	elif total <= 5:
+		col = "#FFAA00"
+	var tail := "[color=#707070]- resting inside spends it; nothing else heals you[/color]"
+	if total == 0:
+		tail = "[color=#FF6666]- you cannot rest inside. Forage or fish before you go.[/color]"
+	_warn_row("Food", "[color=%s][b]%d[/b][/color] %s" % [col, total, tail])
+
 
 # Dungeon theme-tile legend. Per-dungeon descriptions of any unusual terrain
 # the player will see on the floor map so they aren't left wondering what a
@@ -48977,68 +49124,6 @@ const DUNGEON_THEME_LEGEND = {
 		{"glyph": "U", "color": "#884466", "desc": "Decay motes — entropy itself rots at you. Stepping ticks ~6% of your max HP. Strongest persistent damage tile in the pool. Persistent. Plan tier S paths VERY carefully."}
 	],
 }
-
-func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
-	"""Render the in-warning theme-tile legend. Spider Nest has webbed tiles
-	(Audit #5 theme tags Slice 1) — players reported confusion at the purple
-	w glyphs without a key. As more themes ship, drop entries into
-	DUNGEON_THEME_LEGEND and they show up here automatically."""
-	if not DUNGEON_THEME_LEGEND.has(dungeon_type):
-		return
-	var entries: Array = DUNGEON_THEME_LEGEND[dungeon_type]
-	if entries.is_empty():
-		return
-	display_game("[color=#FFD700]── Map legend ──[/color]")
-	for entry in entries:
-		var glyph = String(entry.get("glyph", "?"))
-		var color = String(entry.get("color", "#FFFFFF"))
-		var desc = String(entry.get("desc", ""))
-		display_game("  [color=%s][b]%s[/b][/color]  [color=#AAAAAA]%s[/color]" % [color, glyph, desc])
-	display_game("")
-
-func _display_dungeon_food_warning_section() -> void:
-	"""Render the in-warning recovery/food section. Computes food stockpile
-	from crafting_materials filtered by type (plant/herb/fungus/fish — same
-	set the dungeon_rest action accepts) and displays acquisition advice."""
-	var food_types = ["plant", "herb", "fungus", "fish"]
-	var mats: Dictionary = character_data.get("crafting_materials", {})
-	var total = 0
-	var stacks = 0
-	var by_type = {"plant": 0, "herb": 0, "fungus": 0, "fish": 0}
-	for mat_id in mats.keys():
-		var qty = int(mats[mat_id])
-		if qty <= 0:
-			continue
-		var mat_info = CraftingDatabase.MATERIALS.get(mat_id, {})
-		var mat_type = str(mat_info.get("type", ""))
-		if mat_type in food_types:
-			total += qty
-			stacks += 1
-			by_type[mat_type] = int(by_type.get(mat_type, 0)) + qty
-
-	display_game("[color=#FFD700]── Recovery in this dungeon ──[/color]")
-	display_game("[color=#AAAAAA]Dungeons don't auto-heal between fights. To rest, you spend [b]food materials[/b] (plant, herb, fungus, fish). No food means no resting.[/color]")
-	var amount_color: String
-	if total == 0:
-		amount_color = "#FF4444"
-	elif total <= 5:
-		amount_color = "#FFAA00"
-	else:
-		amount_color = "#9ACD32"
-	var stack_text = "%d stack%s" % [stacks, "" if stacks == 1 else "s"]
-	display_game("Food on hand: [color=%s][b]%d[/b][/color] (%s)" % [amount_color, total, stack_text])
-	if total > 0:
-		var parts: Array = []
-		for t in food_types:
-			var n = int(by_type.get(t, 0))
-			if n > 0:
-				parts.append("%s %d" % [t.capitalize(), n])
-		if parts.size() > 0:
-			display_game("[color=#808080]  Breakdown: %s[/color]" % ", ".join(parts))
-	if total == 0:
-		display_game("[color=#FF6666]You can't rest inside without food — bring some or expect to push through on HP alone.[/color]")
-	display_game("[color=#5F9EA0]Best ways to stock up:[/color] [color=#AAAAAA]Forage herb / flower / mushroom / bush tiles overworld; fish at water tiles; forest biome is herb-rich. Markets at trading posts also sell consumable materials.[/color]")
-	display_game("")
 
 func handle_hotzone_warning(message: Dictionary):
 	"""You have found a hunting ground - somewhere worth fighting, that will not be here long.
