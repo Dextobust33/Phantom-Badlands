@@ -6631,6 +6631,20 @@ func _dev_run_shots() -> void:
 					execute_local_action("back")
 					await get_tree().create_timer(0.6).timeout
 
+			"wightpet":
+				# ⚑ THE TALL COMPANION, WHICH IS THE ONE THAT CLIPPED. Owner 2026-09-16: *"the XP bar on
+				# the Wight is being cutoff."* The Wight has the tallest art in the table, so it is the
+				# case that decides whether the panel fits - and it cannot be captured by luck.
+				await _dev_shot_force_companion("Wight")
+				send_to_server({"type": "gm_apply_state", "state": "clear"})
+				await get_tree().create_timer(0.8).timeout
+				send_to_server({"type": "gm_teleport", "x": 0, "y": 0})
+				await get_tree().create_timer(2.0).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("wightpet")
+				if _dungeon_fit_debug:
+					_dev_print_rects()
+
 			"worldpet":
 				# ⚑ THE OVERWORLD WITH A COMPANION OUT. Owner 2026-09-15: *"when testing you
 				# should also equip a companion so we can see where/how that art shows up."* The
@@ -7015,6 +7029,23 @@ func _dev_shot_grant_companions() -> void:
 		send_to_server({"type": "gm_givecompanion", "monster_type": mt})
 		await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.8).timeout
+
+
+func _dev_shot_force_companion(monster_type: String) -> void:
+	"""Grant and activate a SPECIFIC companion, for judging one animal's art.
+
+	The Wight is the tall one, and it was the Wight whose panel clipped - so "does the art fit"
+	cannot be answered from a capture of whatever companion the last scene happened to leave on
+	the character. Same reasoning as `gm_apply_state`: make the case reachable on demand."""
+	send_to_server({"type": "gm_givecompanion", "monster_type": monster_type})
+	await get_tree().create_timer(1.4).timeout
+	for c in character_data.get("collected_companions", []):
+		if c is Dictionary and String(c.get("monster_type", "")) == monster_type:
+			send_to_server({"type": "activate_companion", "id": c.get("id", "")})
+			await get_tree().create_timer(1.4).timeout
+			break
+	send_to_server({"type": "gm_revive_companion"})
+	await get_tree().create_timer(1.0).timeout
 
 
 func _dev_shot_ensure_companion() -> void:
@@ -34701,9 +34732,12 @@ func _gauge(w: int, h: int, col: String, frac: float) -> ProgressBar:
 	if frac > 0.0 and bar.value < 25.0:
 		bar.value = 25.0
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The track is dark but NOT invisible: a gauge at 0% is all track, and at (0.04, 0.04, 0.06)
+	# on a near-black panel it read as nothing at all - a Lv1 companion looked like it had no XP
+	# bar rather than an empty one. Still recessed, just legible when empty.
 	var track := StyleBoxFlat.new()
-	track.bg_color = Color(0.04, 0.04, 0.06, 1.0)
-	track.border_color = Color(0.0, 0.0, 0.0, 1.0)
+	track.bg_color = Color(0.11, 0.11, 0.14, 1.0)
+	track.border_color = Color(0.28, 0.28, 0.34, 1.0)
 	track.set_border_width_all(1)
 	track.set_corner_radius_all(2)
 	bar.add_theme_stylebox_override("background", track)
@@ -35873,6 +35907,85 @@ func _on_status_hud_eggs_meta_clicked(meta):
 			return
 		send_to_server({"type": "toggle_egg_freeze", "index": idx})
 
+func _art_visible(t: String) -> String:
+	"""The text of an art row with BBCode tags and spaces removed - i.e. what is actually drawn.
+	Used to tell a row that only opens a colour apart from a row that is genuinely empty."""
+	var out := ""
+	var depth := 0
+	for i in range(t.length()):
+		var c := t[i]
+		if c == "[":
+			depth += 1
+		elif c == "]":
+			depth = maxi(0, depth - 1)
+		elif depth == 0 and c != " ":
+			out += c
+	return out
+
+
+func _trim_art_padding(lines: Array) -> Array:
+	"""Strip the DEAD ROWS and the shared left indent off a block of ASCII art.
+
+	Owner 2026-09-16, of the Wight in the companion panel: *"the XP bar on the Wight is being
+	cutoff. I think it's too long vertically. It looks like the Wight ASCII art might just need the
+	dead lines removed from it. Seems like there's a lot of dead space included in the art."*
+	Measured: `art_map["Wight"]` is 114 rows, of which the first THIRTEEN and the last several are
+	entirely blank, and every row is space-padded to 150 characters with the figure starting around
+	column 16. So the panel was sized for a picture a sixth of which was nothing, which is what
+	pushed the XP gauge past the bottom of the box.
+
+	Fixed here rather than in the art table because it is not one companion: these blocks came out
+	of an image converter and they all carry its canvas. One trim reaches all fourteen, and the
+	table stays the converter's output rather than becoming hand-edited art nobody dares regenerate.
+
+	⛑ A LINE THAT LOOKS BLANK MAY NOT BE. The first element of every entry is `[color=#808080]` -
+	no visible characters, but it opens the colour the whole figure is drawn in, and stripping it
+	would silently grey the art. So a row is padding only if it has nothing visible AND carries no
+	BBCode.
+
+	Scoped to the COMPANION panel on purpose. The same table feeds the combat battlefield, which
+	positions art against its own box, and there is no reason to move that today."""
+	var out: Array = lines.duplicate()
+	var is_pad := func(t: String) -> bool:
+		return not t.contains("[") and t.strip_edges() == ""
+	var is_bb := func(t: String) -> bool:
+		return t.contains("[") and _art_visible(t) == ""
+	# ⛑ A BBCODE-ONLY ROW IS TRANSPARENT: stepped over, never deleted.
+	#
+	# This is what the first version got wrong, and a static check over all 56 art entries is
+	# what caught it rather than a screenshot. `[color=#808080]` is the FIRST element of every
+	# entry, so a loop that stops at the first non-padding row stops on it immediately and the
+	# thirteen blank rows behind it are never reached - the trim reported success and removed
+	# nothing. With the rule corrected: 355 blank rows come off across the whole table, the
+	# Wight goes 118 -> 98, and no entry loses a single visible character.
+	var k: int = 0
+	while k < out.size():
+		if is_bb.call(String(out[k])):
+			k += 1
+		elif is_pad.call(String(out[k])):
+			out.remove_at(k)
+		else:
+			break
+	k = out.size() - 1
+	while k >= 0:
+		if is_bb.call(String(out[k])):
+			k -= 1
+		elif is_pad.call(String(out[k])):
+			out.remove_at(k)
+			k -= 1
+		else:
+			break
+	# ⛑ ROWS KEEP THEIR WIDTH. The first cut also trimmed the shared left indent and the
+	# trailing spaces, and the owner saw the result immediately: *"now it is skewed a bit."*
+	# The block is drawn inside `[center]`, which centres EACH LINE - so the moment rows stop
+	# being the same length the figure shears. And trimming the left indent buys nothing under
+	# `[center]` anyway: a rectangle shifted left re-centres to exactly where it was.
+	#
+	# So this trims ROWS and nothing else. Vertical dead space was the actual complaint (the
+	# Wight goes 118 rows to 98, which is what stopped the XP gauge being pushed out of the box).
+	return out
+
+
 func _get_companion_art_lines(monster_type: String, companion_name: String) -> Array:
 	"""Get ASCII art lines for a companion by monster type or name.
 	Handles special variants and name mappings."""
@@ -35900,9 +36013,9 @@ func _get_companion_art_lines(monster_type: String, companion_name: String) -> A
 
 	# Try to find art by lookup name first, then companion name
 	if lookup_name != "" and art_map.has(lookup_name):
-		return art_map[lookup_name].duplicate()
+		return _trim_art_padding(art_map[lookup_name])
 	elif art_map.has(companion_name):
-		return art_map[companion_name].duplicate()
+		return _trim_art_padding(art_map[companion_name])
 
 	return []
 
