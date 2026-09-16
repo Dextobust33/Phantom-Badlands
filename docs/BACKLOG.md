@@ -584,6 +584,16 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE (rewritten 2026-09-16 early hours, mid UI-ARC)
 
+### ⛑ v0.9.793 SHIPPED THE UI ARC UNFINISHED - ON THE OWNER'S CALL (2026-09-16 ~02:30)
+
+Owner, going to bed: *"make sure to document and update everything properly. Go ahead and push a
+release as well. We will work through the bugs in the morning."* So v0.9.793 is the UI reflow as it
+stood at 02:00, **with two screens never looked at** - the dungeon and party combat - and the stance
+timing still open. That was said plainly before shipping; it is not a surprise to find in the
+morning, it is the deal that was made.
+
+**START HERE IN THE MORNING: the four open items below, then walk the dungeon and a party fight.**
+
 ### ⛑ WHERE THE UI ARC STOPPED (2026-09-16 ~02:00, owner went to bed)
 
 **Nothing is released. Master carries an unreleased UI reflow** built live with the owner over one
@@ -600,6 +610,13 @@ as the page is built, never a list of screen names. Visual menu panels (Inventor
 Market...) keep the canvas as they always did.
 
 **What the owner still has open, in their words:**
+**FIXED at the last minute, by measurement:** the Pouch's Back button is bound to
+`more_subview_back`, NOT `pouch_back` - so two rounds of fixes went to code that was never being
+pressed. The `backtest` shots scene (added this session) opens each screen the way the shortcut row
+does, presses whatever slot 0 actually holds, and prints whether the world came back. It named the
+binding in one run, and it also caught its own first version pressing `jobs_close` when the action
+is `job_close`. Every sub-view of the More menu goes through one exit now.
+
 - [ ] *"Market and alchemy crafting still display Travel stances for a brief second before it hides
       when they are opened, the stances need to hide before those menus are drawn, not after."*
       The margin decision moved from a `_process` poll to the end of the frame that handled the

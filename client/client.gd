@@ -6303,7 +6303,12 @@ func _dev_run_shots() -> void:
 					print("[BACKTEST] %s OPEN  more=%s pend_more=%s pend_inv=%s wide=%s panel=%s margin=%s" % [
 						String(probe[0]), str(more_mode), pending_more_action, pending_inventory_action,
 						str(_ow_wide_page), str(_canvas_panel_open()), str(_margin_widgets_shown())])
-					execute_local_action(String(probe[1]))
+					# THE REAL PATH: whatever slot 0 is bound to right now, the way the key press fires
+					# it. Calling the action id directly is how the first version of this probe missed
+					# the pouch bug entirely - the id it pressed was not the id the Back button holds.
+					var slot0: String = String(current_actions[0].get("action_data", "")) if current_actions.size() > 0 else ""
+					print("[BACKTEST]   slot0 is '%s' (expected '%s')" % [slot0, String(probe[1])])
+					trigger_action(0)
 					await get_tree().create_timer(0.8).timeout
 					print("[BACKTEST] %s BACK1 more=%s pend_more=%s pend_inv=%s wide=%s panel=%s margin=%s" % [
 						String(probe[0]), str(more_mode), pending_more_action, pending_inventory_action,
@@ -15217,16 +15222,20 @@ func execute_local_action(action: String):
 			display_materials()
 			update_action_bar()
 		"more_subview_back":
+			# ⚑ THE BACK THE POUCH ACTUALLY USES. Measured, after two fixes to the wrong action:
+			# the button in that screen is bound to this, not to "pouch_back", so the code I kept
+			# correcting was never the code being pressed. Owner 2026-09-16: *"pressing it once goes
+			# back to the More menu on the right, pressing it a second time closes the more menu."*
+			#
+			# Every sub-view of the More menu comes through here - changelog, bestiary, pouch, the
+			# dungeon atlas - so routing it to the shared exit fixes the whole family at once, and
+			# still lands on More for anyone who opened it from More.
 			pending_more_action = ""
 			pending_inventory_action = ""
-			set_meta("hotkey_0_pressed", true)
-			display_more_menu()
-			update_action_bar()
+			_close_menu_to_origin()
 		"pouch_back":
 			pending_inventory_action = ""
 			_close_menu_to_origin()
-			return
-			update_action_bar()
 		"more_menu":
 			open_more_menu()
 		"more_close":
@@ -31794,6 +31803,18 @@ func display_changelog():
 	# measured against what combat actually reads, card-specific gear replacing the +N rank
 	# affixes, gear reaching cards, a defense double-count, and the tutorial fixes from a live
 	# two-player session. Monster curve re-calibrated after the player-side changes.
+	# v0.9.793 - the UI reflow: the map takes the main canvas, the HUD moves into its margins,
+	# the right column becomes the log, and text stops flashing on screen and vanishing.
+	display_game("[color=#00FF00]v0.9.793[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE MAP TAKES THE BIG SCREEN.[/color] The overworld map was drawn in the small side panel while the main window held six lines of status and then sat empty. It now fills the main canvas and the tiles are drawn at their [b]real size[/b] — they were being shrunk by a fifth, which is most of why they were hard to read at 1080p.")
+	display_game("  [color=#FF8000]★ YOUR HUD MOVED INTO THE MARGINS.[/color] A square map in a wide window leaves room either side, and that is where the HUD now lives: [b]coordinates[/b] and your [b]tools, backpack, quests and eggs[/b] on the left with the [b]chat box[/b] under them, and the [b]minimap, area, active effects, party[/b] and your [b]companion[/b] on the right. Everything wears the same frame, including the map.")
+	display_game("  [color=#FF8000]★ THE RIGHT COLUMN IS A LOG THAT KEEPS ITS PLACE.[/color] It runs the full height of the window now. The [b]newest line is always visible[/b], scrolling up for history no longer drags you back to the bottom, and the same line arriving five times reads [b](x5)[/b] instead of five copies. Text that is too big for the column takes the main screen instead of being squeezed into it.")
+	display_game("  [color=#FF4444]★ TEXT STOPPED FLASHING AND VANISHING.[/color] Standing in a post, every step redrew the post description on the main screen for a frame before the map painted over it. Station text — the [b]Dungeon Atlas[/b], the [b]market[/b], the [b]inn[/b] — now sits in the column, replaces itself instead of piling up, and clears when you walk away.")
+	display_game("  [color=#1EFF00]◆ Buttons that look like buttons.[/color] The action bar and the shortcut row were flat outlines that read as a row of words; they are raised, shadowed and sink when pressed, with the key shown on a cap underneath. The shortcuts are [b]coloured by what they are[/b] — creatures green, goods amber, places blue, people violet — so the row can be learned by shape.")
+	display_game("  [color=#1EFF00]◆ Travel stances sit under the map[/color] with the shortcut buttons beside them, the [b]player list[/b] is a tab in the chat box alongside [b]Chat[/b] and [b]System[/b], and the action bar has the bottom of the window to itself.")
+	display_game("  [color=#1EFF00]◆ One press means back.[/color] Companions, Eggs, Jobs, the Pouch, the Deck and the Market all took two presses to leave — the first returned you to a menu you never opened. The [b]stat-point popup is gone[/b]; the Stats button already says how many you have. A kill now pays [b]more for a deadlier monster[/b], and about 18% more on average.")
+	display_game("")
+
 	display_game("[color=#00FF00]v0.9.792[/color] [color=#808080](Current)[/color]")
 	display_game("  [color=#FF4444]★ PARTY FIGHTS PAY WHAT THE KILL IS WORTH.[/color] A kill in a party — including every fight beside the Warden — paid only the monster’s [b]base XP[/b]. No Danger Zone bonus, no bonus for fighting above your level, no apex bonus, no Hunter’s Mark, no Insight potion, and your [b]companion earned nothing at all[/b]. A level 7 hotzone kill that pays 361 solo was paying 195. [b]Perfect Heist[/b] was short too. One sum now, whoever swung.")
 	display_game("  [color=#FF8000]★ YOUR GEAR NOW POWERS YOUR CARDS.[/color] Gear [b]+% damage[/b], [b]crit damage[/b], [b]lifesteal[/b], [b]Shocking[/b] and [b]Execute[/b] used to work on basic attacks only — about one action in a hundred. They now work on your cards, and your weapon's [b]attack[/b] adds to card damage too, at half the share it gives a swing, so attacking still has its place. Monsters were re-sized to match.")
@@ -31822,17 +31843,6 @@ func display_changelog():
 	display_game("  [color=#FF4444]★ ASSASSINATE SHOWS THE ODDS IT ACTUALLY ROLLS.[/color] The card advertised a kill chance [b]13 points higher[/b] than the one the game rolled, and [b]Silver Tongue[/b] and the unique that raise it moved the card but not the dice. Both now work as written, and the card also shows the damage it deals when it does not kill.")
 	display_game("  [color=#1EFF00]◆ Floor loot looks like what it is.[/color] Every piece of equipment on a dungeon floor was drawn as a shield and every consumable as a potion. There are now pictures for each slot and each kind.")
 	display_game("  [color=#1EFF00]◆ The chat bar no longer grabs your keyboard[/color] when you close a tutorial panel, and [color=#1EFF00]a full pack no longer eats your starter gear[/color] in silence — it says what it could not give, and the Warden hands it over when you have room.")
-	display_game("")
-
-	display_game("[color=#808080]v0.9.789[/color]")
-	display_game("  [color=#FF8000]★ WARDEN HOLLIS NOW WALKS YOU TO YOUR FIRST DUNGEON.[/color] The last step of [b]Warden’s Watch[/b] used to end with “the rest of your gear is on the floor of that dungeon” and leave you standing in a post with no idea which one. He now [b]tells you where it is, asks if you are ready, and then leads you there himself[/b] — resting you before you set off, and keeping the road quiet while you walk. Step off on your own at any time and he falls in behind you instead.")
-	display_game("  [color=#FF8000]★ AND HE TEACHES THE FIGHT ONE PIECE AT A TIME.[/color] Your first combat now names the card you are meant to play and [b]rings both the card and the key that plays it[/b], instead of describing a screen you have never seen. He has the health to survive standing next to you while you learn, and he takes the hits that would have ended you.")
-	display_game("  [color=#FF4444]★ YOU CAN CHANGE YOUR MIND IN A PARTY FIGHT.[/color] Picking an action locked it in and left you watching. [b]Pick something else and it replaces it[/b] — no confirmation, no waiting.")
-	display_game("  [color=#FF4444]★ A DUNGEON’S GRADE IS THE ONE YOU ARE STANDING IN.[/color] A player entered what the map showed as [b]F4[/b] and found a [b]C5[/b] inside, with a level 29 Phoenix. The grade belongs to the instance and eight places were still asking the [b]type[/b] — including the one that names it. What the overworld says is what you enter, and the boss’s egg is now [b]never below the dungeon’s own rank[/b].")
-	display_game("  [color=#FF4444]★ AND YOU CAN ALWAYS GET OUT.[/color] Scrolls of Escape were graded, so the one in your pack could be [b]refused by the dungeon you were trapped in[/b]. There is now [b]one scroll[/b] and it works everywhere.")
-	display_game("  [color=#1EFF00]◆ Swift enemies split their hits.[/color] Three strikes all landing on you is how a new character dies without a turn. They are now divided across you and your companion, the way multi-strike already worked.")
-	display_game("  [color=#1EFF00]◆ A wish says what it grants[/color] before you choose it, [color=#1EFF00]Tricksters no longer pay a health tax[/color] for an ability that no longer exists, and [color=#1EFF00]you can inspect your equipment in the Sanctuary[/color].")
-	display_game("  [color=#1EFF00]◆ New characters are born whole.[/color] Creation was granting gear after health had been totalled, so you started at [b]129 of 142[/b] — wounded, before anything had touched you.")
 	display_game("")
 
 	display_game("[color=#808080]v0.9.788[/color]")
