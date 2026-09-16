@@ -6810,6 +6810,50 @@ func _dev_run_shots() -> void:
 					companions_panel.hide()
 				update_action_bar()
 
+			"trivialhunt":
+				# ⚑ REPRODUCE THE OWNER'S BREAK. They hunted repeatedly with the 5 key on a level 30
+				# character in low country and the screen ended up with TWO maps - one on the canvas and
+				# one in the side column - the margins gone and the action bar stuck on "Continue".
+				#
+				# Reading found nothing: `combat_end`, which is what sets `pending_continue`, is only sent
+				# from `handle_combat_command`, and the auto-resolve never goes near it. So this hunts on
+				# a loop and prints the client state after each one, which is the only way to see WHICH
+				# hunt breaks it and what it looks like at that moment.
+				send_to_server({"type": "gm_setlevel", "level": 30})
+				await get_tree().create_timer(1.5).timeout
+				send_to_server({"type": "gm_teleport", "x": 57, "y": -11})
+				await get_tree().create_timer(1.5).timeout
+				# Hunt until a real fight starts, WIN it, and watch the Continue prompt - which is the
+				# state the owner described twice: two maps while it is up, and the map not coming back
+				# when it is dismissed. Driving it through a victory is deterministic; waiting for the
+				# 3% loot-find roll is not.
+				send_to_server({"type": "gm_godmode"})
+				await get_tree().create_timer(0.8).timeout
+				for _h in range(10):
+					if in_combat:
+						break
+					send_to_server({"type": "hunt"})
+					await get_tree().create_timer(1.4).timeout
+				for _r in range(30):
+					if pending_continue:
+						break
+					trigger_action(0)
+					await get_tree().create_timer(1.0).timeout
+				var _col := func() -> bool:
+					return map_display != null and map_display.visible and map_display.get_parsed_text().contains("You")
+				var _canvas_len := func() -> int:
+					return game_output.get_parsed_text().length() if game_output != null else -1
+				print("[TRIVIALHUNT] AT CONTINUE: continue=%s col_map=%s canvas_len=%d margins=%s" % [
+					str(pending_continue), str(_col.call()), _canvas_len.call(), str(_margin_widgets_shown())])
+				await _dev_shot_capture("at_continue")
+				# ...and dismiss it. The map should be back on the canvas without needing a step.
+				trigger_action(0)
+				await get_tree().create_timer(2.0).timeout
+				print("[TRIVIALHUNT] AFTER CONTINUE: continue=%s col_map=%s canvas_len=%d margins=%s  %s" % [
+					str(pending_continue), str(_col.call()), _canvas_len.call(), str(_margin_widgets_shown()),
+					"PASS" if (not pending_continue and _canvas_len.call() > 200 and _margin_widgets_shown()) else "FAIL"])
+				await _dev_shot_capture("trivial_hunt")
+
 			"dungeoncard":
 				# ⚑ VERIFY THE CARD AWARD IS VISIBLE - the one complaint of the three left open.
 				#
@@ -43777,6 +43821,26 @@ func update_map(map_text: String):
 			_ow_rendering = false
 			_ow_canvas_showing = true
 			_ow_canvas_mark = game_output.get_parsed_text().length()
+		elif _ow_canvas_showing:
+			# ⛑ THE MAP JUST MOVED TO THE COLUMN, SO THE CANVAS HAS TO GIVE UP ITS COPY.
+			#
+			# `_ow_canvas_showing` was only ever set TRUE. When the canvas stopped being eligible -
+			# which `_combat_ui_busy()` makes happen for the whole of a Continue prompt - the map
+			# was redrawn in the side column and the canvas silently kept the old one. Owner, after
+			# hunting repeatedly: the screen ended up with TWO maps, one in each place.
+			#
+			# Reproduced with `--shots=trivialhunt`: continue=true, col_map=true, margins=false from
+			# the fourth hunt onward and never recovering. It is not new and not about hunting - any
+			# Continue prompt does it, including an ordinary combat victory, which is the same
+			# report as *"after clearing the victory screen it didn't immediately redraw the map"*.
+			#
+			# Only cleared when the canvas still holds the MAP and nothing else has printed over it:
+			# `_ow_canvas_mark` is the length recorded when the map was drawn, so a page that has
+			# since taken the canvas is left strictly alone.
+			if game_output != null and is_instance_valid(game_output):
+				if game_output.get_parsed_text().length() <= _ow_canvas_mark:
+					game_output.clear()
+			_ow_canvas_showing = false
 	if minimap_display:
 		minimap_display.clear()
 		if minimap_text != "":

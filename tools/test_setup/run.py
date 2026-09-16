@@ -147,6 +147,7 @@ def main():
     # opening four windows to reach one of them is its own obstacle.
     only = ""
     noranks = False
+    noparty = False
     want_ranks = 0
     shots = ""
     argv = []
@@ -160,6 +161,11 @@ def main():
             # its own annoyance. The scene captures from inside the client, at the client's own
             # resolution, with the party already formed by the auto-party hook.
             shots = a.split("=", 1)[1]
+        elif a == "--noparty":
+            # Some scenarios need the players INDEPENDENT. A follower cannot move on its own
+            # (the server refuses), so an auto-party silently disables the control half of any
+            # A/B test - which is how the trivial-encounter scenario would have been unusable.
+            noparty = True
         elif a == "--noranks":
             noranks = True
         elif a.startswith("--ranks="):
@@ -221,7 +227,8 @@ def main():
     slog = open(os.path.join(logdir, "server.log"), "w", encoding="utf-8", errors="replace")
     subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
                       "--resolution", "1280x720", "server/server.tscn", "--",
-                      "--autoparty", "--autoact", "--playtest-log"],
+                      "--autoact", "--playtest-log"]
+                     + ([] if noparty else ["--autoparty"]),
                      stdout=slog, stderr=subprocess.STDOUT)
     if not wait_for_server():
         print("  server never started listening")

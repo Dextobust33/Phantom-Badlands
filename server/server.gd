@@ -9448,10 +9448,18 @@ func _auto_resolve_encounter(peer_id: int, character, monster: Dictionary) -> vo
 		var t := String(m)
 		if t.contains("EXP") or t.contains("XP"):
 			gained = maxi(gained, _first_int_in(t))
-	var line := "[color=#808080]You brush past a %s without breaking stride." % mname
+	# ⛑ LOUD ENOUGH TO NOTICE. The first version was grey-on-grey in the rolling log, and the
+	# owner walked a level 30 character around and reported *"couldn't find any encounters"* -
+	# while the server log showed the resolve firing. A resolved encounter that reads as nothing
+	# is indistinguishable from no encounter, which is worse than the interruption it replaced:
+	# the player cannot tell the feature from a broken spawn rate.
+	#
+	# So it keeps its one line, but it is a line you can see: a marker, the monster named in its
+	# own colour, and the XP in the green every other reward uses.
+	var line := "[color=#7FD4A0]›[/color] [color=#B8A98C]You cut down a[/color] [color=#9ACD32]%s[/color] [color=#B8A98C]without breaking stride[/color]" % mname
 	if gained > 0:
-		line += " [color=#9ACD32]+%d XP[/color][color=#808080]" % gained
-	line += ".[/color]"
+		line += " [color=#1EFF00]+%d XP[/color]" % gained
+	line += "[color=#B8A98C].[/color]"
 	send_to_peer(peer_id, {"type": "text", "message": line})
 	save_character(peer_id)
 	send_character_update(peer_id)

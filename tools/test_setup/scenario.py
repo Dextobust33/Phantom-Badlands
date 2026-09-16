@@ -309,6 +309,20 @@ SCENARIOS = {
         players=3, at=(250, -150),
         apply=lambda c: c.update({"current_hp": 1})),
 
+    "trivial": dict(
+        doc="TRIVIAL-ENCOUNTER AUTO-RESOLVE, with its own control. Both characters stand in the "
+            "same ~Lv8 country outside Iron Peak. test02 is set to LEVEL 30, so every monster "
+            "here is at or under level/3 and should resolve itself - one grey line, no combat "
+            "screen, full XP. test002 stays at level 9, so the identical encounter still opens a "
+            "real fight. If both behave the same way, the gate is not working. Walk east/west a "
+            "few steps in each; Hunting stance raises the encounter rate.",
+        players=2, at=(57, -11),
+        apply=lambda c: c.update({
+            "current_hp": c.get("max_hp", 100),
+            "level": 30 if c["name"] == "test02" else 9,
+            "travel_stance": "hunting",
+        })),
+
     "party5": dict(
         doc="A FULL party of five (leader + four) - the max. Exercises the widest combat party "
             "column, the longest follower tail through a post doorway, and rotation across five.",
