@@ -311,7 +311,7 @@ SCENARIOS = {
 
     "trivial": dict(
         doc="TRIVIAL-ENCOUNTER AUTO-RESOLVE, with its own control. Both characters stand in the "
-            "same ~Lv8 country outside Iron Peak. test02 is set to LEVEL 30, so every monster "
+            "same ~Lv8 country outside Iron Peak. test02 is set to LEVEL 20, so every monster "
             "here is at or under level/3 and should resolve itself - one grey line, no combat "
             "screen, full XP. test002 stays at level 9, so the identical encounter still opens a "
             "real fight. If both behave the same way, the gate is not working. Walk east/west a "
@@ -319,7 +319,10 @@ SCENARIOS = {
         players=2, at=(57, -11),
         apply=lambda c: c.update({
             "current_hp": c.get("max_hp", 100),
-            "level": 30 if c["name"] == "test02" else 9,
+            # A gap of ~12 above the ~Lv8 ground: inside the band where encounters still fire
+            # (the rate reaches zero at +20, so level 30 here saw NOTHING at all), and past the
+            # +10 the auto-resolve needs. The control stays level 9 - a real fight.
+            "level": 20 if c["name"] == "test02" else 9,
             "travel_stance": "hunting",
         })),
 

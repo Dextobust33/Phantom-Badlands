@@ -76,11 +76,15 @@ func _init() -> void:
 
 	print("\n===== 3. WHICH ENCOUNTERS COUNT AS TRIVIAL =====")
 	var srv = ServerScript.new()
-	var lo = mdb.generate_monster_by_name("Goblin", 8, true, "normal")     # 8 vs 30/3 = 10
-	var hi = mdb.generate_monster_by_name("Goblin", 15, true, "normal")    # 15 > 10
-	var elite = mdb.generate_monster_by_name("Goblin", 8, true, "elite")
-	ck(srv._encounter_is_trivial(ch, lo, 8), "level 8 against a level 30 player IS trivial")
-	ck(not srv._encounter_is_trivial(ch, hi, 15), "level 15 against a level 30 player is NOT")
+	# The threshold is a level GAP of 10, chosen to sit INSIDE the window where encounters
+	# still fire: `check_encounter` scales the rate by -5% per level above the area and reaches
+	# zero at +20, so a ratio of level/3 put this feature entirely in dead ground.
+	var lo = mdb.generate_monster_by_name("Goblin", 18, true, "normal")    # gap 12 - trivial
+	var hi = mdb.generate_monster_by_name("Goblin", 24, true, "normal")    # gap 6  - a real fight
+	var elite = mdb.generate_monster_by_name("Goblin", 15, true, "elite")
+	ck(srv._encounter_is_trivial(ch, lo, 18), "a 12-level gap IS trivial")
+	ck(not srv._encounter_is_trivial(ch, hi, 24), "a 6-level gap is NOT")
+	ck(not srv._encounter_is_trivial(ch, lo, 18, true), "a fight you HUNTED for is never trivial")
 	ck(not srv._encounter_is_trivial(ch, elite, 8), "an ELITE is never trivial, however low")
 	var spill = lo.duplicate()
 	spill["threat_source"] = "Wraith Barrow"
@@ -91,6 +95,15 @@ func _init() -> void:
 	var young = sim.make_char(6, "average", "Fighter", "Human")
 	ck(not srv._encounter_is_trivial(young, mdb.generate_monster_by_name("Goblin", 1, true, "normal"), 1),
 		"a low-level character never gets free kills (everything is still a fight for them)")
+
+	# ⛑ AND THE BAND HAS TO OVERLAP THE ONE WHERE ENCOUNTERS ACTUALLY HAPPEN. This is the
+	# check that would have caught the whole mistake: the first threshold was unreachable
+	# because `check_encounter` had already zeroed the rate by the time it was met.
+	var ws = load("res://shared/world_system.gd").new()
+	var gap_at_zero := 20                       # -5% per level, so zero at +20
+	ck(int(srv.TRIVIAL_ENCOUNTER_LEVEL_GAP) < gap_at_zero,
+		"the trivial gap (%d) is INSIDE the window where encounters still fire (<%d)" % [
+			int(srv.TRIVIAL_ENCOUNTER_LEVEL_GAP), gap_at_zero])
 
 	print("\n===== VERDICT =====")
 	print("  all checks PASS" if fails == 0 else "  %d check(s) FAIL" % fails)

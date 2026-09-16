@@ -6168,7 +6168,7 @@ func handle_hunt(peer_id: int):
 		hunt_chance += 20  # 80% in hotspots
 
 	if hunt_roll < hunt_chance:
-		trigger_encounter(peer_id)
+		trigger_encounter(peer_id, true)   # hunted: the player asked for this fight, so it is never auto-resolved
 	else:
 		# Don't send location update - player hasn't moved, keep the message visible
 		send_to_peer(peer_id, {
@@ -9393,17 +9393,30 @@ func _exit_tree():
 	save_all_active_characters()
 	server.stop()
 
-## How far below you the ground has to be before a fight resolves itself: your level divided by
-## this. At 3.0 a level 30 character stops being interrupted by level 10 country - which is the
-## band where the owner reported the encounters as meaningless.
-const TRIVIAL_ENCOUNTER_LEVEL_DIVISOR := 3.0
+## ⛑ A LEVEL GAP, NOT A RATIO - and the first version was unreachable because of it.
+##
+## `world_system.check_encounter` has scaled the encounter rate by the level gap since v0.9.620:
+## -5% per level above the area, reaching ZERO at +20. The owner's original complaint about "low
+## level meaningless encounters" was already answered there for the far-above case.
+##
+## The first cut of this feature used "monster at or under your level / 3", which for a level 30
+## character means area level 10 - a gap of 20, where the encounter rate is already zero. So it
+## could never fire while walking, and the only path that reached it was the HUNT action, which
+## bypasses the scaling. The owner found this in one test: *"Still not seeing any encounters for
+## test02"*, while hunting by hand did produce one. Built to fire exactly where it should not and
+## never where it should.
+##
+## A GAP lines the two up. At +10 the encounter rate is halved and still real, and the monster is
+## worth nothing - which is exactly the band this is for. Below +10 the fight is still a fight;
+## above +20 the world already stopped bothering you.
+const TRIVIAL_ENCOUNTER_LEVEL_GAP := 10
 ## ...and never below this, so a level 3 character is not handed free kills while everything is
 ## still a real fight for them. The feature is for people who have outgrown the ground, and at low
 ## level nobody has.
 const TRIVIAL_ENCOUNTER_MIN_LEVEL := 12
 
 
-func _encounter_is_trivial(character, monster: Dictionary, area_level: int) -> bool:
+func _encounter_is_trivial(character, monster: Dictionary, area_level: int, asked_for_it: bool = false) -> bool:
 	"""Is this a fight not worth opening a screen for?
 
 	Judged on the MONSTER's own level rather than the area average, because the area is a range and
@@ -9411,6 +9424,11 @@ func _encounter_is_trivial(character, monster: Dictionary, area_level: int) -> b
 	can still roll something that is not.
 
 	Every exclusion here is a fight that is an EVENT rather than an interruption."""
+	# ⛑ HUNTING IS ASKING FOR A FIGHT. The Hunt action bypasses the encounter-rate scaling on
+	# purpose, so it is the one path that reaches a far-below monster at full rate - and
+	# resolving it away is the opposite of what the player just pressed a button for.
+	if asked_for_it:
+		return false
 	if int(character.level) < TRIVIAL_ENCOUNTER_MIN_LEVEL:
 		return false
 	if String(character.forced_next_monster) != "":
@@ -9425,8 +9443,7 @@ func _encounter_is_trivial(character, monster: Dictionary, area_level: int) -> b
 		return false                                  # spilled out of a dungeon threat
 	if float(monster.get("hotspot_intensity", 0.0)) > 0.0:
 		return false                                  # a hunting ground is chosen ground
-	var cutoff: float = float(character.level) / TRIVIAL_ENCOUNTER_LEVEL_DIVISOR
-	return float(monster.get("level", area_level)) <= cutoff
+	return int(character.level) - int(monster.get("level", area_level)) >= TRIVIAL_ENCOUNTER_LEVEL_GAP
 
 
 func _auto_resolve_encounter(peer_id: int, character, monster: Dictionary) -> void:
@@ -9478,8 +9495,12 @@ func _first_int_in(text: String) -> int:
 	return int(cur) if cur != "" else 0
 
 
-func trigger_encounter(peer_id: int):
-	"""Trigger a random encounter - usually monster, but rarely loot or legendary adventurer"""
+func trigger_encounter(peer_id: int, hunted: bool = false):
+	"""Trigger a random encounter - usually monster, but rarely loot or legendary adventurer.
+
+	`hunted` is true when the player pressed Hunt. It travels all the way down to the trivial
+	check, because a fight you went looking for is never an interruption."""
+	var _encounter_was_hunted: bool = hunted
 	if not characters.has(peer_id):
 		return
 
@@ -9573,7 +9594,7 @@ func trigger_encounter(peer_id: int):
 	# threat-corridor spill, a monster summoned by a Selection Scroll, or anything carrying a
 	# hotspot intensity. Those are events, and skipping an event is not the same as skipping
 	# an interruption.
-	if _encounter_is_trivial(character, monster, area_level):
+	if _encounter_is_trivial(character, monster, area_level, _encounter_was_hunted):
 		_auto_resolve_encounter(peer_id, character, monster)
 		return
 
