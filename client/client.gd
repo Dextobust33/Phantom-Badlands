@@ -6756,6 +6756,8 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "gm_dungeon_drop", "kind": "equipment"})
 				await get_tree().create_timer(0.8).timeout
 				await _dev_shot_capture("dungeon")
+				if _dungeon_fit_debug:
+					_dev_print_rects()
 
 			"dungeontrap":
 				# What a sprung trap looks like. 2026-09-09: this screen showed a BLANK canvas
@@ -35140,8 +35142,28 @@ func _place_map_widgets(on_canvas: bool) -> void:
 	# chat used to be visible throughout - it lived under the action bar. So in those it goes
 	# back there rather than disappearing for the length of a dungeon run.
 	var chat_in_margin: bool = on_canvas and canvas != null and not (dungeon_mode or in_combat or _combat_ui_busy() or _house_room_active())
+	# ⚑ ...AND UNDERGROUND IT GOES IN THE SIDE COLUMN, NOT UNDER THE ACTION BAR.
+	#
+	# Measured, chasing the owner's *"all of the wasted space in the canvas"*: in a dungeon the
+	# canvas is 662 tall where the overworld gets 792, and the missing 130px are in BottomStrip
+	# (h_min 256 underground against ~126 up top) - the chat log moving there is what claims
+	# them. So the floor was paying for the chat box out of its tile size, and the dungeon side
+	# column - which carries the floor status and the run log in its top third and nothing at
+	# all in the other 680px - was the space already going begging.
+	#
+	# The dungeon is the one mode where this is clearly right: it has its own side column and
+	# its canvas is a tile grid that any floating box would cover. A fight and the Sanctuary
+	# room still send it to the bottom strip, where it has always lived.
+	var chat_in_column: bool = dungeon_mode and not in_combat and not _combat_ui_busy() and map_display != null and is_instance_valid(map_display)
 	if chat_output != null and is_instance_valid(chat_output):
 		if chat_in_margin:
+			# Undo the dungeon column split. A 1.4 ratio against a hidden sibling costs nothing,
+			# but leaving it means the column is carrying a number nobody set for this screen.
+			if map_display != null and is_instance_valid(map_display):
+				map_display.size_flags_stretch_ratio = 1.0
+				var _cc: Node = map_display.get_parent().get_node_or_null("ColumnChat") if map_display.get_parent() != null else null
+				if _cc != null:
+					(_cc as Control).visible = false
 			var chat_box: VBoxContainer = canvas.get_node_or_null("MarginChat") as VBoxContainer
 			if chat_box == null:
 				chat_box = VBoxContainer.new()
@@ -35182,10 +35204,54 @@ func _place_map_widgets(on_canvas: bool) -> void:
 			chat_box.offset_right = 8.0 + margin_w
 			chat_box.offset_top = chat_top
 			chat_box.offset_bottom = -(_stance_bar_h + 8.0)
+		elif chat_in_column:
+			var col: Control = map_display.get_parent() as Control
+			if col != null:
+				var dbox: VBoxContainer = col.get_node_or_null("ColumnChat") as VBoxContainer
+				if dbox == null:
+					dbox = VBoxContainer.new()
+					dbox.name = "ColumnChat"
+					dbox.add_theme_constant_override("separation", 2)
+					col.add_child(dbox)
+				# Directly under the floor-status panel, which is what it is reading alongside.
+				col.move_child(dbox, mini(map_display.get_index() + 1, col.get_child_count() - 1))
+				dbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				dbox.size_flags_stretch_ratio = 1.0
+				# The status panel keeps the larger share; it is the one you are reading to play.
+				map_display.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				map_display.size_flags_stretch_ratio = 1.4
+				for n in [chat_tab_bar, chat_output, online_players_list]:
+					if n == null or not is_instance_valid(n):
+						continue
+					if (n as Node).get_parent() != dbox:
+						if (n as Node).get_parent() != null:
+							(n as Node).get_parent().remove_child(n)
+						dbox.add_child(n)
+				chat_output.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				chat_output.custom_minimum_size.y = 0.0
+				if not chat_output.has_theme_stylebox_override("normal"):
+					chat_output.add_theme_stylebox_override("normal", _margin_box_style())
+				if online_players_list != null and is_instance_valid(online_players_list):
+					online_players_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+					online_players_list.scroll_active = true
+					online_players_list.custom_minimum_size.y = 0.0
+					if not online_players_list.has_theme_stylebox_override("normal"):
+						online_players_list.add_theme_stylebox_override("normal", _margin_box_style())
+					online_players_list.visible = chat_tab == "players"
+				dbox.visible = true
+			if _margin_chat_box != null and is_instance_valid(_margin_chat_box):
+				_margin_chat_box.visible = false
 		else:
-			# Sprites off: the map is drawn in the column and the canvas is plain text, so a
-			# framed chat box floating on it would cover the text. It goes back under the action
-			# bar, which is where it lived before the margins existed.
+			# Sprites off, a fight, or the Sanctuary room: the map is drawn in the column and the
+			# canvas is plain text or a battlefield, so a framed chat box floating on it would
+			# cover what is there. It goes back under the action bar, which is where it lived
+			# before the margins existed.
+			# The column split is undone, or the side panel keeps a 1.4 ratio against nothing.
+			if map_display != null and is_instance_valid(map_display):
+				map_display.size_flags_stretch_ratio = 1.0
+				var _old: Node = map_display.get_parent().get_node_or_null("ColumnChat") if map_display.get_parent() != null else null
+				if _old != null:
+					(_old as Control).visible = false
 			var center: Node = _bottom_node("CenterPanel")
 			if center != null:
 				if chat_tab_bar != null and is_instance_valid(chat_tab_bar) and chat_tab_bar.get_parent() != center:
@@ -49354,6 +49420,28 @@ func _dev_print_rects() -> void:
 			var c: Control = ch as Control
 			print("[RECTS]   %-18s vis=%s y=%.0f..%.0f x=%.0f..%.0f" % [c.name, str(c.visible),
 				c.position.y, c.position.y + c.size.y, c.position.x, c.position.x + c.size.x])
+
+	# ...and the rows OUTSIDE the canvas, because a canvas that is short is a canvas whose
+	# siblings took the height. Walked two levels deep, with each node named by its path so a
+	# widget that has been re-parented at runtime is obvious.
+	var root: Node = $RootContainer
+	for a in root.get_children():
+		if not (a is Control):
+			continue
+		var ac: Control = a as Control
+		print("[TREE] %-16s vis=%s y=%.0f..%.0f" % [ac.name, str(ac.visible), ac.position.y, ac.position.y + ac.size.y])
+		for b in ac.get_children():
+			if not (b is Control):
+				continue
+			var bc: Control = b as Control
+			print("[TREE]   %-16s vis=%s y=%.0f..%.0f h_min=%.0f" % [bc.name, str(bc.visible),
+				bc.position.y, bc.position.y + bc.size.y, bc.get_combined_minimum_size().y])
+			for c3 in bc.get_children():
+				if not (c3 is Control):
+					continue
+				var cc: Control = c3 as Control
+				print("[TREE]     %-16s vis=%s y=%.0f..%.0f h_min=%.0f" % [cc.name, str(cc.visible),
+					cc.position.y, cc.position.y + cc.size.y, cc.get_combined_minimum_size().y])
 
 
 func _dungeon_ally_cell(al: Dictionary, prop: String = "") -> String:
