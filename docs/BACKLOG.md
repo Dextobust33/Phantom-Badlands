@@ -666,6 +666,32 @@ has been used."*
       cards, which are earned drops rather than a reset preference (the reason the first pass
       deliberately kept them). Audit the live saves for duplicate ROSTER cards before touching it.
 
+### ✅ 2026-09-16 — THE DECK SCREEN IS A DRAG-AND-DROP BUILDER
+
+Owner: *"It would be nice to be able to drag and drop into and out of your deck on the deck screen.
+Maybe we can see the cards you have in your deck similar to how we see All Cards currently.
+Players should be able to scroll down if needed through their All Cards and Drag up into their Deck
+that displays above to add it or drag from their deck down into All cards to remove the card."*
+
+- [x] **Your Deck is a card GRID**, built by the same `_make_deck_entry` as the collection, so the
+      two halves read as one screen you move cards between. It scrolls, and so does All Cards.
+- [x] **A card is in ONE half, never both.** That is what makes the gesture unambiguous. The old
+      screen listed everything in the catalogue and *also* mirrored in-deck cards into a strip, so
+      a card appeared twice and dragging the catalogue copy of a card already in the deck would
+      have meant nothing.
+- [x] **Drag up to play, drag down to bench.** Two inner classes (`CardDrag`, `CardZone`) - Godot's
+      drag/drop is virtual methods on a Control, so a runtime-built tile cannot take part without a
+      script. The payload carries the exact copy key, so a drag moves the card you grabbed.
+- [x] **The −/+ buttons stay.** A drag is invisible until you try it; the project's own rule is
+      that the discoverable control comes first and the gesture is a supplement. Both paths end in
+      the same two signals.
+
+- [ ] **⛑ THE GESTURE ITSELF IS UNVERIFIED.** The layout, the zones and the routing are confirmed
+      in `shot_11668`, but a headless capture cannot perform a drag - there is no mouse automation
+      in this harness. **The owner needs to try it once.** If a drop does nothing, the first
+      suspects are `mouse_filter` on the ScrollContainers (a scroll that grabs the mouse stops the
+      zone beneath seeing the drop) and whether `_can_drop_data` is reached at all.
+
 ### ⛑ NOT VERIFIED IN v0.9.795 — look at these first
 
 - [ ] **The dungeon key's tile hover.** The key moved into its own label (`_dungeon_key_label`) and

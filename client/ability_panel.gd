@@ -61,6 +61,82 @@ var _deck_count_label: RichTextLabel = null  # v0.9.688 — live deck-size count
 var _traits_label: RichTextLabel = null      # #69 — class + race passive Trait cards
 var _class_trait: Dictionary = {}            # #69 — {name, description, color}
 var _race_trait: Dictionary = {}             # #69 — {name, description, color}
+## ⚑ DRAG AND DROP, in two inner classes.
+##
+## Owner 2026-09-16: *"It would be nice to be able to drag and drop into and out of your deck on
+## the deck screen. Maybe we can see the cards you have in your deck similar to how we see All
+## Cards currently. Players should be able to scroll down if needed through their All Cards and
+## Drag up into their Deck that displays above to add it or drag from their deck down into All
+## cards to remove the card."*
+##
+## Godot's drag/drop is a set of VIRTUAL METHODS on a Control, so a tile built at runtime cannot
+## take part without a script of its own. These two are the smallest thing that does it: one wraps
+## a card so it can be picked up, one wraps a zone so a card can be let go over it.
+##
+## The −/+ buttons STAY. A drag is invisible until you try it, and this project's own rule is that
+## a discoverable control comes first and the power-user gesture is a supplement, never the only
+## way in. Both paths end in the same two signals.
+class CardDrag extends PanelContainer:
+	## One card tile, picked up by the mouse. `key` is the exact copy ("cleave#2"), so a drag moves
+	## the card the player grabbed rather than "one of those".
+	var key: String = ""
+	var in_deck: bool = false
+	var title: String = ""
+
+	func _init() -> void:
+		# Draws nothing: the tile inside supplies the whole look. A PanelContainer is used only
+		# because it sizes itself to its child.
+		add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		mouse_filter = Control.MOUSE_FILTER_PASS
+
+	func _get_drag_data(_at: Vector2) -> Variant:
+		if key == "":
+			return null
+		# The preview follows the cursor, so it has to read at a glance and cost nothing to build.
+		var prev := PanelContainer.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.06, 0.06, 0.09, 0.95)
+		sb.border_color = Color(0.85, 0.7, 0.2)
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(4)
+		sb.set_content_margin_all(6)
+		prev.add_theme_stylebox_override("panel", sb)
+		var lbl := Label.new()
+		lbl.text = ("↓ " if in_deck else "↑ ") + title
+		lbl.add_theme_font_size_override("font_size", 12)
+		prev.add_child(lbl)
+		set_drag_preview(prev)
+		return {"kind": "pbcard", "key": key, "in_deck": in_deck}
+
+
+class CardZone extends PanelContainer:
+	## A place a card can be dropped. `wants_in_deck` says which way this zone moves a card, so the
+	## deck area and the collection area are the same class configured twice rather than two
+	## near-identical ones that can drift apart.
+	var panel_ref = null
+	var wants_in_deck: bool = false
+
+	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+		if not (data is Dictionary):
+			return false
+		if String((data as Dictionary).get("kind", "")) != "pbcard":
+			return false
+		# Dropping a card back where it already is does nothing, and saying so with the cursor is
+		# better than accepting it and sending the server a no-op.
+		return bool((data as Dictionary).get("in_deck", false)) != wants_in_deck
+
+	func _drop_data(_at: Vector2, data: Variant) -> void:
+		if panel_ref == null or not (data is Dictionary):
+			return
+		var k := String((data as Dictionary).get("key", ""))
+		if k == "":
+			return
+		if wants_in_deck:
+			panel_ref._on_add_pressed(k)
+		else:
+			panel_ref._on_cull_pressed(k)
+
+
 var _deck_strip_label: RichTextLabel = null   # v0.9.716 — "Your Deck" strip header
 var _deck_strip: HFlowContainer = null        # v0.9.716 — at-a-glance visual of the cards actually in your deck
 var _path_label_node: RichTextLabel
@@ -179,14 +255,47 @@ func _build_layout() -> void:
 	_deck_strip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_deck_strip_label.add_theme_font_size_override("normal_font_size", 13)
 	root_vbox.add_child(_deck_strip_label)
-	var deck_strip_panel := _make_subpanel()
-	deck_strip_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	root_vbox.add_child(deck_strip_panel)
+	# ⚑ THE DECK IS A CARD GRID NOW, not a strip of chips - and it is a DROP ZONE.
+	#
+	# Owner 2026-09-16: *"Maybe we can see the cards you have in your deck similar to how we see
+	# All Cards currently... Drag up into their Deck that displays above to add it or drag from
+	# their deck down into All cards to remove the card."*
+	#
+	# So it uses the SAME tile builder as the collection below (`_make_deck_entry`), which is
+	# what makes the two halves read as one screen you move cards between. It scrolls, because
+	# a deck can outgrow two rows, and it keeps a minimum height so the zone is still a target
+	# to drop onto when the deck is empty.
+	var deck_zone := CardZone.new()
+	deck_zone.panel_ref = self
+	deck_zone.wants_in_deck = true
+	deck_zone.add_theme_stylebox_override("panel", _subpanel_style())
+	deck_zone.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# ⛑ THE TWO HALVES SHARE THE HEIGHT. A fixed 150px deck zone clipped its own second row -
+	# measured, a card tile is ~158px, so a nine-card deck hid "Venom Fang ×2" completely and
+	# the screen silently disagreed with its own "Cards in deck: 9". Both zones expand and
+	# scroll instead, so the split follows the window rather than a guessed constant, and the
+	# minimum is one full tile so an empty deck is still an obvious drop target.
+	deck_zone.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	deck_zone.size_flags_stretch_ratio = 1.2
+	# 215, measured rather than picked: a tile is ~160px, its rank line and − button another
+	# ~30, and the panel adds 6px of padding top and bottom. At 180 the control row was cut
+	# off the bottom of every deck card - the tiles were there and the − was not.
+	deck_zone.custom_minimum_size = Vector2(0, 215)
+	root_vbox.add_child(deck_zone)
+	var deck_scroll := ScrollContainer.new()
+	deck_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	deck_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	deck_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# The scroll must not eat the drag: a ScrollContainer that grabs the mouse stops the zone
+	# underneath ever seeing a drop.
+	deck_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	deck_zone.add_child(deck_scroll)
 	_deck_strip = HFlowContainer.new()
 	_deck_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_deck_strip.add_theme_constant_override("h_separation", 4)
-	_deck_strip.add_theme_constant_override("v_separation", 4)
-	deck_strip_panel.add_child(_deck_strip)
+	_deck_strip.add_theme_constant_override("h_separation", 6)
+	_deck_strip.add_theme_constant_override("v_separation", 6)
+	_deck_strip.mouse_filter = Control.MOUSE_FILTER_PASS
+	deck_scroll.add_child(_deck_strip)
 
 	# v0.9.322 — slot row / status row removed (deck system replaced
 	# slot-equip). Status + cancel-choose still allocated as dummy instances
@@ -201,20 +310,28 @@ func _build_layout() -> void:
 
 	# Deck cards header
 	var avail_header := Label.new()
-	avail_header.text = "All Cards — adjust copies (thin unused, add favourites):"
+	avail_header.text = "All Cards — drag one UP into your deck to play it, or use +. Drag a deck card DOWN here to bench it."
 	avail_header.add_theme_color_override("font_color", Color(0.0, 1.0, 1.0))
 	avail_header.add_theme_font_size_override("font_size", 13)
 	root_vbox.add_child(avail_header)
 
-	var avail_panel := _make_subpanel()
+	# The other half of the gesture: dropping a card here takes it OUT of the deck.
+	var avail_panel := CardZone.new()
+	avail_panel.panel_ref = self
+	avail_panel.wants_in_deck = false
+	avail_panel.add_theme_stylebox_override("panel", _subpanel_style())
 	avail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	avail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# The collection gets the larger share: it holds everything you are not playing, and it is
+	# the half the owner asked to be able to scroll through.
+	avail_panel.size_flags_stretch_ratio = 1.5
 	root_vbox.add_child(avail_panel)
 
 	var avail_scroll := ScrollContainer.new()
 	avail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	avail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	avail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	avail_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
 	avail_panel.add_child(avail_scroll)
 
 	var avail_vbox := VBoxContainer.new()
@@ -274,8 +391,12 @@ func _build_layout() -> void:
 	add_child(_ctx_menu)
 
 
-func _make_subpanel() -> PanelContainer:
-	var p := PanelContainer.new()
+func _subpanel_style() -> StyleBoxFlat:
+	"""The sub-panel look, as a style rather than a built node.
+
+	Split out of `_make_subpanel` because the two drop ZONES are `CardZone`s, not plain
+	PanelContainers, and they have to look identical to every other panel on the screen. One
+	style, two node types - rather than a second hand-copied StyleBoxFlat that drifts."""
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.045, 0.035, 0.025, 0.7)
 	sb.border_color = Color(0.4, 0.34, 0.25, 0.6)
@@ -285,7 +406,12 @@ func _make_subpanel() -> PanelContainer:
 	sb.content_margin_top = 6
 	sb.content_margin_right = 6
 	sb.content_margin_bottom = 6
-	p.add_theme_stylebox_override("panel", sb)
+	return sb
+
+
+func _make_subpanel() -> PanelContainer:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", _subpanel_style())
 	return p
 
 
@@ -525,12 +651,19 @@ func _rebuild_abilities() -> void:
 			# owned, and then split every copy unconditionally - so two untouched duplicates showed
 			# as two tiles you could not tell apart, while a single copy kept a "x N/3" counter and a
 			# dead "+". Grouping by `_stack_signature` gets both right from one rule.
+			# ⚑ A CARD IS IN THE DECK GRID OR THE COLLECTION GRID - NEVER BOTH.
+			#
+			# That is what makes the drag unambiguous: every card is in exactly one place, so "drag it
+			# up" and "drag it down" each have one meaning. The old screen listed every card in the
+			# catalogue AND mirrored the in-deck ones into a strip, so a card appeared twice and
+			# dragging the catalogue copy of a card already in the deck would have meant nothing.
 			var _copies: Array = instances_by_card.get(ab_name, [])
 			if not _copies.is_empty():
 				var _groups: Array = _group_copies(_copies)
 				for _g in _groups:
 					var _rep: Dictionary = _g["rep"]
 					var _n_in_group: int = int((_g["copies"] as Array).size())
+					var _in_deck: bool = bool(_rep.get("in_deck", false))
 					var _cp_ab: Dictionary = ability.duplicate()
 					var _base_disp := str(ability.get("display", _humanize(ab_name)))
 					# Named by copy number only when there is more than one tile to tell apart; a
@@ -539,30 +672,22 @@ func _rebuild_abilities() -> void:
 						_cp_ab["display"] = "%s ×%d" % [_base_disp, _n_in_group]
 					elif _groups.size() > 1:
 						_cp_ab["display"] = "%s · copy %d" % [_base_disp, int(_rep.get("n", 1))]
-					var _cp_entry := _make_deck_entry(_cp_ab, _n_in_group if bool(_rep.get("in_deck", false)) else 0, _rep)
+					var _cp_entry := _make_deck_entry(_cp_ab, _n_in_group if _in_deck else 0, _rep)
 					if _cp_entry != null:
-						_ability_grid.add_child(_cp_entry)
-					# The STRIP gets one tile per physical card, and those tiles must NOT carry the
-					# stack's "×N" suffix - a group of two drew two tiles each labelled "×2", which
-					# reads as four cards. The strip is the draw pile: one tile is one card.
-					if _deck_strip != null and bool(_rep.get("in_deck", false)):
-						var _strip_ab: Dictionary = ability.duplicate()
-						if _groups.size() > 1:
-							_strip_ab["display"] = "%s · copy %d" % [_base_disp, int(_rep.get("n", 1))]
-						for _i in range(_n_in_group):
-							_deck_strip.add_child(_make_deck_pile_tile(_strip_ab, 1, false, _rep))
+						_add_card_tile(_cp_entry, _copy_target(ab_name, _rep), _in_deck,
+							str(_cp_ab.get("display", _base_disp)))
 				continue
+			# No owned instances: a card the player can reach but does not hold a copy of, or a
+			# companion LOANER - active in the deck with a copy count of 0 while the companion is
+			# equipped. The loaner belongs in the DECK half, because that is where it is playing
+			# from; it just cannot be dragged out, since benching a card you do not own is not a
+			# thing (its key is passed anyway, and the server refuses).
+			var _is_loaner := ab_name.begins_with("companion_card_") and not _deck_collection.has(ab_name)
 			var entry := _make_deck_entry(ability, deck_count)
-			if entry != null:
-				_ability_grid.add_child(entry)
-			else:
-				_ability_grid.add_child(_make_ability_card(ability, true))  # fallback
-			# v0.9.716/717 — mirror in-deck cards into the visual "Your Deck" strip.
-			# A companion LOANER (companion equipped, card not yet earned) is active
-			# in the deck with copy count 0, so include it too.
-			var _is_loaner_strip := ab_name.begins_with("companion_card_") and not _deck_collection.has(ab_name)
-			if _deck_strip != null and (deck_count >= 1 or _is_loaner_strip):
-				_deck_strip.add_child(_make_deck_pile_tile(ability, deck_count, _is_loaner_strip))
+			if entry == null:
+				entry = _make_ability_card(ability, true)  # fallback
+			_add_card_tile(entry, ab_name, deck_count >= 1 or _is_loaner,
+				str(ability.get("display", _humanize(ab_name))))
 		else:
 			var card := _make_ability_card(ability, false)
 			_locked_grid.add_child(card)
@@ -582,9 +707,9 @@ func _rebuild_abilities() -> void:
 	if _deck_strip_label != null:
 		var _types := _deck_strip.get_child_count() if _deck_strip != null else 0
 		if _types <= 0:
-			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#FF8844]— empty. Add cards from the catalog below.[/color]"
+			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#FF8844]— empty. Drag a card up from All Cards below, or press its +.[/color]"
 		else:
-			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#B8A98C]— the cards you'll draw from ([i]click a tile to thin one[/i]):[/color]"
+			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#B8A98C]— the cards you'll draw from. [i]Drag one down into All Cards to bench it[/i], or press its −.[/color]"
 
 
 func _make_deck_pile_tile(ability: Dictionary, count: int, is_loaner: bool = false, copy: Dictionary = {}) -> Control:
@@ -843,6 +968,22 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 
 	card.gui_input.connect(_on_ability_card_input.bind(ab_name, is_unlocked))
 	return card
+
+
+func _add_card_tile(entry: Control, key: String, in_deck: bool, title: String) -> void:
+	"""Put a built tile in the right grid, wrapped so it can be dragged.
+
+	ONE function decides which half of the screen a card lives in. Two call sites choosing that
+	for themselves is how a card would end up in both grids, or in neither."""
+	var drag := CardDrag.new()
+	drag.key = key
+	drag.in_deck = in_deck
+	drag.title = title
+	drag.add_child(entry)
+	if in_deck and _deck_strip != null:
+		_deck_strip.add_child(drag)
+	else:
+		_ability_grid.add_child(drag)
 
 
 func _copy_target(ab_name: String, copy: Dictionary) -> String:
