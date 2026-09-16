@@ -6642,6 +6642,33 @@ func _dev_run_shots() -> void:
 				await get_tree().create_timer(2.0).timeout
 				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("wightpet")
+				# ⚑ THE STICKY-HOVER REGRESSION TEST, driven through the real function.
+				#
+				# Owner 2026-09-16: hover the player, then the companion, then the player, then the
+				# companion - and the tooltip stayed stuck on the player. A mouse cannot be scripted
+				# here, but the bug was never in the mouse: it was `_show_map_tooltip` filling one label
+				# two different ways, so calling it in that A-B-A-B order is the actual repro.
+				#
+				# It has to be the SECOND visit that is asserted. The first companion hover always
+				# worked, which is what made this look like an ordering or timing problem for so long.
+				var _hv_player: Dictionary = {
+					"name": String(character_data.get("name", "")),
+					"battler_id": String(character_data.get("battler_id", "")),
+					"appearance_color": String(character_data.get("appearance_color", "")),
+					"equipped": character_data.get("equipped", {}),
+				}
+				var _hv_pbody := "[b]PLAYERHOVER[/b]\n" + PORTRAIT_TOKEN
+				var _hv_cbody := "[b]COMPANIONHOVER[/b]\nsome art"
+				for _round in range(2):
+					await _show_map_tooltip(_hv_pbody, null, _hv_player)
+					await get_tree().create_timer(0.3).timeout
+					var _saw_p := _map_tooltip_label.get_parsed_text().contains("PLAYERHOVER")
+					await _show_map_tooltip(_hv_cbody, null, {})
+					await get_tree().create_timer(0.3).timeout
+					var _saw_c := _map_tooltip_label.get_parsed_text().contains("COMPANIONHOVER")
+					print("[HOVERSWAP] round %d player=%s companion=%s %s" % [_round, str(_saw_p),
+						str(_saw_c), "PASS" if (_saw_p and _saw_c) else "FAIL"])
+				_hide_map_tooltip()
 				if _dungeon_fit_debug:
 					_dev_print_rects()
 
@@ -44104,7 +44131,29 @@ func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: D
 		if _hp_parts.size() > 1:
 			_map_tooltip_label.append_text(_hp_parts[1])
 	else:
-		_map_tooltip_label.text = content_bbcode
+		# ⛑ ONE WAY TO FILL THIS LABEL, AND IT IS clear() + append_text().
+		#
+		# Owner 2026-09-16: *"If I hover my player sprite I can see it in the hover window. If I
+		# then hover my companion art I can see its ascii art. If I then move back to the player
+		# and back to the companion the hover stays stuck on the player sprite."*
+		#
+		# This line was the whole of it. The two fill paths in this function used DIFFERENT
+		# mechanisms: the player branch above builds the label with `clear()` + `append_text()` +
+		# `add_image()` (it has to - the portrait is a composed Texture2D, not markup), and this
+		# branch assigned `text`. `RichTextLabel.set_text` returns early when the string is
+		# unchanged, and `clear()` does not touch the `text` property - so:
+		#
+		#   hover companion -> text = COMPANION, drawn
+		#   hover player    -> clear + append, drawn; `text` still holds COMPANION
+		#   hover companion -> text = COMPANION again, setter sees no change, DOES NOTHING
+		#
+		# and the player portrait stays on screen. Which is exactly why the repro needs the
+		# SECOND visit to the companion: the first one always worked.
+		#
+		# Two mechanisms writing one surface, one of them caching. Same shape as every other
+		# "one value, two places" bug in this file, and the fix is the same: pick one.
+		_map_tooltip_label.clear()
+		_map_tooltip_label.append_text(content_bbcode)
 	_map_tooltip.size = Vector2.ZERO
 	# Position next to the anchor — prefer to the right; fall back to left
 	# if it would overflow the viewport. Defer one frame so size is valid.
