@@ -6810,6 +6810,52 @@ func _dev_run_shots() -> void:
 					companions_panel.hide()
 				update_action_bar()
 
+			"dungeoncard":
+				# ⚑ VERIFY THE CARD AWARD IS VISIBLE - the one complaint of the three left open.
+				#
+				# Owner, live 2026-09-14: *"Players aren't seeing or understanding what cards they are
+				# getting for completing dungeons."* The backlog carried that as open, but commit
+				# `8a5a77b0` (2026-09-15, the DAY AFTER the report) made the completion screen speak
+				# either way - and the item was never ticked. Shipped-but-unticked is its own trap, so
+				# this LOOKS at the screen instead of trusting either the backlog or the commit message.
+				#
+				# `force_card` because a 5-30%% chance is not a test.
+				send_to_server({"type": "gm_godmode"})
+				await get_tree().create_timer(0.6).timeout
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				send_to_server({"type": "gm_enter_dungeon", "tier": 3})
+				await get_tree().create_timer(3.0).timeout
+				send_to_server({"type": "gm_finish_dungeon", "force_card": true})
+				await get_tree().create_timer(3.0).timeout
+				# ⛑ gm_finish_dungeon only SPAWNS the final chest - the completion screen, and with it
+				# the card banner, comes after the chest is claimed. The first version of this scene
+				# captured the "walk onto the *" prompt and would have been filed as "the award screen".
+				send_to_server({"type": "dungeon_skip_final_chest"})
+				await get_tree().create_timer(3.0).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("dungeon_card_award")
+				print("[DUNGEONCARD] dungeon=%s wide_page=%s" % [str(dungeon_mode), str(_ow_wide_page)])
+				# ⚑ AND THE OVERWORLD YOU LAND BACK ON. Owner 2026-09-16: *"the party bar at the bottom
+				# is going over the top of the companion box on the right."* Measured on a normal
+				# overworld frame the two cannot touch - the strip ends at `margin_w + 18` and the
+				# companion starts at `margin_w + 8`, a 10px gap by construction. But the DUNGEON dock
+				# gives the strip the full canvas width, and leaving a dungeon used to leave that
+				# geometry in place - which is exactly the overlap reported. This captures the frame
+				# after the exit, and prints both rects, so the claim is checked rather than argued.
+				trigger_action(0)   # Continue
+				await get_tree().create_timer(2.5).timeout
+				await _dev_shot_clear_overlays()
+				await _dev_shot_capture("after_dungeon_exit")
+				if _margin_party_label != null and companion_art_overlay != null:
+					var _ps: Rect2 = (_margin_party_label as Control).get_global_rect()
+					var _cs: Rect2 = (companion_art_overlay as Control).get_global_rect()
+					print("[DUNGEONCARD] strip=%s vis=%s | companion=%s vis=%s | overlap=%s" % [
+						str(_ps), str(_margin_party_label.visible), str(_cs),
+						str(companion_art_overlay.visible),
+						str(_ps.intersects(_cs) and _margin_party_label.visible and companion_art_overlay.visible)])
+
 			"deckdrag":
 				# ⚑ PERFORM REAL DRAGS, BOTH WAYS, because a gesture cannot be debugged by reading.
 				#
@@ -35203,6 +35249,27 @@ func _sync_margin_widgets() -> void:
 	a missed one leaves the Coords box sitting on top of a page. One boolean and a short loop over
 	the canvas's children per frame, and it cannot be forgotten by whatever panel is added next."""
 	var want: int = 1 if _margin_widgets_shown() else 0
+	# ⛑ THE HIDE IS APPLIED EVERY FRAME; ONLY THE RE-PLACEMENT IS CACHED.
+	#
+	# Two owners for one `visible`, with a cache in front of one of them, and the cached one
+	# losing. `_place_dungeon_dock` shows the party strip and the dungeon key underground, and
+	# `update_companion_art_overlay` shows the portrait whenever the companion changes - neither
+	# of which touches `_margin_widgets_last`. So by the time a page opened, this function had
+	# long since recorded "already hidden", returned early, and left three widgets on screen.
+	#
+	# That is why two earlier rounds changed nothing: the first added the missing nodes to the
+	# hide LIST, the second added the missing call - and the call was behind the early return.
+	# Measured each time on the dungeon-completion screen, which is how it kept being obvious
+	# that the fix had not worked.
+	#
+	# Applying visibility unconditionally is a loop over about ten nodes, which is what this
+	# function's own docstring already signed up for. The expensive part - re-parenting the
+	# chat box, re-laying the margins - stays behind the change check.
+	_map_widgets_visible(want == 1)
+	# ...and the dungeon dock tears itself down the moment you are not underground. It is
+	# self-gating, so calling it here costs an `if` when there is nothing to do.
+	if not dungeon_mode:
+		_place_dungeon_dock()
 	if want == _margin_widgets_last:
 		return
 	_margin_widgets_last = want
@@ -35233,14 +35300,27 @@ func _map_widgets_visible(v: bool) -> void:
 
 	They float over the canvas now, so a page that takes the canvas has to take it from them too
 	- otherwise the Coords box sits on top of the inventory."""
+	# ⛑ THE COMPANION PANEL AND THE DUNGEON KEY BELONG IN THIS SET TOO.
+	#
+	# Caught in a dungeon-completion capture: the completion page took the canvas and the
+	# companion portrait, the party strip and the dungeon key were all still floating on top of
+	# it. The companion was never in this list at all - it has its own show/hide in
+	# `update_companion_art_overlay`, which only runs when the COMPANION changes, so nothing
+	# hid it when a PAGE arrived. The key is new today and had the same gap: the dock tears
+	# itself down in `_place_dungeon_dock`, but that only runs while a dungeon floor is being
+	# drawn, so leaving one left the key on screen.
+	#
+	# One list, so "what hides when a page takes the canvas" is answered in one place.
 	for n in [coord_post_label, region_label, minimap_display, tool_status_overlay, _margin_chat_box,
-		buff_display_label, _margin_party_label, _ow_map_frame]:
+		buff_display_label, _margin_party_label, _ow_map_frame, companion_art_overlay,
+		_dungeon_key_label]:
 		if n == null or not is_instance_valid(n):
 			continue
-		# The party strip is the one widget the DUNGEON also uses - it moves to the bottom dock
-		# down there (`_place_dungeon_dock`). Hiding it as part of this overworld set is what
-		# would make it flicker: the dock shows it, the next map refresh hides it again.
-		if n == _margin_party_label and dungeon_mode:
+		# The party strip and the key are the two the DUNGEON dock owns while you are underground
+		# (`_place_dungeon_dock`). Hiding them as part of this overworld set down there is what
+		# would make them flicker: the dock shows them, the next map refresh hides them again.
+		# Above ground this set is their only owner, which is what stops them surviving an exit.
+		if dungeon_mode and (n == _margin_party_label or n == _dungeon_key_label):
 			continue
 		(n as Control).visible = v
 
@@ -35274,7 +35354,22 @@ func _place_dungeon_dock() -> void:
 	if not dungeon_mode or not _dungeon_dock_wanted():
 		if _margin_party_label != null and is_instance_valid(_margin_party_label) and dungeon_mode:
 			_margin_party_label.visible = false
+		# ⛑ AND THE DOCK GEOMETRY MUST NOT SURVIVE THE EXIT.
+		#
+		# Owner 2026-09-16: *"the party bar at the bottom is going over the top of the companion
+		# box on the right."* On a normal overworld frame the two cannot touch - measured, the
+		# strip ends at `margin_w + 18` and the companion starts at `margin_w + 8`, a 10px gap
+		# by construction. But underground the dock gives the strip the FULL canvas width, and
+		# leaving a dungeon left that in place: measured right after an exit, the strip was still
+		# `P:(12, 732) S:(1343, 28)` - straight through the companion box.
+		#
+		# Hiding it is not enough, because the next thing to show it would show it like that. So
+		# the exit INVALIDATES the margin cache, which makes `_sync_margin_widgets` re-place the
+		# strip with overworld geometry. Gated on the key still being visible, so this fires once
+		# on the way out rather than every frame you spend above ground.
 		if _dungeon_key_label != null and is_instance_valid(_dungeon_key_label):
+			if _dungeon_key_label.visible:
+				_margin_widgets_last = -1
 			_dungeon_key_label.visible = false
 		_dungeon_dock_h = 0.0
 		return

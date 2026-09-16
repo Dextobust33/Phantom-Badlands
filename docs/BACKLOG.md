@@ -564,13 +564,12 @@ Asked because the arc had run out of defects and into design. All four answered.
             any player-facing card label that forgets, so it cannot land partially again.
       - [x] **The grant itself is sound.** One grant adds exactly one copy, and a fresh copy owes
             no milestones, so it raises no popup. The roll was never the problem.
-      - [ ] **STILL OPEN — complaint 1: the award is invisible.** The card is announced only as
-            two lines appended to `completion_msg`, a long dungeon-completion text block
-            (`server.gd` ~35946). That is almost certainly why *"players aren't seeing what cards
-            they are getting"*: it scrolls past inside a wall of rewards. **Next step: capture a
-            dungeon completion that forces a card (`gm_force_dungeon_card` + `gm_finish_dungeon`)
-            and look at where the line lands** before deciding the surface. Do not redesign it
-            from the source — look at the frame first.
+      - [x] **Complaint 1 was ALREADY FIXED and never ticked — verified by looking, 2026-09-16.**
+            Commit `8a5a77b0` (2026-09-15, the day AFTER the report) made the completion screen
+            speak either way, naming the odds and the card. Confirmed on screen with
+            `--shots=dungeoncard`: the banner reads *"★ RARE CARD DROP! ★ +1 copy of Fortify
+            (deck ×1/3)"* in magenta on the wide page, impossible to miss. Shipped-but-unticked
+            is its own trap; the probe exists now so the next check is a minute, not a guess.
 
 ## ⚑ RELEASE CADENCE — there are LIVE PLAYERS now (owner, 2026-09-13)
 
