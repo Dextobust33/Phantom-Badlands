@@ -846,7 +846,15 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    ~4% of monsters reach a clamp and no level's average sits on one. Kills per level move with it
    (L10 22.4 -> 18.3, L1000 16.2 -> 13.7). No refit needed - XP does not feed fight outcomes.
 
-4c. **Two "what did that do?" gaps (owner 2026-09-15).** Both are the same shape - an action lands
+4c. **✅ DONE 2026-09-15 (unreleased) - two "what did that do?" gaps (owner 2026-09-15).**
+   Home stone: the prompt and BOTH copies of the no-companion refusal now say it acts on the
+   companion you have out and offers no picker. Egg listing: each picker row shows what the egg
+   will fetch, quoted by `_egg_listing_valor` - the same helper that pays out (measured: Halfling
+   tier-1 wolf egg quoted 229, paid 229; tier-6 gilded lich 29,899) - and the picker is rebuilt
+   from the server's next character_update instead of the stale local copy that still held the egg
+   just sold, which is why it read as if nothing had happened. `refresh_picker()` had no callers at
+   all. Probe `tools/probe/egg_listing_tells_you.gd`.
+   Original report: Both are the same shape - an action lands
    and the player is never told what it acted on or what they got. Cheap, and both sit on the
    onboarding path now that the Warden hands out a Home Stone (Companion).
    - **Home Stone (Companion)** acts on your EQUIPPED companion and gives no choice. Nothing says so:
