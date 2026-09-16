@@ -91,6 +91,11 @@ func _init() -> void:
 	ck(not srv._encounter_is_trivial(ch, hi, 24), "a 6-level gap is NOT")
 	ck(not srv._encounter_is_trivial(ch, lo, 18, true), "a fight you HUNTED for is never trivial")
 	ck(not srv._encounter_is_trivial(ch, elite, 8), "an ELITE is never trivial, however low")
+	# A COMMON rare variant is not an event - it is the same trivial fight with a prefix, and
+	# excluding them made the feature look broken in play (some rats resolved, some did not).
+	var variant = lo.duplicate()
+	variant["variant_type"] = "corrosive"
+	ck(srv._encounter_is_trivial(ch, variant, 18), "a common rare variant IS still trivial")
 	var spill = lo.duplicate()
 	spill["threat_source"] = "Wraith Barrow"
 	ck(not srv._encounter_is_trivial(ch, spill, 8), "a threat-corridor spill is never trivial")

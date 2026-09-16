@@ -9437,8 +9437,17 @@ func _encounter_is_trivial(character, monster: Dictionary, area_level: int, aske
 	# first version tested one and the probe caught it: an ELITE Goblin resolved itself.
 	if bool(monster.get("is_elite", false)) or bool(monster.get("is_boss", false)):
 		return false
-	if String(monster.get("variant_type", "")) != "":
-		return false                                  # any rare variant is an event, not noise
+	# ⛑ A RARE VARIANT IS NOT AN EVENT AT AN ELEVEN-LEVEL GAP - and excluding them all was
+	# why the feature looked inconsistent in play.
+	#
+	# Owner, testing at level 20 in ~Lv8 country: goblins, zombies and a giant rat resolved
+	# themselves, *"and I've also had to fight some level 9 enemies"* - on the same character,
+	# at the same gap. Those were the common rare variants (weapon_master, corrosive, sunder
+	# and friends), which this used to treat as events. They are not: a Corrosive Rat eleven
+	# levels below you is the same trivial fight with a prefix, and a rule that resolves one
+	# rat and opens a screen for the next reads as broken rather than as considered.
+	#
+	# ELITES and BOSSES stay excluded above - 3.5x HP is a real fight whatever the level gap.
 	if String(monster.get("threat_source", "")) != "":
 		return false                                  # spilled out of a dungeon threat
 	if float(monster.get("hotspot_intensity", 0.0)) > 0.0:
@@ -9476,6 +9485,11 @@ func _auto_resolve_encounter(peer_id: int, character, monster: Dictionary) -> vo
 		line += " [color=#1EFF00]+%d XP[/color]" % gained
 	line += "[color=#B8A98C].[/color]"
 	send_to_peer(peer_id, {"type": "text", "message": line})
+	# Distinguishable in the log from a fight the player actually had: both end a combat and
+	# both log "Victory: true", so without this line the two cannot be told apart afterwards -
+	# which is exactly the question that came up the first time this was tested in play.
+	log_message("Auto-resolved trivial encounter for %s: %s (Lv %d) +%d XP" % [
+		character.name, mname, int(monster.get("level", 0)), gained])
 	save_character(peer_id)
 	send_character_update(peer_id)
 

@@ -101,9 +101,18 @@ All of this came out of the distribution work. Recorded before starting any of i
       monster; and the probe's own first expectation was wrong, because `kill_xp` is the
       pre-multiplier sum and `add_experience` applies race + Sanctuary on top.
 
-      - [ ] **Not yet seen in a running game.** The probe drives the model; nobody has walked a
-            level 30 character through level 8 country and watched the line appear. Do that before
-            it ships.
+      - [x] **TESTED IN PLAY 2026-09-16, and the live test found three things the probe could
+            not.** (1) The threshold was a RATIO in dead ground: `check_encounter` has zeroed the
+            encounter rate at +20 levels since v0.9.620, and "level / 3" only met that at +20 or
+            worse, so it could never fire while walking - the only path reaching it was HUNT,
+            which bypasses the scaling, i.e. the one fight the player had asked for. Now a level
+            GAP of 10, inside the live band, and a hunted fight is never resolved. (2) The line
+            printed **"+808080 XP"** - the reward scraped out of its own `[color=#808080]` tag.
+            The resolve reports what it banked now. (3) Common rare variants were excluded as
+            "events", so some rats resolved and some opened a screen, which reads as broken;
+            only elites and bosses are events.
+            Confirmed working by the owner across goblins, zombies and a giant rat, with
+            level 9 enemies still fighting at the smaller gap.
 
 - [ ] **POST-TO-POST ROAD TRAVEL — ACCEPTED by the owner 2026-09-13** (held as a separate
       decision, and answered separately).
