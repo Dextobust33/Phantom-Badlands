@@ -684,11 +684,14 @@ Monsters, then Boss + Companion egg — three lines each — and one summary lin
    **Quests** button and `/quests` → Quests tab; **Atlas** button, the Cartographer NPC and
    `/dungeons` → Dungeons tab. No button is left pointing at a retired screen.
 
-**⛑ One harness observation, not chased:** the `dungeon_exit` message did not leave the dungeon
-after four sends in the `atlas` scene (`[SHOTS] WARN still underground after 4 exits`), so the
-Atlas rendered into the side column. It may be GM/godmode-specific or want different params.
-Worth ten minutes before the next dungeon capture, since it will bite any scene that needs to
-come back up.
+**⛑ That harness observation was NOT a bug — corrected 2026-09-17.** I filed `dungeon_exit`
+not leaving the dungeon as a possible fault. It is the DESIGN: `handle_dungeon_exit` is
+documented *"no free exit, must use escape scroll"* and the floor says so on screen
+(*"You can't leave from here"*). The refusal was correct every time and the harness was asking
+for something the game deliberately does not offer. `gm_finish_dungeon` is no help either — it
+places the final chest but DEFERS the teleport until the player walks onto it. Neither is needed
+now: the Atlas is a full-screen modal, so what is behind it does not matter. Surfacing only
+mattered while the Atlas was text in `game_output`, where the dungeon owned the canvas.
 
 
 ### ✅ v0.9.798 IS LIVE (2026-09-16 evening) — client AND server, verified

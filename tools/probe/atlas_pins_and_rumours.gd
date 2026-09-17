@@ -49,6 +49,7 @@ func _init() -> void:
 		"cartography_rank": 4, "cartography_max_rank": 8, "cartography_sense_rank": 8,
 		"cartography_xp": 300, "cartography_next_xp": 500,
 		"at_post": false,
+		"player_level": 10,
 		"entries": [
 			# a DISCOVERED dungeon that a quest points at
 			{"id": "wolf_den", "state": 3, "tier": 2, "rank": 4, "name": "Wolf Den",
@@ -97,6 +98,12 @@ func _init() -> void:
 	# ...and it is correctly refused away from a post, rather than offered and then failing.
 	ck(blob.contains("[button]Locate[disabled]"),
 		"Locate is disabled away from a post, not silently broken")
+
+	print("\n===== 4. THE ATLAS JUDGES THE DUNGEON AGAINST YOU =====")
+	# The entrance screen has done this since 2026-09-16; the screen you CHOOSE from had
+	# nothing. Same words and same thresholds on both, so the phrase means one thing.
+	# At level 10: Wolf Den opens at 6 (below you), Goblin Caves at 1 (below you).
+	ck(blob.contains("below you"), "a dungeon under your level says so")
 
 	print("\n===== 4. AND BOTH DOORS ARE ALWAYS PRESENT =====")
 	ck(blob.contains("[button]Quests"), "the Quests tab is reachable from here")

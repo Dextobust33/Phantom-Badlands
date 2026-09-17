@@ -7240,13 +7240,17 @@ func _dev_run_shots() -> void:
 				# OUT of the dungeon before asking. The Atlas drawn underground lands in the side
 				# column, because the canvas belongs to the floor - so the first capture photographed
 				# a squeezed column with the header scrolled off, which is not the screen being judged.
-				var _tries := 0
-				while dungeon_mode and _tries < 4:
-					_tries += 1
-					send_to_server({"type": "dungeon_exit"})
-					await get_tree().create_timer(2.0).timeout
-				if dungeon_mode:
-					print("[SHOTS] WARN still underground after %d exits" % _tries)
+				# STAYS UNDERGROUND ON PURPOSE, and it does not matter.
+				#
+				# Two dead ends were tried here first. `dungeon_exit` is refused by design -
+				# `handle_dungeon_exit` is documented *"no free exit, must use escape scroll"* and the
+				# floor says so on screen - which I briefly filed as a possible bug. And
+				# `gm_finish_dungeon` places the final chest but DEFERS the teleport until the player
+				# walks onto it, so it does not surface anybody either.
+				#
+				# Neither is needed: the Atlas is a full-screen MODAL now, so whatever is behind it is
+				# irrelevant to judging it. Surfacing only mattered while the Atlas was text in
+				# `game_output`, where the dungeon owned the canvas and squeezed it into the column.
 				await get_tree().create_timer(1.0).timeout
 				send_to_server({"type": "gm_set_cartography", "rank": 5})
 				await get_tree().create_timer(1.0).timeout

@@ -153,6 +153,7 @@ func open_atlas(message: Dictionary) -> void:
 	var cxp := int(message.get("cartography_xp", 0))
 	var cnext := int(message.get("cartography_next_xp", 0))
 	var at_post := bool(message.get("at_post", false))
+	var my_level := int(message.get("player_level", 0))
 
 	_title_label.clear()
 	_subtitle_label.clear()
@@ -199,11 +200,11 @@ func open_atlas(message: Dictionary) -> void:
 	if pinned.size() > 0:
 		_add_section_header("⚑ Wanted — a quest points here", "#FFD700")
 		for e in pinned:
-			_add_dungeon_card(e, pins.get(String(e.get("id", "")), {}), rank, sense, at_post)
+			_add_dungeon_card(e, pins.get(String(e.get("id", "")), {}), rank, sense, at_post, my_level)
 	if known.size() > 0:
 		_add_section_header("Dungeons you have entered", "#4DD6E0")
 		for e in known:
-			_add_dungeon_card(e, {}, rank, sense, at_post)
+			_add_dungeon_card(e, {}, rank, sense, at_post, my_level)
 	if rumours.size() > 0:
 		# Owner chose reading (a): a rumour row is INFORMATIONAL and names where it was heard, so
 		# every accept still happens at a post. No Accept button lives on this tab.
@@ -216,15 +217,29 @@ func open_atlas(message: Dictionary) -> void:
 	visible = true
 
 
-func _add_dungeon_card(e: Dictionary, pin: Dictionary, rank: int, sense: int, at_post: bool) -> void:
+func _add_dungeon_card(e: Dictionary, pin: Dictionary, rank: int, sense: int, at_post: bool, my_level: int = 0) -> void:
 	"""One dungeon: its grade and band, what it holds, and Locate. Plus the quest, when pinned."""
 	var tier := int(e.get("tier", 1))
 	var row := _make_card(Color(0.30, 0.42, 0.44) if pin.is_empty() else Color(0.62, 0.52, 0.16))
 	var body := _make_body(row)
 	var label := PowerRank.label(tier, int(e.get("rank", 0))) if int(e.get("rank", 0)) > 0 else PowerRank.letter(tier)
-	_body_line(body, "[color=%s][b]%s[/b][/color]  [color=#C8C8C8]%s[/color]   [color=#808080]Lv %d-%d · %d clears[/color]" % [
+	# ⚑ THE VERDICT, IN THE SAME WORDS THE ENTRANCE SCREEN USES. Deliberately the same
+	# phrasing and the same thresholds: a player should not have to learn that "above you"
+	# here and "above you" on the door mean the same thing.
+	var verdict := ""
+	if my_level > 0:
+		var gap: int = int(e.get("level_min", 1)) - my_level
+		if gap >= 8:
+			verdict = "  [color=#FF2A2A]far above you[/color]"
+		elif gap >= 3:
+			verdict = "  [color=#FF5555]above you[/color]"
+		elif gap >= -2:
+			verdict = "  [color=#FFAA00]your level[/color]"
+		else:
+			verdict = "  [color=#9ACD32]below you[/color]"
+	_body_line(body, "[color=%s][b]%s[/b][/color]  [color=#C8C8C8]%s[/color]   [color=#808080]Lv %d-%d · %d clears[/color]%s" % [
 		PowerRank.color(tier), label, String(e.get("name", "?")),
-		int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0))], 15, 22)
+		int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), verdict], 15, 22)
 	if not pin.is_empty():
 		# The bridge to the other tab: what is wanted, how far along, and WHERE to hand it in -
 		# because this tab deliberately cannot accept or turn in anything.

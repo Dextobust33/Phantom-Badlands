@@ -15871,6 +15871,11 @@ func handle_dungeon_atlas_request(peer_id: int):
 			"post": String(q.get("trading_post", "")),
 		}
 	send_to_peer(peer_id, {"type": "dungeon_atlas_data", "entries": entries, "pins": pins,
+		# The Atlas is where a player CHOOSES where to go, so it has to be able to answer
+		# "can I take this" - and it could not, because it was never told their level. The
+		# dungeon ENTRANCE screen has colour-coded that against your own level since
+		# 2026-09-16; the screen you decide from had nothing.
+		"player_level": int(character.level),
 		"discovered": discovered_count, "total": DungeonDatabaseScript.DUNGEON_TYPES.size(),
 		"cartography_rank": int(character.cartography_rank),
 		"cartography_xp": int(character.cartography_xp),
