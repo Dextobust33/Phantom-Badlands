@@ -7115,6 +7115,18 @@ func _dev_run_shots() -> void:
 				if _dungeon_fit_debug:
 					_dev_print_rects()
 
+			"changelog":
+				# Read the release notes before shipping them. The %% trap has bitten this screen
+				# twice: these strings are NOT format strings, so a doubled %% prints as "%%".
+				display_changelog()
+				await get_tree().create_timer(1.0).timeout
+				# The newest entry is at the TOP and the log lands at the bottom, so a straight capture
+				# photographs release notes from a year ago.
+				if game_output and game_output.get_v_scroll_bar():
+					game_output.get_v_scroll_bar().value = 0
+				await get_tree().create_timer(0.6).timeout
+				await _dev_shot_capture("changelog")
+
 			"dungeongrade":
 				# ⛑ DOES WHAT THE OVERWORLD ADVERTISED EQUAL WHAT YOU WALK INTO?
 				#
@@ -32663,9 +32675,19 @@ func display_changelog():
 	# two-player session. Monster curve re-calibrated after the player-side changes.
 	# v0.9.793 - the UI reflow: the map takes the main canvas, the HUD moves into its margins,
 	# the right column becomes the log, and text stops flashing on screen and vanishing.
+	# v0.9.798 - the dungeon entrance screen becomes readable, and a dungeon finally tells the
+	# truth about its own grade everywhere - including in what it pays you.
 	# v0.9.797 - fights far below you resolve where you stand, and the map stops doubling up
 	# behind a Continue prompt.
-	display_game("[color=#00FF00]v0.9.797[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.798[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE DUNGEON ENTRANCE SCREEN IS SOMETHING YOU CAN SKIM.[/color] It ran past [b]twenty lines[/b] of prose - two paragraphs about food, a full sentence for every kind of ground - with the two numbers that actually decide it buried in the middle. It is a [b]table[/b] now: one fact per row, monster levels first and colour-coded against your own, then what is unusual about the place, its floors, its ground, your food and how you get out. Nothing was dropped - [b]hover any ground marker[/b] for the full description.")
+	display_game("  [color=#FF8000]★ WHAT A DUNGEON IS WORTH IS NOW SAID IN NUMBERS.[/color] A modified dungeon used to describe itself in flavour - \"What died here did not finish dying\" - and never once told you the trade. Each one now reads as [b]cost and reward side by side[/b]: [color=#FF8888]40% more HP[/color] against [color=#88FF88]+20% XP[/color]. Same for [b]Hard Mode[/b].")
+	display_game("  [color=#FF4444]★ FIXED: a dungeon could advertise one grade and deliver another.[/color] A dungeon's grade belongs to the [b]place it spawned[/b], not to what kind of dungeon it is - that is what lets an [b]A5 Goblin Caves[/b] exist. Six screens were still reading the template: the [b]dungeon list[/b] printed one dungeon's letter beside another's number, and the [b]Atlas, compass and entry warning[/b] could all name a grade you would never meet. They all read the real one now.")
+	display_game("  [color=#FF4444]★ FIXED: rare dungeons were paying like common ones.[/color] The same fault reached the [b]rewards[/b], where nobody could see it. Completion experience was calculated from the dungeon's [b]type[/b] instead of its grade, so clearing an [b]A-grade Goblin Caves paid 300 XP where it should have paid 2,400[/b] - the rarest, hardest version of a place paid the least. Chest contents were graded the same wrong way. Both fixed.")
+	display_game("  [color=#1EFF00]◆ Dungeons are named by their grade, everywhere.[/color] The last few places still calling them [b]T3[/b] now use the same [b]letter-and-rank[/b] label as everything else, and the Atlas remembers the grade of the one [b]you[/b] found.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.797[/color]")
 	display_game("  [color=#FF8000]★ FIGHTS FAR BELOW YOU RESOLVE THEMSELVES.[/color] Walk through country [b]10 or more levels under you[/b] and a wandering monster no longer opens the combat screen — you get [b]one line and the full reward[/b], exactly what killing it would have paid. It is not a discount: same XP, same job and companion XP, same gems and drops. [b]Elites and bosses still fight[/b], and so does anything you go looking for with [b]Hunt[/b] — if you asked for a fight, you get one.")
 	display_game("  [color=#FF4444]★ FIXED: two maps at once.[/color] While a [b]Continue[/b] prompt was up — after any victory, a lucky find, or a wandering adventurer — the map was redrawn in the side column while the main screen [b]kept its own copy[/b], so you got two maps and no HUD. The main screen hands its copy back now, and the map returns the moment you press Continue instead of waiting for your next step.")
 	display_game("")
