@@ -5452,8 +5452,26 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
           an item's class stats come from its BASE TYPE, not its affixes. Do not design a themed
           affix that no acquisition path can actually roll.
 - [ ] **Dungeon Atlas** as hub + quest board.
-- [ ] **Dungeon-centred questing** to replace the disliked overworld quests: clear / rescue /
-      boss-hunt / gather.
+- [x] **Dungeon-centred questing** to replace the disliked overworld quests: clear / rescue /
+      boss-hunt / gather. — **ALREADY BUILT (P2, 2026-08-26). Ticked 2026-09-16 after an audit,
+      not after work.**
+
+      The owner asked to start the arc *"and we should ensure some of it hasn't been done
+      already"*. This is the shipped-but-unticked case that warning exists for.
+
+      Verified by following the call path rather than by reading the item:
+      `get_available_quests_for_player` - the ONLY quest source the board uses - returns just
+      `generate_dynamic_quests`, whose pool is the `DYNAMIC_QUEST_TYPES` constant:
+      `[DUNGEON_CLEAR, RESCUE, BOSS_HUNT, GATHER]`. Exactly the four this item names.
+
+      The overworld types are **not** in that pool. `KILL_ANY`, `KILL_TYPE`, `KILL_LEVEL` and
+      `HOTZONE_KILL` survive only in `_generate_quest_for_tier*`, which the dispatcher reaches
+      solely for quest ids containing `_dynamic_` - commented in the source as *"legacy dynamic
+      quest IDs"*. Live quests use `_daily_` ids and never touch it.
+
+      **What was nearly built on top of a finished feature:** a plan to "replace the overworld
+      quests" would have found them already replaced, and the obvious next move - editing the
+      type pool - would have edited a constant that is already correct.
 - [x] **Presentation pass — mostly SHIPPED, one piece left.** The map, minimap and in-dungeon  **DONE 2026-09-13** - `docs/img/dungeon.jpg` is live on the features page under the Dungeons section. The capture scene now walks an 18-step route instead of 3, because the short one left two-thirds of the frame black: fine for checking a sprite, useless as a picture of the game.
       GUI all landed across v0.9.760-767. What remains is narrow: **real in-game dungeon
       screenshots for the website**, which now show something worth showing.
