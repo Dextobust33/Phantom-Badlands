@@ -255,7 +255,14 @@ static func build(meaning_rows: Array, biome_rows: Array, figures: Dictionary = 
 					var t := _img(DIR + "tile/%s.png" % tile_name)
 					if t != null:
 						grid.blend_rect(t, Rect2i(Vector2i.ZERO, t.get_size()), Vector2i(x * CELL, y * CELL))
-			if overlay != "" and overlay != "fog" and not figures.has("%d,%d" % [x, y]):
+			# ⛑ A HOTZONE IS A WASH OVER THE GROUND, NOT A SPRITE PER SQUARE. It is applied
+			# here rather than in the overlay block below because it must go UNDER the figures
+			# and under the big art - it tints the country, it does not sit on top of people
+			# standing in it. And unlike the old sprite it runs even when a figure is on the
+			# cell, so the square you are standing in still reads as dangerous.
+			if overlay == "hot" or overlay == "hotdepleted":
+				_wash(grid, x, y, HOT_WASH)
+			if overlay != "" and overlay != "fog" and overlay != "hot" and overlay != "hotdepleted" and not figures.has("%d,%d" % [x, y]):
 				# A dungeon's marker depends on what KIND of place it is, and that arrives in the
 				# `dungeons` side channel rather than in the meaning string - see the note in
 				# `world_system._map_cells`. Older servers send no family and get the generic
@@ -449,6 +456,39 @@ static func _dimmed_big(tile_name: String, amount: float) -> Image:
 			img.set_pixel(x, y, Color(c.r * k, c.g * k, c.b * k, c.a))
 	_dim_big_cache[key] = img
 	return img
+
+
+## ⚑ THE HOTZONE WASH. Owner 2026-09-17: *"they don't need a half broken campfire sprite on
+## them... or just a red tint to the tiles."* A hotzone is tens of tiles across and the old overlay
+## stamped one small fire on each of them, which read as clutter rather than as danger.
+##
+## Danger is a property of the GROUND over an area, so the area is what gets painted. A depleted
+## hotzone washes weaker, so "still dangerous, nothing left to take" stays legible.
+## ⛑ ONE COLOUR FOR BOTH. `hotdepleted` is a SPENT NODE STANDING IN a hotzone, not a spent
+## hotzone - `OVERLAY_SPRITE` says so by mapping it to the same `hot` picture. The ground is
+## exactly as dangerous, so it gets exactly the same wash, and what marks it spent is the
+## `_darken` further down that was already doing that job.
+##
+## Measured, not guessed: a 0.26 wash over plains rendered as BROWN - red at low alpha over green
+## desaturates to mud and reads as dirt, which is the opposite of a warning. Deeper and stronger.
+const HOT_WASH := Color(0.82, 0.04, 0.04, 0.52)
+static var _wash_cache: Dictionary = {}
+
+
+static func _wash(grid: Image, cx: int, cy: int, color: Color) -> void:
+	"""Alpha-blend one flat colour over a cell.
+
+	⛑ A RECT OPERATION, FOR THE SAME MEASURED REASON AS `_darken`. That function's note records
+	15.2 ms of an 18.7 ms compose lost to a per-pixel loop, and a live report of *"a delay to our
+	actions intermittently"*. A hotzone can cover more cells than fog does, so a naive loop here
+	would bring that straight back."""
+	var key := "%d" % int(color.to_rgba32())
+	var tint: Image = _wash_cache.get(key, null)
+	if tint == null:
+		tint = Image.create(CELL, CELL, false, Image.FORMAT_RGBA8)
+		tint.fill(color)
+		_wash_cache[key] = tint
+	grid.blend_rect(tint, Rect2i(Vector2i.ZERO, Vector2i(CELL, CELL)), Vector2i(cx * CELL, cy * CELL))
 
 
 static func _darken(grid: Image, cx: int, cy: int, amount: float) -> void:

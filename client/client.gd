@@ -10449,6 +10449,11 @@ func _scale_action_bar_fonts(base_scale: float):
 	update_action_bar_hotkeys()
 
 func update_action_bar():
+	# ⛑ THE PINNED QUESTION RIDES ALONG. Every site that sets or clears a pending warning
+	# already calls this, so deriving the prompt here means no call site has to remember -
+	# and a stale question telling the player to press a key that now does something else
+	# cannot happen.
+	_sync_side_prompt()
 	current_actions.clear()
 	_update_shortcut_buttons_visibility()
 	# The Travel stances belong to the overworld. Set here rather than at the ten places that
@@ -29348,11 +29353,17 @@ func _on_send_button_pressed():
 # The wording was also stale - it named the numpad only, which stopped being the whole story when
 # arrow keys gained diagonals on 2026-09-10.
 func _on_input_focus_entered():
-	if has_character and game_state == GameState.PLAYING and not dungeon_mode:
+	# ⛑ ...AND NOT WHEN THE LOG IS A COLUMN EITHER. The note above explains why this is
+	# suppressed underground: it floods a short log and pushes real events off it. The
+	# overworld side column has exactly the same shape and arrived later, so the rule was
+	# never extended to it. Owner 2026-09-17, of a hotzone warning he could not find:
+	# *"my right panel is just filled up with movement mode, chat mode, mined, salvaged"* -
+	# "Chat mode" and "Movement mode" alternate SIX times in that screenshot.
+	if has_character and game_state == GameState.PLAYING and not dungeon_mode and not _ow_text_in_column():
 		display_game("[color=#808080]Chat mode - type to send messages[/color]")
 
 func _on_input_focus_exited():
-	if has_character and game_state == GameState.PLAYING and not dungeon_mode:
+	if has_character and game_state == GameState.PLAYING and not dungeon_mode and not _ow_text_in_column():
 		display_game("[color=#808080]Movement mode - numpad or arrow keys to move[/color]")
 
 func _on_clickable_area_clicked(event: InputEvent):
@@ -33611,7 +33622,23 @@ func display_changelog():
 	# the Atlas and your quest log became one screen.
 	# v0.9.801 - a card for every one of the 53 dungeons, the grade of the place pays,
 	# and something down there is edible.
-	display_game("[color=#00FF00]v0.9.801[/color] [color=#808080](Current)[/color]")
+	# v0.9.802 - the live-report release: one predicate behind four map faults, a dungeon's
+	# grade finally follows the country it sits in, potions per round, and a Menu for everything.
+	display_game("[color=#00FF00]v0.9.802[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: a dungeon could be far deadlier than the country around it.[/color] A quest could send you into an [b]E2 with Lv 34-49 monsters[/b] from land averaging [b]level 14[/b] — because a quest dungeon was graded by its own TYPE and its distance from the origin, and [b]never looked at the land it sits in[/b]. Under permadeath that is a trap with no warning. A dungeon's grade now follows its neighbourhood, everywhere. The reverse was broken too and nobody had reported it: every dungeon quest at a far post was graded [b]H9[/b] in high country. What kind of dungeon it is stays free — a Goblin Dungeon deep in the badlands is still possible, it is simply graded like the badlands.")
+	display_game("  [color=#FF4444]★ FIXED: four separate map faults were one thing.[/color] Turning in a quest [b]moved the map back to the right column[/b]; hatching a companion drew [b]lines across the map[/b], printed the text [b]over it[/b], and left [b]a second map[/b] in the column; salvaging flashed the lines too. All of it was one test: the map gave up the main screen for [b]any[/b] Continue prompt, including ones with no fight behind them.")
+	display_game("  [color=#FF8000]★ THE QUEST BOARD TELLS YOU WHAT YOU ARE WALKING INTO.[/color] Every dungeon quest now states the [b]grade, the number of floors and the levels you will actually meet[/b] — [i]F5 · 5 floors · monsters Lv 26-37[/i] — and the grade it advertises is the one you get. It was being [b]re-rolled when you walked in[/b], so the board could promise H2 and build H4.")
+	display_game("  [color=#FF8000]★ DUNGEON QUESTS PAY FOR THE DUNGEON, NOT THE POSTCODE.[/color] Both XP and Valor were set by [b]how far the post is from the origin[/b] rather than by where the quest sends you — so a board near spawn paid starter money for five floors and a boss. Measured: a full dungeon and boss went from [b]5 Valor to 71[/b] near the centre, and from 22 to [b]185-317[/b] further out. It can only ever raise a quest, never cut one.")
+	display_game("  [color=#FF4444]★ FIXED: your free potion did not come back each round.[/color] One item a round is free. The flag that tracked it was cleared [b]only when the monster took its turn[/b] while the round could end three other ways — so a potion drunk in one round made the [b]next[/b] round\'s potion hand the enemy a free hit.")
+	display_game("  [color=#FF8000]★ A MENU THAT REACHES EVERYTHING.[/color] Thirty capabilities had no button anywhere and could only be typed. There is now a [b]Menu[/b] button opening a two-level tree — Character, World, People, Clan, Your Post, Help, Settings — and eighteen more chat commands are retired. Every row is keyboard and controller navigable.")
+	display_game("  [color=#FF8000]★ CONTROLLER SUPPORT.[/color] The D-pad and stick move you in all eight directions, the face and shoulder buttons are your action bar, [b]Back[/b] puts the cursor on the bar for the rest of it, and [b]Start[/b] opens the Menu. The engine binds the stick to menu movement by default but binds [b]nothing to confirm or cancel[/b] — so a pad could move over every screen in the game and never press anything.")
+	display_game("  [color=#1EFF00]◆ A hotzone is a red wash over the ground[/color] instead of a broken campfire stamped on every square of it. Owner: [i]\"they don\'t need a half broken campfire sprite on them... or just a red tint to the tiles.\"[/i]")
+	display_game("  [color=#1EFF00]◆ The danger-zone warning is pinned where you can see it.[/color] It was printed into the side log and buried under [i]Mined:[/i] and [i]Salvaged:[/i] lines within seconds — a question with a permanent consequence, scrolling away. It now sits above the log until you answer it, and the [i]Chat mode / Movement mode[/i] chatter that was filling that column is gone.")
+	display_game("  [color=#1EFF00]◆ Escape lets go of the chat box instead of grabbing it.[/color] Pressing it with nothing to close used to put the cursor INTO the chat box and eat your next keypress.")
+	display_game("  [color=#1EFF00]◆ Right-click a player[/color] for whisper, inspect, trade, duel, watch, friend and block — including [b]duelling for Valor[/b], which the menu could not offer at all.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.801[/color]")
 	display_game("  [color=#FF8000]★ EVERY DUNGEON NOW HAS A CARD THAT ONLY IT DROPS.[/color] Four of the [b]fifty-three[/b] dungeon types had one; the rest paid a spare copy of something you already owned, so most of the realm had [b]nothing named to chase[/b]. All 53 do now, and each is built out of the place that drops it — the Rat Warrens give [b]Filthbite[/b], the Sphinx gives [b]Riddle’s Answer[/b], Entropy gives [b]All Things Stop[/b]. Each one is sized to its own dungeon, and every one of them shows the creature that guards it on its face.")
 	display_game("  [color=#FF8000]★ A DUNGEON’S GRADE NOW PAYS.[/color] Quest rewards already scaled with the task and the depth; the [b]grade[/b] of the dungeon you settle it in was ignored completely. Clearing the same quest in an [b]S9[/b] instead of an [b]H1[/b] is worth up to [b]48 percent more[/b], and the board says so before you accept. It can only ever ADD — the figure on the card is the least it can pay, never the most.")
 	display_game("  [color=#FF8000]★ A DUNGEON CAN FEED YOU NOW.[/color] Resting underground eats food, and running dry a long way down is a real way to lose a run. [b]Fowl wander the floors[/b] — they will not fight you, they [b]run[/b] when they see you, and stepping onto one catches it for [b]1-3 rations[/b]. Whether to spend the turns chasing it while the wandering monsters close in is the whole point.")
@@ -39624,6 +39651,86 @@ func _ow_side_add(text: String) -> void:
 			while _ow_side_lines.size() > OW_SIDE_MAX_LINES:
 				_ow_side_lines.pop_front()
 	_ow_side_refresh()
+
+
+## ⚑ THE PINNED QUESTION. Anything the player must ANSWER goes here rather than into the
+## side log, because the log scrolls and a pickup arriving a second later pushes the question off
+## the top of it. Owner 2026-09-17: *"I tried to enter a hotzone and there is nothing in the right
+## column showing me the warning or anything."* It had been appended to the log and buried.
+var _ow_side_prompt: RichTextLabel = null
+var _ow_prompt_lines: Array = []
+
+
+func _sync_side_prompt() -> void:
+	"""Show the pinned question that matches the pending state, or none.
+
+	⛑ DERIVED, NOT CALLED BY HAND. There are four places that clear `pending_hotzone_warning`
+	and two that set it; asking each to remember to pin or unpin is how one of them ends up leaving a
+	stale question on screen telling the player to press a key that now does something else. This
+	reads the state instead, and `update_action_bar()` - which every one of those sites already
+	calls - drives it."""
+	if not _ow_text_in_column():
+		# The canvas is holding text, not the map, so the warning is readable where it was printed.
+		set_side_prompt([])
+		return
+	if not pending_hotzone_warning.is_empty():
+		set_side_prompt([
+			"[color=#FF6666][b]\u26a0 DANGER ZONE[/b][/color]",
+			"[color=#FF6666]This is well above your level.[/color]",
+			"[color=#808080]Monsters here run about [/color][color=#FFAA00]Lv %d[/color]" % int(pending_hotzone_warning.get("estimated_level", 0)),
+			"[color=#808080]Press [%s] to go in, [%s] to stay back.[/color]" % [
+				get_action_key_name(0), get_action_key_name(1)],
+		])
+		return
+	if not pending_dungeon_warning.is_empty():
+		set_side_prompt([
+			"[color=#FF6666][b]\u26a0 THIS DUNGEON IS ABOVE YOU[/b][/color]",
+			"[color=#808080]Press [%s] to go in, [%s] to stay back.[/color]" % [
+				get_action_key_name(0), get_action_key_name(1)],
+		])
+		return
+	set_side_prompt([])
+
+
+func _ensure_side_prompt_label() -> void:
+	"""The pinned PROMPT label, above the place label and the log."""
+	if _ow_side_prompt != null and is_instance_valid(_ow_side_prompt):
+		return
+	if map_display == null or map_display.get_parent() == null:
+		return
+	var col: Node = map_display.get_parent()
+	_ow_side_prompt = RichTextLabel.new()
+	_ow_side_prompt.name = "SidePrompt"
+	_ow_side_prompt.bbcode_enabled = true
+	_ow_side_prompt.fit_content = true
+	_ow_side_prompt.scroll_active = false
+	_ow_side_prompt.selection_enabled = true
+	_ow_side_prompt.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_ow_side_prompt.add_theme_font_size_override("normal_font_size",
+		map_display.get_theme_font_size("normal_font_size"))
+	var f: Font = map_display.get_theme_font("normal_font")
+	if f != null:
+		_ow_side_prompt.add_theme_font_override("normal_font", f)
+	col.add_child(_ow_side_prompt)
+	col.move_child(_ow_side_prompt, map_display.get_index())
+
+
+func set_side_prompt(lines: Array) -> void:
+	"""Pin a question above the log, or clear it with an empty array.
+
+	⛑ IT DOES NOT SCROLL AND IT DOES NOT AGE OUT. That is the whole point: a hotzone warning
+	asks whether to walk into something that can kill a character permanently, and it used to be
+	appended to the same stream as `Mined: 1x Stone`."""
+	_ow_prompt_lines = lines
+	_ensure_side_prompt_label()
+	if _ow_side_prompt == null or not is_instance_valid(_ow_side_prompt):
+		return
+	_ow_side_prompt.clear()
+	if lines.is_empty():
+		_ow_side_prompt.visible = false
+		return
+	_ow_side_prompt.visible = true
+	_ow_side_prompt.append_text("\n".join(lines))
 
 
 func _ensure_side_place_label() -> void:
