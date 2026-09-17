@@ -19,6 +19,21 @@ signal turn_in_requested(quest_id: String)
 signal abandon_requested(quest_id: String)
 signal refresh_requested
 signal dismissed
+# ⚑ ONE PANEL, TWO TABS. Owner 2026-09-17, asked whether the Atlas and the quest board should
+# be one thing: *"Is there enough overlap to combine the two? I guess we will just need to
+# ensure the difference between each is clear."*
+#
+# They share a SUBJECT (dungeons) but answer different QUESTIONS - the Atlas answers *where do
+# I go and what is in there*, the board answers *what am I asked to do and what have I got on*.
+# One list would make a row sometimes-a-place and sometimes-a-task, so it is one SHELL with two
+# tabs, and the difference is carried by the VERB each row offers: Dungeons rows offer Locate,
+# Quest rows offer Accept / Turn In / Abandon. The PIN is the bridge between them.
+#
+# Switching tab re-asks the server rather than caching: a stale Atlas showing a quest you have
+# since turned in is worse than a round trip nobody notices.
+signal atlas_requested
+signal quests_requested
+signal locate_requested(dungeon_id: String)
 
 const HelpPanelScript = preload("res://client/help_panel.gd")
 
@@ -32,6 +47,9 @@ var _content: VBoxContainer          # rebuilt each open_board()
 var _help_panel: Control = null
 
 var _tp_id: String = ""
+## Which tab is showing: "quests" or "dungeons".
+var _mode: String = "quests"
+var _tab_row: HBoxContainer = null
 var _active_count: int = 0
 var _max_quests: int = 3
 
@@ -47,6 +65,7 @@ func open_board(message: Dictionary, active_only: bool = false) -> void:
 	"""Render the quest_list payload as cards. Called on every quest_list message
 	(initial open + refreshes after accept/turn-in). active_only = the unified 'Your Quests'
 	view opened from the map — shows just the Active section (no Turn In / Available)."""
+	_mode = "quests"
 	_tp_id = String(message.get("trading_post_id", ""))
 	_active_count = int(message.get("active_count", 0))
 	_max_quests = int(message.get("max_quests", 3))
@@ -72,6 +91,7 @@ func open_board(message: Dictionary, active_only: bool = false) -> void:
 	# Rebuild content
 	for c in _content.get_children():
 		c.queue_free()
+	_add_tabs()
 
 	if not active_only:
 		# --- Section 1: Ready to Turn In ---
@@ -112,6 +132,152 @@ func open_board(message: Dictionary, active_only: bool = false) -> void:
 
 
 # ---------- card builders ----------
+
+func open_atlas(message: Dictionary) -> void:
+	"""The DUNGEONS tab - where to go, what is in there, and which places are wanted.
+
+	Replaces the text Atlas that lived in `game_output`, and the orphaned text dungeon LIST that
+	could only be reached by typing `/dungeons`. Both retire with this, which is the "ensure we
+	don't have dead UI buttons/navigations to the one we aren't using" half of the owner's ask.
+
+	A row per dungeon rather than the old three prose lines each - same reasoning as the dungeon
+	entrance table: one fact per row, and the detail on the row that needs it."""
+	_mode = "dungeons"
+	var entries: Array = message.get("entries", [])
+	var pins: Dictionary = message.get("pins", {})
+	var discovered := int(message.get("discovered", 0))
+	var total := int(message.get("total", entries.size()))
+	var rank := int(message.get("cartography_rank", 1))
+	var rmax := int(message.get("cartography_max_rank", 8))
+	var sense := int(message.get("cartography_sense_rank", 8))
+	var cxp := int(message.get("cartography_xp", 0))
+	var cnext := int(message.get("cartography_next_xp", 0))
+	var at_post := bool(message.get("at_post", false))
+
+	_title_label.clear()
+	_subtitle_label.clear()
+	_title_label.append_text("[color=#FFD700]✦ Dungeon Atlas[/color]")
+	# Cartography is the Atlas's own progression and its gate on Locate, so it belongs in the
+	# subtitle where the quest view puts its slot count - the same line answering "what can I do
+	# from here right now".
+	var precision := "region hints only"
+	if rank >= 5:
+		precision = "precise coordinates"
+	elif rank >= 3:
+		precision = "direction + distance"
+	var prog := "[color=#606060](max rank)[/color]"
+	if rank < rmax:
+		prog = "[color=#606060](%d / %d XP to rank %d)[/color]" % [cxp, cnext, rank + 1]
+	var gate := ""
+	if rank >= sense:
+		gate = "   [color=#7AE07A]Locate works anywhere.[/color]"
+	elif at_post:
+		gate = "   [color=#C8A24A]A Cartographer is here — Locate costs Valor.[/color]"
+	else:
+		gate = "   [color=#909090]Locate needs a Cartographer (K) at a post.[/color]"
+	_subtitle_label.append_text("[color=#4DD6E0]Discovered %d / %d[/color]   [color=#5AC8FF]🧭 Cartography %d / %d[/color] [color=#909090]— %s[/color] %s%s" % [
+		discovered, total, rank, rmax, precision, prog, gate])
+
+	for c in _content.get_children():
+		c.queue_free()
+	_add_tabs()
+
+	# PINNED FIRST. A dungeon something is asking you for is the one you came to this screen to
+	# find, so it sorts above everything regardless of grade.
+	var pinned: Array = []
+	var known: Array = []
+	var rumours: Array = []
+	for e in entries:
+		var st := int(e.get("state", 0))
+		if pins.has(String(e.get("id", ""))):
+			pinned.append(e)
+		elif st >= 3:
+			known.append(e)
+		elif st >= 1:
+			rumours.append(e)
+
+	if pinned.size() > 0:
+		_add_section_header("⚑ Wanted — a quest points here", "#FFD700")
+		for e in pinned:
+			_add_dungeon_card(e, pins.get(String(e.get("id", "")), {}), rank, sense, at_post)
+	if known.size() > 0:
+		_add_section_header("Dungeons you have entered", "#4DD6E0")
+		for e in known:
+			_add_dungeon_card(e, {}, rank, sense, at_post)
+	if rumours.size() > 0:
+		# Owner chose reading (a): a rumour row is INFORMATIONAL and names where it was heard, so
+		# every accept still happens at a post. No Accept button lives on this tab.
+		_add_section_header("Rumours", "#A0A0A0")
+		for e in rumours:
+			_add_rumour_line(e)
+	if pinned.is_empty() and known.is_empty() and rumours.is_empty():
+		_add_empty_line("You have not heard of a single dungeon yet. Ask at a trading post.")
+
+	visible = true
+
+
+func _add_dungeon_card(e: Dictionary, pin: Dictionary, rank: int, sense: int, at_post: bool) -> void:
+	"""One dungeon: its grade and band, what it holds, and Locate. Plus the quest, when pinned."""
+	var tier := int(e.get("tier", 1))
+	var row := _make_card(Color(0.30, 0.42, 0.44) if pin.is_empty() else Color(0.62, 0.52, 0.16))
+	var body := _make_body(row)
+	var label := PowerRank.label(tier, int(e.get("rank", 0))) if int(e.get("rank", 0)) > 0 else PowerRank.letter(tier)
+	_body_line(body, "[color=%s][b]%s[/b][/color]  [color=#C8C8C8]%s[/color]   [color=#808080]Lv %d-%d · %d clears[/color]" % [
+		PowerRank.color(tier), label, String(e.get("name", "?")),
+		int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0))], 15, 22)
+	if not pin.is_empty():
+		# The bridge to the other tab: what is wanted, how far along, and WHERE to hand it in -
+		# because this tab deliberately cannot accept or turn in anything.
+		var where := String(pin.get("post", ""))
+		_body_line(body, "[color=#FFD700]⚑ %s[/color] [color=#909090]— %d / %d%s[/color]" % [
+			String(pin.get("name", "A quest")), int(pin.get("progress", 0)), int(pin.get("target", 1)),
+			("  · hand in at %s" % where) if where != "" else ""], 13, 18)
+	var mons: Array = e.get("monsters", [])
+	if mons.size() > 0:
+		_body_line(body, "[color=#909090]%s[/color]   [color=#A335EE]egg:[/color] [color=#909090]%s[/color]" % [
+			", ".join(mons), String(e.get("companion", "—"))], 12, 17)
+	# Locate is this tab's verb. Greyed rather than hidden when it cannot be used, so the reason
+	# is visible - the subtitle says what unlocks it.
+	var can_locate: bool = rank >= sense or at_post
+	var b := Button.new()
+	b.text = "Locate"
+	b.disabled = not can_locate
+	b.tooltip_text = "Mark this dungeon on your map" if can_locate else "Needs a Cartographer at a post, or Cartography rank %d" % sense
+	b.custom_minimum_size = Vector2(96, 30)
+	var did := String(e.get("id", ""))
+	b.pressed.connect(func(): locate_requested.emit(did))
+	row.add_child(b)
+
+
+func _add_rumour_line(e: Dictionary) -> void:
+	"""A dungeon you have only heard about. No name, no Locate, and no Accept - it names the post
+	that was talking about it, and you go there to ask."""
+	var tier := int(e.get("tier", 1))
+	var from_post := String(e.get("from_post", ""))
+	var where := ("heard at [color=#C8A24A]%s[/color]" % from_post) if from_post != "" else "whispered of nearby"
+	_add_empty_line("[color=%s]?[/color]  [color=#808080]an unnamed[/color] [color=%s][b]%s[/b][/color] [color=#808080]dungeon — %s[/color]" % [
+		PowerRank.color(tier), PowerRank.color(tier), PowerRank.letter(tier), where])
+
+
+func _add_tabs() -> void:
+	"""The two doors, always both visible. A tab the player is already on is disabled rather than
+	removed, so the pair does not shuffle position between views."""
+	_tab_row = HBoxContainer.new()
+	_tab_row.add_theme_constant_override("separation", 8)
+	var q := Button.new()
+	q.text = "Quests"
+	q.custom_minimum_size = Vector2(120, 32)
+	q.disabled = _mode == "quests"
+	q.pressed.connect(func(): quests_requested.emit())
+	_tab_row.add_child(q)
+	var d := Button.new()
+	d.text = "Dungeons"
+	d.custom_minimum_size = Vector2(120, 32)
+	d.disabled = _mode == "dungeons"
+	d.pressed.connect(func(): atlas_requested.emit())
+	_tab_row.add_child(d)
+	_content.add_child(_tab_row)
+
 
 func _add_section_header(text: String, color: String) -> void:
 	var lbl := RichTextLabel.new()

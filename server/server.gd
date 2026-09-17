@@ -15850,9 +15850,27 @@ func handle_dungeon_atlas_request(peer_id: int):
 			e["companion"] = String(def.get("boss_egg", ""))
 			e["desc"] = String(def.get("description", ""))
 			e["clears"] = int(rec.get("clears", 0))
+		# WHERE the rumour came from, so the row can say where to go and ask.
+		if String(rec.get("from_post", "")) != "":
+			e["from_post"] = String(rec.get("from_post", ""))
 		entries.append(e)
 	entries.sort_custom(func(a, b): return int(a.get("tier", 0)) < int(b.get("tier", 0)))
-	send_to_peer(peer_id, {"type": "dungeon_atlas_data", "entries": entries,
+	# ⚑ THE PINS. Owner 2026-09-17: a quest PINS its dungeon in the Atlas. Sent as a map of
+	# dungeon_type -> the quest asking for it, so the Dungeons tab can mark and sort without
+	# the client needing a second round trip to the quest log - the panel can open straight
+	# onto that tab with no quest fetch behind it.
+	var pins: Dictionary = {}
+	for q in character.active_quests:
+		var qd: String = String(q.get("dungeon_type", ""))
+		if qd == "":
+			continue
+		pins[qd] = {
+			"name": String(q.get("name", "A quest")),
+			"progress": int(q.get("progress", 0)),
+			"target": int(q.get("target", 1)),
+			"post": String(q.get("trading_post", "")),
+		}
+	send_to_peer(peer_id, {"type": "dungeon_atlas_data", "entries": entries, "pins": pins,
 		"discovered": discovered_count, "total": DungeonDatabaseScript.DUNGEON_TYPES.size(),
 		"cartography_rank": int(character.cartography_rank),
 		"cartography_xp": int(character.cartography_xp),
@@ -33031,7 +33049,8 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 			for kind in try_order:
 				match kind:
 					"dungeon":
-						rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver, personality)
+						var _rp: String = String(post.get("name", post.get("post_name", "")))
+						rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver, personality, _rp)
 					"resource":
 						rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver, personality)
 					"hotzone":
@@ -33094,11 +33113,11 @@ func _format_personality_fallback_nod(quest_giver: String, personality: String) 
 	var template = String(NPC_PERSONALITY_FALLBACK_NOD.get(personality, NPC_PERSONALITY_FALLBACK_NOD["warm"]))
 	return "[color=#A0C8E0]%s[/color]" % (template % quest_giver)
 
-func _build_dungeon_rumor_line(px: int, py: int, peer_id: int, quest_giver: String, personality: String = "warm") -> String:
+func _build_dungeon_rumor_line(px: int, py: int, peer_id: int, quest_giver: String, personality: String = "warm", from_post: String = "") -> String:
 	"""Slice 1 — dungeon hint rumor formatter. Returns "" when no dungeon is
 	within 150 tiles so the caller can fall through to another rumor type.
 	Slice 4 — personality shapes the opener phrase."""
-	var rumors = _find_dungeon_rumors_near(px, py, 150, 1, peer_id)
+	var rumors = _find_dungeon_rumors_near(px, py, 150, 1, peer_id, from_post)
 	if rumors.size() == 0:
 		return ""
 	var r = rumors[0]
@@ -34655,7 +34674,7 @@ func _find_player_post_at(x: int, y: int, username: String) -> Dictionary:
 				return {"found": true, "meta": meta, "post_index": i, "owner": owner}
 	return {"found": false}
 
-func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer_id: int = -1) -> Array:
+func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer_id: int = -1, from_post: String = "") -> Array:
 	"""Audit #11 Slice 1 — uncached helper used by both legacy trading posts
 	(via _get_trading_post_rumors) and procedural NPC posts (arrival greeting).
 	Returns up to `limit` nearby uncompleted dungeons inside `max_radius`,
@@ -34687,10 +34706,10 @@ func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer
 		})
 	candidates.sort_custom(func(a, b): return a.distance < b.distance)
 	var result: Array = candidates.slice(0, mini(limit, candidates.size()))
-	_note_rumored_dungeons(peer_id, result)
+	_note_rumored_dungeons(peer_id, result, from_post)
 	return result
 
-func _note_rumored_dungeons(peer_id: int, rumors: Array) -> void:
+func _note_rumored_dungeons(peer_id: int, rumors: Array, from_post: String = "") -> void:
 	"""P1 Atlas — hearing a rumor about a dungeon marks it RUMORED in the player's Atlas
 	(a "??? Tier N dungeon" hint). note_dungeon_discovery only ESCALATES state, so this
 	never downgrades an already Spotted/Discovered entry. Called from both rumor paths —
@@ -34700,7 +34719,7 @@ func _note_rumored_dungeons(peer_id: int, rumors: Array) -> void:
 		return
 	var character = characters[peer_id]
 	for r in rumors:
-		character.note_dungeon_discovery(String(r.get("dungeon_type", "")), Character.DUNGEON_STATE_RUMORED, String(r.get("name", "")), int(r.get("tier", 0)), 0, 0, false, int(r.get("sub_tier", 0)))
+		character.note_dungeon_discovery(String(r.get("dungeon_type", "")), Character.DUNGEON_STATE_RUMORED, String(r.get("name", "")), int(r.get("tier", 0)), 0, 0, false, int(r.get("sub_tier", 0)), from_post)
 
 func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int = -1) -> Array:
 	"""Audit #5 — cached rumor list for legacy trading posts. Refreshes every
@@ -34711,10 +34730,13 @@ func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int 
 		var cached = trading_post_rumors[tp_id]
 		if current_time - int(cached.get("generated_at", 0)) < TRADING_POST_RUMOR_REFRESH_SEC:
 			var cached_rumors: Array = cached.get("rumors", [])
-			_note_rumored_dungeons(peer_id, cached_rumors)  # cache is shared by post id — mark THIS visitor's Atlas too
+			# The post goes in too, or a rumour taken off the CACHE records no origin while the same
+			# rumour generated fresh records one - the Atlas row would then name a post or not
+			# depending purely on who happened to visit first.
+			_note_rumored_dungeons(peer_id, cached_rumors, tp_id)  # cache is shared by post id — mark THIS visitor's Atlas too
 			return cached_rumors
 
-	var rumors = _find_dungeon_rumors_near(tp_x, tp_y, 150, 2, peer_id)
+	var rumors = _find_dungeon_rumors_near(tp_x, tp_y, 150, 2, peer_id, tp_id)
 	trading_post_rumors[tp_id] = {
 		"generated_at": current_time,
 		"rumors": rumors

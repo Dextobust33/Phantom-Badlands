@@ -3185,6 +3185,15 @@ func _ready():
 	quest_board_panel.abandon_requested.connect(func(qid): send_to_server({"type": "quest_abandon", "quest_id": qid}))
 	quest_board_panel.refresh_requested.connect(func(): send_to_server({"type": "trading_post_quests"}))
 	quest_board_panel.dismissed.connect(func(): update_action_bar())
+	# ⚑ THE TWO TABS, AND EVERY DOOR THAT REACHES THEM. Owner 2026-09-17: *"If we are going
+	# to show Quests in the Atlas we may want to combine the 2 and ensure we don't have dead
+	# UI buttons/navigations to the one we aren't using."*
+	#
+	# Switching tab RE-ASKS the server instead of caching: a stale Atlas still showing a quest
+	# you turned in two screens ago is worse than a round trip nobody notices.
+	quest_board_panel.atlas_requested.connect(func(): send_to_server({"type": "dungeon_atlas_request"}))
+	quest_board_panel.quests_requested.connect(func(): send_to_server({"type": "get_quest_log"}))
+	quest_board_panel.locate_requested.connect(func(did): send_to_server({"type": "dungeon_locate", "dungeon_type": did}))
 
 	# Combat scratch-off panel (user-requested 2026-05-14). Parented to
 	# game_output_container so the centering math matches other gathering
@@ -7246,9 +7255,19 @@ func _dev_run_shots() -> void:
 				if game_output and game_output.get_v_scroll_bar():
 					game_output.get_v_scroll_bar().value = 0
 				await get_tree().create_timer(0.5).timeout
-				print("[SHOTS] ATLAS lines=%d" % game_output.get_parsed_text().split("
-").size())
-				await _dev_shot_capture("atlas")
+				# The Atlas is a TAB of the quest panel now, so report the PANEL rather than the
+				# text page that used to live in `game_output` - a line count of a retired screen
+				# would have looked like a healthy measurement.
+				print("[SHOTS] ATLAS panel_open=%s mode=%s" % [
+					str(quest_board_panel != null and quest_board_panel.visible),
+					str(quest_board_panel.get("_mode")) if quest_board_panel != null else "-"])
+				await _dev_shot_capture("atlas_dungeons")
+				# ...and the other tab, reached the way a player reaches it, so the SWITCH is
+				# exercised rather than just the two builders.
+				send_to_server({"type": "get_quest_log"})
+				await get_tree().create_timer(1.5).timeout
+				print("[SHOTS] ATLAS after switch mode=%s" % (str(quest_board_panel.get("_mode")) if quest_board_panel != null else "-"))
+				await _dev_shot_capture("atlas_quests")
 
 			"hoverproof":
 				# ⛑ WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
@@ -27721,8 +27740,20 @@ func handle_server_message(message: Dictionary):
 			# Enter Atlas view for BOTH entry paths: the More/shortcut button already
 			# sets this before requesting; the Cartographer-bump path is server-initiated,
 			# so set it here too (Back button + refresh-protection). Harmless if already set.
-			pending_more_action = "dungeon_atlas"
-			display_dungeon_atlas(message)
+			# ⚑ THE PANEL, NOT THE TEXT SCREEN. `display_dungeon_atlas` was a 12-line text page
+			# in `game_output`. The Atlas is a TAB of the quest panel now, so the two surfaces
+			# that answer questions about dungeons share one shell and one set of doors.
+			#
+			# The text version stays as a fallback for the case where the panel failed to build,
+			# rather than being deleted outright: a null panel would otherwise mean the Atlas
+			# button silently does nothing, which is the dead navigation this work is removing.
+			if quest_board_panel != null:
+				pending_more_action = ""
+				quest_board_panel.open_atlas(message)
+				update_action_bar()
+			else:
+				pending_more_action = "dungeon_atlas"
+				display_dungeon_atlas(message)
 			update_action_bar()
 
 		# Market messages
@@ -29721,8 +29752,13 @@ func process_command(text: String):
 			else:
 				display_game("You don't have a character yet")
 		"dungeons", "dungeon":
+			# ⛑ THIS WAS THE ONLY ROUTE TO THE TEXT DUNGEON LIST - a surface with no button
+			# anywhere in the game, found orphaned by the 2026-09-17 navigation audit. It
+			# overlapped the Atlas almost entirely (both listed dungeons with grade and level
+			# band), so the command opens the Atlas tab and the list retires - rather than the
+			# command being deleted and taking the only door to a feature with it.
 			if has_character:
-				request_dungeon_list()
+				send_to_server({"type": "dungeon_atlas_request"})
 			else:
 				display_game("You don't have a character yet")
 		"materials", "mats":

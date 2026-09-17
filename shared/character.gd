@@ -2767,7 +2767,7 @@ const DUNGEON_STATE_RUMORED := 1   # heard about it (region + tier hint)
 const DUNGEON_STATE_SPOTTED := 2   # seen its 'D' on the map (name + tier + location)
 const DUNGEON_STATE_DISCOVERED := 3  # entered/cleared it (full detail)
 
-func note_dungeon_discovery(dungeon_type: String, state: int, dname: String = "", tier: int = 0, dx: int = 0, dy: int = 0, record_clear: bool = false, rank: int = 0) -> bool:
+func note_dungeon_discovery(dungeon_type: String, state: int, dname: String = "", tier: int = 0, dx: int = 0, dy: int = 0, record_clear: bool = false, rank: int = 0, from_post: String = "") -> bool:
 	"""Record/upgrade a dungeon's Atlas entry. State only ever escalates (rumored <
 	spotted < discovered). Returns true if the state was NEWLY RAISED (for a
 	'Dungeon discovered!' notice). dname/tier/location filled in when known.
@@ -2792,6 +2792,11 @@ func note_dungeon_discovery(dungeon_type: String, state: int, dname: String = ""
 		entry["tier"] = tier
 	if rank > 0:
 		entry["rank"] = rank
+	# WHERE it was heard. Owner 2026-09-17 chose reading (a) for rumours in the Atlas: the row
+	# is informational and NAMES THE POST offering a quest toward it, so the accept still
+	# happens at a post. The post is known at rumour time and was simply not kept.
+	if from_post != "":
+		entry["from_post"] = from_post
 	if dx != 0 or dy != 0:
 		entry["x"] = dx
 		entry["y"] = dy
