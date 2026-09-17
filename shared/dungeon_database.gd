@@ -3385,6 +3385,36 @@ static func get_sub_tier_level_range(tier: int, sub_tier: int) -> Dictionary:
 		sub_max = sub_min + 1
 	return {"min_level": sub_min, "max_level": maxi(sub_min, sub_max)}
 
+static func instance_level_band(tier: int, rank: int, floors: int) -> Dictionary:
+	"""The levels a player will ACTUALLY MEET in a dungeon of this grade: {min_level, max_level}.
+
+	⚑ ONE OWNER FOR A NUMBER THAT HAD THREE. Owner 2026-09-17: *"When fixing these things if we
+	can fix them structurally so the bugs won't happen again that is preferred."*
+
+	Same shape as the `base_tier` rename, one level down. Three different things were being mixed:
+
+	  * the TYPE's static `min_level`/`max_level` - a DESIGN band describing what KIND of dungeon
+	    this is. Legitimate in `get_dungeons_for_level` (which kinds suit a player) and wrong for
+	    anything describing a dungeon you can walk into. The Atlas read it, which is how a row
+	    showed the INSTANCE's grade letter beside the TYPE's level numbers.
+	  * `get_sub_tier_level_range(tier, rank)` - the instance's grade band. Correct, and recomputed
+	    at eight call sites.
+	  * the DEEPEST-FLOOR scaling - `max x (1 + (floors-1) x FLOOR_DIFFICULTY_PER_FLOOR)`, because
+	    the bottom floor is harder than the first and the number shown has to cover what a player
+	    will actually meet down there. Hand-written TWICE on the display side. It was added to fix
+	    a report that *"a T1-5 dungeon read 6-7 but had level-9 monsters on lower floors"* - a bug
+	    that existed only because the band and the floors were computed apart.
+
+	Asking this instead means a surface cannot show the type's band by accident, and cannot forget
+	the floors either."""
+	var base: Dictionary = get_sub_tier_level_range(tier, maxi(1, rank))
+	var lo: int = int(base.get("min_level", 1))
+	var hi: int = int(base.get("max_level", lo + 1))
+	# floors - 1, because floor 1 is +0%. See FLOOR_DIFFICULTY_PER_FLOOR at the top of this file.
+	var deepest: int = int(float(hi) * (1.0 + float(maxi(0, floors - 1)) * FLOOR_DIFFICULTY_PER_FLOOR))
+	return {"min_level": lo, "max_level": maxi(hi, deepest)}
+
+
 static func get_sub_tier_for_distance(tier: int, distance: float) -> int:
 	"""Calculate rank (1-9) based on distance within tier's spawn band.
 	Further from origin within the tier band = higher rank.

@@ -135,6 +135,38 @@ func _init() -> void:
 	for o in offenders:
 		print("           " + o)
 
+	print("\n===== 6. AND THE LEVEL BAND HAS ONE OWNER TOO =====")
+	# ⛑ THE SAME CLASS, ONE LEVEL DOWN. The Atlas showed the INSTANCE's grade letter beside
+	# the TYPE's level numbers - two different dungeons on one row - because `base_tier` fixed
+	# the letter and nothing fixed the band. `instance_level_band` is now the one owner, and it
+	# also folds in the deepest-floor scaling that was hand-written at two display sites.
+	var b_low: Dictionary = DD.instance_level_band(2, 1, 3)
+	var b_high: Dictionary = DD.instance_level_band(2, 9, 3)
+	print("           G-grade, 3 floors: rank 1 -> %d-%d, rank 9 -> %d-%d" % [
+		int(b_low["min_level"]), int(b_low["max_level"]),
+		int(b_high["min_level"]), int(b_high["max_level"])])
+	ck(int(b_high["min_level"]) > int(b_low["min_level"]),
+		"a higher RANK means a higher band - the band follows the instance, not the type")
+
+	# Floors must move the top of the band. A dungeon whose bottom floor is 40% harder cannot
+	# advertise its first floor's ceiling - that is the 2026-08-27 report, and it came back as
+	# a bug precisely because the band and the floor count were computed in different places.
+	var f2: Dictionary = DD.instance_level_band(3, 5, 2)
+	var f9: Dictionary = DD.instance_level_band(3, 5, 9)
+	print("           F5: 2 floors -> max %d, 9 floors -> max %d" % [
+		int(f2["max_level"]), int(f9["max_level"])])
+	ck(int(f9["max_level"]) > int(f2["max_level"]),
+		"more FLOORS raises the top of the band")
+	ck(int(f9["min_level"]) == int(f2["min_level"]),
+		"...and never the bottom - floor 1 is floor 1 whatever is beneath it")
+
+	# A rank of 0 means "not recorded" on an old Atlas entry. It must degrade to the lowest
+	# band rather than divide by nothing or return an empty dictionary.
+	var b0: Dictionary = DD.instance_level_band(2, 0, 3)
+	ck(int(b0.get("min_level", 0)) > 0 and int(b0.get("max_level", 0)) > int(b0.get("min_level", 0)),
+		"an unrecorded rank still yields a sane band (%d-%d)" % [
+			int(b0.get("min_level", 0)), int(b0.get("max_level", 0))])
+
 	print("\n===== VERDICT =====")
 	print("  all checks PASS" if fails == 0 else "  %d check(s) FAIL" % fails)
 	quit(0)

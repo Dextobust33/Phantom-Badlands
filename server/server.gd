@@ -15843,8 +15843,14 @@ func handle_dungeon_atlas_request(peer_id: int):
 			e["y"] = int(rec.get("y", 0))
 		if st >= Character.DUNGEON_STATE_DISCOVERED:
 			discovered_count += 1
-			e["level_min"] = int(def.get("min_level", 1))
-			e["level_max"] = int(def.get("max_level", 99))
+			# ⛑ THE BAND OF THE ONE THIS PLAYER FOUND, not of its type. The row already showed
+			# the INSTANCE's grade letter from the record, so reading the type here put two
+			# different dungeons on one line - exactly the fault the `base_tier` rename retired
+			# for the letter, still alive in the numbers printed beside it.
+			var _ab: Dictionary = DungeonDatabaseScript.instance_level_band(
+				int(e.get("tier", 1)), int(e.get("rank", 1)), int(def.get("floors", 1)))
+			e["level_min"] = int(_ab.get("min_level", 1))
+			e["level_max"] = int(_ab.get("max_level", 99))
 			e["monsters"] = def.get("monster_pool", [])
 			e["boss"] = String(def.get("boss", {}).get("name", ""))
 			e["companion"] = String(def.get("boss_egg", ""))
@@ -30229,16 +30235,14 @@ func handle_dungeon_list(peer_id: int):
 		var display_max = dungeon_data.max_level
 		var display_name = dungeon_data.name
 		if active_instance != "" and inst_sub_tier > 0:
-			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(_row_tier, inst_sub_tier)
-			display_min = sub_range.min_level
-			# Deeper floors scale monster level up by FLOOR_DIFFICULTY_PER_FLOOR each
-			# (see _spawn_dungeon_floor_monsters: monster_level = dungeon_level ×
-			# (1 + floor_num × PER_FLOOR)). Show the DEEPEST-floor max so the label
-			# reflects what players actually meet — bug report 2026-08-27: a T1-5
-			# dungeon read "6-7" but had level-9 monsters on lower floors.
-			var _floors := int(dungeon_data.get("floors", 1))
-			display_max = int(sub_range.max_level * (1.0 + maxi(0, _floors - 1) * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR))
-			display_max = maxi(display_max, sub_range.max_level)
+			# One owner for the band, floors included. The deepest-floor scaling used to be
+			# written out here AND in `_get_dungeon_at_location` - two copies of the formula
+			# whose absence caused the 2026-08-27 report (*a T1-5 dungeon read 6-7 but had
+			# level-9 monsters on lower floors*) in the first place.
+			var sub_range: Dictionary = DungeonDatabaseScript.instance_level_band(
+				_row_tier, inst_sub_tier, int(dungeon_data.get("floors", 1)))
+			display_min = int(sub_range.get("min_level", 1))
+			display_max = int(sub_range.get("max_level", 1))
 			display_name = DungeonDatabaseScript.get_dungeon_display_name(dungeon_type, _row_tier, inst_sub_tier)
 
 		dungeon_list.append({
@@ -32657,17 +32661,16 @@ func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 		if instance.world_x == x and instance.world_y == y:
 			var dungeon_data = _dungeon_data_for(instance)
 			var inst_sub_tier = instance.get("sub_tier", 1)
-			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, inst_sub_tier)
+			var sub_range: Dictionary = DungeonDatabaseScript.instance_level_band(
+				dungeon_data.tier, inst_sub_tier, int(dungeon_data.get("floors", 1)))
 			return {
 				"instance_id": instance_id,
 				"dungeon_type": instance.dungeon_type,
 				"name": DungeonDatabaseScript.get_dungeon_display_name(instance.dungeon_type, dungeon_data.tier, inst_sub_tier),
 				"tier": dungeon_data.tier,
 				"sub_tier": inst_sub_tier,
-				"min_level": sub_range.min_level,
-				# Deepest-floor max (deeper floors scale monster level up per floor) so
-				# the readout matches what players meet on lower floors (bug 2026-08-27).
-				"max_level": maxi(sub_range.max_level, int(sub_range.max_level * (1.0 + maxi(0, int(dungeon_data.get("floors", 1)) - 1) * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR))),
+				"min_level": int(sub_range.get("min_level", 1)),
+				"max_level": int(sub_range.get("max_level", 1)),
 				# ⛑ THE STARTER FLAG. handle_dungeon_enter reads it from HERE to decide whether
 				# the instance it builds is a starter dungeon - and it was never in this dict, so
 				# `_inherit_starter` was false every single time. The starter dungeon therefore
@@ -32808,7 +32811,10 @@ func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: in
 			# dungeons in the world the hover is not a nicety - it is how a player tells an H4
 			# from an S9 without walking onto it and finding out.
 			var _vst: int = int(instance.get("sub_tier", 1))
-			var _vsr = DungeonDatabaseScript.get_sub_tier_level_range(int(dungeon_data.get("tier", 1)), _vst)
+			# Through the one owner, so the marker hover and the entrance screen cannot
+			# disagree about the same dungeon.
+			var _vsr: Dictionary = DungeonDatabaseScript.instance_level_band(
+				int(dungeon_data.get("tier", 1)), _vst, int(dungeon_data.get("floors", 1)))
 			visible.append({
 				"x": instance.world_x,
 				"y": instance.world_y,
