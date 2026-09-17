@@ -1895,6 +1895,8 @@ var post_status_panel = null
 const PvPCombatPanelScript = preload("res://client/pvp_combat_panel.gd")
 const SocialPanelScript = preload("res://client/social_panel.gd")
 var social_panel = null
+const MenuTreePanelScript = preload("res://client/menu_tree_panel.gd")
+var menu_tree_panel = null
 var pvp_combat_panel = null
 
 # Audit #14 Slice 1 — visual clan create/roster panel (no chat-command-first).
@@ -3109,7 +3111,7 @@ func _ready():
 	numpad_help_panel.dismissed.connect(_on_numpad_help_dismissed)
 	numpad_help_panel.persistent_toggled.connect(_on_numpad_help_persistent_toggled)
 
-	# v0.9.568 — Bounty Board panel. Modal opens via /bounty list or /bountyboard
+	# v0.9.568 — Bounty Board panel. Modal opens via /bounty list or Menu › World › Bounty Board
 	# / /bb. Posts/views/cancels route back through the existing bounty_* server
 	# messages (Audit #14 Slice E payloads unchanged).
 	bounty_board_panel = BountyBoardPanelScript.new()
@@ -3151,6 +3153,9 @@ func _ready():
 	social_panel = SocialPanelScript.new()
 	add_child(social_panel)
 	social_panel.action_requested.connect(_on_social_action)
+	menu_tree_panel = MenuTreePanelScript.new()
+	add_child(menu_tree_panel)
+	menu_tree_panel.action_chosen.connect(_on_menu_tree_action)
 	pvp_combat_panel.action_submitted.connect(_on_pvp_combat_action_submitted)
 
 	# Audit #14 Slice 1 — clan create/roster panel.
@@ -5460,7 +5465,7 @@ func _process(delta):
 	# focus rather than the action bar. `_swallow_modal_dismiss_keys` closes the other half: the
 	# key must be RELEASED before it counts again.
 	var teaching_modal_open = (tutorial_hint_panel != null and tutorial_hint_panel.visible) 		or (numpad_help_panel != null and numpad_help_panel.visible) 		or (guided_intro_overlay != null and guided_intro_overlay.visible)
-	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open or quest_board_open or feedback_open or teaching_modal_open
+	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open or quest_board_open or feedback_open or teaching_modal_open or _blocking_overlay_open()
 	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode and not _testfx_step_active
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
@@ -5923,6 +5928,11 @@ func _input(event):
 	# ESC leaves whisper mode. Placed beside the bug-report cancel below because it is the same
 	# shape - an input mode the player must be able to back out of without sending anything - and
 	# because a player who opens a whisper by accident must not have to type a line to escape it.
+	if _prompt_action != "" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_cancel_text_prompt()
+		get_viewport().set_input_as_handled()
+		return
+
 	if pending_donate and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		_cancel_donate_prompt()
 		get_viewport().set_input_as_handled()
@@ -6585,6 +6595,26 @@ func _dev_run_shots() -> void:
 				await _dev_shot_capture("world")
 				if _dungeon_fit_debug:
 					_dev_print_rects()
+			"menutree":
+				# ⚑ THE TREE, PHOTOGRAPHED. It is built in code rather than from a scene file, so the
+				# column widths, the hint line and whether thirty rows fit are things only a capture
+				# can answer. Two shots: the first category, and the Clan page, which carries the
+				# longest labels and the most rows.
+				await _dev_shot_clear_overlays()
+				if menu_tree_panel:
+					menu_tree_panel.open()
+					await get_tree().create_timer(0.8).timeout
+					print("[SHOTS] menutree visible=%s entries=%d" % [
+						str(menu_tree_panel.visible), menu_tree_panel.all_action_ids().size()])
+					await _dev_shot_capture("menu_tree_character")
+					menu_tree_panel._cat = 3
+					menu_tree_panel._rebuild()
+					await get_tree().create_timer(0.6).timeout
+					await _dev_shot_capture("menu_tree_clan")
+					menu_tree_panel.close()
+				else:
+					print("[SHOTS] menutree FAIL panel is null")
+
 			"scouting":
 				# ⚑ SCOUTING, LOOKED AT. Owner 2026-09-13: *"Scouting is busted"* - the map drew
 				# as horizontal bands separated by black, because +2 vision made the row of
@@ -9612,7 +9642,11 @@ const PLAYER_MENU_ITEMS := [
 	{"id": 0, "label": "Whisper", "verb": "say something privately"},
 	{"id": 1, "label": "Inspect", "verb": "look at their gear and level"},
 	{"id": 2, "label": "Trade", "verb": "offer a trade"},
-	{"id": 3, "label": "Duel", "verb": "challenge them"},
+	{"id": 3, "label": "Duel", "verb": "challenge them, for nothing but the result"},
+	# ⚑ THE WAGER NEEDED ITS OWN ROW. `player_duel` takes "none" or "valor_10" and the
+	# menu only ever passed "none", so half the feature had no UI route at all - and a sweep
+	# reading "Duel is in the menu" would have called the capability covered.
+	{"id": 7, "label": "Duel for Valor", "verb": "challenge them, 10% of your valor on it"},
 	{"id": 4, "label": "Watch", "verb": "follow their game output, with their consent"},
 	{"id": 5, "label": "Add Friend", "verb": "send a friend request"},
 	{"id": 6, "label": "Block", "verb": "silence their whispers and requests"},
@@ -9662,6 +9696,7 @@ func _on_player_menu_id(id: int) -> void:
 		1: player_examine(target)
 		2: handle_trade_command(target)
 		3: player_duel(target, "none")
+		7: player_duel(target, "valor_10")
 		4: request_watch_player(target)
 		5: player_friend_add(target)
 		6: player_block(target)
@@ -9687,6 +9722,80 @@ func cancel_whisper_to() -> void:
 	whisper_target = ""
 	if input_field:
 		input_field.placeholder_text = ""
+
+
+func _on_menu_tree_action(action_id: String) -> void:
+	"""Route a menu tree entry.
+
+	⚑ THE TREE DISPATCHES NOTHING ITSELF. Every entry is an id one of the two existing
+	dispatchers already handles - the shortcut row's, or the action bar's - so a tree entry cannot
+	behave differently from the button that does the same thing. The suffix is the rule rather than
+	a second list of ids, because a list would be a third copy to keep in step."""
+	if action_id.ends_with("_shortcut"):
+		_on_shortcut_button_pressed(action_id)
+	else:
+		execute_local_action(action_id)
+
+
+## ⚑ ONE PROMPT, NOT ONE FLAG PER QUESTION. `bug_report_mode`, `whisper_target` and
+## `pending_donate` are three bespoke ways to ask the player for a line of text, each with its own
+## branch in `send_input` and its own ESC arm. The clan setters and help search need five more.
+## This is the fourth mechanism and the last: the string names what the answer is FOR, and every
+## question shares one branch, one cancel and one placeholder.
+##
+## action id -> [placeholder, the line shown when the prompt opens]
+const TEXT_PROMPTS := {
+	"clan_set_desc": ["What is your clan for?",
+		"Type a description for your clan, or press Esc to cancel. An empty line clears it."],
+	"clan_set_motto": ["A short motto (50 characters)",
+		"Type your clan's motto, or press Esc to cancel. An empty line clears it."],
+	"clan_set_color": ["#FFD700",
+		"Type your clan's colour as #RRGGBB (example: #FFD700), or press Esc to cancel."],
+	"help_search": ["A word to look for",
+		"Type a word and every help topic mentioning it is listed. Esc to cancel."],
+}
+
+var _prompt_action: String = ""
+
+
+func _begin_text_prompt(action_id: String) -> void:
+	var spec: Array = TEXT_PROMPTS.get(action_id, [])
+	if spec.is_empty():
+		return
+	_prompt_action = action_id
+	input_field.placeholder_text = String(spec[0])
+	display_game("[color=#9ACD32]%s[/color]" % String(spec[1]))
+	input_field.grab_focus()
+
+
+func _cancel_text_prompt() -> void:
+	if _prompt_action == "":
+		return
+	_prompt_action = ""
+	input_field.placeholder_text = ""
+	display_game("[color=#808080]Cancelled.[/color]")
+
+
+func _answer_text_prompt(answer: String) -> void:
+	"""The typed line, sent wherever the prompt was opened for."""
+	var what := _prompt_action
+	_prompt_action = ""
+	input_field.placeholder_text = ""
+	match what:
+		"clan_set_desc":
+			send_to_server({"type": "clan_description_set", "text": answer})
+		"clan_set_motto":
+			send_to_server({"type": "clan_motto_set", "text": answer})
+		"clan_set_color":
+			if answer == "":
+				display_game("[color=#FF8800]A colour looks like #FFD700.[/color]")
+			else:
+				send_to_server({"type": "clan_banner_color_set", "color": answer})
+		"help_search":
+			if answer == "":
+				display_game("[color=#808080]Nothing to search for.[/color]")
+			else:
+				search_help(answer)
 
 
 func _on_social_action(action: String, username: String) -> void:
@@ -13709,6 +13818,12 @@ func _create_shortcut_buttons():
 		["People", "social_shortcut"],
 		["Inv", "inventory_shortcut"],
 		["Help", "help_shortcut"],
+		# ⚑ THE INDEX. Everything the game can do, including the fifteen buttons to its
+		# left and the thirteen capabilities that had no button at all. Owner 2026-09-17:
+		# *"all slash commands should be accessible through a UI element that makes sense.
+		# If we don't have a place for it we need to build one in a tree structure."* One
+		# more button is what a tree costs; thirteen more is the crowding it prevents.
+		["Menu", "menu_shortcut"],
 	]
 
 	# ⚑ A COLOUR PER GROUP, so the row can be navigated by shape rather than by reading it.
@@ -13727,6 +13842,7 @@ func _create_shortcut_buttons():
 		"post_shortcut": Color(0.45, 0.70, 0.95), "quests_shortcut": Color(0.95, 0.80, 0.35),
 		"deck_shortcut": Color(0.78, 0.55, 0.95), "stats_shortcut": Color(0.95, 0.80, 0.35),
 		"clan_shortcut": Color(0.78, 0.55, 0.95), "help_shortcut": Color(0.70, 0.70, 0.70),
+		"menu_shortcut": Color(0.70, 0.70, 0.70),
 	}
 	for shortcut in shortcuts:
 		var accent: Color = shortcut_accents.get(shortcut[1], Color(0.52, 0.43, 0.27))
@@ -13930,6 +14046,9 @@ func _on_shortcut_button_pressed(action: String):
 			pending_inventory_action = ""
 			display_inventory()
 			update_action_bar()
+		"menu_shortcut":
+			if menu_tree_panel:
+				menu_tree_panel.open()
 		"help_shortcut":
 			more_mode = false
 			pending_more_action = ""
@@ -16561,6 +16680,23 @@ func continue_flock_encounter():
 	flock_monster_name = ""
 	send_to_server({"type": "continue_flock"})
 
+func _blocking_overlay_open() -> bool:
+	"""Is a panel up that must swallow the hotkeys?
+
+	⛑ THE ACTION BAR POLLS PHYSICAL KEYS, not focus. So with a full-screen panel open, `1`
+	browsed the panel AND fired action slot 5 behind it - CLAUDE.md's golden rule, reached from a
+	new direction.
+
+	`any_popup_open` used to be a hand-maintained OR of seven booleans, which is why a panel written
+	yesterday was not in it. Adding an eighth would have been the same mistake, so this ASKS instead:
+	a panel opts in with a two-line `blocks_hotkeys()`. Combat and the tutorial hint are overlays too
+	and must NOT swallow the bar, so they simply do not opt in."""
+	for c in get_children():
+		if c is CanvasItem and c.visible and c.has_method("blocks_hotkeys") and c.blocks_hotkeys():
+			return true
+	return false
+
+
 func execute_local_action(action: String):
 	# v0.9.740 — dynamic target-picker slots (target_select_1, target_select_2, ...). Same
 	# prefix-dispatch shape as party_appoint_N below; a `var x when ...` match pattern cannot be
@@ -16624,6 +16760,43 @@ func execute_local_action(action: String):
 			show_help()
 		"pilgrimage_donate":
 			_start_donate_prompt()
+		"help_search":
+			# There is no search box in the UI, so the prompt IS the search box.
+			_begin_text_prompt("help_search")
+		"bug_report":
+			# ⚑ The worst thing in the game to be command-only: a player who has just hit a bug is
+			# exactly the one who does not know the command for reporting it.
+			generate_bug_report("")
+		"clear_log":
+			_page_clear()
+			chat_output.clear()
+		"bounty_board":
+			_open_bounty_board()
+		"zone_deck":
+			# The ZONE deck - what spawns where you are standing. Not the ability deck the Deck
+			# shortcut opens; they are different screens that happened to share a command name.
+			if has_character:
+				send_to_server({"type": "request_zone_deck"})
+		"crucible":
+			# The Elder gauntlet. The server decides whether you are allowed in.
+			if has_character:
+				send_to_server({"type": "start_crucible"})
+		"mentor_list":
+			if has_character:
+				send_to_server({"type": "mentor_list"})
+		"trade_history":
+			if has_character:
+				send_to_server({"type": "trade_history", "limit": 10})
+		"clan_vault":
+			open_clan_vault_panel()
+		"clan_posts":
+			if has_character:
+				send_to_server({"type": "clan_posts_list"})
+		"clan_set_desc", "clan_set_motto", "clan_set_color":
+			# All three need a line of text, and all three share one prompt. The server is the one
+			# that knows whether you lead a clan, so it answers that rather than the button.
+			if has_character:
+				_begin_text_prompt(action)
 		"help_topics":
 			# The index of every registered help topic - the UI route for `/topics` + `/topic`.
 			if global_help_panel:
@@ -17529,7 +17702,7 @@ func execute_local_action(action: String):
 		"tutorial_start_no":
 			pending_tutorial_prompt = false
 			_page_clear()
-			display_game("[color=#808080]Tutorial skipped. Type /help for a quick reference.[/color]")
+			display_game("[color=#808080]Tutorial skipped. The [/color][color=#FFD700]Help[/color][color=#808080] button in the shortcut row is the quick reference — and [/color][color=#FFD700]Menu[/color][color=#808080] beside it opens everything else.[/color]")
 			update_action_bar()
 		# Quest actions
 		# ⚑ THE CONTEXTUAL [R] SLOT'S "Build" BUTTON. Standing in your own enclosure, slot 4
@@ -29102,6 +29275,13 @@ func send_input():
 	# below, rather than a new mechanism.
 	# The Trial of Wealth asks for a number. Same place as the whisper branch and for the same
 	# reason: an empty line means "I changed my mind", not "donate nothing".
+	# The menu tree's questions all land here. Checked before the empty-text return for the
+	# same reason as the two below: an empty line is an ANSWER to "set my clan description"
+	# (it clears it), and Esc is how you change your mind.
+	if _prompt_action != "":
+		_answer_text_prompt(text)
+		return
+
 	if pending_donate:
 		pending_donate = false
 		input_field.placeholder_text = ""
@@ -29286,7 +29466,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["clear", "who", "players", "examine", "ex", "watch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "block", "unblock", "debughatch", "catches", "deck", "set_title", "settitle", "buystone", "spendstat", "clandesc", "clancolor", "clanmotto", "clanpost", "clanposts", "vault", "clanvault", "mentor", "mentors", "duel", "bounty", "bountyboard", "bb",
+	var command_keywords = ["who", "players", "examine", "ex", "watch", "bug", "report", "trade", "companion", "pet", "donate", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topic", "viewtopic", "friend", "friends", "block", "unblock", "set_title", "settitle", "buystone", "spendstat", "clanpost", "mentor", "duel", "bounty",
 		"setlevel", "setgold", "setmonstergems", "setxp", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats",
 		"tp", "tpstable", "teststable", "completequest", "broadcast", "gmhelp",
@@ -30034,9 +30214,6 @@ func process_command(text: String):
 		command = command.substr(1)
 
 	match command:
-		"clear":
-			_page_clear()
-			chat_output.clear()
 		"testfx":
 			# v0.9.415 — step-through by default. Subcommands:
 			#   /testfx          → step through all FX (in-box path, simpler)
@@ -30115,13 +30292,6 @@ func process_command(text: String):
 			# Audit #14 v0.9.532 — list online clanmates with level + class.
 			# Server returns clan_list_result; client renders compact roster.
 			send_to_server({"type": "clan_list"})
-		"trades", "tradehistory":
-			# Audit #14 v0.9.539 — request the caller's trade history.
-			# Optional [N] arg = how many entries (default 10, max 50).
-			var trade_limit = 10
-			if parts.size() > 1:
-				trade_limit = clampi(int(parts[1]), 1, 50)
-			send_to_server({"type": "trade_history", "limit": trade_limit})
 		"friend", "friends":
 			# Audit #14 v0.9.540 — friend list (focused project #4). Single
 			# command with sub-args: add/accept/reject/cancel/remove/list/requests.
@@ -30222,13 +30392,6 @@ func process_command(text: String):
 			if parts.size() > 1:
 				description = " ".join(parts.slice(1))
 			generate_bug_report(description)
-		"search", "find":
-			if parts.size() > 1:
-				var search_term = " ".join(parts.slice(1))
-				search_help(search_term)
-			else:
-				display_game("[color=#FF0000]Usage: /search <term>[/color]")
-				display_game("[color=#808080]Example: /search warrior, /search flee, /search gems[/color]")
 		"trade":
 			if has_character:
 				if parts.size() > 1:
@@ -30270,18 +30433,6 @@ func process_command(text: String):
 					display_game("[color=#808080]Donate Valor to the Shrine of Wealth (Elder pilgrimage).[/color]")
 			else:
 				display_game("You don't have a character yet")
-		"crucible":
-			if has_character:
-				send_to_server({"type": "start_crucible"})
-			else:
-				display_game("You don't have a character yet")
-		"catches", "deck":
-			# Audit #7 zone deck preview — sends a request to the server; server
-			# resolves zone by current location and replies with a `text` payload.
-			if has_character:
-				send_to_server({"type": "request_zone_deck"})
-			else:
-				display_game("You don't have a character yet")
 		"buystone":
 			# Audit #4 Slice 1 — buy a Home Stone with valor at an NPC post.
 			# Usage: /buystone <egg|supplies|equipment|companion>
@@ -30306,36 +30457,6 @@ func process_command(text: String):
 					display_game("[color=#FF8800]Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>  —  see /stats for your bank.[/color]")
 				else:
 					send_to_server({"type": "spend_stat_point", "stat": stat_name})
-		"clandesc":
-			# Audit #14 Slice 7 — leader-only clan description setter.
-			# Usage: /clandesc <text> — sets the description; empty clears it.
-			if not has_character:
-				display_game("You don't have a character yet")
-			else:
-				var cd_parts = text.split(" ", false, 1)
-				var cd_text = cd_parts[1].strip_edges() if cd_parts.size() > 1 else ""
-				send_to_server({"type": "clan_description_set", "text": cd_text})
-		"clanmotto":
-			# Audit #14 v0.9.510 — leader-only clan motto setter (short tagline).
-			# Usage: /clanmotto <text> — sets the motto (max 50 chars); empty clears.
-			if not has_character:
-				display_game("You don't have a character yet")
-			else:
-				var cm_parts = text.split(" ", false, 1)
-				var cm_text = cm_parts[1].strip_edges() if cm_parts.size() > 1 else ""
-				send_to_server({"type": "clan_motto_set", "text": cm_text})
-		"clancolor":
-			# Audit #14 Slice 8 — leader-only banner color setter.
-			# Usage: /clancolor #RRGGBB — sets the chat [TAG] color.
-			if not has_character:
-				display_game("You don't have a character yet")
-			else:
-				var cc_parts = text.split(" ", false, 1)
-				var cc_color = cc_parts[1].strip_edges() if cc_parts.size() > 1 else ""
-				if cc_color == "":
-					display_game("[color=#FF8800]Usage: /clancolor #RRGGBB  (example: /clancolor #FFD700)[/color]")
-				else:
-					send_to_server({"type": "clan_banner_color_set", "color": cc_color})
 		"clanpost":
 			# Audit #14 Slice F (v0.9.558) — share/revert a post with your clan.
 			# Usage: /clanpost share  → flag the post you're standing in as
@@ -30355,13 +30476,6 @@ func process_command(text: String):
 					send_to_server({"type": "clan_post_revert"})
 				else:
 					display_game("[color=#FF8800]Usage: /clanpost share  |  /clanpost revert  (stand inside the post first; you can also use the buttons on the post status panel)[/color]")
-		"clanposts":
-			# Audit #14 Slice F v2 (v0.9.559) — discovery list of every post
-			# shared with your clan (name, owner, location, last-tended state).
-			if not has_character:
-				display_game("You don't have a character yet")
-			else:
-				send_to_server({"type": "clan_posts_list"})
 		"mentor":
 			# Audit #14 v0.9.517 — Mentor Badge MVP.
 			# Usage: /mentor on | /mentor off — toggles a ★ badge on your name
@@ -30378,12 +30492,6 @@ func process_command(text: String):
 				else:
 					display_game("[color=#FF8800]Usage: /mentor on  or  /mentor off[/color]")
 					display_game("  [color=#888888]Volunteer to be visible as a mentor (Lv 20+). New players see a [color=#FFD700]★[/color] on your name.[/color]")
-		"mentors":
-			# Audit #14 v0.9.520 — list online mentors with name + level + class.
-			if has_character:
-				send_to_server({"type": "mentor_list"})
-			else:
-				display_game("You don't have a character yet")
 		"duel":
 			# Audit #14 PvP Slice B (v0.9.552) — Duel request. Bilateral consent,
 			# agreed stakes. Usage:
@@ -30459,9 +30567,6 @@ func process_command(text: String):
 							send_to_server({"type": "bounty_cancel", "target": bp[2].strip_edges()})
 					else:
 						display_game("[color=#FF8800]Unknown subcommand '%s'. Use post / list / on / cancel.[/color]" % sub)
-		"bountyboard", "bb":
-			# v0.9.568 — explicit Bounty Board panel shortcut.
-			_open_bounty_board()
 		"set_title", "settitle":
 			# Audit #6 Slice 11 — wear a chain title in chat. Usage:
 			#   /set_title <id>   → wear that title
@@ -30473,49 +30578,6 @@ func process_command(text: String):
 				var st_parts = text.split(" ", false, 1)
 				var arg_id = st_parts[1].strip_edges() if st_parts.size() > 1 else ""
 				send_to_server({"type": "set_chain_title", "title_id": arg_id})
-		"debughatch":
-			if has_character:
-				send_to_server({"type": "debug_hatch"})
-			else:
-				display_game("You don't have a character yet")
-		"vault", "clanvault":
-			# Audit #14 Slice 5 (v0.9.446) — chat-command Clan Vault.
-			# Usage:
-			#   /vault                    → list current vault contents
-			#   /vault deposit <slot>     → put inventory slot N (1-based) into vault
-			#   /vault take <N>           → pull vault slot N (1-based) into inventory
-			if not has_character:
-				display_game("You don't have a character yet")
-			else:
-				var vparts = text.split(" ", false)
-				if vparts.size() <= 1:
-					send_to_server({"type": "clan_vault_list"})
-				else:
-					var sub = String(vparts[1]).to_lower()
-					match sub:
-						"deposit", "put", "store":
-							if vparts.size() < 3:
-								display_game("[color=#FFAA66]Usage:[/color] /vault deposit <inventory slot number>")
-							else:
-								var slot_arg = int(vparts[2]) - 1
-								if slot_arg < 0:
-									display_game("[color=#FF6666]Invalid slot number.[/color]")
-								else:
-									send_to_server({"type": "clan_vault_deposit", "slot": slot_arg})
-						"take", "withdraw", "get":
-							if vparts.size() < 3:
-								display_game("[color=#FFAA66]Usage:[/color] /vault take <vault slot number>")
-							else:
-								var idx_arg = int(vparts[2]) - 1
-								if idx_arg < 0:
-									display_game("[color=#FF6666]Invalid vault slot.[/color]")
-								else:
-									send_to_server({"type": "clan_vault_withdraw", "index": idx_arg})
-						"list", "show", "":
-							send_to_server({"type": "clan_vault_list"})
-						_:
-							display_game("[color=#FFAA66]Unknown vault command.[/color] Try: /vault, /vault deposit <N>, /vault take <N>")
-		# ===== GM COMMANDS =====
 		"admin":
 			open_admin_menu()
 		"gmhelp":
@@ -38332,7 +38394,7 @@ func show_help():
 	display_game("[color=#FF6644]Under Threat — Mechanical Bite:[/color] When a tier G+ active dungeon is within 80 tiles of a post, the post shows ⚠ Under Threat.")
 	display_game("  Now means: +50% service costs / +20% market markup / threat-zone encounters spawn the dungeon's monster type / your settler bubble loses 1 suppression. Clear the dungeon to remove all four.")
 	display_game("[color=#FFD700]Clan Vault Panel:[/color] More → Clan → Open Vault. 30 shared slots; rarity-colored item rows; one-click Withdraw / Deposit.")
-	display_game("  Auto-refreshes when other members act. `/vault` chat command still works as fallback.")
+	display_game("  Auto-refreshes when other members act. Also on the Menu › Clan › Clan Vault.")
 	display_game("[color=#88FF88]Player Post Inactivity:[/color] Posts now show 'Last tended: Xd ago' on the status panel.")
 	display_game("  ⚠ Inactive at 7d, ⚠⚠ ABANDONED at 30d. Tending = arrival inside the bubble, build / demolish, /feedall.")
 	display_game("[color=#FF8800]Dungeon Theme Tiles:[/color] All 53 dungeons now have unique themed tiles — webs in Spider Nest, lava in Balrog Depths,")
@@ -38414,7 +38476,7 @@ func _main_help_text() -> String:
 	var k8 = get_action_key_name(8)  # Additional 4 (default: 4)
 
 	var help_text = """[b][color=#FF6666]⚠ PERMADEATH ENABLED - Death is permanent![/color][/b]
-[color=#808080]Tip: Use [/color][color=#00FFFF]/search <term>[/color][color=#808080] to find specific topics (e.g., /search warrior, /search flee)[/color]
+[color=#808080]Tip: [/color][color=#FFD700]Menu[/color][color=#808080] › Help › [/color][color=#00FFFF]Search Help[/color][color=#808080] finds topics by word — or Browse Topics for the full index.[/color]
 
 [b][color=#FFD700]══ GETTING STARTED ══[/color][/b]
 [color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage. [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)
@@ -38444,7 +38506,7 @@ func _main_help_text() -> String:
 
 [b][color=#FFD700]══ BASICS ══[/color][/b]
 [color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [{k0}]=Primary | [{k1}][{k2}][{k3}][{k4}]=Quick | [{k5}][{k6}][{k7}][{k8}]=Extra
-[color=#00FFFF]Cmds:[/color] /inventory ([{k1}]) | /abilities ([{k5}]) | /who | /examine <name> | /help | /clear
+[color=#00FFFF]Cmds:[/color] /who | /examine <name>   — everything else is a button: [color=#FFD700]Menu[/color] (shortcut row) opens Stats, Deck, Inventory, Pouch, Atlas, Quests, Clan, Help and the rest
 [color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger P=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You [color=#00FF00]G[/color]=Guard [color=#FFD700]^[/color]=Tower
 
 [b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
@@ -38705,10 +38767,10 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [color=#AAAAAA]Gambling:[/color] 3d6 vs merchant. Triples pay big! Triple 6s = JACKPOT!
 [color=#AAAAAA]Bug:[/color] "/bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
-[color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
+[color=#FF4444]Chat:[/color] Text goes to chat; the few remaining commands need a [color=#00FFFF]/[/color] prefix (e.g. /who, /examine). Everything else is a button — see [color=#FFD700]Menu[/color]. Combat keywords work without /.
 
 [b][color=#FFD700]══ RECENT ADDITIONS ══[/color][/b]
-[color=#00FFFF]Mentor System:[/color] [color=#9ACD32]/mentor on[/color] (Lv 20+) volunteers you as a mentor — gold [color=#FFD700]★[/color] shows on your name. [color=#9ACD32]/mentors[/color] lists who's online.
+[color=#00FFFF]Mentor System:[/color] [color=#9ACD32]/mentor on[/color] (Lv 20+) volunteers you as a mentor — gold [color=#FFD700]★[/color] shows on your name. [color=#FFD700]Menu[/color] › People › [color=#9ACD32]Mentors[/color] lists who's online.
 [color=#00FFFF]Apex Frontier:[/color] >1500 tiles from origin = [color=#9F70FF]⚡ APEX[/color] zone. +10% XP. Four named zones (Burning Reach NE / Frostbound Verge NW / Sundered Hollows SW / Cinder Wastes SE).
 [color=#00FFFF]Apex Variants:[/color] Every monster spawned in apex frontier is an [color=#9F70FF]Apex[/color] variant — +25% HP, +10% damage, +30% XP total, +50% Soul Gems. Drops Apex Crystal (750 valor) at 12% rate.
 [color=#00FFFF]Repeatable starter chains:[/color] T1 + T2 + T3 chains (13 total) are immediately repeatable after completion. Higher tiers stay one-shot.
@@ -38717,9 +38779,9 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any rank mix) + Ascension Catalyst → same type one TIER letter higher. Keeps your favourite pet, raises its tier. Catalysts drop at tier C+.
 [color=#00FFFF]Hybrid Fusion:[/color] 2 different rank 5+ + Hybrid Catalyst → blended companion. Catalysts drop at tier D+.
 [color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
-[color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
+[color=#00FFFF]Clan polish:[/color] [color=#FFD700]Menu[/color] › Clan › [color=#9ACD32]Set Description / Set Motto / Set Colour[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
 [color=#00FFFF]Help discovery:[/color] [color=#9ACD32]/topics[/color] lists every help-panel topic key + title; [color=#9ACD32]/topic <key>[/color] opens any topic from anywhere.
-[color=#00FFFF]Trade history:[/color] [color=#9ACD32]/trades [N][/color] (default 10, max 50) — your rolling log of direct trades and market buys/sales, account-level + persistent across deaths.
+[color=#00FFFF]Trade history:[/color] [color=#FFD700]Menu[/color] › People › [color=#9ACD32]Trade History[/color] — your rolling log of direct trades and market buys/sales, account-level + persistent across deaths.
 [color=#00FFFF]Friend list:[/color] [color=#9ACD32]/friend add|accept|reject|cancel|remove|list|requests[/color] — account-level bidirectional friends, online status + current character on the list. [color=#9ACD32]/block <user>[/color] silences whispers from a user; [color=#9ACD32]/blocklist[/color] shows your blocks.
 [color=#00FFFF]Mentor reward bonus:[/color] A Lv 20+ [color=#9ACD32]/mentor on[/color] partied with a Lv < 10 player grants [color=#FFD700]+25% XP[/color] to the whole party on every kill.
 [color=#00FFFF]Social chat channels:[/color] [color=#9ACD32]/c[/color] clan chat ([color=#88FFCC][CLAN][/color]), [color=#9ACD32]/p[/color] party chat ([color=#FFAA66][PARTY][/color]), [color=#9ACD32]/clist[/color] online clanmates roster.
@@ -38736,7 +38798,7 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [color=#00FFFF]/duel <player> [valor]:[/color] Bilateral PvP, any zone, any level. Mutual-consent modal + agreed stakes (none or 10% valor). Instant dice-roll resolution comparing duel power (level + STR + DEX + weapon dmg, ±30% variance).
 [color=#00FFFF]Apex PvP:[/color] Apex Frontier (>1500 tiles) is now a [color=#FF2020]⚔ PvP zone[/color] — adjacent players can be attacked without consent. Triggering the attack opens a [b]combat-scene[/b] modal where both players pick from [color=#FF8888]Attack[/color] / [color=#88B8FF]Special[/color] / [color=#88FF88]Defend[/color] each round; both submit, both resolve simultaneously. HP 0 ends the fight (round cap 15). KO drops a gold [color=#FFD700]$[/color] sack at the death tile (15% valor + 1 equipped + 3 inventory + up to 3 eggs + 1 non-active companion). Any player who walks onto the tile auto-claims it. Victim respawns at origin with full HP — character survives (permadeath stays PvE-only).
 [color=#00FFFF]Bounties:[/color] [color=#9ACD32]/bounty post <player> <valor>[/color] (min 50, escrowed) places a public bounty. Collected when the target is KO'd in the apex zone. [color=#9ACD32]/bounty list[/color] shows the board, [color=#9ACD32]/bounty on <player>[/color] checks a single target, [color=#9ACD32]/bounty cancel <player>[/color] refunds yours.
-[color=#00FFFF]Clan-shared posts:[/color] Owner stands inside their post → [b]Share with Clan[/b] button on the post status panel (or [color=#9ACD32]/clanpost share[/color]). Clan-mates then get build + demolish permissions AND keep the decay timer fresh just by visiting. [color=#9ACD32]/clanposts[/color] lists every post shared with your clan, freshest-first.
+[color=#00FFFF]Clan-shared posts:[/color] Owner stands inside their post → [b]Share with Clan[/b] button on the post status panel (or [color=#9ACD32]/clanpost share[/color]). Clan-mates then get build + demolish permissions AND keep the decay timer fresh just by visiting. [color=#FFD700]Menu[/color] › Clan › [color=#9ACD32]Shared Posts[/color] lists every post shared with your clan, freshest-first.
 [color=#00FFFF]Pathfinder's Trial:[/color] New starter chain at [color=#FFD700]Crossroads[/color] (4 stages): fish 3 → mine 2 → kill 2 → kill 3. Each stage rewards a piece of Tier 1 gear ([color=#9AFF9A]weapon → armor → boots → ring[/color]) plus a final companion egg + [color=#9ACD32]Pathfinder[/color] title. Designed for fresh characters with empty slots.
 [color=#00FFFF]Post auto-reclaim:[/color] Posts untended for 120+ days are mechanically reclaimed — walls, structures, guards inside the bubble are wiped and the slot is freed. 14-day warning shows on the post status panel ([color=#FF2020]⚠⚠ AUTO-RECLAIM in Xd[/color]); any visit resets the timer to fresh. Clan-shared posts: any clan member's visit counts.
 
@@ -38933,7 +38995,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "ETERNAL PILGRIMAGE",
 			"keywords": ["pilgrimage", "eternal", "awakening", "trial", "blood", "mind", "wealth", "ember", "crucible", "donate", "shrine", "flame"],
-			"content": "[color=#00FFFF]ETERNAL PILGRIMAGE[/color] (Elder only, use Seek Flame to track)\n\n[color=#FFFFFF]1. The Awakening[/color] - Slay 5,000 monsters\n[color=#FF4444]2. Trial of Blood[/color] - Kill 1,000 tier A+ monsters → +3 STR\n[color=#FFFF00]3. Trial of Mind[/color] - End 200 fights without beating them down (Assassinate) → +3 WIT\n[color=#FFD700]4. Trial of Wealth[/color] - Donate %s valor (/donate <amount>) → +3 WIS\n[color=#FF8800]5. Ember Hunt[/color] - Collect 500 Flame Embers (tier A: 10%%, tier S: 25%%)\n[color=#FF0000]6. The Crucible[/color] - Defeat 10 consecutive tier S bosses (/crucible)\n\n[color=#808080]Commands:[/color] /donate <amount> (at shrine), /crucible (start gauntlet)\n[color=#808080]Note:[/color] Crucible death resets progress but keeps previous trials." % format_number(int(Titles.PILGRIMAGE_STAGES["trial_wealth"]["requirement"]))
+			"content": "[color=#00FFFF]ETERNAL PILGRIMAGE[/color] (Elder only, use Seek Flame to track)\n\n[color=#FFFFFF]1. The Awakening[/color] - Slay 5,000 monsters\n[color=#FF4444]2. Trial of Blood[/color] - Kill 1,000 tier A+ monsters → +3 STR\n[color=#FFFF00]3. Trial of Mind[/color] - End 200 fights without beating them down (Assassinate) → +3 WIT\n[color=#FFD700]4. Trial of Wealth[/color] - Donate %s valor (/donate <amount>) → +3 WIS\n[color=#FF8800]5. Ember Hunt[/color] - Collect 500 Flame Embers (tier A: 10%%, tier S: 25%%)\n[color=#FF0000]6. The Crucible[/color] - Defeat 10 consecutive tier S bosses\n\n[color=#808080]How:[/color] the Donate button at the shrine, and Menu › World › The Crucible to start the gauntlet\n[color=#808080]Note:[/color] Crucible death resets progress but keeps previous trials." % format_number(int(Titles.PILGRIMAGE_STAGES["trial_wealth"]["requirement"]))
 		},
 		{
 			"title": "TITLE ABILITIES",
@@ -39045,7 +39107,7 @@ func search_help(search_term: String):
 			display_game(_help_fill_passives(String(section.content)))
 			display_game("")
 
-	display_game("[color=#808080]Type /help for full help page | /search <term> to search again[/color]")
+	display_game("[color=#808080]Menu › Help for the full page | Menu › Help › Search Help to search again[/color]")
 
 # ===== BBCODE HELPER FUNCTIONS =====
 
@@ -40357,7 +40419,7 @@ func _handle_clan_info_data(message: Dictionary) -> void:
 func _handle_clan_vault_list_result(message: Dictionary) -> void:
 	"""Audit #14 Slice 5 (v0.9.446) — chat-command render of the clan vault.
 	Audit #14 Slice 6 (v0.9.458) — also feeds the visual Clan Vault panel
-	when open; chat-command render only runs as a fallback so /vault still
+	when open; the text render is the fallback for when the panel is not up
 	works from the chat input."""
 	var items: Array = message.get("items", [])
 	var capacity := int(message.get("capacity", 30))
@@ -40380,7 +40442,7 @@ func _handle_clan_vault_list_result(message: Dictionary) -> void:
 	if clan_name != "":
 		display_game("[color=#888888]%s [%s][/color]   [color=#88FF88]%d / %d[/color]" % [clan_name, clan_tag, items.size(), capacity])
 	if items.is_empty():
-		display_game("[color=#888888](Empty — use /vault deposit <inventory slot> to add an item.)[/color]")
+		display_game("[color=#888888](Empty — open the Clan Vault panel and press Deposit to add an item.)[/color]")
 		return
 	for i in range(items.size()):
 		var item = items[i]
@@ -40396,7 +40458,7 @@ func _handle_clan_vault_list_result(message: Dictionary) -> void:
 		if itype != "":
 			type_tag = " [color=#888888](%s)[/color]" % itype
 		display_game("  [color=#FFCC00]%2d.[/color] [color=%s]%s[/color]%s%s" % [i + 1, rarity_color, iname, qty_str, type_tag])
-	display_game("[color=#888888]/vault take <N> to withdraw  •  /vault deposit <inventory slot> to add[/color]")
+	display_game("[color=#888888]Use the Clan Vault panel's Withdraw and Deposit buttons — Menu › Clan › Clan Vault[/color]")
 
 
 func _handle_clan_action_result(message: Dictionary) -> void:
@@ -40658,7 +40720,7 @@ func _handle_bounty_list_result(message: Dictionary) -> void:
 	"""v0.9.568 — Route bounty_list to the BountyBoardPanel when it's open OR
 	when the request was fired via the panel/its shortcuts. Falls back to the
 	chat-style display_game render if the panel was never instantiated (no-UI
-	mode) for safety. The panel auto-opens on /bounty list and /bountyboard."""
+	mode) for safety. The panel auto-opens on /bounty list and Menu › World › Bounty Board."""
 	var entries: Array = message.get("entries", [])
 	# Always feed the panel so it stays fresh whether or not it's visible.
 	if bounty_board_panel:
@@ -40800,6 +40862,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 		# Test B2 scenario
 		"gm_test_b2":
 			send_to_server({"type": "gm_test_b2"})
+		"gm_debug_hatch":
+			send_to_server({"type": "gm_debug_hatch"})
 		"gm_ko_companion":
 			send_to_server({"type": "gm_ko_companion"})
 		"gm_revive_companion":

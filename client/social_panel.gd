@@ -45,9 +45,24 @@ func _ready() -> void:
 	_build_layout()
 	visible = false
 
+	# ⛑ `top_level` DETACHES THIS CONTROL FROM ITS PARENT'S RECT, so PRESET_FULL_RECT has no
+	# rectangle to resolve against and sizes the panel to NOTHING - which centres it at the
+	# origin and shrinks the dim to the panel's own bounds. Size it from the viewport instead,
+	# and again whenever the window changes.
+	_fit_to_viewport()
+	get_viewport().size_changed.connect(_fit_to_viewport)
+
+
+func _fit_to_viewport() -> void:
+	var r := get_viewport().get_visible_rect()
+	position = Vector2.ZERO
+	size = r.size
+
+
 
 func open() -> void:
 	visible = true
+	_fit_to_viewport()
 	_rebuild()
 	# Ask for all three at once. They are small, and a tab that shows yesterday's list because
 	# you have not visited it yet is worse than three cheap requests.
@@ -270,3 +285,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
 			close()
+
+
+func blocks_hotkeys() -> bool:
+	"""Swallow the action bar's hotkeys while this is up - see `client._blocking_overlay_open`.
+
+	The bar polls physical keys, not focus, so without this a number key does two things at once."""
+	return visible

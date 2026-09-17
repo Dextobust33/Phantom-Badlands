@@ -12,18 +12,18 @@ with the same verb are a merge, an entry point that reaches nothing is a dead bu
 
 | | count |
 |---|---|
-| chat commands whitelisted | 90 |
+| chat commands whitelisted | 72 |
 | ...that are the ONLY door to a surface (need a button before retiring) | **0** |
 | ...that are SPEECH, not navigation (not part of the sweep) | 8 |
 | ...that are ADMIN tools (a separate decision, see CLAUDE.md) | 27 |
-| ...that take a TARGET argument (a button may not be able to) | **23** |
-| ...kept after a HAND check found no route (see below) | 7 |
+| ...that take a TARGET argument (a button may not be able to) | **17** |
+| ...kept after a HAND check found no route (see below) | 0 |
 | ...whose surface only COMMANDS reach (need a button first) | **0** |
 | ...reaching a surface a button also reaches (safe to retire) | 0 |
 | ...opening no surface at all (pure navigation, safe to retire) | 0 |
 | ...with no arm in `process_command` | **0** |
 | ...handled but not whitelisted (unreachable by typing) | **0** |
-| panel scripts | 29 |
+| panel scripts | 30 |
 | ...never opened from `client.gd` | **0** |
 | local action-bar ids offered | 382 |
 | ...with no case in `execute_local_action` (click does nothing) | **0** |
@@ -56,6 +56,7 @@ point for the touch controls the phone-support item will need.
 | `help_panel.gd` | 6 | close, open, show_index, show_topic | Audit #4 Slice 1A (v0.9.485) — reusable in-place help overlay. Distinct from |
 | `quest_board_panel.gd` | 6 | get, open_atlas, open_board, visible | P2 (2026-08-26) — Quest Board panel. Replaces the scrolling game_output text blob |
 | `ability_panel.gd` | 5 | has_method, populate, update_deck_collection, visible | v0.9.322 — Combat Deck viewer (formerly Ability Loadout). Shows the |
+| `menu_tree_panel.gd` | 5 | _rebuild, all_action_ids, close, open | Everything the game can do, in one place, as a two-level tree. |
 | `pvp_combat_panel.gd` | 5 | end_combat, note_opponent_submitted, note_self_submitted, open_combat, update_state | Audit #14 PvP Slice B.2 (v0.9.563) — Combat-scene PvP panel. |
 | `clan_panel.gd` | 4 | close, open, refresh, show_action_result | Audit #14 Slice 1 — visual Clan panel (per "no chat-command-first" rule). |
 | `clan_vault_panel.gd` | 4 | close, open, refresh, set_inventory | Audit #14 Slice 6 — visual Clan Vault panel. Promotes v0.9.446's |
@@ -104,28 +105,19 @@ owner's own tools. Grouped from the whitelist's own line layout, not judged by n
 
 > `/admin`, `/altsprite`, `/banip`, `/broadcast`, `/completequest`, `/condensed`, `/givecompanion`, `/giveconsumable`, `/giveegg`, `/giveitem`, `/givemats`, `/givetool`, `/gmhelp`, `/resetpw`, `/setbp`, `/setgold`, `/setjob`, `/setlevel`, `/setmonstergems`, `/setxp`, `/spawnmonster`, `/spritesize`, `/testfx`, `/teststable`, `/tp`, `/tpstable`, `/unbanip`
 
-**KEPT — the columns call these safe and a hand check says they are not (7).**
+**KEPT — the columns call these safe and a hand check says they are not (0).**
 
 The tool can see that a command opens no SURFACE. It cannot see that the CAPABILITY has no
 route, and those are different statements. Each was traced to its handler and no
 non-command caller was found.
 
-| command(s) | why it survives |
-|---|---|
-| `/clear` | no Clear button anywhere |
-| `/crucible` | starts the Elder gauntlet; no UI at all |
-| `/catches`, `/deck` | ONE arm with `deck`, and it is the ZONE deck preview - the Deck shortcut opens the ABILITY deck, a different screen. Retiring it deletes a feature |
-| `/clanposts` | the clan post list; the Clan panel does not show it |
-| `/mentors` | lists online mentors; the player list shows a badge, not a list |
-| `/bountyboard`, `/bb` | `_open_bounty_board()` is called only from this arm. Command-only |
-| `/debughatch` | a dev tool sitting in the player section - belongs in /admin |
 
-**TAKES AN ARGUMENT — check the button can supply it (23).** `/block bob` is not
+**TAKES AN ARGUMENT — check the button can supply it (17).** `/block bob` is not
 replaced by a button that opens the block LIST: *open the screen* and *do this to THAT
 name* are different capabilities, and only the first is what the destination check
 answers. Detected by the arm reading `parts[...]`.
 
-> `/block`, `/bounty`, `/bug`, `/buystone`, `/clancolor`, `/clandesc`, `/clanmotto`, `/clanpost`, `/clanvault`, `/companion`, `/donate`, `/duel`, `/ex`, `/examine`, `/find`, `/friend`, `/friends`, `/mentor`, `/pet`, `/report`, `/search`, `/set_title`, `/settitle`, `/spendstat`, `/topic`, `/trade`, `/tradehistory`, `/trades`, `/unblock`, `/vault`, `/viewtopic`, `/watch`
+> `/block`, `/bounty`, `/bug`, `/buystone`, `/clanpost`, `/companion`, `/donate`, `/duel`, `/ex`, `/examine`, `/friend`, `/friends`, `/mentor`, `/pet`, `/report`, `/set_title`, `/settitle`, `/spendstat`, `/topic`, `/trade`, `/unblock`, `/viewtopic`, `/watch`
 
 **NEEDS A BUTTON FIRST (0)** — the surface these open is reached from no non-command
 path, so retiring them removes a feature rather than a shortcut.
@@ -149,7 +141,6 @@ feature.
 
 | command(s) | opens |
 |---|---|
-| `/clear` | — |
 | `/testfx` | — |
 | `/spritesize` | `_show_sprite_size_preview` |
 | `/altsprite` | — |
@@ -160,7 +151,6 @@ feature.
 | `/reply`, `/r` | — |
 | `/c`, `/cc`, `/clanchat` | — |
 | `/clist`, `/clanlist`, `/clanonline` | — |
-| `/trades`, `/tradehistory` | — |
 | `/friend`, `/friends` | — |
 | `/block` | — |
 | `/unblock` | — |
@@ -170,27 +160,16 @@ feature.
 | `/p`, `/pc`, `/partychat` | — |
 | `/watch` | — |
 | `/bug`, `/report` | — |
-| `/search`, `/find` | — |
 | `/trade` | — |
 | `/companion`, `/pet` | `show_companion_info` |
 | `/donate` | — |
-| `/crucible` | — |
-| `/catches`, `/deck` | — |
 | `/buystone` | — |
 | `/spendstat` | — |
-| `/clandesc` | — |
-| `/clanmotto` | — |
-| `/clancolor` | — |
 | `/clanpost` | — |
-| `/clanposts` | — |
 | `/mentor` | — |
-| `/mentors` | — |
 | `/duel` | `open_duel_outgoing_dialog` |
 | `/bounty` | `_open_bounty_board` |
-| `/bountyboard`, `/bb` | `_open_bounty_board` |
 | `/set_title`, `/settitle` | — |
-| `/debughatch` | — |
-| `/vault`, `/clanvault` | — |
 | `/admin` | `open_admin_menu` |
 | `/gmhelp` | `display_gm_help` |
 | `/setlevel` | — |

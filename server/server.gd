@@ -2158,7 +2158,7 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_toggle_egg_freeze(peer_id, message)
 		"discard_egg":
 			handle_discard_egg(peer_id, message)
-		"debug_hatch":
+		"gm_debug_hatch":
 			handle_debug_hatch(peer_id)
 		# Unified gathering system handlers
 		"gathering_start":
@@ -12473,7 +12473,7 @@ func handle_spend_stat_point(peer_id: int, message: Dictionary) -> void:
 	var character = characters[peer_id]
 	var stat_name = String(message.get("stat", "")).strip_edges().to_lower()
 	if stat_name == "":
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800]Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>  —  see /stats for your bank.[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800]Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>  —  or just use the Stats panel, which shows your bank and spends with a click.[/color]"})
 		return
 	var result = character.spend_stat_point(stat_name)
 	if not result.get("success", false):
@@ -21751,7 +21751,16 @@ func handle_dismiss_companion(peer_id: int):
 	save_character(peer_id)
 
 func handle_debug_hatch(peer_id: int):
-	"""Debug command to hatch a random companion with a random variant pattern"""
+	"""Hatch a random companion with a random variant pattern. ADMIN ONLY.
+
+	⚑ THIS HAD NO GATE. It grants a free random companion and it was reachable by every
+	player through `/debughatch`, which sat in the client's own command whitelist - so it
+	was not even obscure. Every other `gm_*` handler opens with these three lines; this one
+	opened with the `characters.has` check alone, which only asks whether you are logged in.
+	Found while giving the command a home in the /admin panel, where it now lives."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
 	if not characters.has(peer_id):
 		return
 
@@ -22061,7 +22070,7 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 
 	# Audit #7 forward-direction transparency — gentle hint about /catches.
 	# Sent once per session start as a soft cue; players can re-trigger anytime.
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#808080](Type /catches or /deck to see what's in this zone)[/color]"})
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#808080](Menu › World › Zone Deck shows what lives here)[/color]"})
 
 	# Skip minigame if player has skip_gather_minigame enabled AND has tool equipped
 	var skip_failed_msg = ""
@@ -34550,7 +34559,7 @@ func _maybe_send_clan_post_hint(peer_id: int, x: int, y: int) -> void:
 		+ "  • [color=#88FF88]Build[/color] new structures inside the enclosure\n"
 		+ "  • [color=#88FF88]Demolish[/color] any structure inside it\n"
 		+ "  • [color=#88FF88]Reset its decay timer[/color] just by walking through (so it stays alive even when the owner is offline)\n\n"
-		+ "Type [color=#9ACD32]/clanposts[/color] anywhere to list every post shared with your clan (sorted by freshness — abandoned shared posts float to the bottom).\n\n"
+		+ "[color=#9ACD32]Menu › Clan › Shared Posts[/color] lists every post shared with your clan (sorted by freshness — abandoned shared posts float to the bottom).\n\n"
 		+ "Only the owner can revert the post to private."
 	)
 	_send_hint(peer_id, title, body)
@@ -39382,7 +39391,7 @@ func _show_pilgrimage_progress(peer_id: int, character: Character):
 			msg += "[color=#FFD700]Stage 4: The Crucible[/color]\n"
 			msg += "Defeat 10 Tier 9 bosses in succession.\n"
 			msg += "[color=#FF4444]Progress: %d / %d bosses[/color]" % [bosses, required]
-			msg += "\n[color=#808080]Death resets progress. Use /crucible to begin in a T9 zone.[/color]"
+			msg += "\n[color=#808080]Death resets progress. Menu › World › The Crucible begins it, in a T9 zone.[/color]"
 			if bosses >= required:
 				msg += "\n[color=#00FFFF]THE CRUCIBLE IS COMPLETE![/color]"
 				msg += "\n[color=#FFD700]The Eternal Flame reveals itself...[/color]"

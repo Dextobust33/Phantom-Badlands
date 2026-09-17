@@ -170,6 +170,8 @@ func _render_page() -> void:
 			_add_button("Give 3x Taunt Charm", "give_taunt_x3")
 			_add_separator()
 			_add_button("Give Egg (random monster type)", "give_egg")
+			_add_button("Hatch Active Egg (instant)", "gm_debug_hatch")
+			_subtitle_subline("Skips the incubation timer on the egg you are carrying. Was the /debughatch chat command - a dev tool sitting in the player command list.")
 			_add_button("Give Companion (random, T5)", "give_companion_t5")
 			_add_button("Give Companion Stable (structure)", "give_companion_stable_structure", Color(1, 0.5, 1))
 			_subtitle_subline("A buildable Companion Stable. Place inside your own enclosure for Sanctuary kennel access at your post.")

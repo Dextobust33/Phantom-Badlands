@@ -5080,7 +5080,9 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       that must not be made against a stale map. Re-run it after every deletion to prove the
       deletion did not orphan something else.
 
-      **What it says today:**
+      **What it said on its FIRST run** (the figures the sweep was decided against — re-run the
+      tool for today's; after two sweep rounds it reads **72 commands in 52 arms, 30 panels,
+      382 action ids, 0 dead buttons, 0 only-doors, 0 kept by hand**):
       | | |
       |---|---|
       | chat commands whitelisted | 119, in 86 arms |
@@ -5275,11 +5277,96 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
          trivially true because everything in the client calls `display_game`. **That single
          mistake is most of the difference between 78 and 16.**
 
-      **Seven arms the tool still calls safe are recorded as KEPT** in the map, with the reason
-      each survives — `/clear`, `/crucible`, `/clanposts`, `/mentors`, `/debughatch`,
-      `/catches`+`/deck` (one arm, and it is the ZONE deck, not the ability deck the shortcut
-      opens), `/bountyboard`+`/bb` (`_open_bounty_board` is called from nowhere else). Unrecorded,
-      the next reading of the map deletes seven working features.
+      **Seven arms were recorded as KEPT** because a hand check found no route at all — `/clear`,
+      `/crucible`, `/clanposts`, `/mentors`, `/debughatch`, `/catches`+`/deck`,
+      `/bountyboard`+`/bb`. Unrecorded, the next reading of the map deletes seven working features.
+
+      ☑ **AND THEN THEY ALL GOT A DOOR (2026-09-17) — `KEEP_NO_ROUTE` IS EMPTY.** Owner:
+      *"all slash commands should be accessible through a UI element that makes sense. If we don't
+      have a place for it we need to build one in a tree structure that makes sense and doesn't
+      crowd our UI or cause confusion."*
+
+      `client/menu_tree_panel.gd` — **30 entries in 7 categories** (Character, World, People,
+      Clan, Your Post, Help, Settings), categories on the left, entries with one-line hints on the
+      right, every row a focusable `Button` so a D-pad reaches it. The hint follows FOCUS as well
+      as hover, or a controller player gets a menu of bare verbs.
+
+      ⛑ **IT COSTS THE SHORTCUT ROW ONE BUTTON.** The row already carried fifteen, which is
+      the crowding the owner named; thirteen homeless capabilities could not go there. A category
+      list is two clicks to anything and adding the next capability costs a table row rather than
+      a sixteenth button. **Nothing existing moved** — every shortcut and panel is still where
+      players know it; this is an additional door, not a reorganisation.
+
+      ⛑ **THE TREE DISPATCHES NOTHING ITSELF.** Every entry is an id one of the two existing
+      dispatchers already handles (`execute_local_action`, `_on_shortcut_button_pressed`), so a
+      tree entry cannot behave differently from the button that does the same thing.
+      `tools/probe/menu_tree_routes.gd` calls `MenuTreePanel.all_action_ids()` and reads the two
+      match statements from source — two independent sources, not the circular check that bit
+      the direction table — and fails on an id nothing handles or a row that appears twice.
+      **Both fault shapes were injected and both went red.**
+
+      ⛑ **ONE PROMPT, NOT FIVE MORE BOOLEANS.** Four clan setters and help-search all need a
+      typed line, and the client already had THREE bespoke ways to ask for one —
+      `bug_report_mode`, `whisper_target`, `pending_donate` — each with its own `send_input`
+      branch, ESC arm and placeholder handling. Five more would have made eight copies of one idea.
+      `TEXT_PROMPTS` + `_prompt_action` is one branch, one cancel, one placeholder. (The
+      "one value, many owners" shape again, caught before it landed rather than after.)
+
+      ⛑ **AND `/debughatch` HAD NO ADMIN GATE.** Found while moving it into the /admin panel:
+      `handle_debug_hatch` grants a **random companion** and opened with `characters.has(peer_id)`
+      — which only asks whether you are logged in — where every other `gm_*` handler opens
+      with `_is_admin` + `_gm_deny`. Any player could type `/debughatch` for a free companion, as
+      often as they liked, and the command was in the client's own whitelist so it was not even
+      obscure. Now gated, renamed `gm_debug_hatch`, and a button on /admin › Companions.
+
+      ⛑ **THE CONTEXT MENU COULD ONLY DUEL FOR NOTHING.** `player_duel(target, stakes)` takes
+      `"none"` or `"valor_10"` and the menu hardcoded `"none"`, so the wagered duel — the
+      half anyone would want — was still typed-only, and a sweep reading "Duel is in the menu"
+      would have called the capability covered. Second row: **Duel for Valor**.
+
+      ☑ **SWEEP ROUND TWO: 90 → 72 commands.** 18 names in 13 arms, each named against the
+      route that now serves it: `/clear`, `/crucible`, `/clanposts`, `/mentors`, `/catches`+`/deck`,
+      `/bountyboard`+`/bb`, `/trades`+`/tradehistory`, `/search`+`/find`, `/clandesc`,
+      `/clanmotto`, `/clancolor`, `/vault`+`/clanvault` (the Clan panel's own Vault button —
+      read in `_on_clan_panel_vault`, not inferred), `/debughatch`.
+      **NOT retired:** `/clanpost` and `/companion` — both take subcommands and both have only
+      partial panel coverage. The list has narrowed five times already; two arms are not worth a
+      sixth.
+
+      **The map now reports `0 arms are a surface's ONLY door` and `0 kept by hand`.** What remains
+      is 8 speech commands, 27 admin (kept by CLAUDE.md rule), and 17 argument-taking arms whose
+      capability is reachable but whose exact syntax is not worth a button.
+
+      ⛑ **AND THE PHOTOGRAPH FOUND TWO BUGS THE PROBE COULD NOT.** The tree parsed, opened,
+      and printed `visible=true entries=30`. The capture said it was in the wrong place:
+
+      1. **Both overlay panels were pinned TOP-LEFT and the dim covered nothing.** `top_level =
+         true` DETACHES a Control from its parent's rect, so `PRESET_FULL_RECT` has no rectangle
+         to resolve against, sizes the panel to zero, and the CenterContainer centres inside a
+         zero-size box — landing it at the origin with the full-screen dim shrunk to the
+         panel's own bounds, leaving the game fully lit and fully clickable behind a modal.
+         `social_panel.gd` has carried this since it was written and was **never photographed**.
+         Both now size themselves from the viewport and re-fit on window resize.
+      2. **A full-screen panel did not stop the action bar.** It polls
+         `Input.is_physical_key_pressed()`, which does not care what has focus — so `1` browsed
+         the menu AND fired action slot 5 behind it. CLAUDE.md's golden rule, reached from a new
+         direction. `any_popup_open` was a hand-maintained OR of **seven booleans**, which is
+         exactly why a panel written the day before was not in it; an eighth would have been the
+         same mistake. It now ASKS: `_blocking_overlay_open()` returns true for any visible child
+         with a `blocks_hotkeys()` saying so. A panel opts in with two lines, and the overlays
+         that must NOT eat the bar — combat scene, tutorial hint — simply do not.
+
+      The selected category was also marked with `disabled`, which made the thing you were looking
+      at the dimmest item on the panel. Colour and a ▸ marker instead.
+
+      ⛑ **A SWEEP IS NOT DONE WHEN THE ARM IS DELETED — it is done when nothing still tells
+      the player to type it.** Thirteen help lines named retired commands, and **four had been dead
+      longer than today**: the `Cmds:` line taught `/inventory`, `/abilities`, `/help` and
+      `/clear`, and the line shown to a brand-new player who skips the tutorial said *"Type /help
+      for a quick reference."* A help page confidently naming commands that do nothing is worse
+      than no help page — the player concludes the game is broken rather than the text is stale.
+      All thirteen now name the button. **Add this to the retirement checklist: grep the help text
+      and the player-facing strings for every name you delete.**
 
       Probe: `tools/probe/social_and_bug_routes.gd`, on the real client scene, proven to fire by
       disconnecting the bug button again (3 checks go red).

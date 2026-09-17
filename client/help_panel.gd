@@ -102,7 +102,7 @@ const HELP_TOPICS := {
 			+ "[color=#FFD700]── Equipment comparison ──[/color]\n"
 			+ "When you hover an equipable item the tooltip shows green/red deltas vs whatever's currently in that slot, including Sanctuary house bonuses (HP multipliers, resource max).\n\n"
 			+ "[color=#FFD700]── Home Stones ──[/color]\n"
-			+ "Special consumables (Egg / Supplies / Equipment / Companion) that send items to your Sanctuary — survive permadeath. Drop from tier E+ dungeon chests or buy at NPC posts (`/stones`).\n\n"
+			+ "Special consumables (Egg / Supplies / Equipment / Companion) that send items to your Sanctuary — survive permadeath. Drop from tier E+ dungeon chests or buy at NPC posts (the [color=#9ACD32]Stones[/color] shortcut button).\n\n"
 			+ "[color=#888888]Capacity is shown at the top right. Upgrade in Sanctuary → Storage tier for more slots.[/color]"
 		),
 	},
@@ -208,9 +208,9 @@ const HELP_TOPICS := {
 			+ "  • [b]Accept[/b] an invitation from another leader. Pending invites surface in the panel.\n\n"
 			+ "[color=#FFD700]── Leader perks ──[/color]\n"
 			+ "  • Invite / kick members (limited capacity per clan tier).\n"
-			+ "  • Set the public description ([color=#9ACD32]/clandesc[/color] up to 240 chars).\n"
-			+ "  • Set a short tagline / motto ([color=#9ACD32]/clanmotto[/color] up to 50 chars). Renders below the description on the clan panel.\n"
-			+ "  • Set the clan's [color=#FFD700]banner color[/color] ([color=#9ACD32]/clancolor #RRGGBB[/color]). The [TAG] marker follows the color through chat, whispers, player list, and the panel.\n"
+			+ "  • Set the public description ([color=#9ACD32]Menu › Clan › Set Description[/color], up to 240 chars).\n"
+			+ "  • Set a short tagline / motto ([color=#9ACD32]Menu › Clan › Set Motto[/color], up to 50 chars). Renders below the description on the clan panel.\n"
+			+ "  • Set the clan's [color=#FFD700]banner color[/color] ([color=#9ACD32]Menu › Clan › Set Colour[/color], as #RRGGBB). The [TAG] marker follows the color through chat, whispers, player list, and the panel.\n"
 			+ "  • Disband the clan.\n\n"
 			+ "[color=#FFD700]── Clan Vault ──[/color]\n"
 			+ "Shared 30-slot inventory. Any member can deposit or withdraw. Open via the [b]Vault[/b] button on the clan panel, or the legacy [color=#9ACD32]/vault[/color] chat command. Auto-refreshes when another member acts.\n\n"
@@ -642,7 +642,7 @@ const HELP_TOPICS := {
 	"quest_log": {
 		"title": "[color=#FFD700]Quests[/color]",
 		"body": (
-			"Quest objectives, turn-ins, and rewards. Access via the quest board at any trading post (bump the [color=#9ACD32]Q[/color] tile) or via [color=#9ACD32]/quests[/color].\n\n"
+			"Quest objectives, turn-ins, and rewards. Access via the quest board at any trading post (bump the [color=#9ACD32]Q[/color] tile) or the [color=#9ACD32]Quests[/color] shortcut button.\n\n"
 			+ "[color=#FFD700]── Quest types ──[/color]\n"
 			+ "  • [color=#88FF88]Gather[/color] — fish / mine / chop N of a resource.\n"
 			+ "  • [color=#FFA500]Kill[/color] — slay N of a monster type / level range.\n"
@@ -726,7 +726,7 @@ const HELP_TOPICS := {
 			+ "When the target is KO'd in an apex-zone PvP fight, all bounty postings on them pay out to the winner. Stacking bounties = a juicier reward for the eventual hunter.\n\n"
 			+ "[color=#FFD700]── Chat fallback ──[/color]\n"
 			+ "  • [color=#9ACD32]/bounty list[/color] — re-opens this panel.\n"
-			+ "  • [color=#9ACD32]/bountyboard[/color] / [color=#9ACD32]/bb[/color] — same thing, shorter alias.\n"
+			+ "  • [color=#9ACD32]Menu › World › Bounty Board[/color] — the same board, without typing.\n"
 			+ "  • [color=#9ACD32]/bounty post / on / cancel[/color] — legacy V1 commands, fully functional.\n\n"
 			+ "[color=#888888]Target must be online to receive a bounty for the first time (so they know they're marked). Offline players that already have bounties still show on the board (offline) tag.[/color]"
 		),

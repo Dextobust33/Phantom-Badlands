@@ -280,16 +280,13 @@ ADMIN = set()
 ## Unrecorded, the next reading of this map deletes seven working features - which is the exact
 ## failure this file exists to prevent. Delete a row here when you give it a button.
 KEEP_NO_ROUTE = {
-    "clear": "no Clear button anywhere",
-    "crucible": "starts the Elder gauntlet; no UI at all",
-    "clanposts": "the clan post list; the Clan panel does not show it",
-    "mentors": "lists online mentors; the player list shows a badge, not a list",
-    "debughatch": "a dev tool sitting in the player section - belongs in /admin",
-    "catches": "ONE arm with `deck`, and it is the ZONE deck preview - the Deck shortcut opens "
-               "the ABILITY deck, a different screen. Retiring it deletes a feature",
-    "deck": "see `catches` - same arm, and the shortcut is not the same screen",
-    "bountyboard": "`_open_bounty_board()` is called only from this arm. Command-only",
-    "bb": "see `bountyboard`",
+    # ✓ EMPTY as of 2026-09-17, and that is the point: all nine rows got a door rather than
+    # a permanent exemption. Six of them went into the Menu tree (`client/menu_tree_panel.gd`),
+    # `/debughatch` went into the /admin panel - where it was also found to have no admin gate at
+    # all - and `/bountyboard` got a tree entry to the panel that already existed.
+    #
+    # Add a row when a command has no UI route and you cannot give it one today. Delete it the
+    # day you do.
 }
 
 SPEECH_COMMANDS = {
