@@ -987,27 +987,50 @@ has been used."*
       blind and filed a 5x5 map as the sighted control; and the diagnostic print was invisible
       because shots.py only echoes lines carrying `[SHOTS]`. The scene clears state first and
       reports blind flag and column count beside the tile size now, so a wrong reading says so.
-- [ ] **⛑ TWO COMBAT EFFECTS THAT DO NOTHING** — found 2026-09-16 while auditing which buffs
-      lack an icon. Neither is on any list; both are player-facing claims the code does not honour.
+- [x] **⛑ TWO COMBAT EFFECTS THAT DID NOTHING** — FIXED 2026-09-16, owner picked it.
 
-      * **`smite_debuff` is never read.** An Eternal player's Smite does
-        `target.add_buff("smite_debuff", 25, 10)` with the comment *"-25% damage for 10 rounds"*,
-        and that line is the ONLY reference to the key in the entire codebase. The poison half of
-        Smite works; the damage reduction has never existed.
-      * **`damage_penalty` is display-only.** It has an icon, a colour, a label and help text in
-        `client.gd`, and is never applied or consumed anywhere.
+      An Eternal player's Smite did `target.add_buff("smite_debuff", 25, 10)` with the comment
+      *"-25% damage for 10 rounds"*, and that line was the **only reference to the key in the
+      entire codebase**. The poison half of Smite worked; the damage half had never existed.
+      `damage_penalty` was the mirror image - an icon, a colour, a label and help text on the
+      client, applied and consumed nowhere.
 
-      **The one-line fix does not work, and the reason is worth keeping.** Reusing the existing
-      `damage` key with a negative value would be read correctly - `get_buff_value` SUMS - but
-      `add_buff` refreshes with `max(buff.value, value)`, so a -25 arriving while any positive
-      damage buff is up is silently discarded. A penalty and a bonus cannot share one entry.
+      Smite now writes `damage_penalty`, and both damage funnels consume it.
 
-      The one-owner fix: a `character.damage_buff_pct()` helper defined as
-      `get_buff_value("damage") - get_buff_value("damage_penalty")`, used at the five sites that
-      currently read the damage buff (including the CARD PREVIEW at combat_manager:4609, or the
-      card face will advertise damage the fight does not deal). Then Smite applies
-      `damage_penalty` and every consumer honours it. Est. small, but it touches damage numbers,
-      so it wants its own change rather than riding on something else.
+      **It goes in the FUNNELS, not beside the buff reads.** The five
+      `get_buff_value("damage")` sites are per-ability - magic bolt, blast, cataclysm, unmaking,
+      basic attacks - so a penalty placed there would have reached five cards and silently missed
+      every other one, which is a subtler version of the bug being fixed. It goes in
+      `apply_ability_damage_modifiers` (documented as covering all ability damage, solo and party)
+      and in `calculate_damage` (basic attacks) - the same two places `analyze_bonus` is applied,
+      for the same reason. The CARD PREVIEW got it too, or a smited player reads a number the
+      fight will not pay.
+
+      **The tempting one-liner is wrong, and it is worth knowing why.** Reusing the `damage` key
+      with a value of -25 READS correctly, because `get_buff_value` sums - but `add_buff`
+      refreshes an existing entry with `max(buff.value, value)`, so a -25 arriving while War Cry
+      is up is thrown away and the player takes no penalty at all. A separate key is the fix, not
+      tidiness.
+
+      **Measured, 4000 samples each:** abilities 24.9%, basic attacks 25.2%, against the 25% the
+      ability claims. Proven to fire by restoring the dead key.
+      Probe: `tools/probe/smite_damage_penalty.gd`.
+
+      **⛑ Two instrument faults on the way, both mine.** The probe first called the funnel ONCE
+      each and read 1250 against 750 as a 40% cut - that funnel ROLLS (abilities crit, and glance
+      for 60% on a failed accuracy check), so one call against one call compares two dice. And it
+      grepped for the string `smite_debuff`, which failed on the very comment explaining the fix;
+      it looks for the WRITE now.
+
+      **⛑ And a real finding from the measurement: `int()` truncation made the penalty harsher
+      than advertised.** At a level-20 basic attack of ~18 damage, truncating sheds half a point
+      every swing and a "25%" penalty landed at 29.8%. Abilities hide it because their numbers are
+      large. Rounded instead, which is why the attack path now measures 25.2% rather than 30.
+
+      **No re-calibration needed, and that was checked rather than assumed:** this only changes
+      damage while `damage_penalty` is active, which happens solely through an Eternal's PvP
+      Smite. The reference player the monster curve is built from never carries it, so
+      `speciescal`/`refcal`/`rolecal` are unaffected.
 
 - [ ] **Buff icons for the rest.** — NARROWED 2026-09-16: it is **three keys, not "the rest"**,
       and only ONE of them needs art. Diffed every `add_buff(...)` call against `BUFF_ICONS`:

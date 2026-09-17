@@ -931,6 +931,25 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		if _rage > 0:
 			mod_damage = int(float(mod_damage) * engine_damage_ramp(character, combat))
 			_note_modifier(combat, "Rage +%d%%" % int(float(_rage) * BARBARIAN_RAGE_DMG_PER * 100.0))
+	# ⛑ A DAMAGE PENALTY ON THE ATTACKER, in the funnel every ability already passes
+	# through. Owner 2026-09-16 chose this fix after the audit found an Eternal's Smite
+	# adding `smite_debuff` with the comment "-25% damage for 10 rounds" - and that line
+	# being the ONLY reference to the key anywhere. The poison half of Smite worked; the
+	# damage half had never existed.
+	#
+	# It goes HERE rather than beside the five `get_buff_value("damage")` reads because
+	# those five are per-ability (magic bolt, blast, cataclysm, unmaking, basic attacks) and
+	# a penalty that only reached five cards would be a subtler version of the same bug.
+	# This funnel is documented above as covering all ability damage, solo and party.
+	#
+	# NOT a negative `damage` buff, which was the tempting one-liner: `get_buff_value` sums
+	# so it would READ correctly, but `add_buff` refreshes with `max(buff.value, value)`, so
+	# a -25 arriving while any positive damage buff is up is silently discarded.
+	if character != null:
+		var _dpen: int = character.get_buff_value("damage_penalty")
+		if _dpen > 0:
+			mod_damage = maxi(1, roundi(float(mod_damage) * (1.0 - minf(0.90, float(_dpen) / 100.0))))
+			_note_modifier(combat, "Damage down -%d%%" % _dpen)
 	var _an_bonus: int = int(combat.get("analyze_bonus", 0))
 	if _an_bonus > 0:
 		mod_damage = int(float(mod_damage) * (1.0 + float(_an_bonus) / 100.0))
@@ -4608,6 +4627,10 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 	# applies: the damage buff, and Analyze once it reaches abilities.
 	var preview_buff_mult: float = 1.0 + float(character.get_buff_value("damage")) / 100.0
 	preview_buff_mult *= 1.0 + float(int(combat.get("analyze_bonus", 0))) / 100.0
+	# The card face has to move with the penalty too, or a smited player reads a number the
+	# fight will not pay. Same shape as the buff above it, which was added for the same
+	# reason: "is that taking into account the characters current buffs, debuffs".
+	preview_buff_mult *= 1.0 - minf(0.90, float(character.get_buff_value("damage_penalty")) / 100.0)
 
 	# --- Phantom Strike: it strikes, and has done since 2026-09-07. -------------------------
 	# Owner 2026-09-15: *"I used Phantom strike and it did damage it didn't advertise or show on
@@ -10573,6 +10596,12 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var damage_buff = character.get_buff_value("damage")
 	if damage_buff > 0:
 		raw_damage = int(raw_damage * (1.0 + damage_buff / 100.0))
+	# ...and the same penalty on the basic-attack side. Two funnels, because this codebase
+	# applies `analyze_bonus` in exactly these two places for exactly this reason - one for
+	# abilities, one for attacks - and matching that is what stops a third being missed.
+	var _dpen_atk: int = character.get_buff_value("damage_penalty")
+	if _dpen_atk > 0:
+		raw_damage = maxi(1, roundi(float(raw_damage) * (1.0 - minf(0.90, float(_dpen_atk) / 100.0))))
 
 	# Audit #5 Slice 13 — Gargoyle Cathedral SACRED_GROUND blesses next attack
 	# with +20% damage. Consumed on use. Picked up via the dungeon move handler

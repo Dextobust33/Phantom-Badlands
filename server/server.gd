@@ -39054,7 +39054,11 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 				# bar over its life, so a Smite is always a serious wound and never a sentence.
 				var _smite_tick: int = maxi(1, int(float(target.get_total_max_hp()) * 0.025))
 				target.apply_poison(_smite_tick, 10)
-				target.add_buff("smite_debuff", 25, 10)  # -25% damage for 10 rounds
+				# `damage_penalty`, NOT `smite_debuff`. The old key was written here and read nowhere
+				# in the entire codebase, so this line has been a comment describing a mechanic that
+				# did not exist for as long as Smite has. `damage_penalty` is consumed in both damage
+				# funnels and already has an icon and hover text on the client.
+				target.add_buff("damage_penalty", 25, 10)  # -25% damage for 10 rounds
 				send_to_peer(target_peer_id, {
 					"type": "text",
 					"message": "[color=#00FFFF]Eternal %s has SMITED you! You are cursed.[/color]" % character.name
