@@ -4508,6 +4508,20 @@ share of a pool plus a per-class engine, so its cost curve does not transfer. Ow
       **Not covered, and stated so in the probe:** whether 53 cards read well together, or whether
       one is the obvious best pick at its tier. That is the sim's question and the owner's taste.
 
+      **And every one of them has a FACE.** `companion_card_art_bbcode` returned art for
+      `companion_card_` ids and "" for everything else, so a dungeon card has always drawn a blank
+      art box — four blanks before this pass, and 53 after it, which would have made *no picture*
+      the most common card face in the collection. A blank art box is the quietest kind of missing
+      content: the card works, the layout is fine, nothing reports it.
+      The image a dungeon card wants is not a new asset — it is the dungeon's own **boss species**,
+      which `MonsterArt` already draws for every monster in the game. One lookup (card → dungeon →
+      `boss_egg`), no art to make. Note the species and not the boss's NAME: "Goblin King" has no
+      art, "Goblin" does, and the species is what the floors are full of anyway.
+      The function is `card_art_bbcode` now and the old name **forwards** to it — one implementation
+      under two names, because two implementations is how the two faces of one card drift apart.
+      Probe: `tools/probe/dungeon_card_art.gd` — 106/106 cards draw something, companion art
+      unchanged, and it checks the art is the right monster rather than merely non-empty.
+
       ⛑ **AND IT FOUND A FAULT IN THE ORIGINAL FOUR.** `bulwark_of_bone` was tier **3** and drops
       from `forgotten_crypt`, which is base_tier **1** — the only one of the four whose tier did not
       match its dungeon, which is the tell that it was a slip rather than a design. It made a

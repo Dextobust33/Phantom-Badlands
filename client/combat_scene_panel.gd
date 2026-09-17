@@ -3704,17 +3704,41 @@ func _build_hand_strip() -> HBoxContainer:
 	return outer
 
 
-static func companion_card_art_bbcode(card_name: String) -> String:
-	"""v0.9.683 — the monster ASCII art for a companion card, centered, or "" if
-	the id isn't a companion card / has no art. Keyed by de-slugged type name."""
+static func card_art_bbcode(card_name: String) -> String:
+	"""The ASCII art for a collectible card, centered, or "" if it has none.
+
+	v0.9.683 — companion cards show their own monster, keyed by de-slugged type name.
+
+	⚑ 2026-09-17 — AND SO DO DUNGEON CARDS, via the thing that guards the place. This returned
+	"" for anything that was not a `companion_card_`, so every dungeon card drew a blank art box.
+	That was four blanks before the full 53-card pass and would have been 53 after it - the most
+	common card face in the collection.
+	The image a dungeon card wants is not a new asset: it is the dungeon's own boss species, which
+	`MonsterArt` already draws for every monster in the game. One lookup, no art to make.
+	"""
 	card_name = Character.card_base(card_name)   # art is the card's, whichever copy
-	if not card_name.begins_with("companion_card_"):
+	var mtype := ""
+	if card_name.begins_with("companion_card_"):
+		mtype = card_name.trim_prefix("companion_card_").capitalize()
+	elif card_name.begins_with("dungeon_card_"):
+		# The dungeon's boss SPECIES (`boss_egg`), not the boss's own name: "Goblin King" has no
+		# art of its own, "Goblin" does - and the species is what the floors are full of.
+		var dcard: Dictionary = DropTables.get_dungeon_card_data_by_id(card_name)
+		var dtype: String = String(dcard.get("dungeon", ""))
+		if dtype != "":
+			mtype = String(DungeonDatabase.get_dungeon(dtype).get("boss_egg", ""))
+	if mtype == "":
 		return ""
-	var mtype := card_name.trim_prefix("companion_card_").capitalize()
 	var art := MonsterArt.get_monster_ascii_art(mtype)
 	if art == "":
 		return ""
 	return "[center]" + art + "[/center]"
+
+
+static func companion_card_art_bbcode(card_name: String) -> String:
+	"""Kept as an alias so anything reaching for it by name still works. It FORWARDS - one
+	implementation under two names, never two implementations."""
+	return card_art_bbcode(card_name)
 
 const CARD_ART_BOX := Vector2(134, 88)  # fixed art box inside the 150x190 card (pips moved to own row v0.9.693)
 
