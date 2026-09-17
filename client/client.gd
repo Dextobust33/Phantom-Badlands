@@ -2737,8 +2737,19 @@ func _ready():
 	# removing it and exporting again. As a flag it costs one export and never goes stale.
 	#
 	#   PhantomBadlandsClient.exe --buildverify
+	#
+	# ⛑ ANYTHING THIS BLOCK REPORTS MUST BE ESTABLISHED ABOVE IT. The block prints and
+	# quits, so a guard set further down `_ready` reports as absent in a build that has
+	# it - which is how the pad bindings read `ui_accept=0` on the gate's first run while
+	# the probe, which waits eight frames, saw them fine.
+	_setup_controller_bindings()
 	if "--buildverify" in OS.get_cmdline_args():
 		print("[BUILDVERIFY] version=", get_version())
+		# ⚑ THE PAD BINDINGS, for the same reason as vsync and max_fps: set from code because
+		# the editor strips project.godot settings it considers default, and a binding that
+		# cannot survive the build is not a binding. Without these two a controller can move
+		# the highlight over every screen and never press anything.
+		print("[BUILDVERIFY] pad_bindings=", controller_binding_report())
 		print("[BUILDVERIFY] themed_loot_hook=", has_method("_theme_loot_payload"))
 		print("[BUILDVERIFY] outsmart_button_gone=", not has_method("_style_outsmart_button"))
 		print("[BUILDVERIFY] ability_crit_bonus=", "ambush" in CombatManagerScript.ABILITY_CRIT_BONUS)
@@ -4593,11 +4604,20 @@ func _process(delta):
 			# If there's a pending watch request, escape denies it
 			elif watch_request_pending != "":
 				deny_watch_request()
-			# Otherwise toggle input focus
+			# ⛑ ESCAPE LETS GO. IT NEVER GRABS.
+			#
+			# This used to TOGGLE, so pressing Escape with nothing to close put the cursor
+			# INTO the chat box - which is the opposite of what a back-out key means, and it
+			# then swallowed the next keypress. Owner 2026-09-17: *"Pressing escape keeps
+			# focusing the chatbox, It should only be focused when the player clicks down
+			# into it."*
+			#
+			# Enter still focuses it deliberately (see the `enter_pressed` block), so nothing
+			# is lost - and a controller's B button is bound to `ui_cancel`, which reaches this
+			# same branch, so a pad pressing Back would otherwise have opened a text field it
+			# has no way to type into.
 			elif input_field.has_focus():
 				input_field.release_focus()
-			else:
-				input_field.grab_focus()
 
 	# House screen escape handling (settings only)
 	if game_state == GameState.HOUSE_SCREEN:
@@ -5492,7 +5512,7 @@ func _process(delta):
 					set_meta("hotkey_%d_pressed" % i, false)
 					continue
 
-			if Input.is_physical_key_pressed(key) and not Input.is_key_pressed(KEY_SHIFT):
+			if (Input.is_physical_key_pressed(key) or _pad_slot_down(i)) and not Input.is_key_pressed(KEY_SHIFT):
 				# Skip if this key was already consumed by item selection this frame
 				# (prevents double-trigger when item selection changes state mid-frame)
 				if key in item_selection_consumed_this_frame:
@@ -5737,6 +5757,14 @@ func _process(delta):
 				if move_dir == 0 and not is_hunt:
 					move_dir = _arrow_move_dir(placement_keys if build_placement_active else [])
 
+				# The pad, last, so a keyboard held at the same time still wins. It rides the same
+				# cooldown and the same mode gate as everything above - a controller must not be
+				# able to walk somewhere the keyboard cannot.
+				if move_dir == 0 and not is_hunt:
+					move_dir = _pad_move_dir()
+					if move_dir == 0 and _pad_focus_free() and _pad_held(PAD_HUNT):
+						is_hunt = true
+
 				if move_dir > 0:
 					# Dismiss bump prompt on movement
 					if pending_party_bump != "":
@@ -5928,6 +5956,26 @@ func _input(event):
 	# ESC leaves whisper mode. Placed beside the bug-report cancel below because it is the same
 	# shape - an input mode the player must be able to back out of without sending anything - and
 	# because a player who opens a whisper by accident must not have to type a line to escape it.
+	# ⚑ START OPENS THE MENU. The shortcut row is deliberately `FOCUS_NONE` - a focused
+	# Button eats the spacebar, which is the action bar's primary key - so a pad cannot
+	# reach the row at all and needs one guaranteed door. The tree is that door.
+	# Back puts the highlight on the action bar, which is how a pad reaches slots 5-9. The
+	# five face and shoulder buttons cover the constant actions; these are the rest.
+	if event is InputEventJoypadButton and event.pressed and event.button_index == PAD_FOCUS_BAR:
+		if game_state == GameState.PLAYING and has_character:
+			_pad_focus_action_bar()
+			get_viewport().set_input_as_handled()
+			return
+
+	if event is InputEventJoypadButton and event.pressed and event.button_index == PAD_MENU:
+		if menu_tree_panel and game_state == GameState.PLAYING and has_character and not in_combat:
+			if menu_tree_panel.visible:
+				menu_tree_panel.close()
+			else:
+				menu_tree_panel.open()
+			get_viewport().set_input_as_handled()
+			return
+
 	if _prompt_action != "" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		_cancel_text_prompt()
 		get_viewport().set_input_as_handled()
@@ -23181,6 +23229,61 @@ var _milestone_panel: PanelContainer = null
 # True while the shuffle flight is playing; reveals are refused until it lands.
 var _ms_shuffling: bool = false
 
+## ⚑ THE FACE BUTTONS. Godot binds the D-pad and the left stick to `ui_up/down/left/right` by
+## default, so a controller can already move the highlight between focusable Buttons - which is why
+## the navigation audit made every new panel row a real `Button`. What it does NOT bind, measured
+## rather than assumed, is `ui_accept` and `ui_cancel`: of 91 default actions only SIX carry any
+## joypad event, and neither of those two is among them.
+##
+## So without these two lines a pad can move the highlight over every screen in the game and never
+## press anything, and never back out of anything.
+##
+## Button 0 / 1 are Godot's abstract A and B (cross and circle on a DualShock), so this is correct
+## on every pad the engine knows rather than one vendor's numbering.
+const PAD_ACCEPT := JOY_BUTTON_A
+const PAD_CANCEL := JOY_BUTTON_B
+## Start opens the Menu tree. The shortcut row is `FOCUS_NONE` by deliberate design - those buttons
+## must never eat the spacebar - so a pad cannot reach the row at all, and needs one guaranteed way
+## into the game's own index. The tree reaches everything, which is what it was built for.
+const PAD_MENU := JOY_BUTTON_START
+
+
+func _setup_controller_bindings() -> void:
+	"""Give the pad's face buttons to `ui_accept` / `ui_cancel`.
+
+	⛑ FROM CODE, NOT project.godot - the same defence as `vsync_mode` and `max_fps` above. The
+	editor strips settings it considers default on every `--editor --quit`, which is how the vsync
+	guard vanished from four consecutive release builds. Set at runtime it cannot be stripped, and
+	`--buildverify` reports it so the release gate can assert it."""
+	_bind_pad("ui_accept", PAD_ACCEPT)
+	_bind_pad("ui_cancel", PAD_CANCEL)
+
+
+func _bind_pad(action: String, button: int) -> void:
+	if not InputMap.has_action(action):
+		return
+	# Idempotent: adding the same button twice would fire the action twice per press.
+	for e in InputMap.action_get_events(action):
+		if e is InputEventJoypadButton and e.button_index == button:
+			return
+	var ev := InputEventJoypadButton.new()
+	ev.button_index = button
+	ev.pressed = true
+	InputMap.action_add_event(action, ev)
+
+
+func controller_binding_report() -> String:
+	"""What `--buildverify` prints, and what the probe reads. One line, one truth."""
+	var out: Array = []
+	for a in ["ui_accept", "ui_cancel"]:
+		var n := 0
+		for e in InputMap.action_get_events(a):
+			if e is InputEventJoypadButton:
+				n += 1
+		out.append("%s=%d" % [a, n])
+	return ",".join(out)
+
+
 func _check_for_duplicate_instance() -> void:
 	"""Notice when a SECOND client is already running, and say so. Never blocks.
 
@@ -39304,13 +39407,40 @@ func _dungeon_panel_menu_open() -> bool:
 	return dungeon_mode and (dungeon_food_select or dungeon_resource_prompt)
 
 
+func _canvas_owned_by_combat() -> bool:
+	"""Is something else actually DRAWING on the canvas right now?
+
+	⛑ NARROWER THAN `_combat_ui_busy()`, ON PURPOSE. That one means "still fighting, or the
+	round is playing out, or the victory screen is up, OR THE CONTINUE PROMPT IS PENDING" - which is
+	right for its other consumers and wrong here, because a quest turn-in, an egg hatch and a salvage
+	summary all raise a Continue prompt without anything being drawn on the canvas at all.
+
+	Using it for canvas eligibility declared the canvas ineligible for the whole of every such
+	prompt, and that single predicate produced four separate live reports on 2026-09-17: the map
+	moving to the right column, the hatch text printing across the map, lines appearing over the map
+	(the text append flips `meta_underlined` back on, and every map cell is `[url]`-wrapped), and a
+	second map appearing in the column because the append pushed the canvas past `_ow_canvas_mark`
+	so the two-map cleanup declined to fire.
+
+	A victory is still covered: the combat scene is visible for it, and the queue is non-empty while
+	the round drains. The ONLY case this lets through is a Continue prompt with no combat behind it,
+	which is the case that was broken."""
+	if in_combat or _party_end_playback:
+		return true
+	if not combat_msg_queue.is_empty():
+		return true
+	if combat_scene_panel != null and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible:
+		return true
+	return false
+
+
 func _ow_canvas_eligible() -> bool:
 	"""Should the overworld map own the main canvas right now?
 
 	Sprites only: the ASCII fallback's player-marker overlay measures itself against map_display,
 	so moving that map would put the marker in the wrong place - and a map made of letters is the
 	thing that has to keep working when everything else fails."""
-	return _OverworldRoom.available() 		and not dungeon_mode and not _house_room_active() 		and not in_combat and not _combat_ui_busy() 		and game_output != null and map_display != null
+	return _OverworldRoom.available() 		and not dungeon_mode and not _house_room_active() 		and not in_combat and not _canvas_owned_by_combat() 		and game_output != null and map_display != null
 
 
 func _canvas_panel_open() -> bool:
@@ -39601,11 +39731,17 @@ func display_game(text: String):
 	if _ow_text_in_column() and not _ow_rendering:
 		_ow_side_add(text)
 		return
-		# The canvas is text again: give it back the rows the travel row was holding, and take
-		# the floating map widgets off the page that just claimed it.
-		_place_stance_bar(_ow_canvas_eligible(), false)
-		if _ow_canvas_eligible():
-			_map_widgets_visible(false)
+	# ⛑ DEAD CODE, FOUND 2026-09-17 while tracing the map reports. These four lines sat
+	# AFTER the `return` above at the same indentation, so "the canvas is text again" never
+	# ran once: the travel row never got its rows back and the floating map widgets were
+	# never taken off a page that had claimed the canvas. It parses, and a source-reading
+	# probe cannot see it - the same shape as the death-curse block that was lifted under a
+	# guard clause and silently did nothing.
+	#
+	# Now it runs, on the path it was written for: text IS going to the canvas.
+	_place_stance_bar(_ow_canvas_eligible(), false)
+	if _ow_canvas_eligible():
+		_map_widgets_visible(false)
 	if game_output:
 		# The map turned the `[url]` underline off (see update_map). Text on the canvas wants it
 		# back: an underline is the only cue that a damage number or an item name has something
@@ -39617,7 +39753,15 @@ func display_game(text: String):
 		# tile got a line across it. Owner 2026-09-16: *"there is a line through the item sprites
 		# and floor glyphs in the dungeon."* The same defect as the overworld map lines,
 		# introduced by the fix for them.
-		if not dungeon_mode:
+		# ⛑ ...AND NEVER WHILE THE OVERWORLD MAP IS ON THE CANVAS, for exactly the same
+		# reason as the dungeon guard beside it. Every map cell is `[url=owlv:...]`-wrapped so
+		# the square can be hovered for its level, and RichTextLabel underlines meta tags - so
+		# restoring it here draws a line under every row of the map. Owner 2026-09-17:
+		# *"it puts line on my main map"*, reported three separate ways in one message.
+		#
+		# The routing fix above stops text reaching the canvas during a Continue prompt, which
+		# is what made this fire; this is the guard that makes any FUTURE path harmless too.
+		if not dungeon_mode and not _ow_canvas_showing:
 			game_output.meta_underlined = true
 		game_output.append_text(text + "\n")
 
@@ -57736,6 +57880,114 @@ func _check_tutorial_trigger(event: String):
 var _arrow_mask: int = 0          # arrows seen since this press began (1=N 2=S 4=W 8=E)
 var _arrow_deadline_ms: int = 0   # when the chord window closes
 var _arrow_settled: bool = false  # true once resolved; keeps held travel at full speed
+
+
+## ⚑ THE WHOLE PAD, IN ONE TABLE. Measured before it was written: all ten action bar buttons
+## are already `FOCUS_ALL`, so the pad does not need ten buttons - it needs five for the actions a
+## player takes constantly, and one way to put focus on the bar for the rest.
+##
+##   D-pad / left stick  move, eight directions
+##   A                   action slot 0, and `ui_accept` wherever something has focus
+##   X / Y               action slots 1 and 2
+##   LB / RB             action slots 3 and 4 (RB is the contextual location action)
+##   B                   back out - `ui_cancel`
+##   Left stick click    Hunt, the numpad-5 action
+##   Back                put focus on the action bar; the D-pad then walks all ten slots
+##   Start               the Menu tree, which reaches every capability in the game
+##
+## A is deliberately both slot 0 and `ui_accept`: in free roam nothing has focus so `ui_accept`
+## presses nothing, and with focus `_pad_slot_down` returns false. One button, two contexts, never
+## both at once - the golden rule, arranged rather than guarded.
+const PAD_SLOT_BUTTONS := {
+	0: JOY_BUTTON_A,
+	1: JOY_BUTTON_X,
+	2: JOY_BUTTON_Y,
+	3: JOY_BUTTON_LEFT_SHOULDER,
+	4: JOY_BUTTON_RIGHT_SHOULDER,
+}
+const PAD_HUNT := JOY_BUTTON_LEFT_STICK
+const PAD_FOCUS_BAR := JOY_BUTTON_BACK
+## Past this, a stick counts as held. 0.5 is the usual "treat the stick as a d-pad" line: low
+## enough to feel responsive, high enough that a resting stick never walks you into a monster.
+const PAD_STICK_DEADZONE := 0.5
+
+
+func _pad_held(button: int) -> bool:
+	"""Is this button down on ANY connected pad? Players do not all use device 0."""
+	for dev in Input.get_connected_joypads():
+		if Input.is_joy_button_pressed(dev, button):
+			return true
+	return false
+
+
+func _pad_focus_free() -> bool:
+	"""Nothing has the highlight, so the pad is driving the WORLD rather than a menu.
+
+	Without this, walking the action bar with the D-pad would walk the character across the map at
+	the same time. It is the one place where the two inputs really are the same stick."""
+	var vp := get_viewport()
+	return vp == null or vp.gui_get_focus_owner() == null
+
+
+func _pad_move_dir() -> int:
+	"""The numpad direction (1-9) the pad is asking for, or 0.
+
+	⛑ NO CHORD WINDOW, UNLIKE THE ARROW KEYS. A D-pad reports both axes in the same frame, so
+	the grace period that makes a hand-entered diagonal possible would only add latency here. It
+	shares `_arrow_mask_to_dir` - the one direction table - and nothing else."""
+	if not _pad_focus_free():
+		return 0
+	if Input.get_connected_joypads().is_empty():
+		return 0
+	var mask := 0
+	if _pad_held(JOY_BUTTON_DPAD_UP):
+		mask |= 1
+	if _pad_held(JOY_BUTTON_DPAD_DOWN):
+		mask |= 2
+	if _pad_held(JOY_BUTTON_DPAD_LEFT):
+		mask |= 4
+	if _pad_held(JOY_BUTTON_DPAD_RIGHT):
+		mask |= 8
+	for dev in Input.get_connected_joypads():
+		var x: float = Input.get_joy_axis(dev, JOY_AXIS_LEFT_X)
+		var y: float = Input.get_joy_axis(dev, JOY_AXIS_LEFT_Y)
+		# Godot's stick Y is positive DOWNWARD, and north is "up" on screen. Getting this
+		# backwards is the same mistake the map markers made twice.
+		if y <= -PAD_STICK_DEADZONE:
+			mask |= 1
+		elif y >= PAD_STICK_DEADZONE:
+			mask |= 2
+		if x <= -PAD_STICK_DEADZONE:
+			mask |= 4
+		elif x >= PAD_STICK_DEADZONE:
+			mask |= 8
+	if mask == 0:
+		return 0
+	return _arrow_mask_to_dir(mask)
+
+
+func _pad_slot_down(slot: int) -> bool:
+	"""Is the pad asking for this action bar slot?
+
+	False whenever anything has focus, so that walking the bar with the D-pad and pressing A goes
+	through `ui_accept` on the focused button instead of firing twice."""
+	if not PAD_SLOT_BUTTONS.has(slot):
+		return false
+	if not _pad_focus_free():
+		return false
+	return _pad_held(int(PAD_SLOT_BUTTONS[slot]))
+
+
+func _pad_focus_action_bar() -> void:
+	"""Put the highlight on the action bar so the D-pad can walk all ten slots.
+
+	The five face and shoulder buttons cover the actions taken constantly; slots 5-9 are real
+	actions too (More, Settings, Cloak, Char Select) and a pad needs them. They are already
+	`FOCUS_ALL` - measured, 10 of 10 - so this is the whole feature."""
+	for b in action_buttons:
+		if b is Button and b.visible and not b.disabled:
+			b.grab_focus()
+			return
 
 
 func _arrow_move_dir(blocked_keys: Array = []) -> int:

@@ -129,6 +129,40 @@ const QUEST_DEPTH_PER_FLOOR := 0.12
 const QUEST_DEPTH_CLAMP := Vector2(0.7, 1.6)
 
 
+## ⚑ WHAT THE BOARD TELLS YOU BEFORE YOU COMMIT.
+##
+## Owner 2026-09-17, after a five-floor dungeon and a boss for 224 XP: *"Quests offered on the
+## Quest board should mention their difficulty, Example: Dungeon is an E2 with monsters Lvl
+## 34-49, etc."*
+##
+## ⛑ THE GRADE IS HONEST ONLY BECAUSE THIS IS A QUEST DUNGEON. A dungeon TYPE has no grade -
+## CLAUDE.md is emphatic, and reading `base_tier` as an instance's grade has reached player-facing
+## text six separate times. What makes it safe HERE is that a quest dungeon is built by
+## `_create_player_dungeon_instance`, which takes `grade_tier` from `base_tier` and the rank from
+## the post's distance - the same two inputs available at board time. It is a promise this code
+## can keep. Do not copy this to a world dungeon, where the land decides.
+static func dungeon_difficulty_line(dungeon_info: Dictionary, rank: int, floors: int) -> String:
+	if dungeon_info.is_empty():
+		return ""
+	var tier: int = int(dungeon_info.get("base_tier", 1))
+	# ⛑ THE RANK IS PASSED IN, NOT ROLLED HERE. `get_sub_tier_for_distance` carries a
+	# +/-1 (sometimes +/-2) random variance, so calling it a second time would advertise a
+	# different dungeon from the one the server builds - "Advertised H1, delivered E1" all
+	# over again. The caller rolls it ONCE and hands the same number to the server.
+	# ⛑ AND THE BAND COMES FROM `instance_level_band`, which folds in the deepest-floor
+	# scaling. `get_sub_tier_level_range` alone describes floor 1, so a five-floor run
+	# would advertise levels the player stops meeting after the first floor.
+	var band: Dictionary = DungeonDatabaseScript.instance_level_band(tier, rank, maxi(1, floors))
+	var lo: int = int(band.get("min_level", 1))
+	var hi: int = int(band.get("max_level", lo))
+	var grade: String = PowerRankScript.label(tier, rank)
+	# Floors are stated because depth is most of what the run COSTS - it is already worth a
+	# reward multiplier (`quest_depth_mult`), so hiding it from the player while paying for it
+	# is the asymmetry this line closes.
+	return "[color=#FFAA00]%s[/color] \u00b7 %d floors \u00b7 monsters [color=#FFAA00]Lv %d-%d[/color]" % [
+		grade, maxi(1, floors), lo, hi]
+
+
 static func quest_depth_mult(floors_required: int) -> float:
 	"""Reward multiplier for making a player descend `floors_required` floors."""
 	return clampf(1.0 + float(floors_required - QUEST_DEPTH_PIVOT) * QUEST_DEPTH_PER_FLOOR,
@@ -2736,6 +2770,24 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	# ⚑ APPLIED ONCE, HERE - not inside four branches. The task multiplier and the depth of
 	# the descent are the two things the owner asked for, and they are the last word on the
 	# reward so that every quest type is paid by the same rule.
+	# ⚑ THE GRADE IS ROLLED ONCE, HERE, AND CARRIED. `get_sub_tier_for_distance` has a
+	# random variance, so rolling it again at creation time would build a different
+	# dungeon from the advertised one. `dungeon_rank` / `dungeon_tier` ride the quest to
+	# the server, which passes them as `force_sub_tier` / `force_tier` - the parameters
+	# that already existed for exactly this and had never been used by the quest path.
+	#
+	# One line, appended once, after every arm has settled `_task_floors`. Four copies
+	# inside the four arms would be four chances for the advertised difficulty to drift
+	# from the paid one.
+	if picked_type in [QuestType.BOSS_HUNT, QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.GATHER]:
+		var _d_tier: int = int(dungeon_info.get("base_tier", 1))
+		var _d_rank: int = DungeonDatabaseScript.get_sub_tier_for_distance(_d_tier, post_distance)
+		extra_fields["dungeon_tier"] = _d_tier
+		extra_fields["dungeon_rank"] = _d_rank
+		var _diff: String = dungeon_difficulty_line(dungeon_info, _d_rank, _task_floors)
+		if _diff != "":
+			quest_desc += "\n\n" + _diff
+
 	var _depth_mult: float = quest_depth_mult(_task_floors)
 	base_xp = int(float(base_xp) * _task_xp_mult * _depth_mult)
 	valor = int(clampf(float(valor) * _task_valor_mult * _depth_mult, 3, 250))

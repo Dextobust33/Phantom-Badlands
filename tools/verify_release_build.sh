@@ -108,6 +108,13 @@ fi
 # --- project.godot cannot take them away silently.
 check "vsync_mode"   "1"  "$(field vsync_mode)"
 check "max_fps"      "60" "$(field max_fps)"
+# ⛑ THE PAD BINDINGS, and they sit beside vsync/max_fps because they share the cause: all three
+# are set from CODE precisely because the editor strips project.godot settings it considers
+# default on every --editor --quit, which silently deleted the vsync guard from four consecutive
+# release builds. Measured: the engine ships 91 default actions and only six carry ANY joypad
+# binding - ui_accept and ui_cancel carry none - so without these a controller can move the
+# highlight over every screen in the game and never press anything.
+check "pad_bindings" "ui_accept=1,ui_cancel=1" "$(field pad_bindings)"
 
 # --- freshness. A stale export ships the previous release's code with the new VERSION.txt
 # --- stamped beside it, so the version alone does not prove freshness — these do.

@@ -20195,7 +20195,10 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 		if quest.get("type") == quest_db.QuestType.BOSS_HUNT:
 			var fb_dungeon_type = quest.get("dungeon_type", "")
 			var fb_name = String(quest.get("fabled_boss_name", ""))
-			var fb_instance_id = _create_player_dungeon_instance(peer_id, quest_id, fb_dungeon_type, character.level, fb_name)
+			# ⛑ THE GRADE THE BOARD ADVERTISED, not a fresh roll. `get_sub_tier_for_distance`
+			# has a +/-1 variance, so re-rolling here builds a different dungeon from the one
+			# the player accepted - the recorded "Advertised H1, delivered E1" defect.
+			var fb_instance_id = _create_player_dungeon_instance(peer_id, quest_id, fb_dungeon_type, character.level, fb_name, "", 0, _quest_rank(quest), _quest_tier(quest))
 			if fb_instance_id != "":
 				if not player_dungeon_instances.has(peer_id):
 					player_dungeon_instances[peer_id] = {}
@@ -20205,7 +20208,7 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 		# For RESCUE quests, create a personal dungeon with rescue NPC
 		if quest.get("type") == quest_db.QuestType.RESCUE:
 			var rescue_dungeon_type = quest.get("dungeon_type", "")
-			var rescue_instance_id = _create_player_dungeon_instance(peer_id, quest_id, rescue_dungeon_type, character.level)
+			var rescue_instance_id = _create_player_dungeon_instance(peer_id, quest_id, rescue_dungeon_type, character.level, "", "", 0, _quest_rank(quest), _quest_tier(quest))
 			if rescue_instance_id != "":
 				if not player_dungeon_instances.has(peer_id):
 					player_dungeon_instances[peer_id] = {}
@@ -20220,7 +20223,7 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 		# For DUNGEON_CLEAR quests, create a personal dungeon instance for this player
 		if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
 			var dungeon_type = quest.get("dungeon_type", "")
-			var instance_id = _create_player_dungeon_instance(peer_id, quest_id, dungeon_type, character.level)
+			var instance_id = _create_player_dungeon_instance(peer_id, quest_id, dungeon_type, character.level, "", "", 0, _quest_rank(quest), _quest_tier(quest))
 			if instance_id != "":
 				# Store mapping of quest to dungeon instance for this player
 				if not player_dungeon_instances.has(peer_id):
@@ -20234,7 +20237,7 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 			var g_dungeon_type = quest.get("dungeon_type", "")
 			var g_relic = String(quest.get("gather_relic_name", "Relic"))
 			var g_count = int(quest.get("target", 3))
-			var g_instance_id = _create_player_dungeon_instance(peer_id, quest_id, g_dungeon_type, character.level, "", g_relic, g_count)
+			var g_instance_id = _create_player_dungeon_instance(peer_id, quest_id, g_dungeon_type, character.level, "", g_relic, g_count, _quest_rank(quest), _quest_tier(quest))
 			if g_instance_id != "":
 				if not player_dungeon_instances.has(peer_id):
 					player_dungeon_instances[peer_id] = {}
@@ -31585,6 +31588,20 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 
 	log_message("Created dungeon instance: %s (%s) [%s] (tier=%d sub=%d)" % [instance_id, dungeon_data.name, PowerRank.label(int(dungeon_data.get("base_tier", 1)), sub_tier), int(dungeon_data.get("base_tier", 1)), sub_tier])
 	return instance_id
+
+func _quest_rank(quest: Dictionary) -> int:
+	"""The rank the quest board ADVERTISED, or -1 to let the instance roll its own.
+
+	⛑ -1 RATHER THAN A DEFAULT. An older quest, generated before the grade was pinned, carries
+	no `dungeon_rank` - and defaulting it to 1 would quietly turn every one of them into an H1. -1
+	is what `_create_player_dungeon_instance` already reads as "no override"."""
+	return int(quest.get("dungeon_rank", -1))
+
+
+func _quest_tier(quest: Dictionary) -> int:
+	"""The tier the quest board advertised, or -1 for "roll it". See `_quest_rank`."""
+	return int(quest.get("dungeon_tier", -1))
+
 
 func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0, force_sub_tier: int = -1, force_tier: int = -1, force_starter: bool = false) -> String:
 	"""Create a personal dungeon instance for a player's quest. Returns instance ID.
