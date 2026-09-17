@@ -2289,6 +2289,16 @@ var player_info_equipped: Dictionary = {}  # Cached equipment for clicked player
 var player_info_last_data: Dictionary = {}  # Last data dict passed to show_player_info_popup — used to rebuild the base popup when the player clicks a new item
 var last_death_message: Dictionary = {}  # Cached permadeath data for save-to-file
 var online_players_names: Array = []  # Cache player names for click detection
+## The player the context menu is about, and the menu itself (built once, on demand).
+var _player_menu: PopupMenu = null
+var _player_menu_target: String = ""
+## While this is set, the next chat line is a WHISPER to them rather than a public message.
+##
+## ⚑ Same idiom as `bug_report_mode` and `title_broadcast_mode` - the client already has a way
+## to say "the next thing typed means something else", so this is one more branch rather than a
+## new mechanism. Whisper is the one action in the menu that cannot be a single click, because it
+## needs words.
+var whisper_target: String = ""
 var last_online_click_time: float = 0.0  # Track double-click timing
 const DOUBLE_CLICK_TIME: float = 0.4  # 400ms for double-click
 
@@ -3353,6 +3363,7 @@ func _ready():
 	# Connect player info panel signals
 	if close_player_info_button:
 		close_player_info_button.pressed.connect(_on_close_player_info_pressed)
+		_ensure_player_info_actions_button()
 
 	# Build a dedicated status-row between the map/game section and the bottom
 	# action/chat strip. Mini HP/Mana bars live on the left of this row; the
@@ -3381,6 +3392,16 @@ func _ready():
 	if online_players_list:
 		if not online_players_list.meta_clicked.is_connected(_on_player_name_clicked):
 			online_players_list.meta_clicked.connect(_on_player_name_clicked)
+		# ⚑ RIGHT CLICK NEEDS THE HOVERED NAME, because `meta_clicked` is left-button only.
+		# The label reports which meta the cursor is over through these two signals, so the name
+		# is already known by the time the button goes down - no hit-testing of our own, which is
+		# the part that has failed here before.
+		if not online_players_list.meta_hover_started.is_connected(_on_online_meta_hover):
+			online_players_list.meta_hover_started.connect(_on_online_meta_hover)
+		if not online_players_list.meta_hover_ended.is_connected(_on_online_meta_unhover):
+			online_players_list.meta_hover_ended.connect(_on_online_meta_unhover)
+		if not online_players_list.gui_input.is_connected(_on_online_players_gui_input):
+			online_players_list.gui_input.connect(_on_online_players_gui_input)
 
 	# Connect player info popup for clickable equipment
 	if player_info_content:
@@ -5885,6 +5906,14 @@ func _input(event):
 	# Skip combat phase pause on any key press
 	if combat_phase_paused and event is InputEventKey and event.pressed and not event.echo:
 		_flush_combat_queue()
+
+	# ESC leaves whisper mode. Placed beside the bug-report cancel below because it is the same
+	# shape - an input mode the player must be able to back out of without sending anything - and
+	# because a player who opens a whisper by accident must not have to type a line to escape it.
+	if whisper_target != "" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		cancel_whisper_to()
+		get_viewport().set_input_as_handled()
+		return
 
 	# Handle ESC to cancel bug report mode
 	if bug_report_mode and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
@@ -9544,11 +9573,205 @@ func display_leaderboard_death_screen(message: Dictionary):
 
 # ===== PLAYER INFO POPUP HANDLERS =====
 
+## ⚑ ONE FUNCTION PER PLAYER-TARGETED CAPABILITY.
+##
+## Owner 2026-09-17: *"Anything that remains needs a way to access it via the UI. Example, on the
+## player list you right click a player for a menu that has a whisper option, etc."*
+##
+## Each of these WAS a one-line `send_to_server` inside a chat-command arm. A context menu written
+## the obvious way would have carried a second copy of every message, and the day one of them
+## gained a field only one of the two copies would get it. The arms call these now, and so does
+## the menu - so the typed route and the clicked route cannot drift apart.
+
+
+## The actions the menu offers, in order. `id` is what `_on_player_menu_id` dispatches on.
+##
+## Every one of these forwards to the SAME function the chat command calls - see the note above
+## `player_examine`. Adding an action here is a row and a case, never a second `send_to_server`.
+const PLAYER_MENU_ITEMS := [
+	{"id": 0, "label": "Whisper", "verb": "say something privately"},
+	{"id": 1, "label": "Inspect", "verb": "look at their gear and level"},
+	{"id": 2, "label": "Trade", "verb": "offer a trade"},
+	{"id": 3, "label": "Duel", "verb": "challenge them"},
+	{"id": 4, "label": "Watch", "verb": "follow their game output, with their consent"},
+	{"id": 5, "label": "Add Friend", "verb": "send a friend request"},
+	{"id": 6, "label": "Block", "verb": "silence their whispers and requests"},
+]
+
+
+func _ensure_player_menu() -> PopupMenu:
+	"""The one context menu, built on first use.
+
+	⚑ A PopupMenu rather than a row of Buttons because the point of the navigation audit is
+	controller and phone support, and this control is focus-navigable with a D-pad already."""
+	if _player_menu != null and is_instance_valid(_player_menu):
+		return _player_menu
+	_player_menu = PopupMenu.new()
+	_player_menu.name = "PlayerActionsMenu"
+	add_child(_player_menu)
+	_player_menu.id_pressed.connect(_on_player_menu_id)
+	return _player_menu
+
+
+func open_player_menu(target: String, at: Vector2 = Vector2(-1, -1)) -> void:
+	"""Show the action menu for `target`. `at` is a screen position, or the mouse if omitted."""
+	if target == "" or target == character_data.get("name", ""):
+		return          # no menu on yourself - none of these actions mean anything
+	_player_menu_target = target
+	var m := _ensure_player_menu()
+	m.clear()
+	# The name is the first row, disabled, so the menu says who it is about. A context menu that
+	# does not name its subject is the classic way to whisper to the wrong person.
+	m.add_item(target, -1)
+	m.set_item_disabled(0, true)
+	m.add_separator()
+	for it in PLAYER_MENU_ITEMS:
+		m.add_item(String(it["label"]), int(it["id"]))
+	var pos: Vector2 = at if at.x >= 0.0 else get_viewport().get_mouse_position()
+	m.position = Vector2i(get_window().position) + Vector2i(pos)
+	m.reset_size()
+	m.popup()
+
+
+func _on_player_menu_id(id: int) -> void:
+	var target := _player_menu_target
+	if target == "":
+		return
+	match id:
+		0: start_whisper_to(target)
+		1: player_examine(target)
+		2: handle_trade_command(target)
+		3: player_duel(target, "none")
+		4: request_watch_player(target)
+		5: player_friend_add(target)
+		6: player_block(target)
+
+
+func start_whisper_to(target: String) -> void:
+	"""Point the chat input at one player. The next line sent goes only to them.
+
+	Whisper is the one menu action that needs WORDS, so it cannot be a single click. Rather than
+	prefilling a command - which would tie the UI route to the typed one this audit is retiring -
+	it sets a target the send path reads, and says so where the player is about to type."""
+	whisper_target = target
+	if input_field:
+		input_field.placeholder_text = "Whisper to %s  (Esc to cancel)" % target
+		input_field.grab_focus()
+	display_chat("[color=#DD88DD]Whispering to %s — type your message, or press Escape.[/color]" % target)
+
+
+func cancel_whisper_to() -> void:
+	if whisper_target == "":
+		return
+	display_chat("[color=#808080]No longer whispering to %s.[/color]" % whisper_target)
+	whisper_target = ""
+	if input_field:
+		input_field.placeholder_text = ""
+
+
+func player_examine(target: String) -> void:
+	"""Ask the server for another player's details (the info popup)."""
+	if target == "":
+		return
+	pending_player_info_request = target
+	send_to_server({"type": "examine_player", "name": target})
+
+
+func player_block(target: String) -> void:
+	"""Silence a player's whispers and friend requests, and drop them as a friend."""
+	if target == "":
+		return
+	send_to_server({"type": "block_user", "username": target})
+
+
+func player_unblock(target: String) -> void:
+	if target == "":
+		return
+	send_to_server({"type": "unblock_user", "username": target})
+
+
+func player_friend_add(target: String) -> void:
+	if target == "":
+		return
+	send_to_server({"type": "friend_add", "username": target})
+
+
+func player_duel(target: String, stakes: String = "none") -> void:
+	"""Challenge a player. `stakes` is "none" or "valor_10"."""
+	if target == "":
+		return
+	send_to_server({"type": "duel_request", "target": target, "stakes": stakes})
+
+
+func player_whisper(target: String, message: String) -> void:
+	"""Send one private line. The TARGET and the MESSAGE arrive separately in the UI route - the
+	menu picks the name and the next thing typed is the message - so this takes both rather than
+	parsing a command string."""
+	if target == "" or message.strip_edges() == "":
+		return
+	send_to_server({"type": "private_message", "target": target, "message": message})
+
+
+## Which player name the cursor is over in the online list, or "" - see the note where these
+## are connected. `meta_clicked` is left-button only, so right-click reads this instead.
+var _online_hovered_player: String = ""
+
+
+func _on_online_meta_hover(meta) -> void:
+	_online_hovered_player = str(meta)
+
+
+func _on_online_meta_unhover(_meta) -> void:
+	_online_hovered_player = ""
+
+
+func _on_online_players_gui_input(event: InputEvent) -> void:
+	"""Right click on a name in the online list -> the action menu.
+
+	Owner 2026-09-17: *"on the player list you right click a player for a menu that has a whisper
+	option, etc."* The same menu opens from a BUTTON on the player-info popup, because right-click
+	is a desktop idiom and this audit exists to make the game reachable on a controller."""
+	if not (event is InputEventMouseButton):
+		return
+	if not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
+		return
+	if _online_hovered_player == "":
+		return
+	online_players_list.accept_event()
+	open_player_menu(_online_hovered_player, event.position + online_players_list.global_position)
+
+
 func _on_player_name_clicked(meta):
-	"""Handle click on player name in online players list - shows player info popup"""
-	var player_name = str(meta)
-	pending_player_info_request = player_name
-	send_to_server({"type": "examine_player", "name": player_name})
+	"""LEFT click on a player name in the online list - their details.
+
+	Right click opens the ACTION menu instead; see `_on_online_players_gui_input`."""
+	player_examine(str(meta))
+
+func _ensure_player_info_actions_button() -> void:
+	"""Put an Actions button beside Close on the player-info popup.
+
+	⚑ THE SECOND DOOR TO THE CONTEXT MENU. Right-click opens it too - the owner asked for that -
+	but a right-click survives neither a controller nor a touchscreen, which is the reason this
+	audit is happening at all. Built in code rather than in the scene so it cannot be lost in a
+	scene merge, next to the button it sits beside."""
+	if close_player_info_button == null or not is_instance_valid(close_player_info_button):
+		return
+	var parent := close_player_info_button.get_parent()
+	if parent == null or parent.has_node("PlayerActionsButton"):
+		return
+	var b := Button.new()
+	b.name = "PlayerActionsButton"
+	b.text = "Actions"
+	b.focus_mode = Control.FOCUS_ALL          # reachable by D-pad, unlike a right-click
+	b.pressed.connect(func():
+		var who := String(player_info_last_data.get("name", ""))
+		if who != "":
+			# Anchored to the button rather than the mouse, so the keyboard and controller routes
+			# put the menu somewhere sensible instead of wherever the pointer was left.
+			open_player_menu(who, b.global_position + Vector2(0, b.size.y)))
+	parent.add_child(b)
+	parent.move_child(b, close_player_info_button.get_index())
+
 
 func _on_close_player_info_pressed():
 	if player_info_panel:
@@ -28767,6 +28990,26 @@ func _on_input_gui_input(event: InputEvent):
 func send_input():
 	var text = input_field.text.strip_edges()
 	input_field.clear()
+
+	# ⚑ WHISPER MODE, checked BEFORE the empty-text return on purpose: an empty line while
+	# whispering means "I changed my mind", not "send nothing".
+	#
+	# Owner 2026-09-17: *"on the player list you right click a player for a menu that has a
+	# whisper option, etc."* Whisper is the one action in that menu that needs WORDS, so the menu
+	# sets a target and this is where the words meet it - the same shape as `bug_report_mode`
+	# below, rather than a new mechanism.
+	if whisper_target != "":
+		if text.is_empty():
+			cancel_whisper_to()
+			return
+		var _wt := whisper_target
+		# Cleared BEFORE sending: one line is ONE whisper. Staying in the mode is how the next
+		# idle thought goes privately to somebody who was not meant to read it.
+		whisper_target = ""
+		input_field.placeholder_text = ""
+		player_whisper(_wt, text)
+		return
+
 	input_field.placeholder_text = ""
 
 	if text.is_empty():
@@ -29721,8 +29964,7 @@ func process_command(text: String):
 			display_game("[color=#808080]Refreshing player list...[/color]")
 		"examine", "ex":
 			if parts.size() > 1:
-				var target = parts[1]
-				send_to_server({"type": "examine_player", "name": target})
+				player_examine(String(parts[1]))
 			else:
 				display_game("[color=#FF0000]Usage: /examine <playername>[/color]")
 		"whisper", "w", "msg", "tell":
@@ -29731,8 +29973,7 @@ func process_command(text: String):
 				var target = parts[1]
 				# Join remaining parts as the message
 				var msg_parts = parts.slice(2)
-				var msg = " ".join(msg_parts)
-				send_to_server({"type": "private_message", "target": target, "message": msg})
+				player_whisper(target, " ".join(msg_parts))
 			else:
 				display_game("[color=#FF0000]Usage: /whisper <player> <message>[/color]")
 				display_game("[color=#808080]Example: /w Gandalf Hello there![/color]")
@@ -29804,7 +30045,7 @@ func process_command(text: String):
 					send_to_server({"type": "friend_requests"})
 				"add", "invite":
 					if parts.size() > 2:
-						send_to_server({"type": "friend_add", "username": String(parts[2])})
+						player_friend_add(String(parts[2]))
 					else:
 						display_game("[color=#FF0000]Usage: /friend add <username>[/color]")
 				"accept":
@@ -29836,12 +30077,12 @@ func process_command(text: String):
 			# Audit #14 v0.9.540 — block a user (silences whispers + future
 			# friend requests + auto-removes from friend list).
 			if parts.size() > 1:
-				send_to_server({"type": "block_user", "username": String(parts[1])})
+				player_block(String(parts[1]))
 			else:
 				display_game("[color=#FF0000]Usage: /block <username>[/color]")
 		"unblock":
 			if parts.size() > 1:
-				send_to_server({"type": "unblock_user", "username": String(parts[1])})
+				player_unblock(String(parts[1]))
 			else:
 				display_game("[color=#FF0000]Usage: /unblock <username>[/color]")
 		"blocklist", "blocked":
@@ -30162,7 +30403,7 @@ func process_command(text: String):
 						else:
 							display_game("[color=#FF8800]Unknown stakes '%s'. Use 'valor' or omit for none.[/color]" % st)
 							return
-					send_to_server({"type": "duel_request", "target": target_name, "stakes": stakes})
+					player_duel(target_name, stakes)
 		"bounty":
 			# Audit #14 PvP Slice E (v0.9.556) — Bounty system. Player-funded
 			# bounties on other players, collected on apex-zone KO.

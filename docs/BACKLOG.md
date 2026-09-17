@@ -5150,8 +5150,39 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       reading the list rather than from a failing check — which is the argument for bringing a
       generated list to the owner as GROUPS to approve, not as a number to act on.
 
-      **What remains:** the owner's yes on the 36, whether the 10 argument-takers have a UI that
-      can supply a target, and their call on the 32 admin commands. Plus the judgements the tool
+      ☑ **AND THE ANSWER TO “whether the 10 argument-takers have a UI” IS: BUILD ONE.** Owner
+      2026-09-17: *“Anything that remains needs a way to access it via the UI. Example, on the
+      player list you right click a player for a menu that has a whisper option, etc.”* That turns
+      the retirement question inside out — the list is not *which commands can go*, it is *which
+      capabilities still lack a UI route*.
+      **Built: a player context menu** (`PopupMenu`, so a D-pad can walk it — the whole reason for
+      this audit is controller and phone) offering **Whisper, Inspect, Trade, Duel, Watch, Add
+      Friend, Block**. That is 7 of the 10 argument-takers and most of the speech group in one
+      surface.
+      ⚑ **IT SENDS NOTHING OF ITS OWN.** Every action forwards to the same function the chat
+      command calls — `player_examine`, `player_block`, `player_friend_add`, `player_duel`,
+      `player_whisper`, plus the two that already had one. Those were one-line `send_to_server`
+      calls inside command arms; a menu written the obvious way would have carried a second copy
+      of every protocol message, and the day one gained a field only one copy would get it.
+      ⚑ **TWO DOORS.** Right-click on the online list, as the owner described — and an **Actions
+      button** on the player-info popup, because a right-click survives neither a controller nor a
+      touchscreen and CLAUDE.md already says a button is discoverable where a hotkey is not.
+      ⚑ **Whisper needs WORDS, so it is not one click.** It sets a target, the input says who it is
+      talking to, the next line goes privately, and Escape or an empty line cancels. One line is
+      ONE whisper — staying in the mode is how the next idle thought goes privately to somebody it
+      was not meant for. Same idiom as `bug_report_mode`, not a new mechanism.
+      Probe: `tools/probe/player_actions_menu.gd`, on the real client scene — a `PopupMenu` whose
+      `id_pressed` is unconnected looks exactly like one that works, so the signal is emitted for
+      real and the effect watched.
+      ⛑ **A patch script lost its edit to a later assertion and reported success**, so the whisper
+      send path was simply absent; the probe caught it as two failures while the patch had printed
+      *ok*. Second time today. **A patch asserts what it needs FIRST, or writes immediately after
+      each edit** — these scripts do all their work in memory and write at the end, so anything
+      that throws in between discards good edits silently.
+
+      **Still to route through the UI before the sweep:** `/mentor`, `/donate`, `/topic` +
+      `/viewtopic` (the last two are the help-topic reader, not a player action). Then the owner's
+      yes on the 36, and their call on the 32 admin commands. Plus the judgements the tool
       says it cannot make — whether two surfaces with different verbs are the same thing to a
       PLAYER, and whether a button's MODE is ever entered. Those need the game run.
 
