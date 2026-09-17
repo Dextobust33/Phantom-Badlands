@@ -666,11 +666,23 @@ Monsters, then Boss + Companion egg — three lines each — and one summary lin
   against your own; the Atlas does not, though it is where you choose where to go.
 * no sense of progress beyond a clear count.
 
-**Open questions to settle with the owner BEFORE building** (the backlog's own rule):
-1. Does the Atlas SHOW quests, or ACCEPT them? Accepting from anywhere competes with posts as
-   the reason to travel; showing only keeps the post meaningful.
-2. Does a quest pin its dungeon in the list, or does the list gain a "Wanted" section?
-3. Should undiscovered dungeons be listed as rumours you can take a quest toward, or stay hidden?
+**✅ ANSWERED by the owner 2026-09-17 — build to these:**
+1. The Atlas **SHOWS** quests, it does not accept them. Every accept stays at a post, so the post
+   keeps being a reason to travel.
+2. A quest **PINS its dungeon** in the list.
+3. Rumours **display**, and can be quested toward — reading (a): the rumour row is informational
+   and names the post offering it. No accept, no reward path, outside a post.
+4. **One PANEL, two TABS — not one list.** Owner: *"Is there enough overlap to combine the two?
+   I guess we will just need to ensure the difference between each is clear."* The overlap is the
+   SUBJECT (dungeons), not the QUESTION: the Atlas answers *where do I go and what is in there*,
+   the quest board answers *what am I asked to do and what have I got on*. One list would make a
+   row sometimes-a-place and sometimes-a-task. So: shared shell and one set of doors, two tabs,
+   and the difference carried by the VERB each row offers - Dungeons rows offer **Locate**, Quest
+   rows offer **Accept / Turn In / Abandon**. The PIN is the bridge between them.
+5. It lands in the existing `quest_board_panel` (a real card UI) rather than in the text Atlas,
+   and the text Atlas + the orphaned text dungeon list both retire. Entry points converge:
+   **Quests** button and `/quests` → Quests tab; **Atlas** button, the Cartographer NPC and
+   `/dungeons` → Dungeons tab. No button is left pointing at a retired screen.
 
 **⛑ One harness observation, not chased:** the `dungeon_exit` message did not leave the dungeon
 after four sends in the `atlas` scene (`[SHOTS] WARN still underground after 4 exits`), so the
@@ -4604,6 +4616,39 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       immediately overwritten by `start_rebinding("hunt")` — so pressing 4 rebound Hunt and WEST
       could not be rebound at all, in the exact menu a numpad-less player is sent to.
       The help popup no longer opens with "the best way to control your character is the numpad".
+
+- [ ] **⚑ FULL UI / NAVIGATION AUDIT — and it goes BEFORE controller support.**
+      Owner 2026-09-17: *"At some point we need to go through every menu path in the game, assess
+      what is still being used and what can be removed/retired, as well as ways to simplify them.
+      We mentioned controller support or phone support at some point, that simplification will be
+      crucial to that kind of support."*
+
+      **Why it is placed here rather than later.** Mapping a maze to a D-pad is wasted work: every
+      menu retired is one nobody has to map, and the phone item below already says in its own
+      words that *"the three-panel desktop layout does not survive a phone screen"*. Doing input
+      first means doing it twice.
+
+      **The audit already has evidence, found incidentally on 2026-09-16/17 while merging the
+      Atlas and the quest board — this is not a hypothetical tidy-up:**
+      * **FOUR overlapping dungeon/quest surfaces**: the quest panel (a real card UI), the Atlas
+        (text), the dungeon LIST (text), and the dungeon entrance screen. Two of them list
+        dungeons with grade and level band.
+      * **the dungeon LIST is already an orphan** — reachable only by typing `/dungeons`, no
+        button anywhere in the game.
+      * **119 chat commands** are whitelisted in `command_keywords`.
+
+      **What it produces** (a map, before any deletion): every surface → its entry points → its
+      one-line VERB. A surface with no entry point is dead. Two surfaces with the same verb are a
+      merge. An entry point that reaches nothing is a dead button.
+
+      **⚑ RETIRE THE `/commands`** — owner, same message: *"/commands should be retired as we no
+      longer use those."* This is the explicit ask CLAUDE.md requires before touching them
+      (*"Existing chat admin commands stay as fallbacks — don't migrate in a cleanup pass without
+      explicit ask (muscle memory)"*), so it is authorised. But it belongs INSIDE this audit and
+      not as a standalone sweep, for one measured reason: **`/dungeons` is currently the only route
+      to the dungeon list.** Deleting commands before the audit gives each feature a button would
+      silently remove features rather than remove navigation. Order: map → give every surviving
+      feature a button → then retire the commands.
 
 - [ ] **Controller support (NEXT).** Godot has joypad input built in; a D-pad or stick gives all
       eight directions natively and the face buttons map to the action bar. Scope it as its own
