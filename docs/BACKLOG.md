@@ -628,6 +628,38 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ⛑ "COMPLETE THE BACKLOG TODAY AND TOMORROW" — what that can and cannot mean
+
+Owner 2026-09-17: *"I'd like to get it completed over the course of today and tomorrow."*
+
+Counted mechanically rather than estimated: **51 open items, of which 19 carry three lines of
+detail or fewer.** Those 19 are genuinely a day's work. The rest is not, and it is worth being
+specific about WHY rather than discovering it at midnight tomorrow.
+
+**Cannot be done by me at all — needs an artist:**
+* **Action poses for the 40 sprites that lack them.** The item says so in its own words: *"this
+  is ART, not game code."* Same for the remaining buff icons, where the standing rule is not to
+  press a spare debuff row into service.
+
+**Cannot be done in two days — each is its own session or more:**
+* **Sprite the overworld, Phase 2** — 51 lines of scope, and the backlog already calls it *"NOW
+  THE BIG ONE"*. Includes NPC post interiors and the zoom-inside-a-post ask.
+* **Party play, half two** — independent movement plus join-in-progress combat. 65 lines.
+* **The full UI / navigation audit** — every menu path in the game, then retiring the 119 chat
+  commands. It is the prerequisite for controller support, which is why it is not filler.
+* **The 53-dungeon card content** — 4 of 59 authored. This is 55 cards of writing, and the
+  quality bar is the four that exist.
+
+**Blocked on an owner decision, not on effort** (each has its open questions written down):
+post-to-post road travel; dungeon-themed floor equipment; chickens as a dungeon food source;
+judging the dungeon with a full party; the assassinate/Silver Tongue follow-ups.
+
+**So the honest plan for the two days:** clear the 19 small items and as many of the mediums as
+hold up, and bring the owner a short list of the blocked ones to answer in a batch. What will NOT
+happen is the list reaching zero - and a list that reaches zero by having its hard items quietly
+redefined is worse than an honest one that does not.
+
+
 ### ⛑ THE LEGACY POST SYSTEM — AUDITED 2026-09-17, needs an owner decision
 
 Owner: *"It sounds like we need to remove or structurally resolve the legacy post stuff just like
