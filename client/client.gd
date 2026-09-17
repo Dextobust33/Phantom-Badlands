@@ -3248,6 +3248,19 @@ func _ready():
 				_on_window_resized(),
 			"World Map"
 		)
+	# The ACTION BAR and the STATUS HUD, same pattern: the applier calls the existing apply path
+	# and that path reads the per-element scale, so nothing here has to know how a font is sized.
+	#
+	# `_on_window_resized` is the single entry point for both - it recomputes every font in the
+	# client from the current window and the current scales, and calls `_scale_action_bar_fonts`
+	# itself. Calling the specific scaler instead would have needed `base_scale` recomputed here,
+	# which is a second copy of the window maths.
+	if ui_scale_manager != null and action_bar != null:
+		ui_scale_manager.register("action_bar", action_bar,
+			func(_scale: float): _on_window_resized(), "Action Bar")
+	if ui_scale_manager != null and tool_status_overlay != null:
+		ui_scale_manager.register("status_hud", tool_status_overlay,
+			func(_scale: float): _on_window_resized(), "Status Panel")
 
 	combat_loot_panel = CombatLootPanelScript.new()
 	game_output_container.add_child(combat_loot_panel)
@@ -4135,7 +4148,10 @@ func _on_window_resized():
 		# than owning a column. Owner 2026-09-15: *"The status panel text can be smaller by
 		# default so it can take up less vertical space as well as needed."* 11 at base, ~13 at
 		# 1080p; the slider still takes it back up for anyone who wants it.
-		var hud_font_size = int(11 * (1.0 + (base_scale - 1.0) * 0.5) * ui_scale_status_hud)
+		# The PER-ELEMENT factor, from the click-to-resize overlay, multiplied with the bulk
+		# slider rather than replacing it - see the note on `_scale_action_bar_fonts`.
+		var _pe_hud: float = ui_scale_manager.get_scale("status_hud") if ui_scale_manager != null else 1.0
+		var hud_font_size = int(11 * (1.0 + (base_scale - 1.0) * 0.5) * ui_scale_status_hud * _pe_hud)
 		hud_font_size = clampi(hud_font_size, 9, 28)
 		# The minimap and the status labels are the map's real competition: both use fit_content,
 		# so their HEIGHT is their font size, and every point they take is a row off the map. They
@@ -4143,12 +4159,12 @@ func _on_window_resized():
 		# scale at the status slider's rate and no faster.
 		if minimap_display:
 			minimap_display.add_theme_font_size_override("normal_font_size",
-				clampi(int(9.0 * ui_scale_status_hud), 6, 16))
+				clampi(int(9.0 * ui_scale_status_hud * _pe_hud), 6, 16))
 		for _lbl in [status_hud_backpack, status_hud_area, status_hud_compass,
 				status_hud_pouch, status_hud_quests, status_hud_eggs]:
 			if _lbl != null and is_instance_valid(_lbl):
 				_lbl.add_theme_font_size_override("normal_font_size",
-					clampi(int(12.0 * ui_scale_status_hud), 8, 22))
+					clampi(int(12.0 * ui_scale_status_hud * _pe_hud), 8, 22))
 		tool_status_overlay.add_theme_font_size_override("normal_font_size", hud_font_size)
 		tool_status_overlay.add_theme_font_size_override("bold_font_size", hud_font_size)
 
@@ -9886,14 +9902,22 @@ func _scale_right_panel_fonts(base_scale: float):
 			res_label.add_theme_font_size_override("font_size", stats_size)
 
 func _scale_action_bar_fonts(base_scale: float):
-	"""Scale action bar button and label fonts based on window size and user preference"""
-	var button_size = int(BUTTON_BASE_FONT_SIZE * base_scale * ui_scale_buttons)
+	"""Scale action bar button and label fonts based on window size and user preference.
+
+	⚑ THREE FACTORS, AND NONE OF THEM IS A COPY OF ANOTHER. The window gives `base_scale`, the
+	settings slider gives `ui_scale_buttons`, and the click-to-resize overlay gives the
+	per-element scale read here. They MULTIPLY. Writing the overlay's value back into
+	`ui_scale_buttons` would have been simpler and wrong: the settings menu would then display a
+	number the player never typed, which is the one-value-two-places shape this project keeps
+	paying for. `world_map` has worked this way since v0.9.647."""
+	var _pe_bar: float = ui_scale_manager.get_scale("action_bar") if ui_scale_manager != null else 1.0
+	var button_size = int(BUTTON_BASE_FONT_SIZE * base_scale * ui_scale_buttons * _pe_bar)
 	button_size = clampi(button_size, BUTTON_MIN_FONT_SIZE, BUTTON_MAX_FONT_SIZE)
 
-	var cost_size = int(9 * base_scale * ui_scale_buttons)
+	var cost_size = int(9 * base_scale * ui_scale_buttons * _pe_bar)
 	cost_size = clampi(cost_size, 7, 36)
 
-	var hotkey_size = int(9 * base_scale * ui_scale_buttons)
+	var hotkey_size = int(9 * base_scale * ui_scale_buttons * _pe_bar)
 	hotkey_size = clampi(hotkey_size, 7, 36)
 
 	for button in action_buttons:

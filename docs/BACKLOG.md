@@ -5259,8 +5259,35 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Now level x6, a multiplier so the margin survives future player-power changes.
       Found while looking: the status chip read **"Exposed 995T"** — see below.
 
-- [ ] **Extend UI-scale registration** to the elements that still lack it (action bar, status HUD,
-      inventory, market, crafting, sanctuary).
+- [ ] **Extend UI-scale registration** — **HALF DONE 2026-09-17: action bar and status panel.**
+      Both are now click-to-resize (`ui_scale_manager.register`), which was the same three lines
+      `world_map` has used since v0.9.647: register the control, have the applier call
+      `_on_window_resized()`, and read the per-element scale INSIDE the font maths.
+      ⛑ **The per-element factor MULTIPLIES the settings slider, it does not replace it.** The
+      slider owns the bulk factor, the overlay owns the per-element one, and the font is their
+      product. Writing the overlay's value back into `ui_scale_buttons` would have been simpler
+      and wrong — the settings menu would then display a number the player never typed.
+      Probe: `tools/probe/ui_scale_registration.gd`, on the real client scene at 1920x1080,
+      because both ways this fails silently are invisible in the source: a registration whose
+      apply path never reads `get_scale` (present, reachable, does nothing) and a per-element
+      value that clobbers the slider.
+      **Two instrument faults found writing that probe, both worth recording:**
+      * It read the baseline straight after `instantiate()`, before the client had scaled itself —
+        so the baseline was whatever the scene file carried, disagreed with the settled value
+        (29px vs 44px) and **failed a different check on each run**. One explicit resize pass
+        before measuring fixed it; both runs now agree exactly.
+      * Its composition check ran at slider 2.0x, where the font is already pinned at
+        `BUTTON_MAX_FONT_SIZE` — so adding a 1.5x per-element factor changed nothing and the check
+        passed on `>=` while proving nothing. **A cell where the clamp is binding cannot tell
+        composition from replacement.** Moved to 0.6x (17px → 26px).
+      **And a real measurement worth keeping:** at 1080p the status panel's font is **10px at
+      1.0x**, one point off its floor of 9. So its slider's useful direction is UP, which is the
+      owner's own 2026-09-15 decision (*"The status panel text can be smaller by default"*)
+      meeting a readability floor — not a fault. The probe pins that, so a drift back upward shows.
+      **Still to do: inventory, market, crafting, sanctuary.** Not the same three lines: those are
+      text inside `game_output` or whole panels rather than one control with one font, so each
+      needs an applier of its own. Worth doing WITH the UI audit, which may move or merge these
+      surfaces anyway.
 
 - [ ] **Dungeon level mismatch — BLOCKED, needs a second example.** Owner reported a 1-1 wolf
       dungeon advertising "recommended level 3" while floor-1 wolves were level 6. A real defect
