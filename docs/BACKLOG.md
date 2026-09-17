@@ -1032,23 +1032,36 @@ has been used."*
       Smite. The reference player the monster curve is built from never carries it, so
       `speciescal`/`refcal`/`rolecal` are unaffected.
 
-- [ ] **Buff icons for the rest.** — NARROWED 2026-09-16: it is **three keys, not "the rest"**,
-      and only ONE of them needs art. Diffed every `add_buff(...)` call against `BUFF_ICONS`:
-      `open_guard_penalty`, `time_stop` and `smite_debuff` are the only applied effects with no
-      icon. `open_guard_penalty` is the same concept as the already-mapped `defense_penalty` (you
-      take more damage) and `smite_debuff` the same as `damage_penalty` (you deal less), so both
-      can reuse those icons rather than wait for art. **`time_stop` is the only one that needs a
-      new picture** - "the next attack against you never comes" has no equivalent in the pack.
+- [x] **Buff icons for the rest.** — DONE 2026-09-16, and it was **three keys, not "the rest"**.
+      Diffed every `add_buff(...)` call in the game against `BUFF_ICONS`: only
+      `open_guard_penalty`, `time_stop` and `smite_debuff` were applied with no picture.
 
-      **⛑ And the buff vocabulary lives in TWO tables that have already drifted.**
-      `client.gd::BUFF_HELP` has 14 entries; `combat_scene_panel.gd::_STATUS_HELP` has 30 and
-      already covers `open_guard_penalty` and `time_stop`. They disagree on meaning as well as
-      coverage: `defense_penalty` is *"You take N% more damage"* in one and *"Exposed. Its defence
-      is cut"* in the other - the same key describing the player in one place and the monster in
-      the other. Whichever is shown to the wrong carrier is a lie. Worth unifying before adding
-      more entries to either. The remaining combat buffs have no art that honestly represents
-      them; `BUFF_ICONS` records what is mapped and why. Either source icons or leave them as
-      lettered chips — do NOT map a spare debuff row onto a buff.
+      **None of them needed new art.** `smite_debuff` became `damage_penalty` when Smite was
+      fixed, which was already mapped. `open_guard_penalty` means the same thing as
+      `defense_penalty` - you take more damage - so it takes the same shield. And the item pack
+      already contains `Hourglass.png`, which is a literal hourglass for an effect that stops the
+      next attack. The standing rule in `BUFF_ICONS`' own note is not to press a spare DEBUFF ROW
+      into service as a buff; reusing an icon for the SAME MEANING is a different thing.
+
+      **⛑ And a two-copies-of-one-number retired on the way.** `open_guard_penalty` is stored
+      with a value of 15 and its consumer multiplied by a hardcoded `1.15`. They agreed, so
+      nothing was broken - but the hover added here quotes the STORED value, so the moment either
+      moved the screen would have lied. The consumer reads the stored value now.
+
+- [x] **Every effect icon is LOADED, not looked at** — new guard, 2026-09-16.
+      `tools/probe/effect_icons_load.gd` calls `load()` on all 16 buff icons, loads the state
+      sheet, asserts each state frame sits INSIDE it (a frame running off the edge samples empty
+      pixels and draws a blank square, which reads as a missing icon and sends you hunting in the
+      wrong place), and re-diffs applied effects against the table so a new one cannot ship
+      iconless. Proven to fire against both fault shapes: a path that does not exist, and an
+      applied effect with no entry.
+
+      Also a `buff_icons` line in the release gate, per CLAUDE.md's rule about new art surfaces.
+      **⛑ The first version of that line would have failed EVERY release:** it printed
+      `buff_icons=true (16/16)`, and `verify_release_build.sh` parses with
+      `sed "s/.*name=//" | tr -d ' '`, so the value arrived as `true(16/16)`. The count is on its
+      own line now. Caught by reading the parser rather than by a failed release.
+
 - [ ] **Judge the dungeon with a full party.** The owner has frames at the right tile size now
       (`shot_38675`, `shot_50715`); the call is theirs.
 

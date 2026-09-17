@@ -9263,9 +9263,16 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 				# Brittle Strike bought its damage by leaving the guard open until you act again.
 				_mit_mult *= 1.25
 				messages.append("[color=#FFAA55]Your guard was open — the blow lands harder.[/color]")
-			if character.get_buff_value("open_guard_penalty") > 0:
+			var _ogp: int = character.get_buff_value("open_guard_penalty")
+			if _ogp > 0:
 				# Open Guard: a much stronger buff, paid for with defence while it holds.
-				_mit_mult *= 1.15
+				#
+				# Reads the STORED value rather than a hardcoded 1.15. They agreed - the buff is
+				# added with 15 - but they were two copies of one number, and the hover added on
+				# 2026-09-16 would have quoted the stored one while the fight used the literal.
+				# That is the shape that has produced a wrong-text bug on nearly every surface in
+				# this project, so it is one number now.
+				_mit_mult *= 1.0 + float(_ogp) / 100.0
 			_mit_mult = clampf(_mit_mult, MITIGATION_BUFF_FLOOR, MITIGATION_VULN_CEIL)
 			damage = max(1, int(_raw_hit * _mit_mult))
 

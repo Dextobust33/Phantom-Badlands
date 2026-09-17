@@ -99,6 +99,13 @@ const BUFF_ICONS := {
 	"cloak": {"path": "res://client/sprites/items_pack/Equip/Back/CloakA0.png"},
 	"damage_penalty": {"path": "res://client/sprites/items_pack/Equip/Set/FineBlade0.png", "tint": "#FF7070"},
 	"defense_penalty": {"path": "res://client/sprites/items_pack/Equip/Shield/Shield5.png", "tint": "#FF7070"},
+	# The last two applied effects that had no picture, closing the set. Neither needed new
+	# art: "guard down" is the same idea as the line above it - you take more damage - and
+	# `Hourglass` is a literal hourglass for an effect that stops the next attack. The rule
+	# this respects is the one in BUFF_ICONS' own note: do NOT press a spare debuff row into
+	# service as a buff. Reusing an icon for the SAME MEANING is not that.
+	"open_guard_penalty": {"path": "res://client/sprites/items_pack/Equip/Shield/Shield5.png", "tint": "#FF7070"},
+	"time_stop": {"path": "res://client/sprites/items_pack/Hourglass.png"},
 }
 
 ## What each one actually DOES, read off `combat_manager` rather than written from intuition - the
@@ -118,6 +125,12 @@ const BUFF_HELP := {
 	"cloak": ["Cloaked", "Nothing on the overworld starts a fight with you - and your pools do not refill while it holds. Hunting drops it."],
 	"damage_penalty": ["Damage down", "Your damage is reduced by %d%%."],
 	"defense_penalty": ["Defense down", "You take %d%% more damage."],
+	# `%d` is substituted from the buff's stored value, and `_mit_mult` reads that same value -
+	# see the note at its consumer. Before that they were two copies of 15.
+	"open_guard_penalty": ["Guard down", "You take %d%% more damage - the defence a card traded away for power. It fades with the buff it paid for."],
+	# No number: the effect is one attack, not a percentage, so the help carries no `%d` and
+	# `_show_buff_hover` prints it verbatim.
+	"time_stop": ["Time anchored", "The next attack against you never lands."],
 }
 
 const STATE_ICONS := {
@@ -2723,6 +2736,22 @@ func _ready():
 		# texture fails to load draws NOTHING - no gap, no placeholder - so the Effects box looks
 		# exactly as it did before the icons existed. Calling the loader is the only check.
 		print("[BUILDVERIFY] state_icons=", load(STATE_SHEET) != null)
+		# Every BUFF icon too, counted rather than spot-checked. These are separate PNGs rather
+		# than one sheet, so a single missing file is the failure mode - and an [img] whose
+		# texture will not load draws NOTHING, which looks exactly like an icon nobody added.
+		var _bi_ok: int = 0
+		for _bk in BUFF_ICONS.keys():
+			if load(String(BUFF_ICONS[_bk].get("path", ""))) != null:
+				_bi_ok += 1
+		# A BOOLEAN, alone on its line. Asserting "16/16" in the gate would be a second copy of
+		# the table size that fails the day somebody adds a seventeenth icon - failing for the
+		# wrong reason is how a gate loses credibility and starts getting ignored.
+		#
+		# And the count goes on its OWN line, not appended to this one: `verify_release_build.sh`
+		# parses with `sed "s/.*name=//" | tr -d ' '`, so a trailing " (16/16)" arrives as
+		# `true(16/16)` and would have failed the gate on every single release.
+		print("[BUILDVERIFY] buff_icons=", _bi_ok == BUFF_ICONS.size())
+		print("[BUILDVERIFY] buff_icons_count=%d/%d" % [_bi_ok, BUFF_ICONS.size()])
 		# Perf guards for the 4K-laptop thermal-throttling report (v0.9.735). These live in
 		# project.godot, which is baked into the pck — so the only way to know a shipped build
 		# still has them is to ask the running engine.

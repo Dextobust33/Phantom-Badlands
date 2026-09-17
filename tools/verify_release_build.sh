@@ -125,6 +125,9 @@ check "dungeon_warden"       "true"          "$(field dungeon_warden)"
 # nothing under it was imported or packed - and `ResourceLoader.exists()` still said true, while
 # an [img] tag whose texture will not load draws nothing at all. A silent, invisible failure.
 check "state_icons"          "true"          "$(field state_icons)"
+# Every buff icon loads. A boolean, not a count: asserting "16/16" here would be a second
+# copy of the table size that fails the day somebody adds a seventeenth icon.
+check "buff_icons"           "true"          "$(field buff_icons)"
 # The multi-cell tile manifest is a raw .json, not an imported resource - if it misses the .pck
 # the map silently falls back to the shrunken 32px tiles and nothing else looks wrong.
 BIG_TILES="$(field big_tiles)"
