@@ -50566,7 +50566,11 @@ func _overworld_display(payload: Dictionary) -> String:
 			else:
 				mark_cell = Vector2i(-1, -1)
 	if not _OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}), _ow_anim_tick, mark_cell, mark_arrow):
-		return MapPayload.inflate(payload)
+		# ⚑ THE TEXT MAP GETS THE MARK TOO. This used to return a bare `inflate`, which
+		# knows nothing about `mark_cell` - so with sprites off, or in a build missing
+		# licence-restricted art, the Warden said *"it is ringed on your map"* and there
+		# was no ring on it. Same two cells the sprite renderer would have used.
+		return MapPayload.inflate_marked(payload, mark_cell, mark_arrow, cols_n, rows_n)
 	# NO CROP INSIDE A POST, and the reason is a measurement rather than a preference. The zoom
 	# shipped as "crop to the middle 11 and draw them twice as big", on the assumption that you
 	# cannot see past a post's walls so the edges were wasted. Measured afterwards: a post is

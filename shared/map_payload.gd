@@ -151,6 +151,73 @@ static func inflate(payload: Dictionary) -> String:
 	return out
 
 
+## The eight bearings, for the off-grid arrowhead. Index by (signi(dx), signi(dy)) on SCREEN
+## axes, where y grows downward - the payload grid is already in screen order.
+const _MARK_ARROWS := {
+	Vector2i(0, -1): "\u2191", Vector2i(0, 1): "\u2193",
+	Vector2i(-1, 0): "\u2190", Vector2i(1, 0): "\u2192",
+	Vector2i(-1, -1): "\u2196", Vector2i(1, -1): "\u2197",
+	Vector2i(-1, 1): "\u2199", Vector2i(1, 1): "\u2198",
+}
+const _MARK_COLOR := "#FFD700"
+const _MARK_BG := "#4A3B00"
+
+
+static func inflate_marked(payload: Dictionary, mark: Vector2i, arrow: Vector2i,
+		w_expect: int, h_expect: int) -> String:
+	"""`inflate`, with the gold destination mark drawn into the map grid.
+
+	⚑ WHY THIS EXISTS. The sprite map draws the ring and the off-grid arrowhead as images
+	(`overworld_room.gd` pass 4). When that renderer is unavailable - the player has sprites off,
+	or the build is missing licence-restricted art - the caller fell back to plain `inflate`,
+	which has no idea a mark was requested. The Warden's line *"it is ringed on your map"* was
+	then simply untrue, and the tutorial's only navigational aid was the bearing in the side
+	panel. A guide that tells you to look for something that is not there is worse than one that
+	says nothing.
+
+	The ON-GRID mark keeps the cell's own glyph and adds a gold BACKGROUND, because the marked
+	tile is usually a dungeon `D` and replacing it would hide the very thing being pointed at.
+	The OFF-GRID arrowhead replaces its cell: it stands four cells from the player on open
+	ground, where the direction is the whole message.
+
+	`w_expect`/`h_expect` pick the MAP grid rather than the first grid in the payload - the
+	minimap is a grid too, and marking that one would put a gold cell in the corner inset."""
+	if mark.x < 0 or mark.y < 0:
+		return inflate(payload)
+	var out := ""
+	var done := false
+	for seg in payload.get("segs", []):
+		if not (seg is Dictionary):
+			continue
+		if seg.has("s"):
+			out += String(seg["s"])
+			continue
+		var w: int = int(seg.get("w", 0))
+		var h: int = int(seg.get("h", 0))
+		if done or w != w_expect or h != h_expect or mark.x >= w or mark.y >= h:
+			out += inflate({"segs": [seg]})
+			continue
+		done = true
+		var rows: Array = cells(seg)
+		if rows.is_empty():
+			out += inflate({"segs": [seg]})
+			continue
+		var row: PackedStringArray = rows[mark.y]
+		var was: String = String(row[mark.x])
+		if arrow != Vector2i.ZERO:
+			var key := Vector2i(signi(arrow.x), signi(arrow.y))
+			var glyph: String = String(_MARK_ARROWS.get(key, "\u2022"))
+			row[mark.x] = "[color=%s][b]%s[/b][/color]" % [_MARK_COLOR, glyph]
+		else:
+			row[mark.x] = "[bgcolor=%s]%s[/bgcolor]" % [_MARK_BG, was]
+		rows[mark.y] = row
+		var lines: PackedStringArray = PackedStringArray()
+		for r in rows:
+			lines.append("".join(r))
+		out += String(seg.get("rs", "\n")).join(lines) + String(seg.get("t", ""))
+	return out
+
+
 static func inflate_sprites(payload: Dictionary, cell_bbcode: Callable, crop: int = 0) -> String:
 	"""The display string with the MAP GRID drawn as images instead of letters.
 

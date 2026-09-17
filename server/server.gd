@@ -44734,6 +44734,14 @@ func _escort_walk_tick() -> void:
 		# understand.
 
 
+func _ring_escort_goal(peer_id: int, goal: Dictionary) -> void:
+	"""Put the gold ring on the tile the escort is actually walking to."""
+	if goal.is_empty():
+		return
+	send_to_peer(peer_id, {"type": "mark_tile", "x": int(goal.get("x", 0)), "y": int(goal.get("y", 0)),
+		"label": String(goal.get("name", "the dungeon")), "seconds": 900})
+
+
 func _escort_walk_start(peer_id: int, character) -> void:
 	"""Start walking the player to the dungeon."""
 	var goal: Dictionary = _escort_goal_for(peer_id, character)
@@ -44765,7 +44773,9 @@ func _escort_walk_start(peer_id: int, character) -> void:
 		# walking on its own, twenty seconds after being told to go it alone.
 		_guide_say(peer_id, "Ground's clear now. With me — I have the way.")
 		_escort_walk[peer_id] = {"gx": int(goal.get("x", 0)), "gy": int(goal.get("y", 0)),
+			"name": String(goal.get("name", "the dungeon")),
 			"next_ms": Time.get_ticks_msec(), "stuck": 0}
+		_ring_escort_goal(peer_id, goal)
 		return
 	var _healed: int = character.get_total_max_hp() - character.current_hp
 	character.current_hp = character.get_total_max_hp()
@@ -44777,7 +44787,13 @@ func _escort_walk_start(peer_id: int, character) -> void:
 			"[color=#00FF88]Warden Hollis binds your wounds — %d HP restored.[/color]" % _healed})
 	send_character_update(peer_id)
 	_escort_walk[peer_id] = {"gx": int(goal.get("x", 0)), "gy": int(goal.get("y", 0)),
+		"name": String(goal.get("name", "the dungeon")),
 		"next_ms": Time.get_ticks_msec(), "stuck": 0}
+	# ⚑ RE-RING IT. The mark is sent once, lives only in client memory and expires after 900s,
+	# so a player who took a while to read the panel set off toward an unmarked tile. Re-sending
+	# it here also guarantees the ring is on the tile the WALK is using rather than the one the
+	# resolver happened to return when the panel was raised.
+	_ring_escort_goal(peer_id, goal)
 	_guide_say(peer_id, "Stay close and keep your hands free. Move on your own and I will let you lead.")
 
 
@@ -44815,12 +44831,24 @@ func _escort_goal_for(peer_id: int, character) -> Dictionary:
 			"x": _px, "y": _py}
 	if _stage != 3:
 		return {}          # steps one and two are fought where you stand
-	# Make sure there IS one before promising to walk them to it. `_point_at_the_dungeon` has
-	# ensured this since the pointer shipped; the escort read the same world without it, so a
-	# player who reached step three before any tier-1 instance existed got a Warden who agreed
-	# to lead and then stood still - measured, on the admin jump straight to step three.
-	_ensure_starter_dungeon_exists()
-	var d: Dictionary = _nearest_starter_dungeon(character)
+	# ⚑ ONCE HE IS WALKING, THE WALK IS THE TRUTH.
+	#
+	# This used to re-pick the nearest starter instance on every step, while the walk held a goal
+	# frozen at walk start and the gold ring held a third one sent once. A single step that
+	# changed which instance was nearest therefore pointed the side panel at a different hole
+	# from the one he was carrying the player to - and the ring at neither.
+	#
+	# Reading the walk instead means the bearing counts down to the tile he is actually heading
+	# for, which is also the tile the ring is on (`_escort_walk_start` re-sends the mark).
+	var _w: Dictionary = _escort_walk.get(peer_id, {})
+	if not _w.is_empty():
+		return {"name": String(_w.get("name", "the dungeon")),
+			"where": _get_direction_text(int(character.x), int(character.y),
+				int(_w.get("gx", 0)), int(_w.get("gy", 0))),
+			"x": int(_w.get("gx", 0)), "y": int(_w.get("gy", 0))}
+	# Not walking yet (he has not been told to go, or the walk gave up): the same resolver the
+	# ring uses, so the two agree before the walk exists as well as after.
+	var d: Dictionary = _starter_destination(peer_id, character)
 	if d.is_empty():
 		return {}
 	# `direction_text` already reads "22 tiles northwest" - it carries the distance itself. The
@@ -44828,6 +44856,28 @@ func _escort_goal_for(peer_id: int, character) -> Dictionary:
 	return {"name": String(d.get("name", "the dungeon")),
 		"where": String(d.get("direction_text", "")),
 		"x": int(d.get("x", 0)), "y": int(d.get("y", 0))}
+
+
+func _starter_destination(peer_id: int, character) -> Dictionary:
+	"""WHERE THE TUTORIAL IS SENDING THIS PLAYER. The one answer, for every surface that shows it.
+
+	⚑ THERE WERE THREE ANSWERS. The gold ring picked the nearest starter instance and fell back
+	to a tier-3 dungeon when there was none; the escort WALK froze a goal at walk start; and the
+	side-panel bearing re-picked every step with no fallback at all. Any step that changed which
+	instance was nearest moved the bearing off both the ring and the walk - and with no starter
+	instance at all the ring pointed somewhere the Warden flatly refused to go.
+
+	The backlog filed this as needing TWO unfinished starter dungeons to show up. It needed one."""
+	if character == null:
+		return {}
+	# `_find_nearest_dungeon_for_quest(..., tier 1)` accepts only tier-1 instances, and the LAND
+	# decides a dungeon's grade, so there may be no tier-1 anywhere near spawn - measured: none at
+	# all from (-8,-8) on a fresh world.
+	_ensure_starter_dungeon_exists()
+	var d: Dictionary = _nearest_starter_dungeon(character)
+	if d.is_empty():
+		d = _find_nearest_dungeon_for_quest(int(character.x), int(character.y), "", 3, peer_id)
+	return d
 
 
 func _nearest_starter_dungeon(character) -> Dictionary:
@@ -44895,10 +44945,7 @@ func _mark_the_dungeon(peer_id: int, character) -> Dictionary:
 	# LAND decides a dungeon`s grade there may be no tier-1 anywhere near spawn - measured: none
 	# at all from (-8,-8) on a fresh world. The pointer then fell through to a vague line and the
 	# player was told to find a "D" that did not exist. Owner: *"I don`t see a D."*
-	_ensure_starter_dungeon_exists()
-	var d: Dictionary = _nearest_starter_dungeon(character)
-	if d.is_empty():
-		d = _find_nearest_dungeon_for_quest(int(character.x), int(character.y), "", 3, peer_id)
+	var d: Dictionary = _starter_destination(peer_id, character)
 	if d.is_empty():
 		# Still nothing. Say so plainly rather than send them hunting.
 		_guide_say(peer_id, "There is a hole in the ground somewhere near. Ask at the post - I cannot see it from here.")

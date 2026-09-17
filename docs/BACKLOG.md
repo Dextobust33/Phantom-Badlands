@@ -1877,10 +1877,55 @@ chain after it), party half two (independent movement + join-in-progress), contr
       weakness in one round of a four-party. The magnitude keys are deliberately NOT de-duplicated
       — zeroing those per action would remove the debuff from everyone after the first, the
       opposite mistake. `tools/probe/coop_shared_debuffs.gd` asserts both halves.
-- [ ] **Text-map fallback draws no gold ring or arrow** (sprite toggle off, or licence art missing).
-- [ ] **The ring can sit under the corner labels** near the top corners of the map. Unverified in pixels.
-- [ ] **Two unfinished starter dungeons could split the ring from the walk** - the mark is chosen once,
-      `_escort_goal_for` re-picks. Inferred from code, not observed.
+- [x] **Text-map fallback draws no gold ring or arrow** — **DONE 2026-09-17.**
+      `_render_overworld_room` worked out `mark_cell` and `mark_arrow` and then, when the sprite
+      renderer declined, returned a bare `MapPayload.inflate(payload)` — which has never heard of
+      either. So with sprites switched off, or in a build missing licence-restricted art, the
+      Warden said *"it is ringed on your map"* and nothing was ringed anywhere.
+      New `MapPayload.inflate_marked(payload, mark, arrow, w, h)` draws it, in the renderer that
+      already owns what a payload MEANS rather than in the client. Two deliberate choices:
+      the on-grid ring is a gold **background** so the cell's own glyph survives (the marked tile
+      is usually the dungeon `D` being pointed at — a marker that overwrote it would point at a
+      thing by deleting it), and the off-grid arrowhead **replaces** its cell, because four tiles
+      from the player the direction is the whole message.
+      `w`/`h` pick the MAP grid rather than the first grid in the payload: a payload holds a
+      minimap too, and marking that one would put a gold cell in the corner inset and nothing on
+      the map. Probe `tools/probe/text_map_mark.gd` checks that case explicitly, along with the
+      row (this codebase has got the map's inverted y axis wrong twice) and a no-mark control that
+      must come back byte-identical to the plain renderer.
+- [ ] **The ring can sit under the corner labels** near the top corners of the map — **narrowed
+      2026-09-17 to the sprites-OFF path only, and de-prioritised.** Read off `_place_map_widgets`:
+      when the sprite canvas is in use — which is the default and what almost every player sees —
+      the Coords and Area boxes live in the **margins beside** the map, not over it, so there is
+      nothing to occlude. They only *"float over its corners"* in the text-map layout, where the
+      map is drawn in `map_display`.
+      The geometry there, still derived rather than measured in pixels: each box spans x 8 to
+      8+`margin_w` (default 240) and y 8 to 60 over a panel a few hundred pixels wide, so at a
+      ~7x14 text cell they cover roughly the **top four rows of about a third of the width at each
+      corner**. Which means the honest version of this item is bigger than the ring: on the
+      sprites-off path those boxes hide a chunk of the map itself.
+      **Not fixed, deliberately.** Choosing where they should go instead needs the screen measured,
+      not the code reasoned about, and it is a minority configuration where the side-panel bearing
+      still names the destination and its distance. Worth doing as part of the UI audit, with a
+      capture, rather than guessed at now.
+- [x] **The ring, the walk and the bearing could all name different tiles** — **DONE 2026-09-17,
+      and it was worse than this item said.** Filed as needing *two* unfinished starter dungeons.
+      It needed one, and there were **three** owners of the destination, not two:
+      * the **mark** (`_mark_the_dungeon`) picked the nearest starter instance, falling back to
+        `_find_nearest_dungeon_for_quest(..., 3)` when there was none;
+      * the **walk** (`_escort_walk[peer_id].gx/gy`) froze a goal at walk start;
+      * the **bearing** in the side panel (`_escort_goal_for`) re-picked every single step and had
+        **no fallback at all** — so with no starter instance the ring pointed at a tier-3 dungeon
+        while the panel said nothing and the Warden refused to lead.
+      Any step that changed which instance was nearest moved the bearing off the ring and off the
+      walk. **Fixed structurally:** one `_starter_destination(peer_id, character)` that both the
+      ring and the bearing ask, and **once he is walking the walk is the truth** — the bearing
+      reads the active walk's goal instead of re-picking, so it counts down to the tile he is
+      actually carrying the player to. `_escort_walk_start` now re-sends the mark on both its
+      paths (the mark lives only in client memory and expires after 900s, so a player who took a
+      while to read the panel set off toward an unmarked tile) and records the dungeon's NAME so
+      the bearing can name it. `tools/probe/guide_ring_and_delivery.gd` gained a section that bans
+      a second picker.
 - [x] **"Floors Cleared: 2/5" on the starter dungeon's completion screen** - fixed, see RECOMMENDED ORDER item 6.
 - [ ] **Home is the NEAREST post**, which after an eastern starter dungeon is not the Crossroads
       (measured: (65,-9)). Probably right; confirm with the owner if it reads oddly in play.

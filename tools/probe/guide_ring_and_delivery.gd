@@ -166,6 +166,52 @@ func _init() -> void:
 		"  it does say they may take over, which is the one navigation line worth keeping")
 
 	print("")
+	print("===== THE RING, THE WALK AND THE BEARING NAME ONE TILE =====")
+	# ⛑ THREE OWNERS OF ONE DESTINATION, filed in the backlog as needing two unfinished starter
+	# dungeons to show up. It needed one: the MARK picked the nearest starter instance (falling
+	# back to a tier-3 dungeon when there was none), the WALK froze a goal at walk start, and the
+	# side-panel BEARING re-picked every step with no fallback at all. Any step that changed
+	# which instance was nearest moved the bearing off the ring and off the walk.
+	#
+	# A source check, for the same reason fault one above is: reaching this live needs two
+	# starter instances, a connected client and thirty tiles of walking.
+	var resolver_calls: Array = []
+	var lines: PackedStringArray = ssrc.split("\n")
+	var in_resolver := false
+	for line in lines:
+		var ln: String = line.strip_edges()
+		if ln.begins_with("func "):
+			in_resolver = ln.begins_with("func _starter_destination(")
+		if in_resolver:
+			continue
+		if "_nearest_starter_dungeon(" in ln and not ln.begins_with("#") and not ln.begins_with("func "):
+			resolver_calls.append(ln.substr(0, 110))
+	for c in resolver_calls:
+		print("  SECOND PICKER: " + String(c))
+	ck(resolver_calls.is_empty(),
+		"only `_starter_destination` chooses the destination (%d others)" % resolver_calls.size())
+	ck(ssrc.contains("func _starter_destination("), "the one resolver exists")
+	# The mark and the bearing must both go through it, or "one resolver" is just a function
+	# nobody calls.
+	ck(mark.contains("_starter_destination("), "  the gold ring asks it")
+	var gf := ssrc.find("func _escort_goal_for")
+	var gf_end := ssrc.find("\nfunc ", gf + 10)
+	var goalfn := ssrc.substr(gf, (gf_end - gf) if gf_end > gf else 5000)
+	ck(goalfn.contains("_starter_destination("), "  the side-panel bearing asks it")
+	# And once he is walking, the bearing must READ THE WALK rather than re-pick - otherwise the
+	# panel counts down to a tile he is not heading for.
+	ck(goalfn.contains("_escort_walk.get(peer_id"),
+		"  and defers to the active walk, so the bearing counts down to the tile he is using")
+	# The mark is client-side only and expires after 900s, so the walk re-rings it.
+	var ws := ssrc.find("func _escort_walk_start")
+	var ws_end := ssrc.find("\nfunc ", ws + 10)
+	var walkfn := ssrc.substr(ws, (ws_end - ws) if ws_end > ws else 5000)
+	ck(walkfn.count("_ring_escort_goal(") == 2,
+		"both walk-start paths re-ring the goal (%d)" % walkfn.count("_ring_escort_goal("))
+	ck(walkfn.contains('"name": String(goal.get("name"'),
+		"and the walk records WHICH dungeon, so the bearing can name it")
+
+	print("")
 	print("===== NOT COVERED HERE =====")
 	print("  Whether the merged panel READS well. That is a playtest, not an assertion.")
 	print("  Whether the door waypoint clears every post SHAPE - posts vary, and the")
