@@ -632,9 +632,22 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 Owner 2026-09-17: *"I'd like to get it completed over the course of today and tomorrow."*
 
-Counted mechanically rather than estimated: **51 open items, of which 19 carry three lines of
-detail or fewer.** Those 19 are genuinely a day's work. The rest is not, and it is worth being
-specific about WHY rather than discovering it at midnight tomorrow.
+Counted mechanically: **51 open items.**
+
+**⛑ AND MY FIRST ATTEMPT AT SIZING THEM WAS WRONG, so this is the corrected read.** I ranked the
+items by how many lines of detail each carried and called the 19 shortest "a day's work". That
+measures how much has been WRITTEN about an item, not how much work it is - and the shortest
+entries on this list are `Sanctuary redesign.`, `Player phantoms.`, `Living world / rework the
+posts.`, `Minigame variety.` and `Crafting review`. One line each, because nobody has written them
+up yet. They are among the largest things on the list.
+
+**Genuinely small, having read them:** the four gold-ring / starter-mark verification items, and
+extending UI-scale registration. Five or six, not nineteen.
+
+**Genuinely large but recorded in one line each** — these are the trap: Sanctuary redesign, player
+phantoms, living world / rework the posts, minigame variety, crafting review (*"not in a good spot
+at all"*), real sinks for excess eggs and companions, the Prize Shuffle redesign's remaining two
+thirds, death replay, and the launcher revamp. Any one of them is a session or several.
 
 **Cannot be done by me at all — needs an artist:**
 * **Action poses for the 40 sprites that lack them.** The item says so in its own words: *"this
@@ -654,10 +667,13 @@ specific about WHY rather than discovering it at midnight tomorrow.
 post-to-post road travel; dungeon-themed floor equipment; chickens as a dungeon food source;
 judging the dungeon with a full party; the assassinate/Silver Tongue follow-ups.
 
-**So the honest plan for the two days:** clear the 19 small items and as many of the mediums as
-hold up, and bring the owner a short list of the blocked ones to answer in a batch. What will NOT
-happen is the list reaching zero - and a list that reaches zero by having its hard items quietly
-redefined is worse than an honest one that does not.
+**So the honest plan for the two days:** clear the five or six genuinely small items, take the
+mediums that hold up, and put the blocked ones to the owner in one batch. What will NOT happen is
+the list reaching zero - and a list that reaches zero by having its hard items quietly redefined
+is worse than an honest one that does not.
+
+**And the lesson from getting the sizing wrong:** a terse backlog entry is not a small job, it is
+an unwritten one. Sizing this list needs the items read, not counted.
 
 
 ### ⛑ THE LEGACY POST SYSTEM — AUDITED 2026-09-17, needs an owner decision
@@ -5670,7 +5686,14 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
         * **Read `docs/design/equipment_reference.md` first** — the chase pool is epic+ only, and
           an item's class stats come from its BASE TYPE, not its affixes. Do not design a themed
           affix that no acquisition path can actually roll.
-- [ ] **Dungeon Atlas** as hub + quest board.
+- [x] **Dungeon Atlas** as hub + quest board. — **DONE 2026-09-17.** It is a TAB of the quest
+      panel now, not a screen of its own: one shell, two doors, and the difference carried by the
+      verb each row offers (Dungeons rows Locate, Quest rows Accept / Turn In / Abandon). A quest
+      PINS its dungeon at the top, naming what is wanted, the progress, and the post to hand it
+      in at — because that tab deliberately cannot accept anything. Rumours display and name
+      where they were heard. Every row judges the place against your level in the same words the
+      dungeon entrance screen uses. The text Atlas and the orphaned text dungeon LIST both
+      retired, and no button points at either. Probe: `tools/probe/atlas_pins_and_rumours.gd`.
 - [x] **Dungeon-centred questing** to replace the disliked overworld quests: clear / rescue /
       boss-hunt / gather. — **ALREADY BUILT (P2, 2026-08-26). Ticked 2026-09-16 after an audit,
       not after work.**
