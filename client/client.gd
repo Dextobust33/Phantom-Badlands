@@ -29213,10 +29213,10 @@ func send_input():
 	# Commands
 	# Reduced command set - most actions available via action bar
 	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "clanpost", "clanposts", "vault", "clanvault", "mentor", "mentors", "duel", "bounty", "bountyboard", "bb",
-		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
-		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
-		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
-		"giveconsumable", "spawnwish", "setjob", "givetool",
+		"setlevel", "setgold", "setmonstergems", "setxp", "setbp",
+		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats",
+		"tp", "tpstable", "teststable", "completequest", "broadcast", "gmhelp",
+		"giveconsumable", "setjob", "givetool",
 		"banip", "unbanip", "resetpw", "testfx", "spritesize", "altsprite", "condensed", "admin"]
 	# Combat commands as typed fallback (action bar is preferred)
 	var combat_keywords = ["attack", "a", "flee", "f", "item", "i",
@@ -30581,8 +30581,6 @@ func process_command(text: String):
 				display_game("[color=#FF0000]Usage: /setxp <amount>[/color]")
 			else:
 				send_to_server({"type": "gm_setxp", "amount": int(parts[1])})
-		"godmode":
-			send_to_server({"type": "gm_godmode"})
 		"setbp":
 			if parts.size() < 2:
 				display_game("[color=#FF0000]Usage: /setbp <amount>[/color]")
@@ -30631,8 +30629,6 @@ func process_command(text: String):
 				display_game("[color=#808080]Examples: copper_ore, iron_ore, small_fish, healing_herb, common_wood[/color]")
 			else:
 				send_to_server({"type": "gm_givemats", "material_id": parts[1], "amount": int(parts[2])})
-		"giveall":
-			send_to_server({"type": "gm_giveall"})
 		"tp":
 			if parts.size() < 3:
 				display_game("[color=#FF0000]Usage: /tp <x> <y>[/color]")
@@ -30651,10 +30647,15 @@ func process_command(text: String):
 		"completequest":
 			var quest_index = int(parts[1]) if parts.size() > 1 else -1
 			send_to_server({"type": "gm_completequest", "index": quest_index})
-		"resetquests":
-			send_to_server({"type": "gm_resetquests"})
-		"heal":
-			send_to_server({"type": "gm_heal"})
+		# ⚑ `/godmode`, `/giveall`, `/heal`, `/resetquests` and `/spawnwish` were retired
+		# 2026-09-17. Owner: *"Retire the ones the panel covers."* Each took no argument and sent
+		# exactly the message an `/admin` button already sends, so the panel is a true replacement
+		# rather than a near one.
+		#
+		# The near-misses deliberately STAYED: `/giveitem <tier>`, `/spawnmonster <name>`,
+		# `/givecompanion <type>` and `/giveegg <type>` look covered - the panel has `give_item_t5`,
+		# `spawn_mob_elite` and so on - but those are fixed variants of a parameterised command, and
+		# a button that gives a tier-5 item does not replace one that gives any tier.
 		"broadcast":
 			if parts.size() < 2:
 				display_game("[color=#FF0000]Usage: /broadcast <message>[/color]")
@@ -30702,8 +30703,6 @@ func process_command(text: String):
 			else:
 				var tool_tier = int(parts[2]) if parts.size() > 2 else 1
 				send_to_server({"type": "gm_givetool", "subtype": parts[1].to_lower(), "tier": tool_tier})
-		"spawnwish":
-			send_to_server({"type": "gm_spawnwish"})
 		"banip":
 			if parts.size() < 2:
 				display_game("[color=#FF0000]Usage: /banip <ip> [reason][/color]")

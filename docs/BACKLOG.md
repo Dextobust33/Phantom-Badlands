@@ -5200,8 +5200,38 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       press a key and be refused, but only while the two agree. The probe compares them and is
       proven to fire by drifting the client's to 25.
 
-      **What is left is entirely the owner's:** yes on the 36 navigation commands, and their call
-      on the 32 admin ones. Nothing is blocked on work. Plus the judgements the tool
+      ☑ **FIVE ADMIN COMMANDS RETIRED (2026-09-17).** Owner: *“Retire the ones the panel
+      covers.”* Checked one at a time rather than by name — `/godmode`, `/giveall`, `/heal`,
+      `/resetquests`, `/spawnwish` each take no argument and send exactly the message an `/admin`
+      button already sends, verified against `admin_panel.gd`.
+      **The near-misses deliberately stayed.** `/giveitem <tier>`, `/spawnmonster <name>`,
+      `/givecompanion <type>`, `/giveegg <type>` all LOOK covered — the panel has `give_item_t5`,
+      `spawn_mob_elite`, `give_companion_t5`, `give_egg` — but those are fixed variants of a
+      parameterised command, and a button that gives a tier-5 item does not replace one that gives
+      any tier. `/admin` stays: it is the door to the panel.
+
+      ⛑ **THE NAVIGATION SWEEP IS NOT SAFE YET, AND THE LIST NARROWED TWICE MORE — ONCE AFTER THE
+      OWNER SAID YES.**
+      * **The argument detector recognised one spelling.** It looked for `parts[` and missed
+        TWELVE arms that read their words as `text.split(" ", false, 1)` — `/duel <player>
+        [stakes]`, `/spendstat`, `/settitle`, `/vault`, `/buystone`, `/clandesc`, `/clanmotto`,
+        `/clancolor`, `/clanpost`, `/bounty post`. Every one was sitting in the approved list.
+        **36 arms → 25.** A list produced by an incomplete detector does not become correct by
+        being approved.
+      * **“Opens no surface” was read as “safe”, and it is not the same thing.** Five of the
+        remaining 25 send a message or print a line rather than opening a screen — and the owner's
+        rule is that the CAPABILITY needs a UI route, not that the command opens one.
+        `/unwatch` is fine (Escape already stops watching), but **`/bug` and `/report` have no
+        button at all** — `generate_bug_report` is reachable only by typing, which is the worst
+        possible thing to be command-only.
+      * **And the friends/block system has no panel whatsoever.** There is no `*_panel.gd` for it.
+        The context menu added *Add Friend* and *Block*, but **seeing your friend list, seeing and
+        answering friend requests, and seeing or clearing your block list** exist only as
+        `/friends`, `/freq`, `/blocklist`, `/unblock`. Retiring those removes the only way to
+        accept a friend request.
+
+      **So: blocked on two pieces of work, not on a decision** — a bug-report button, and a
+      friends/social surface. Both are named in the list below. Plus the judgements the tool
       says it cannot make — whether two surfaces with different verbs are the same thing to a
       PLAYER, and whether a button's MODE is ever entered. Those need the game run.
 

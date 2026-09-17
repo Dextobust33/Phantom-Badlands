@@ -300,9 +300,16 @@ def command_reach(src, cmd_dest):
         admin = any((n in ADMIN) for n in r["names"])
         # \u2691 DOES IT TAKE AN ARGUMENT? `/block bob` is not replaced by a button that opens the
         # block LIST - "open the screen" and "do this to THAT name" are different capabilities,
-        # and only the first is what `dests` checks. Detected by the arm reading `parts[...]`,
-        # which is how every command in this file reads its words.
-        takes_arg = bool(re.search(r"\bparts\s*\[", r.get("body", "")))
+        # and only the first is what `dests` checks.
+        #
+        # \u26d1 THE FIRST VERSION LOOKED FOR `parts[` ONLY, and missed TWELVE arms that read their
+        # words as `text.split(" ", false, 1)` instead - `/duel <player> [stakes]`,
+        # `/spendstat <stat>`, `/clandesc <text>`, `/settitle`, `/vault <sub>` and more. Every
+        # one of them was sitting in the "safe to retire" list. A detector that recognises one
+        # spelling of a thing reports the others as absent, and here "absent" meant "delete it".
+        body_txt = r.get("body", "")
+        takes_arg = bool(re.search(r"\bparts\s*\[", body_txt)) \
+            or bool(re.search(r"\btext\s*\.\s*(split|substr|to_lower|strip_edges)\s*\(", body_txt))
         rows.append({"names": r["names"], "dests": r["dests"], "speech": speech, "admin": admin,
                      "takes_arg": takes_arg,
                      "button": button_reached, "command_only": command_only})
