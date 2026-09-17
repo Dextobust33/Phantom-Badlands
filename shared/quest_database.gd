@@ -2051,6 +2051,36 @@ func get_quests_for_trading_post(trading_post_id: String) -> Array:
 			quests.append(scaled_quest)
 	return quests
 
+## ⚑ HOW THE QUEST GENERATOR LEARNS WHAT THE COUNTRY IS WORTH.
+##
+## Owner 2026-09-17: *"Dungeons should be of appropriate level to the neighborhood they are in.
+## Quests should respect this and ensure they aren't breaking it."* - after a Star Hollow quest
+## routed him into an E2 (Lv 34-49) from country averaging level 14.
+##
+## The server sets this at startup to something that calls `_grade_of_land`, which needs the live
+## world (`get_post_anchored_level` is an instance method on `world_system`). It returns
+## `{tier, rank}` for a post id.
+##
+## ⛑ A RESOLVER RATHER THAN A PARAMETER, deliberately. `_generate_daily_quest` runs from two
+## places that must stay in exact lockstep - the board display and the turn-in reconstruction - and
+## `get_quest()` has five server call sites. A `land_grade` argument would have to arrive
+## identically at every one of them, and the day one forgets, the quest a player turns in is not
+## the quest they accepted. `_grade_of_land` is a pure function of the post's POSITION, so every
+## path that asks gets the same answer with nobody having to remember.
+##
+## Unset (a client-side preview, a test), it returns {} and the old type-and-distance grading
+## stands - so nothing breaks, it simply is not land-aware.
+var land_grade_fn: Callable = Callable()
+
+
+func _land_grade_for_post(post_id: String) -> Dictionary:
+	"""{tier, rank} for the country around a post, or {} when no resolver is installed."""
+	if not land_grade_fn.is_valid():
+		return {}
+	var g = land_grade_fn.call(post_id)
+	return g if g is Dictionary else {}
+
+
 func get_available_quests_for_player(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, daily_cooldowns: Dictionary, player_level: int = 1, character_name: String = "") -> Array:
 	"""Get quests available for a player at a Trading Post.
 	All quests are now dynamically generated per-post per-day."""
@@ -2802,8 +2832,20 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	# inside the four arms would be four chances for the advertised difficulty to drift
 	# from the paid one.
 	if picked_type in [QuestType.BOSS_HUNT, QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.GATHER]:
-		var _d_tier: int = int(dungeon_info.get("base_tier", 1))
-		var _d_rank: int = DungeonDatabaseScript.get_sub_tier_for_distance(_d_tier, post_distance)
+		# ⛑ THE GRADE COMES FROM THE LAND, NOT THE TYPE. Owner 2026-09-17: *"Dungeons
+		# should be of appropriate level to the neighborhood they are in. Quests should
+		# respect this and ensure they aren't breaking it."*
+		#
+		# The TYPE stays free - a Goblin Dungeon in high country is deliberate ("we do
+		# want lower types of monster dungeons to be possible in high level areas"). It
+		# is the GRADE that has to match, and in BOTH directions: no E2 reachable from
+		# level-14 country, and no H1 sitting in high country either.
+		var _land: Dictionary = _land_grade_for_post(trading_post_id)
+		var _d_tier: int = int(_land.get("tier", dungeon_info.get("base_tier", 1)))
+		var _d_rank: int = int(_land.get("rank", 0))
+		if _d_rank <= 0:
+			# No resolver installed (client preview, tests): the old type-and-distance rule.
+			_d_rank = DungeonDatabaseScript.get_sub_tier_for_distance(_d_tier, post_distance)
 		extra_fields["dungeon_tier"] = _d_tier
 		extra_fields["dungeon_rank"] = _d_rank
 		# ⛑ THE PAY FOLLOWS THE DUNGEON NOW, NOT THE POST'S DISTANCE FROM SPAWN.

@@ -5749,7 +5749,36 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       needs an applier of its own. Worth doing WITH the UI audit, which may move or merge these
       surfaces anyway.
 
-- [ ] **Dungeon level mismatch — BLOCKED, needs a second example.** Owner reported a 1-1 wolf
+- [x] **DONE 2026-09-17 — dungeon grade now follows the LAND, on every path.** The second
+      example arrived: owner accepted a Star Hollow quest that routed him into an **E2 (Lv 34-49)
+      reachable from country averaging level 14**. Ruling: *"I'm fine with low dungeons (judging by
+      the type of monster example being a goblin vs a world eater) being possible in high level
+      areas (although they would likely be the appropriate grade, you shouldn't be running into H1
+      dungeons in high level areas). The reverse is not okay though, Dungeons should be of
+      appropriate level to the neighborhood they are in. Quests should respect this."*
+
+      That separates two things that were tangled: the **TYPE** (goblin vs world eater) stays free,
+      the **GRADE** must match the neighbourhood **in both directions**.
+
+      Two paths did not use `_grade_of_land`, which has answered exactly this since 2026-09-11:
+      1. `_create_world_dungeon_near` graded by the TYPE's design weight. Its own comment said
+         making it consistent was *"the owner's call, not a side effect of a rename."* Called.
+      2. **Quest dungeons** graded by `base_tier` + distance-rank with no reference to the land.
+
+      ⛑ **AND MEASURING IT SHOWED BOTH DIRECTIONS WERE BROKEN.** Under the old rule every
+      dungeon quest at northwatch graded **1/9 — H9 — in high country**, which is the *"you
+      shouldn't be running into H1 dungeons in high level areas"* half nobody had reported yet.
+
+      ⛑ **A RESOLVER, NOT A PARAMETER.** `get_post_anchored_level` is an instance method on
+      `world_system`, so `quest_database` cannot compute it. Threading a `land_grade` argument
+      would have meant threading it through `get_quest()` as well — five server call sites —
+      and `_generate_daily_quest` runs from two places that must stay in exact lockstep (the board
+      display and the turn-in reconstruction). The day one forgets, the quest a player turns in is
+      not the quest they accepted. `quest_db.land_grade_fn` is a pure function of the post's
+      POSITION, so every path gets the same answer with nobody having to remember.
+      Probe: a stub resolver drives the advertised grade to 2/3 and 7/8 and every quest follows.
+
+- [ ] ~~**Dungeon level mismatch — BLOCKED, needs a second example.**~~ Owner reported a 1-1 wolf
       dungeon advertising "recommended level 3" while floor-1 wolves were level 6. A real defect
       was found and fixed in v0.9.758 (the warning quoted `min_level`, a static field on the
       dungeon TYPE, while monsters are sized from the INSTANCE and scale per floor). But the

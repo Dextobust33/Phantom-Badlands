@@ -779,6 +779,16 @@ func _ready():
 	# Initialize quest systems
 	quest_db = QuestDatabaseScript.new()
 	add_child(quest_db)
+	# ⛑ THE QUEST GENERATOR LEARNS WHAT THE COUNTRY IS WORTH. Owner 2026-09-17:
+	# *"Dungeons should be of appropriate level to the neighborhood they are in. Quests
+	# should respect this and ensure they aren't breaking it."* Quest dungeons were graded
+	# by the dungeon TYPE plus a distance rank with no reference to the land, which is how
+	# a Star Hollow quest offered an E2 (Lv 34-49) reachable from level-14 country.
+	#
+	# Injected rather than passed: `get_quest()` has five call sites and the board display
+	# and the turn-in reconstruction must agree exactly. A pure function of the post's
+	# position cannot be forgotten by one of them.
+	quest_db.land_grade_fn = _grade_of_land_for_post
 	quest_mgr = QuestManagerScript.new()
 	add_child(quest_mgr)
 
@@ -32255,13 +32265,20 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 		next_dungeon_id -= 1
 		return ""
 	var distance = sqrt(float(world_x * world_x + world_y * world_y))
-	# ⚑ NOTE, SURFACED BY THE RENAME (2026-09-16): this path grades a dungeon by its TYPE's
-	# design weight, while `_create_world_dungeon` grades it by `_grade_of_land`. So a dungeon
-	# spawned NEAR something does not follow the land the way an ordinary one does. Left as it
-	# was - making it consistent changes world generation, which is the owner's call, not a
-	# side effect of a rename. Filed in the backlog.
-	var _base_tier: int = int(dungeon_data.get("base_tier", 1))
-	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(_base_tier, distance)
+	# ⛑ THE LAND GRADES IT, exactly as `_create_world_dungeon` already did. This path used
+	# to grade by the TYPE's design weight, so a dungeon spawned NEAR something did not
+	# follow the country it landed in - which is how high-grade dungeons appeared in low
+	# country. The note here said making it consistent was the owner's call; owner
+	# 2026-09-17: *"Dungeons should be of appropriate level to the neighborhood they are
+	# in."* Called.
+	#
+	# The TYPE is untouched - a Goblin Dungeon in high country stays possible and stays
+	# deliberate. It is the GRADE that now matches, in both directions.
+	var _land_g: Dictionary = _grade_of_land(world_x, world_y)
+	var _base_tier: int = int(_land_g.get("tier", dungeon_data.get("base_tier", 1)))
+	var sub_tier = int(_land_g.get("rank", 0))
+	if sub_tier <= 0:
+		sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(_base_tier, distance)
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(_base_tier, sub_tier)
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 	_register_dungeon(instance_id, {
@@ -32604,6 +32621,25 @@ func _starter_post_position() -> Vector2i:
 	# A couple of tiles south of the marker, which is open floor in every post layout, so the
 	# player lands ON the post rather than in whatever the centre tile happens to be.
 	return Vector2i(best.x, best.y - 2)
+
+
+func _grade_of_land_for_post(post_id: String) -> Dictionary:
+	"""{tier, rank} for the country around a trading post - the resolver `quest_database` calls.
+
+	⛑ THIS IS WHAT MAKES A QUEST DUNGEON MATCH ITS NEIGHBOURHOOD. Quest dungeons used to be
+	graded by the dungeon TYPE's `base_tier` plus a distance rank, with no reference to the land at
+	all - which is how a Star Hollow quest offered an E2 (Lv 34-49) reachable from country averaging
+	level 14. Owner: *"The reverse is not okay though, Dungeons should be of appropriate level to the
+	neighborhood they are in."*
+
+	Pure function of the post's POSITION, which is what lets `quest_database` ask it from the display
+	path, the accept path and the turn-in path and get the same answer every time without anybody
+	threading it through as an argument."""
+	# `post_coords` already returns the LIVE world position - `register_post_coords` feeds it the
+	# real procedural posts at startup - so this is the actual ground the player stands on, not
+	# the legacy hardcoded table.
+	var c: Vector2i = QuestDatabaseScript.post_coords(post_id)
+	return _grade_of_land(c.x, c.y)
 
 
 func _grade_of_land(x: int, y: int) -> Dictionary:
