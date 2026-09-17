@@ -702,6 +702,22 @@ func _ready():
 				log_message("Backfilled tier/region_name on existing NPC posts")
 		else:
 			log_message("Loaded %d NPC posts" % npc_posts.size())
+	# ⚑ TELL THE QUEST DATABASE WHERE POSTS ACTUALLY ARE.
+	#
+	# `quest_database` scaled every board from `TRADING_POST_COORDS`, a hardcoded table keyed
+	# by LEGACY post ids. Real posts are procedural and their ids are synthesised from their
+	# names, so every lookup missed, every board computed distance 0, and **every quest board
+	# in the world paid Core rates** - measured at 4,505 XP for a World's Edge post against
+	# the 791,326 the same generator produces when it knows the distance.
+	#
+	# Registered here, once, right after the post list is final and before any player can ask
+	# for a board. The id comes from `world_system.npc_post_id` - the same function
+	# `_normalize_npc_post` uses - so the key registered is exactly the key looked up.
+	var _post_xy: Dictionary = {}
+	for post in npc_posts:
+		_post_xy[WorldSystem.npc_post_id(post)] = Vector2i(int(post.get("x", 0)), int(post.get("y", 0)))
+	QuestDatabaseScript.register_post_coords(_post_xy)
+	log_message("Registered %d post coordinates for quest scaling" % _post_xy.size())
 	# Always re-stamp post layouts into chunks (ensures walls/floors exist after wipes)
 	for post in npc_posts:
 		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)

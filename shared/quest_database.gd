@@ -1760,7 +1760,7 @@ func _regenerate_progression_quest(quest_id: String) -> Dictionary:
 	if not TRADING_POST_COORDS.has(dest_post_id):
 		return {}
 
-	var dest_coords = TRADING_POST_COORDS.get(dest_post_id, Vector2i(0, 0))
+	var dest_coords = post_coords(dest_post_id)
 	var distance = sqrt(dest_coords.x * dest_coords.x + dest_coords.y * dest_coords.y)
 	var recommended_level = max(1, int(distance))
 
@@ -1787,7 +1787,7 @@ func _regenerate_progression_quest(quest_id: String) -> Dictionary:
 
 func _get_area_level_for_post(trading_post_id: String) -> int:
 	"""Get the expected monster level for an area around a trading post."""
-	var coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+	var coords = post_coords(trading_post_id)
 	var distance = sqrt(coords.x * coords.x + coords.y * coords.y)
 	# Distance-to-level formula: roughly distance * 0.5 for moderate zones
 	# Haven (distance 10) = level 5, Northwatch (distance 75) = level 37
@@ -1860,7 +1860,7 @@ func _regenerate_dynamic_quest(quest_id: String, player_level: int = -1, quests_
 	var quest_tier = tier + index
 
 	# Get trading post coordinates
-	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+	var post_coords = post_coords(trading_post_id)
 	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
 
 	# If player_level is provided, use the scaled version (matches what was displayed to player)
@@ -2142,6 +2142,38 @@ static func _get_tier_name(tier: int) -> String:
 	return "Tier %s" % PowerRank.letter(tier)
 
 # Trading post locations for distance calculations
+## ⚑ WHERE POSTS ACTUALLY ARE - registered by the server at startup.
+##
+## `TRADING_POST_COORDS` below is a HARDCODED table keyed by legacy post ids ("haven",
+## "northwatch"). Posts are procedurally placed now, carry no id in `npc_posts.json`, and the
+## server synthesises `"npc_" + name` - which is not in that table. So every lookup fell back to
+## Vector2i(0, 0), every board computed distance 0, and **every quest board in the world scaled
+## as if it stood at the origin.**
+##
+## Measured (`tools/probe/quest_board_scales_by_post.gd`): through the LEGACY ids the mechanism
+## works - haven at distance 10 generates 6,463 XP of quests, northwatch at 75 generates 791,326.
+## Through the ids the server really passes, npc_crossroads gives 4,505 and npc_iron_peak 4,561:
+## identical within seed noise. A World's Edge board was paying Core rates.
+##
+## The fix is the DATA, not the readers. `post_coords()` prefers this registered map and falls
+## back to the old table, so all six existing call sites are correct without being touched - and
+## `generate_dynamic_quests` and `_regenerate_daily_quest` stay in the RNG lockstep they document,
+## because they both go through the same accessor rather than each being edited.
+static var _live_post_coords: Dictionary = {}
+
+
+static func register_post_coords(coords: Dictionary) -> void:
+	"""Called once by the server, from the real post list. Keyed by the post's real id."""
+	_live_post_coords = coords
+
+
+static func post_coords(post_id: String) -> Vector2i:
+	"""A post's coordinates: the live world first, the legacy table second, origin last."""
+	if _live_post_coords.has(post_id):
+		return _live_post_coords[post_id]
+	return TRADING_POST_COORDS.get(post_id, Vector2i(0, 0))
+
+
 const TRADING_POST_COORDS = {
 	# Core Zone (0-30 distance)
 	"haven": Vector2i(0, 10),
@@ -2398,7 +2430,7 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 	var date_str = _get_date_string()
 
 	# Get this trading post's coordinates and area level
-	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+	var post_coords = post_coords(trading_post_id)
 	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
 	var area_level = max(1, int(post_distance * 0.5))
 
@@ -2584,7 +2616,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			if nearby_posts.size() > 0:
 				var dest_idx = rng.randi() % nearby_posts.size()
 				var dest_id = nearby_posts[dest_idx]
-				var dest_coords = TRADING_POST_COORDS.get(dest_id, Vector2i(0, 0))
+				var dest_coords = post_coords(dest_id)
 				var dest_name = dest_id.replace("_", " ").capitalize()
 				var origin_name = trading_post_id.replace("_", " ").capitalize()
 				var dist_text = _get_distance_text(post_coords, dest_coords)
@@ -2670,7 +2702,7 @@ func _regenerate_daily_quest(quest_id: String, player_level: int = -1, quests_co
 		return {}
 	var index = int(date_parts[1])
 
-	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+	var post_coords = post_coords(trading_post_id)
 	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
 
 	var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
@@ -2907,7 +2939,7 @@ func _generate_quest_for_tier_scaled(trading_post_id: String, quest_id: String, 
 			var b_monster = _pick_bounty_monster_type_seeded(area_level)
 			var b_prefix = _pick_bounty_prefix_seeded(b_monster)
 			bounty_name = "%s the %s" % [b_prefix, b_monster]
-			var post_coords_for_bounty = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
+			var post_coords_for_bounty = post_coords(trading_post_id)
 			bounty_loc = _pick_bounty_location_seeded(post_coords_for_bounty)
 			quest_name = "Bounty: %s" % bounty_name
 			quest_desc = "Hunt %s — last spotted near (%d, %d)." % [bounty_name, bounty_loc.x, bounty_loc.y]

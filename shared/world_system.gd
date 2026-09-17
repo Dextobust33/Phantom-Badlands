@@ -4112,11 +4112,24 @@ func get_trading_post_at(x: int, y: int) -> Dictionary:
 		return trading_post_db.get_trading_post_at(x, y)
 	return {}
 
+static func npc_post_id(post: Dictionary) -> String:
+	"""A post's id, derived from its name. THE one definition.
+
+	⚑ Posts carry NO id in `npc_posts.json` - it is synthesised here and nowhere else. That
+	mattered the moment anything outside this file needed to build the same id: a second copy of
+	this expression would be a second answer, and the two would drift the first time a name was
+	normalised differently. `QuestDatabase`'s post-coordinate registration needs exactly this id,
+	so it asks rather than repeats."""
+	if post.has("id") and String(post["id"]) != "":
+		return String(post["id"])
+	return "npc_" + String(post.get("name", "unknown")).to_lower().replace(" ", "_")
+
+
 func _normalize_npc_post(post: Dictionary) -> Dictionary:
 	"""Ensure NPC post dict has all fields trading post handlers expect."""
 	var result = post.duplicate()
 	if not result.has("id"):
-		result["id"] = "npc_" + result.get("name", "unknown").to_lower().replace(" ", "_")
+		result["id"] = npc_post_id(result)
 	if not result.has("center"):
 		result["center"] = {"x": result.get("x", 0), "y": result.get("y", 0)}
 	if not result.has("description"):
