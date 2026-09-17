@@ -192,7 +192,7 @@ All of this came out of the distribution work. Recorded before starting any of i
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
-## ⚑ WHERE THE LIST STANDS — 53 open, 161 done (recounted 2026-09-15 evening)
+## ⚑ WHERE THE LIST STANDS — 53 open, 210 done (recounted 2026-09-16 evening)
 
 Counted mechanically (`- [ ]` vs `- [x]` across this file), not estimated. **The working order is
 the RECOMMENDED ORDER in the NEXT SESSION block.** The breakdown below is from 2026-09-13 and is now approximate — the onboarding arc closed a large share of
@@ -220,7 +220,11 @@ Asked because the arc had run out of defects and into design. All four answered.
       a low roll; otherwise it caps at 8. Both routes to the top rank stay alive and fusion is not
       obsoleted. *(Replaces the "decide" item below.)*
 
-- [ ] **DUNGEON RARITY = ALL THREE AXES.** The owner picked better loot quality **and** rolled
+- [x] **DUNGEON RARITY = ALL THREE AXES.** — **COMPLETE, and LIVE in v0.9.798.** All three axes
+      were built on 2026-09-13 and sat unreleased; axis two's entry-screen surface was finished on
+      2026-09-16 (the modifiers state their cost and reward in numbers, and the screen they appear
+      on was rebuilt to be readable). This was "the biggest single item left in the arc".
+      The owner picked better loot quality **and** rolled
       modifiers **and** rarer monsters / a guaranteed unique. So a rarer dungeon pays more, reads
       differently before you enter it, and holds different things. This is the biggest single item
       left in the arc; build it in that order - loot scaling first (it rides existing code),
@@ -624,7 +628,23 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE
 
-### ✅ v0.9.795 IS LIVE (2026-09-16) — client AND server, verified
+### ✅ v0.9.798 IS LIVE (2026-09-16 evening) — client AND server, verified
+
+Release gate PASS (958 dungeon-art lookups resolved, every performance guard intact), all seven
+assets published, and the server swapped **in one restart**, verified by hashing the running
+process (`81bf7a2031c2276d`) rather than the file on disk.
+
+**It carries a live balance change, which is why it went out rather than waiting.** Dungeon
+completion XP was computed from the dungeon's TYPE instead of its grade, so clearing an A-grade
+Goblin Caves paid 300 XP where it should have paid 2,400. Chest contents were graded the same
+wrong way. Nobody had reported either - both were found by the `base_tier` rename, which is the
+argument for that rename in one line.
+
+Shipped: the dungeon entrance screen as a skimmable table; modifiers stating their trade in
+numbers; six surfaces that advertised a dungeon's TYPE grade instead of the instance's; the
+numeric `T#` label gone from every dungeon surface; and the two reward formulas above.
+
+### ✓ v0.9.795 (superseded, kept for the deploy notes)
 
 Seven assets under `v0.9.795`, release gate PASS (including the new `state_icons` line), and the
 server swapped **in one restart** and verified by hashing `/proc/$PID/exe` against the local build
