@@ -657,6 +657,56 @@ player power, so the `speciescal`/`refcal`/`rolecal` chain does not apply.
 - [x] The sticky player/companion hover — one label, two fill mechanisms, one of them caching.
 - [x] Dev loopback exempt from the connection rate limit, so a 5-client test stops losing a member.
 
+### ✅ 2026-09-16 — THE STRUCTURAL FIX: a dungeon TYPE no longer HAS a grade
+
+Owner, after the fourth leak of the same bug: *"do the structural fix then so this doesn't happen
+again."*
+
+Patching call sites was losing. The grade leaked from the type into SIX player-facing places and
+TWO reward formulas, each found separately, months apart, by a player noticing. The cause is that
+`DUNGEON_TYPES[x].tier` was **reachable and looked right** at every call site.
+
+**So the field is renamed.** `base_tier` is the type's DESIGN WEIGHT - an input to creation. `tier`
+exists only on a dictionary an instance has resolved (`_dungeon_data_for`). A raw `get_dungeon()`
+result has no `tier` at all, so the wrong read fails loudly instead of returning a wrong number.
+53 type definitions, ~40 read sites, every one classified by walking back to where its variable
+was assigned rather than by eye.
+
+**And the rename found two silent BALANCE bugs nobody had reported:**
+
+- `calculate_completion_rewards` computed `base_xp = tier * 500` off the TYPE. Clearing an
+  **A-grade Goblin Caves paid 300 XP where it should have paid 2400** - the rarest, hardest
+  version of a place paid the least, because the number came from the template.
+- `roll_treasure` graded every chest in the world by the type, so the same dungeon regraded by
+  the land kept its template's egg and material rarity.
+
+Both now take the cleared grade. Measured: H 300 -> A 2400.
+
+**Two detectors, both proven to fire by re-injecting the fault** (`tools/probe/dungeon_base_tier_invariant.gd`):
+- the SHAPE: no type defines `tier`, `get_dungeon` does not add one back, and the reward formulas
+  actually move with the grade they are handed
+- the last quiet spelling: `dd.get("tier", 1)` still returns a default rather than failing, so a
+  provenance walk - for each read of `x.tier`, find where `x` was assigned and judge THAT - fails
+  on any display or reward site reading a type. Proximity was NOT used; it was tried for the
+  sibling `T#` check the same day and was a silent no-op.
+
+End to end after the rename, on a real `D` tile: overworld `G3`, warning `G3`, inside `G3`.
+
+**⛑ Filed, not assumed:** `_create_world_dungeon_near` grades by the type's design weight while
+`_create_world_dungeon` grades by `_grade_of_land` - so a dungeon spawned NEAR something does not
+follow the land the way an ordinary one does. Surfaced by the rename. Making it consistent changes
+world generation, which is the owner's call.
+
+**⛑ Also filed:** `QuestDatabase.get_threat_relief_rewards` deliberately stays on the design
+weight. It is called twice for one quest - when offered, and again from `quest_from_id` when a
+saved one is rehydrated - and that second call has only the type, because the quest id encodes
+post+type. Grading by the instance would promise one reward and pay another. Fixing it properly
+means storing the grade in the quest record.
+
+**⛑ And a stale probe found on the way:** `dungeon_grade_truth.gd` had been matching on a closing
+paren that moved when `_inherit_starter` was added on 2026-09-14, so it had been failing silently
+since. A stale probe looks exactly like a broken feature.
+
 ### ✅ 2026-09-16 — THE ADVERTISED GRADE IS THE ONE YOU WALK INTO
 
 Owner: *"As long as the entrance screen matches what the actual instance the player will enter is

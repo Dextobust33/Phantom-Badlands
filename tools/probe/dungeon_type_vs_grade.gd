@@ -28,7 +28,7 @@ func _init() -> void:
 	var names_by_tier := {}
 	for dt in DD.DUNGEON_TYPES:
 		var d: Dictionary = DD.DUNGEON_TYPES[dt]
-		var tier := int(d.get("tier", 1))
+		var tier := int(d.get("base_tier", 1))
 		var c := int(counts.get(dt, 0))
 		by_tier[tier] = float(by_tier.get(tier, 0.0)) + float(c)
 		if not names_by_tier.has(tier):
@@ -55,7 +55,7 @@ func _init() -> void:
 		var share := 100.0 * float(int(counts.get(dt, 0))) / float(SAMPLE)
 		if String(dt).find("goblin") >= 0:
 			goblin_share += share
-		if int(d.get("tier", 1)) >= 8:
+		if int(d.get("base_tier", 1)) >= 8:
 			top_share += share
 	print("  a dungeon of GOBLIN type          : %.2f%% of all dungeons" % goblin_share)
 	print("  a dungeon of TIER A/S species     : %.2f%% of all dungeons" % top_share)
@@ -70,7 +70,7 @@ func _init() -> void:
 	print("  H1 level band: L%d-%d" % [int(band.get("min_level", 0)), int(band.get("max_level", 0))])
 	for dt in DD.DUNGEON_TYPES:
 		var d: Dictionary = DD.DUNGEON_TYPES[dt]
-		if int(d.get("tier", 1)) >= 8:
+		if int(d.get("base_tier", 1)) >= 8:
 			print("  e.g. an H1 \"%s\" would spawn its own species at L%d-%d" % [
 				String(d.get("name", dt)), int(band.get("min_level", 0)), int(band.get("max_level", 0))])
 
@@ -91,7 +91,7 @@ func _init() -> void:
 		var d8 := 0.0
 		var top := 0.0
 		for dt in DD.DUNGEON_TYPES:
-			var tt := int(DD.DUNGEON_TYPES[dt].get("tier", 1))
+			var tt := int(DD.DUNGEON_TYPES[dt].get("base_tier", 1))
 			var sh := 100.0 * float(int(c2.get(dt, 0))) / 12000.0
 			if tt == 1:
 				h += sh

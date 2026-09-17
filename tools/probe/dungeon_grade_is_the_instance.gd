@@ -37,7 +37,7 @@ func _init() -> void:
 		"and nowhere near C5 - the grade it was refused against")
 	ck(PowerRank.letter(3) == "F" and PowerRank.letter(6) == "C",
 		"F is tier 3 and C is tier 6 (three grades apart)")
-	ck(int(DDB.get_dungeon("phoenix_nest").get("tier", 0)) == 6,
+	ck(int(DDB.get_dungeon("phoenix_nest").get("base_tier", 0)) == 6,
 		"and phoenix_nest's TYPE says 6, which is where the C came from")
 
 	print("")

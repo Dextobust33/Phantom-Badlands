@@ -359,7 +359,7 @@ const DUNGEON_TYPES = {
 	"goblin_caves": {
 		"name": "Goblin Caves",
 		"description": "A network of crude tunnels where goblins have established a small colony.",
-		"tier": 1,
+		"base_tier": 1,
 		"min_level": 1,
 		"max_level": 10,
 		"monster_pool": ["Goblin", "Giant Rat", "Kobold"],
@@ -386,7 +386,7 @@ const DUNGEON_TYPES = {
 	"wolf_den": {
 		"name": "Wolf Den",
 		"description": "A cavern where a pack of wolves has made their home, led by a massive alpha.",
-		"tier": 1,
+		"base_tier": 1,
 		"min_level": 3,
 		"max_level": 12,
 		"monster_pool": ["Wolf", "Giant Rat"],
@@ -414,7 +414,7 @@ const DUNGEON_TYPES = {
 	"rat_warrens": {
 		"name": "Rat Warrens",
 		"description": "A maze of filthy tunnels beneath old ruins, teeming with oversized rats.",
-		"tier": 1,
+		"base_tier": 1,
 		"min_level": 1,
 		"max_level": 8,
 		"monster_pool": ["Giant Rat", "Kobold"],
@@ -441,7 +441,7 @@ const DUNGEON_TYPES = {
 	"kobold_tunnels": {
 		"name": "Kobold Tunnels",
 		"description": "Cramped mining tunnels dug by a tribe of cunning kobolds.",
-		"tier": 1,
+		"base_tier": 1,
 		"min_level": 2,
 		"max_level": 10,
 		"monster_pool": ["Kobold", "Giant Rat"],
@@ -468,7 +468,7 @@ const DUNGEON_TYPES = {
 	"forgotten_crypt": {
 		"name": "Forgotten Crypt",
 		"description": "An ancient burial ground where skeletons rise to guard forgotten treasures.",
-		"tier": 1,
+		"base_tier": 1,
 		"min_level": 3,
 		"max_level": 12,
 		"monster_pool": ["Skeleton", "Giant Rat"],
@@ -497,7 +497,7 @@ const DUNGEON_TYPES = {
 	"orc_stronghold": {
 		"name": "Orc Stronghold",
 		"description": "A fortified camp where orcs prepare for raids on nearby settlements.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 6,
 		"max_level": 20,
 		"monster_pool": ["Orc", "Hobgoblin", "Gnoll"],
@@ -524,7 +524,7 @@ const DUNGEON_TYPES = {
 	"spider_nest": {
 		"name": "Spider Nest",
 		"description": "A web-covered cavern where a giant spider queen lairs with her brood.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 8,
 		"max_level": 22,
 		"monster_pool": ["Giant Spider", "Kobold"],
@@ -552,7 +552,7 @@ const DUNGEON_TYPES = {
 	"hobgoblin_fortress": {
 		"name": "Hobgoblin Fortress",
 		"description": "A disciplined military outpost where hobgoblins drill for war.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 7,
 		"max_level": 18,
 		"monster_pool": ["Hobgoblin", "Goblin", "Orc"],
@@ -579,7 +579,7 @@ const DUNGEON_TYPES = {
 	"gnoll_den": {
 		"name": "Gnoll Pack Den",
 		"description": "A savage hunting camp where gnolls gather between raids.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 7,
 		"max_level": 18,
 		"monster_pool": ["Gnoll", "Wolf", "Hobgoblin"],
@@ -606,7 +606,7 @@ const DUNGEON_TYPES = {
 	"plagued_graveyard": {
 		"name": "Plagued Graveyard",
 		"description": "A cemetery overrun by shambling undead, spreading their corruption.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 8,
 		"max_level": 20,
 		"monster_pool": ["Zombie", "Skeleton"],
@@ -633,7 +633,7 @@ const DUNGEON_TYPES = {
 	"barrow_mounds": {
 		"name": "Barrow Mounds",
 		"description": "Ancient burial hills where wights guard treasures of a forgotten age.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 9,
 		"max_level": 22,
 		"monster_pool": ["Wight", "Skeleton", "Zombie"],
@@ -660,7 +660,7 @@ const DUNGEON_TYPES = {
 	"siren_cove": {
 		"name": "Siren's Cove",
 		"description": "A coastal cave where enchanting voices lure sailors to their doom.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 8,
 		"max_level": 20,
 		"monster_pool": ["Siren", "Kelpie"],
@@ -687,7 +687,7 @@ const DUNGEON_TYPES = {
 	"kelpie_marsh": {
 		"name": "Kelpie Marsh",
 		"description": "A waterlogged swamp where kelpies drag victims beneath the murky waters.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 8,
 		"max_level": 20,
 		"monster_pool": ["Kelpie", "Siren", "Giant Rat"],
@@ -714,7 +714,7 @@ const DUNGEON_TYPES = {
 	"mimic_treasury": {
 		"name": "Mimic Treasury",
 		"description": "An abandoned vault where nothing is as it seems and every chest bites back.",
-		"tier": 2,
+		"base_tier": 2,
 		"min_level": 10,
 		"max_level": 22,
 		"monster_pool": ["Mimic", "Kobold"],
@@ -743,7 +743,7 @@ const DUNGEON_TYPES = {
 	"troll_den": {
 		"name": "Troll's Den",
 		"description": "A foul-smelling cave where a mighty Troll has made its lair.",
-		"tier": 3,
+		"base_tier": 3,
 		"min_level": 16,
 		"max_level": 35,
 		"monster_pool": ["Goblin", "Hobgoblin", "Ogre"],
@@ -770,7 +770,7 @@ const DUNGEON_TYPES = {
 	"wyvern_roost": {
 		"name": "Wyvern's Roost",
 		"description": "A mountain peak nest where a fearsome Wyvern guards its territory.",
-		"tier": 3,
+		"base_tier": 3,
 		"min_level": 20,
 		"max_level": 40,
 		"monster_pool": ["Harpy", "Gargoyle", "Kobold"],
@@ -797,7 +797,7 @@ const DUNGEON_TYPES = {
 	"ogre_bog": {
 		"name": "Ogre Bog",
 		"description": "A stinking swamp where a clan of ogres feast on anything that wanders in.",
-		"tier": 3,
+		"base_tier": 3,
 		"min_level": 16,
 		"max_level": 32,
 		"monster_pool": ["Ogre", "Goblin", "Gnoll"],
@@ -824,7 +824,7 @@ const DUNGEON_TYPES = {
 	"wraith_barrow": {
 		"name": "Wraith Barrow",
 		"description": "A haunted tomb deep underground where restless spirits guard cursed relics.",
-		"tier": 3,
+		"base_tier": 3,
 		"min_level": 18,
 		"max_level": 35,
 		"monster_pool": ["Wraith", "Skeleton", "Wight"],
@@ -851,7 +851,7 @@ const DUNGEON_TYPES = {
 	"minotaur_labyrinth": {
 		"name": "Minotaur's Labyrinth",
 		"description": "A twisting underground maze with a fearsome minotaur lurking at its heart.",
-		"tier": 3,
+		"base_tier": 3,
 		"min_level": 18,
 		"max_level": 36,
 		"monster_pool": ["Minotaur", "Ogre", "Gargoyle"],
@@ -878,7 +878,7 @@ const DUNGEON_TYPES = {
 	"gargoyle_cathedral": {
 		"name": "Gargoyle Cathedral",
 		"description": "A crumbling cathedral where stone guardians come alive to protect ancient secrets.",
-		"tier": 3,
+		"base_tier": 3,
 		"min_level": 20,
 		"max_level": 38,
 		"monster_pool": ["Gargoyle", "Skeleton", "Wraith"],
@@ -905,7 +905,7 @@ const DUNGEON_TYPES = {
 	"harpy_cliffs": {
 		"name": "Harpy Cliffs",
 		"description": "Wind-swept coastal cliffs where a flock of harpies nest and hunt.",
-		"tier": 3,
+		"base_tier": 3,
 		"min_level": 17,
 		"max_level": 34,
 		"monster_pool": ["Harpy", "Kobold", "Giant Rat"],
@@ -932,7 +932,7 @@ const DUNGEON_TYPES = {
 	"shrieker_caverns": {
 		"name": "Shrieker Caverns",
 		"description": "Echo-filled caves where monstrous fungi emit deafening shrieks.",
-		"tier": 3,
+		"base_tier": 3,
 		"min_level": 19,
 		"max_level": 36,
 		"monster_pool": ["Shrieker", "Giant Spider", "Kobold"],
@@ -961,7 +961,7 @@ const DUNGEON_TYPES = {
 	"giant_keep": {
 		"name": "Giant's Keep",
 		"description": "A crumbling fortress claimed by a towering Giant.",
-		"tier": 4,
+		"base_tier": 4,
 		"min_level": 31,
 		"max_level": 55,
 		"monster_pool": ["Ogre", "Troll", "Minotaur"],
@@ -988,7 +988,7 @@ const DUNGEON_TYPES = {
 	"vampire_crypt": {
 		"name": "Vampire's Crypt",
 		"description": "An ancient tomb where a Vampire lord slumbers and feeds.",
-		"tier": 4,
+		"base_tier": 4,
 		"min_level": 35,
 		"max_level": 60,
 		"monster_pool": ["Skeleton", "Zombie", "Wight", "Wraith"],
@@ -1015,7 +1015,7 @@ const DUNGEON_TYPES = {
 	"dragon_hatchery": {
 		"name": "Dragon Hatchery",
 		"description": "A volcanic cave where dragon eggs incubate and wyrmlings fiercely guard their nest.",
-		"tier": 4,
+		"base_tier": 4,
 		"min_level": 32,
 		"max_level": 55,
 		"monster_pool": ["Dragon Wyrmling", "Kobold", "Wyvern"],
@@ -1042,7 +1042,7 @@ const DUNGEON_TYPES = {
 	"demon_gate": {
 		"name": "Demon Gate",
 		"description": "A rift to the infernal planes where demons pour through to wreak havoc.",
-		"tier": 4,
+		"base_tier": 4,
 		"min_level": 35,
 		"max_level": 58,
 		"monster_pool": ["Demon", "Hobgoblin", "Orc"],
@@ -1069,7 +1069,7 @@ const DUNGEON_TYPES = {
 	"gryphon_aerie": {
 		"name": "Gryphon Aerie",
 		"description": "A mountain fortress where gryphons roost and fiercely defend their territory.",
-		"tier": 4,
+		"base_tier": 4,
 		"min_level": 33,
 		"max_level": 56,
 		"monster_pool": ["Gryphon", "Harpy", "Wyvern"],
@@ -1096,7 +1096,7 @@ const DUNGEON_TYPES = {
 	"chimaera_gorge": {
 		"name": "Chimaera's Gorge",
 		"description": "A twisting canyon where a monstrous chimaera terrorizes all who enter.",
-		"tier": 4,
+		"base_tier": 4,
 		"min_level": 36,
 		"max_level": 58,
 		"monster_pool": ["Chimaera", "Wyvern", "Gargoyle"],
@@ -1123,7 +1123,7 @@ const DUNGEON_TYPES = {
 	"succubus_parlor": {
 		"name": "Succubus Parlor",
 		"description": "A cursed palace of temptation and illusion where a succubus holds court.",
-		"tier": 4,
+		"base_tier": 4,
 		"min_level": 38,
 		"max_level": 60,
 		"monster_pool": ["Succubus", "Demon", "Siren"],
@@ -1152,7 +1152,7 @@ const DUNGEON_TYPES = {
 	"lich_sanctum": {
 		"name": "Lich's Sanctum",
 		"description": "A hidden sanctuary where an undead sorcerer performs dark rituals.",
-		"tier": 5,
+		"base_tier": 5,
 		"min_level": 51,
 		"max_level": 100,
 		"monster_pool": ["Skeleton", "Wraith", "Wight", "Zombie"],
@@ -1179,7 +1179,7 @@ const DUNGEON_TYPES = {
 	"cerberus_pit": {
 		"name": "Cerberus's Pit",
 		"description": "A volcanic hellmouth guarded by the three-headed beast Cerberus.",
-		"tier": 5,
+		"base_tier": 5,
 		"min_level": 60,
 		"max_level": 110,
 		"monster_pool": ["Demon", "Hellhound", "Fire Elemental"],
@@ -1206,7 +1206,7 @@ const DUNGEON_TYPES = {
 	"balrog_depths": {
 		"name": "Balrog's Depths",
 		"description": "The deepest mines where an ancient Balrog was awakened.",
-		"tier": 5,
+		"base_tier": 5,
 		"min_level": 70,
 		"max_level": 120,
 		"monster_pool": ["Demon", "Fire Elemental", "Succubus"],
@@ -1233,7 +1233,7 @@ const DUNGEON_TYPES = {
 	"demon_lord_throne": {
 		"name": "Demon Lord's Throne",
 		"description": "The seat of infernal power where a Demon Lord commands legions of the damned.",
-		"tier": 5,
+		"base_tier": 5,
 		"min_level": 55,
 		"max_level": 100,
 		"monster_pool": ["Demon", "Succubus", "Balrog"],
@@ -1260,7 +1260,7 @@ const DUNGEON_TYPES = {
 	"titan_colosseum": {
 		"name": "Titan's Colosseum",
 		"description": "An ancient arena where a Titan still battles, shaking the earth with every blow.",
-		"tier": 5,
+		"base_tier": 5,
 		"min_level": 60,
 		"max_level": 110,
 		"monster_pool": ["Giant", "Minotaur", "Ogre"],
@@ -1287,7 +1287,7 @@ const DUNGEON_TYPES = {
 	"jabberwock_thicket": {
 		"name": "Jabberwock's Thicket",
 		"description": "A twisted dark forest where reality bends and a Jabberwock hunts.",
-		"tier": 5,
+		"base_tier": 5,
 		"min_level": 65,
 		"max_level": 115,
 		"monster_pool": ["Troll", "Wyvern", "Shrieker"],
@@ -1316,7 +1316,7 @@ const DUNGEON_TYPES = {
 	"ancient_dragon_lair": {
 		"name": "Ancient Dragon's Lair",
 		"description": "A volcanic cavern ruled by an Ancient Dragon of immense power.",
-		"tier": 6,
+		"base_tier": 6,
 		"min_level": 101,
 		"max_level": 300,
 		"monster_pool": ["Dragon Wyrmling", "Demon", "Elemental"],
@@ -1343,7 +1343,7 @@ const DUNGEON_TYPES = {
 	"hydra_swamp": {
 		"name": "Hydra's Swamp",
 		"description": "A poisonous bog where a regenerating Hydra lurks.",
-		"tier": 6,
+		"base_tier": 6,
 		"min_level": 150,
 		"max_level": 400,
 		"monster_pool": ["Giant Spider", "Siren", "Kelpie"],
@@ -1370,7 +1370,7 @@ const DUNGEON_TYPES = {
 	"phoenix_nest": {
 		"name": "Phoenix's Nest",
 		"description": "A sacred mountain peak where a Phoenix guards its eternal flame.",
-		"tier": 6,
+		"base_tier": 6,
 		"min_level": 200,
 		"max_level": 500,
 		"monster_pool": ["Elemental", "Gryphon", "Harpy"],
@@ -1397,7 +1397,7 @@ const DUNGEON_TYPES = {
 	"elemental_nexus": {
 		"name": "Elemental Nexus",
 		"description": "A convergence of elemental planes where raw forces of nature clash.",
-		"tier": 6,
+		"base_tier": 6,
 		"min_level": 120,
 		"max_level": 350,
 		"monster_pool": ["Elemental", "Phoenix", "Iron Golem"],
@@ -1424,7 +1424,7 @@ const DUNGEON_TYPES = {
 	"golem_foundry": {
 		"name": "Golem Foundry",
 		"description": "An ancient dwarven forge where iron golems continue their endless work.",
-		"tier": 6,
+		"base_tier": 6,
 		"min_level": 130,
 		"max_level": 400,
 		"monster_pool": ["Iron Golem", "Elemental", "Gargoyle"],
@@ -1451,7 +1451,7 @@ const DUNGEON_TYPES = {
 	"sphinx_riddle_hall": {
 		"name": "Sphinx's Riddle Hall",
 		"description": "A desert temple where a Sphinx poses deadly riddles to all who seek passage.",
-		"tier": 6,
+		"base_tier": 6,
 		"min_level": 150,
 		"max_level": 450,
 		"monster_pool": ["Sphinx", "Gargoyle", "Mimic"],
@@ -1478,7 +1478,7 @@ const DUNGEON_TYPES = {
 	"nazgul_shadow_keep": {
 		"name": "Nazgul's Shadow Keep",
 		"description": "A fortress of darkness and despair where a Nazgul commands the shadows.",
-		"tier": 6,
+		"base_tier": 6,
 		"min_level": 180,
 		"max_level": 500,
 		"monster_pool": ["Nazgul", "Wraith", "Wight"],
@@ -1507,7 +1507,7 @@ const DUNGEON_TYPES = {
 	"void_walker_rift": {
 		"name": "Void Walker's Rift",
 		"description": "A tear in reality where a Void Walker steps between dimensions.",
-		"tier": 7,
+		"base_tier": 7,
 		"min_level": 501,
 		"max_level": 1200,
 		"monster_pool": ["Elemental", "Nazgul", "Wraith"],
@@ -1534,7 +1534,7 @@ const DUNGEON_TYPES = {
 	"primordial_dragon_domain": {
 		"name": "Primordial Dragon's Domain",
 		"description": "An ancient realm ruled by a dragon from the dawn of time.",
-		"tier": 7,
+		"base_tier": 7,
 		"min_level": 800,
 		"max_level": 2000,
 		"monster_pool": ["Ancient Dragon", "Dragon Wyrmling", "Elemental"],
@@ -1561,7 +1561,7 @@ const DUNGEON_TYPES = {
 	"world_serpent_coil": {
 		"name": "World Serpent's Coil",
 		"description": "The oceanic depths where the World Serpent coils around the roots of reality.",
-		"tier": 7,
+		"base_tier": 7,
 		"min_level": 600,
 		"max_level": 1500,
 		"monster_pool": ["Hydra", "Kelpie", "Siren"],
@@ -1588,7 +1588,7 @@ const DUNGEON_TYPES = {
 	"elder_lich_phylactery": {
 		"name": "Elder Lich's Phylactery",
 		"description": "The hidden vault containing an Elder Lich's soul, guarded by legions of undead.",
-		"tier": 7,
+		"base_tier": 7,
 		"min_level": 700,
 		"max_level": 1800,
 		"monster_pool": ["Lich", "Wraith", "Wight"],
@@ -1617,7 +1617,7 @@ const DUNGEON_TYPES = {
 	"cosmic_horror_realm": {
 		"name": "Cosmic Horror's Realm",
 		"description": "A nightmare dimension where sanity frays and a Cosmic Horror dwells.",
-		"tier": 8,
+		"base_tier": 8,
 		"min_level": 2001,
 		"max_level": 5000,
 		"monster_pool": ["Void Walker", "Elder Lich", "Time Weaver"],
@@ -1644,7 +1644,7 @@ const DUNGEON_TYPES = {
 	"time_weaver_loom": {
 		"name": "Time Weaver's Loom",
 		"description": "A temporal distortion where past and future collide under the Time Weaver's will.",
-		"tier": 8,
+		"base_tier": 8,
 		"min_level": 2500,
 		"max_level": 5000,
 		"monster_pool": ["Void Walker", "Primordial Dragon", "Elder Lich"],
@@ -1671,7 +1671,7 @@ const DUNGEON_TYPES = {
 	"death_domain": {
 		"name": "Death's Domain",
 		"description": "The threshold between life and oblivion where Death Incarnate waits.",
-		"tier": 8,
+		"base_tier": 8,
 		"min_level": 3000,
 		"max_level": 5000,
 		"monster_pool": ["Elder Lich", "Cosmic Horror", "Void Walker"],
@@ -1700,7 +1700,7 @@ const DUNGEON_TYPES = {
 	"chaos_sanctum": {
 		"name": "Avatar of Chaos's Sanctum",
 		"description": "The heart of entropy itself, where the Avatar of Chaos reigns supreme.",
-		"tier": 9,
+		"base_tier": 9,
 		"min_level": 5001,
 		"max_level": 10000,
 		"monster_pool": ["Cosmic Horror", "Death Incarnate", "Time Weaver"],
@@ -1727,7 +1727,7 @@ const DUNGEON_TYPES = {
 	"nameless_void": {
 		"name": "The Nameless Void",
 		"description": "A place beyond comprehension where The Nameless One erases all meaning.",
-		"tier": 9,
+		"base_tier": 9,
 		"min_level": 5500,
 		"max_level": 10000,
 		"monster_pool": ["Cosmic Horror", "Time Weaver", "Death Incarnate"],
@@ -1754,7 +1754,7 @@ const DUNGEON_TYPES = {
 	"god_slayer_arena": {
 		"name": "God Slayer's Arena",
 		"description": "A divine battlefield where the God Slayer tests all challengers.",
-		"tier": 9,
+		"base_tier": 9,
 		"min_level": 6000,
 		"max_level": 10000,
 		"monster_pool": ["Avatar of Chaos", "Death Incarnate", "Time Weaver"],
@@ -1781,7 +1781,7 @@ const DUNGEON_TYPES = {
 	"entropy_end": {
 		"name": "Entropy's End",
 		"description": "The final dissolution of all things, where Entropy itself awaits.",
-		"tier": 9,
+		"base_tier": 9,
 		"min_level": 7000,
 		"max_level": 10000,
 		"monster_pool": ["Avatar of Chaos", "The Nameless One", "God Slayer"],
@@ -1846,13 +1846,38 @@ static var _scaled_cache: Dictionary = {}
 
 static func _scale_dungeon_size(base: Dictionary) -> Dictionary:
 	var d = base.duplicate(true)
-	var tier = int(base.get("tier", 1))
+	# The type's design weight, correctly: how big a dungeon of this KIND is built, which has
+	# nothing to do with what grade any particular one of them turns out to be.
+	var tier = int(base.get("base_tier", 1))
 	d["floors"] = int(base.get("floors", 3)) + int(_FLOORS_BOOST.get(tier, 1))
 	d["monsters_per_floor"] = int(base.get("monsters_per_floor", 3)) + int(_MONSTERS_BOOST.get(tier, 0))
 	return d
 
 static func get_dungeon(dungeon_id: String) -> Dictionary:
-	"""Get dungeon definition by ID (C1: floors/monsters size-scaled, cached)."""
+	"""Get dungeon definition by ID (C1: floors/monsters size-scaled, cached).
+
+	⚑ WHAT COMES BACK HAS NO `tier`. IT HAS `base_tier`, AND THEY ARE NOT THE SAME THING.
+	
+	A dungeon's GRADE belongs to the INSTANCE, not the type - the land it spawned in decides it
+	(owner 2026-09-11: *"an A5 Goblin Dungeon, or a S2 Kelpie one"*). So there is no such thing as
+	"the grade of a Goblin Caves", and a surface that reads one off this dictionary is wrong by
+	construction however right it looks.
+	
+	That kept happening. The grade leaked from the type into SIX player-facing places and two
+	reward formulas, and each was found separately, months apart, by a player noticing: *"a player
+	went into a pheonix dungeon that showed as F4 on the overworld and instead it put them in a
+	C5."* Owner 2026-09-16, after the fourth: *"do the structural fix then so this doesn't happen
+	again."*
+	
+	So the field is NAMED for what it is. `base_tier` is the type's DESIGN weight - how big it is,
+	how far out it likes to spawn, how out-of-place it feels for its grade. It is an input to
+	creation, never an answer to "what grade is this dungeon".
+	
+	The answer to that comes from `server._instance_tier(instance)`, or from
+	`server._dungeon_data_for(instance)`, which hands back this same dictionary with a real `tier`
+	written into it. **`tier` present means an instance resolved it.** A display or reward site
+	that reads `.tier` off a raw `get_dungeon()` now fails loudly on the missing key instead of
+	quietly returning the wrong number."""
 	if _scaled_cache.has(dungeon_id):
 		return _scaled_cache[dungeon_id]
 	var base = DUNGEON_TYPES.get(dungeon_id, {})
@@ -2918,13 +2943,24 @@ const TREASURE_EGG_CHANCE_BY_TIER = {
 	9: 1     # 1% for tier 9 (extremely rare!)
 }
 
-static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1) -> Dictionary:
-	"""Roll for treasure chest contents. Eggs use tier-based rarity. Rank scales material quantity."""
+static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1, grade_tier: int = 0) -> Dictionary:
+	"""Roll for treasure chest contents. Eggs use grade-based rarity. Rank scales material quantity.
+
+	⛑ PAID BY THE INSTANCE'S GRADE, NOT THE TYPE'S - and it did not used to be.
+	
+	This read `dungeon.tier` off the TYPE, so every chest in the world was sized by the dungeon's
+	design weight rather than by the grade the player actually walked into. An A5 Goblin Caves -
+	the whole point of the 2026-09-11 regrade - paid H-grade treasure, and a G-grade Wyvern's
+	Roost paid F. Found by the rename that made the wrong read impossible, not by anyone playing
+	it, which is what a rename is for.
+	
+	`grade_tier` falls back to the design weight so an old caller keeps working rather than
+	crashing, but every live caller passes the instance's."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
 		return {"materials": [], "egg": {}}
 
-	var tier = dungeon.tier
+	var tier = grade_tier if grade_tier > 0 else int(dungeon.get("base_tier", 1))
 	var sub_tier_mult = 1.0 + (sub_tier - 1) * 0.1
 
 	# Roll for materials (more generous since no gold)
@@ -2972,14 +3008,19 @@ static func roll_treasure(dungeon_id: String, floor_num: int, sub_tier: int = 1)
 		"recipe_scroll": recipe_scroll,
 	}
 
-static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int, sub_tier: int = 1) -> Dictionary:
+static func calculate_completion_rewards(dungeon_id: String, floors_cleared: int, sub_tier: int = 1, grade_tier: int = 0) -> Dictionary:
 	"""Calculate rewards for completing a dungeon. Includes GUARANTEED boss egg!
-	Rank scales XP by +10% per rank above 1."""
+	Rank scales XP by +10% per rank above 1.
+
+	⛑ SAME FAULT AS `roll_treasure`, and a bigger one: `base_xp = tier * 500`. Reading the
+	TYPE's tier meant clearing an A5 Goblin Caves paid the experience of a tier-1 dungeon - the
+	rarest, hardest version of a place paid the least, because the number came from the template
+	rather than from what was cleared. See the note there."""
 	var dungeon = get_dungeon(dungeon_id)
 	if dungeon.is_empty():
 		return {}
 
-	var tier = dungeon.tier
+	var tier = grade_tier if grade_tier > 0 else int(dungeon.get("base_tier", 1))
 	var total_floors = dungeon.floors
 
 	# Base rewards scale with tier and completion
@@ -3266,7 +3307,9 @@ static func pick_weighted_type_for_grade(grade_tier: int) -> String:
 	for dt in DUNGEON_TYPES:
 		var d: Dictionary = DUNGEON_TYPES[dt]
 		var w := maxf(1.0, float(d.get("spawn_weight", 50)))
-		var above: int = int(d.get("tier", 1)) - grade_tier
+		# How far ABOVE its design weight this grade is - a type property against an instance
+		# grade, which is exactly the comparison this weighting is for.
+		var above: int = int(d.get("base_tier", 1)) - grade_tier
 		if above > 0:
 			w *= pow(SPECIES_ABOVE_GRADE_FALLOFF, float(above))
 		weights[dt] = w

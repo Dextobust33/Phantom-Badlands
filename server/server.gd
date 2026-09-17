@@ -15835,7 +15835,7 @@ func handle_dungeon_atlas_request(peer_id: int):
 		# can honestly report is the grade of the one THIS player found, which is what the record
 		# is for. Falls back to the type for entries written before the rank was stored.
 		var e: Dictionary = {"id": dt, "state": st,
-			"tier": int(rec.get("tier", def.get("tier", 1))),
+			"tier": int(rec.get("tier", def.get("base_tier", 1))),
 			"rank": int(rec.get("rank", 0))}
 		if st >= Character.DUNGEON_STATE_SPOTTED:
 			e["name"] = String(def.get("name", dt))
@@ -30198,11 +30198,15 @@ func handle_dungeon_list(peer_id: int):
 			inst_sub_tier = int(inst.get("sub_tier", 1))
 
 		# Use rank level range if instance exists, otherwise use dungeon defaults
+		# ⛑ ONE GRADE PER ROW, RESOLVED ONCE. Three separate reads here used to answer the
+		# same question - the level band asked the TYPE, the name asked the INSTANCE, and the
+		# payload asked the TYPE again. That is how a row advertised two different dungeons.
+		var _row_tier: int = _instance_tier(active_dungeons[active_instance]) if (active_instance != "" and active_dungeons.has(active_instance)) else int(dungeon_data.get("base_tier", 1))
 		var display_min = dungeon_data.min_level
 		var display_max = dungeon_data.max_level
 		var display_name = dungeon_data.name
 		if active_instance != "" and inst_sub_tier > 0:
-			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, inst_sub_tier)
+			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(_row_tier, inst_sub_tier)
 			display_min = sub_range.min_level
 			# Deeper floors scale monster level up by FLOOR_DIFFICULTY_PER_FLOOR each
 			# (see _spawn_dungeon_floor_monsters: monster_level = dungeon_level ×
@@ -30212,9 +30216,7 @@ func handle_dungeon_list(peer_id: int):
 			var _floors := int(dungeon_data.get("floors", 1))
 			display_max = int(sub_range.max_level * (1.0 + maxi(0, _floors - 1) * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR))
 			display_max = maxi(display_max, sub_range.max_level)
-			# The INSTANCE's grade, not the type's - see the note at the other call site.
-			var _dn_tier: int = _instance_tier(active_dungeons[active_instance]) if active_instance != "" and active_dungeons.has(active_instance) else int(dungeon_data.tier)
-			display_name = DungeonDatabaseScript.get_dungeon_display_name(dungeon_type, _dn_tier, inst_sub_tier)
+			display_name = DungeonDatabaseScript.get_dungeon_display_name(dungeon_type, _row_tier, inst_sub_tier)
 
 		dungeon_list.append({
 			"type": dungeon_type,
@@ -30225,7 +30227,7 @@ func handle_dungeon_list(peer_id: int):
 			# `display_name` on the very same row was already using the instance's. Owner
 			# 2026-09-16: *"We don't need the overworld advertising F something and end up in a
 			# C dungeon."* Half of this row was doing exactly that.
-			"tier": _instance_tier(active_dungeons[active_instance]) if (active_instance != "" and active_dungeons.has(active_instance)) else int(dungeon_data.tier),
+			"tier": _row_tier,
 			"sub_tier": inst_sub_tier,
 			"min_level": display_min,
 			"max_level": display_max,
@@ -30297,7 +30299,11 @@ func _dungeon_expected_levels(dungeon_type: String, instance_id: String, player_
 			_sub = int(_tile.get("sub_tier", -1))
 		if _sub <= 0:
 			_sub = int(dungeon_data.get("sub_tier", 1))
-		var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(int(dungeon_data.get("tier", 1)), _sub)
+		# The INSTANCE's grade decides the band, the same way `_sub` above is the instance's
+		# rank. Reading the type here paired an instance rank with a template letter.
+		var _exp_tier: int = int(active_dungeons.get(instance_id, {}).get("tier",
+			_get_dungeon_at_location(player_x, player_y, -1).get("tier", dungeon_data.get("base_tier", 1))))
+		var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(_exp_tier, _sub)
 		lvl = clampi(player_level, int(sub_range.min_level), int(sub_range.max_level))
 	var floors: int = maxi(1, int(dungeon_data.get("floors", 1)))
 	var per: float = DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR
@@ -30417,7 +30423,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 			# (`MODIFIER_COUNT_BY_RANK`) and the owner asked for rarity to be legible BEFORE the
 			# door. Read off the instance where there is one - `sub_tier` on the dungeon TYPE is
 			# the template's depth, which is the same class of mistake as `min_level`.
-			"tier": int(active_dungeons.get(_mod_inst, {}).get("tier", dungeon_data.get("tier", 1))),
+			"tier": int(active_dungeons.get(_mod_inst, {}).get("tier", dungeon_data.get("base_tier", 1))),
 			"rank": int(active_dungeons.get(_mod_inst, {}).get("sub_tier", 0)),
 			"sub_tier": int(active_dungeons.get(_mod_inst, {}).get("sub_tier",
 				_get_dungeon_at_location(character.x, character.y, peer_id).get("sub_tier", 0))),
@@ -30555,7 +30561,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	# advertise a grade that no dungeon of that type in the world actually had.
 	var _atlas_inst: Dictionary = active_dungeons.get(instance_id, {})
 	var _atlas_dd = _dungeon_data_for(_atlas_inst) if not _atlas_inst.is_empty() else DungeonDatabaseScript.get_dungeon(dungeon_type)
-	if character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(_atlas_dd.get("name", dungeon_type)), int(_atlas_dd.get("tier", 0)), character.x, character.y, false, int(_atlas_inst.get("sub_tier", 0))):
+	if character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(_atlas_dd.get("name", dungeon_type)), int(_atlas_dd.get("tier", _atlas_dd.get("base_tier", 0))), character.x, character.y, false, int(_atlas_inst.get("sub_tier", 0))):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]★ Dungeon discovered: %s — added to your Atlas.[/color]" % String(_atlas_dd.get("name", dungeon_type))})
 		_grant_cartography_xp(peer_id, character, 20, "charting a new dungeon")
 
@@ -31452,7 +31458,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	var max_attempts = 20
 
 	for _attempt in range(max_attempts):
-		var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+		var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(int(dungeon_data.get("base_tier", 1)))
 		spawn_x = spawn_loc.x
 		spawn_y = spawn_loc.y
 		if not trading_post_db.is_trading_post_tile(spawn_x, spawn_y) and not world_system.is_safe_zone(spawn_x, spawn_y):
@@ -31460,8 +31466,11 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 
 	# Calculate rank based on distance from origin
 	var distance = sqrt(float(spawn_x * spawn_x + spawn_y * spawn_y))
-	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
-	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
+	# The type's DESIGN WEIGHT seeds where this kind of dungeon likes to sit. It is an input
+	# to creation, not an answer to "what grade is this" - see `get_dungeon`'s note.
+	var _base_tier: int = int(dungeon_data.get("base_tier", 1))
+	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(_base_tier, distance)
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(_base_tier, sub_tier)
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 
 	# Create instance
@@ -31474,7 +31483,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 		"active_players": [],
 		"dungeon_level": dungeon_level,
 		"sub_tier": sub_tier,
-		"tier": int(dungeon_data.get("tier", 1)),
+		"tier": int(dungeon_data.get("base_tier", 1)),
 	})
 
 	# Generate all floor grids (BSP rooms + corridors)
@@ -31495,7 +31504,7 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	# Generate traps for all floors
 	_generate_dungeon_traps(instance_id, dungeon_type, floor_grids)
 
-	log_message("Created dungeon instance: %s (%s) [%s] (tier=%d sub=%d)" % [instance_id, dungeon_data.name, PowerRank.label(dungeon_data.tier, sub_tier), dungeon_data.tier, sub_tier])
+	log_message("Created dungeon instance: %s (%s) [%s] (tier=%d sub=%d)" % [instance_id, dungeon_data.name, PowerRank.label(int(dungeon_data.get("base_tier", 1)), sub_tier), int(dungeon_data.get("base_tier", 1)), sub_tier])
 	return instance_id
 
 func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0, force_sub_tier: int = -1, force_tier: int = -1, force_starter: bool = false) -> String:
@@ -31549,7 +31558,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 			spawn_y = int(character.y + sin(angle) * dist_offset)
 		else:
 			# Fallback to standard spawn location
-			var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+			var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(int(dungeon_data.get("base_tier", 1)))
 			spawn_x = spawn_loc.x
 			spawn_y = spawn_loc.y
 
@@ -31561,7 +31570,7 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 
 	# Calculate rank based on distance from origin
 	var distance = sqrt(float(spawn_x * spawn_x + spawn_y * spawn_y))
-	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
+	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(int(dungeon_data.get("base_tier", 1)), distance)
 	#
 	# 2026-09-08 - ...unless the caller INHERITED one. Reported live: a tile advertising
 	# "Forgotten Crypt [T1-2] | Levels 2-3" opened into a T1-7 with a level 9 skeleton on floor 1.
@@ -31590,7 +31599,8 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	#
 	# `_dungeon_data_for` warns about exactly this: "leaving one behind is precisely how a
 	# dungeon ends up advertising a grade its monsters do not have." One was left behind.
-	var grade_tier: int = force_tier if force_tier > 0 else int(dungeon_data.get("tier", 1))
+	# An inherited grade when the tile had one, else the type's design weight as a seed.
+	var grade_tier: int = force_tier if force_tier > 0 else int(dungeon_data.get("base_tier", 1))
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(grade_tier, sub_tier)
 
 	# Scale dungeon level to player, clamped to rank range
@@ -31960,7 +31970,7 @@ func _ensure_starter_dungeon_exists():
 	var spawn_y = int(sin(angle) * SPAWN_DISTANCE)
 
 	# Starter dungeons always get rank 1 (easiest)
-	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, 1)
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(int(dungeon_data.get("base_tier", 1)), 1)
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 
 	# Create instance
@@ -31973,7 +31983,7 @@ func _ensure_starter_dungeon_exists():
 		"active_players": [],
 		"dungeon_level": dungeon_level,
 		"sub_tier": 1,
-		"tier": int(dungeon_data.get("tier", 1)),
+		"tier": int(dungeon_data.get("base_tier", 1)),
 		"starter": true,
 	})
 
@@ -31983,7 +31993,7 @@ func _ensure_starter_dungeon_exists():
 	# (Measured by tools/probe/lazy_dungeon_interior.gd on a dev box; the monster spawn is on top
 	# of that and the code's own note has bursts of eight costing ~5 s on the live server.)
 
-	log_message("Spawned starter dungeon: %s (%s) [T%d-1] at (%d, %d)" % [instance_id, dungeon_data.name, dungeon_data.tier, spawn_x, spawn_y])
+	log_message("Spawned starter dungeon: %s (%s) [T%d-1] at (%d, %d)" % [instance_id, dungeon_data.name, int(dungeon_data.get("base_tier", 1)), spawn_x, spawn_y])
 
 func _check_dungeon_spawns():
 	"""Periodically check and spawn new world dungeons, despawn completed ones"""
@@ -32149,8 +32159,14 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 		next_dungeon_id -= 1
 		return ""
 	var distance = sqrt(float(world_x * world_x + world_y * world_y))
-	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(dungeon_data.tier, distance)
-	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, sub_tier)
+	# ⚑ NOTE, SURFACED BY THE RENAME (2026-09-16): this path grades a dungeon by its TYPE's
+	# design weight, while `_create_world_dungeon` grades it by `_grade_of_land`. So a dungeon
+	# spawned NEAR something does not follow the land the way an ordinary one does. Left as it
+	# was - making it consistent changes world generation, which is the owner's call, not a
+	# side effect of a rename. Filed in the backlog.
+	var _base_tier: int = int(dungeon_data.get("base_tier", 1))
+	var sub_tier = DungeonDatabaseScript.get_sub_tier_for_distance(_base_tier, distance)
+	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(_base_tier, sub_tier)
 	var dungeon_level = sub_range.min_level + randi() % maxi(1, sub_range.max_level - sub_range.min_level + 1)
 	_register_dungeon(instance_id, {
 		"instance_id": instance_id,
@@ -32161,7 +32177,7 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 		"active_players": [],
 		"dungeon_level": dungeon_level,
 		"sub_tier": sub_tier,
-		"tier": int(dungeon_data.get("tier", 1)),
+		"tier": _base_tier,
 		"completed_at": 0
 	})
 	# The INTERIOR is lazy. See `_ensure_dungeon_interior`: a world dungeon is a map marker, and
@@ -32539,7 +32555,10 @@ func _current_dungeon_tier(character) -> int:
 	var inst: Dictionary = active_dungeons.get(character.current_dungeon_id, {})
 	if not inst.is_empty():
 		return _instance_tier(inst)
-	return int(DungeonDatabaseScript.get_dungeon(String(character.current_dungeon_type)).get("tier", 1))
+	# Last resort for an instance saved before the grade was stored on it: the type's design
+	# weight. Reading "tier" here would now be a MISSING KEY and silently grade every legacy
+	# dungeon as H - the one place in this file where the rename could have done real harm.
+	return int(DungeonDatabaseScript.get_dungeon(String(character.current_dungeon_type)).get("base_tier", 1))
 
 
 func _instance_tier(instance: Dictionary) -> int:
@@ -32554,7 +32573,8 @@ func _instance_tier(instance: Dictionary) -> int:
 	Falls back to the type's old fixed tier so instances saved before this keep resolving."""
 	if instance.has("tier"):
 		return int(instance["tier"])
-	return int(DungeonDatabaseScript.get_dungeon(String(instance.get("dungeon_type", ""))).get("tier", 1))
+	# Same last resort as `_current_dungeon_tier` - see the note there.
+	return int(DungeonDatabaseScript.get_dungeon(String(instance.get("dungeon_type", ""))).get("base_tier", 1))
 
 
 func _ensure_dungeon_interior(instance_id: String) -> bool:
@@ -35364,7 +35384,7 @@ func _open_dungeon_treasure(peer_id: int):
 		inst_sub_tier = active_dungeons[instance_id].get("sub_tier", 1)
 
 	# Get treasure (rank scales gold)
-	var treasure = DungeonDatabaseScript.roll_treasure(character.current_dungeon_type, character.dungeon_floor, inst_sub_tier)
+	var treasure = DungeonDatabaseScript.roll_treasure(character.current_dungeon_type, character.dungeon_floor, inst_sub_tier, _current_dungeon_tier(character))
 
 	# Give rewards
 	var reward_messages = []
@@ -35871,7 +35891,7 @@ func _complete_dungeon(peer_id: int):
 	var dungeon_data = _dungeon_data_for(_done_inst) if not _done_inst.is_empty() else DungeonDatabaseScript.get_dungeon(dungeon_type)
 	# P1 Dungeon Atlas — completing a dungeon bumps its clear count (already discovered).
 	# The grade recorded is the one just cleared, not the type's.
-	character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(dungeon_data.get("name", dungeon_type)), int(dungeon_data.get("tier", 0)), character.x, character.y, true, int(_done_inst.get("sub_tier", 0)))
+	character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(dungeon_data.get("name", dungeon_type)), int(dungeon_data.get("tier", dungeon_data.get("base_tier", 0))), character.x, character.y, true, int(_done_inst.get("sub_tier", 0)))
 	_grant_cartography_xp(peer_id, character, 40, "mapping a dungeon end to end")
 	var instance_id = character.current_dungeon_id
 	var inst_sub_tier = 1
@@ -35899,7 +35919,7 @@ func _complete_dungeon(peer_id: int):
 		origin_wy = int(active_dungeons[instance_id].get("origin_wy", -999999))
 
 	# Calculate rewards (rank scales XP)
-	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier)
+	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier, _current_dungeon_tier(character))
 
 	# Hard mode bonus: +75% XP, +50% materials
 	var is_hard_completion = false
@@ -36170,7 +36190,7 @@ func _complete_dungeon(peer_id: int):
 			var follower = characters[pid]
 
 			# Give same rewards (full duplication, not split)
-			var f_rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, follower.dungeon_floor + 1, inst_sub_tier)
+			var f_rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, follower.dungeon_floor + 1, inst_sub_tier, _current_dungeon_tier(follower))
 			var f_xp_result = follower.add_experience(f_rewards.xp)
 
 			# Boss egg for each member
@@ -36386,7 +36406,9 @@ func _generate_dungeon_traps(instance_id: String, dungeon_type: String, floor_gr
 	var dungeon_data_t = DungeonDatabaseScript.get_dungeon(dungeon_type)
 	if dungeon_data_t.is_empty():
 		return
-	var tier = dungeon_data_t.get("tier", 1)
+	# Traps are content, so they are graded like content: by the instance. Reading the type
+	# gave a regraded dungeon the trap table of whatever its species usually is.
+	var tier = _instance_tier(active_dungeons.get(instance_id, {})) if active_dungeons.has(instance_id) else int(dungeon_data_t.get("base_tier", 1))
 	dungeon_traps[instance_id] = {}
 	for floor_num in range(floor_grids.size()):
 		var rng = RandomNumberGenerator.new()
@@ -36889,7 +36911,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 	# the escape scroll, the egg - so reading the TYPE's number graded a whole dungeon's contents
 	# by what its species usually is rather than by what this one actually is. That is how an
 	# F-grade Phoenix's Nest whose monsters were level 29 handed out a C-rank egg.
-	var tier: int = _instance_tier(active_dungeons.get(instance_id, {})) 		if active_dungeons.has(instance_id) else int(dungeon_data.get("tier", 1))
+	var tier: int = _instance_tier(active_dungeons.get(instance_id, {})) 		if active_dungeons.has(instance_id) else int(dungeon_data.get("base_tier", 1))
 	var boss_egg_monster: String = String(dungeon_data.get("boss_egg", ""))
 	var sub_tier: int = int(active_dungeons.get(instance_id, {}).get("sub_tier", 1))
 	var floor_grids = dungeon_floors[instance_id]
@@ -37262,7 +37284,10 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 	if _mod_count_mult != 1.0:
 		monsters_count = clampi(int(round(float(monsters_count) * _mod_count_mult)),
 			_base_count, int(round(14.0 * _mod_count_mult)))
-	var tier = dungeon_data.tier
+	# Only the glyph COLOUR - monster levels come from `dungeon_level`, which is already the
+	# instance's. Still the instance's grade, so the colour agrees with the label the player
+	# was shown on the way in.
+	var tier = _instance_tier(active_dungeons.get(instance_id, {})) if active_dungeons.has(instance_id) else int(dungeon_data.get("base_tier", 1))
 	var boss_data = dungeon_data.get("boss", {})
 	var monster_type = boss_data.get("monster_type", "Goblin")
 	var display_color = DungeonDatabaseScript.MONSTER_DISPLAY_COLORS.get(tier, "#FF4444")
@@ -37482,7 +37507,7 @@ func _spawn_one_wandering_monster(instance_id: String, floor_num: int, character
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	if dungeon_data.is_empty():
 		return false
-	var tier = dungeon_data.tier
+	var tier = _instance_tier(active_dungeons.get(instance_id, {})) if active_dungeons.has(instance_id) else int(dungeon_data.get("base_tier", 1))
 	var boss_data = dungeon_data.get("boss", {})
 	var monster_type = boss_data.get("monster_type", "Goblin")
 	var display_color = DungeonDatabaseScript.MONSTER_DISPLAY_COLORS.get(tier, "#FF4444")
@@ -41881,7 +41906,7 @@ func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
 	if requested_tier >= 1 and requested_tier <= 9:
 		var tier_matches = []
 		for did in DungeonDatabaseScript.DUNGEON_TYPES:
-			if int(DungeonDatabaseScript.DUNGEON_TYPES[did].get("tier", 0)) == requested_tier:
+			if int(DungeonDatabaseScript.DUNGEON_TYPES[did].get("base_tier", 0)) == requested_tier:
 				tier_matches.append(did)
 		if not tier_matches.is_empty():
 			dungeon_type = tier_matches[randi() % tier_matches.size()]
@@ -41897,7 +41922,7 @@ func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
 		"type": "text",
 		"message": "[color=#00FF00][GM] Entering %s (%s)...[/color]" % [
 			str(DungeonDatabaseScript.DUNGEON_TYPES[dungeon_type].get("name", dungeon_type)),
-			PowerRank.rich_grade(int(DungeonDatabaseScript.DUNGEON_TYPES[dungeon_type].get("tier", 1)))
+			PowerRank.rich_grade(int(DungeonDatabaseScript.DUNGEON_TYPES[dungeon_type].get("base_tier", 1)))
 		]
 	})
 	# Pre-confirmed so the standard warning popup is skipped — admin path.

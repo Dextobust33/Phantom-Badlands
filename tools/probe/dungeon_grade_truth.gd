@@ -39,7 +39,7 @@ func _init() -> void:
 	var enter := _body("handle_dungeon_enter")
 	ck(enter.find("var _inherit_tier: int = _instance_tier(_tile_dungeon)") >= 0,
 		"the entry path reads the tile's TIER")
-	ck(enter.find("0, _inherit_sub, _inherit_tier)") >= 0,
+	ck(enter.find("0, _inherit_sub, _inherit_tier") >= 0,
 		"...and passes it to the instance it creates")
 	var mk := _body("_create_player_dungeon_instance")
 	ck(mk.find("force_tier: int = -1") >= 0, "the creator accepts an inherited tier")
@@ -71,7 +71,7 @@ func _init() -> void:
 	var diffs := 0
 	var examples: Array = []
 	for dt in DD.DUNGEON_TYPES.keys():
-		var type_tier: int = int(DD.get_dungeon(String(dt)).get("tier", 1))
+		var type_tier: int = int(DD.get_dungeon(String(dt)).get("base_tier", 1))
 		for land_tier in [1, 3, 5, 7]:
 			if land_tier == type_tier:
 				continue

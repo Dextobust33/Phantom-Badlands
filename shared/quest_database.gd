@@ -39,8 +39,17 @@ static func get_threat_relief_rewards(dungeon_type: String) -> Dictionary:
 	"""Look up the appropriate {xp, valor} reward for a threat-relief quest
 	pointing at the given dungeon_type. Tier is read from DungeonDatabase
 	DUNGEON_TYPES so the formula stays in sync with dungeon balance edits."""
+	# The type's DESIGN WEIGHT, deliberately, and NOT the instance's grade.
+	#
+	# Everywhere else a dungeon reward is sized by the instance (see `roll_treasure`). Here it
+	# must not be: this is called TWICE for the same quest - once when it is offered, and again
+	# from `quest_from_id` when a saved one is rehydrated - and that second call has only the
+	# type, because the quest id encodes post+type and nothing else. Grading by the instance
+	# would promise one reward and pay another, which is worse than being consistently coarse.
+	#
+	# Making it grade-accurate means putting the grade in the quest record. Filed, not assumed.
 	var dungeon_info: Dictionary = DungeonDatabaseScript.DUNGEON_TYPES.get(dungeon_type, {})
-	var tier: int = int(dungeon_info.get("tier", 0))
+	var tier: int = int(dungeon_info.get("base_tier", 0))
 	return THREAT_RELIEF_REWARDS_BY_TIER.get(tier, THREAT_RELIEF_REWARDS_DEFAULT)
 
 # Quest type constants

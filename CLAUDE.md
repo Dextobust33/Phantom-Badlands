@@ -181,6 +181,39 @@ question that settled it in one command was `ls .godot/imported/ | grep States`.
 - Add a `--buildverify` line for any art loaded BY PATH, so a packaged build cannot ship it
   invisible. `state_icons` and `sanctuary_sprites` are both there for this reason.
 
+## ⚑ A dungeon TYPE has no grade — `base_tier` is NOT `tier`
+
+A dungeon's grade belongs to the **instance**. The land it spawned in decides it, which is what
+makes an A5 Goblin Dungeon possible (owner, 2026-09-11: *"We do want lower types of monster
+dungeons to be possible in high level areas"*). So `DUNGEON_TYPES[x]` cannot answer *"what grade
+is this dungeon"*, and for months every surface that asked it got a plausible wrong number.
+
+It leaked **six times into player-facing text and twice into reward formulas**, each found
+separately by somebody noticing — *"a player went into a pheonix dungeon that showed as F4 on the
+overworld and instead it put them in a C5."* The worst were silent: an A5 Goblin Caves paid the
+treasure and the completion XP of a tier-1 dungeon (300 XP where it should have been 2400),
+because the reward formulas read the template.
+
+So the field is **named for what it is**:
+
+| you want | ask |
+|---|---|
+| what grade IS this dungeon (display, rewards, content) | `server._instance_tier(instance)`, or `_dungeon_data_for(instance)` which returns the type dict with a real `tier` written in |
+| how this KIND of dungeon is designed (how big, how far out it spawns, how out-of-place a species feels) | `get_dungeon(id).base_tier` |
+
+**`tier` present on a dungeon dictionary means an instance resolved it.** A raw `get_dungeon()`
+result has no `tier` at all, so `dd.tier` now fails loudly instead of returning the wrong number.
+
+The one spelling that still fails quietly is `dd.get("tier", 1)`, so that has a detector:
+`tools/probe/dungeon_base_tier_invariant.gd` walks **provenance** — for each read of `x.tier` it
+finds where `x` was assigned and judges that — and fails on any display or reward site reading a
+type. Both halves are proven to fire by re-injecting the fault. Run it after touching anything
+dungeon-graded.
+
+**Not resolved, filed:** `_create_world_dungeon_near` still grades by the type's design weight
+while `_create_world_dungeon` grades by `_grade_of_land`, so a dungeon spawned *near* something
+does not follow the land. Making that consistent changes world generation and is the owner's call.
+
 ## ⚑ A rename touches SEVEN surfaces
 
 Card face, action bar, combat log, hover text, buff panel, gear-affix tokens, help pages. Miss one

@@ -51,7 +51,7 @@ func _init() -> void:
 	# What that means for a whole tier-1 dungeon.
 	var dd = DD.get_dungeon("goblin_caves")
 	var floors: int = int(dd.floors)
-	var tier: int = int(dd.tier)
+	var tier: int = int(dd.base_tier)
 	# `extra` per floor is 1 + tier/3 + randi()%2 -> mean 1.5 + tier/3
 	var per_floor: float = 1.0 + float(tier / 3) + 0.5
 	var rolls: float = per_floor * float(floors)
