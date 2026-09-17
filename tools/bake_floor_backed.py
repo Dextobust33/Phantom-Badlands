@@ -42,8 +42,23 @@ def floor_tile():
 
 
 def bake(src_path, out_dir, name):
+    return bake_image(Image.open(src_path).convert('RGBA'), out_dir, name)
+
+
+def bake_frame(sheet_path, frame, out_dir, name, cell=16):
+    """Bake ONE frame out of a horizontal sprite strip.
+
+    The mob packs ship animation as a single row (ChickenA.png is 144x16 = nine 16px frames), so
+    a strip cannot be handed to `bake` directly - it would be scaled down to fit the whole row
+    into one 32px tile and come out as a smear. Cropping here rather than writing nine temp PNGs
+    keeps the bake reproducible from committed sources, which is the whole point of this file."""
+    im = Image.open(sheet_path).convert('RGBA')
+    x = frame * cell
+    return bake_image(im.crop((x, 0, x + cell, im.size[1])), out_dir, name)
+
+
+def bake_image(spr, out_dir, name):
     floor = floor_tile()
-    spr = Image.open(src_path).convert('RGBA')
 
     # Scale to fit INSIDE the tile, preserving aspect, on a whole-number factor where possible so
     # the pixel grid survives. A sprite drawn at 1.4x looks soft next to tiles drawn at 2x.
@@ -105,6 +120,37 @@ PACK = 'client/sprites/items_pack'
 LOOT_OUT = 'client/sprites/loot_floor32'
 
 
+# ── CRITTERS: the passive creatures that wander a dungeon floor ──────────────────────────────
+#
+# Owner 2026-09-17, asked how chickens should work: *"A creature you catch."* They are a FOOD
+# source found inside a dungeon, for the rest that eats food - so they need the same floor-backed
+# 32px treatment as every other dungeon entity, at the frame naming `dungeon_sprites.monster_path`
+# expects (`<slug>_<frame>` plus an `_alert` twin).
+#
+# Frames 0-2 of ChickenA are the walk cycle (frames 3-5 are a second gait and 6-8 a peck; read off
+# a contact sheet, because no check can tell you which nine frames are which). The ALERT twin is
+# the SAME image on purpose: a chicken has no alert state, it flees. It is baked anyway so a
+# renderer that asks for one can never hit a missing file - a failed `[img]` draws nothing at all
+# and punches a hole in the floor.
+CRITTER_SOURCES = {
+    'chicken': ('client/sprites/mobs_pack/ChickenA.png', [0, 1, 2]),
+}
+MONSTER_OUT = 'client/sprites/monster_floor32'
+
+
+def rebake_critters():
+    n = 0
+    for name, (sheet, frames) in sorted(CRITTER_SOURCES.items()):
+        for i, fr in enumerate(frames):
+            bake_frame(sheet, fr, MONSTER_OUT, '%s_%d' % (name, i))
+            bake_frame(sheet, fr, MONSTER_OUT, '%s_%d_alert' % (name, i))
+            n += 2
+    print()
+    print('%d critter tiles baked. Godot serves .godot/imported, so re-import then verify:' % n)
+    print('    godot --headless --path . --import')
+    print('    godot --headless --path . --script res://tools/verify_dungeon_art.gd')
+
+
 def rebake_loot():
     for name, rel in sorted(LOOT_SOURCES.items()):
         bake(os.path.join(PACK, rel), LOOT_OUT, name)
@@ -119,6 +165,8 @@ def rebake_loot():
 if __name__ == '__main__':
     if len(sys.argv) == 2 and sys.argv[1] == '--rebake-loot':
         rebake_loot()
+    elif len(sys.argv) == 2 and sys.argv[1] == '--rebake-critters':
+        rebake_critters()
     elif len(sys.argv) == 4:
         bake(sys.argv[1], sys.argv[2], sys.argv[3])
     else:

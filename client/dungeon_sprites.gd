@@ -136,6 +136,10 @@ const MONSTER_SPRITE := {
 	"Avatar of Chaos": "avatar_of_chaos",
 	"Balrog": "balrog",
 	"Cerberus": "cerberus",
+	# A CRITTER, not a monster: it never fights, and it is in this table only because the floor
+	# renderer resolves every entity's art through `monster_path`. Baked by
+	# `tools/bake_floor_backed.py --rebake-critters`.
+	"Chicken": "chicken",
 	"Chimaera": "chimaera",
 	"Cosmic Horror": "cosmic_horror",
 	"Death Incarnate": "death_incarnate",

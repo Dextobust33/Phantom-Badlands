@@ -17906,7 +17906,7 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 	# plant/herb/fungus/fish material_types (food bulk-list still stamps
 	# supply_category as "material_t*" today; this filter does the lookup
 	# at browse time so no migration is needed for existing listings).
-	var food_types = ["plant", "herb", "fungus", "fish"]
+	var food_types = CraftingDatabaseScript.FOOD_MATERIAL_TYPES
 	var filtered = []
 	for listing in all_listings:
 		var supply_cat = listing.get("supply_category", "")
@@ -18079,7 +18079,7 @@ func handle_market_network_browse(peer_id: int, message: Dictionary):
 	# Filter by category. Player posts (enclosures) are excluded from the
 	# network index — those are geographic discoveries, not official posts.
 	# v0.9.268: food gets its own filter (see handle_market_browse for rationale).
-	var net_food_types = ["plant", "herb", "fungus", "fish"]
+	var net_food_types = CraftingDatabaseScript.FOOD_MATERIAL_TYPES
 	var filtered = []
 	for listing in all_entries:
 		var lpid_check = String(listing.get("post_id", ""))
@@ -19347,7 +19347,7 @@ func handle_market_list_preview(peer_id: int, message: Dictionary):
 			total_valor += base_valor
 			count += stack_size
 	elif list_type == "materials":
-		var food_types = ["plant", "herb", "fungus", "fish"]
+		var food_types = CraftingDatabaseScript.FOOD_MATERIAL_TYPES
 		for mat_name in character.crafting_materials.keys():
 			var qty = int(character.crafting_materials.get(mat_name, 0))
 			if qty <= 0:
@@ -19363,7 +19363,7 @@ func handle_market_list_preview(peer_id: int, message: Dictionary):
 			total_valor += mat_total
 			count += 1
 	elif list_type == "food":
-		var food_types = ["plant", "herb", "fungus", "fish"]
+		var food_types = CraftingDatabaseScript.FOOD_MATERIAL_TYPES
 		for mat_name in character.crafting_materials.keys():
 			var qty = int(character.crafting_materials.get(mat_name, 0))
 			if qty <= 0:
@@ -19522,7 +19522,7 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 
 	elif list_type == "materials":
 		# List all crafting materials (excluding food: plant, herb, fungus, fish)
-		var food_types = ["plant", "herb", "fungus", "fish"]
+		var food_types = CraftingDatabaseScript.FOOD_MATERIAL_TYPES
 		var mat_keys = character.crafting_materials.keys().duplicate()
 		for mat_name in mat_keys:
 			var qty = int(character.crafting_materials.get(mat_name, 0))
@@ -19557,7 +19557,7 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 
 	elif list_type == "food":
 		# List all food materials (plant, herb, fungus, fish)
-		var food_types = ["plant", "herb", "fungus", "fish"]
+		var food_types = CraftingDatabaseScript.FOOD_MATERIAL_TYPES
 		var mat_keys = character.crafting_materials.keys().duplicate()
 		for mat_name in mat_keys:
 			var qty = int(character.crafting_materials.get(mat_name, 0))
@@ -19654,7 +19654,7 @@ func handle_market_orders_browse(peer_id: int, message: Dictionary):
 	var all_orders = persistence.get_market_orders(post_id)
 
 	# Filter by category (same chip set as listings); v1: equipment/egg never have orders
-	var food_types = ["plant", "herb", "fungus", "fish"]
+	var food_types = CraftingDatabaseScript.FOOD_MATERIAL_TYPES
 	var filtered: Array = []
 	for order in all_orders:
 		if _order_remaining(order) <= 0:
@@ -31309,6 +31309,15 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		_trigger_rescue_encounter(peer_id, rescue_npc, instance_id)
 		return
 
+	# Check if the player walked onto a CRITTER - caught, not fought. Done before the
+	# monster check and then allowed to fall through, so the step still counts as a step: the
+	# bird is gone from the tile the player is now standing on, monsters still get their move,
+	# and the catch text rides out with the other event texts after the state refresh (a
+	# message sent before `_send_dungeon_state` is wiped by it).
+	var stepped_critter = _get_monster_at_position(instance_id, character.dungeon_floor, new_x, new_y)
+	if stepped_critter != null and bool(stepped_critter.get("is_critter", false)):
+		_catch_dungeon_critter(peer_id, stepped_critter, dungeon_event_texts)
+
 	# Check if player walked onto a monster entity
 	var stepped_monster = _get_monster_at_position(instance_id, character.dungeon_floor, new_x, new_y)
 	if stepped_monster != null:
@@ -34899,6 +34908,10 @@ func _send_dungeon_state(peer_id: int):
 					"id": m.id, "x": m.x, "y": m.y,
 					"char": m.display_char, "color": m.display_color,
 					"alert": m.alert, "is_boss": m.is_boss,
+					# A passive creature. Without this the hover would describe a chicken as a
+					# level-0 monster, which is both wrong and unhelpful - the player needs to
+					# know it is food and that walking into it catches it.
+					"critter": bool(m.get("is_critter", false)),
 					"type": m.monster_type,
 					# 2026-09-08 - the ONE field the dungeon monster hover needed. Owner assumed
 					# it "would require that the type of encounter get chosen beforehand"; it is
@@ -36955,6 +36968,97 @@ func _spawn_all_dungeon_monsters(instance_id: String, dungeon_type: String, dung
 
 const _FLOOR_LOOT_TILES := [DungeonDatabaseScript.TileType.TREASURE, DungeonDatabaseScript.TileType.SCATTERED_LOOT, DungeonDatabaseScript.TileType.GOLD_HOARD]
 
+## ⚑ CHICKENS. A dungeon that can feed you changes how far you push.
+##
+## Owner 2026-09-10: *"One argument for the chickens is they could be a food source that can be
+## found in the dungeon so they can use it when they rest."* Asked in 2026-09-17 whether that
+## should be a floor-loot KIND, a creature you catch, or an interactive tile, they chose
+## **a creature you catch** - which is why this is an entity in `dungeon_monsters` and not an
+## entry in `_roll_floor_item`. A pickup would have been a tile you walk over; a bird that runs
+## is a small chase you have to decide whether to spend turns on while the wandering monsters
+## close in, and spending turns is the dungeon's real currency.
+##
+## The numbers: one bird per floor at 35% (the same cadence as the floor egg, so the floor's
+## surprises stay legible), and 1-3 rations each. A five-floor run therefore expects ~1.75 birds
+## and ~3.5 meals - meaningful against a rest that costs one food, and nowhere near a supply.
+const DUNGEON_CRITTER_FLOOR_CHANCE := 0.35
+const DUNGEON_CRITTER_FOOD := "wild_fowl"
+## How often a startled bird actually runs. ⚑ NOT 100%: a critter that always flees the player
+## by one tile can never be caught on an open floor, and an uncatchable food source is worse
+## than none - it is a promise the floor does not keep. At 65% it panics, then pecks, and a
+## corridor or a dead end closes the deal.
+const DUNGEON_CRITTER_FLEE_CHANCE := 0.65
+
+
+func _spawn_dungeon_critter(instance_id: String, floor_num: int, grid: Array) -> bool:
+	"""Put one passive creature on a floor. Returns false if there was nowhere to stand.
+
+	⚑ CALLED FROM `_spawn_all_dungeon_floor_items`, AND THAT MATTERS.
+	`_spawn_all_dungeon_monsters` clears `dungeon_monsters[instance_id]` to {} and only then calls
+	the floor-item pass - so the birds survive because they are spawned after the reset. Move this
+	call earlier and every bird in the game vanishes with no error, because clearing a dictionary
+	is not a failure. `tools/probe/dungeon_critters.gd` asserts the two line numbers stay in that
+	order."""
+	if not dungeon_monsters.has(instance_id):
+		dungeon_monsters[instance_id] = {}
+	if not dungeon_monsters[instance_id].has(floor_num):
+		dungeon_monsters[instance_id][floor_num] = []
+	var floor_monsters: Array = dungeon_monsters[instance_id][floor_num]
+	var occupied: Array = []
+	for m in floor_monsters:
+		if m.get("alive", false):
+			occupied.append(Vector2i(m.x, m.y))
+	var entrance_pos := _find_tile_position(grid, DungeonDatabaseScript.TileType.ENTRANCE)
+	var exit_pos := _find_tile_position(grid, DungeonDatabaseScript.TileType.EXIT)
+	var pos := _find_monster_spawn_position(grid, entrance_pos, exit_pos, occupied)
+	if pos.x < 0:
+		return false
+	floor_monsters.append({
+		"id": next_dungeon_monster_id,
+		"x": pos.x, "y": pos.y,
+		"monster_type": "Chicken",
+		"level": 0,
+		"display_char": "c",
+		"display_color": "#E8C87A",
+		"alive": true,
+		"alert": false,
+		"is_boss": false,
+		"boss_data": {},
+		"is_critter": true,
+	})
+	next_dungeon_monster_id += 1
+	return true
+
+
+func _catch_dungeon_critter(peer_id: int, critter: Dictionary, events: Array) -> void:
+	"""Catch the bird. Food, not combat, and the player keeps the tile they stepped onto."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	critter["alive"] = false
+	var got: int = 1 + (randi() % 3)
+	character.crafting_materials[DUNGEON_CRITTER_FOOD] = int(
+		character.crafting_materials.get(DUNGEON_CRITTER_FOOD, 0)) + got
+	var mat_name: String = String(CraftingDatabaseScript.MATERIALS.get(
+		DUNGEON_CRITTER_FOOD, {}).get("name", "Wild Fowl"))
+	# The setting bible already covers why something living is down here: a phantom is a dead
+	# place that came back in the shape it died in, and eggs are the one living thing a dead place
+	# produces. A bird scratching about a phantom is that, grown.
+	events.append("[color=#E8C87A]You catch the fowl.[/color] [color=#808080](The place still "
+		+ "remembers keeping livestock.)[/color] [color=#1EFF00]+%d %s[/color] - rations for a rest." % [got, mat_name])
+
+
+func _move_dungeon_critter(critter: Dictionary, player_pos: Vector2i, grid: Array, all_monsters: Array) -> void:
+	"""A passive creature's turn. It runs from the player; it never chases and never fights."""
+	var pos := Vector2i(critter.x, critter.y)
+	var dist: int = absi(pos.x - player_pos.x) + absi(pos.y - player_pos.y)
+	if dist <= 4 and _has_line_of_sight(grid, pos, player_pos) and randf() < DUNGEON_CRITTER_FLEE_CHANCE:
+		# Flee: the mirror of `_move_monster_toward`, aiming at the point opposite the player.
+		_move_monster_toward(critter, pos + (pos - player_pos), grid, all_monsters)
+		return
+	_move_monster_random(critter, grid, all_monsters)
+
+
 func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, dungeon_level: int) -> void:
 	"""Place pickup loot on floor tiles across every floor. Replaces the old
 	TREASURE/SCATTERED_LOOT/GOLD_HOARD tile loot (those tiles are blanked here and their
@@ -37010,6 +37114,11 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 			var it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, false)
 			if not it.is_empty():
 				_place_floor_item_random(instance_id, floor_num, grid, it)
+		# (b2) One passive creature, so a long run can feed itself. See
+		# DUNGEON_CRITTER_FLOOR_CHANCE for why it is a bird you chase and not an item you
+		# step on.
+		if randf() < DUNGEON_CRITTER_FLOOR_CHANCE:
+			_spawn_dungeon_critter(instance_id, floor_num, grid)
 		# (c) Dungeon type-matched EGG as floor loot — ~35% chance per floor.
 		if boss_egg_monster != "" and randf() < 0.35:
 			var egg_it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, true)
@@ -37691,6 +37800,12 @@ func _move_dungeon_monsters(peer_id: int) -> bool:
 		if not m.alive:
 			continue
 
+		# A CRITTER runs; it has no combat at all, so it also skips the landed-on-player
+		# check below. Being walked into by a chicken should not start a fight.
+		if m.get("is_critter", false):
+			_move_dungeon_critter(m, player_pos, grid, floor_monsters)
+			continue
+
 		# Bosses are stationary — they stay in their room and don't block hallways
 		if m.get("is_boss", false):
 			var monster_pos = Vector2i(m.x, m.y)
@@ -37959,7 +38074,7 @@ func handle_dungeon_rest(peer_id: int, message: Dictionary):
 		return
 	var mat_info = CraftingDatabaseScript.MATERIALS.get(food_id, {})
 	var mat_type = mat_info.get("type", "")
-	if mat_type not in ["plant", "herb", "fungus", "fish"]:
+	if mat_type not in CraftingDatabaseScript.FOOD_MATERIAL_TYPES:
 		send_to_peer(peer_id, {"type": "error", "message": "That is not a food material!"})
 		return
 	var current_qty = int(character.crafting_materials.get(food_id, 0))

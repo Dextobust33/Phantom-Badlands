@@ -1595,7 +1595,7 @@ func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_mater
 			continue
 	# Materials + food live in crafting_materials. CraftingDatabase is a
 	# global class_name, so its constants are directly accessible.
-	var food_types := ["plant", "herb", "fungus", "fish"]
+	var food_types: Array = CraftingDatabase.FOOD_MATERIAL_TYPES
 	if crafting_materials is Dictionary:
 		for mat_name in crafting_materials.keys():
 			var qty: int = int(crafting_materials[mat_name])

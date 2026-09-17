@@ -65,7 +65,7 @@ func _init() -> void:
 	ck(qty == ServerScript.STARTER_RATIONS, "the rations are there")
 	var CraftingDB = load("res://shared/crafting_database.gd")
 	var mat: Dictionary = CraftingDB.MATERIALS.get("healing_herb", {})
-	ck(String(mat.get("type", "")) in ["plant", "herb", "fungus", "fish"],
+	ck(String(mat.get("type", "")) in CraftingDB.FOOD_MATERIAL_TYPES,
 		"and it is a type the Rest handler accepts (%s) - a ration it refuses would be worse than none"
 			% String(mat.get("type", "")))
 	ck(int(mat.get("tier", 99)) == 1, "at tier 1, so it is not a valuable item in disguise")

@@ -664,7 +664,7 @@ thirds, death replay, and the launcher revamp. Any one of them is a session or s
   quality bar is the four that exist.
 
 **Blocked on an owner decision, not on effort** (each has its open questions written down):
-post-to-post road travel; chickens as a dungeon food source;
+post-to-post road travel;
 judging the dungeon with a full party; the assassinate/Silver Tongue follow-ups.
 
 **So the honest plan for the two days:** clear the five or six genuinely small items, take the
@@ -4608,15 +4608,61 @@ does not exist in the interiors case at all.
       monster cell is. The brackets say "this is a pickup"; hover would say WHICH pickup, which is
       the natural next question and the one the colour alone cannot answer.
 
-- [ ] **Chickens (and animals) as a dungeon FOOD source** (owner, 2026-09-10): *"One argument for
-      the chickens is they could be a food source that can be found in the dungeon so they can use
-      it when they rest."* This turns a rejected asset into content, and it lands on a system that
-      already exists - resting underground consumes food from the pouch, and running dry is a real
-      pressure on a long run.
-      It also fits the dungeon design: a floor that can feed you changes how far you push, which
-      is the same lever wandering monsters pull. Open questions for whoever picks it up: is it a
-      floor-loot KIND (bracketed like other pickups), a passive creature you catch, or a tile you
-      interact with? `farmlands_v3` has 12 chicken frames, so there is art for any of the three.
+- [x] **CHICKENS AS A DUNGEON FOOD SOURCE — DONE 2026-09-17.** Owner 2026-09-10: *"One argument
+      for the chickens is they could be a food source that can be found in the dungeon so they can
+      use it when they rest."* Asked on 2026-09-17 to choose between a floor-loot KIND, a creature
+      you catch, and an interactive tile, the owner picked **a creature you catch** — so a chicken
+      is an entity in `dungeon_monsters` with `is_critter`, not an entry in `_roll_floor_item`.
+
+      **Why that choice is the better one mechanically:** a pickup is a tile you walk over, but a
+      bird that runs is a small chase you have to decide whether to spend turns on while the
+      wandering monsters close in — and turns are the dungeon's real currency. It flees at 65%
+      when it sees you (**not 100%**: a critter that always steps away is uncatchable on open
+      ground, and an uncatchable food source is worse than none), it never fights, and stepping
+      onto it catches it for **1-3 Wild Fowl**, a tier-1 near-worthless `meat` material — a
+      ration, not a trade good, or the food source becomes a valor farm.
+
+      **Yield, stated in meals rather than probabilities:** 35% per floor, so a 3-floor run
+      expects ~2 meals, a 5-floor ~3.5, a 9-floor ~6.3. A rest costs one food, so a deep run still
+      cannot feed itself outright — the pressure is relieved, not removed.
+
+      ⛑ **THE REAL WORK WAS NOT THE CHICKEN — IT WAS THAT "FOOD" HAD TWELVE OWNERS.**
+      `["plant", "herb", "fungus", "fish"]` was written out **twelve times** across four files:
+      the dungeon Rest handler, five market and order filters, two supply calculators, the
+      client's food picker, the client's food counter, the market panel and a probe. Adding a
+      `meat` type to eleven of them would have produced a bird you can sell but not eat, or eat
+      but not sell, **and nothing would have failed loudly.** So
+      `CraftingDatabase.FOOD_MATERIAL_TYPES` + `is_food_material()` is the one owner, all twelve
+      copies now read it, and the probe is a token ban so a thirteenth cannot appear.
+
+      **Three more faults found on the way, each the same shape:**
+      * **"Remaining: N" counted the chicken.** The floor's only readout of whether it is done
+        would have said a monster remained, and "Floor cleared!" could never have appeared while
+        a bird was alive. The count loop was written out TWICE (floor renderer, side panel) — one
+        `_dungeon_threat_counts()` helper now, skipping critters.
+      * **The materials screen had a second list of types.** `display_order` drives the grouped
+        display and had no `meat`, so Wild Fowl fell through to the unstyled "ungrouped" branch
+        even though `type_info` had a name and colour for it. Added, *and* the ungrouped branch
+        now reads `type_info` too, so a type that has styling can never render without it.
+      * **An invisible ordering dependency.** `_spawn_all_dungeon_monsters` clears
+        `dungeon_monsters[instance_id]` and only then calls the floor-item pass, which is where
+        the birds spawn. Reorder those two and every bird in the game vanishes with **no error**,
+        because clearing a dictionary is not a failure. Both sites are commented and the probe
+        asserts the two line numbers stay in order.
+
+      **Art:** `client/sprites/mobs_pack/ChickenA.png` (frames 0-2 are the walk cycle; 3-5 a
+      second gait, 6-8 a peck — read off a contact sheet, since no check can tell you which nine
+      frames are which). Baked floor-backed at 32px by a new
+      `tools/bake_floor_backed.py --rebake-critters`, so it is reproducible output rather than
+      irreplaceable art. The `_alert` twin is the same image deliberately — a chicken has no
+      alert state, but a renderer that asks for one must never hit a missing file.
+
+      Probe: `tools/probe/dungeon_critters.gd` — six sections, including driving the real spawner
+      against real generated floors (12/12 placed, all on open tiles) and calling `load()` on all
+      six baked tiles. Fault-injection proven: deleting the catch branch fails the ordering check.
+      **What it does NOT prove** is that the bird is catchable in practice — that is arithmetic
+      here (a 65% flee rate means the player closes a tile every ~2.9 turns on open ground) and
+      wants one live run to confirm it feels like a chase rather than a chore.
 
 - [x] **DONE — and DECIDED ON SCREEN, which is better than this entry proposed.**
       `client.gd::_dungeon_supports_floor` draws rock where the cell ABOVE is floor, so the rock

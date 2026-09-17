@@ -172,6 +172,24 @@ const BULK_CRAFTABLE_TYPES = ["consumable", "structure", "rune", "enhancement",
 
 # ===== MATERIALS =====
 # Materials can come from fishing, monster drops, or gathering
+## ⚑ WHAT A CHARACTER CAN EAT. ONE list, and this is it.
+##
+## Resting in a dungeon consumes food, the market prices food as its own supply category, and the
+## client shows a food picker and a food count - four different questions with the same answer.
+## Until 2026-09-17 that answer was written out TWELVE times across four files, which meant a new
+## edible type had to be added in twelve places and a miss produced something you could sell but
+## not eat with nothing failing loudly.
+##
+## `meat` was added here, once, when chickens became catchable in dungeons - the whole point of
+## having an owner.
+const FOOD_MATERIAL_TYPES := ["plant", "herb", "fungus", "fish", "meat"]
+
+
+static func is_food_material(mat_id: String) -> bool:
+	"""Whether this material can be eaten (dungeon Rest, market food category)."""
+	return String(MATERIALS.get(mat_id, {}).get("type", "")) in FOOD_MATERIAL_TYPES
+
+
 const MATERIALS = {
 	# Fish (from fishing)
 	"small_fish": {"name": "Small Fish", "type": "fish", "tier": 1, "value": 5},
@@ -291,6 +309,15 @@ const MATERIALS = {
 
 	# Foraging — T1
 	"clover": {"name": "Clover", "type": "herb", "tier": 1, "value": 5},
+	# ⚑ THE FIRST `meat`, and the reason FOOD_MATERIAL_TYPES exists. Owner 2026-09-17:
+	# chickens as *"a food source that can be found in the dungeon so they can use it when they
+	# rest."* Caught, not looted - see `_catch_dungeon_critter` on the server.
+	#
+	# Tier 1 and low value on purpose: this is a RATION, not a trade good. It has to be worth
+	# chasing a bird round a floor while wandering monsters close in, and worth nothing at the
+	# market, or the food source becomes a valor farm and the pressure it relieves comes back as
+	# a grind.
+	"wild_fowl": {"name": "Wild Fowl", "type": "meat", "tier": 1, "value": 6},
 	"wild_berries": {"name": "Wild Berries", "type": "plant", "tier": 1, "value": 4},
 	"common_mushroom": {"name": "Common Mushroom", "type": "fungus", "tier": 1, "value": 6},
 	"reed_fiber": {"name": "Reed Fiber", "type": "plant", "tier": 1, "value": 3},

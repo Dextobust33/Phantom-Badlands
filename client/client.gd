@@ -17722,7 +17722,7 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"dungeon_rest":
 			# Build food list from crafting materials
-			var food_types = ["plant", "herb", "fungus", "fish"]
+			var food_types = CraftingDatabase.FOOD_MATERIAL_TYPES
 			var mats = character_data.get("crafting_materials", {})
 			dungeon_food_list = []
 			for mat_id in mats.keys():
@@ -21296,6 +21296,7 @@ func display_materials():
 		"mineral": {"name": "Minerals", "color": "#708090"},
 		"monster_part": {"name": "Monster Parts", "color": "#FF6600"},
 		"fungus": {"name": "Fungi", "color": "#8B008B"},
+		"meat": {"name": "Meat", "color": "#E8C87A"},
 	}
 
 	# Group materials by type
@@ -21324,7 +21325,7 @@ func display_materials():
 		grouped[mat_type].sort_custom(func(a, b): return a.tier < b.tier)
 
 	# Display in order
-	var display_order = ["ore", "wood", "leather", "cloth", "herb", "fish", "enchant", "gem", "essence", "plant", "mineral", "monster_part", "fungus"]
+	var display_order = ["ore", "wood", "leather", "cloth", "herb", "fish", "meat", "enchant", "gem", "essence", "plant", "mineral", "monster_part", "fungus"]
 	for mat_type in display_order:
 		if grouped.has(mat_type):
 			var info = type_info.get(mat_type, {"name": mat_type.capitalize(), "color": "#FFFFFF"})
@@ -21337,7 +21338,12 @@ func display_materials():
 	# Show any ungrouped materials
 	for mat_type in grouped:
 		if mat_type not in display_order:
-			display_game("[color=#FFFFFF]%s:[/color]" % mat_type.capitalize())
+			# Styled from `type_info` like the ordered pass. This branch used to hardcode white and
+			# capitalise the raw key, so a type that HAD a name and colour but had not been added to
+			# `display_order` still rendered as a bare white "Meat:" - two lists of the same types,
+			# one of which silently downgraded anything the other had not heard of.
+			var ug = type_info.get(mat_type, {"name": mat_type.capitalize(), "color": "#FFFFFF"})
+			display_game("[color=%s]%s:[/color]" % [ug.color, ug.name])
 			for mat in grouped[mat_type]:
 				var qty_color = "#FF4444" if mat.quantity >= 999 else "#AAAAAA"
 				display_game("  [color=#AAAAAA]material tier %d[/color] %s [color=%s]x%d/999[/color]" % [mat.tier, mat.name, qty_color, mat.quantity])
@@ -35847,6 +35853,27 @@ func _map_widgets_visible(v: bool) -> void:
 		(n as Control).visible = v
 
 
+func _dungeon_threat_counts() -> Dictionary:
+	"""How many things on this floor are actually a THREAT, and how many have noticed you.
+
+	⚑ CRITTERS ARE NOT MONSTERS. A chicken is an entity in the same list, so counting the list
+	gave "Remaining: 1" for a floor holding nothing but a bird - and "Floor cleared!" could never
+	appear while one was alive. It is the player's only readout of whether a floor is done.
+
+	One helper because this loop was written out TWICE, in the floor renderer and in the side
+	panel, which is two places for the next entity kind to be miscounted.
+	"""
+	var alive := 0
+	var alert := 0
+	for m in dungeon_monsters_data:
+		if bool(m.get("critter", false)):
+			continue
+		alive += 1
+		if m.get("alert", false):
+			alert += 1
+	return {"alive": alive, "alert": alert}
+
+
 func _place_dungeon_dock() -> void:
 	"""⚑ THE PARTY STRIP AND THE KEY LIVE AT THE BOTTOM OF THE DUNGEON CANVAS.
 
@@ -41156,6 +41183,9 @@ func _on_log_meta_hover(meta) -> void:
 		for _mm in dungeon_monsters_data:
 			if int(_mm.get("id", -1)) != _mid:
 				continue
+			if bool(_mm.get("critter", false)):
+				_show_dungeon_critter_hover(String(_mm.get("type", "")))
+				return
 			_show_dungeon_monster_hover(String(_mm.get("type", "")), int(_mm.get("level", 1)),
 				String(_mm.get("variant_name", "")),
 				String(_mm.get("appearance_color", "")),
@@ -41165,6 +41195,18 @@ func _on_log_meta_hover(meta) -> void:
 		return
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
 		combat_scene_panel._show_formula_popup(m)
+
+
+func _show_dungeon_critter_hover(species: String) -> void:
+	"""A passive creature. It is food, and the player needs to be told that walking into it is
+	how you take it - nothing else in a dungeon is caught by stepping on it."""
+	var body := "[b]%s[/b]  -  [color=#E8C87A]a living thing, down here[/color]\n\n" % (
+		species if species != "" else "Critter")
+	body += "It will not fight you, and it will [color=#E8C87A]run[/color] if it sees you.\n"
+	body += "[color=#1EFF00]Step onto it to catch it[/color] - worth 1-3 rations, and a rest in a\n"
+	body += "dungeon costs one."
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(body)
 
 
 func _show_overworld_level_hover(cell_key: String) -> void:
@@ -49357,7 +49399,7 @@ func _display_dungeon_food_row() -> void:
 	then a per-type breakdown, then a paragraph on where to forage - every time, whether you were
 	carrying forty or none. A player with food needs none of it. Now: the count, coloured, and the
 	advice only when it is zero, which is the only case where it is advice rather than noise."""
-	var food_types := ["plant", "herb", "fungus", "fish"]
+	var food_types: Array = CraftingDatabase.FOOD_MATERIAL_TYPES
 	var mats: Dictionary = character_data.get("crafting_materials", {})
 	var total := 0
 	for mat_id in mats.keys():
@@ -49956,12 +49998,9 @@ func display_dungeon_floor():
 	var grid_display = _render_dungeon_grid(dungeon_floor_grid, player_x, player_y)
 
 	# Count alive and alert monsters
-	var alive_count = 0
-	var alert_count = 0
-	for m in dungeon_monsters_data:
-		alive_count += 1
-		if m.get("alert", false):
-			alert_count += 1
+	var _tc: Dictionary = _dungeon_threat_counts()
+	var alive_count: int = int(_tc["alive"])
+	var alert_count: int = int(_tc["alert"])
 
 	# 2026-09-08 (presentation pass E) — the GRID and the TEXT swapped places.
 	#
@@ -50049,6 +50088,7 @@ func display_dungeon_food_select():
 			"herb": type_color = "#44FF44"
 			"fungus": type_color = "#CC88FF"
 			"plant": type_color = "#88CC44"
+			"meat": type_color = "#E8C87A"
 		display_game("  [color=#FFD700][%d][/color] %s x%d [color=%s][%s material tier %d][/color]" % [num, food.name, food.quantity, type_color, food.type.capitalize(), food.tier])
 	display_game("")
 	if total_pages > 1:
@@ -50067,12 +50107,9 @@ func _dungeon_side_panel_text() -> String:
 	var floor_num = dungeon_data.get("floor", 1)
 	var total_floors = dungeon_data.get("total_floors", 1)
 	var encounters_cleared = dungeon_data.get("encounters_cleared", 0)
-	var alive_count = 0
-	var alert_count = 0
-	for m in dungeon_monsters_data:
-		alive_count += 1
-		if m.get("alert", false):
-			alert_count += 1
+	var _tc: Dictionary = _dungeon_threat_counts()
+	var alive_count: int = int(_tc["alive"])
+	var alert_count: int = int(_tc["alert"])
 	var out = "[color=%s]%s[/color]\n" % [dungeon_color, dungeon_name]
 	out += "Floor %d/%d\n" % [floor_num, total_floors]
 	out += "Defeated: %d\n" % encounters_cleared
