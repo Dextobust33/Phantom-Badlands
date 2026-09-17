@@ -657,6 +657,54 @@ player power, so the `speciescal`/`refcal`/`rolecal` chain does not apply.
 - [x] The sticky player/companion hover — one label, two fill mechanisms, one of them caching.
 - [x] Dev loopback exempt from the connection rate limit, so a 5-client test stops losing a member.
 
+### ✅ 2026-09-16 — THE ADVERTISED GRADE IS THE ONE YOU WALK INTO
+
+Owner: *"As long as the entrance screen matches what the actual instance the player will enter is
+we are good. We don't need the overworld advertising F something and end up in a C dungeon."*
+
+**This had already happened once** and been fixed in ONE place. A dungeon's grade belongs to the
+INSTANCE, not the type (owner, 2026-09-11: *"an A5 Goblin Dungeon, or a S2 Kelpie one"*), so
+`DUNGEON_TYPES[x].tier` describes nothing a player can walk into. The earlier report - *"a player
+went into a pheonix dungeon that showed as F4 or near that on the overworld and instead it put
+them in a C5"* - was fixed for the dungeon's name INSIDE the dungeon. Four more surfaces were
+still reading the type:
+
+- [x] **The dungeon LIST** sent the TYPE'S letter beside the INSTANCE'S number, so the label was
+      assembled out of two different dungeons - while the `display_name` on the same row already
+      used the instance's. Half of one row disagreeing with the other half.
+- [x] **The entry warning** (new this session, so this one was mine).
+- [x] **The compass bearing.** Now names the full label rather than a grade: it points at ONE
+      dungeon, so it knows the rank.
+- [x] **The Atlas**, all three rows. A dungeon TYPE has no single grade to report, so the Atlas
+      now shows the grade of the one THIS player found - the record stores it at discovery, and
+      `note_dungeon_discovery` gained a `rank` so it can keep both halves.
+
+Already correct, and left alone: the overworld map hover and the entrance panel, both of which
+resolve through `_dungeon_data_for(instance)`.
+
+**Measured end to end, because reading the code cannot answer it** - both numbers are real and
+both look right at their own call site. `gm_goto_dungeon` stands the harness on a real `D` (every
+other GM route passes a bare `dungeon_type` with no instance, which resolves off the TYPE and so
+hides the bug), and the `dungeongrade` shots scene reads the grade off all three screens a player
+sees:
+
+```
+GRADE overworld entrance : 3-1  (Orc Stronghold [F1])
+GRADE entry warning      : 3-1
+GRADE inside the dungeon : Orc Stronghold [F1]
+PASS overworld and warning agree
+```
+
+Not a vacuous pass: the first run drew a Wyvern's Roost, whose TYPE is tier 3 (F) standing as a
+tier 2 (G) instance. **Proven to fire** by reverting the warning fix - it caught a Goblin Caves
+advertised G2 on the overworld and H2 on the warning.
+
+**⛑ The class is not retired, only its instances.** `get_dungeon(type).tier` is still reachable
+and still looks right at every call site - 40 reads across the codebase, most of them legitimate
+creation-time inputs that genuinely want the type's base. The structural fix is to rename the raw
+field (e.g. `base_tier`) so a display surface CANNOT read a type's grade by accident. That is a
+~40-site change spanning creation and display and wants its own session - **filed, not assumed.**
+
 ### ✅ 2026-09-16 — NO DUNGEON SHOWS A NUMERIC TIER ANY MORE
 
 Owner: *"T# dungeons shouldn't exist anymore as all dungeons are now on the letter number format."*

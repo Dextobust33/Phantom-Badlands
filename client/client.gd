@@ -7115,6 +7115,45 @@ func _dev_run_shots() -> void:
 				if _dungeon_fit_debug:
 					_dev_print_rects()
 
+			"dungeongrade":
+				# ⛑ DOES WHAT THE OVERWORLD ADVERTISED EQUAL WHAT YOU WALK INTO?
+				#
+				# Owner 2026-09-16: *"We don't need the overworld advertising F something and end
+				# up in a C dungeon."* That exact mismatch has been reported once already - an F4
+				# phoenix_nest on the map that read C5 inside - because a dungeon's grade belongs
+				# to the INSTANCE and four surfaces were still reading the TYPE's fixed number.
+				#
+				# Reading the code cannot answer this: both numbers are real and both look right
+				# at their own call site. So walk it. Stand on a real `D`, read the grade off each
+				# of the three screens a player sees, and compare them.
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				send_to_server({"type": "gm_godmode"})
+				send_to_server({"type": "gm_goto_dungeon"})
+				await get_tree().create_timer(2.5).timeout
+				var _g_ent := "%d-%d" % [int(dungeon_entrance_info.get("tier", 0)), int(dungeon_entrance_info.get("sub_tier", 0))]
+				print("[SHOTS] GRADE overworld entrance : %s  (%s)" % [_g_ent, String(dungeon_entrance_info.get("name", "?"))])
+				# The warning, reached the way a player reaches it.
+				send_to_server({"type": "dungeon_enter",
+					"dungeon_type": String(dungeon_entrance_info.get("dungeon_type", "")),
+					"instance_id": String(dungeon_entrance_info.get("instance_id", ""))})
+				await get_tree().create_timer(2.0).timeout
+				var _g_warn := "%d-%d" % [int(pending_dungeon_warning.get("tier", 0)), int(pending_dungeon_warning.get("rank", 0))]
+				print("[SHOTS] GRADE entry warning     : %s" % _g_warn)
+				await _dev_shot_capture("dungeongrade_warning")
+				# ...and in.
+				send_to_server({"type": "dungeon_enter",
+					"dungeon_type": String(pending_dungeon_warning.get("dungeon_type", "")),
+					"confirmed": true})
+				await get_tree().create_timer(3.0).timeout
+				print("[SHOTS] GRADE inside the dungeon: %s" % String(dungeon_data.get("dungeon_name", "?")))
+				await _dev_shot_capture("dungeongrade_inside")
+				if _g_ent == _g_warn:
+					print("[SHOTS] PASS overworld and warning agree: %s" % _g_ent)
+				else:
+					print("[SHOTS] FAIL overworld %s but warning %s" % [_g_ent, _g_warn])
+
 			"dungeonwarn":
 				# The screen you read BEFORE you commit. Owner 2026-09-16: the old one was a wall of
 				# text. There is no other headless route to it - every GM entry pre-confirms and the
@@ -39611,21 +39650,26 @@ func display_dungeon_atlas(message: Dictionary) -> void:
 	for e in entries:
 		var st := int(e.get("state", 0))
 		var tier := int(e.get("tier", 1))
-		var tcol: String = tier_colors[clampi(tier, 0, 9)]
+		var tcol = PowerRank.color(tier)
+		# The RECORDED rank, when there is one: the Atlas remembers the dungeon this player
+		# actually found, and a type has no grade of its own to fall back on beyond the old
+		# fixed number. Rank 0 means the entry predates the record - show the grade alone.
+		var _arank := int(e.get("rank", 0))
+		var glabel: String = PowerRank.rich_label(tier, _arank) if _arank > 0 else PowerRank.rich_grade(tier)
 		if st >= 3:  # discovered — full detail (name is click-to-locate)
 			shown += 1
 			var comp := String(e.get("companion", ""))
-			display_game("[color=%s]◆ %s[/color] [color=#808080](%s · Lv %d-%d · %d clears)[/color]  [url=atlas_locate:%s][color=#5AC8FF][b][‹ Locate ›][/b][/color][/url]" % [tcol, String(e.get("name", "?")), PowerRank.rich_grade(tier), int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), String(e.get("id", ""))])
+			display_game("[color=%s]◆ %s[/color] [color=#808080](%s · Lv %d-%d · %d clears)[/color]  [url=atlas_locate:%s][color=#5AC8FF][b][‹ Locate ›][/b][/color][/url]" % [tcol, String(e.get("name", "?")), glabel, int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), String(e.get("id", ""))])
 			var monsters: Array = e.get("monsters", [])
 			if monsters.size() > 0:
 				display_game("   [color=#909090]Monsters:[/color] %s" % ", ".join(monsters))
 			display_game("   [color=#909090]Boss:[/color] %s   [color=#A335EE]Companion egg:[/color] %s" % [String(e.get("boss", "?")), (comp if comp != "" else "—")])
 		elif st == 2:  # spotted
 			shown += 1
-			display_game("[color=%s]◇ %s[/color] [color=#808080](%s · seen near %d,%d — not yet explored)[/color]" % [tcol, String(e.get("name", "?")), PowerRank.rich_grade(tier), int(e.get("x", 0)), int(e.get("y", 0))])
+			display_game("[color=%s]◇ %s[/color] [color=#808080](%s · seen near %d,%d — not yet explored)[/color]" % [tcol, String(e.get("name", "?")), glabel, int(e.get("x", 0)), int(e.get("y", 0))])
 		elif st == 1:  # rumored
 			shown += 1
-			display_game("[color=#808080]? [i]??? — a %s dungeon, whispered of nearby[/i][/color]" % PowerRank.rich_grade(tier))
+			display_game("[color=#808080]? [i]??? — a %s dungeon, whispered of nearby[/i][/color]" % glabel)
 		else:
 			unknown += 1
 	if shown == 0:
@@ -48824,7 +48868,10 @@ func handle_dungeon_level_warning(message: Dictionary):
 		"dungeon_type": dtype,
 		"dungeon_name": message.get("dungeon_name", "Dungeon"),
 		"min_level": message.get("min_level", 1),
-		"player_level": message.get("player_level", 1)
+		"player_level": message.get("player_level", 1),
+		# Kept so the grade this screen showed can be compared with the one the player lands in.
+		"tier": int(message.get("tier", 0)),
+		"rank": int(message.get("rank", 0))
 	}
 
 	_page_clear()
@@ -48832,8 +48879,9 @@ func handle_dungeon_level_warning(message: Dictionary):
 	# The rank rides in the header rather than taking a row of its own: it is an attribute of the
 	# name, and it is how a player reads "how modified is this likely to be" at a glance.
 	var rank_tag := ""
-	if int(message.get("sub_tier", 0)) > 0:
-		rank_tag = "  " + PowerRank.rich_label(int(message.get("tier", 1)), int(message.get("sub_tier", 1)))
+	var _wrank := int(message.get("rank", message.get("sub_tier", 0)))
+	if _wrank > 0:
+		rank_tag = "  " + PowerRank.rich_label(int(message.get("tier", 1)), _wrank)
 	display_game("[color=#FF8800]═══ %s ═══[/color]%s" % [dname.to_upper(), rank_tag])
 	display_game("")
 

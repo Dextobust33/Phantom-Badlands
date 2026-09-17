@@ -2767,10 +2767,19 @@ const DUNGEON_STATE_RUMORED := 1   # heard about it (region + tier hint)
 const DUNGEON_STATE_SPOTTED := 2   # seen its 'D' on the map (name + tier + location)
 const DUNGEON_STATE_DISCOVERED := 3  # entered/cleared it (full detail)
 
-func note_dungeon_discovery(dungeon_type: String, state: int, dname: String = "", tier: int = 0, dx: int = 0, dy: int = 0, record_clear: bool = false) -> bool:
+func note_dungeon_discovery(dungeon_type: String, state: int, dname: String = "", tier: int = 0, dx: int = 0, dy: int = 0, record_clear: bool = false, rank: int = 0) -> bool:
 	"""Record/upgrade a dungeon's Atlas entry. State only ever escalates (rumored <
 	spotted < discovered). Returns true if the state was NEWLY RAISED (for a
-	'Dungeon discovered!' notice). dname/tier/location filled in when known."""
+	'Dungeon discovered!' notice). dname/tier/location filled in when known.
+
+	⚑ THE GRADE STORED HERE IS THE INSTANCE'S, NOT THE TYPE'S. Since 2026-09-11 a dungeon's
+	grade belongs to the instance - owner: *"an A5 Goblin Dungeon, or a S2 Kelpie one"* - so there
+	is no such thing as "the grade of a Goblin Caves". All three callers used to pass the TYPE's
+	fixed number, which meant the Atlas advertised a grade no dungeon in the world need have.
+
+	`rank` is new for the same reason: a record that keeps the letter but drops the number can
+	only ever show half the label, and the owner's rule is that what is advertised has to be what
+	you walk into."""
 	if dungeon_type == "":
 		return false
 	var entry: Dictionary = dungeon_atlas.get(dungeon_type, {})
@@ -2781,6 +2790,8 @@ func note_dungeon_discovery(dungeon_type: String, state: int, dname: String = ""
 		entry["name"] = dname
 	if tier > 0:
 		entry["tier"] = tier
+	if rank > 0:
+		entry["rank"] = rank
 	if dx != 0 or dy != 0:
 		entry["x"] = dx
 		entry["y"] = dy

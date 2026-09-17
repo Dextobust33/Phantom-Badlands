@@ -2505,6 +2505,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_revive_companion(peer_id)
 		"gm_test_b2":
 			handle_gm_test_b2(peer_id)
+		"gm_goto_dungeon":
+			handle_gm_goto_dungeon(peer_id)
 		"gm_enter_dungeon":
 			handle_gm_enter_dungeon(peer_id, message)
 		"gm_dungeon_drop":
@@ -15828,7 +15830,13 @@ func handle_dungeon_atlas_request(peer_id: int):
 		var def: Dictionary = DungeonDatabaseScript.DUNGEON_TYPES[dt]
 		var rec: Dictionary = atlas.get(dt, {})
 		var st: int = int(rec.get("state", 0))
-		var e: Dictionary = {"id": dt, "state": st, "tier": int(def.get("tier", 1))}
+		# ⛑ THE RECORD FIRST. A dungeon TYPE has no single grade any more - the land decides it
+		# per instance - so `def.tier` describes nothing a player can walk into. What the Atlas
+		# can honestly report is the grade of the one THIS player found, which is what the record
+		# is for. Falls back to the type for entries written before the rank was stored.
+		var e: Dictionary = {"id": dt, "state": st,
+			"tier": int(rec.get("tier", def.get("tier", 1))),
+			"rank": int(rec.get("rank", 0))}
 		if st >= Character.DUNGEON_STATE_SPOTTED:
 			e["name"] = String(def.get("name", dt))
 			e["x"] = int(rec.get("x", 0))
@@ -30212,7 +30220,12 @@ func handle_dungeon_list(peer_id: int):
 			"type": dungeon_type,
 			"name": display_name,
 			"description": dungeon_data.description,
-			"tier": dungeon_data.tier,
+			# ⛑ THE INSTANCE'S GRADE. This sent the TYPE's `tier` beside the INSTANCE's
+			# `sub_tier`, so the row rendered a label out of two different dungeons - and the
+			# `display_name` on the very same row was already using the instance's. Owner
+			# 2026-09-16: *"We don't need the overworld advertising F something and end up in a
+			# C dungeon."* Half of this row was doing exactly that.
+			"tier": _instance_tier(active_dungeons[active_instance]) if (active_instance != "" and active_dungeons.has(active_instance)) else int(dungeon_data.tier),
 			"sub_tier": inst_sub_tier,
 			"min_level": display_min,
 			"max_level": display_max,
@@ -30404,7 +30417,8 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 			# (`MODIFIER_COUNT_BY_RANK`) and the owner asked for rarity to be legible BEFORE the
 			# door. Read off the instance where there is one - `sub_tier` on the dungeon TYPE is
 			# the template's depth, which is the same class of mistake as `min_level`.
-			"tier": int(dungeon_data.get("tier", 1)),
+			"tier": int(active_dungeons.get(_mod_inst, {}).get("tier", dungeon_data.get("tier", 1))),
+			"rank": int(active_dungeons.get(_mod_inst, {}).get("sub_tier", 0)),
 			"sub_tier": int(active_dungeons.get(_mod_inst, {}).get("sub_tier",
 				_get_dungeon_at_location(character.x, character.y, peer_id).get("sub_tier", 0))),
 			"modifiers": _mod_rows,
@@ -30537,8 +30551,11 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	var instance = active_dungeons[instance_id]
 
 	# P1 Dungeon Atlas — entering a dungeon fully DISCOVERS it (adds to the player's Atlas).
-	var _atlas_dd = DungeonDatabaseScript.get_dungeon(dungeon_type)
-	if character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(_atlas_dd.get("name", dungeon_type)), int(_atlas_dd.get("tier", 0)), character.x, character.y):
+	# The grade of the instance being ENTERED. Recording the type's meant the Atlas could
+	# advertise a grade that no dungeon of that type in the world actually had.
+	var _atlas_inst: Dictionary = active_dungeons.get(instance_id, {})
+	var _atlas_dd = _dungeon_data_for(_atlas_inst) if not _atlas_inst.is_empty() else DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(_atlas_dd.get("name", dungeon_type)), int(_atlas_dd.get("tier", 0)), character.x, character.y, false, int(_atlas_inst.get("sub_tier", 0))):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]★ Dungeon discovered: %s — added to your Atlas.[/color]" % String(_atlas_dd.get("name", dungeon_type))})
 		_grant_cartography_xp(peer_id, character, 20, "charting a new dungeon")
 
@@ -34643,6 +34660,7 @@ func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer
 			"name": dungeon_data.get("name", "Unknown Dungeon"),
 			"dungeon_type": instance.dungeon_type,
 			"tier": int(dungeon_data.get("tier", 1)),
+			"sub_tier": int(instance.get("sub_tier", 1)),
 			"distance": dist,
 			"direction_text": _get_direction_text(x, y, instance.world_x, instance.world_y),
 			"color": dungeon_data.get("color", "#88FF88")
@@ -34662,7 +34680,7 @@ func _note_rumored_dungeons(peer_id: int, rumors: Array) -> void:
 		return
 	var character = characters[peer_id]
 	for r in rumors:
-		character.note_dungeon_discovery(String(r.get("dungeon_type", "")), Character.DUNGEON_STATE_RUMORED, String(r.get("name", "")), int(r.get("tier", 0)))
+		character.note_dungeon_discovery(String(r.get("dungeon_type", "")), Character.DUNGEON_STATE_RUMORED, String(r.get("name", "")), int(r.get("tier", 0)), 0, 0, false, int(r.get("sub_tier", 0)))
 
 func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int = -1) -> Array:
 	"""Audit #5 — cached rumor list for legacy trading posts. Refreshes every
@@ -34725,7 +34743,12 @@ func _find_nearest_dungeon_for_quest(from_x: int, from_y: int, dungeon_type: Str
 					"distance": int(dist),
 					"direction_text": _get_direction_text(from_x, from_y, instance.world_x, instance.world_y),
 					"dungeon_type": instance.dungeon_type,
-					"dungeon_name": dungeon_data.name
+					"dungeon_name": dungeon_data.name,
+					# `dungeon_data` is already `_dungeon_data_for(instance)`, so this is the grade of
+					# the dungeon the needle is pointing at - not its type's. The compass names ONE
+					# dungeon, so it gets the full label rather than a bare grade.
+					"tier": int(dungeon_data.get("tier", 1)),
+					"sub_tier": int(instance.get("sub_tier", 1))
 				}
 
 	return nearest
@@ -35844,9 +35867,11 @@ func _complete_dungeon(peer_id: int):
 
 	var character = characters[peer_id]
 	var dungeon_type = character.current_dungeon_type
-	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	var _done_inst: Dictionary = active_dungeons.get(character.current_dungeon_id, {})
+	var dungeon_data = _dungeon_data_for(_done_inst) if not _done_inst.is_empty() else DungeonDatabaseScript.get_dungeon(dungeon_type)
 	# P1 Dungeon Atlas — completing a dungeon bumps its clear count (already discovered).
-	character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(dungeon_data.get("name", dungeon_type)), int(dungeon_data.get("tier", 0)), character.x, character.y, true)
+	# The grade recorded is the one just cleared, not the type's.
+	character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(dungeon_data.get("name", dungeon_type)), int(dungeon_data.get("tier", 0)), character.x, character.y, true, int(_done_inst.get("sub_tier", 0)))
 	_grant_cartography_xp(peer_id, character, 40, "mapping a dungeon end to end")
 	var instance_id = character.current_dungeon_id
 	var inst_sub_tier = 1
@@ -36641,8 +36666,9 @@ func _use_dungeon_compass(peer_id: int, item_index: int):
 		d_color = d_data.get("color", d_color)
 
 	var msg = "[color=#FFD700]The compass needle steadies and glows![/color]\n"
-	# The GRADE, not the numeric tier. A bearing names a dungeon TYPE, so it has no rank.
-	msg += "[color=%s]%s[/color] [color=#808080](%s)[/color] lies %s." % [d_color, nearest.dungeon_name, PowerRank.rich_grade(int(d_data.get("tier", 1)) if not d_data.is_empty() else 1), nearest.direction_text]
+	# The label of the INSTANCE the needle found, not of its type - `nearest` carries both
+	# halves for exactly this. A bearing points at one dungeon, so it can name the rank.
+	msg += "[color=%s]%s[/color] [color=#808080](%s)[/color] lies %s." % [d_color, nearest.dungeon_name, PowerRank.rich_label(int(nearest.get("tier", 1)), int(nearest.get("sub_tier", 1))), nearest.direction_text]
 	send_to_peer(peer_id, {"type": "text", "message": msg})
 
 	# Send a compass_reveal payload so the client can flash a marker on the
@@ -41794,6 +41820,39 @@ func handle_gm_apply_state(peer_id: int, message: Dictionary) -> void:
 	send_to_peer(peer_id, {"type": "text",
 		"message": "[color=#808080]state: %s for %d turns[/color]" % [which, duration]})
 	send_character_update(peer_id)
+
+
+func handle_gm_goto_dungeon(peer_id: int):
+	"""Stand the player ON the nearest world dungeon entrance.
+
+	⛑ THE ONLY WAY TO TEST THE REAL ENTRY PATH. Every other GM route into a dungeon passes a
+	`dungeon_type` with no instance attached, which means the grade resolves off the TYPE - the
+	exact fallback that hides the bug this exists to catch. A player never enters that way: they
+	stand on a `D`, and everything they are shown resolves through the INSTANCE under their feet.
+
+	Owner 2026-09-16: *"We don't need the overworld advertising F something and end up in a C
+	dungeon."* Proving that needs a harness that can be standing on one."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "[GM] You are already in a dungeon."})
+		return
+	var nearest: Dictionary = _find_nearest_dungeon_for_quest(character.x, character.y, "", 0, peer_id)
+	if nearest.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "[GM] No world dungeon in range."})
+		return
+	character.x = int(nearest.x)
+	character.y = int(nearest.y)
+	send_to_peer(peer_id, {"type": "text", "message":
+		"[color=#00FF00][GM] Standing on %s (%s) at (%d, %d).[/color]" % [
+			String(nearest.get("dungeon_name", "?")),
+			PowerRank.rich_label(int(nearest.get("tier", 1)), int(nearest.get("sub_tier", 1))),
+			character.x, character.y]})
+	send_location_update(peer_id)
 
 
 func handle_gm_enter_dungeon(peer_id: int, message: Dictionary):
