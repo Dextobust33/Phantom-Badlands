@@ -72,6 +72,58 @@ enum QuestType {
 # walk a shared RNG in lockstep picking `rng.randi() % pool.size()`, so they MUST use the
 # exact same array or the accepted quest won't match the displayed one. Dungeon-centered:
 # DUNGEON_CLEAR + RESCUE + BOSS_HUNT (fabled boss) + GATHER (dungeon relic gather).
+## ⚑ WHAT A QUEST ASKS OF YOU, AND WHAT THAT IS WORTH.
+##
+## Owner 2026-09-17: *"Quests should ideally give rewards that can make them worth doing... They
+## rewards should scale based on the difficulty of the quest and be appropriate for what
+## completing one entails."* And, on the dungeon-only board: *"rewards should scale with the
+## dungeons difficulty as well as the difficulty of the task you have to do in the dungeon."*
+##
+## Before this, the reward was driven by THREE things and none of them was the task:
+##   * the POST's distance - which had itself stopped reaching the generator at all, so every
+##     board in the world paid Core rates (fixed separately, see `register_post_coords`)
+##   * the player's level
+##   * `index`, the quest's SLOT on the board. A quest in slot 4 paid more than slot 0 for no
+##     reason a player could see or act on.
+##
+## Task scaling did exist, as three ad-hoc multipliers applied inside three branches - and they
+## said that CLEARING A WHOLE DUNGEON AND ITS BOSS was worth exactly what reaching an NPC on an
+## early floor was worth (both x2.0). That is the complaint, precisely.
+##
+## So: ONE table, ordered by what the task actually costs you.
+##   * CLEAR - every floor, then the boss. The longest run on the board.
+##   * BOSS_HUNT - the same descent to the boss floor, against a BUFFED fabled boss, but you can
+##     leave the rest of the dungeon alone. Harder fight, shorter run.
+##   * RESCUE - a partial descent to a chosen floor. Scaled by HOW DEEP, below.
+##   * GATHER - relics picked up while exploring. The shallowest ask.
+const QUEST_TASK_REWARD := {
+	QuestType.DUNGEON_CLEAR: {"xp": 2.4, "valor": 1.7},
+	QuestType.BOSS_HUNT:     {"xp": 2.2, "valor": 1.6},
+	QuestType.RESCUE:        {"xp": 1.8, "valor": 1.45},
+	QuestType.GATHER:        {"xp": 1.6, "valor": 1.4},
+}
+
+## How much of the dungeon the quest makes you descend, as a reward multiplier.
+##
+## ⚑ DEPTH WAS WORTH NOTHING. A nine-floor dungeon and a three-floor dungeon paid the same to
+## clear, though one is three times the descent, three times the wandering monsters and three
+## times the chance of dying on the way. Floors are known when the quest is generated - it is
+## reading the dungeon type already - so this was an input sitting in scope and thrown away.
+##
+## Normalised around FIVE floors so this REDISTRIBUTES rather than inflates: a median dungeon is
+## unchanged, a shallow one pays less, a deep one pays more. The board's overall generosity is
+## the distance fix's business, not this one's.
+const QUEST_DEPTH_PIVOT := 5
+const QUEST_DEPTH_PER_FLOOR := 0.12
+const QUEST_DEPTH_CLAMP := Vector2(0.7, 1.6)
+
+
+static func quest_depth_mult(floors_required: int) -> float:
+	"""Reward multiplier for making a player descend `floors_required` floors."""
+	return clampf(1.0 + float(floors_required - QUEST_DEPTH_PIVOT) * QUEST_DEPTH_PER_FLOOR,
+		QUEST_DEPTH_CLAMP.x, QUEST_DEPTH_CLAMP.y)
+
+
 const DYNAMIC_QUEST_TYPES := [QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.BOSS_HUNT, QuestType.GATHER]
 
 # P2 Slice 2 — proper names for fabled dungeon bosses. The quest reads "Slay <name>";
@@ -2505,6 +2557,11 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	# P2 dungeon-only board: every dynamic quest routes into a dungeon. _get_dungeon_for_area
 	# walks down to tier 1 (always populated), so this is effectively never empty — but if it
 	# ever is, yield nothing (the board loop skips empties) rather than an overworld fallback.
+	# Task difficulty, filled in by whichever branch below runs. Defaults mean an unknown
+	# quest type is paid as-is rather than silently zeroed.
+	var _task_xp_mult: float = 1.0
+	var _task_valor_mult: float = 1.0
+	var _task_floors: int = QUEST_DEPTH_PIVOT
 	var dungeon_info = _get_dungeon_for_area(area_level)
 	if dungeon_info.is_empty():
 		return {}
@@ -2555,9 +2612,11 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["dungeon_type"] = dungeon_info.type
 			extra_fields["fabled_boss_name"] = fabled_full
 			extra_fields["is_fabled_boss"] = true
-			# Fabled bosses are the toughest board quests → the best rewards.
-			base_xp = int(base_xp * 2.2)
-			valor = max(valor + 3, int(valor * 1.6))
+			# The descent is the same as a clear; the boss is buffed but the rest of the floors
+			# can be left alone. Depth counts the whole way down to the boss floor.
+			_task_xp_mult = float(QUEST_TASK_REWARD[QuestType.BOSS_HUNT]["xp"])
+			_task_valor_mult = float(QUEST_TASK_REWARD[QuestType.BOSS_HUNT]["valor"])
+			_task_floors = int(dungeon_info.get("floors", QUEST_DEPTH_PIVOT))
 
 		QuestType.RESCUE:
 			var rescue_npc = RESCUE_NPC_TYPES[rng.randi() % RESCUE_NPC_TYPES.size()]
@@ -2576,8 +2635,12 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["dungeon_type"] = rescue_dungeon.get("type", "")
 			extra_fields["rescue_floor"] = rescue_floor
 			# Rescue quests: match dungeon clear rewards (equalized)
-			base_xp = int(base_xp * 2.0)
-			valor = max(valor + 2, int(valor * 1.5))
+			# A partial descent - and HOW DEEP is the difficulty. A rescue on floor 1 and a rescue
+			# on floor 7 paid identically before this, which is the clearest case of the reward
+			# ignoring what it was asking for.
+			_task_xp_mult = float(QUEST_TASK_REWARD[QuestType.RESCUE]["xp"])
+			_task_valor_mult = float(QUEST_TASK_REWARD[QuestType.RESCUE]["valor"])
+			_task_floors = rescue_floor
 
 		QuestType.EXPLORATION:
 			var nearby_posts = _find_nearby_posts(post_coords, 50, 300)
@@ -2604,9 +2667,10 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			quest_desc = "Venture into a %s and defeat %s." % [dungeon_info.name, dungeon_info.boss]
 			target = 1
 			extra_fields["dungeon_type"] = dungeon_info.type
-			# Dungeon quests give bonus rewards
-			base_xp = int(base_xp * 2.0)
-			valor = max(valor + 2, int(valor * 1.5))
+			# The longest ask on the board: every floor, then the boss.
+			_task_xp_mult = float(QUEST_TASK_REWARD[QuestType.DUNGEON_CLEAR]["xp"])
+			_task_valor_mult = float(QUEST_TASK_REWARD[QuestType.DUNGEON_CLEAR]["valor"])
+			_task_floors = int(dungeon_info.get("floors", QUEST_DEPTH_PIVOT))
 
 		QuestType.GATHER:
 			# P2 Slice 3 — DUNGEON GATHER. Recover N themed relics scattered as floor loot
@@ -2620,8 +2684,17 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["dungeon_type"] = dungeon_info.type
 			extra_fields["gather_relic_name"] = relic_name
 			extra_fields["is_dungeon_gather"] = true
-			base_xp = int(base_xp * 1.6)
-			valor = max(valor + 2, int(valor * 1.4))
+			# Picked up while exploring - the shallowest ask, and it does not require the bottom.
+			_task_xp_mult = float(QUEST_TASK_REWARD[QuestType.GATHER]["xp"])
+			_task_valor_mult = float(QUEST_TASK_REWARD[QuestType.GATHER]["valor"])
+			_task_floors = maxi(1, int(dungeon_info.get("floors", QUEST_DEPTH_PIVOT)) / 2)
+
+	# ⚑ APPLIED ONCE, HERE - not inside four branches. The task multiplier and the depth of
+	# the descent are the two things the owner asked for, and they are the last word on the
+	# reward so that every quest type is paid by the same rule.
+	var _depth_mult: float = quest_depth_mult(_task_floors)
+	base_xp = int(float(base_xp) * _task_xp_mult * _depth_mult)
+	valor = int(clampf(float(valor) * _task_valor_mult * _depth_mult, 3, 250))
 
 	# Determine reward tier for display tag
 	var reward_tier: String
