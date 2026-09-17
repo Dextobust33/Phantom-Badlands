@@ -1893,21 +1893,37 @@ chain after it), party half two (independent movement + join-in-progress), contr
       the map. Probe `tools/probe/text_map_mark.gd` checks that case explicitly, along with the
       row (this codebase has got the map's inverted y axis wrong twice) and a no-mark control that
       must come back byte-identical to the plain renderer.
-- [ ] **The ring can sit under the corner labels** near the top corners of the map — **narrowed
-      2026-09-17 to the sprites-OFF path only, and de-prioritised.** Read off `_place_map_widgets`:
-      when the sprite canvas is in use — which is the default and what almost every player sees —
-      the Coords and Area boxes live in the **margins beside** the map, not over it, so there is
-      nothing to occlude. They only *"float over its corners"* in the text-map layout, where the
-      map is drawn in `map_display`.
-      The geometry there, still derived rather than measured in pixels: each box spans x 8 to
-      8+`margin_w` (default 240) and y 8 to 60 over a panel a few hundred pixels wide, so at a
-      ~7x14 text cell they cover roughly the **top four rows of about a third of the width at each
-      corner**. Which means the honest version of this item is bigger than the ring: on the
-      sprites-off path those boxes hide a chunk of the map itself.
-      **Not fixed, deliberately.** Choosing where they should go instead needs the screen measured,
-      not the code reasoned about, and it is a minority configuration where the side-panel bearing
-      still names the destination and its distance. Worth doing as part of the UI audit, with a
-      capture, rather than guessed at now.
+- [x] **The text overworld map is RETIRED** — **DONE 2026-09-17.** Owner, asked whether the
+      sprites-off path was still worth supporting: *"Retire the text map."*
+      Gone: the settings toggle, the saved `overworld_sprites` setting, the settings row, the
+      `_toggle_overworld_sprites` handler and every `if overworld_sprites` branch. **One supported
+      overworld renderer** — no duplicate path to keep in step, no "which map am I looking at"
+      class of bug, one fewer setting for the controller/phone simplification, and the
+      corner-label occlusion below is now unreachable in normal play.
+      An old settings file carrying `overworld_sprites: false` is simply ignored, which is the
+      point. The row is left OUT rather than renumbered (slot 7 is a gap): those numbers are typed
+      from muscle memory, and the UI audit renumbers the whole screen at once or not at all.
+      ⛑ **What is KEPT, and why it is not a half-measure.** The sprites are licence-restricted and
+      live in a separate private repo, so a source build legitimately has none — deleting the last
+      resort would hand that case a **blank** map rather than a letter map. So it still falls back,
+      and it is no longer silent: it names the cause where the map would be. The accepted cost
+      (*"licence-restricted art missing from a build becomes fatal rather than degraded"*) is
+      applied at the **release gate** instead, as a new `overworld_art` check — which is where
+      fatal belongs, at the build, rather than in front of a player who cannot do anything about
+      it. Verified: `[BUILDVERIFY] overworld_art=true`.
+- [ ] **The Coords/Area boxes can cover the corners of the map** — **re-scoped 2026-09-17, and it
+      was never really about the ring.** Read off `_place_map_widgets`: on the sprite canvas — the
+      only overworld renderer now — those boxes live in the **margins beside** the map, so there is
+      nothing to occlude. They *"float over its corners"* only when the map is drawn into
+      `map_display`, which `_ow_canvas_eligible()` selects while in combat, in a dungeon or in the
+      house. Retiring the text map removed the configuration this was originally filed against.
+      The geometry in the remaining case, derived and still not measured in pixels: each box spans
+      x 8 to 8+`margin_w` (default 240) and y 8 to 60, so at a ~7x14 text cell it covers roughly
+      the **top four rows of about a third of the width at each corner**. Which makes the honest
+      item bigger than the gold ring — it hides part of the map itself.
+      **Deliberately not fixed here.** Deciding where they should go needs the screen measured,
+      not the code reasoned about, and the overworld map is barely the thing a player is looking at
+      in those three states. For the UI audit, with a capture.
 - [x] **The ring, the walk and the bearing could all name different tiles** — **DONE 2026-09-17,
       and it was worse than this item said.** Filed as needing *two* unfinished starter dungeons.
       It needed one, and there were **three** owners of the destination, not two:

@@ -117,6 +117,11 @@ check "outsmart_button_gone" "true"          "$(field outsmart_button_gone)"
 check "passive_single_source" "true"         "$(field passive_single_source)"
 # The sprite Sanctuary's art is loaded by path and untracked; prove the packaged build has it.
 check "sanctuary_sprites"    "true"          "$(field sanctuary_sprites)"
+# THE OVERWORLD SPRITE PACK. Since 2026-09-17 the text map is no longer a supported MODE (owner:
+# "Retire the text map"), so a build without this art is not a degraded build, it is a broken one -
+# it would boot, draw the letter map, and say so where the map should be. This is the line that
+# makes that fatal here rather than something a player finds.
+check "overworld_art"        "true"          "$(field overworld_art)"
 # v0.9.790: the off-map guide arrow (OverworldRoom.build's 7th argument).
 check "mark_arrow"           "true"          "$(field mark_arrow)"
 # v0.9.791: the dungeon Warden figure (client._dungeon_warden_img).

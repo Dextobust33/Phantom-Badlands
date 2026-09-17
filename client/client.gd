@@ -165,7 +165,6 @@ func _cls(raw) -> String:
 const OVERWORLD_POST_CROP := 11
 ## Off falls back to the letters, and so does a build whose art is missing. There is no settings
 ## button for this yet - see the backlog; the fallback is automatic, so nobody is stranded.
-var overworld_sprites := true
 ## The dungeon entrances in the current view, keyed by map cell, so a hover can name one.
 var _overworld_dungeons: Dictionary = {}
 ## Cell key -> who is standing there, for hover and click. Rebuilt with every map redraw.
@@ -2715,6 +2714,11 @@ func _ready():
 		# The sprite Sanctuary (2026-09-11) is licence-restricted art loaded BY PATH, so a build
 		# made on a machine without the bake shows the ASCII room with nothing to say why.
 		print("[BUILDVERIFY] sanctuary_sprites=", _SanctuaryRoom.available())
+		# ⚑ AND THE OVERWORLD ART, for the same reason and a sharper one: since 2026-09-17 the
+		# text map is no longer a supported MODE, so a build without the sprite pack is not a
+		# degraded build, it is a broken one. This is the line that makes "the art is missing"
+		# fatal at the gate instead of something a player discovers.
+		print("[BUILDVERIFY] overworld_art=", _OverworldRoom.available())
 		# ⚑ THE MULTI-CELL ART IS DATA, AND DATA IS WHAT SLIPS OUT OF A BUILD. The full-size
 		# tiles are driven by `big_tiles.json`, which is a raw file rather than an imported
 		# resource - exactly the shape that made VERSION.txt ship stale and made the monster
@@ -6263,8 +6267,6 @@ func _input(event):
 				_toggle_disable_tutorial()
 			elif keycode == KEY_6:
 				_toggle_map_legend()
-			elif keycode == KEY_7:
-				_toggle_overworld_sprites()
 			elif keycode == KEY_8:
 				settings_submenu = "stat_priority"
 				_page_clear()
@@ -30447,8 +30449,6 @@ func _load_keybinds():
 				# v0.9.417 — condensed_combat_log removed; ignore any saved value.
 				if data.has("show_map_legend"):
 					show_map_legend = data["show_map_legend"]
-				if data.has("overworld_sprites"):
-					overworld_sprites = bool(data["overworld_sprites"])
 				if data.has("comparison_pinned_stats") and data["comparison_pinned_stats"] is Array:
 					comparison_pinned_stats = data["comparison_pinned_stats"]
 
@@ -30481,7 +30481,6 @@ func _save_keybinds():
 	save_data["sfx_muted"] = sfx_muted
 	# v0.9.417 — condensed_combat_log removed; no longer saved.
 	save_data["show_map_legend"] = show_map_legend
-	save_data["overworld_sprites"] = overworld_sprites
 	save_data["comparison_pinned_stats"] = comparison_pinned_stats
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
 	if file:
@@ -31072,13 +31071,12 @@ func display_game_settings():
 	display_game("[5] Tutorial on New Character: %s" % tutorial_status)
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
 	display_game("[6] Map Legend: %s" % legend_status)
-	# Phase 2.95 PHASE 2. Off falls back to the letters the map has always been, and so does a
-	# build whose art is missing - so this can never leave anyone without a map.
-	var sprites_status = "[color=#00FF00]ON[/color]" if overworld_sprites else "[color=#FF6666]OFF[/color]"
-	if _OverworldRoom.available():
-		display_game("[7] Overworld Map Sprites: %s" % sprites_status)
-	else:
-		display_game("[color=#808080][7] Overworld Map Sprites: art not installed[/color]")
+	# ⚑ SLOT 7 WAS "Overworld Map Sprites", RETIRED 2026-09-17. Owner, asked whether the
+	# sprites-off path was still worth supporting: *"Retire the text map."* One renderer, so
+	# there is nothing to toggle - and one fewer setting for the controller/phone simplification
+	# the owner wants. The row is left OUT rather than renumbered: the numbers are typed by
+	# players from muscle memory, and the UI audit renumbers the whole screen at once or not at
+	# all. A build with no art says so where the map would be (see `_overworld_display`).
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
 	display_game("[8] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
 	display_game("")
@@ -38801,7 +38799,7 @@ func _ow_canvas_eligible() -> bool:
 	Sprites only: the ASCII fallback's player-marker overlay measures itself against map_display,
 	so moving that map would put the marker in the wrong place - and a map made of letters is the
 	thing that has to keep working when everything else fails."""
-	return overworld_sprites and _OverworldRoom.available() 		and not dungeon_mode and not _house_room_active() 		and not in_combat and not _combat_ui_busy() 		and game_output != null and map_display != null
+	return _OverworldRoom.available() 		and not dungeon_mode and not _house_room_active() 		and not in_combat and not _combat_ui_busy() 		and game_output != null and map_display != null
 
 
 func _canvas_panel_open() -> bool:
@@ -43767,25 +43765,6 @@ func _toggle_map_legend():
 		_page_clear()
 		display_game_settings()
 
-func _toggle_overworld_sprites():
-	"""Draw the overworld as art, or as the letters it has always been.
-
-	A real setting rather than a variable, per the project rule that a new entry point is a
-	visible control. It is also the honest escape hatch: the art is licence-restricted and not in
-	git, machines differ, and a player who does not like it should not have to."""
-	overworld_sprites = not overworld_sprites
-	_save_keybinds()
-	_page_clear()
-	var status = "SPRITES" if overworld_sprites else "TEXT"
-	var color = "#00FF00" if overworld_sprites else "#FF6666"
-	display_game("[color=%s]Overworld Map: %s[/color]" % [color, status])
-	display_game("[color=#808080]Take a step to redraw the map.[/color]")
-	await get_tree().create_timer(1.0).timeout
-	if settings_submenu == "game_settings":
-		_page_clear()
-		display_game_settings()
-
-
 func _toggle_condensed_combat_log():
 	"""Toggle the per-turn condensed combat log."""
 	condensed_combat_log = not condensed_combat_log
@@ -45136,7 +45115,7 @@ func _sync_map_sprites_overlay() -> void:
 	# drawn 1 space too low... I have to try to walk into the space above them to interact"* -
 	# that last one is this overlay drawing YOU a row off, so everything else looked shifted
 	# relative to you.
-	if overworld_sprites and _OverworldRoom.available() and not dungeon_mode:
+	if _OverworldRoom.available() and not dungeon_mode:
 		local.visible = false
 		if _local_companion_label:
 			_local_companion_label.visible = false
@@ -50318,14 +50297,26 @@ func _nearby_player_named(pname: String) -> Dictionary:
 
 
 func _overworld_display(payload: Dictionary) -> String:
-	"""The location display with the map drawn as art.
+	"""The location display with the map drawn as art. The ONLY overworld renderer.
 
 	Everything except the map grid is untouched - the header, the minimap, the caption - so this
-	cannot move the layout. Every failure falls back to `inflate`, which is the text map the
-	server has always sent: art missing, payload without a meaning grid, renderer refusing to
-	build. A map that will not draw is worse than a map made of letters."""
-	if not overworld_sprites or not _OverworldRoom.available():
-		return MapPayload.inflate(payload)
+	cannot move the layout.
+
+	⚑ THE TEXT MAP IS NO LONGER A MODE (owner 2026-09-17: *"Retire the text map."*). There is no
+	toggle, no saved setting and no `overworld_sprites` branch anywhere; a single renderer means
+	no duplicate path to keep in step and no "which map am I looking at" bugs.
+
+	What survives is an EMERGENCY, and it is no longer silent. The sprites are licence-restricted
+	and live in a separate private repo, so a source build legitimately has none - deleting the
+	last resort would hand that case a blank map rather than a letter map. So it still falls back,
+	and it SAYS SO, naming the cause where the map would be. The release gate (`overworld_art`)
+	makes the case unreachable in anything shipped, which is where "fatal" belongs: at the build,
+	not in front of a player who cannot do anything about it."""
+	if not _OverworldRoom.available():
+		return ("[color=#FF6666]Overworld art is not installed in this build — drawing the "
+			+ "letter map.[/color]\n[color=#808080]This is a source build without the "
+			+ "licence-restricted sprite pack. A release build cannot ship this way; the release "
+			+ "gate fails on it.[/color]\n\n") + MapPayload.inflate(payload)
 	var meaning: Array = MapPayload.cells(payload.get("meaning", {}))
 	var biomes: Array = MapPayload.cells(payload.get("biomes", {}))
 	if meaning.is_empty():
