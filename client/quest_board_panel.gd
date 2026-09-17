@@ -237,8 +237,16 @@ func _add_dungeon_card(e: Dictionary, pin: Dictionary, rank: int, sense: int, at
 			verdict = "  [color=#FFAA00]your level[/color]"
 		else:
 			verdict = "  [color=#9ACD32]below you[/color]"
+	# A pinned dungeon may be UNDISCOVERED - the quest is what told the player it exists -
+	# and the Atlas only fills `name` in from SPOTTED upward. The pin carries the dungeon's
+	# own name for exactly that case, so the one row that must read clearly does.
+	var dname: String = String(e.get("name", ""))
+	if dname == "":
+		dname = String(pin.get("dungeon_name", ""))
+	if dname == "":
+		dname = "?"
 	_body_line(body, "[color=%s][b]%s[/b][/color]  [color=#C8C8C8]%s[/color]   [color=#808080]Lv %d-%d · %d clears[/color]%s" % [
-		PowerRank.color(tier), label, String(e.get("name", "?")),
+		PowerRank.color(tier), label, dname,
 		int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), verdict], 15, 22)
 	if not pin.is_empty():
 		# The bridge to the other tab: what is wanted, how far along, and WHERE to hand it in -

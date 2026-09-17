@@ -2505,6 +2505,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_revive_companion(peer_id)
 		"gm_test_b2":
 			handle_gm_test_b2(peer_id)
+		"gm_goto_post":
+			handle_gm_goto_post(peer_id)
 		"gm_goto_dungeon":
 			handle_gm_goto_dungeon(peer_id)
 		"gm_enter_dungeon":
@@ -15867,14 +15869,46 @@ func handle_dungeon_atlas_request(peer_id: int):
 	# onto that tab with no quest fetch behind it.
 	var pins: Dictionary = {}
 	for q in character.active_quests:
+		# ⛑ HYDRATE THE QUEST. The STORED entry is a stub - `progress`, `target`, `quest_id`
+		# and a little extra_data - and it does NOT carry the quest name or the post to hand
+		# it in at. Worse, `dungeon_type` is only kept for DUNGEON_CLEAR, so reading the stub
+		# would have pinned ONE of the four dungeon quest types and silently ignored rescue,
+		# gather and boss-hunt.
+		#
+		# The quest LOG already solved this: prefer stored fields, fall back to regenerating
+		# the full definition from the id. Pins use the same route rather than a second,
+		# thinner one.
+		#
+		# Found because a probe fed the renderer IDEAL data and passed - the pin looked right
+		# with a name and a post because the test provided them. The live data has neither.
+		var qid: String = String(q.get("quest_id", ""))
 		var qd: String = String(q.get("dungeon_type", ""))
+		var qname: String = String(q.get("quest_name", ""))
+		var qpost: String = String(q.get("trading_post", ""))
+		if qd == "" or qname == "" or qpost == "":
+			var _full: Dictionary = quest_db.get_quest(qid,
+				int(q.get("player_level_at_accept", 1)),
+				int(q.get("completed_at_post", 0)),
+				String(q.get("character_name", character.name)))
+			if not _full.is_empty():
+				if qd == "":
+					qd = String(_full.get("dungeon_type", ""))
+				if qname == "":
+					qname = String(_full.get("name", ""))
+				if qpost == "":
+					qpost = String(_full.get("trading_post", ""))
 		if qd == "":
 			continue
 		pins[qd] = {
-			"name": String(q.get("name", "A quest")),
+			"name": qname if qname != "" else "A quest",
+			# ⛑ THE DUNGEON'S OWN NAME, because a pin can point at a dungeon the player has
+			# NOT discovered - the quest is what told them it exists. The Atlas only fills in
+			# `name` from SPOTTED upward, so without this the pinned row for a quest you just
+			# took would render as "?" - the one row that must read clearly.
+			"dungeon_name": String(DungeonDatabaseScript.DUNGEON_TYPES.get(qd, {}).get("name", "")),
 			"progress": int(q.get("progress", 0)),
 			"target": int(q.get("target", 1)),
-			"post": String(q.get("trading_post", "")),
+			"post": qpost,
 		}
 	send_to_peer(peer_id, {"type": "dungeon_atlas_data", "entries": entries, "pins": pins,
 		# The Atlas is where a player CHOOSES where to go, so it has to be able to answer
@@ -41882,6 +41916,43 @@ func handle_gm_apply_state(peer_id: int, message: Dictionary) -> void:
 	send_to_peer(peer_id, {"type": "text",
 		"message": "[color=#808080]state: %s for %d turns[/color]" % [which, duration]})
 	send_character_update(peer_id)
+
+
+func handle_gm_goto_post(peer_id: int) -> void:
+	"""Stand the player ON the nearest NPC post.
+
+	⛑ THE SAME GAP `gm_goto_dungeon` FILLED, for posts. Everything that happens AT a post -
+	the quest board, the Cartographer, a post arrival recording dungeon RUMOURS - was unreachable
+	to the harness, because the only way there was to walk, and posts are procedurally placed.
+	`TRADING_POST_COORDS` is a legacy table and teleporting to its "crossroads" at (0,0) lands on
+	empty ground: two capture runs reported `accepted=0` before `at_trading_post=false` said why.
+	Ask the world where a post actually is instead of trusting a constant."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.in_dungeon:
+		# Worth saying rather than silently failing: there is no free exit from a dungeon, so a
+		# teleport out is refused and the caller would otherwise see nothing happen.
+		send_to_peer(peer_id, {"type": "error", "message": "[GM] You cannot leave a dungeon - visit a post before entering one."})
+		return
+	var np: Dictionary = chunk_manager.get_nearest_npc_post(character.x, character.y) if chunk_manager else {}
+	if np.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "[GM] No NPC post found near you."})
+		return
+	character.x = int(np.get("x", character.x))
+	character.y = int(np.get("y", character.y))
+	send_to_peer(peer_id, {"type": "text", "message":
+		"[color=#00FF00][GM] Standing on %s at (%d, %d).[/color]" % [
+			String(np.get("name", "a post")), character.x, character.y]})
+	send_location_update(peer_id)
+	# ...and REGISTER the visit, which is the half that matters. Standing on the tile is not
+	# being at the post: the quest board reads a server-side at_trading_post map that only
+	# trigger_trading_post_encounter fills, and the post ARRIVAL is also what records dungeon
+	# rumours. Two capture runs reported at_trading_post=false from a teleport alone.
+	trigger_trading_post_encounter(peer_id)
 
 
 func handle_gm_goto_dungeon(peer_id: int):

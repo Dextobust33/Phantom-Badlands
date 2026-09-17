@@ -6571,7 +6571,7 @@ func _dev_run_shots() -> void:
 				# was refused and then all four compass directions were refused too. Two captures got
 				# filed as "blinded" while showing a full-vision map. `gm_teleport` cannot be blocked by
 				# terrain, so it cannot quietly produce the wrong picture.
-				send_to_server({"type": "gm_teleport", "x": 0, "y": 0})
+				send_to_server({"type": "gm_goto_post"})
 				await get_tree().create_timer(2.0).timeout
 				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("party_overworld_blind")
@@ -7224,6 +7224,54 @@ func _dev_run_shots() -> void:
 					int(character_data.get("blind_turns_remaining", 0)), _ow_last_cols])
 				await _dev_shot_capture("blindmap_blinded")
 
+			"atlaslive":
+				# ⛑ THE PIN AND THE RUMOUR, FOR REAL. The `atlas` scene photographs the tab, but the
+				# test character has no dungeon quest and no rumours, so the two sections the owner
+				# actually decided on are simply ABSENT from that frame - and an absent section looks
+				# exactly like a working one. Both come from a POST, so one trip does both.
+				send_to_server({"type": "gm_godmode"})
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				# THE POST FIRST. The first cut entered a dungeon here and then teleported - and you
+				# CANNOT LEAVE A DUNGEON (`handle_dungeon_exit`: "no free exit"), so the teleport was
+				# refused, the board never opened and the scene reported `accepted=0`.
+				#
+				# `gm_goto_post` asks the world where a post IS. Teleporting to the legacy
+				# `TRADING_POST_COORDS` "crossroads" at (0,0) landed on empty ground, and two runs
+				# reported `accepted=0` before `at_trading_post=false` explained it.
+				send_to_server({"type": "gm_teleport", "x": 0, "y": 0})
+				await get_tree().create_timer(3.0).timeout
+				# The board, then ACCEPT whatever it offers - pressing the real button on the real card
+				# rather than sending a quest id the scene guessed at.
+				send_to_server({"type": "trading_post_quests"})
+				await get_tree().create_timer(2.0).timeout
+				# What the board actually contains, before trying to press anything - two runs reported
+				# `accepted=0` and a bare count cannot tell "no button" from "no board".
+				if quest_board_panel != null:
+					var caps: Array = []
+					var stack: Array = [quest_board_panel]
+					while not stack.is_empty():
+						var n: Node = stack.pop_back()
+						if n is Button:
+							caps.append((n as Button).text + ("!" if (n as Button).disabled else ""))
+						for c in n.get_children():
+							stack.append(c)
+					print("[SHOTS] BOARD visible=%s buttons=%s" % [str(quest_board_panel.visible), str(caps)])
+				print("[SHOTS] AT POST at_trading_post=%s" % str(at_trading_post))
+				var pressed := 0
+				if quest_board_panel != null:
+					pressed = _dev_press_buttons(quest_board_panel, "Accept", 2)
+				print("[SHOTS] ATLASLIVE accepted=%d" % pressed)
+				await get_tree().create_timer(2.5).timeout
+				# ...and NOW a dungeon, so the Atlas has discovered rows as well as the pin and the
+				# rumours. Underground is fine: the panel is a full-screen modal.
+				send_to_server({"type": "gm_enter_dungeon", "tier": 1})
+				await get_tree().create_timer(3.0).timeout
+				send_to_server({"type": "dungeon_atlas_request"})
+				await get_tree().create_timer(2.0).timeout
+				await _dev_shot_capture("atlas_live")
+
 			"atlas":
 				# The Atlas as it stands, before it is asked to be a hub. Measure the screen, then
 				# redesign it - the house rule that produced the dungeon entrance table.
@@ -7504,6 +7552,27 @@ func _dev_shot_grant_companions() -> void:
 		send_to_server({"type": "gm_givecompanion", "monster_type": mt})
 		await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.8).timeout
+
+
+func _dev_press_buttons(node: Node, caption: String, limit: int = 1) -> int:
+	"""Press up to `limit` ENABLED buttons whose text starts with `caption`. Returns how many.
+
+	The harness presses the real control a player presses, rather than sending the message behind
+	it: a scene that posts a quest id it guessed at proves the server works and says nothing about
+	whether the button is wired, which is the half that has broken before."""
+	var hits := 0
+	var stack: Array = [node]
+	while not stack.is_empty() and hits < limit:
+		var n: Node = stack.pop_back()
+		if n is Button:
+			var b := n as Button
+			if not b.disabled and b.text.begins_with(caption):
+				b.pressed.emit()
+				hits += 1
+				continue
+		for c in n.get_children():
+			stack.append(c)
+	return hits
 
 
 func _dev_report_hover_label(lbl, what: String, link_prefix: String) -> void:

@@ -628,6 +628,40 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ⛑ STILL OPEN after 2026-09-17 — the Atlas pin, live
+
+The merged panel is built and the renderer is proven (`tools/probe/atlas_pins_and_rumours.gd`,
+17 checks). **What is NOT proven is the pin on live data**, and chasing it found a real bug and
+two facts about the world worth keeping.
+
+**✅ FIXED: pins read a STUB, not a quest.** The pin was built from the entry in
+`character.active_quests`, which carries `quest_id`, `progress`, `target` and a little
+`extra_data` - and **not** the quest's name, nor the post to hand it in at. Worse,
+`extra_data["dungeon_type"]` is only written for `DUNGEON_CLEAR`, so reading the stub would have
+pinned **one of the four** dungeon quest types and silently ignored rescue, gather and boss-hunt.
+Pins now hydrate the same way the quest LOG does: prefer stored fields, fall back to
+regenerating the full definition from the quest id.
+
+**⛑ And the lesson, which is the reason to write this down.** The probe PASSED on this code. It
+passed because I handed the renderer ideal data - a pin with a name and a post - so it proved the
+renderer draws what it is given and nothing about what the game gives it. A test that supplies
+its own inputs cannot find a missing input.
+
+**✅ ADDED `gm_goto_post`** — the sibling of `gm_goto_dungeon`. Everything that happens AT a post
+(the quest board, the Cartographer, the arrival that records dungeon RUMOURS) was unreachable to
+the harness because posts are procedurally placed and the only way there was to walk.
+
+**⛑ NPC POSTS AND LEGACY TRADING POSTS ARE DIFFERENT THINGS, and that is what blocked the
+capture.** `gm_goto_post` lands on the nearest **NPC** post (`chunk_manager.get_nearest_npc_post`),
+but the quest board reads a server-side `at_trading_post` map that only
+`trigger_trading_post_encounter` fills - and that function asks
+`world_system.get_trading_post_at`, which finds **legacy** posts. So standing on an NPC post
+leaves `at_trading_post=false` and the board never opens. The quest-board handler already knows
+this (it has an `elif at_player_station.has(peer_id)` branch), which suggests NPC posts reach
+their board another way. **Next step: find that route and give `gm_goto_post` the same one**, then
+the live pin frame is one run away. Teleporting to `TRADING_POST_COORDS["crossroads"]` at (0,0) is
+NOT the answer - it is a legacy table and that coordinate is empty ground.
+
 ### ▶ START HERE (2026-09-17 morning) — THE DUNGEON ARC, AUDITED
 
 The owner chose **the Atlas as hub + quest board** to begin the arc, with *"ensure you're
