@@ -816,6 +816,9 @@ func show_topic(topic_key: String) -> void:
 	_set_index_visible(false)
 	if _all_button:
 		_all_button.visible = true
+	# Sized from the viewport every time it opens, not once at build: the window can be
+	# resized, and a box measured against the old size is the bug this is fixing.
+	_fit_body_to_viewport()
 	visible = true
 	if _close_button:
 		_close_button.grab_focus()
@@ -837,6 +840,7 @@ func show_index() -> void:
 	_set_index_visible(true)
 	if _all_button:
 		_all_button.visible = false
+	_fit_body_to_viewport()
 	visible = true
 	if _index_box != null and _index_box.get_child_count() > 0:
 		(_index_box.get_child(0) as Control).grab_focus()
@@ -891,6 +895,25 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_on_close()
 
 
+## ⚑ THE PANEL NEVER OUTGROWS THE SCREEN. Both scrolling regions are sized from the viewport
+## rather than from a fixed constant, so a long topic scrolls instead of hanging off the bottom -
+## and a small window gets a smaller box rather than an unreadable one.
+const HELP_BODY_MIN := 240.0
+const HELP_BODY_MAX := 620.0
+const HELP_BODY_SHARE := 0.55
+
+
+func _fit_body_to_viewport() -> void:
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var h: float = clampf(vp.get_visible_rect().size.y * HELP_BODY_SHARE, HELP_BODY_MIN, HELP_BODY_MAX)
+	if _body_label != null and is_instance_valid(_body_label):
+		_body_label.custom_minimum_size = Vector2(516, h)
+	if _index_scroll != null and is_instance_valid(_index_scroll):
+		_index_scroll.custom_minimum_size = Vector2(516, h)
+
+
 func _build_layout() -> void:
 	# Dim backdrop.
 	var dim := ColorRect.new()
@@ -934,7 +957,14 @@ func _build_layout() -> void:
 
 	_body_label = RichTextLabel.new()
 	_body_label.bbcode_enabled = true
-	_body_label.fit_content = true
+	# ⛑ `fit_content` MUST BE FALSE HERE, and it was true alongside `scroll_active`.
+	# The two contradict each other: `fit_content` grows the label to its entire content,
+	# so the scroller NEVER engages - the panel simply gets taller than the screen, and a
+	# CenterContainer centres an oversized panel, which cuts off the bottom AND the top.
+	# Owner 2026-09-17: *"The companions help box that pops up spills over vertically,
+	# can't see the bottom of it."* The longest topics are the ones that overflow, which
+	# is to say the ones most worth reading.
+	_body_label.fit_content = false
 	_body_label.scroll_active = true
 	_body_label.add_theme_font_size_override("normal_font_size", 14)
 	_body_label.custom_minimum_size = Vector2(516, 280)
