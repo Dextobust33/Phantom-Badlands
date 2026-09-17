@@ -7215,6 +7215,41 @@ func _dev_run_shots() -> void:
 					int(character_data.get("blind_turns_remaining", 0)), _ow_last_cols])
 				await _dev_shot_capture("blindmap_blinded")
 
+			"atlas":
+				# The Atlas as it stands, before it is asked to be a hub. Measure the screen, then
+				# redesign it - the house rule that produced the dungeon entrance table.
+				send_to_server({"type": "gm_godmode"})
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				# A few dungeons entered, so the Atlas has DISCOVERED rows rather than a page of "???".
+				for _i in range(3):
+					send_to_server({"type": "gm_enter_dungeon", "tier": _i + 1})
+					await get_tree().create_timer(2.5).timeout
+					send_to_server({"type": "dungeon_exit"})
+					await get_tree().create_timer(2.0).timeout
+				# OUT of the dungeon before asking. The Atlas drawn underground lands in the side
+				# column, because the canvas belongs to the floor - so the first capture photographed
+				# a squeezed column with the header scrolled off, which is not the screen being judged.
+				var _tries := 0
+				while dungeon_mode and _tries < 4:
+					_tries += 1
+					send_to_server({"type": "dungeon_exit"})
+					await get_tree().create_timer(2.0).timeout
+				if dungeon_mode:
+					print("[SHOTS] WARN still underground after %d exits" % _tries)
+				await get_tree().create_timer(1.0).timeout
+				send_to_server({"type": "gm_set_cartography", "rank": 5})
+				await get_tree().create_timer(1.0).timeout
+				send_to_server({"type": "dungeon_atlas_request"})
+				await get_tree().create_timer(1.5).timeout
+				if game_output and game_output.get_v_scroll_bar():
+					game_output.get_v_scroll_bar().value = 0
+				await get_tree().create_timer(0.5).timeout
+				print("[SHOTS] ATLAS lines=%d" % game_output.get_parsed_text().split("
+").size())
+				await _dev_shot_capture("atlas")
+
 			"hoverproof":
 				# ⛑ WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
 				#
@@ -32862,7 +32897,15 @@ func display_changelog():
 	# truth about its own grade everywhere - including in what it pays you.
 	# v0.9.797 - fights far below you resolve where you stand, and the map stops doubling up
 	# behind a Continue prompt.
-	display_game("[color=#00FF00]v0.9.798[/color] [color=#808080](Current)[/color]")
+	# v0.9.799 - an ability that never worked now works, blindness stops being a postage
+	# stamp, and every effect on you has a picture.
+	display_game("[color=#00FF00]v0.9.799[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: an Eternal's Smite never actually weakened you.[/color] Smite is meant to curse you with [b]-25% damage for 10 rounds[/b] alongside the poison. The poison worked. The damage reduction [b]had never existed[/b] - the curse was written onto you and nothing in the game ever read it. It is real now, and it applies to [b]every card and every attack[/b], not just a handful.")
+	display_game("  [color=#FF8000]★ BLINDED, YOU CAN ACTUALLY SEE THE MAP.[/color] With your sight cut the overworld is a small cross of tiles - correct, and it was drawn [b]postage-stamp sized[/b] in a corner of a screen with room to spare. The tiles are drawn at [b]double size[/b] now when the view is small enough to afford it, so blindness reads as [b]limited[/b] rather than merely tiny. The normal map is unchanged.")
+	display_game("  [color=#1EFF00]◆ Every effect on you has an icon.[/color] The last few that still showed as bare text - [b]Guard down[/b] and [b]Time anchored[/b] - have pictures like the rest now, and every one of them is [b]hoverable[/b] for what it does and how long it lasts.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.798[/color]")
 	display_game("  [color=#FF8000]★ THE DUNGEON ENTRANCE SCREEN IS SOMETHING YOU CAN SKIM.[/color] It ran past [b]twenty lines[/b] of prose - two paragraphs about food, a full sentence for every kind of ground - with the two numbers that actually decide it buried in the middle. It is a [b]table[/b] now: one fact per row, monster levels first and colour-coded against your own, then what is unusual about the place, its floors, its ground, your food and how you get out. Nothing was dropped - [b]hover any ground marker[/b] for the full description.")
 	display_game("  [color=#FF8000]★ WHAT A DUNGEON IS WORTH IS NOW SAID IN NUMBERS.[/color] A modified dungeon used to describe itself in flavour - \"What died here did not finish dying\" - and never once told you the trade. Each one now reads as [b]cost and reward side by side[/b]: [color=#FF8888]40% more HP[/color] against [color=#88FF88]+20% XP[/color]. Same for [b]Hard Mode[/b].")
 	display_game("  [color=#FF4444]★ FIXED: a dungeon could advertise one grade and deliver another.[/color] A dungeon's grade belongs to the [b]place it spawned[/b], not to what kind of dungeon it is - that is what lets an [b]A5 Goblin Caves[/b] exist. Six screens were still reading the template: the [b]dungeon list[/b] printed one dungeon's letter beside another's number, and the [b]Atlas, compass and entry warning[/b] could all name a grade you would never meet. They all read the real one now.")

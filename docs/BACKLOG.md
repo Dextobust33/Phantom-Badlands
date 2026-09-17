@@ -628,6 +628,57 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ▶ START HERE (2026-09-17 morning) — THE DUNGEON ARC, AUDITED
+
+The owner chose **the Atlas as hub + quest board** to begin the arc, with *"ensure you're
+tracking the cartography stuff as well (or just that it exists)"*. The audit is done; the design
+is not started. **Read this block before touching the Atlas.**
+
+**What the audit found, by following call paths rather than reading items:**
+
+| arc item | reality |
+|---|---|
+| Dungeon-centred questing | ✅ **already built** (P2, 2026-08-26) — ticked below, no work needed |
+| Atlas as hub + quest board | **not started** — this is the chosen piece |
+| 53-dungeon card content | **4 of 59** authored; machinery complete, prerequisite met |
+| Themed floor equipment | not started; the item documents the exact gap |
+
+**✅ CARTOGRAPHY EXISTS AND IS COMPLETE** — the owner asked, and the answer is yes:
+* ranks **1-8**, XP from discovery (**+20**) and clears (**+40**), `Character.add_cartography_xp`
+* rank **3** → Cartographers give direction + distance; rank **5** → precise coordinates;
+  rank **8** (`CARTOGRAPHY_SENSE_RANK`) → Locate **anywhere**, no post and no Valor
+* already displayed at the top of the Atlas (rank, precision, XP to next), and rank-ups announce
+  the capability they just unlocked
+* **the hub already has a front door:** a Cartographer NPC (`K`) at a post calls
+  `_handle_cartographer_station`, which opens the Atlas. Any hub design should use that rather
+  than invent a second entry point.
+
+**What the Atlas is today** (captured, `shots.py atlas`): a CODEX plus a locator. Per discovered
+dungeon it prints a title row (name, grade, level band, clears) with a `[‹ Locate ›]` link, then
+Monsters, then Boss + Companion egg — three lines each — and one summary line for the rest
+(*"...and 35 more dungeon(s) still undiscovered"*). 12 lines with three dungeons known.
+
+**What it is NOT, and what "hub" has to mean:**
+* **no quests anywhere on it.** Questing is already dungeon-centred, so every daily quest points
+  at a dungeon — and the screen that lists dungeons does not say which ones are wanted. Today a
+  player reads the Atlas, then walks to a post to find out what it asks for. That gap is the item.
+* no verdict against the player. The dungeon ENTRANCE screen now colour-codes monster level
+  against your own; the Atlas does not, though it is where you choose where to go.
+* no sense of progress beyond a clear count.
+
+**Open questions to settle with the owner BEFORE building** (the backlog's own rule):
+1. Does the Atlas SHOW quests, or ACCEPT them? Accepting from anywhere competes with posts as
+   the reason to travel; showing only keeps the post meaningful.
+2. Does a quest pin its dungeon in the list, or does the list gain a "Wanted" section?
+3. Should undiscovered dungeons be listed as rumours you can take a quest toward, or stay hidden?
+
+**⛑ One harness observation, not chased:** the `dungeon_exit` message did not leave the dungeon
+after four sends in the `atlas` scene (`[SHOTS] WARN still underground after 4 exits`), so the
+Atlas rendered into the side column. It may be GM/godmode-specific or want different params.
+Worth ten minutes before the next dungeon capture, since it will bite any scene that needs to
+come back up.
+
+
 ### ✅ v0.9.798 IS LIVE (2026-09-16 evening) — client AND server, verified
 
 Release gate PASS (958 dungeon-art lookups resolved, every performance guard intact), all seven
