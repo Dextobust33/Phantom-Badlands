@@ -316,12 +316,34 @@ def command_reach(src, cmd_dest):
     return rows
 
 
+def orphan_handlers(src):
+    """`_on_*_pressed` / `_on_*_toggled` functions that nothing connects.
+
+    ⚑ THE MIRROR OF THE DEAD-BUTTON CHECK, and it found a real one: `_on_bug_button_pressed`
+    was complete, correct and connected to NOTHING, so reporting a bug was command-only - the
+    worst thing in the game to be command-only, since a player who has just hit a bug is exactly
+    the one who does not know the command.
+
+    The map looks for entry points that reach nothing. This is the opposite: a destination
+    nothing reaches, and from the source it looks exactly like a working feature.
+    """
+    out = []
+    for m in re.finditer(r"^func (_on_[a-z_0-9]+)\(", src, re.M):
+        name = m.group(1)
+        # Connected by name, or referenced as a Callable (`.connect(name)`, `bind`, a dict value)
+        uses = len(re.findall(r"\b" + re.escape(name) + r"\b", src))
+        if uses <= 1:
+            out.append(name)
+    return out
+
+
 def main():
     src = client_gd()
     listed, handled = chat_commands(src)
     pl = panels(src)
     offered, ab_handled = action_bar(src)
     cmd_dest = command_destinations(src)
+    orphans = orphan_handlers(src)
     sole_doors = [r for r in cmd_dest if r["only"]]
     reach = command_reach(src, cmd_dest)
     speech = [r for r in reach if r["speech"] and not r["admin"]]
@@ -369,6 +391,7 @@ def main():
     A("| ...never opened from `client.gd` | **%d** |" % len(orphan_panels))
     A("| local action-bar ids offered | %d |" % len(offered))
     A("| ...with no case in `execute_local_action` (click does nothing) | **%d** |" % len(dead_buttons))
+    A("| `_on_*` handlers nothing connects (a feature with no door) | **%d** |" % len(orphans))
     A("")
 
     A("## Dead ends")
@@ -393,6 +416,18 @@ def main():
         A("while the hotkey may still work (CLAUDE.md pitfall #11):")
         A("")
         A("`" + "`, `".join(dead_buttons) + "`")
+        A("")
+    if orphans:
+        A("**Handlers nothing connects** — the mirror of a dead button: a destination nothing")
+        A("reaches, which from the source looks exactly like a working feature. This is how")
+        A("reporting a bug stayed command-only (`_on_bug_button_pressed` was never wired).")
+        A("")
+        A("Each one is either a MISSING DOOR or DEAD CODE, and the tool cannot tell which — read")
+        A("it before acting. `_on_move_button` is the known dead-code case: a movement-pad handler")
+        A("from a pad that no longer exists. It is kept deliberately, as the obvious starting")
+        A("point for the touch controls the phone-support item will need.")
+        A("")
+        A("`" + "`, `".join(orphans) + "`")
         A("")
     if orphan_panels:
         A("**Panels nothing appears to open:**")
@@ -506,6 +541,7 @@ def main():
           % (len(listed), len(dead_cmd), len(unlisted)))
     print("  panels             %d scripts, %d never opened from client.gd" % (len(pl), len(orphan_panels)))
     print("  action bar         %d local ids, %d with no case" % (len(offered), len(dead_buttons)))
+    print("  orphan handlers    %d _on_* functions nothing connects" % len(orphans))
     print("  command doors      %d arms, %d are a surface's ONLY door" % (len(cmd_dest), len(sole_doors)))
     print("  retirement         %d speech, %d admin, %d take an argument, %d need a button, %d safe"
           % (len(speech), len(admin), len(argy), len(needs_button),

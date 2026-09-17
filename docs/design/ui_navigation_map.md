@@ -22,14 +22,26 @@ with the same verb are a merge, an entry point that reaches nothing is a dead bu
 | ...opening no surface at all (pure navigation, safe to retire) | 5 |
 | ...with no arm in `process_command` | **0** |
 | ...handled but not whitelisted (unreachable by typing) | **0** |
-| panel scripts | 28 |
+| panel scripts | 29 |
 | ...never opened from `client.gd` | **0** |
 | local action-bar ids offered | 382 |
 | ...with no case in `execute_local_action` (click does nothing) | **0** |
+| `_on_*` handlers nothing connects (a feature with no door) | **1** |
 
 ## Dead ends
 
 Every whitelisted command has a handler.
+
+**Handlers nothing connects** — the mirror of a dead button: a destination nothing
+reaches, which from the source looks exactly like a working feature. This is how
+reporting a bug stayed command-only (`_on_bug_button_pressed` was never wired).
+
+Each one is either a MISSING DOOR or DEAD CODE, and the tool cannot tell which — read
+it before acting. `_on_move_button` is the known dead-code case: a movement-pad handler
+from a pad that no longer exists. It is kept deliberately, as the obvious starting
+point for the touch controls the phone-support item will need.
+
+`_on_move_button`
 
 ## Surfaces
 
@@ -46,6 +58,7 @@ Every whitelisted command has a handler.
 | `pvp_combat_panel.gd` | 5 | end_combat, note_opponent_submitted, note_self_submitted, open_combat, update_state | Audit #14 PvP Slice B.2 (v0.9.563) — Combat-scene PvP panel. |
 | `clan_panel.gd` | 4 | close, open, refresh, show_action_result | Audit #14 Slice 1 — visual Clan panel (per "no chat-command-first" rule). |
 | `clan_vault_panel.gd` | 4 | close, open, refresh, set_inventory | Audit #14 Slice 6 — visual Clan Vault panel. Promotes v0.9.446's |
+| `social_panel.gd` | 4 | open, set_blocked, set_friends, set_requests | Friends, requests and blocked players — the surface the friend system never had. |
 | `tutorial_hint_panel.gd` | 4 | _on_dismiss, has_method, hide, show_hint | Audit #3 Slice 4 — modal overlay for tutorial/teaching messages. Replaces |
 | `bestiary_panel.gd` | 3 | close, open, refresh | Audit #13 Slice 2 — visual Bestiary. Account-level ledger of monster kills. |
 | `bounty_board_panel.gd` | 3 | apply_list, apply_postings, open_board | v0.9.568 — Bounty Board panel (Slice 3 of the v0.9.568 polish batch). |

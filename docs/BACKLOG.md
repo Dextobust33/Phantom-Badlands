@@ -5230,8 +5230,35 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
         `/friends`, `/freq`, `/blocklist`, `/unblock`. Retiring those removes the only way to
         accept a friend request.
 
-      **So: blocked on two pieces of work, not on a decision** — a bug-report button, and a
-      friends/social surface. Both are named in the list below. Plus the judgements the tool
+      ☑ **BOTH BUILT 2026-09-17. The sweep is unblocked.**
+      * **A Report button beside Send**, on every screen. `_on_bug_button_pressed()` had existed,
+        complete and correct, **connected to nothing** — a handler for a button nobody built — so
+        `/bug` was the only way to report one. That is the worst thing in the game to be
+        command-only: a player who has just hit a bug is exactly the one who does not know the
+        command.
+      * **A People panel** (`client/social_panel.gd`): Friends / Requests / Blocked, with the
+        pending count on the tab so an unanswered request is visible without opening it. The whole
+        friend system had no surface — no `*_panel.gd` at all — and `/friend accept <name>` was
+        the ONLY way to answer a request, with `/freq` the only way to learn one existed. A request
+        you cannot see is a request you cannot accept.
+        It sends **no protocol message of its own**: every action forwards to the function the chat
+        command calls, and the four answers (`accept` / `reject` / `cancel` / `remove`) got a shared
+        `player_friend_answer` rather than being inlined twice. Nothing was added to the protocol —
+        the server already sent all three lists.
+
+      ⚑ **AND THE MAP LOOKS BOTH WAYS NOW.** It could only find entry points that reach nothing;
+      the bug button was the opposite — a destination nothing reaches, which from the source looks
+      exactly like a working feature. `orphan_handlers` closes that class. It reports **1**:
+      `_on_move_button`, which is dead code rather than a missing door (a movement pad that no
+      longer exists), kept deliberately as the starting point for the touch controls the phone item
+      will need. The tool cannot tell the two apart and says so.
+
+      Probe: `tools/probe/social_and_bug_routes.gd`, on the real client scene, proven to fire by
+      disconnecting the bug button again (3 checks go red).
+      ⛑ Its Accept check failed first on MY OWN lambda: a GDScript closure captures by VALUE, so
+      assigning to a captured variable inside it rebinds the lambda's copy and the outer one never
+      changes. The signal was firing correctly and the probe could not see it. Mutate the
+      dictionary, never reassign it. Plus the judgements the tool
       says it cannot make — whether two surfaces with different verbs are the same thing to a
       PLAYER, and whether a button's MODE is ever entered. Those need the game run.
 

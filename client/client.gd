@@ -1893,6 +1893,8 @@ var post_status_panel = null
 # Audit #14 PvP Slice B.2 (v0.9.563) — combat-scene PvP panel. Modal opens on
 # pvp_combat_start, updates on pvp_combat_state, closes on pvp_combat_end.
 const PvPCombatPanelScript = preload("res://client/pvp_combat_panel.gd")
+const SocialPanelScript = preload("res://client/social_panel.gd")
+var social_panel = null
 var pvp_combat_panel = null
 
 # Audit #14 Slice 1 — visual clan create/roster panel (no chat-command-first).
@@ -3142,6 +3144,13 @@ func _ready():
 	# Audit #14 PvP Slice B.2 (v0.9.563) — combat-scene PvP modal.
 	pvp_combat_panel = PvPCombatPanelScript.new()
 	add_child(pvp_combat_panel)
+	# ⚑ THE FRIEND SYSTEM'S FIRST SURFACE. Everything about it - the list, the requests, the
+	# blocked - was reachable only by typing, and `/friend accept <name>` was the ONLY way to
+	# answer a request. Owner 2026-09-17: *"Anything that remains needs a way to access it via
+	# the UI."*
+	social_panel = SocialPanelScript.new()
+	add_child(social_panel)
+	social_panel.action_requested.connect(_on_social_action)
 	pvp_combat_panel.action_submitted.connect(_on_pvp_combat_action_submitted)
 
 	# Audit #14 Slice 1 — clan create/roster panel.
@@ -3305,6 +3314,7 @@ func _ready():
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
+	_ensure_bug_button()
 	input_field.gui_input.connect(_on_input_gui_input)
 	input_field.focus_entered.connect(_on_input_focus_entered)
 	input_field.focus_exited.connect(_on_input_focus_exited)
@@ -9679,6 +9689,47 @@ func cancel_whisper_to() -> void:
 		input_field.placeholder_text = ""
 
 
+func _on_social_action(action: String, username: String) -> void:
+	"""What the People panel asked for.
+
+	⚑ EVERY BRANCH FORWARDS, exactly like the player context menu. The panel sends no protocol
+	message of its own, so the typed route and the clicked route cannot drift apart - and the two
+	that had no shared function yet (`friend_accept`, `friend_reject`, `friend_cancel`,
+	`friend_remove`) got one rather than being inlined here."""
+	match action:
+		"refresh":
+			# All three at once. A tab showing yesterday's list because you have not opened it yet
+			# is worse than three cheap requests.
+			send_to_server({"type": "friend_list"})
+			send_to_server({"type": "friend_requests"})
+			send_to_server({"type": "block_list"})
+		"whisper": start_whisper_to(username)
+		"friend_accept": player_friend_answer("accept", username)
+		"friend_reject": player_friend_answer("reject", username)
+		"friend_cancel": player_friend_answer("cancel", username)
+		"friend_remove": player_friend_answer("remove", username)
+		"unblock": player_unblock(username)
+	# Whatever it was, the lists have probably changed.
+	if action != "refresh" and action != "whisper":
+		send_to_server({"type": "friend_list"})
+		send_to_server({"type": "friend_requests"})
+		send_to_server({"type": "block_list"})
+
+
+## The four answers to a friend request, which had no function of their own - the command arm sent
+## each message inline, so the panel would have been a second copy of all four.
+const _FRIEND_ANSWER_MSG := {
+	"accept": "friend_accept", "reject": "friend_reject",
+	"cancel": "friend_cancel", "remove": "friend_remove",
+}
+
+
+func player_friend_answer(what: String, target: String) -> void:
+	if target == "" or not _FRIEND_ANSWER_MSG.has(what):
+		return
+	send_to_server({"type": String(_FRIEND_ANSWER_MSG[what]), "username": target})
+
+
 func player_examine(target: String) -> void:
 	"""Ask the server for another player's details (the info popup)."""
 	if target == "":
@@ -13652,6 +13703,10 @@ func _create_shortcut_buttons():
 		["Stones", "stones_shortcut"],
 		["Post", "post_shortcut"],
 		["Clan", "clan_shortcut"],
+		# ⚑ THE FRIEND SYSTEM'S ONLY DOOR. Friends, pending requests and the blocked list were
+		# reachable only by typing, and `/friend accept` was the only way to ANSWER a request -
+		# so a request you could not see was one you could not accept.
+		["People", "social_shortcut"],
 		["Inv", "inventory_shortcut"],
 		["Help", "help_shortcut"],
 	]
@@ -13667,6 +13722,8 @@ func _create_shortcut_buttons():
 		"jobs_shortcut": Color(0.86, 0.64, 0.30), "pouch_shortcut": Color(0.86, 0.64, 0.30),
 		"inventory_shortcut": Color(0.86, 0.64, 0.30), "stones_shortcut": Color(0.86, 0.64, 0.30),
 		"build_shortcut": Color(0.45, 0.70, 0.95), "atlas_shortcut": Color(0.45, 0.70, 0.95),
+		# People sits with Clan: both are about other players.
+		"social_shortcut": Color(0.55, 0.78, 0.55),
 		"post_shortcut": Color(0.45, 0.70, 0.95), "quests_shortcut": Color(0.95, 0.80, 0.35),
 		"deck_shortcut": Color(0.78, 0.55, 0.95), "stats_shortcut": Color(0.95, 0.80, 0.35),
 		"clan_shortcut": Color(0.78, 0.55, 0.95), "help_shortcut": Color(0.70, 0.70, 0.70),
@@ -13804,6 +13861,17 @@ func _on_shortcut_button_pressed(action: String):
 			job_mode = false
 			pending_inventory_action = ""
 			open_build_mode()
+			update_action_bar()
+		"social_shortcut":
+			# Friends / requests / blocked. The panel asks the server for all three as it opens.
+			more_mode = false
+			pending_more_action = ""
+			companions_mode = false
+			eggs_mode = false
+			job_mode = false
+			pending_inventory_action = ""
+			if social_panel:
+				social_panel.open()
 			update_action_bar()
 		"quests_shortcut":
 			more_mode = false
@@ -26693,6 +26761,8 @@ func handle_server_message(message: Dictionary):
 			display_chat("[color=#666666]○[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged out.[/color]" % [logout_tag_prefix, logout_sender], "system")
 
 		"friend_list_result":
+			if social_panel:
+				social_panel.set_friends(message.get("entries", []))
 			# Audit #14 v0.9.540 — /friend list response. Renders friends
 			# with online status + current character info (parallels /clist).
 			var fl_entries: Array = message.get("entries", [])
@@ -26720,6 +26790,8 @@ func handle_server_message(message: Dictionary):
 			display_game("")
 
 		"friend_requests_result":
+			if social_panel:
+				social_panel.set_requests(message.get("incoming", []), message.get("outgoing", []))
 			# Audit #14 v0.9.540 — /friend requests response. Two sections.
 			var fr_incoming: Array = message.get("incoming", [])
 			var fr_outgoing: Array = message.get("outgoing", [])
@@ -26741,6 +26813,8 @@ func handle_server_message(message: Dictionary):
 			display_game("")
 
 		"block_list_result":
+			if social_panel:
+				social_panel.set_blocked(message.get("entries", []))
 			# Audit #14 v0.9.540 — /blocklist response.
 			var bl_entries: Array = message.get("entries", [])
 			display_game("[color=#FFD700]══════ BLOCKED USERS (%d) ══════[/color]" % bl_entries.size())
@@ -30092,22 +30166,22 @@ func process_command(text: String):
 						display_game("[color=#FF0000]Usage: /friend add <username>[/color]")
 				"accept":
 					if parts.size() > 2:
-						send_to_server({"type": "friend_accept", "username": String(parts[2])})
+						player_friend_answer("accept", String(parts[2]))
 					else:
 						display_game("[color=#FF0000]Usage: /friend accept <username>[/color]")
 				"reject", "decline":
 					if parts.size() > 2:
-						send_to_server({"type": "friend_reject", "username": String(parts[2])})
+						player_friend_answer("reject", String(parts[2]))
 					else:
 						display_game("[color=#FF0000]Usage: /friend reject <username>[/color]")
 				"cancel":
 					if parts.size() > 2:
-						send_to_server({"type": "friend_cancel", "username": String(parts[2])})
+						player_friend_answer("cancel", String(parts[2]))
 					else:
 						display_game("[color=#FF0000]Usage: /friend cancel <username>[/color]")
 				"remove", "delete", "del":
 					if parts.size() > 2:
-						send_to_server({"type": "friend_remove", "username": String(parts[2])})
+						player_friend_answer("remove", String(parts[2]))
 					else:
 						display_game("[color=#FF0000]Usage: /friend remove <username>[/color]")
 				_:
@@ -54912,6 +54986,37 @@ func handle_watch_character(message: Dictionary):
 # ===== BUG REPORTING =====
 
 const BUG_REPORT_PATH = "user://bug_reports.txt"
+
+## The Report button lives here so it can be found from anywhere. It is built in code rather
+## than in the scene for the same reason the player-info Actions button is: next to the thing it
+## sits beside, where a scene merge cannot quietly drop it.
+var bug_button: Button = null
+
+
+func _ensure_bug_button() -> void:
+	"""Put a Report button beside Send.
+
+	⚑ `_on_bug_button_pressed` has existed, complete, connected to NOTHING - a handler for a
+	button nobody built. So reporting a bug has only ever been possible by typing `/bug`, which is
+	the worst thing in the game to be command-only: it is what a player reaches for when something
+	has gone wrong, and somebody who has just hit a bug is exactly the person who does not know
+	the command.
+
+	CLAUDE.md's rule for an entry point needed on every surface: *"a small persistent button
+	somewhere unobtrusive"*. The input row is on every screen."""
+	if send_button == null or not is_instance_valid(send_button):
+		return
+	var row := send_button.get_parent()
+	if row == null or row.has_node("BugButton"):
+		return
+	bug_button = Button.new()
+	bug_button.name = "BugButton"
+	bug_button.text = "Report"
+	bug_button.tooltip_text = "Report a bug - includes your character, location and game state"
+	bug_button.focus_mode = Control.FOCUS_ALL
+	bug_button.pressed.connect(_on_bug_button_pressed)
+	row.add_child(bug_button)
+
 
 func _on_bug_button_pressed():
 	"""Handle bug report button press - prompt for optional description"""
