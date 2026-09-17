@@ -35505,7 +35505,7 @@ func _open_dungeon_treasure(peer_id: int):
 	# shot at a tier-appropriate equipment piece (this is the "more equipment
 	# in dungeons" knob) and a 25% shot at a chest-only consumable.
 	var chest_item_level = max(1, character.level)
-	var chest_equipment = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, chest_item_level)
+	var chest_equipment = _dungeon_equipment_for(String(character.current_dungeon_id), dungeon_tier, chest_item_level, 0)
 	if not chest_equipment.is_empty():
 		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
 			character.inventory.append(chest_equipment)
@@ -35748,7 +35748,7 @@ func _open_final_chest(peer_id: int):
 	# rolling twice and keeping the better outcome (existing helper rolls
 	# rarity internally).
 	var _lbonus: float = float(_dungeon_mods(character.current_dungeon_id).get("loot_bonus", 0.0))
-	var best_eq = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier, _lbonus))
+	var best_eq = _dungeon_equipment_for(String(character.current_dungeon_id), dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier, _lbonus))
 	if best_eq.is_empty():
 		# roll_dungeon_chest_equipment can fail its 55% gate; force a roll
 		# here since the final chest must always yield equipment.
@@ -35756,9 +35756,13 @@ func _open_final_chest(peer_id: int):
 		if not bases.is_empty():
 			var pick = drop_tables._roll_item_from_table(bases)
 			if not pick.is_empty():
-				best_eq = drop_tables._generate_item(pick, item_level, drop_tables._roll_rarity_for_tier(dungeon_tier))
+				# Themed like every other piece from this dungeon. This path exists because the
+				# generator can fail its own 55% gate and the final chest must always pay out -
+				# which made it the easiest place for the theme to go missing on one run in two.
+				best_eq = drop_tables._generate_item(pick, item_level, drop_tables._roll_rarity_for_tier(dungeon_tier),
+					_dungeon_theme_species(String(character.current_dungeon_id)))
 	# Roll a second time and keep whichever has a "better" rarity.
-	var alt = drop_tables.roll_dungeon_chest_equipment(dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier, _lbonus))
+	var alt = _dungeon_equipment_for(String(character.current_dungeon_id), dungeon_tier, item_level, _dungeon_loot_rarity_upgrade(inst_sub_tier, _lbonus))
 	if not alt.is_empty() and not best_eq.is_empty():
 		if _rarity_rank(str(alt.get("rarity", "common"))) > _rarity_rank(str(best_eq.get("rarity", "common"))):
 			best_eq = alt
@@ -37066,7 +37070,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 	# leave; the escape scroll above is deliberately on floor 0 for the opposite reason.
 	if floor_count > 0:
 		var _geq_floor: int = randi() % floor_count
-		var _geq = drop_tables.roll_dungeon_chest_equipment(tier, maxi(1, dungeon_level), _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
+		var _geq = _dungeon_equipment_for(instance_id, tier, maxi(1, dungeon_level), _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
 		if _geq is Dictionary and not _geq.is_empty():
 			_place_floor_item_random(instance_id, _geq_floor, floor_grids[_geq_floor], {
 				"kind": "equipment", "char": "◆",
@@ -37104,6 +37108,49 @@ func _floor_egg_species(instance_id: String, fallback: String) -> String:
 	if seen.is_empty():
 		return fallback
 	return String(seen[randi() % seen.size()])
+
+
+func _dungeon_equipment_for(instance_id: String, tier: int, item_level: int, rarity_upgrade: int) -> Dictionary:
+	"""Equipment found INSIDE a dungeon, always themed to that dungeon's own creatures.
+
+	⚑ THE ONE DOOR, and it exists because the first attempt at this used four doors. Themed loot
+	was wired into the scattered floor roll alone; the probe's call-site check then found four more
+	`roll_dungeon_chest_equipment` calls - the treasure chest, the final chest's two rolls and the
+	guaranteed floor piece - every one of them still handing out generic gear. The player would
+	have seen Balrog gear on the ground and ordinary gear in the chests, with no way to say why.
+
+	So the theme is NOT a parameter any of them passes. It is derived here, from the instance id
+	they all already have, and a new dungeon-loot site gets it by calling this instead of the
+	generator."""
+	return drop_tables.roll_dungeon_chest_equipment(
+		tier, item_level, rarity_upgrade, _dungeon_theme_species(instance_id))
+
+
+func _dungeon_theme_species(instance_id: String) -> Array:
+	"""WHOSE dungeon this is, for theming what it drops.
+
+	Owner 2026-09-08: *"higher chances for players to find floor equipment with affixes related to
+	our matching the dungeon type. Example Balrog equipment in a Balrog dungeon."*
+
+	The boss species first, then every species that actually SPAWNED on the floors - the same
+	`spawned_species` list the floor eggs are drawn from (`_floor_egg_species`), for the same
+	reason: what a place gives up should be what the player met in it, not a fixed list sitting in
+	the type table. A dungeon whose boss has no affix naming it is still themed by its inhabitants.
+
+	Measured over all 53 dungeon types: 43 are themed by their boss species alone and 10 more
+	through their monster pool. Before the cosmic species were given affixes, Chaos Sanctum and
+	The Nameless Void matched nothing at all. It is 53/53 now - see
+	`tools/probe/themed_floor_equipment.gd`, which fails if any dungeon type falls out."""
+	var out: Array = []
+	var boss_egg: String = String(DungeonDatabaseScript.get_dungeon(
+		String(active_dungeons.get(instance_id, {}).get("dungeon_type", ""))).get("boss_egg", ""))
+	if boss_egg != "":
+		out.append(boss_egg)
+	for sp in active_dungeons.get(instance_id, {}).get("spawned_species", []):
+		var name: String = String(sp)
+		if name != "" and not out.has(name):
+			out.append(name)
+	return out
 
 
 func _floor_egg_rank(dungeon_rank: int) -> int:
@@ -37160,7 +37207,7 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		var v := randi_range(tier * 2, tier * 6)
 		return {"kind": "valor", "char": "¢", "color": "#FFD700", "item_data": {"valor": v}}
 	elif roll < 82:  # equipment
-		var eq = drop_tables.roll_dungeon_chest_equipment(tier, lvl, _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
+		var eq = _dungeon_equipment_for(instance_id, tier, lvl, _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
 		if eq.is_empty():
 			return {}
 		return {"kind": "equipment", "char": "◆", "color": _get_rarity_color(eq.get("rarity", "common")), "item_data": eq}

@@ -664,7 +664,7 @@ thirds, death replay, and the launcher revamp. Any one of them is a session or s
   quality bar is the four that exist.
 
 **Blocked on an owner decision, not on effort** (each has its open questions written down):
-post-to-post road travel; dungeon-themed floor equipment; chickens as a dungeon food source;
+post-to-post road travel; chickens as a dungeon food source;
 judging the dungeon with a full party; the assassinate/Silver Tongue follow-ups.
 
 **So the honest plan for the two days:** clear the five or six genuinely small items, take the
@@ -777,7 +777,7 @@ is not started. **Read this block before touching the Atlas.**
 | Dungeon-centred questing | ✅ **already built** (P2, 2026-08-26) — ticked below, no work needed |
 | Atlas as hub + quest board | **not started** — this is the chosen piece |
 | 53-dungeon card content | **4 of 59** authored; machinery complete, prerequisite met |
-| Themed floor equipment | not started; the item documents the exact gap |
+| Themed floor equipment | **DONE 2026-09-17** — the affix pools' monster comments became a field; 53/53 types themed |
 
 **✅ CARTOGRAPHY EXISTS AND IS COMPLETE** — the owner asked, and the answer is yes:
 * ranks **1-8**, XP from discovery (**+20**) and clears (**+40**), `Character.add_cartography_xp`
@@ -5667,25 +5667,60 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       **Balance rule REVISED 2026-09-08:** dungeons may be PARTY-UPGRADABLE — much harder, much
       riskier, much better rewards — provided a solo option always exists and is completable.
       Not "one dungeon, more bodies"; an opt-in difficulty tier, signposted before entry.
-- [ ] **Dungeon-themed floor equipment** (owner 2026-09-08): *"higher chances for players to find
-      floor equipment with affixes related to our matching the dungeon type. Example Balrog
-      equipment in a Balrog dungeon."*
-      The gap is small and precise, because **the pattern already exists one branch above it**:
-      `server.gd::_roll_floor_item` receives `dungeon_type` AND `boss_egg_monster`, and the EGG
-      branch uses them (floor eggs already match the dungeon type + tier). The equipment branch
-      (`roll < 82`) calls `drop_tables.roll_dungeon_chest_equipment(tier, lvl)`, which takes only
-      tier and level — so the dungeon's identity is in scope and thrown away.
-      There is also a naming/affix pattern to copy rather than invent: `generate_arcane_hoarder_gear`
-      / `generate_warrior_hoarder_gear` / `generate_trickster_gear` in `drop_tables.gd` already
-      produce monster-flavoured items ("Arcane Hoarder's Ring of the Archon") with a level boost
-      and their own affix roll. A Balrog's Depths run wants "Balrog's ..." on the same shape.
-      Open questions to settle when this is picked up, NOT assumed now:
-        * Does the theme drive a real AFFIX BIAS (fire/burn weighting in a lava dungeon) or only
-          the name + a level/rarity boost? The owner said "affixes related to", so probably both.
-        * How much higher is "higher chance"? Pick it against the drop-rate work, not by feel.
-        * **Read `docs/design/equipment_reference.md` first** — the chase pool is epic+ only, and
-          an item's class stats come from its BASE TYPE, not its affixes. Do not design a themed
-          affix that no acquisition path can actually roll.
+- [x] **DUNGEON-THEMED FLOOR EQUIPMENT — DONE 2026-09-17.** Owner 2026-09-08: *"higher chances
+      for players to find floor equipment with affixes related to our matching the dungeon type.
+      Example Balrog equipment in a Balrog dungeon."* A Balrog's Depths run now drops
+      **"Balrog-touched Legendary Ring of the Balrog"**, and every one of the 53 dungeon types has
+      a theme.
+
+      **The content already existed — as comments.** 55 of the 120 affix rows named the monster
+      they were written for: `{"name": "Balrog-touched", ...},# Balrog`. In a trailing comment, so
+      no code could read it. The association was fully authored and completely unusable, and the
+      obvious implementation was a second table mapping dungeons to affixes — the same "one value,
+      two owners" shape as this week's other bugs, with the copy guaranteed to drift as the pools
+      grow. **So the comment became a field.** `"monster": "Balrog"` sits on the row it describes;
+      `themed_affix_subset()` reads it; there is no mapping table anywhere. Add an affix and it is
+      themed the moment it names a creature.
+
+      **Measured coverage, not hoped-for coverage:** of 53 dungeon types, **43 are themed by their
+      boss species alone and 10 more through their floor pool**. The two cosmic dungeons (Chaos
+      Sanctum, The Nameless Void) matched nothing, because the endgame cosmic species had never
+      been given affixes — six rows closed it to 53/53.
+
+      **Two faults the probe found that the feature would otherwise have shipped with:**
+      * **`Draconic` was themed to "Dragon", which is not a monster.** The species is "Ancient
+        Dragon", which the matching suffix had said all along. A themed affix naming a creature
+        that does not exist is a dead row: never picked, and indistinguishable from one that
+        simply never came up.
+      * **The first cut wired ONE of five call sites.** `roll_dungeon_chest_equipment` is called
+        five times in `server.gd` — the scattered floor roll, the guaranteed floor piece, the
+        treasure chest, and the final chest's two rolls — plus a forced fallback that calls the
+        generator directly when the 55% gate fails. Only the scatter was themed. A player would
+        have seen Balrog gear on the ground and ordinary gear in the chests with no way to
+        describe the difference. **Fixed structurally:** `_dungeon_equipment_for(instance_id, ...)`
+        is the one door, it **derives** the theme from the instance rather than taking it as a
+        parameter, and the probe is a token BAN with an allowlist — a new site that reaches the
+        generator directly fails the check. (A probe that *searches for the good call* passes on
+        finding one and says nothing about the other four. That is how four survived.)
+
+      **It is a bias, not a bonus, and that was measured too.** 45% per affix slot, so an uncommon
+      carries a themed affix ~70% of the time while the other slot stays a free roll — a themed
+      item is not a fixed item. Within a stat family a themed affix is worth **1.00x** an average
+      one across all 53 types, ranging 0.67x (Rat Warrens) to 1.46x (God Slayer Arena), which is
+      the gradient the affix authors built in by matching affix strength to monster strength.
+      **No player-power change, so no re-calibration is owed.**
+
+      ⛑ **And the first version of that power measurement was unsound** — it summed raw affix
+      values across different stats, where one hp affix (40 + 6/level) outweighs every attack
+      affix in the pool (7 + 1.2/level). A Balrog dungeon has no hp-themed affix, so biasing
+      toward its own creatures moved the roll off hp and the sum fell 11%. That is a change of
+      stat MIX, which is the intended effect, read as a loss of power. Fixed by comparing
+      **within** a stat family, which is one unit and can be compared.
+
+      Probe: `tools/probe/themed_floor_equipment.gd` — five sections, and all four of its
+      fault-detecting checks were proven to fire by re-injecting the faults (bias chance to 0, one
+      call site back to the raw generator).
+
 - [x] **Dungeon Atlas** as hub + quest board. — **DONE 2026-09-17.** It is a TAB of the quest
       panel now, not a screen of its own: one shell, two doors, and the difference carried by the
       verb each row offers (Dungeons rows Locate, Quest rows Accept / Turn In / Abandon). A quest

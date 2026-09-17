@@ -4412,7 +4412,7 @@ const DUNGEON_CHEST_CONSUMABLES_BY_TIER = {
 	9: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
 }
 
-func roll_dungeon_chest_equipment(tier: int, item_level: int, rarity_upgrade: int = 0) -> Dictionary:
+func roll_dungeon_chest_equipment(tier: int, item_level: int, rarity_upgrade: int = 0, theme_species: Array = []) -> Dictionary:
 	"""Roll a tier-appropriate equipment piece for a dungeon chest. Returns {}
 	if the chance fails or no base item is available.
 
@@ -4433,7 +4433,11 @@ func roll_dungeon_chest_equipment(tier: int, item_level: int, rarity_upgrade: in
 	var rolled_rarity = _roll_rarity_for_tier(tier)
 	if rarity_upgrade > 0:
 		rolled_rarity = upgrade_rarity(rolled_rarity, rarity_upgrade)
-	return _generate_item(base_item, item_level, rolled_rarity)
+	# `theme_species` is the dungeon's own creatures. Owner 2026-09-08: *"Example Balrog
+	# equipment in a Balrog dungeon."* The dungeon's identity was already in scope one branch
+	# above this - `_roll_floor_item` reads `boss_egg_monster` for the egg branch - and the
+	# equipment branch threw it away.
+	return _generate_item(base_item, item_level, rolled_rarity, theme_species)
 
 func roll_dungeon_chest_consumable(tier: int, item_level: int) -> Dictionary:
 	"""Roll a dungeon-exclusive consumable for a chest. Returns {} if the
@@ -4473,7 +4477,7 @@ static func _normalize_consumable_type(item_type: String) -> String:
 	# Gold/Gems - keep as-is
 	return item_type
 
-func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity: String = "") -> Dictionary:
+func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity: String = "", theme_species: Array = []) -> Dictionary:
 	"""Generate an actual item from a drop table entry. If override_rarity is set, use it (D2 system)."""
 	var item_type = drop_entry.get("item_type", "unknown")
 	var base_rarity = drop_entry.get("rarity", "common")
@@ -4516,7 +4520,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 			final_level = int(monster_level * 1.1)
 
 	# Roll for affixes (only for equipment, not consumables)
-	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level)
+	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level, false, theme_species)
 	var affix_name = _get_affix_prefix(affixes)
 	var affix_suffix = _get_affix_suffix(affixes)
 	# v0.9.665 — surface a stat mutation (Focused / Wild) in the name so the
@@ -4773,6 +4777,27 @@ func _calculate_consumable_value(tier: int, item_type: String) -> int:
 
 # D2-style guaranteed affix counts per rarity
 # Common = salvage fodder, Legendary/Artifact = best-in-slot potential
+## ⚑ HOW OFTEN A DUNGEON'S OWN MONSTERS SHOW UP IN WHAT IT DROPS.
+##
+## Owner 2026-09-08: *"higher chances for players to find floor equipment with affixes related to
+## our matching the dungeon type. Example Balrog equipment in a Balrog dungeon."*
+##
+## Applied PER AFFIX SLOT, not per item, and deliberately not 100%:
+##   * at 45% an uncommon (prefix + suffix) carries at least one themed affix 70% of the time -
+##     often enough that a Balrog's Depths run visibly drops Balrog gear
+##   * the other slot stays a free roll, so a themed item is not a FIXED item. Locking both
+##     slots would have made every piece from a given dungeon nearly identical, which is the
+##     opposite of a chase
+##
+## ⚑ AND IT IS NOT A POWER BUFF, WHICH IS WHY IT IS A BIAS AND NOT A BONUS. The themed affixes
+## span the whole value range on purpose - "of the Goblin" is the WEAKEST wits suffix in the pool
+## (3 / 0.4) and "Balrog-touched" is the STRONGEST attack prefix (7 / 1.2), because whoever wrote
+## them matched affix strength to monster strength. So a themed roll in a tier-1 dungeon is
+## slightly weaker than a free roll and a themed roll in a tier-9 dungeon slightly stronger. That
+## gradient is correct and is measured in `tools/probe/themed_floor_equipment.gd` rather than
+## asserted here; the 45% is what keeps either end from running away.
+const THEME_AFFIX_BIAS_CHANCE := 45
+
 const AFFIX_COUNTS = {
 	# 2026-09-03 — common 0 -> 1 and uncommon 1 -> 2. The strict D2 convention (white items
 	# carry no affixes) does not survive this game's scaling, because the two halves of an
@@ -4815,43 +4840,43 @@ const PREFIX_POOL = [
 	{"name": "Mighty", "stat": "attack_bonus", "base": 2, "per_level": 0.5},
 	{"name": "Brutal", "stat": "attack_bonus", "base": 4, "per_level": 0.8},
 	# Attack prefixes (monster-themed)
-	{"name": "Orcish", "stat": "attack_bonus", "base": 3, "per_level": 0.6},        # Orc
-	{"name": "Draconic", "stat": "attack_bonus", "base": 5, "per_level": 0.9},      # Dragon
-	{"name": "Demonic", "stat": "attack_bonus", "base": 6, "per_level": 1.0},       # Demon
-	{"name": "Balrog-touched", "stat": "attack_bonus", "base": 7, "per_level": 1.2},# Balrog
+	{"name": "Orcish", "stat": "attack_bonus", "base": 3, "per_level": 0.6, "monster": "Orc"},
+	{"name": "Draconic", "stat": "attack_bonus", "base": 5, "per_level": 0.9, "monster": "Ancient Dragon"},
+	{"name": "Demonic", "stat": "attack_bonus", "base": 6, "per_level": 1.0, "monster": "Demon"},
+	{"name": "Balrog-touched", "stat": "attack_bonus", "base": 7, "per_level": 1.2, "monster": "Balrog"},
 	# Defense prefixes (generic)
 	{"name": "Fortified", "stat": "defense_bonus", "base": 2, "per_level": 0.5},
 	{"name": "Armored", "stat": "defense_bonus", "base": 4, "per_level": 0.8},
 	# Defense prefixes (monster-themed)
-	{"name": "Skeletal", "stat": "defense_bonus", "base": 3, "per_level": 0.6},     # Skeleton
-	{"name": "Golem-forged", "stat": "defense_bonus", "base": 5, "per_level": 0.9}, # Iron Golem
-	{"name": "Gargoyle-hewn", "stat": "defense_bonus", "base": 6, "per_level": 1.0},# Gargoyle
+	{"name": "Skeletal", "stat": "defense_bonus", "base": 3, "per_level": 0.6, "monster": "Skeleton"},
+	{"name": "Golem-forged", "stat": "defense_bonus", "base": 5, "per_level": 0.9, "monster": "Iron Golem"},
+	{"name": "Gargoyle-hewn", "stat": "defense_bonus", "base": 6, "per_level": 1.0, "monster": "Gargoyle"},
 	# HP prefixes (generic)
 	{"name": "Healthy", "stat": "hp_bonus", "base": 10, "per_level": 2},
 	{"name": "Stalwart", "stat": "hp_bonus", "base": 20, "per_level": 3},
 	# HP prefixes (monster-themed)
-	{"name": "Trollish", "stat": "hp_bonus", "base": 25, "per_level": 4},           # Troll
-	{"name": "Hydra-scaled", "stat": "hp_bonus", "base": 30, "per_level": 5},       # Hydra
-	{"name": "Titanic", "stat": "hp_bonus", "base": 40, "per_level": 6},            # Titan
+	{"name": "Trollish", "stat": "hp_bonus", "base": 25, "per_level": 4, "monster": "Troll"},
+	{"name": "Hydra-scaled", "stat": "hp_bonus", "base": 30, "per_level": 5, "monster": "Hydra"},
+	{"name": "Titanic", "stat": "hp_bonus", "base": 40, "per_level": 6, "monster": "Titan"},
 	# Speed prefixes (generic)
 	{"name": "Quick", "stat": "speed_bonus", "base": 2, "per_level": 0.3},
 	{"name": "Swift", "stat": "speed_bonus", "base": 4, "per_level": 0.5},
 	# Speed prefixes (monster-themed)
-	{"name": "Wolfish", "stat": "speed_bonus", "base": 3, "per_level": 0.4},        # Wolf
-	{"name": "Harpy-blessed", "stat": "speed_bonus", "base": 5, "per_level": 0.6},  # Harpy
-	{"name": "Serpentine", "stat": "speed_bonus", "base": 6, "per_level": 0.7},     # World Serpent
+	{"name": "Wolfish", "stat": "speed_bonus", "base": 3, "per_level": 0.4, "monster": "Wolf"},
+	{"name": "Harpy-blessed", "stat": "speed_bonus", "base": 5, "per_level": 0.6, "monster": "Harpy"},
+	{"name": "Serpentine", "stat": "speed_bonus", "base": 6, "per_level": 0.7, "monster": "World Serpent"},
 	# Resource prefixes (mana - monster-themed)
 	{"name": "Arcane", "stat": "mana_bonus", "base": 10, "per_level": 2},
-	{"name": "Lich-touched", "stat": "mana_bonus", "base": 15, "per_level": 3},     # Lich
-	{"name": "Sphinx-blessed", "stat": "mana_bonus", "base": 20, "per_level": 4},   # Sphinx
+	{"name": "Lich-touched", "stat": "mana_bonus", "base": 15, "per_level": 3, "monster": "Lich"},
+	{"name": "Sphinx-blessed", "stat": "mana_bonus", "base": 20, "per_level": 4, "monster": "Sphinx"},
 	# Resource prefixes (stamina - monster-themed)
 	{"name": "Enduring", "stat": "stamina_bonus", "base": 5, "per_level": 1},
-	{"name": "Minotaur-forged", "stat": "stamina_bonus", "base": 8, "per_level": 1.5}, # Minotaur
-	{"name": "Ogre-made", "stat": "stamina_bonus", "base": 10, "per_level": 2},     # Ogre
+	{"name": "Minotaur-forged", "stat": "stamina_bonus", "base": 8, "per_level": 1.5, "monster": "Minotaur"},
+	{"name": "Ogre-made", "stat": "stamina_bonus", "base": 10, "per_level": 2, "monster": "Ogre"},
 	# Resource prefixes (energy - monster-themed)
 	{"name": "Energetic", "stat": "energy_bonus", "base": 5, "per_level": 1},
-	{"name": "Spider-spun", "stat": "energy_bonus", "base": 8, "per_level": 1.5},   # Giant Spider
-	{"name": "Void-touched", "stat": "energy_bonus", "base": 12, "per_level": 2},   # Void Walker
+	{"name": "Spider-spun", "stat": "energy_bonus", "base": 8, "per_level": 1.5, "monster": "Giant Spider"},
+	{"name": "Void-touched", "stat": "energy_bonus", "base": 12, "per_level": 2, "monster": "Void Walker"},
 	# v0.9.665 — expanded pool for more name variety (existing stat keys only).
 	{"name": "Savage", "stat": "attack_bonus", "base": 3, "per_level": 0.6},
 	{"name": "Bloodthirsty", "stat": "attack_bonus", "base": 5, "per_level": 0.9},
@@ -4874,6 +4899,12 @@ const PREFIX_POOL = [
 	{"name": "Vital", "stat": "energy_bonus", "base": 6, "per_level": 1.2},
 	{"name": "Charged", "stat": "energy_bonus", "base": 9, "per_level": 1.7},
 	{"name": "Frenetic", "stat": "energy_bonus", "base": 13, "per_level": 2.2},
+	# Themed loot 2026-09-17 - the endgame cosmic species had no affix naming them, so the two
+	# dungeons built around them (Chaos Sanctum, The Nameless Void) were the only two in the game
+	# that could not roll themed equipment. Valued with the existing top rows, not above them.
+	{"name": "Chaos-riven", "stat": "attack_bonus", "base": 7, "per_level": 1.2, "monster": "Avatar of Chaos"},
+	{"name": "Nameless", "stat": "defense_bonus", "base": 6, "per_level": 1.1, "monster": "The Nameless One"},
+	{"name": "Horror-marked", "stat": "hp_bonus", "base": 40, "per_level": 6, "monster": "Cosmic Horror"},
 ]
 
 # Suffix affixes: "of X" style names that appear AFTER the item name
@@ -4882,61 +4913,61 @@ const PREFIX_POOL = [
 const SUFFIX_POOL = [
 	# Stat suffixes - STR (generic + monster-themed)
 	{"name": "of Strength", "stat": "str_bonus", "base": 2, "per_level": 0.3},
-	{"name": "of the Orc", "stat": "str_bonus", "base": 3, "per_level": 0.4},       # Orc
-	{"name": "of the Ogre", "stat": "str_bonus", "base": 4, "per_level": 0.5},      # Ogre
-	{"name": "of the Titan", "stat": "str_bonus", "base": 6, "per_level": 0.7},     # Titan
+	{"name": "of the Orc", "stat": "str_bonus", "base": 3, "per_level": 0.4, "monster": "Orc"},
+	{"name": "of the Ogre", "stat": "str_bonus", "base": 4, "per_level": 0.5, "monster": "Ogre"},
+	{"name": "of the Titan", "stat": "str_bonus", "base": 6, "per_level": 0.7, "monster": "Titan"},
 	# Stat suffixes - CON (generic + monster-themed)
 	{"name": "of Fortitude", "stat": "con_bonus", "base": 2, "per_level": 0.3},
-	{"name": "of the Troll", "stat": "con_bonus", "base": 4, "per_level": 0.5},     # Troll
-	{"name": "of the Golem", "stat": "con_bonus", "base": 5, "per_level": 0.6},     # Iron Golem
-	{"name": "of the Hydra", "stat": "con_bonus", "base": 6, "per_level": 0.7},     # Hydra
+	{"name": "of the Troll", "stat": "con_bonus", "base": 4, "per_level": 0.5, "monster": "Troll"},
+	{"name": "of the Golem", "stat": "con_bonus", "base": 5, "per_level": 0.6, "monster": "Iron Golem"},
+	{"name": "of the Hydra", "stat": "con_bonus", "base": 6, "per_level": 0.7, "monster": "Hydra"},
 	# Stat suffixes - DEX (generic + monster-themed)
 	{"name": "of Dexterity", "stat": "dex_bonus", "base": 2, "per_level": 0.3},
-	{"name": "of the Spider", "stat": "dex_bonus", "base": 3, "per_level": 0.4},    # Giant Spider
-	{"name": "of the Harpy", "stat": "dex_bonus", "base": 4, "per_level": 0.5},     # Harpy
-	{"name": "of the Serpent", "stat": "dex_bonus", "base": 6, "per_level": 0.7},   # World Serpent
+	{"name": "of the Spider", "stat": "dex_bonus", "base": 3, "per_level": 0.4, "monster": "Giant Spider"},
+	{"name": "of the Harpy", "stat": "dex_bonus", "base": 4, "per_level": 0.5, "monster": "Harpy"},
+	{"name": "of the Serpent", "stat": "dex_bonus", "base": 6, "per_level": 0.7, "monster": "World Serpent"},
 	# Stat suffixes - INT (generic + monster-themed)
 	{"name": "of Intellect", "stat": "int_bonus", "base": 2, "per_level": 0.3},
-	{"name": "of the Wight", "stat": "int_bonus", "base": 3, "per_level": 0.4},     # Wight
-	{"name": "of the Lich", "stat": "int_bonus", "base": 5, "per_level": 0.6},      # Lich
-	{"name": "of the Sphinx", "stat": "int_bonus", "base": 6, "per_level": 0.7},    # Sphinx
+	{"name": "of the Wight", "stat": "int_bonus", "base": 3, "per_level": 0.4, "monster": "Wight"},
+	{"name": "of the Lich", "stat": "int_bonus", "base": 5, "per_level": 0.6, "monster": "Lich"},
+	{"name": "of the Sphinx", "stat": "int_bonus", "base": 6, "per_level": 0.7, "monster": "Sphinx"},
 	# Stat suffixes - WIS (generic + monster-themed)
 	{"name": "of Wisdom", "stat": "wis_bonus", "base": 2, "per_level": 0.3},
-	{"name": "of the Wraith", "stat": "wis_bonus", "base": 4, "per_level": 0.5},    # Wraith
-	{"name": "of the Phoenix", "stat": "wis_bonus", "base": 5, "per_level": 0.6},   # Phoenix
-	{"name": "of Entropy", "stat": "wis_bonus", "base": 6, "per_level": 0.7},       # Entropy
+	{"name": "of the Wraith", "stat": "wis_bonus", "base": 4, "per_level": 0.5, "monster": "Wraith"},
+	{"name": "of the Phoenix", "stat": "wis_bonus", "base": 5, "per_level": 0.6, "monster": "Phoenix"},
+	{"name": "of Entropy", "stat": "wis_bonus", "base": 6, "per_level": 0.7, "monster": "Entropy"},
 	# Stat suffixes - WITS (generic + monster-themed)
 	{"name": "of Cunning", "stat": "wits_bonus", "base": 2, "per_level": 0.3},
-	{"name": "of the Goblin", "stat": "wits_bonus", "base": 3, "per_level": 0.4},   # Goblin
-	{"name": "of the Mimic", "stat": "wits_bonus", "base": 4, "per_level": 0.5},    # Mimic
-	{"name": "of the Succubus", "stat": "wits_bonus", "base": 6, "per_level": 0.7}, # Succubus
+	{"name": "of the Goblin", "stat": "wits_bonus", "base": 3, "per_level": 0.4, "monster": "Goblin"},
+	{"name": "of the Mimic", "stat": "wits_bonus", "base": 4, "per_level": 0.5, "monster": "Mimic"},
+	{"name": "of the Succubus", "stat": "wits_bonus", "base": 6, "per_level": 0.7, "monster": "Succubus"},
 	# Combat suffixes - attack (generic + monster-themed)
 	{"name": "of Striking", "stat": "attack_bonus", "base": 2, "per_level": 0.4},
-	{"name": "of the Wolf", "stat": "attack_bonus", "base": 3, "per_level": 0.5},   # Wolf
-	{"name": "of the Dragon", "stat": "attack_bonus", "base": 5, "per_level": 0.7}, # Ancient Dragon
-	{"name": "of the Balrog", "stat": "attack_bonus", "base": 6, "per_level": 0.9}, # Balrog
+	{"name": "of the Wolf", "stat": "attack_bonus", "base": 3, "per_level": 0.5, "monster": "Wolf"},
+	{"name": "of the Dragon", "stat": "attack_bonus", "base": 5, "per_level": 0.7, "monster": "Ancient Dragon"},
+	{"name": "of the Balrog", "stat": "attack_bonus", "base": 6, "per_level": 0.9, "monster": "Balrog"},
 	# Combat suffixes - defense (generic + monster-themed)
 	{"name": "of Warding", "stat": "defense_bonus", "base": 2, "per_level": 0.4},
-	{"name": "of the Skeleton", "stat": "defense_bonus", "base": 3, "per_level": 0.5}, # Skeleton
-	{"name": "of the Gargoyle", "stat": "defense_bonus", "base": 5, "per_level": 0.7}, # Gargoyle
-	{"name": "of the Nazgul", "stat": "defense_bonus", "base": 6, "per_level": 0.9},# Nazgul
+	{"name": "of the Skeleton", "stat": "defense_bonus", "base": 3, "per_level": 0.5, "monster": "Skeleton"},
+	{"name": "of the Gargoyle", "stat": "defense_bonus", "base": 5, "per_level": 0.7, "monster": "Gargoyle"},
+	{"name": "of the Nazgul", "stat": "defense_bonus", "base": 6, "per_level": 0.9, "monster": "Nazgul"},
 	# HP suffixes (generic + monster-themed)
 	{"name": "of Vitality", "stat": "hp_bonus", "base": 15, "per_level": 2.5},
-	{"name": "of the Giant", "stat": "hp_bonus", "base": 20, "per_level": 3.5},     # Giant
-	{"name": "of the Cerberus", "stat": "hp_bonus", "base": 25, "per_level": 4},    # Cerberus
-	{"name": "of the Primordial", "stat": "hp_bonus", "base": 35, "per_level": 5},  # Primordial Dragon
+	{"name": "of the Giant", "stat": "hp_bonus", "base": 20, "per_level": 3.5, "monster": "Giant"},
+	{"name": "of the Cerberus", "stat": "hp_bonus", "base": 25, "per_level": 4, "monster": "Cerberus"},
+	{"name": "of the Primordial", "stat": "hp_bonus", "base": 35, "per_level": 5, "monster": "Primordial Dragon"},
 	# Resource suffixes - mana (monster-themed)
-	{"name": "of the Siren", "stat": "mana_bonus", "base": 12, "per_level": 2.5},   # Siren
-	{"name": "of the Elemental", "stat": "mana_bonus", "base": 18, "per_level": 3.5}, # Elemental
-	{"name": "of the Elder Lich", "stat": "mana_bonus", "base": 25, "per_level": 5},# Elder Lich
+	{"name": "of the Siren", "stat": "mana_bonus", "base": 12, "per_level": 2.5, "monster": "Siren"},
+	{"name": "of the Elemental", "stat": "mana_bonus", "base": 18, "per_level": 3.5, "monster": "Elemental"},
+	{"name": "of the Elder Lich", "stat": "mana_bonus", "base": 25, "per_level": 5, "monster": "Elder Lich"},
 	# Resource suffixes - stamina (monster-themed)
-	{"name": "of the Gnoll", "stat": "stamina_bonus", "base": 6, "per_level": 1.2}, # Gnoll
-	{"name": "of the Gryphon", "stat": "stamina_bonus", "base": 10, "per_level": 2},# Gryphon
-	{"name": "of the God Slayer", "stat": "stamina_bonus", "base": 15, "per_level": 3}, # God Slayer
+	{"name": "of the Gnoll", "stat": "stamina_bonus", "base": 6, "per_level": 1.2, "monster": "Gnoll"},
+	{"name": "of the Gryphon", "stat": "stamina_bonus", "base": 10, "per_level": 2, "monster": "Gryphon"},
+	{"name": "of the God Slayer", "stat": "stamina_bonus", "base": 15, "per_level": 3, "monster": "God Slayer"},
 	# Resource suffixes - energy (monster-themed)
-	{"name": "of the Kobold", "stat": "energy_bonus", "base": 6, "per_level": 1.2}, # Kobold
-	{"name": "of the Vampire", "stat": "energy_bonus", "base": 10, "per_level": 2}, # Vampire
-	{"name": "of the Void", "stat": "energy_bonus", "base": 15, "per_level": 3},    # Void Walker
+	{"name": "of the Kobold", "stat": "energy_bonus", "base": 6, "per_level": 1.2, "monster": "Kobold"},
+	{"name": "of the Vampire", "stat": "energy_bonus", "base": 10, "per_level": 2, "monster": "Vampire"},
+	{"name": "of the Void", "stat": "energy_bonus", "base": 15, "per_level": 3, "monster": "Void Walker"},
 	# v0.9.665 — expanded pool for more name variety (existing stat keys only).
 	{"name": "of Might", "stat": "str_bonus", "base": 3, "per_level": 0.4},
 	{"name": "of the Colossus", "stat": "str_bonus", "base": 5, "per_level": 0.6},
@@ -4958,6 +4989,10 @@ const SUFFIX_POOL = [
 	{"name": "of the Behemoth", "stat": "hp_bonus", "base": 28, "per_level": 4.5},
 	{"name": "of the Wellspring", "stat": "mana_bonus", "base": 15, "per_level": 3},
 	{"name": "of the Archon", "stat": "mana_bonus", "base": 22, "per_level": 4.5},
+	# Themed loot 2026-09-17 - see the matching prefix note.
+	{"name": "of Oblivion", "stat": "wis_bonus", "base": 6, "per_level": 0.7, "monster": "Death Incarnate"},
+	{"name": "of the Hourglass", "stat": "dex_bonus", "base": 6, "per_level": 0.7, "monster": "Time Weaver"},
+	{"name": "of the Unnamed", "stat": "int_bonus", "base": 6, "per_level": 0.7, "monster": "The Nameless One"},
 	{"name": "of Tenacity", "stat": "stamina_bonus", "base": 8, "per_level": 1.5},
 	{"name": "of the Juggernaut", "stat": "stamina_bonus", "base": 13, "per_level": 2.5},
 	{"name": "of Momentum", "stat": "energy_bonus", "base": 8, "per_level": 1.5},
@@ -5295,7 +5330,29 @@ func _apply_stat_mutation(affixes: Dictionary, rarity: String, item_level: int, 
 			affixes["mutation"] = "wild"
 			affixes["mutation_name"] = "Wild"
 
-func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) -> Dictionary:
+static func themed_affix_subset(pool: Array, theme_species: Array) -> Array:
+	"""The rows of `pool` whose affix already names one of `theme_species`.
+
+	There is no dungeon-to-affix table anywhere: the answer is read off the pool itself, from the
+	`monster` field promoted out of each row's own comment. Add an affix and it is themed the
+	moment it names a creature; add a dungeon and it is themed the moment its species has one."""
+	if theme_species.is_empty():
+		return []
+	var out: Array = []
+	for row in pool:
+		if theme_species.has(String(row.get("monster", ""))):
+			out.append(row)
+	return out
+
+
+static func _pick_affix(pool: Array, themed: Array) -> Dictionary:
+	"""One affix, THEME_AFFIX_BIAS_CHANCE of the time from the themed subset."""
+	if not themed.is_empty() and (randi() % 100) < THEME_AFFIX_BIAS_CHANCE:
+		return themed[randi() % themed.size()]
+	return pool[randi() % pool.size()]
+
+
+func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false, theme_species: Array = []) -> Dictionary:
 	"""Roll for item affixes using D2-style guaranteed counts per rarity.
 	Common=0, Uncommon=1, Rare=2, Epic=3, Legendary=4, Artifact=5+proc.
 	Crafted items get 0 affixes (affixes come from Enchanter Runes)."""
@@ -5309,6 +5366,10 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 	if count == 0:
 		return affixes
 
+	# Which affixes name this dungeon's own monsters. Empty everywhere except dungeon floor
+	# loot, where it is the boss species plus the floor pool - see `roll_dungeon_chest_equipment`.
+	var themed_prefix: Array = themed_affix_subset(PREFIX_POOL, theme_species)
+	var themed_suffix: Array = themed_affix_subset(SUFFIX_POOL, theme_species)
 	var roll_range = _get_stat_roll_range(item_level)
 	var total_roll_quality = 0
 	var affix_count = 0
@@ -5319,7 +5380,7 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 	if count == 1:
 		# 50/50 prefix or suffix
 		if randi() % 2 == 0:
-			var prefix = PREFIX_POOL[randi() % PREFIX_POOL.size()]
+			var prefix = _pick_affix(PREFIX_POOL, themed_prefix)
 			var result = _calculate_affix_value(prefix, item_level, roll_range)
 			affixes[prefix.stat] = result.value
 			affixes["prefix_name"] = prefix.name
@@ -5327,7 +5388,7 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 			total_roll_quality += result.quality
 			affix_count += 1
 		else:
-			var suffix = SUFFIX_POOL[randi() % SUFFIX_POOL.size()]
+			var suffix = _pick_affix(SUFFIX_POOL, themed_suffix)
 			var result = _calculate_affix_value(suffix, item_level, roll_range)
 			affixes[suffix.stat] = result.value
 			affixes["suffix_name"] = suffix.name
@@ -5336,7 +5397,7 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 			affix_count += 1
 	else:
 		# count >= 2: guaranteed prefix AND suffix
-		var prefix = PREFIX_POOL[randi() % PREFIX_POOL.size()]
+		var prefix = _pick_affix(PREFIX_POOL, themed_prefix)
 		var result = _calculate_affix_value(prefix, item_level, roll_range)
 		affixes[prefix.stat] = result.value
 		affixes["prefix_name"] = prefix.name
@@ -5344,7 +5405,7 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 		total_roll_quality += result.quality
 		affix_count += 1
 
-		var suffix = SUFFIX_POOL[randi() % SUFFIX_POOL.size()]
+		var suffix = _pick_affix(SUFFIX_POOL, themed_suffix)
 		result = _calculate_affix_value(suffix, item_level, roll_range)
 		if affixes.has(suffix.stat):
 			affixes[suffix.stat] += result.value
@@ -5370,13 +5431,15 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 			# Try to pick an affix with a stat we haven't used (up to 5 attempts)
 			var picked = null
 			for _attempt in range(5):
-				var candidate = pool_for_roll[randi() % pool_for_roll.size()]
+				var candidate: Dictionary = pool_for_roll[randi() % pool_for_roll.size()] if roll_from_chase \
+					else _pick_affix(pool_for_roll, themed_prefix + themed_suffix)
 				if candidate.stat not in used_stats:
 					picked = candidate
 					break
 			if picked == null:
 				# All stats used, just pick any
-				picked = pool_for_roll[randi() % pool_for_roll.size()]
+				picked = pool_for_roll[randi() % pool_for_roll.size()] if roll_from_chase \
+					else _pick_affix(pool_for_roll, themed_prefix + themed_suffix)
 			if picked.stat == "card_bonus":
 				# Card-specific gear: one card, one of its measured kinds, tiered by item level.
 				var cb: Array = CardGearScript.roll(item_level)
