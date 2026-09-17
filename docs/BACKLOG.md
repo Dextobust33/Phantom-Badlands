@@ -5722,7 +5722,14 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 - [ ] **Real sinks for excess eggs and companions**: shops, breeders, trainers, fusers, companion
       tasks. Much is already scaffolded (fusion, breeder NPCs, egg market, kennel).
-- [ ] **Living world / rework the posts.**
+- [ ] **Living world / rework the posts.** Designed 2026-09-04 as **step 4 of the companion
+      spine**, and the detail is in `docs/archive/BACKLOG_journal_to_2026-09-07.md` (item 16) —
+      not undesigned, just archived. Scope: companions living around the posts, **NPCs, wandering
+      travellers and recruitable party members**, and threats woven into the posts rather than
+      sitting beside them. It follows the companion drops and the egg/companion sinks because it
+      is what those populate. **Overlaps the player-phantom prefab tiers** (a bought post's quest
+      boards and workstations are the player-owned half of the same idea) — design the two
+      together or the post will have two unrelated populations.
 - [ ] **Launcher revamp + feedback inbox** — self-updating launcher, bigger window, changelog panel,
       and suggest-idea / report-issue buttons posting to a server inbox.
 
@@ -5741,10 +5748,143 @@ down, and these are the ones it keeps sending back — which is what extra lives
 ## Phase 8 — later / unscheduled
 
 - [ ] **Prize Shuffle** loot-minigame redesign (combat done; gathering and crafting remain).
-- [ ] **Crafting review** — owner: "not in a good spot at all."
-- [ ] **Sanctuary redesign.**
-- [ ] **Player phantoms.**
-- [ ] **Minigame variety.**
+- [ ] **CRAFTING REASSESSMENT — scoped by the owner 2026-09-17, and it is most of the system.**
+      Asked how much of crafting was in scope, the owner answered *"Most of it"*: *"Players gather
+      a bunch of materials and don't really have useful things to do with them. It is all too
+      difficult to understand for them currently. Ideally they should have clear options that
+      obviously benefit them to do. Currently it's a pain to craft and you're often making things
+      with no real value or use just to try and level up your crafting skill. I'd say all of the
+      craftable items and options need to be reassessed and we need a clear path that speaks to
+      the identity of each type of crafter. We want interesting options that are beneficial for
+      players rather than grindy crap that no one wants."*
+
+      Four faults named, and they are separate problems:
+      1. **Materials have no destination.** Gathering produces a pile the player cannot spend on
+         anything they want. (Pairs with the egg/companion sinks — same disease, different
+         resource.)
+      2. **It is not understandable.** The recipe surface does not tell a player what to make or
+         why. This is a UI/legibility job as much as a content one and belongs with the UI audit.
+      3. **The output is worthless.** Players craft to raise the skill, not to get the item — the
+         tell that recipe outputs are not sized against what drops.
+      4. **No crafter identity.** Each crafting job needs a **clear path** that says what that
+         kind of crafter is FOR, so choosing one is a choice.
+
+      **Not to be confused with item 18 in the archive, "Craft review"** — that is auditing the
+      *game* against industry standards, a completely different task that happens to share a word.
+
+      **Do first, before any recipe is touched:** enumerate what crafting can currently produce by
+      **executing the tables** (`shared/crafting_database.gd`) rather than reading them, and price
+      each output against what a dungeon of the same level DROPS. Fault 3 is a claim about
+      relative value and cannot be judged without both numbers. Same rule as the equipment
+      reference: walk the acquisition paths, do not enumerate the pools.
+- [ ] **Sanctuary redesign — put the house in the world.** Owner direction 2026-09-01, written
+      up as item 15 in `docs/archive/BACKLOG_journal_to_2026-09-07.md`. **Read it before
+      building.** Today the Sanctuary is a menu between login and character select
+      (`HOUSE_SCREEN`); the owner wants a real place — near the starting post is the suggested
+      anchor — so that going home is travel, not a screen. Plus **customisation** (personal, not
+      a fixed room) and **more to do with companions there**, coordinated with the egg/companion
+      sinks rather than inventing a parallel set. Keep what works: account-level persistence
+      through permadeath, the kennel (30-500 slots), the Fusion Station.
+
+      **The one decision that must come first**, because it drives chunk cost, griefing and what
+      happens when thousands of accounts each own ground: a shared world district, an instanced
+      interior behind a world doorway, or true claimed land. Prior art exists either way — player
+      posts already claim real tiles (`add_player_tile` / `get_player_tiles` / enclosure checks),
+      so the sparse-tile storage pattern is proven.
+- [ ] **PLAYER PHANTOMS — the outward loop.** The whole design already existed and this list had
+      lost it. Owner 2026-09-17, asked for the scope: *"Player phantoms(aka dungeons) are buildable
+      inside of a player owned trading post... players can purchase a semi-randomized buildable
+      player post from the build menu and place it on a valid placement spot. It will cost a
+      substantial amount of valor to buy. The cheapest will only have a market and a phantom
+      surrounded by walls with one door and enough room to move around inside. More expensive ones
+      will be larger and have more player structures like quest boards, workstations, etc. There
+      should be something on the to do about this if not you need to go back and find our
+      conversation where we spoke about player posts."*
+
+      **⛑ THE DESIGN WAS NOT MISSING — IT WAS ARCHIVED.** It is item **12b, "The Phantom — the
+      outward loop"**, written up in full on 2026-09-02 (hook, egg economy, companion economy,
+      prefab posts, theming, nine open questions, and a measurement that corrected one of my own
+      claims). When this list was rewritten on 2026-09-07 the whole section went to
+      `docs/archive/BACKLOG_journal_to_2026-09-07.md` (≈line 5701) and what survived here was the
+      two words `Player phantoms.` That is how a fully-specified feature came to be re-asked as an
+      open question. **Read the archive section before building; do not re-derive it.** The same
+      trap is live for `Sanctuary redesign.`, `Living world / rework the posts.` and
+      `Minigame variety.` — check the archive for each before treating any of them as undesigned.
+
+      **The loop (verbatim from the owner, 2026-09-02):** push out into the wilderness as far as
+      you can survive → found a post there and stock it with eggs and companions you no longer
+      need (consumed, permanently) → descend into that post's Phantom to win better gear and
+      companions → push further out and repeat. **The farther out, the deeper the Phantom can go
+      and the better what is inside it**, given the investment. This is the outward pull the
+      difficulty model cannot supply: encounter level is a pure function of position, so the
+      pressure has to come from the reward gradient — and here the player builds that gradient
+      themselves, at the edge of what they can survive.
+
+      **Eggs set what the place remembers.** Each egg is consumed, makes that monster type more
+      likely to spawn on the Phantom's floors, and **buffs the eggs of that type found inside**
+      beyond the normal tier/sub-tier ceiling — a goblin egg pulled from a heavily-invested player
+      Phantom is far stronger than an identical-tier one from an overworld dungeon. Eggs inside are
+      **at least 10x rarer**: the thing a player hunts long and hard for, where getting it *out
+      alive* is the payoff. This is what turns surplus eggs from clutter into something carried
+      forward onto new characters.
+
+      **Companions are the gearing axis.** Companions you no longer want are consumed to make the
+      **equipment** found in the Phantom stronger — the gear a fresh character needs to survive
+      the wilderness outside. A dignified use for retired companions and a second sink for the
+      same oversupply.
+
+      **Theming, already drafted against the setting bible.** The ground under a new post is
+      already remembering something. **Feeding it eggs teaches it which shapes to wear** — give it
+      goblins and it comes back up goblin. **Giving it companions**, things that lived alongside
+      you, is why it returns *possessions*: gear is what the place kept of them. The 10x egg rarity
+      is the fiction too — a place only rarely produces something still living, and you have to
+      carry it out past everything else it remembers.
+
+      **What the owner ADDED on 2026-09-17, which sharpens the prefab half:** the post is bought
+      from the **build menu** as a semi-randomised prefab and placed on a valid spot, for a
+      substantial Valor cost. **Cheapest tier = a market and a phantom, walled, one door, enough
+      room to move around inside.** Dearer tiers are larger and add player structures — quest
+      boards, workstations. So the prefab is a **tier ladder priced in Valor**, not one item: that
+      is the shape to build, and Valor's only current sinks are bounties, PvP payouts and repairs,
+      so size it against those.
+
+      **Prerequisite, and it is now met.** 12b was blocked on companion power — a level-1 companion
+      was statistically identical to no companion, so a hard-won 10x-rare egg would have hatched
+      into something that changed nothing. That was fixed 2026-09-13 (grade ladder monotonic,
+      ascension/fusion carrying the best input level). **The reward no longer rings hollow, so this
+      is unblocked.**
+
+      **Open questions to settle before code** (carried from 12b, still open):
+      * Does investment raise the egg **RATE** or only egg **QUALITY**? 10x rarity plus pure RNG
+        means a dry run reads as theft after a heavy investment. Prefer a **deterministic floor**
+        (a guaranteed egg at certain depths) with quality as the variable part.
+      * **Account vs character ownership.** Permadeath means the character who built and stocked
+        the post can die. The post and its investment must survive at the **account** level, but
+        what is carried *out* of a run must still be lost on death.
+      * **Guard the laundering pump** — invest cheap eggs, extract better eggs, hatch, invest those
+        companions, get better gear, repeat. The exchange must be lossy and gated by **depth and
+        survival risk**, never by volume.
+      * **The Phantom needs its OWN scaling model.** Measured 2026-09-02: low-tier monsters hit a
+        hard HP **cap** when scaled up (Goblin and Wolf both land on exactly 15,000 HP at L5000),
+        so seeding cheap low-tier eggs would produce monsters that stop getting harder with depth
+        while the player keeps levelling. Depth must set difficulty for **any** seeded species, so
+        anchor to depth (and through it to a reference player), never to each monster's
+        hand-authored `base_level`.
+      * **Valid placement** — minimum distance from existing posts, terrain rules.
+      * Is a Phantom per-post, per-account or shared, and who else may enter?
+      * **Check whether the player-post suppression-floor change is still parked.** 12b recorded a
+        *"DO NOT DEPLOY before 12b exists"* on it, because spawn-at-post already ships and the
+        change stranded a level-1 character at a frontier post. That note is not in this list any
+        more — find out whether it shipped, was dropped, or is still sitting in the tree.
+
+      **Do not confuse this with the OTHER thing called player phantoms** — dead characters
+      persisting as things in the world, raised under the roguelike-progression item. They share
+      vocabulary deliberately; only this one is specified.
+- [ ] **Minigame variety.** Item 17 in `docs/archive/BACKLOG_journal_to_2026-09-07.md`, and it
+      is concrete: **port the Chain / Mystery / Trap mechanics from combat loot to gathering and
+      crafting** (the combat slice shipped as v0.9.644-645), plus **trap chests, a Mimic chest
+      variant, and the 2 remaining dungeon-exclusive consumables**. It is the same list as the
+      Prize Shuffle line above from a different angle — fold them when either is started.
 - [x] **Card market smoke-tested 2026-09-10 — no faults found.** It had been "built, compile-clean,
       never exercised end to end", so this exercised it two ways.
       `tools/probe/card_market.gd` puts ALL 57 tradeable cards through the three lookups a
