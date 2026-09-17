@@ -660,7 +660,7 @@ thirds, death replay, and the launcher revamp. Any one of them is a session or s
 * **Party play, half two** — independent movement plus join-in-progress combat. 65 lines.
 * **The full UI / navigation audit** — every menu path in the game, then retiring the 119 chat
   commands. It is the prerequisite for controller support, which is why it is not filler.
-* **The 53-dungeon card content** — 4 of 59 authored. This is 55 cards of writing, and the
+* ~~**The 53-dungeon card content**~~ — **DONE 2026-09-17, all 53.** Was: 4 of 59 authored. The
   quality bar is the four that exist.
 
 **Blocked on an owner decision, not on effort** (each has its open questions written down):
@@ -776,7 +776,7 @@ is not started. **Read this block before touching the Atlas.**
 |---|---|
 | Dungeon-centred questing | ✅ **already built** (P2, 2026-08-26) — ticked below, no work needed |
 | Atlas as hub + quest board | **not started** — this is the chosen piece |
-| 53-dungeon card content | **4 of 59** authored; machinery complete, prerequisite met |
+| 53-dungeon card content | **DONE 2026-09-17 — 53 of 53**, cast-tested through the real processor |
 | Themed floor equipment | **DONE 2026-09-17** — the affix pools' monster comments became a field; 53/53 types themed |
 
 **✅ CARTOGRAPHY EXISTS AND IS COMPLETE** — the owner asked, and the answer is yes:
@@ -4469,9 +4469,62 @@ share of a pool plus a per-class engine, so its cost curve does not transfer. Ow
       immediately and the card face now carries the reveal, whereas party makes you commit and
       wait. Adding a confirm to solo would tax every turn of every fight for information that is
       already on screen.
-- [ ] **THEN the 53-dungeon card content.** The owner chose full coverage, but that decision
-      predates this design — cards should now be authored WITH cycle values, so the content pass
-      waits on the model being confirmed.
+- [x] **THE 53-DUNGEON CARD CONTENT — DONE 2026-09-17. 53 of 53.** Owner, asked again what the
+      49 dungeons without an exclusive card should offer: *"Write cards for all 53."* The blocker
+      this entry named is gone: the cycle model shipped, so every new card is authored **with** its
+      cycle value, the way the four originals were.
+
+      **Four facts and a sentence each, and no new combat logic.** Every card uses an existing
+      `kind` — the 19 arms of `_process_companion_card_ability`'s `match` are the whole vocabulary —
+      so 49 cards cost 49 rows and nothing else.
+
+      ⚑ **`tier` IS THE DUNGEON'S OWN `base_tier`, and that is the only tuning any of them needed.**
+      Every kind scales its numbers off `tier`, so a card arrives sized to the place that drops it
+      and nothing is hand-balanced per card. It is stored in the row because `dungeon_database.gd`
+      sits on the other side of `drop_tables`' imports — so the probe asserts every row's tier
+      equals its dungeon's `base_tier`, which is what keeps the copy honest.
+
+      **What was deliberate rather than convenient:**
+      * **Kinds are spread.** The widest is 4 of 53. A pass that reached for `strike` every time
+        would have written 49 cards and one card, and the collection IS the reward.
+      * **The strong control kinds are gated by where they can be earned.** `timestop` is the only
+        kind that takes a monster's turn away outright, so it exists only at T7-T9 — Void Walker's
+        Rift, the Time Weaver's Loom and Entropy's End — on top of its numbers already climbing
+        with tier. The probe fails if one appears below T7.
+      * **Each name comes from the dungeon's own boss and description**, not from its mechanic: a
+        Rat King gives *Filthbite*, a Sphinx gives *Riddle's Answer*, an Ogre Chieftain gives *Bog
+        Club*. A dungeon-exclusive card that named its mechanic would not be worth making
+        exclusive.
+
+      Probe: `tools/probe/dungeon_cards_complete.gd`. Its last section **casts all 53 through the
+      real processor** and requires each to change something, because the four ways this pass could
+      be silently wrong are all invisible: a dungeon with no card (falls back to the copy-drop), a
+      typo'd `kind` (hits the `_:` fallback and deals plain strike damage while its face promises a
+      poison), a tier that disagrees with its dungeon (a mis-sized card nothing complains about),
+      and a `cycle` type the payout skips (a promise in the description that never pays). The kind
+      and cycle lists are read **off the source of the functions that implement them** rather than
+      restated in the probe.
+
+      **Not covered, and stated so in the probe:** whether 53 cards read well together, or whether
+      one is the obvious best pick at its tier. That is the sim's question and the owner's taste.
+
+      ⛑ **AND IT FOUND A FAULT IN THE ORIGINAL FOUR.** `bulwark_of_bone` was tier **3** and drops
+      from `forgotten_crypt`, which is base_tier **1** — the only one of the four whose tier did not
+      match its dungeon, which is the tell that it was a slip rather than a design. It made a
+      starter-crypt card shield for attack x1.75 instead of x1.25 and overpriced it on the card
+      market, since `calculate_card_valor` reads the same field. Corrected to 1. That is a small
+      nerf to a card a player may already hold, and it is the honest cost of the row being wrong.
+
+      ⛑ **Two instrument notes.** The probe first searched for `_process_companion_card_ability`;
+      the function is `_process_companion_ability`, so its kind parser found **nothing** — and
+      reported all 53 cards as naming an unimplemented kind. What it did not do is quietly pass:
+      the `the kind list was read off the processor (0)` check failed first, which is the whole
+      reason that check exists rather than trusting the list it builds. Separately,
+      `get_root().add_child(sim)` has always errored in every probe that copies that shape, because
+      `real_combat_sim.gd` extends SceneTree — harmless, since its `_init` builds what is needed,
+      and dropped here.
+      All four fault-detecting checks proven to fire by injecting a typo'd kind, a dungeon that does
+      not exist and a mismatched tier.
 
 - [x] **SHIPPED v0.9.768 (2026-09-10) - the dungeon ROOM pass.** Per-room floors from 7 packs
       and per-room decor from 7, room IDENTITY via connected components, the rim rule changed from

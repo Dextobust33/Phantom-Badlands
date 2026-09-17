@@ -1421,18 +1421,109 @@ static func companion_card_permanence_uses(monster_type: String) -> int:
 	return 40 + (tier - 1) * 22
 
 # =========================================================================
-# #38 (2026-08-27) — DUNGEON-EXCLUSIVE CARDS. Universal (any class) combat cards
-# earned ONLY by clearing a themed dungeon (replaces the old "copy-drop" reward).
-# They route through the SAME data-driven companion-card processor
-# (_process_companion_card_ability) via a `dungeon_card_<slug>` id, so they need
-# no new combat logic — each uses an EXISTING kind. Granted PERMANENT on a clear.
-# Slice 1 = 4 cards (poison / lifesteal / shield / execute) across 4 dungeon types.
+# DUNGEON-EXCLUSIVE CARDS — one for every dungeon type in the game.
+#
+# #38 (2026-08-27) built the mechanism and four cards. Owner 2026-09-17, asked what the other 49
+# dungeons should offer instead of a generic copy-drop: *"Write cards for all 53."* So: 53 of 53.
+#
+# Universal (any class), earned ONLY by clearing the themed dungeon, granted PERMANENT on a clear.
+# They route through the SAME data-driven processor as companion cards
+# (`_process_companion_card_ability`) via a `dungeon_card_<slug>` id, so **no card here adds combat
+# logic** — the 19 arms of that function's `match kind` are the entire vocabulary, and a card is
+# four facts and a sentence.
+#
+# ⚑ `tier` IS THE DUNGEON'S OWN `base_tier`, and it is the only tuning knob any of these needed.
+# Every kind scales its numbers off `tier`, so a card arrives sized to the place that drops it and
+# nothing is hand-balanced per card. It is stored here rather than looked up because
+# `dungeon_database.gd` sits on the other side of this file's imports — so
+# `tools/probe/dungeon_cards_complete.gd` asserts every row's tier equals its dungeon's
+# `base_tier`, which is the guard that keeps the copy honest.
+#
+# ⚑ KINDS ARE SPREAD ON PURPOSE. The widest is 4 of 53. A pass that reached for `strike` every
+# time would have written 49 cards and one card, and the collection is the reward.
+#
+# ⚑ THE STRONG CONTROL KINDS ARE GATED BY WHERE THEY CAN BE EARNED. `timestop` is the only kind
+# that takes a monster's turn away outright, so it exists only at T7-T9 (Void Walker, Time Weaver,
+# Entropy) — on top of its numbers already climbing with tier.
+#
+# `cycle` is one of the five the payout implements: chip (% of your attack), heal / shield (% of
+# max HP), resource (% of your primary pool), engine (flat engine points). Worth a little more at
+# higher tiers, because a top-tier card sits in a deck where everything else is bigger too.
+#
+# Each name and description is written from the dungeon's own boss, pool and description — a Rat
+# King gives Filthbite, a Sphinx gives Riddle's Answer. A dungeon-exclusive card that named its
+# mechanic instead of its place would not be worth making exclusive.
 # =========================================================================
 const DUNGEON_CARD_DATA = {
+	# ---- tier 1-9, the four originals kept verbatim (Slice 1, 2026-08-27) ----
 	"venom_fang":        {"name": "Venom Fang",         "kind": "poison",    "tier": 2, "dungeon": "spider_nest",      "cycle": {"type": "chip", "amount": 30}, "desc": "A dungeon-forged strike drenched in spider venom — poisons the enemy, dealing damage every turn. If you do not play it, the venom still seeps: it deals a little damage as it cycles."},
 	"crimson_draught":   {"name": "Crimson Draught",    "kind": "lifesteal", "tier": 4, "dungeon": "vampire_crypt",    "cycle": {"type": "heal", "amount": 3}, "desc": "Crypt-tainted blood magic — a strike that heals you for part of the damage dealt. Left unplayed it still works on you, mending a little as it cycles."},
-	"bulwark_of_bone":   {"name": "Bulwark of Bone",    "kind": "shield",    "tier": 3, "dungeon": "forgotten_crypt",  "cycle": {"type": "shield", "amount": 4}, "desc": "Raise a lattice of grave-bone that absorbs a burst of incoming damage. Even unplayed the bone answers, leaving a thin ward as it cycles."},
-	"executioners_edge": {"name": "Executioner's Edge", "kind": "execute",   "tier": 9, "dungeon": "god_slayer_arena", "cycle": {"type": "engine", "amount": 1}, "desc": "A god-killer's finishing blow — devastating against wounded enemies. Carrying it sharpens you: it feeds your engine as it cycles, played or not."},
+	# ⚑ TIER 1, CORRECTED 2026-09-17. It shipped as tier 3 from a base_tier 1 dungeon - the
+	# only one of the four originals whose tier did not match its dungeon, which is the tell
+	# that it was a slip. It made a starter-crypt card shield for attack x1.75 instead of
+	# x1.25 and overpriced it on the card market, since `calculate_card_valor` reads the same
+	# field. Found by `tools/probe/dungeon_cards_complete.gd`, which now fails on any tier
+	# that disagrees with its dungeon.
+	"bulwark_of_bone":   {"name": "Bulwark of Bone",    "kind": "shield",    "tier": 1, "dungeon": "forgotten_crypt",  "cycle": {"type": "shield", "amount": 4}, "desc": "Raise a lattice of grave-bone that absorbs a burst of incoming damage. Even unplayed the bone answers, leaving a thin ward as it cycles."},
+	"executioners_edge": {"name": "Executioner's Edge", "kind": "execute",   "tier": 9, "dungeon": "god_slayer_arena", "cycle": {"type": "engine", "amount": 1}, "desc": "A god-killer's finishing blow — devastating against wounded enemies. Carrying it sharpens you: it feeds your engine as it cycles."},
+	# ---- tier 1 ----
+	"grit_in_the_eye": {"name": "Grit in the Eye", "kind": "blind", "tier": 1, "dungeon": "goblin_caves", "cycle": {"type": "chip", "amount": 20}, "desc": "Dirty fighting, learned from a goblin king who never fought fair - strikes and leaves the enemy swinging blind. Left in hand it still finds an eye: a little damage as it cycles."},
+	"savage_bite": {"name": "Savage Bite", "kind": "bleed", "tier": 1, "dungeon": "wolf_den", "cycle": {"type": "chip", "amount": 22}, "desc": "The alpha's own hold, jaws set and pulling - it wounds and the wound keeps opening. Unplayed it still worries at the enemy as the hand cycles."},
+	"filthbite": {"name": "Filthbite", "kind": "poison", "tier": 1, "dungeon": "rat_warrens", "cycle": {"type": "chip", "amount": 18}, "desc": "Everything in the warrens carries something. A bite that sickens as much as it hurts, poisoning the enemy for several turns. It seeps even unplayed, doing a little damage as it cycles."},
+	"tunnel_toll": {"name": "Tunnel Toll", "kind": "tribute", "tier": 1, "dungeon": "kobold_tunnels", "cycle": {"type": "resource", "amount": 6}, "desc": "The kobolds took a toll from everything that passed. Now you do - a strike that adds Valor to what the fight pays out. Carrying it teaches thrift: it gives a little of your resource back as it cycles."},
+	# ---- tier 2 ----
+	"false_bottom": {"name": "False Bottom", "kind": "plunder", "tier": 2, "dungeon": "mimic_treasury", "cycle": {"type": "resource", "amount": 7}, "desc": "Every chest in that vault had teeth, and one of them taught you where the real floor is. Strikes, and what the fight drops comes up richer and better. Unplayed it still pays attention, returning a little resource as it cycles."},
+	"undertow": {"name": "Undertow", "kind": "stun", "tier": 2, "dungeon": "kelpie_marsh", "cycle": {"type": "shield", "amount": 3}, "desc": "The marsh pulls down rather than back. A strike that can drag the enemy off its turn entirely. Held, the water still holds you up a little: a thin ward as it cycles."},
+	"sirensong": {"name": "Sirensong", "kind": "charm", "tier": 2, "dungeon": "siren_cove", "cycle": {"type": "resource", "amount": 7}, "desc": "One line of it stayed in your head. Strikes, and the enemy may turn on itself instead of you. It hums even unplayed, giving a little resource back as it cycles."},
+	"grave_goods": {"name": "Grave Goods", "kind": "tribute", "tier": 2, "dungeon": "barrow_mounds", "cycle": {"type": "shield", "amount": 3}, "desc": "The wights were buried with their wealth and resent every coin of it. A strike that adds Valor to the fight's pay. Even in hand the barrow's cold answers, leaving a thin ward as it cycles."},
+	"rot_in_the_marrow": {"name": "Rot in the Marrow", "kind": "weaken", "tier": 2, "dungeon": "plagued_graveyard", "cycle": {"type": "chip", "amount": 20}, "desc": "What spread through that cemetery gets into the bones. Strikes and leaves the enemy hitting softer for several rounds. Unplayed it still spreads, doing a little damage as it cycles."},
+	"pack_frenzy": {"name": "Pack Frenzy", "kind": "rage", "tier": 2, "dungeon": "gnoll_den", "cycle": {"type": "engine", "amount": 1}, "desc": "The packmaster's trick was never strength - it was starting. Your own damage climbs for several rounds. Carrying it keeps you wound up: it feeds your engine as it cycles."},
+	"shieldwall_drill": {"name": "Shieldwall Drill", "kind": "guard", "tier": 2, "dungeon": "hobgoblin_fortress", "cycle": {"type": "shield", "amount": 3}, "desc": "Hobgoblins drill until the wall is reflex. Damage taken falls sharply for several rounds. Unplayed the drill still holds: a thin ward as it cycles."},
+	"warlords_charge": {"name": "Warlord's Charge", "kind": "reckless", "tier": 2, "dungeon": "orc_stronghold", "cycle": {"type": "chip", "amount": 25}, "desc": "The warlord's answer to everything, and it worked more often than it should have - a huge hit that costs you a little blood. Left in hand it still strains forward, doing a little damage as it cycles."},
+	# ---- tier 3 ----
+	"trollish_regrowth": {"name": "Trollish Regrowth", "kind": "heal", "tier": 3, "dungeon": "troll_den", "cycle": {"type": "heal", "amount": 3}, "desc": "Whatever lets a troll close a wound mid-fight, taken and kept. Heals you outright. It works slowly even unplayed, mending a little as it cycles."},
+	"wyvern_sting": {"name": "Wyvern Sting", "kind": "poison", "tier": 3, "dungeon": "wyvern_roost", "cycle": {"type": "chip", "amount": 25}, "desc": "The tail, not the teeth - that is what kills on those cliffs. Strikes and poisons for several turns. It drips even in hand, doing a little damage as it cycles."},
+	"bog_club": {"name": "Bog Club", "kind": "strike", "tier": 3, "dungeon": "ogre_bog", "cycle": {"type": "chip", "amount": 28}, "desc": "No technique whatsoever, and it does not need any. The single hardest swing in the collection. Unplayed it still connects with something, doing a little damage as it cycles."},
+	"spirit_leech": {"name": "Spirit Leech", "kind": "channel", "tier": 3, "dungeon": "wraith_barrow", "cycle": {"type": "resource", "amount": 8}, "desc": "The wraiths down there take what keeps you casting. Strikes and gives you back part of your resource. It sips even unplayed, returning a little as it cycles."},
+	"labyrinth_fury": {"name": "Labyrinth Fury", "kind": "rage", "tier": 3, "dungeon": "minotaur_labyrinth", "cycle": {"type": "engine", "amount": 1}, "desc": "The champion never found the way out and stopped caring. Your damage climbs for several rounds. Carrying it keeps the anger close: it feeds your engine as it cycles."},
+	"stonewatch": {"name": "Stonewatch", "kind": "guard", "tier": 3, "dungeon": "gargoyle_cathedral", "cycle": {"type": "shield", "amount": 4}, "desc": "Stand the way the sentinels stand and very little gets through. Damage taken falls sharply for several rounds. Unplayed the stone still shelters you: a thin ward as it cycles."},
+	"wingstorm": {"name": "Wingstorm", "kind": "blind", "tier": 3, "dungeon": "harpy_cliffs", "cycle": {"type": "chip", "amount": 22}, "desc": "Grit and feathers and a wind off the sea. Strikes and leaves the enemy swinging at nothing. It still blows unplayed, doing a little damage as it cycles."},
+	"deafening_shriek": {"name": "Deafening Shriek", "kind": "stun", "tier": 3, "dungeon": "shrieker_caverns", "cycle": {"type": "chip", "amount": 22}, "desc": "The caverns answer any sound with a worse one. A strike that can take the enemy's turn outright. Even in hand it rings, doing a little damage as it cycles."},
+	# ---- tier 4 ----
+	"whispered_bargain": {"name": "Whispered Bargain", "kind": "charm", "tier": 4, "dungeon": "succubus_parlor", "cycle": {"type": "resource", "amount": 8}, "desc": "You did not accept. You did remember the wording. Strikes, and the enemy may turn on itself. It whispers unplayed too, giving a little resource back as it cycles."},
+	"three_headed_maul": {"name": "Three-Headed Maul", "kind": "strike", "tier": 4, "dungeon": "chimaera_gorge", "cycle": {"type": "chip", "amount": 30}, "desc": "Three sets of teeth arriving as one blow. Among the heaviest single hits there is. Unplayed one of the heads still finds you a target, doing a little damage as it cycles."},
+	"gryphons_eye": {"name": "Gryphon's Eye", "kind": "focus", "tier": 4, "dungeon": "gryphon_aerie", "cycle": {"type": "engine", "amount": 1}, "desc": "A gryphon picks its moment from a mile up. Your critical chance climbs for several rounds. Carrying it sharpens you: it feeds your engine as it cycles."},
+	"infernal_rush": {"name": "Infernal Rush", "kind": "reckless", "tier": 4, "dungeon": "demon_gate", "cycle": {"type": "chip", "amount": 28}, "desc": "What comes through the gate does not brace first. An enormous hit that costs you a little blood. Left in hand it still surges, doing a little damage as it cycles."},
+	"hoard_sense": {"name": "Hoard-Sense", "kind": "plunder", "tier": 4, "dungeon": "dragon_hatchery", "cycle": {"type": "resource", "amount": 8}, "desc": "Wyrmlings are born knowing what is worth keeping. Strikes, and what the fight drops comes up richer and better. Unplayed it still counts the room, returning a little resource as it cycles."},
+	"giants_bulwark": {"name": "Giant's Bulwark", "kind": "shield", "tier": 4, "dungeon": "giant_keep", "cycle": {"type": "shield", "amount": 4}, "desc": "A door the giant used as a shield, and it is still the best one you have seen. Absorbs a great deal of incoming damage. Unplayed it leans where you need it: a thin ward as it cycles."},
+	# ---- tier 5 ----
+	"phylactery_draught": {"name": "Phylactery Draught", "kind": "channel", "tier": 5, "dungeon": "lich_sanctum", "cycle": {"type": "resource", "amount": 9}, "desc": "The lich kept its power in a jar. You learned the trick of drinking from one. Strikes and returns part of your resource. It draws even unplayed, giving a little back as it cycles."},
+	"threefold_jaws": {"name": "Threefold Jaws", "kind": "bleed", "tier": 5, "dungeon": "cerberus_pit", "cycle": {"type": "chip", "amount": 28}, "desc": "Three mouths, one grip, and nothing closes afterwards. Strikes and leaves a wound that keeps bleeding. Unplayed it still worries the enemy, doing a little damage as it cycles."},
+	"deepflame_wrath": {"name": "Deepflame Wrath", "kind": "rage", "tier": 5, "dungeon": "balrog_depths", "cycle": {"type": "engine", "amount": 1}, "desc": "Something that old does not burn hot - it burns slowly, and forever. Your damage climbs for several rounds. Carrying it keeps the coal alive: it feeds your engine as it cycles."},
+	"sovereigns_command": {"name": "Sovereign's Command", "kind": "weaken", "tier": 5, "dungeon": "demon_lord_throne", "cycle": {"type": "shield", "amount": 4}, "desc": "The Demon Lord never raised its voice. Strikes and leaves the enemy hitting far softer. Even in hand it carries authority: a thin ward as it cycles."},
+	"titanfall": {"name": "Titanfall", "kind": "strike", "tier": 5, "dungeon": "titan_colosseum", "cycle": {"type": "chip", "amount": 32}, "desc": "The titan's finisher, which was simply all of its weight arriving at once. One of the heaviest hits in the game. Unplayed the ground still shifts, doing a little damage as it cycles."},
+	"whiffling_gyre": {"name": "Whiffling Gyre", "kind": "blind", "tier": 5, "dungeon": "jabberwock_thicket", "cycle": {"type": "resource", "amount": 8}, "desc": "In that thicket nothing is quite where you left it, including the enemy's aim. Strikes and blinds. Unplayed the air still turns, giving a little resource back as it cycles."},
+	# ---- tier 6 ----
+	"black_breath": {"name": "Black Breath", "kind": "weaken", "tier": 6, "dungeon": "nazgul_shadow_keep", "cycle": {"type": "shield", "amount": 4}, "desc": "Not a wound. A leaving-behind of strength. Strikes and leaves the enemy badly weakened. Even unplayed the cold keeps its distance for you: a thin ward as it cycles."},
+	"riddles_answer": {"name": "Riddle's Answer", "kind": "focus", "tier": 6, "dungeon": "sphinx_riddle_hall", "cycle": {"type": "engine", "amount": 1}, "desc": "You did not out-think the sphinx. You noticed it wanted to be answered. Your critical chance climbs for several rounds. Carrying it keeps you looking: it feeds your engine as it cycles."},
+	"foundry_plate": {"name": "Foundry Plate", "kind": "guard", "tier": 6, "dungeon": "golem_foundry", "cycle": {"type": "shield", "amount": 5}, "desc": "Plate the golems were still forging when the dwarves left. Damage taken falls sharply for several rounds. Unplayed it still stands between: a thin ward as it cycles."},
+	"nexus_tap": {"name": "Nexus Tap", "kind": "channel", "tier": 6, "dungeon": "elemental_nexus", "cycle": {"type": "resource", "amount": 10}, "desc": "Where the planes touch you can drink straight from the seam. Strikes and returns a large part of your resource. It trickles even unplayed, giving a little back as it cycles."},
+	"ashen_rebirth": {"name": "Ashen Rebirth", "kind": "heal", "tier": 6, "dungeon": "phoenix_nest", "cycle": {"type": "heal", "amount": 4}, "desc": "You are not reborn. You do get up. Heals you outright, and for a great deal. Unplayed the warmth still works on you, mending a little as it cycles."},
+	"hydra_venom": {"name": "Hydra Venom", "kind": "poison", "tier": 6, "dungeon": "hydra_swamp", "cycle": {"type": "chip", "amount": 30}, "desc": "Cut one head off and the venom only gets angrier. Strikes and poisons heavily for several turns. It drips in hand too, doing a little damage as it cycles."},
+	"wyrms_verdict": {"name": "Wyrm's Verdict", "kind": "execute", "tier": 6, "dungeon": "ancient_dragon_lair", "cycle": {"type": "chip", "amount": 32}, "desc": "The dragon decided who was finished and it was rarely wrong. Devastating against a wounded enemy. Unplayed it still weighs them up, doing a little damage as it cycles."},
+	# ---- tier 7 ----
+	"step_between": {"name": "Step Between", "kind": "timestop", "tier": 7, "dungeon": "void_walker_rift", "cycle": {"type": "engine", "amount": 1}, "desc": "You are not faster. You are simply not there for a moment, and then you are. Strikes and freezes the enemy for a turn or more. Carrying it thins the walls: it feeds your engine as it cycles."},
+	"first_flame": {"name": "First Flame", "kind": "reckless", "tier": 7, "dungeon": "primordial_dragon_domain", "cycle": {"type": "chip", "amount": 34}, "desc": "Fire from before anything had learned to be afraid of it. An enormous hit that costs you a little blood. Left in hand it still smoulders, doing a little damage as it cycles."},
+	"crushing_coil": {"name": "Crushing Coil", "kind": "stun", "tier": 7, "dungeon": "world_serpent_coil", "cycle": {"type": "shield", "amount": 5}, "desc": "The serpent does not strike. It closes. A hit that can take the enemy's turn away entirely. Even unplayed its weight is on your side: a thin ward as it cycles."},
+	"soul_tithe": {"name": "Soul Tithe", "kind": "lifesteal", "tier": 7, "dungeon": "elder_lich_phylactery", "cycle": {"type": "heal", "amount": 4}, "desc": "The vault ran on a tax the dead could not refuse. Strikes and heals you for part of the damage. Unplayed the tithe still comes in, mending a little as it cycles."},
+	# ---- tier 8 ----
+	"maddening_glimpse": {"name": "Maddening Glimpse", "kind": "charm", "tier": 8, "dungeon": "cosmic_horror_realm", "cycle": {"type": "resource", "amount": 10}, "desc": "You looked. It looked at whatever it is fighting instead. Strikes, and the enemy may turn on itself. Unplayed the shape stays behind your eyes, giving a little resource back as it cycles."},
+	"unwoven_moment": {"name": "Unwoven Moment", "kind": "timestop", "tier": 8, "dungeon": "time_weaver_loom", "cycle": {"type": "engine", "amount": 2}, "desc": "One thread pulled out of the fight, and the enemy's next turn was on it. Freezes them for a turn or more. Carrying it keeps the loom in reach: it feeds your engine as it cycles."},
+	"reapers_due": {"name": "Reaper's Due", "kind": "execute", "tier": 8, "dungeon": "death_domain", "cycle": {"type": "chip", "amount": 34}, "desc": "Everything at that threshold is owed, and you have learned to collect early. Devastating against a wounded enemy. Unplayed the debt still accrues, doing a little damage as it cycles."},
+	# ---- tier 9 ----
+	"chaos_unbound": {"name": "Chaos Unbound", "kind": "reckless", "tier": 9, "dungeon": "chaos_sanctum", "cycle": {"type": "chip", "amount": 36}, "desc": "No form, no restraint, and no way to aim it at only one thing. The largest hit there is, and it costs you a little blood. Left in hand it still churns, doing a little damage as it cycles."},
+	"unnaming": {"name": "Unnaming", "kind": "weaken", "tier": 9, "dungeon": "nameless_void", "cycle": {"type": "shield", "amount": 5}, "desc": "It does not kill the enemy. It takes away whatever made them dangerous. Strikes and leaves them hitting as softly as anything can. Even in hand the silence shields you: a thin ward as it cycles."},
+	"all_things_stop": {"name": "All Things Stop", "kind": "timestop", "tier": 9, "dungeon": "entropy_end", "cycle": {"type": "engine", "amount": 2}, "desc": "The last thing Entropy does to anything is end its turn. Freezes the enemy for a turn or more. Carrying it slows the world a little around you: it feeds your engine as it cycles."},
 }
 
 static func dungeon_card_id_for_dungeon(dungeon_type: String) -> String:
