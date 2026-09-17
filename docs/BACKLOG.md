@@ -1397,11 +1397,47 @@ is `job_close`. Every sub-view of the More menu goes through one exit now.
 
 - [ ] *"Market and alchemy crafting still display Travel stances for a brief second before it hides
       when they are opened, the stances need to hide before those menus are drawn, not after."*
-      The margin decision moved from a `_process` poll to the end of the frame that handled the
-      message (`_margin_sync_after_message`), which closes the frame-lag - but the owner reports
-      something longer than a frame and I have guessed twice. **MEASURE IT**: timestamp the mode
-      flip, the panel becoming visible, and the stance bar hiding. The `backtest` shots scene is
-      the pattern to copy - drive it, do not ask the owner to reproduce.
+      ☑ **MEASURED 2026-09-17, and the answer moves the item.** New shots scene `stancetiming`
+      prints a PER-FRAME timeline (a row only when something changes) of the stance bar, the
+      shortcut row, both panels and `_margin_widgets_shown()`, driving each entry the way the game
+      really reaches it.
+
+      ```
+      market     f0     0ms  stance=false shortcuts=false marketpanel=false market_mode=true
+      market     f1    31ms  stance=false shortcuts=false marketpanel=true  market_mode=true
+      alchemy    f0     0ms  stance=false shortcuts=false craftpanel=false  crafting_mode=true
+      alchemy    f1    32ms  stance=false shortcuts=false craftpanel=true   crafting_mode=true
+      ```
+
+      ⚑ **THE ORDERING IS ALREADY WHAT THE OWNER ASKED FOR.** The stances and shortcuts are gone
+      on the frame the mode flips, and the panel is drawn on the NEXT frame - hidden BEFORE the
+      menu is drawn, not after. So the two previous fixes worked; they fixed a real frame-lag that
+      was not what the owner was seeing.
+
+      ⚑ **WHAT THE OWNER IS SEEING IS THE ROUND TRIP BEFORE ANY OF THAT.** Bump-to-interact is
+      entirely server-side: the client sends `move`, `server.gd:5624` sees the target tile is a
+      `market` or a station, sends back `market_start` / `station_interact` and **returns without
+      moving the player**. Until that reply lands the client has no idea anything is happening, so
+      the map, the travel row and the shortcuts all correctly stay exactly as they were. Measured
+      RTT to the live server: **71ms** (5 pings, 70-72ms), plus a client poll frame and a server
+      tick either side - call it **90-120ms, six or seven frames**, during which the player has
+      pressed a key and nothing at all has changed. Then everything changes at once.
+      That is a much better fit for *"a brief second"* than any within-frame ordering, and it
+      explains why two ordering fixes changed nothing the owner could see.
+      It also explains the owner's PAIRING of market and alchemy: both are entered by bumping a
+      tile (`market`, and an alchemy station via `station_interact`), so both flip their mode only
+      on the reply. Crafting opened from the menu (`open_crafting`, a local action) flips
+      immediately and has never had the problem.
+
+      **So the remaining fix is latency masking, and it is a DESIGN choice rather than a bug fix**
+      — the client would have to hide the margin widgets speculatively, on sending a move into a
+      tile whose meaning it can already see is a menu-opening station. It has the information: the
+      map payload's `meaning` grid carries the tile-type names (`market`, `forge`, `apothecary`,
+      ...) and `send_move` is the single place a player's move goes out. The cost is a new piece of
+      speculative state and one visible failure mode — if the bump is refused, the travel row
+      blinks off and back. **Owner's call; asked 2026-09-17.**
+
+      Instrument kept: `--shots=stancetiming`. Re-run it after any change to the margin rule.
 - [x] **Icons for the effect chips — SHIPPED v0.9.795/796.** Poison and blind come from
       `States.png` (copied out of a `.gdignore`d pack, which is its own recorded trap), and
       fourteen BUFFS got icons from `items_pack/` - sword, shield, armour, boots, star, heart,

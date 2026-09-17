@@ -6476,6 +6476,29 @@ func _dev_shots_requested() -> Array:
 		return []
 	return String(_dev_auto["shots"]).split(",", false)
 
+func _dev_stance_timeline(label: String, frames: int) -> void:
+	"""Print a row whenever any of the watched flags changes, for `frames` frames.
+
+	⚑ THE POINT IS THE ORDER, so only CHANGES are printed and each row carries the frame index
+	and the milliseconds since the watch started. A sampler that printed every frame would bury
+	the two transitions that matter in three hundred identical lines."""
+	var t0: int = Time.get_ticks_msec()
+	var last := ""
+	for f in range(frames):
+		var stance_vis: bool = _stance_bar != null and is_instance_valid(_stance_bar) and _stance_bar.visible
+		var short_vis: bool = shortcut_buttons_container != null \
+			and is_instance_valid(shortcut_buttons_container) and shortcut_buttons_container.visible
+		var mkt_vis: bool = market_panel != null and is_instance_valid(market_panel) and market_panel.visible
+		var crf_vis: bool = crafting_panel != null and is_instance_valid(crafting_panel) and crafting_panel.visible
+		var row := "stance=%s shortcuts=%s marketpanel=%s craftpanel=%s market_mode=%s crafting_mode=%s allowed=%s" % [
+			str(stance_vis), str(short_vis), str(mkt_vis), str(crf_vis),
+			str(market_mode), str(crafting_mode), str(_margin_widgets_shown())]
+		if row != last:
+			print("[SHOTS] %-10s f%-4d %5dms  %s" % [label, f, Time.get_ticks_msec() - t0, row])
+			last = row
+		await get_tree().process_frame
+
+
 func _dev_run_shots() -> void:
 	"""Walk the requested scenes, capturing each. Runs once, after login+character select."""
 	if _dev_shots_done:
@@ -6675,6 +6698,38 @@ func _dev_run_shots() -> void:
 					await get_tree().create_timer(2.5).timeout
 				await _dev_shot_clear_overlays()
 				await _dev_shot_capture("party_combat_rounds")
+
+			"stancetiming":
+				# ⚑ MEASURE IT. Owner, twice: *"Market and alchemy crafting still display Travel
+				# stances for a brief second before it hides when they are opened, the stances need
+				# to hide before those menus are drawn, not after."* Two fixes were written from
+				# theories about the code; this prints the ORDER instead.
+				#
+				# Both entries are driven the way the game reaches them, which is the part that
+				# matters: the MARKET arrives as a server message (`market_start`, sent when you
+				# bump the $ tile), while CRAFTING is a local action that then asks the server for
+				# its recipe list. Those are opposite shapes, and driving either one directly would
+				# measure a path the player never takes.
+				send_to_server({"type": "gm_goto_post"})
+				await get_tree().create_timer(2.5).timeout
+				print("[SHOTS] --- baseline, standing in a post ---")
+				await _dev_stance_timeline("idle", 20)
+
+				print("[SHOTS] --- MARKET: enter_market() is called from the market_start message ---")
+				enter_market()
+				await _dev_stance_timeline("market", 120)
+				exit_market()
+				await get_tree().create_timer(1.0).timeout
+
+				print("[SHOTS] --- CRAFTING: open_crafting() is a local action, then a round trip ---")
+				open_crafting()
+				await _dev_stance_timeline("craft_open", 60)
+				print("[SHOTS] --- ALCHEMY: the skill pick, which fetches the recipe list ---")
+				request_craft_list("alchemy")
+				await _dev_stance_timeline("alchemy", 120)
+				close_crafting()
+				await get_tree().create_timer(0.8).timeout
+				print("[SHOTS] --- done ---")
 
 			"backtest":
 				# ⚑ WHAT DOES BACK ACTUALLY DO? Owner 2026-09-16: *"Back on pouch screen still takes
