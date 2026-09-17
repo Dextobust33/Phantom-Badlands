@@ -1962,8 +1962,12 @@ chain after it), party half two (independent movement + join-in-progress), contr
       the bearing can name it. `tools/probe/guide_ring_and_delivery.gd` gained a section that bans
       a second picker.
 - [x] **"Floors Cleared: 2/5" on the starter dungeon's completion screen** - fixed, see RECOMMENDED ORDER item 6.
-- [ ] **Home is the NEAREST post**, which after an eastern starter dungeon is not the Crossroads
-      (measured: (65,-9)). Probably right; confirm with the owner if it reads oddly in play.
+- [x] **Home is the NEAREST post** — **ASKED AND CHANGED 2026-09-17.** Owner, given the choice:
+      *"Back to where you started."* So it is `character.origin_post`, stamped once at creation,
+      with nearest kept as the fallback for legacy characters who have none. The line he SAYS at
+      the end of the chain reads the same field, or he would ring one place and lead to another —
+      the same three-owners split fixed for the outbound leg the same day. Driven on the live
+      server in `tools/probe/tutorial_walkthrough.gd`, including the legacy fallback.
 - [ ] **`assassinate_pct` now reaches the dice** (v0.9.790): Silver Tongue +15% and one unique work as
       written. A small per-class power gain - glance at it on the next `refcal`.
 
@@ -2110,12 +2114,14 @@ adding up to a whole kit, so adding a gear slot to the game forces a decision ab
 comes from.
 
 
-- [ ] **The Warden's handout is named like endgame loot.** (Still open — re-verified by CALLING the generator on 2026-09-15; the current names are listed in the NEXT SESSION block at the top of this file.) `get_starter_kit_item("weapon")` runs
-      the full affix generator, so the first item a new player is ever given came out as
-      *"Blurred Rusty Weapon of the Elder Lich"*. A tutorial handout should read as a plain
-      starter weapon. NOT a one-line fix: `_generate_item` has no affix-suppression flag, and
-      renaming without changing the roll would put a name on the item that its stats contradict
-      — the affixes carry real bonuses. Needs a proper "plain base item" path in drop_tables.
+- [x] **The Warden's handout is named like endgame loot** — **DONE 2026-09-17.** *"Rusty Weapon
+      of Wisdom"* is *"Rusty Weapon"*, and the kit is deterministic instead of a fresh roll per
+      character. The `plain` path in `_generate_item` this entry asked for exists; the level moved
+      5 → 10 to pay for the dropped affix, measured at 1.04x of the old kit's power.
+      ⛑ **AND THIS WAS THE SAME JOB AS "THE STARTER KIT IS STILL NAMED LIKE ENDGAME LOOT"**, filed
+      separately under another name — same function (`get_starter_kit_item`), same cause, same
+      requested fix, two open lines. Exactly what the backlog rule at the top of CLAUDE.md is for.
+      Full write-up under that heading; probe `tools/probe/starter_kit_plain.gd`.
 
 
 Fixed this pass (`bdd7060c`, `adef56ab`, and the party-kill/import commit):
@@ -5466,10 +5472,19 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
         produce confident nonsense. It also under-reports bleed/poison DoT, lifesteal healing and
         plunder/tribute rewards, which it does not measure.
 
-- [ ] **Dungeon card pass** (same conversation): *"dungeon reward cards likely need reworked and
-      added to add interesting new cards that classes may want to swap into their decks."* The bar
-      is a card a player would CHOOSE over one of their five, which today almost none clear. Same
-      note as above: some should rattle the enemy.
+- [ ] **Dungeon card pass — re-scoped 2026-09-17: the COVERAGE half is done, the POWER half is
+      not.** Owner: *"dungeon reward cards likely need reworked and added to add interesting new
+      cards that classes may want to swap into their decks."*
+      **Done:** *"added"*. All 53 dungeon types have an exclusive card, each themed to its own
+      boss and sized to its own tier, each with a face — see the 53-card entry in the dungeon arc.
+      Several DO rattle the enemy, which this entry asked for: 3 blind, 3 stun, 4 weaken, 3 charm
+      and 3 timestop.
+      **Still open, and it is the harder half:** *"cards that classes may want to swap into their
+      decks"*. The bar is **a card a player would CHOOSE over one of their five**, and nothing has
+      measured whether any of the 53 clears it. That is a sim question, not a writing one — the
+      shape of it is: for each class, does substituting a dungeon card for its weakest deck slot
+      raise the win rate or lower it? Until that is run, "53 cards exist and all 53 work" is the
+      honest claim and the only one the probe makes.
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
