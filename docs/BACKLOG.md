@@ -5009,6 +5009,63 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       silently remove features rather than remove navigation. Order: map → give every surviving
       feature a button → then retire the commands.
 
+      ☑ **STEP ONE IS DONE — THE MAP EXISTS, AND IT IS GENERATED (2026-09-17).**
+      `tools/ui_navigation_map.py` → `docs/design/ui_navigation_map.md`. A tool rather than a
+      document, because a hand-written map of 28 panels, 119 commands and 380 action ids is stale
+      the day after it is written, and the whole purpose is to decide what to DELETE — a decision
+      that must not be made against a stale map. Re-run it after every deletion to prove the
+      deletion did not orphan something else.
+
+      **What it says today:**
+      | | |
+      |---|---|
+      | chat commands whitelisted | 119, in 86 arms |
+      | ...with no handler | **0** |
+      | ...that are a surface's ONLY door | **0** |
+      | panel scripts | 28 |
+      | ...never opened from `client.gd` | **0** |
+      | action-bar local ids | 380 |
+      | ...with no case in `execute_local_action` | **1** |
+
+      ⚑ **THE COMMAND SWEEP IS UNBLOCKED, AND THIS IS THE EVIDENCE.** The reason recorded above
+      for not sweeping was that `/dungeons` was a feature's only door. It no longer is (it opens
+      the Atlas tab since 2026-09-17), and **none of the other 85 arms is either** — every surface
+      a chat command opens is reachable from somewhere else as well. So retiring the commands now
+      removes navigation and not features, which is precisely the condition this entry set.
+
+      **The one real dead end it found:** the action bar's **Build** button. `build_shortcut` is
+      offered as `action_type: "local"` (`client.gd:12660`) and has no case in
+      `execute_local_action` — and BOTH input paths go through that function (`trigger_action`
+      dispatches click and hotkey alike), so pressing it and clicking it both do nothing, while
+      the same id works from the shortcut ROW. CLAUDE.md pitfall #11, exactly.
+
+      ⛑ **THE TOOL FLAGGED 34 LIVE FEATURES BEFORE I CHECKED ITS OUTPUT**, and every fault
+      pointed the same way — toward deleting something that works. In a tool whose product is a
+      deletion list that is not an inaccuracy, it is a proposal:
+      * **11 "dead" action ids were handled.** `help_quest_log` and nine siblings share ONE match
+        arm spread over four lines with `\` continuations; the parser matched an arm only when it
+        fitted on one line. `job_commit_` is not an id at all — it is a prefix.
+      * **23 "untypable" commands were sub-commands** — `accept`, `invite`, `deposit` are arms of
+        NESTED matches (`/clan invite`, `/vault deposit`). Fixed by judging an arm by its
+        indentation depth.
+      * **2 "never opened" panels** were opened by verbs my whitelist did not contain
+        (`show_with_payload`, `open_combat`). A whitelist of opener verbs cannot be complete.
+      * **the verb column printed method names** — and after two rounds of blaming the docstring
+        parser, the cause was the opener loop below it reusing the variable `verb`. Shadowed in
+        plain sight, eight lines under the code I kept editing.
+
+      ⛑ **And the first attempt to prove the only-door detector FIRES was itself invalid.** I
+      injected a fake surface call next to `show_help()` — and hit line 16239, inside
+      `execute_local_action`, not the one at 29572 inside `process_command`. The test never touched
+      the code under test and reported nothing, which looks exactly like a detector finding nothing
+      wrong. Re-injected at the right line, it flags correctly. **A "0 found" result is worth
+      nothing until the injection lands in the function being tested.**
+
+      **What remains of this item:** step two (give every surviving feature a button) and step
+      three (retire the commands). Plus the judgements the tool says it cannot make — whether two
+      surfaces with different verbs are the same thing to a PLAYER, and whether a button's MODE is
+      ever entered. Those need the game run.
+
 - [ ] **Controller support (NEXT).** Godot has joypad input built in; a D-pad or stick gives all
       eight directions natively and the face buttons map to the action bar. Scope it as its own
       piece. Note `_on_move_button` already exists as an orphaned 8-way handler with no caller —
