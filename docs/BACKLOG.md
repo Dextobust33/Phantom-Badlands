@@ -1615,7 +1615,8 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      (a second copy used to lose its tome bonus). Client item text, compact tokens and comparisons read
      card_gear. Measured in equipment_audit.gd; items_in_combat.gd uses a card tome; card_bonus_fit.gd
      FAILS if the table drifts from what cards measurably do (full run ~10 min, not yet run with the
-     guard). Still to do: regenerate docs/design/equipment_reference.md (gearsources).
+     guard). ✅ `docs/design/equipment_reference.md` regenerated 2026-09-17 (`-- gearsources`); it was
+     nearly current - one line moved, `scroll_time_stop` joining the mystery-box pool.
    - OPEN, small: card_face_truth fails ONE cell, Sage L20 Frost Nova at 4 engine (quote 250, real
      211, 0.85) - present before the gear change too (stash-tested), so an existing over-quote.
    - ✅ FIXED (player power): the "defense" buff was read TWICE per hit - as % damage reduction (the
