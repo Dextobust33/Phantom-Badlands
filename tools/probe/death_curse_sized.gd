@@ -75,7 +75,69 @@ func _init() -> void:
 	var k3: Dictionary = _kill(sim, cm, und, md.generate_monster_by_name("Demon", 100, true))
 	ck(String(k3["text"]).find("no effect on your undead form") >= 0 and int(k3["lost"]) <= 3, "an Undead character is immune")
 
-	print("\n===== 3. WHAT THE PLAYER IS TOLD MATCHES =====")
+	print("\n===== 3. IN A PARTY, EVERY MEMBER TAKES IT =====")
+	# ⛑ IT FIRED FOR NOBODY. `_process_victory_with_abilities` returns early on
+	# `suppress_victory` - a member's killing blow must not run the solo victory - and the curse
+	# lived below that return, so an ability the monster's trait chip advertises did nothing at
+	# all in co-op. Owner 2026-09-17, asked whether the killer or everyone should take it:
+	# *"Everyone in the fight."*
+	#
+	# Driven through the real party victory path rather than checked in the source, because the
+	# fault being guarded against is precisely a function that exists and is never reached.
+	var pa = sim.make_char(100, "average", "Fighter", "Human")
+	var pb = sim.make_char(100, "average", "Wizard", "Human")
+	pa.name = "Aleader"
+	pb.name = "Bmate"
+	pa.current_hp = pa.get_total_max_hp()
+	pb.current_hp = pb.get_total_max_hp()
+	var pmon: Dictionary = md.generate_monster_by_name("Demon", 100, true)
+	pmon["current_hp"] = 0          # the blow has landed; this is the victory beat
+	var pcombat := {
+		"members": [1, 2],
+		"characters": {1: pa, 2: pb},
+		"member_states": {1: {}, 2: {}},
+		"monster": pmon,
+		"round": 1,
+	}
+	cm.active_party_combats[1] = pcombat
+	var a_before: int = int(pa.current_hp)
+	var b_before: int = int(pb.current_hp)
+	var pres: Dictionary = cm._party_victory(pcombat, [])
+	var a_lost: int = a_before - int(pa.current_hp)
+	var b_lost: int = b_before - int(pb.current_hp)
+	var want_a: int = maxi(1, int(int(float(pa.get_total_max_hp()) * CM.DEATH_CURSE_PLAYER_SHARE)
+		* (1.0 - minf(0.5, float(pa.get_effective_stat("wisdom")) / 200.0))))
+	var want_b: int = maxi(1, int(int(float(pb.get_total_max_hp()) * CM.DEATH_CURSE_PLAYER_SHARE)
+		* (1.0 - minf(0.5, float(pb.get_effective_stat("wisdom")) / 200.0))))
+	print("  Fighter (%d HP) lost %d, expected %d | Wizard (%d HP) lost %d, expected %d" % [
+		pa.get_total_max_hp(), a_lost, want_a, pb.get_total_max_hp(), b_lost, want_b])
+	ck(a_lost > 0 and b_lost > 0, "BOTH members take the curse, not just the killer")
+	ck(a_lost == want_a and b_lost == want_b,
+		"and each takes a share of their OWN bar, so a party is not punished four times over")
+	# The Wizard has more Wisdom, so it should resist more - proof the shared function is doing
+	# the per-character maths rather than one figure applied to everyone.
+	ck(want_a != want_b or pa.get_effective_stat("wisdom") == pb.get_effective_stat("wisdom"),
+		"  (their Wisdom differs, so the amounts differ - one figure for all would not)")
+	ck(pres.get("victory", false) and pres.get("combat_ended", false),
+		"the party victory result is still a victory")
+	var ptext := ""
+	for m in pres.get("messages", []):
+		ptext += String(m) + " "
+	ck("death curse" in ptext.to_lower(), "and the log says so (%d chars)" % ptext.length())
+	# ⚑ BOTH victory exits. A member's blow can finish it mid-order and a DoT can during the
+	# monster phase; they used to build the result inline in two places, which is how something
+	# added on victory ends up firing on one path only.
+	var src0 := FileAccess.get_file_as_string("res://shared/combat_manager.gd")
+	var rp := src0.find("func resolve_party_round(")
+	var rp_end := src0.find("\nfunc ", rp + 10)
+	var rpbody := src0.substr(rp, (rp_end - rp) if rp_end > rp else 6000)
+	ck(rpbody.count("_party_victory(combat, entries)") == 2,
+		"both party victory exits go through the one path (%d)" % rpbody.count("_party_victory(combat, entries)"))
+	ck(not rpbody.contains('"victory": true, "messages": party_flatten_log'),
+		"  and neither builds its own victory result any more")
+	cm.active_party_combats.erase(1)
+
+	print("\n===== 4. WHAT THE PLAYER IS TOLD MATCHES =====")
 	var src := FileAccess.get_file_as_string("res://shared/combat_manager.gd")
 	var i := src.find('"death_curse": {"label": "Death Curse"')
 	var desc := src.substr(i, 260) if i >= 0 else ""

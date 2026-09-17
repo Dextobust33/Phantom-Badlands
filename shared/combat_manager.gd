@@ -3274,6 +3274,52 @@ func _apply_on_kill_chase_procs(character: Character, messages: Array) -> void:
 			messages.append("[color=#90EE90]>> +%d HP on kill (gear)[/color]" % actual)
 
 
+func apply_death_curse(character, monster: Dictionary, combat: Dictionary, messages: Array) -> void:
+	"""The monster's dying strike, for ONE character.
+
+	⚑ EXTRACTED 2026-09-17 because the party path never reached it.
+	`_process_victory_with_abilities` returns early on `suppress_victory` (a member's killing
+	blow must not run the solo victory), and the curse lived below that return - so an ability
+	the monster's own trait chip advertises did nothing at all in party combat, which is the
+	format the owner most wants players in.
+
+	Owner 2026-09-17, asked whether the killer or everyone should take it: **everyone in the
+	fight.** That is what the ability means, and it scales honestly because the damage is a
+	share of the RECIPIENT's own maximum HP - a party is not four times as punished, each
+	member pays the same fraction of their own bar, and it still cannot kill.
+
+	One function rather than a copy in the party layer: the last time this shape appeared here
+	it was the WIS resist that drifted between the copies."""
+	if not (ABILITY_DEATH_CURSE in monster.get("abilities", [])):
+		return
+	if character.is_immune_to_death_curse():
+		messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
+	else:
+		# ⛑ 2026-09-15 - SIZED TO THE PLAYER, NOT THE MONSTER.
+		#
+		# It was 10% of the MONSTER's max HP, set back when a monster's bar was about the size
+		# of a player's. Monster HP has since been sized to take several turns (the reference
+		# curve), and this never moved with it. Measured across all eight carriers at their home
+		# levels: from ~40% of a real player's bar at the low end to 100-500% for most carriers,
+		# most levels and every elite - so it usually left the player at 1 HP and the clamp below
+		# was doing the work. Any of them can flock (Broodcalling forces it, and a flock is more of the same
+		# species), so a chain was a string of trips to 1 HP. Owner: *"It often puts a player to
+		# 1 hp meaning it could be death in a flock or if they can't heal."* Owner chose 20% of
+		# the player's max HP; Wisdom still resists up to half and it still cannot kill.
+		var base_curse_damage = int(float(character.get_total_max_hp()) * DEATH_CURSE_PLAYER_SHARE)
+		# WIS provides ability resistance: reduces damage by min(50%, WIS/200)
+		var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
+		var wis_reduction = minf(0.50, float(player_wis) / 200.0)  # Max 50% reduction at WIS 100+
+		var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
+		curse_damage = max(1, curse_damage)
+		character.current_hp -= curse_damage
+		character.current_hp = max(1, character.current_hp)
+		if wis_reduction > 0:
+			messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
+		else:
+			messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, curse_damage])
+
+
 func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dictionary:
 	"""Process monster defeat with all ability effects (death message, bonuses, curses)"""
 	# #64 — in SIMULTANEOUS party combat, a member's killing blow must NOT run the solo
@@ -3323,35 +3369,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	# Phoenix-rebirth boss doesn't pay out twice in one fight.
 	_apply_on_kill_chase_procs(character, messages)
 
-	# Death curse ability: deal damage on death (nerfed from 25% to 10%, reduced by WIS)
-	# Undead racial: immune to death curses
-	if ABILITY_DEATH_CURSE in abilities:
-		if character.is_immune_to_death_curse():
-			messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
-		else:
-			# ⛑ 2026-09-15 - SIZED TO THE PLAYER, NOT THE MONSTER.
-			#
-			# It was 10% of the MONSTER's max HP, set back when a monster's bar was about the size
-			# of a player's. Monster HP has since been sized to take several turns (the reference
-			# curve), and this never moved with it. Measured across all eight carriers at their home
-			# levels: from ~40% of a real player's bar at the low end to 100-500% for most carriers,
-			# most levels and every elite - so it usually left the player at 1 HP and the clamp below
-			# was doing the work. Any of them can flock (Broodcalling forces it, and a flock is more of the same
-			# species), so a chain was a string of trips to 1 HP. Owner: *"It often puts a player to
-			# 1 hp meaning it could be death in a flock or if they can't heal."* Owner chose 20% of
-			# the player's max HP; Wisdom still resists up to half and it still cannot kill.
-			var base_curse_damage = int(float(character.get_total_max_hp()) * DEATH_CURSE_PLAYER_SHARE)
-			# WIS provides ability resistance: reduces damage by min(50%, WIS/200)
-			var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
-			var wis_reduction = minf(0.50, float(player_wis) / 200.0)  # Max 50% reduction at WIS 100+
-			var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
-			curse_damage = max(1, curse_damage)
-			character.current_hp -= curse_damage
-			character.current_hp = max(1, character.current_hp)
-			if wis_reduction > 0:
-				messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
-			else:
-				messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, curse_damage])
+	apply_death_curse(character, monster, combat, messages)
 
 	# MEASURED HERE, DELIBERATELY: after every post-defeat effect has resolved.
 	# This block originally sat right under the "is defeated" line, BEFORE death curse
@@ -13665,6 +13683,29 @@ func party_round_ready(leader_id: int) -> bool:
 	return true
 
 
+func _party_victory(combat: Dictionary, entries: Array) -> Dictionary:
+	"""The party won. ONE path, because there are two places the monster can hit 0 HP.
+
+	A member's blow can finish it mid-order, or a DoT tick can during the monster phase, and both
+	used to build the same result inline - so anything added on victory had to be added twice or it
+	fired on one path only. Which is exactly what happened to the death curse, in the other
+	direction: it was in the SOLO victory and reachable from neither of these."""
+	entries.append(_party_neutral("[color=#FFD700]The %s is defeated![/color]" % combat.monster.get("name", "monster")))
+	# ⚑ EVERY MEMBER TAKES THE CURSE (owner 2026-09-17). Each message is written to its own
+	# member so a player reads "the death curse deals N damage" about themselves and sees the
+	# others named - the same two-voice rule as every other line in a party log.
+	for pid in _party_alive_members(combat):
+		var ch = combat.characters.get(pid, null)
+		if ch == null:
+			continue
+		var curse_msgs: Array = []
+		apply_death_curse(ch, combat.monster, combat, curse_msgs)
+		for m in curse_msgs:
+			entries.append(_party_entry_auto(pid, String(ch.name), String(m)))
+	return {"combat_ended": true, "victory": true,
+		"messages": party_flatten_log(entries), "message_entries": entries}
+
+
 func resolve_party_round(leader_id: int) -> Dictionary:
 	"""#64 Slice 2 — resolve one SIMULTANEOUS round: members act in SPEED order, then the monster
 	acts once. Returns {combat_ended, victory?, wipe?, messages, round}. The server calls this once
@@ -13685,14 +13726,12 @@ func resolve_party_round(leader_id: int) -> Dictionary:
 			continue
 		entries.append_array(_party_apply_member_action(combat, pid))
 		if int(combat.monster.get("current_hp", 0)) <= 0:
-			entries.append(_party_neutral("[color=#FFD700]The %s is defeated![/color]" % combat.monster.get("name", "monster")))
-			return {"combat_ended": true, "victory": true, "messages": party_flatten_log(entries), "message_entries": entries}
+			return _party_victory(combat, entries)
 	entries.append_array(_party_process_monster_phase(combat))
 	if int(combat.monster.get("current_hp", 0)) <= 0:
 		# A DoT tick (poison/burn/bleed) finished it during the monster phase — that is a win,
 		# not a silently continuing fight against a 0 HP monster.
-		entries.append(_party_neutral("[color=#FFD700]The %s is defeated![/color]" % combat.monster.get("name", "monster")))
-		return {"combat_ended": true, "victory": true, "messages": party_flatten_log(entries), "message_entries": entries}
+		return _party_victory(combat, entries)
 	_party_check_deaths(combat)
 	if _only_npcs_left(combat, _party_alive_members(combat)):
 		return {"combat_ended": true, "victory": false, "wipe": true, "messages": party_flatten_log(entries), "message_entries": entries}

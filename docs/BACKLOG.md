@@ -1480,9 +1480,27 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    flock: an empowered Broodcalling monster forces a 100% flock and the flock is the same species.
    Owner chose **20% of the player's max HP** (Wisdom resists up to half, still never lethal, Undead
    still immune). Trait chip and help text updated. Probe `death_curse_sized.gd` (real kill path).
-   - [ ] **Party fights never apply death curse at all** - a member's killing blow skips the solo
-         victory path where the curse lives (`suppress_victory`). The opposite gap; decide whether
-         the killer, or everyone, takes it.
+   - [x] **Party fights never applied death curse at all** — **FIXED 2026-09-17. Owner: everyone
+         in the fight.** `_process_victory_with_abilities` returns early on `suppress_victory` (a
+         member's killing blow must not run the solo victory) and the curse lived below that
+         return, so an ability the monster's own trait chip advertises did nothing whatever in
+         co-op — the format the owner most wants players in.
+         Everyone is also what it MEANS, and it scales honestly: the curse has been 20% of the
+         **player's own** max HP since 2026-09-15, so each member pays the same fraction of their
+         own bar and a party is not punished four times over. Measured: Fighter 295 of 1989,
+         Wizard 208 of 1442 — different amounts because their Wisdom differs, which is proof the
+         shared function does per-character maths rather than one figure for all.
+         **Structural, twice over.** (1) The curse is now `apply_death_curse()`, one function that
+         solo and party both call — copying 25 lines into the party layer would have given the
+         WIS resist two places to drift, which is what happened the last time this shape appeared
+         here. (2) `resolve_party_round` had **two** victory exits building their results inline,
+         which is how something added on victory fires on one path only; both go through one
+         `_party_victory()` now, and the probe fails if either builds its own again.
+         ⛑ **The first extraction was a silent no-op.** The lifted block kept its original
+         indentation under a new guard clause, so the whole curse sat INSIDE
+         `if not (ABILITY_DEATH_CURSE in ...): return`, after the return. It parsed clean and did
+         nothing. Caught by reading the function back, not by the compiler. Probe section proven
+         to fire by injecting the fault (3 checks go red).
 3. **✅ A REAL card-face instrument — DONE on master 2026-09-15, not released.**
    `tools/probe/card_face_truth.gd`: every class, every deck card that quotes damage, levels 20 and
    200, engine 0 and 4, server quote vs the mean of real casts (zero defence, level-matched, crits /
