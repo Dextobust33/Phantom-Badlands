@@ -124,6 +124,28 @@ const QUEST_TASK_REWARD := {
 ## Normalised around FIVE floors so this REDISTRIBUTES rather than inflates: a median dungeon is
 ## unchanged, a shallow one pays less, a deep one pays more. The board's overall generosity is
 ## the distance fix's business, not this one's.
+## ⚑ VALOR PER LEVEL OF THE FIGHT THE QUEST ACTUALLY ASKS FOR.
+##
+## Owner 2026-09-17: a five-floor dungeon and a boss paid **5 valor**. Measured against the sinks
+## that exist today - the cheapest Sanctuary upgrade is 250 valor and the ladder runs to 8000 - a
+## full dungeon run was worth about 2% of the cheapest thing a player can buy.
+##
+## ⚑ THIS NUMBER IS PROVISIONAL AND THE COMMENT IS HERE SO IT IS NOT READ AS SETTLED. Owner,
+## answering the question about magnitude: *"valor costs for everything likely need rebalanced
+## across the realm. Some things aren't even actively balanced or used as far as blacksmiths,
+## healing, repairs, etc."* It is calibrated against sinks he has just said are wrong. The
+## realm-wide economy pass is a backlog item; this is the interim anchor, not the answer.
+const QUEST_VALOR_PER_LEVEL := 3.5
+## How far the dungeon re-anchor may lift XP. Bounded because XP goes as level^2.2, so a
+## moderate jump in the anchor is a large jump in the payout - measured at 206,426 XP for a
+## single quest before this leash existed. Valor needs no equivalent: it is linear.
+const QUEST_XP_REANCHOR_CAP := 2
+const QUEST_VALOR_BASE := 3.0
+## Raised with it. The old 150/250 pair capped a high-grade dungeon at roughly what a mid one
+## paid, which is the shape that makes the deepest content feel worst.
+const QUEST_VALOR_CLAMP := Vector2(5.0, 600.0)
+
+
 const QUEST_DEPTH_PIVOT := 5
 const QUEST_DEPTH_PER_FLOOR := 0.12
 const QUEST_DEPTH_CLAMP := Vector2(0.7, 1.6)
@@ -2784,13 +2806,44 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 		var _d_rank: int = DungeonDatabaseScript.get_sub_tier_for_distance(_d_tier, post_distance)
 		extra_fields["dungeon_tier"] = _d_tier
 		extra_fields["dungeon_rank"] = _d_rank
+		# ⛑ THE PAY FOLLOWS THE DUNGEON NOW, NOT THE POST'S DISTANCE FROM SPAWN.
+		# `area_level` is `post_distance * 0.5`, so a board two tiles from origin paid
+		# starter money for five floors and a buffed boss - measured at 5 valor.
+		#
+		# A MAX of the three, never a replacement: keying purely off the band would LOWER
+		# every quest whose dungeon sits beneath the player, and the report was that
+		# rewards are too low. Re-anchoring may only ever raise.
+		var _band: Dictionary = DungeonDatabaseScript.instance_level_band(_d_tier, _d_rank, maxi(1, _task_floors))
+		var _band_mid: int = int((int(_band.get("min_level", 1)) + int(_band.get("max_level", 1))) / 2.0)
+		var _fight_level: int = maxi(effective_reward_level, _band_mid)
+		# ⛑ THE XP RAISE IS BOUNDED, BECAUSE XP GOES AS level^2.2. Caught by measuring the
+		# real board rather than reasoning about it: at a far post the band midpoint can sit
+		# well above `area_level`, and 2.2 turns a 1.6x level jump into ~3x the XP. The
+		# unbounded version handed one northwatch quest 206,426 XP.
+		#
+		# Valor is NOT bounded this way - it is linear, and lifting it is the point. Only
+		# the exponent needs a leash. Flattening the curve itself is a separate question
+		# the owner has not answered, so this changes nothing about its shape.
+		if _fight_level > effective_reward_level:
+			var _raised: int = int(tier_base_xp * pow(_fight_level + 1, 2.2) * tier_mult * distance_bonus_mult)
+			base_xp = maxi(base_xp, mini(_raised, base_xp * QUEST_XP_REANCHOR_CAP))
+		# Valor is rebuilt rather than floored: its old formula read `area_level` directly,
+		# so there is no version of it that tracks the dungeon to take a max against.
+		valor = maxi(valor, int(clampf(
+			(QUEST_VALOR_BASE + float(_fight_level) * QUEST_VALOR_PER_LEVEL + float(index) * 2.0)
+				* tier_mult * distance_bonus_mult,
+			QUEST_VALOR_CLAMP.x, QUEST_VALOR_CLAMP.y)))
 		var _diff: String = dungeon_difficulty_line(dungeon_info, _d_rank, _task_floors)
 		if _diff != "":
 			quest_desc += "\n\n" + _diff
 
 	var _depth_mult: float = quest_depth_mult(_task_floors)
 	base_xp = int(float(base_xp) * _task_xp_mult * _depth_mult)
-	valor = int(clampf(float(valor) * _task_valor_mult * _depth_mult, 3, 250))
+	# ⛑ THE CEILING MOVES WITH THE FLOOR. Leaving 250 here would have discarded the whole
+	# lift on exactly the deep, high-grade quests it was meant for - the multipliers are
+	# applied AFTER the re-anchor, so this is the number that decides what a player sees.
+	valor = int(clampf(float(valor) * _task_valor_mult * _depth_mult,
+		QUEST_VALOR_CLAMP.x, QUEST_VALOR_CLAMP.y))
 
 	# Determine reward tier for display tag
 	var reward_tier: String
