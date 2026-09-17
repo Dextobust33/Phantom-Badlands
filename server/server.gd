@@ -191,6 +191,19 @@ const MARKET_HISTORY_WINDOW: int = 50
 const INVENTORY_REFRESH_INTERVAL = 300.0  # 5 minutes
 const STARTER_INVENTORY_REFRESH_INTERVAL = 60.0  # 1 minute for starter trading posts
 const STARTER_TRADING_POSTS = ["haven", "crossroads", "south_gate", "east_market", "west_shrine"]
+
+## ⚑ ASK THIS, never the list. Four sites asked "is this a starter post" and TWO of them
+## asked wrong: `tp_id in STARTER_TRADING_POSTS`, where `tp_id` is a REAL post id
+## (`npc_crossroads`) and the list holds LEGACY names (`crossroads`). Both were therefore
+## always false - so the "flat low cost to help new players" recharge discount at starter
+## posts never applied to anybody, which is a price rise for exactly the players least able
+## to absorb one.
+##
+## The other two sites already carried `.trim_prefix("npc_")`, and the comment at one of them
+## records the same discovery being made before: *"so `npc_crossroads in [...]` was always"*.
+## Found once, fixed in one place, and left to be rediscovered twice. One predicate now.
+func _is_starter_post(tp_id) -> bool:
+	return String(tp_id).trim_prefix("npc_") in STARTER_TRADING_POSTS
 var watchers = {}  # peer_id -> Array of peer_ids watching this player
 var watching = {}  # peer_id -> peer_id of player being watched (or -1 if not watching)
 
@@ -17118,7 +17131,7 @@ func trigger_trading_post_encounter(peer_id: int):
 	# parallel check, the quest wouldn't appear in quests_to_turn_in on the
 	# QUEST BOARD even though the server-side turn-in would now accept it.
 	# v0.9.585 — strip "npc_" prefix; procedural NPC posts get prefixed ids.
-	var _is_current_starter_post: bool = String(tp_id).trim_prefix("npc_") in STARTER_TRADING_POSTS
+	var _is_current_starter_post: bool = _is_starter_post(tp_id)
 	var quests_to_turn_in = []
 	for quest_data in character.active_quests:
 		var quest = quest_db.get_quest(quest_data.quest_id, -1, 0, character.name)
@@ -17137,7 +17150,7 @@ func trigger_trading_post_encounter(peer_id: int):
 				quests_to_turn_in.append(quest_data.quest_id)
 
 	# Calculate recharge cost to send to client
-	var is_starter_post = tp_id in STARTER_TRADING_POSTS
+	var is_starter_post = _is_starter_post(tp_id)
 	var recharge_cost: int
 	if is_starter_post:
 		recharge_cost = 20
@@ -17309,10 +17322,23 @@ func handle_trading_post_quests(peer_id: int):
 	# No locked quests with dynamic-only system (no static prerequisite chains)
 	var locked_quests = []
 
-	# Add progression quest if player is high enough level for next post
-	var progression_quest = _generate_progression_quest(tp.id, character.level, character.completed_quests, active_quest_ids)
-	if not progression_quest.is_empty():
-		available_quests.append(progression_quest)
+	# ⚑ THE PROGRESSION QUEST WAS REMOVED HERE on 2026-09-17, on the owner's call.
+	#
+	# It had been DEAD since posts became procedural: `get_next_progression_post` opened with
+	# a `TRADING_POSTS.has(current_post_id)` check keyed by LEGACY post ids while the server
+	# passes `npc_<name>`, so it returned {} every time and the quest reached nobody. Had it
+	# been offered it would also have been uncompletable, because completion compares the id
+	# of the post you are standing on against a legacy destination id.
+	#
+	# ⚑ THE OWNER'S DIRECTION FOR A REPLACEMENT, recorded where anyone will look for it:
+	# *"If we are going to have a progression quest it should now work with the procedurally
+	# generated quests and maybe send players to a more appropriate post for their level once
+	# they are past the point of the current posts quests being very rewarding for them (but
+	# not hardlock them out of doing low level post quests)."*
+	#
+	# So the replacement is a NUDGE keyed off REWARD RELEVANCE rather than a gate: when this
+	# board has stopped paying for your level, point at one that does - and leave every low
+	# post open to anyone who wants it.
 
 	# Audit #11 Slice 12 — threat-relief bounty. When the post is Under Threat,
 	# surface a DUNGEON_CLEAR quest pointing at the threatening dungeon so the
@@ -17343,7 +17369,7 @@ func handle_trading_post_quests(peer_id: int):
 			var dest_post_id = quest_data.quest_id.replace("progression_to_", "")
 			if String(tp.get("id", "")) == dest_post_id:
 				can_turn_in = true
-		elif (String(quest.get("chain_id", "")) == "pathfinder" or String(quest_data.quest_id).begins_with("pathfinder_")) and String(tp.id).trim_prefix("npc_") in STARTER_TRADING_POSTS:
+		elif (String(quest.get("chain_id", "")) == "pathfinder" or String(quest_data.quest_id).begins_with("pathfinder_")) and _is_starter_post(tp.id):
 			# v0.9.585 — ROOT CAUSE FOUND. Procedural NPC posts (chunk_manager's
 			# get_npc_post_at) pass through _normalize_npc_post which prefixes
 			# their id with "npc_" — so at runtime `tp.id` is "npc_crossroads"
@@ -17417,63 +17443,6 @@ func handle_trading_post_quests(peer_id: int):
 	# Audit #3 Slice 5 — first quest-board open teaches chains + the 3-active cap.
 	_maybe_send_quest_board_hint(peer_id)
 
-func _generate_progression_quest(current_post_id: String, player_level: int, completed_quests: Array, active_quest_ids: Array) -> Dictionary:
-	"""Generate a dynamic exploration quest to guide player to the next trading post."""
-	# Check if player already has a progression quest active
-	for quest_id in active_quest_ids:
-		if quest_id.begins_with("progression_to_"):
-			return {}
-
-	# Check if player has recently completed a progression quest to this destination
-	# (prevents spam by requiring them to actually go there)
-	for quest_id in completed_quests:
-		if quest_id.begins_with("progression_to_"):
-			# Already completed a progression quest, don't offer another from same post
-			# until they visit the destination
-			pass
-
-	# Get the next recommended trading post
-	var next_post = trading_post_db.get_next_progression_post(current_post_id, player_level)
-	if next_post.is_empty():
-		return {}
-
-	var next_post_id = next_post.get("id", "")
-	var next_post_name = next_post.get("name", "Unknown")
-	var recommended_level = next_post.get("recommended_level", player_level)
-	var distance = next_post.get("distance_from_origin", 0)
-
-	# Generate quest ID
-	var quest_id = "progression_to_" + next_post_id
-
-	# Skip if already completed this specific progression quest
-	if quest_id in completed_quests:
-		return {}
-
-	# Calculate rewards based on distance (further = better rewards)
-	var base_xp = int(distance * 2)
-	var gems = max(0, int(distance / 100))
-
-	return {
-		"id": quest_id,
-		"name": "Journey to " + next_post_name,
-		"description": "Travel to %s to expand your horizons. (Recommended Level: %d)" % [next_post_name, recommended_level],
-		"type": 4,  # QuestType.EXPLORATION
-		"trading_post": current_post_id,
-		"target": 1,
-		"destinations": [next_post_id],
-		"rewards": {"xp": base_xp, "gems": gems},
-		"is_daily": false,
-		"prerequisite": "",
-		"is_progression": true  # Flag to identify progression quests
-	}
-
-# Audit #11 Slice 12 — threat-relief quest reward curve. Mirrors chain
-# final-stage scaling but slightly lower (single quest, not a chain).
-# v0.9.596 — Threat-relief reward table moved to QuestDatabase so the regen
-# path (quest_database._regenerate_threat_relief_quest) can populate the
-# quest.rewards field from the same source. Server still derives the live tier
-# the same way (via _compute_post_threat_state); QuestDatabase.get_threat_relief_rewards
-# wraps the lookup so both paths agree.
 
 func _generate_threat_relief_quest(tp: Dictionary, completed_quests: Array, active_quest_ids: Array) -> Dictionary:
 	"""Audit #11 Slice 12 — when the post is Under Threat, generate a
@@ -17537,7 +17506,7 @@ func handle_trading_post_recharge(peer_id: int):
 	var tp_id = tp.get("id", "")
 
 	# Starter trading posts have flat low cost to help new players
-	var is_starter_post = tp_id in STARTER_TRADING_POSTS
+	var is_starter_post = _is_starter_post(tp_id)
 	var cost: int
 	if is_starter_post:
 		# Flat 20 base for starter areas regardless of level (divided by 10 for valor)
@@ -20383,7 +20352,7 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 			# ANY starter post. v0.9.585 — strip "npc_" prefix because procedural
 			# NPC posts are normalized to ids like "npc_crossroads" not bare
 			# "crossroads". Was the root cause of the bug user kept reporting.
-			if String(tp.get("id", "")).trim_prefix("npc_") in STARTER_TRADING_POSTS:
+			if _is_starter_post(tp.get("id", "")):
 				can_turn_in = true
 
 		if not can_turn_in:

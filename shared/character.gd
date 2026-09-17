@@ -2455,6 +2455,19 @@ func from_dict(data: Dictionary):
 
 	# Quest system
 	active_quests = data.get("active_quests", [])
+	# One-time cleanup: the PROGRESSION QUEST was removed on 2026-09-17 (see the note at its
+	# old call site in server.gd). It worked before posts became procedural, so a long-lived
+	# character can still be holding one - and with only MAX_ACTIVE_QUESTS slots that is a
+	# THIRD of their capacity lost to a quest that can no longer be displayed or turned in.
+	# Dropped on load rather than left to rot, because the alternative is a player who cannot
+	# see the thing blocking them or do anything about it.
+	var _kept: Array = []
+	for _q in active_quests:
+		if String(_q.get("quest_id", "")).begins_with("progression_to_"):
+			continue
+		_kept.append(_q)
+	if _kept.size() != active_quests.size():
+		active_quests = _kept
 	completed_quests = data.get("completed_quests", [])
 	completed_chains = data.get("completed_chains", [])
 	daily_quest_cooldowns = data.get("daily_quest_cooldowns", {})

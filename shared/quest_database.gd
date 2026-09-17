@@ -1703,9 +1703,9 @@ func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_pos
 	if "_dynamic_" in quest_id:
 		return _regenerate_dynamic_quest(quest_id, player_level, quests_completed_at_post)
 
-	# Handle progression quest IDs (format: progression_to_postid)
-	if quest_id.begins_with("progression_to_"):
-		return _regenerate_progression_quest(quest_id)
+	# `progression_to_*` ids are gone with the quest - removed 2026-09-17. Any such id left on
+	# a saved character falls through to the end of this dispatch and returns {}, which is the
+	# same thing the generator did for its whole life.
 
 	# Audit #11 Slice 12 — threat-relief quest IDs (format:
 	# threat_<post_id>@<dungeon_type>). Server-side handle_trading_post_quests
@@ -1752,38 +1752,6 @@ func _regenerate_threat_relief_quest(quest_id: String) -> Dictionary:
 		"is_threat_relief": true,
 	}
 
-func _regenerate_progression_quest(quest_id: String) -> Dictionary:
-	"""Regenerate a progression quest from its ID."""
-	# Parse ID: progression_to_postid
-	var dest_post_id = quest_id.replace("progression_to_", "")
-
-	if not TRADING_POST_COORDS.has(dest_post_id):
-		return {}
-
-	var dest_coords = post_coords(dest_post_id)
-	var distance = sqrt(dest_coords.x * dest_coords.x + dest_coords.y * dest_coords.y)
-	var recommended_level = max(1, int(distance))
-
-	# Get destination name from the key
-	var dest_name = dest_post_id.replace("_", " ").capitalize()
-
-	# Calculate rewards based on distance
-	var base_xp = int(distance * 2)
-	var valor = max(0, int(distance / 100))
-
-	return {
-		"id": quest_id,
-		"name": "Journey to " + dest_name,
-		"description": "Travel to %s to expand your horizons. (Recommended Level: %d)" % [dest_name, recommended_level],
-		"type": QuestType.EXPLORATION,
-		"trading_post": "",  # Origin unknown when regenerating
-		"target": 1,
-		"destinations": [dest_post_id],
-		"rewards": {"xp": base_xp, "valor": valor},
-		"is_daily": false,
-		"prerequisite": "",
-		"is_progression": true
-	}
 
 func _get_area_level_for_post(trading_post_id: String) -> int:
 	"""Get the expected monster level for an area around a trading post."""

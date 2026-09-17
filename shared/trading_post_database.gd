@@ -1393,52 +1393,6 @@ func get_post_distance_from_origin(post_id: String) -> float:
 	var center = post.center
 	return sqrt(center.x * center.x + center.y * center.y)
 
-func get_next_progression_post(current_post_id: String, player_level: int) -> Dictionary:
-	"""Find the next trading post the player should travel to for progression.
-	Returns the nearest post that is:
-	1. Further from origin than current post
-	2. Within reasonable level range (player_level to player_level + 50)
-	Returns empty dict if no suitable post found."""
-
-	if not TRADING_POSTS.has(current_post_id):
-		return {}
-
-	var current_dist = get_post_distance_from_origin(current_post_id)
-	var candidates = []
-
-	for post_id in TRADING_POSTS:
-		if post_id == current_post_id:
-			continue
-
-		var post_dist = get_post_distance_from_origin(post_id)
-		var recommended_level = get_post_recommended_level(post_id)
-
-		# Must be further from origin
-		if post_dist <= current_dist:
-			continue
-
-		# Recommended level should be within range (current level to +50)
-		# Player should be at least 80% of the recommended level
-		var min_player_level = int(recommended_level * 0.8)
-		if player_level < min_player_level:
-			continue
-
-		# Don't suggest posts way beyond player's level (more than +100)
-		if recommended_level > player_level + 100:
-			continue
-
-		var post_data = TRADING_POSTS[post_id].duplicate(true)
-		post_data["distance_from_origin"] = post_dist
-		post_data["recommended_level"] = recommended_level
-		candidates.append(post_data)
-
-	if candidates.is_empty():
-		return {}
-
-	# Sort by distance from origin (closest first that's still further than current)
-	candidates.sort_custom(func(a, b): return a.distance_from_origin < b.distance_from_origin)
-
-	return candidates[0]
 
 func get_posts_sorted_by_distance() -> Array:
 	"""Get all trading posts sorted by distance from origin."""
