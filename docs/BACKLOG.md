@@ -628,6 +628,60 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ⛑ THE LEGACY POST SYSTEM — AUDITED 2026-09-17, needs an owner decision
+
+Owner: *"It sounds like we need to remove or structurally resolve the legacy post stuff just like
+the dungeon list problems."* Right instinct. The audit found it is **three things, not one**, and
+one of them is a FEATURE THAT IS SILENTLY OFF.
+
+**1. `trading_post_db` is LIVE and legitimate — do not remove it.** It owns what a post *sells*:
+`resolve_post_category`, `category_has_npc_stock`, `get_npc_daily_stock`,
+`get_specialty_discount`, `get_specialty_summary`. Twelve live call sites. `chunk_manager` owns
+where posts *are*; this owns what they do. That split is fine.
+
+**2. `TRADING_POST_COORDS` (58 hardcoded coordinates) points at empty ground.** Measured against
+the real world (`npc_posts.json`, 120 procedural posts): **11 of the 12 sampled have no post
+within 3 tiles.** Only "crossroads" (0,0) coincides with a real post. Read by
+`_regenerate_progression_quest`, travel-quest distance, and exploration destination display.
+
+```
+haven          (   0,  10)  nearest real post 10 tiles away
+south_gate     (   0, -25)  25 tiles
+east_market    (  25,  10)  27 tiles
+northwatch     (   0,  75)  75 tiles
+```
+
+**3. ⛑ THE PROGRESSION QUEST IS DEAD CODE, and has been since posts became procedural.**
+*"Travel to the next trading post"* — the quest that guides a new player outward — can never be
+offered. The chain, end to end:
+* `handle_trading_post_quests` calls `_generate_progression_quest(tp.id, ...)`, where `tp.id` is
+  a REAL post id
+* real posts carry **no `id`** in `npc_posts.json`, so `_normalize_npc_post` synthesises
+  `"npc_" + name` → `"npc_crossroads"`
+* `get_next_progression_post("npc_crossroads", ...)` opens with
+  `if not TRADING_POSTS.has(current_post_id): return {}` — and `TRADING_POSTS` is keyed by
+  **legacy** ids like `"haven"`
+* so it returns `{}` every time, and no progression quest is ever generated
+
+**Worth being precise: this is DEAD, not BROKEN.** I was heading for the more alarming conclusion
+(*"players are given quests they cannot finish"*) and it is not that — the quest is never offered
+at all. Had it been offered it would have been uncompletable, because
+`check_exploration_progress` matches the post id it is standing on (`npc_crossroads`) against the
+destination id (`haven`), which can never be equal.
+
+**THE DECISION (owner's, per CLAUDE.md's "archive with discussion"):**
+* **(a) RESTORE it** — point progression at real posts. The data is all there: `npc_posts.json`
+  has 120 posts with coordinates and names, so "the next post further out, in your level band" is
+  a live query rather than a table. This gives new players a guided path outward again.
+* **(b) REMOVE it** — delete the progression quest, `TRADING_POST_COORDS`, `TRADING_POSTS` and
+  `get_next_progression_post`. The Warden onboarding chain now does the guiding job, which may be
+  why nobody noticed this was off.
+
+**Either way, the structural half is the same** and is the `base_tier` move again: **one owner for
+"where is a post and what is it called"**, which is `chunk_manager`. The two legacy tables must
+stop being readable for placement questions, so that asking them fails loudly instead of
+returning a plausible wrong coordinate.
+
 ### ⛑ STILL OPEN after 2026-09-17 — the Atlas pin, live
 
 The merged panel is built and the renderer is proven (`tools/probe/atlas_pins_and_rumours.gd`,
