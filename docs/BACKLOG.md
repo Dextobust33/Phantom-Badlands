@@ -943,10 +943,31 @@ has been used."*
       parses without ever writing that property; and reading a 10-character Effects box as empty
       when the icons were there all along. Do not retry synthetic hover without first making a
       control answer.
-- [ ] **ONE canvas size only.** Everything in this arc was measured at 1367x792. The dock heights
-      and margin widths are computed, and the dungeon tile fit degrades to 32px if 64 will not fit —
-      so on a 1080p or 1440p window the dungeon may land on a different tile size than the frames
-      the owner reviewed. Five-minute check: `--shots=dungeon` at a couple of resolutions.
+- [x] **ONE canvas size only.** — ANSWERED 2026-09-16, and the concern does not materialise.
+      **Every plausible window shape draws the floor at 64px.** Only the ROW COUNT moves, 7 to 15.
+      The reason is structural: the game stretches with `canvas_items` + `aspect=expand`, which
+      pins the viewport WIDTH at 1920 and lets only the height track the window's aspect - and the
+      tile is chosen from the width. A 16:9 window of any resolution is the same viewport.
+
+      | aspect | viewport | floor |
+      |---|---|---|
+      | 16:9 | 1920x1080 | 64px, 11 rows |
+      | 16:10 | 1920x1200 | 64px, 13 rows |
+      | 21:9 | 1920x823 | 64px, 7 rows |
+      | 4:3 | 1920x1440 | 64px, 15 rows |
+      | 32:9 | 1920x540 | 64px, 7 rows |
+
+      The 64px step needs a canvas 1240 wide (viewport 1793) and the viewport is always 1920, so
+      there is 127px of headroom - **a future layout change that eats more than that halves the
+      floor**, because the step below 64 is 32 and shows a quarter of the area. That is a cliff,
+      not a slope, and the probe asserts it.
+
+      **⛑ The obvious way to check this was impossible, and cost four runs to find out.** Running
+      the harness at several resolutions clamps: `--screen 1` targets a 1920x1080 monitor whose
+      WORK AREA is 1920x1032, so every taller or wider window was squashed back to the same 1009
+      and four "different" runs measured one shape four times. The fit maths is now a pure static
+      `Client.dungeon_tile_fit`, so `tools/probe/dungeon_tile_fit.gd` answers it **headlessly** -
+      no window, which is also the answer to *"do you keep opening a client?"*
 
 ### Open, in order
 
@@ -966,7 +987,43 @@ has been used."*
       blind and filed a 5x5 map as the sighted control; and the diagnostic print was invisible
       because shots.py only echoes lines carrying `[SHOTS]`. The scene clears state first and
       reports blind flag and column count beside the tile size now, so a wrong reading says so.
-- [ ] **Buff icons for the rest.** The remaining combat buffs have no art that honestly represents
+- [ ] **⛑ TWO COMBAT EFFECTS THAT DO NOTHING** — found 2026-09-16 while auditing which buffs
+      lack an icon. Neither is on any list; both are player-facing claims the code does not honour.
+
+      * **`smite_debuff` is never read.** An Eternal player's Smite does
+        `target.add_buff("smite_debuff", 25, 10)` with the comment *"-25% damage for 10 rounds"*,
+        and that line is the ONLY reference to the key in the entire codebase. The poison half of
+        Smite works; the damage reduction has never existed.
+      * **`damage_penalty` is display-only.** It has an icon, a colour, a label and help text in
+        `client.gd`, and is never applied or consumed anywhere.
+
+      **The one-line fix does not work, and the reason is worth keeping.** Reusing the existing
+      `damage` key with a negative value would be read correctly - `get_buff_value` SUMS - but
+      `add_buff` refreshes with `max(buff.value, value)`, so a -25 arriving while any positive
+      damage buff is up is silently discarded. A penalty and a bonus cannot share one entry.
+
+      The one-owner fix: a `character.damage_buff_pct()` helper defined as
+      `get_buff_value("damage") - get_buff_value("damage_penalty")`, used at the five sites that
+      currently read the damage buff (including the CARD PREVIEW at combat_manager:4609, or the
+      card face will advertise damage the fight does not deal). Then Smite applies
+      `damage_penalty` and every consumer honours it. Est. small, but it touches damage numbers,
+      so it wants its own change rather than riding on something else.
+
+- [ ] **Buff icons for the rest.** — NARROWED 2026-09-16: it is **three keys, not "the rest"**,
+      and only ONE of them needs art. Diffed every `add_buff(...)` call against `BUFF_ICONS`:
+      `open_guard_penalty`, `time_stop` and `smite_debuff` are the only applied effects with no
+      icon. `open_guard_penalty` is the same concept as the already-mapped `defense_penalty` (you
+      take more damage) and `smite_debuff` the same as `damage_penalty` (you deal less), so both
+      can reuse those icons rather than wait for art. **`time_stop` is the only one that needs a
+      new picture** - "the next attack against you never comes" has no equivalent in the pack.
+
+      **⛑ And the buff vocabulary lives in TWO tables that have already drifted.**
+      `client.gd::BUFF_HELP` has 14 entries; `combat_scene_panel.gd::_STATUS_HELP` has 30 and
+      already covers `open_guard_penalty` and `time_stop`. They disagree on meaning as well as
+      coverage: `defense_penalty` is *"You take N% more damage"* in one and *"Exposed. Its defence
+      is cut"* in the other - the same key describing the player in one place and the monster in
+      the other. Whichever is shown to the wrong carrier is a lie. Worth unifying before adding
+      more entries to either. The remaining combat buffs have no art that honestly represents
       them; `BUFF_ICONS` records what is mapped and why. Either source icons or leave them as
       lettered chips — do NOT map a spare debuff row onto a buff.
 - [ ] **Judge the dungeon with a full party.** The owner has frames at the right tile size now

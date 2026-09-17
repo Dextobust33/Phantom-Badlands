@@ -50938,6 +50938,37 @@ func _overworld_crisp_px(fit: int) -> int:
 	return clampi(fit, 8, OVERWORLD_SPRITE_PX)
 
 
+static func dungeon_tile_fit(w_room: float, h_room: float, view_w: int) -> Dictionary:
+	"""The tile size and row count for a floor drawn in `w_room` x `h_room`. PURE, and static.
+
+	⚑ PULLED OUT SO IT CAN BE CHECKED WITHOUT OPENING A WINDOW.
+	
+	The backlog carried "everything in this arc was measured at ONE canvas size" for days because
+	answering it seemed to need the screenshot harness at several resolutions - and that turned out
+	to be impossible on the owner's hardware anyway: `--screen 1` puts the window on a 1920x1080
+	monitor whose WORK AREA is 1920x1032, so every taller or wider window asked for was clamped to
+	the same 1009 and four "different" runs measured the same shape four times.
+	
+	Nothing here needs a window. The fit depends on the canvas it is given and nothing else, so as
+	a pure function it is a headless probe instead of four windowed runs - which is also the answer
+	to the owner's *"do you keep opening a client?"*: the cheapest window is the one not opened.
+	
+	The TILE is the largest crisp step that fits `view_w` columns of the WIDTH; the ROWS are however
+	many of those the remaining height holds. Separating them is what stopped a fixed 19x9 view
+	deciding the tile size - see the note in the caller. Steps are multiples of 32 because both
+	sheets have to land on a whole-number scale or the pixel art smears."""
+	var best := 32
+	for px in [32, 64, 96, 128]:
+		if float(view_w * px) <= w_room:
+			best = px
+	# Odd, so the player sits on the middle row, and bounded so a very tall or very short canvas
+	# cannot turn the view into a letterbox or a column.
+	var rows: int = clampi(int(floor(h_room / float(best))), 7, 15)
+	if rows % 2 == 0:
+		rows -= 1
+	return {"tile": best, "rows": rows}
+
+
 func _dungeon_pick_tile_px(view_w: int, view_h: int) -> int:
 	"""Choose the largest crisp tile size that fits the whole viewport in the canvas.
 
@@ -50980,17 +51011,10 @@ func _dungeon_pick_tile_px(view_w: int, view_h: int) -> int:
 	# floor grows to the space instead of a constant deciding how much of it goes unused.
 	# Columns stay fixed because the owner's design for this view is limited sight - filling
 	# the canvas comes from drawing the same width LARGER, not from seeing further sideways.
-	var best := 32
-	for px in [32, 64, 96, 128]:
-		if float(view_w * px) <= w_room:
-			best = px
+	var _fit: Dictionary = dungeon_tile_fit(w_room, h_room, view_w)
+	var best: int = int(_fit["tile"])
+	var rows: int = int(_fit["rows"])
 	_DungeonTiles.TILE_PX = best
-	# Odd, so the player sits on the middle row, and bounded so a very tall or very short
-	# canvas cannot turn the view into a letterbox or a column.
-	var rows: int = int(floor(h_room / float(best)))
-	rows = clampi(rows, 7, 15)
-	if rows % 2 == 0:
-		rows -= 1
 	if _dungeon_fit_debug:
 		print("[DUNGEONFIT] avail=%s w_room=%.0f h_room=%.0f dock=%.0f tile=%d rows=%d" % [
 			str(avail), w_room, h_room, _dungeon_dock_h, best, rows])
