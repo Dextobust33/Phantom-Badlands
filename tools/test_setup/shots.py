@@ -32,6 +32,9 @@ DEFAULT_SCENES = ["world", "companions", "dungeon", "combat"]
 # Three separate failures in a row were debugged blind because of this one line.
 CLIENT_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "shots_client.log")
 SHOT_RES = "1920x1080"   # the layout is designed for 1080p; wider just spreads it thin
+# ...unless --res= says otherwise. The whole v0.9.795 dungeon arc was measured at ONE canvas
+# size, and the dungeon tile fit DEGRADES to 32px when 64 will not fit - so a window the owner
+# never reviewed can silently land on half-size tiles. Being able to ask is the check.
 # The capture walks its scenes on a fixed timeline inside the client; this is that timeline
 # plus headroom. Overrunning is harmless (the client is killed); cutting it short is not.
 BUDGET_S = 200
@@ -87,7 +90,9 @@ def main():
     player_idx = 0
     rest = []
     for a in argv:
-        if a.startswith("--player="):
+        if a.startswith("--res="):
+            globals()["SHOT_RES"] = a.split("=", 1)[1]
+        elif a.startswith("--player="):
             player_idx = int(a.split("=", 1)[1])
         else:
             rest.append(a)

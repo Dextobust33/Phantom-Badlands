@@ -7112,8 +7112,77 @@ func _dev_run_shots() -> void:
 				send_to_server({"type": "gm_dungeon_drop", "kind": "equipment"})
 				await get_tree().create_timer(0.8).timeout
 				await _dev_shot_capture("dungeon")
+				# ⛑ THE TILE SIZE, IN WRITING. The whole dungeon arc was measured at ONE window size,
+				# and the fit DEGRADES to 32px when 64 will not fit - so a resolution nobody reviewed
+				# can quietly halve the floor. A screenshot shows it; a printed number lets a run at a
+				# different size be compared without eyeballing two pictures.
+				# The VIEWPORT is what layout sees, and with stretch aspect=expand it tracks the
+				# window ASPECT, not its resolution: every 16:9 window gives the same 1920x1080.
+				# Print both, or three different resolutions look like three identical tests.
+				print("[SHOTS] FIT win=%s viewport=%dx%d tile=%dpx dock=%.0f" % [str(DisplayServer.window_get_size()),
+					int(get_viewport().size.x), int(get_viewport().size.y),
+					int(_DungeonTiles.TILE_PX), _dungeon_dock_h])
 				if _dungeon_fit_debug:
 					_dev_print_rects()
+
+			"hoverproof":
+				# ⛑ WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
+				#
+				# Two hovers shipped in v0.9.795 signed off by reading their wiring - the in-floor
+				# KEY's theme tiles and the effect icons. Signals being connected is the ingredients,
+				# not the lookup.
+				#
+				# Driving a SYNTHETIC MOUSE was tried first and abandoned after three rounds: pushing
+				# `InputEventMouseMotion` through the viewport never once produced `meta_hover_started`,
+				# including over a link written for the purpose. Whatever the reason, an instrument that
+				# cannot move its own control is not evidence - so it is gone rather than left to look
+				# like a result. DO NOT retry it without first making a control answer.
+				#
+				# What is checked instead is the whole chain either side of the engine's hit-test: the
+				# label EXISTS, is on screen with real size, and holds the `[url=]` it is supposed to
+				# hold; and the handler that link resolves to puts the popup up. The hit-test itself is
+				# Godot's, unchanged, and shared with hovers the owner uses daily.
+				send_to_server({"type": "gm_godmode"})
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				await get_tree().create_timer(1.0).timeout
+
+				# --- THE EFFECTS BOX. It needs an effect before it can show one.
+				send_to_server({"type": "gm_apply_state", "state": "poison", "value": 5, "duration": 30})
+				await get_tree().create_timer(2.0).timeout
+				print("[SHOTS] EFFECTS poison_active=%s turns=%d" % [
+					str(character_data.get("poison_active", false)),
+					int(character_data.get("poison_turns_remaining", 0))])
+				_dev_report_hover_label(buff_display_label, "effects box", "fx:")
+				# ...and the link an effect icon carries resolves and raises the popup, the same way
+				# the tile links do. This is the half a screenshot cannot show.
+				if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+					combat_scene_panel._show_formula_popup("")
+				_on_log_meta_hover("fx:poison:30")
+				await get_tree().create_timer(0.6).timeout
+				var _fxup: bool = combat_scene_panel != null and combat_scene_panel._formula_popup != null and is_instance_valid(combat_scene_panel._formula_popup) and combat_scene_panel._formula_popup.visible
+				print("[SHOTS] %s fx:poison resolves and raises the popup" % ("PASS" if _fxup else "FAIL"))
+				await _dev_shot_capture("hoverproof_effects")
+
+				# --- THE DUNGEON KEY.
+				send_to_server({"type": "gm_enter_dungeon", "tier": 3})
+				await get_tree().create_timer(3.0).timeout
+				for _d in ["e", "e", "s", "e"]:
+					send_to_server({"type": "dungeon_move", "direction": _d})
+					await get_tree().create_timer(0.4).timeout
+				var _dt := String(dungeon_data.get("dungeon_type", ""))
+				print("[SHOTS] KEY dungeon=%s legend=%s" % [_dt, str(DUNGEON_THEME_LEGEND.has(_dt))])
+				_dev_report_hover_label(_dungeon_key_label, "dungeon key", "tile:")
+				# ...and the handler those links resolve to actually puts a popup up.
+				if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+					combat_scene_panel._show_formula_popup("")
+				_on_log_meta_hover("tile:0")
+				await get_tree().create_timer(0.6).timeout
+				var _up: bool = combat_scene_panel != null and combat_scene_panel._formula_popup != null \
+					and is_instance_valid(combat_scene_panel._formula_popup) and combat_scene_panel._formula_popup.visible
+				print("[SHOTS] %s tile:0 resolves and raises the popup" % ("PASS" if _up else "FAIL"))
+				await _dev_shot_capture("hoverproof_key")
 
 			"changelog":
 				# Read the release notes before shipping them. The %% trap has bitten this screen
@@ -7287,6 +7356,30 @@ func _dev_shot_grant_companions() -> void:
 		send_to_server({"type": "gm_givecompanion", "monster_type": mt})
 		await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.8).timeout
+
+
+func _dev_report_hover_label(lbl, what: String, link_prefix: String) -> void:
+	"""Everything about a hoverable label that can be wrong WITHOUT the engine's help.
+
+	A hover needs four things and only the last is Godot's: the label exists, it is on screen with
+	real size, it can receive mouse events, and it holds the `[url=]` the handler expects. Each of
+	those has broken here before - a zero-height label, a `MOUSE_FILTER_IGNORE`, a key rebuilt
+	without its theme marks - and each is invisible in a screenshot."""
+	if lbl == null or not is_instance_valid(lbl):
+		print("[SHOTS] FAIL %s: no label" % what)
+		return
+	var r: Rect2 = Rect2(lbl.global_position, lbl.size)
+	# `get_parsed_text()` strips the markup, so the LINK COUNT has to come from the meta the
+	# label actually parsed. `.text` is empty on every label here - they are filled with
+	# `append_text()`, which parses without ever writing the property.
+	var body: String = lbl.get_parsed_text()
+	var receives: bool = int(lbl.mouse_filter) != int(Control.MOUSE_FILTER_IGNORE)
+	var sized: bool = r.size.x >= 4.0 and r.size.y >= 4.0
+	var shown: bool = lbl.is_visible_in_tree()
+	var ok: bool = receives and sized and shown and body.length() > 0
+	print("[SHOTS] %s %s: on-screen=%s size=%.0fx%.0f receives-mouse=%s chars=%d" % [
+		("PASS" if ok else "FAIL"), what, str(shown), r.size.x, r.size.y, str(receives), body.length()])
+	print("[SHOTS]        content: |%s|" % body.substr(0, 150).replace("\n", " "))
 
 
 func _dev_shot_force_companion(monster_type: String) -> void:

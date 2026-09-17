@@ -906,9 +906,23 @@ has been used."*
 
 ### ⛑ NOT VERIFIED IN v0.9.795 — look at these first
 
-- [ ] **The dungeon key's tile hover.** The key moved into its own label (`_dungeon_key_label`) and
-      the `meta_hover_started` signals are connected, but nobody has hovered a theme tile since.
-- [ ] **The buff-icon hover popups.** Wired the same way as every other hover; never captured.
+- [x] **The dungeon key's tile hover.** VERIFIED 2026-09-16. Label on screen at 1343x22, mouse
+      filter receives events, and its text carries the theme mark (`f Wyvern down`, a
+      `[url=tile:0]`). Driving `tile:0` raises the popup. Scene: `shots.py hoverproof`.
+- [x] **The buff-icon hover popups.** VERIFIED 2026-09-16. Poison applied via `gm_apply_state`,
+      the Effects box renders the icon (confirmed in the capture, not from the text - an `[img]`
+      contributes ZERO characters to `get_parsed_text()`, so length proves nothing here), and
+      `fx:poison` raises the popup.
+
+      **⛑ The instrument that did NOT work, recorded so nobody rebuilds it.** The first three
+      attempts drove a SYNTHETIC MOUSE - `InputEventMouseMotion` pushed through the viewport,
+      sweeping each label's rect. It never once produced `meta_hover_started`, including over a
+      link written for the purpose. Three separate false readings came out of it before a control
+      caught it: sweeping `game_output` **underground**, where the dungeon renderer hides it;
+      reading `lbl.text` for `[url=` when every label here is filled with `append_text()`, which
+      parses without ever writing that property; and reading a 10-character Effects box as empty
+      when the icons were there all along. Do not retry synthetic hover without first making a
+      control answer.
 - [ ] **ONE canvas size only.** Everything in this arc was measured at 1367x792. The dock heights
       and margin widths are computed, and the dungeon tile fit degrades to 32px if 64 will not fit —
       so on a 1080p or 1440p window the dungeon may land on a different tile size than the frames
@@ -1907,7 +1921,7 @@ Everything below shipped in v0.9.791 except the unticked items, which are carrie
 "SMALL OPEN ITEMS" list at the top of the NEXT SESSION block. The owner's local test round added: the
 Warden plans a real route (`_escort_path`, BFS over `move_player`, tight -> wide -> through posts),
 walks you home after the dungeon, stands on the real dungeon ground, and leaving a dungeon no longer
-turns the player into a yellow "@" (the facing had been reset to "").
+turns the player into a yellow "`" (the facing had been reset to "").
 
 ### The gold ring was usually not on the map (fixed in v0.9.790; its three gaps are now listed under SMALL OPEN ITEMS)
 
