@@ -2713,9 +2713,8 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 			result.messages.append("[color=#FF0000]You have been defeated![/color]")
 			return _attach_actors(combat, result)
 	
-	# Increment round
-	combat.round += 1
-	combat.player_can_act = true
+	# Increment round - and with it, the free item use. See `_advance_round`.
+	_advance_round(combat)
 
 	_maybe_reveal_disguise(combat, result)
 
@@ -5322,9 +5321,8 @@ func _process_ability_command_inner(peer_id: int, ability_name: String, arg: Str
 			result.messages.append("[color=#FF0000]You have been defeated![/color]")
 			return _attach_actors(combat, result)
 
-	# Increment round
-	combat.round += 1
-	combat.player_can_act = true
+	# Increment round - and with it, the free item use. See `_advance_round`.
+	_advance_round(combat)
 
 	# The same reveal the basic-attack path runs. Without this line a player who casts every
 	# round never reveals a disguised monster at all.
@@ -13736,6 +13734,12 @@ func resolve_party_round(leader_id: int) -> Dictionary:
 	if _only_npcs_left(combat, _party_alive_members(combat)):
 		return {"combat_ended": true, "victory": false, "wipe": true, "messages": party_flatten_log(entries), "message_entries": entries}
 	combat["round"] = int(combat.get("round", 1)) + 1
+	# ⛑ AND EVERY MEMBER'S FREE ITEM RETURNS WITH THE ROUND, for the same reason as
+	# `_advance_round` does it solo. The reset below the monster phase is not enough on its
+	# own: a round that ends without the monster acting would carry the flag over.
+	for _rpid in combat.get("members", []):
+		if combat.member_states.has(_rpid):
+			combat.member_states[_rpid]["free_item_used"] = false
 	_party_redraw_hands(combat)
 	return {"combat_ended": false, "messages": party_flatten_log(entries), "message_entries": entries, "round": int(combat["round"])}
 
@@ -14720,6 +14724,24 @@ func _engine_note(character, combat: Dictionary) -> String:
 			if n <= 0:
 				return "cast to ramp up"
 			return "+%d%% spell dmg" % int(float(n) * FOCUS_DMG_PER * 100.0)
+
+
+func _advance_round(combat: Dictionary) -> void:
+	"""End the round: bump the counter, hand the player their action back, and RETURN THEIR FREE
+	ITEM USE.
+
+	⛑ THE FREE-ITEM FLAG BELONGS TO THE ROUND. It used to be cleared in exactly one place -
+	inside `process_monster_turn` - while the round advanced in three, so any round that ended
+	without a real monster turn carried the flag into the next one and the next potion was punished
+	for something the player did a round earlier. `process_monster_turn` also returns EARLY when the
+	turn is skipped (stun, suppression), which is a second route to the same state.
+
+	Owner 2026-09-17: *"Should get one item use per round without proceeding the round."* That
+	sentence makes the ROUND the owner of the flag, so there is one function that ends a round rather
+	than three sites that each have to remember."""
+	combat.round += 1
+	combat.player_can_act = true
+	combat["free_item_used"] = false
 
 
 func _maybe_reveal_disguise(combat: Dictionary, result: Dictionary) -> void:
