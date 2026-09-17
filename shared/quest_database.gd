@@ -91,14 +91,22 @@ enum QuestType {
 ## early floor was worth (both x2.0). That is the complaint, precisely.
 ##
 ## So: ONE table, ordered by what the task actually costs you.
-##   * CLEAR - every floor, then the boss. The longest run on the board.
-##   * BOSS_HUNT - the same descent to the boss floor, against a BUFFED fabled boss, but you can
-##     leave the rest of the dungeon alone. Harder fight, shorter run.
+##
+## ⛑ AND THE ORDER WAS WRONG ON THE FIRST ATTEMPT. I priced CLEAR above BOSS_HUNT on the
+## assumption that "clear" meant clearing every floor. It does not. Owner asked directly - *"How
+## do clear quests work. Do they actually stop spawning monsters on the floors?"* - and reading
+## it settled it: a dungeon completes when the BOSS dies (or you descend past the last floor),
+## the floors are never required to be emptied, and wandering monsters keep arriving while you
+## linger. So both tasks are the SAME descent to the boss floor, and the fabled boss carries
+## 1.5x HP, 1.25x attack and 1.1x level on top. Boss hunt is strictly the harder of the two.
+##
+##   * BOSS_HUNT - the full descent, then a BUFFED boss. The hardest ask on the board.
+##   * CLEAR - the full descent, then the ordinary boss.
 ##   * RESCUE - a partial descent to a chosen floor. Scaled by HOW DEEP, below.
 ##   * GATHER - relics picked up while exploring. The shallowest ask.
 const QUEST_TASK_REWARD := {
-	QuestType.DUNGEON_CLEAR: {"xp": 2.4, "valor": 1.7},
-	QuestType.BOSS_HUNT:     {"xp": 2.2, "valor": 1.6},
+	QuestType.BOSS_HUNT:     {"xp": 2.4, "valor": 1.7},
+	QuestType.DUNGEON_CLEAR: {"xp": 2.0, "valor": 1.55},
 	QuestType.RESCUE:        {"xp": 1.8, "valor": 1.45},
 	QuestType.GATHER:        {"xp": 1.6, "valor": 1.4},
 }

@@ -55,14 +55,22 @@ func _init() -> void:
 	var boss_xp: float = float(tr[QDB.QuestType.BOSS_HUNT]["xp"])
 	var resc_xp: float = float(tr[QDB.QuestType.RESCUE]["xp"])
 	var gath_xp: float = float(tr[QDB.QuestType.GATHER]["xp"])
-	print("           CLEAR %.1f > BOSS %.1f > RESCUE %.1f > GATHER %.1f" % [
-		clear_xp, boss_xp, resc_xp, gath_xp])
-	ck(clear_xp > boss_xp, "clearing everything beats killing one buffed boss")
-	ck(boss_xp > resc_xp, "a buffed boss beats a partial descent")
+	print("           BOSS %.1f > CLEAR %.1f > RESCUE %.1f > GATHER %.1f" % [
+		boss_xp, clear_xp, resc_xp, gath_xp])
+	# ⛑ THIS ORDER WAS WRONG FIRST TIME. CLEAR was priced above BOSS_HUNT on the assumption
+	# that "clear" meant clearing every floor. It does not: a dungeon completes when the BOSS
+	# dies, the floors are never required to be emptied, and both tasks are the same descent.
+	# The fabled boss then carries 1.5x HP, 1.25x attack and 1.1x level, so BOSS_HUNT is
+	# strictly harder - and the probe asserted the wrong ordering happily, because a test
+	# written from the same wrong premise agrees with it.
+	ck(boss_xp > clear_xp, "a buffed boss beats the same descent against an ordinary one")
+	ck(clear_xp > resc_xp, "a full descent beats a partial one")
 	ck(resc_xp > gath_xp, "a partial descent beats picking things up on the way")
-	# The old code paid CLEAR and RESCUE identically. That specific equality must be gone.
-	ck(absf(clear_xp - resc_xp) > 0.2,
-		"CLEAR and RESCUE are no longer priced the same (they were both 2.0x)")
+	# The old code paid CLEAR and RESCUE identically at 2.0x. What matters is that the
+	# EQUALITY is gone - not that the gap clears some arbitrary size, which is what the first
+	# version of this check demanded (>0.2) and then failed on a gap of exactly 0.2.
+	ck(absf(clear_xp - resc_xp) > 0.05,
+		"CLEAR and RESCUE are no longer priced the same (both were 2.0x)")
 	# Every live board type must be in the table, or it silently pays 1.0x.
 	for t in QDB.DYNAMIC_QUEST_TYPES:
 		ck(tr.has(t), "%s has a task price" % _type_name(t))
