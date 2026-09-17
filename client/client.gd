@@ -17141,6 +17141,18 @@ func execute_local_action(action: String):
 			display_game("[color=#808080]Tutorial skipped. Type /help for a quick reference.[/color]")
 			update_action_bar()
 		# Quest actions
+		# ⚑ THE CONTEXTUAL [R] SLOT'S "Build" BUTTON. Standing in your own enclosure, slot 4
+		# offers Build - and pressing or clicking it did NOTHING, because both paths come
+		# through here (`trigger_action` dispatches click and hotkey alike) and there was no
+		# case for it. The same id works from the shortcut ROW, which is why it survived: the
+		# feature was reachable, so nobody found the dead door.
+		#
+		# Found by `tools/ui_navigation_map.py` - the one real dead end among 380 action ids.
+		# FORWARDS rather than copying: the shortcut handler already holds the mode-clearing
+		# that has to happen before build mode opens, and a second copy is where the next mode
+		# added to that list would go missing.
+		"build_shortcut":
+			_on_shortcut_button_pressed("build_shortcut")
 		"show_quests":
 			send_to_server({"type": "get_quest_log"})
 		"quest_cancel":

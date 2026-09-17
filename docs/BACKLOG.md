@@ -5033,11 +5033,19 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       a chat command opens is reachable from somewhere else as well. So retiring the commands now
       removes navigation and not features, which is precisely the condition this entry set.
 
-      **The one real dead end it found:** the action bar's **Build** button. `build_shortcut` is
-      offered as `action_type: "local"` (`client.gd:12660`) and has no case in
-      `execute_local_action` — and BOTH input paths go through that function (`trigger_action`
-      dispatches click and hotkey alike), so pressing it and clicking it both do nothing, while
-      the same id works from the shortcut ROW. CLAUDE.md pitfall #11, exactly.
+      **The one real dead end it found — and it is FIXED (2026-09-17).** The action bar's **Build**
+      button. And it is worse than the count suggests, because of WHICH button it is: slot 4, the
+      **contextual location action** CLAUDE.md names as the game's primary entry point for
+      whatever you are standing on. Stand inside your own enclosure and that slot reads *Build*;
+      pressing R did nothing and clicking it did nothing. Both paths come through
+      `execute_local_action` (`trigger_action` dispatches click and hotkey alike) and it had no
+      case for `build_shortcut` — nor for any other `*_shortcut` id. CLAUDE.md pitfall #11 exactly.
+      It survived because the same id works perfectly from the shortcut ROW: the feature was
+      reachable, so nobody ever found the dead door. Fixed by FORWARDING to
+      `_on_shortcut_button_pressed("build_shortcut")` rather than copying its nine lines of
+      mode-clearing — a second copy of *how to enter build mode* is where the next mode added to
+      that list would go missing. The map now reports **0 of 380**, and the check is proven to
+      fire by removing the case again.
 
       ⛑ **THE TOOL FLAGGED 34 LIVE FEATURES BEFORE I CHECKED ITS OUTPUT**, and every fault
       pointed the same way — toward deleting something that works. In a tool whose product is a

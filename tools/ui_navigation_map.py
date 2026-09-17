@@ -198,11 +198,65 @@ def action_bar(src):
     return sorted(offered), sorted(handled)
 
 
+def command_destinations(src):
+    """For each top-level command arm: what it calls, and whether anything else calls the same.
+
+    ⚑ THIS IS THE SECTION THAT MAKES THE COMMAND SWEEP SAFE. `/dungeons` was the ONLY route to
+    the dungeon list, so a sweep done before the audit would have deleted a feature and called it
+    tidying. A command is safe to retire when everything it reaches is also reached from
+    somewhere else; it needs a button FIRST when it is the only caller.
+
+    "Reaches" = the `display_*` / `show_*` / `open_*` / `_display_*` calls and panel openers in
+    its arm. Deliberately narrow: those are the calls that put a SURFACE in front of the player,
+    which is what a navigation audit is about. A command that only sends a server message or sets
+    a flag has no surface of its own and needs no button.
+    """
+    i = src.find("func process_command")
+    j = src.find("\nfunc ", i + 10)
+    body = join_continuations(src[i:j if j > i else len(src)])
+    arms = []               # (names, [lines])
+    cur = None
+    for line in body.split("\n"):
+        if line.startswith('\t\t"') and re.fullmatch(r'("(?:[^"]+)"(?:\s*,\s*"[^"]+")*)\s*:', line.strip()):
+            if cur:
+                arms.append(cur)
+            cur = (re.findall(r'"([^"]+)"', line.strip()), [])
+        elif cur is not None:
+            cur[1].append(line)
+    if cur:
+        arms.append(cur)
+
+    # How many times each surface-opening call appears in the WHOLE client
+    def surface_calls(text):
+        out = set()
+        for m in re.finditer(r"\b((?:_)?(?:display|show|open)_[a-z_0-9]+)\s*\(", text):
+            out.add(m.group(1))
+        for m in re.finditer(r"\b([a-z_0-9]+_panel)\s*\.\s*(open[a-z_0-9]*|show[a-z_0-9]*)\s*\(", text):
+            out.add("%s.%s" % (m.group(1), m.group(2)))
+        return out
+
+    rows = []
+    for names, lines in arms:
+        arm_text = "\n".join(lines)
+        dests = sorted(surface_calls(arm_text))
+        only = []
+        for d in dests:
+            # count elsewhere: total occurrences minus the ones inside this arm
+            total = len(re.findall(re.escape(d) + r"\s*\(", src))
+            here = len(re.findall(re.escape(d) + r"\s*\(", arm_text))
+            if total - here <= 0:
+                only.append(d)
+        rows.append({"names": names, "dests": dests, "only": only})
+    return rows
+
+
 def main():
     src = client_gd()
     listed, handled = chat_commands(src)
     pl = panels(src)
     offered, ab_handled = action_bar(src)
+    cmd_dest = command_destinations(src)
+    sole_doors = [r for r in cmd_dest if r["only"]]
 
     dead_cmd = [c for c in listed if c not in handled]
     unlisted = [c for c in handled if c not in listed]
@@ -226,6 +280,8 @@ def main():
     A("| | count |")
     A("|---|---|")
     A("| chat commands whitelisted | %d |" % len(listed))
+    A("| ...that are the ONLY door to a surface (need a button before retiring) | **%d** |"
+      % len(sole_doors))
     A("| ...with no arm in `process_command` | **%d** |" % len(dead_cmd))
     A("| ...handled but not whitelisted (unreachable by typing) | **%d** |" % len(unlisted))
     A("| panel scripts | %d |" % len(pl))
@@ -285,11 +341,28 @@ def main():
     A("destination has a button is safe to retire; one whose destination has none needs a button")
     A("first.")
     A("")
-    A("| command | has an arm | note |")
-    A("|---|---|---|")
-    for c in listed:
-        A("| `/%s` | %s | %s |" % (c, "yes" if c in handled else "**NO**",
-                                   "" if c in handled else "already dead"))
+    A("### ⛑ These are a feature's ONLY door — give each a button before retiring it")
+    A("")
+    if sole_doors:
+        A("| command(s) | the surface only they open |")
+        A("|---|---|")
+        for r in sole_doors:
+            A("| %s | `%s` |" % (", ".join("`/%s`" % n for n in r["names"]),
+                                 "`, `".join(r["only"])))
+    else:
+        A("None — every command's surface is reachable from somewhere else as well.")
+    A("")
+    A("### Every command, and where it goes")
+    A("")
+    A("A blank destination means the command opens no surface of its own (it sends a server")
+    A("message, sets a flag, or prints a line), so retiring it removes navigation and not a")
+    A("feature.")
+    A("")
+    A("| command(s) | opens |")
+    A("|---|---|")
+    for r in cmd_dest:
+        A("| %s | %s |" % (", ".join("`/%s`" % n for n in r["names"]),
+                           ("`" + "`, `".join(r["dests"]) + "`") if r["dests"] else "—"))
     A("")
     A("## What this tool cannot see")
     A("")
@@ -309,6 +382,7 @@ def main():
           % (len(listed), len(dead_cmd), len(unlisted)))
     print("  panels             %d scripts, %d never opened from client.gd" % (len(pl), len(orphan_panels)))
     print("  action bar         %d local ids, %d with no case" % (len(offered), len(dead_buttons)))
+    print("  command doors      %d arms, %d are a surface's ONLY door" % (len(cmd_dest), len(sole_doors)))
     if "--print" in sys.argv:
         print()
         print("\n".join(lines))

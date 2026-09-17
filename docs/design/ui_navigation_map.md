@@ -13,21 +13,17 @@ with the same verb are a merge, an entry point that reaches nothing is a dead bu
 | | count |
 |---|---|
 | chat commands whitelisted | 119 |
+| ...that are the ONLY door to a surface (need a button before retiring) | **0** |
 | ...with no arm in `process_command` | **0** |
 | ...handled but not whitelisted (unreachable by typing) | **0** |
 | panel scripts | 28 |
 | ...never opened from `client.gd` | **0** |
 | local action-bar ids offered | 380 |
-| ...with no case in `execute_local_action` (click does nothing) | **1** |
+| ...with no case in `execute_local_action` (click does nothing) | **0** |
 
 ## Dead ends
 
 Every whitelisted command has a handler.
-
-**Action-bar ids with no `execute_local_action` case** — CLICKING these does nothing
-while the hotkey may still work (CLAUDE.md pitfall #11):
-
-`build_shortcut`
 
 ## Surfaces
 
@@ -70,127 +66,104 @@ removed features rather than navigation. This is the list to work through — a 
 destination has a button is safe to retire; one whose destination has none needs a button
 first.
 
-| command | has an arm | note |
-|---|---|---|
-| `/help` | yes |  |
-| `/clear` | yes |  |
-| `/who` | yes |  |
-| `/players` | yes |  |
-| `/examine` | yes |  |
-| `/ex` | yes |  |
-| `/watch` | yes |  |
-| `/unwatch` | yes |  |
-| `/bug` | yes |  |
-| `/report` | yes |  |
-| `/search` | yes |  |
-| `/find` | yes |  |
-| `/trade` | yes |  |
-| `/companion` | yes |  |
-| `/pet` | yes |  |
-| `/donate` | yes |  |
-| `/crucible` | yes |  |
-| `/whisper` | yes |  |
-| `/w` | yes |  |
-| `/msg` | yes |  |
-| `/tell` | yes |  |
-| `/reply` | yes |  |
-| `/r` | yes |  |
-| `/c` | yes |  |
-| `/cc` | yes |  |
-| `/clanchat` | yes |  |
-| `/clist` | yes |  |
-| `/clanlist` | yes |  |
-| `/clanonline` | yes |  |
-| `/p` | yes |  |
-| `/pc` | yes |  |
-| `/partychat` | yes |  |
-| `/afk` | yes |  |
-| `/away` | yes |  |
-| `/back` | yes |  |
-| `/afkoff` | yes |  |
-| `/here` | yes |  |
-| `/topics` | yes |  |
-| `/helplist` | yes |  |
-| `/helptopics` | yes |  |
-| `/topic` | yes |  |
-| `/viewtopic` | yes |  |
-| `/trades` | yes |  |
-| `/tradehistory` | yes |  |
-| `/friend` | yes |  |
-| `/friends` | yes |  |
-| `/freq` | yes |  |
-| `/block` | yes |  |
-| `/unblock` | yes |  |
-| `/blocklist` | yes |  |
-| `/blocked` | yes |  |
-| `/fish` | yes |  |
-| `/craft` | yes |  |
-| `/dungeons` | yes |  |
-| `/dungeon` | yes |  |
-| `/materials` | yes |  |
-| `/mats` | yes |  |
-| `/quests` | yes |  |
-| `/quest` | yes |  |
-| `/debughatch` | yes |  |
-| `/catches` | yes |  |
-| `/deck` | yes |  |
-| `/titles` | yes |  |
-| `/title` | yes |  |
-| `/set_title` | yes |  |
-| `/settitle` | yes |  |
-| `/post` | yes |  |
-| `/feedall` | yes |  |
-| `/feed_all` | yes |  |
-| `/stones` | yes |  |
-| `/buystone` | yes |  |
-| `/stats` | yes |  |
-| `/spendstat` | yes |  |
-| `/clan` | yes |  |
-| `/clandesc` | yes |  |
-| `/clancolor` | yes |  |
-| `/clanmotto` | yes |  |
-| `/clanpost` | yes |  |
-| `/clanposts` | yes |  |
-| `/vault` | yes |  |
-| `/clanvault` | yes |  |
-| `/mentor` | yes |  |
-| `/mentors` | yes |  |
-| `/duel` | yes |  |
-| `/bounty` | yes |  |
-| `/bountyboard` | yes |  |
-| `/bb` | yes |  |
-| `/setlevel` | yes |  |
-| `/setgold` | yes |  |
-| `/setmonstergems` | yes |  |
-| `/setxp` | yes |  |
-| `/godmode` | yes |  |
-| `/setbp` | yes |  |
-| `/giveitem` | yes |  |
-| `/giveegg` | yes |  |
-| `/givecompanion` | yes |  |
-| `/spawnmonster` | yes |  |
-| `/givemats` | yes |  |
-| `/giveall` | yes |  |
-| `/tp` | yes |  |
-| `/tpstable` | yes |  |
-| `/teststable` | yes |  |
-| `/completequest` | yes |  |
-| `/resetquests` | yes |  |
-| `/heal` | yes |  |
-| `/broadcast` | yes |  |
-| `/gmhelp` | yes |  |
-| `/giveconsumable` | yes |  |
-| `/spawnwish` | yes |  |
-| `/setjob` | yes |  |
-| `/givetool` | yes |  |
-| `/banip` | yes |  |
-| `/unbanip` | yes |  |
-| `/resetpw` | yes |  |
-| `/testfx` | yes |  |
-| `/spritesize` | yes |  |
-| `/altsprite` | yes |  |
-| `/condensed` | yes |  |
-| `/admin` | yes |  |
+### ⛑ These are a feature's ONLY door — give each a button before retiring it
+
+None — every command's surface is reachable from somewhere else as well.
+
+### Every command, and where it goes
+
+A blank destination means the command opens no surface of its own (it sends a server
+message, sets a flag, or prints a line), so retiring it removes navigation and not a
+feature.
+
+| command(s) | opens |
+|---|---|
+| `/help` | `show_help` |
+| `/clear` | — |
+| `/testfx` | `display_game` |
+| `/spritesize` | `_show_sprite_size_preview` |
+| `/altsprite` | — |
+| `/condensed` | `display_game` |
+| `/who`, `/players` | `display_game` |
+| `/examine`, `/ex` | `display_game` |
+| `/whisper`, `/w`, `/msg`, `/tell` | `display_game` |
+| `/reply`, `/r` | `display_game` |
+| `/c`, `/cc`, `/clanchat` | `display_game` |
+| `/clist`, `/clanlist`, `/clanonline` | — |
+| `/topics`, `/helplist`, `/helptopics` | `display_game` |
+| `/trades`, `/tradehistory` | — |
+| `/friend`, `/friends` | `display_game` |
+| `/freq` | — |
+| `/block` | `display_game` |
+| `/unblock` | `display_game` |
+| `/blocklist`, `/blocked` | — |
+| `/topic`, `/viewtopic` | `display_game`, `global_help_panel.show_topic`, `show_topic` |
+| `/afk`, `/away` | — |
+| `/back`, `/afkoff`, `/here` | — |
+| `/p`, `/pc`, `/partychat` | `display_game` |
+| `/watch` | `display_game` |
+| `/unwatch` | — |
+| `/bug`, `/report` | — |
+| `/search`, `/find` | `display_game` |
+| `/trade` | `display_game` |
+| `/companion`, `/pet` | `display_game`, `show_companion_info` |
+| `/donate` | `display_game` |
+| `/crucible` | `display_game` |
+| `/fish` | `display_game` |
+| `/craft` | `display_game`, `open_crafting` |
+| `/dungeons`, `/dungeon` | `display_game` |
+| `/materials`, `/mats` | `display_game`, `display_materials` |
+| `/quests`, `/quest` | `display_game` |
+| `/catches`, `/deck` | `display_game` |
+| `/post` | `display_game`, `open_post_status_panel` |
+| `/feedall`, `/feed_all` | `display_game`, `open_post_status_panel` |
+| `/stones` | `display_game`, `open_stones_panel` |
+| `/buystone` | `display_game` |
+| `/stats` | `display_game`, `open_stats_panel` |
+| `/spendstat` | `display_game` |
+| `/clan` | `display_game`, `open_clan_panel` |
+| `/clandesc` | `display_game` |
+| `/clanmotto` | `display_game` |
+| `/clancolor` | `display_game` |
+| `/clanpost` | `display_game` |
+| `/clanposts` | `display_game` |
+| `/mentor` | `display_game` |
+| `/mentors` | `display_game` |
+| `/duel` | `display_game`, `open_duel_outgoing_dialog` |
+| `/bounty` | `_open_bounty_board`, `display_game` |
+| `/bountyboard`, `/bb` | `_open_bounty_board` |
+| `/titles`, `/title` | `display_game` |
+| `/set_title`, `/settitle` | `display_game` |
+| `/debughatch` | `display_game` |
+| `/vault`, `/clanvault` | `display_game` |
+| `/admin` | `open_admin_menu` |
+| `/gmhelp` | `display_gm_help` |
+| `/setlevel` | `display_game` |
+| `/setgold` | `display_game` |
+| `/setmonstergems` | `display_game` |
+| `/setxp` | `display_game` |
+| `/godmode` | — |
+| `/setbp` | `display_game` |
+| `/giveitem` | — |
+| `/giveegg` | — |
+| `/givecompanion` | — |
+| `/spawnmonster` | — |
+| `/givemats` | `display_game` |
+| `/giveall` | — |
+| `/tp` | `display_game` |
+| `/tpstable` | — |
+| `/teststable` | — |
+| `/completequest` | — |
+| `/resetquests` | — |
+| `/heal` | — |
+| `/broadcast` | `display_game` |
+| `/giveconsumable` | `display_game` |
+| `/setjob` | `display_game` |
+| `/givetool` | `display_game` |
+| `/spawnwish` | — |
+| `/banip` | `display_game` |
+| `/unbanip` | `display_game` |
+| `/resetpw` | `display_game` |
 
 ## What this tool cannot see
 
