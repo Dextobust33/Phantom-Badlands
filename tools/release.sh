@@ -96,7 +96,20 @@ git push -q origin master
 echo "  ok"
 
 step "GitHub release v$VERSION"
-gh release create "v$VERSION" --title "v$VERSION" --notes "See the in-game What's Changed screen." \
+# THE LAUNCHER SHOWS THIS. Its "Recent Changes" panel renders the GitHub release BODY, and
+# from v0.9.793 to v0.9.799 that body was the one line "See the in-game What's Changed
+# screen." - introduced right here, when the release was automated into one call. Owner
+# 2026-09-17: *"who made the decision to stop putting the patch update notes on the
+# launcher. That's literally what that section is for, undo that."* Nobody decided; the
+# automation dropped it.
+#
+# GENERATED, not hand-written. The notes and the in-game changelog are the same information,
+# so they are authored ONCE in `display_changelog()` and extracted here - otherwise they go
+# stale separately, which is how this broke. `set -e` means a version with no changelog
+# entry STOPS the release rather than shipping another placeholder.
+NOTES="releases/release-notes-v$VERSION.md"
+python tools/make_release_notes.py "$VERSION" -o "$NOTES"
+gh release create "v$VERSION" --title "v$VERSION" --notes-file "$NOTES" \
 	"releases/phantom-badlands-client-v$VERSION.zip" \
 	"releases/phantom-badlands-launcher.zip" \
 	"releases/phantom-badlands-client-linux-v$VERSION.zip" \
