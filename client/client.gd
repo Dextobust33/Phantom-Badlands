@@ -21,6 +21,10 @@ const _OverworldRoom = preload("res://client/overworld_room.gd")
 ## the next honest step up is 64 - which at 21 rows needs more height than the canvas has, i.e. a
 ## smaller view. That is a gameplay decision (how far you can see), not a display one.
 const OVERWORLD_SPRITE_PX := 32
+## How far the overworld tile may grow above the source art when the view is small enough to
+## afford it - see `_overworld_crisp_px`. WHOLE multiples only: the art is 32px and anything
+## else resamples it. 2 is the owner's own number for the blinded view (5 x 64 = 320).
+const _OW_MAX_UPSCALE := 2
 ## The band at the top and bottom of the companion panel that its HP and XP gauges stand in.
 ## Held open by the panel stylebox rather than by blank lines - see update_companion_art_overlay.
 const COMPANION_GAUGE_BAND := 16.0
@@ -1953,6 +1957,10 @@ var _ow_rendering: bool = false
 var _ow_location_pass: bool = false
 ## The width, in pixels, of the map as it was last drawn - see `_place_map_widgets`.
 var _ow_map_px_w: float = 0.0
+## The tile size the overworld last drew at - see `_overworld_crisp_px`.
+var _ow_sprite_px: int = 0
+## How many COLUMNS the overworld last drew - vision, after blindness and weather.
+var _ow_last_cols: int = 0
 ## ...and its height, for the frame drawn around it.
 var _ow_map_px_h: float = 0.0
 ## The frame behind the map - the one thing on the canvas that had no edge of its own.
@@ -2803,7 +2811,7 @@ func _ready():
 				int(map_display.size.y), int(_need), str(_need <= map_display.size.y + 1.0)])
 			var _avail: float = map_display.size.y - 6.0 - _extra * _rlh
 			print("[UIMEASURE] sprite_px=%d (art is %dpx native)" % [
-				clampi(int(floor(maxf(32.0, _avail) / float(MAP_GRID_ROWS))), 8, OVERWORLD_SPRITE_PX),
+				_overworld_crisp_px(int(floor(maxf(32.0, _avail) / float(MAP_GRID_ROWS)))),
 				OVERWORLD_SPRITE_PX])
 		get_tree().quit()
 		return
@@ -7124,6 +7132,39 @@ func _dev_run_shots() -> void:
 					int(_DungeonTiles.TILE_PX), _dungeon_dock_h])
 				if _dungeon_fit_debug:
 					_dev_print_rects()
+
+			"blindmap":
+				# What the overworld looks like with vision cut. Owner: blinded it is "a 5x5 cross at
+				# 30px" - correct, and a postage stamp in a canvas with a thousand spare pixels.
+				# Captured BOTH ways in one run so the pair can be compared without trusting memory.
+				send_to_server({"type": "gm_godmode"})
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				await get_tree().create_timer(1.0).timeout
+				# CLEAR FIRST. Blindness PERSISTS on the character, so a second run of this scene
+				# opens already blinded and files a 5x5 map as the sighted control. It did exactly
+				# that once, and the two numbers agreeing is what gave it away.
+				send_to_server({"type": "gm_apply_state", "state": "clear"})
+				await get_tree().create_timer(1.0).timeout
+				send_to_server({"type": "gm_teleport", "x": 0, "y": 0})
+				await get_tree().create_timer(2.0).timeout
+				print("[SHOTS] SIGHTED tile=%dpx blind=%s turns=%d cols=%d" % [int(_ow_sprite_px),
+					str(character_data.get("blind_active", false)),
+					int(character_data.get("blind_turns_remaining", 0)), _ow_last_cols])
+				await _dev_shot_capture("blindmap_sighted")
+				send_to_server({"type": "gm_apply_state", "state": "blind", "duration": 60})
+				await get_tree().create_timer(1.5).timeout
+				# TELEPORT, DO NOT WALK. Blind vision is applied in send_location_update, which only
+				# runs on a move that SUCCEEDS - and the test spawn is hemmed in, so a step can be
+				# refused and the capture files a full-vision map as blinded. That already cost two
+				# captures on the party scene; the note is right there and I walked into it anyway.
+				send_to_server({"type": "gm_teleport", "x": 0, "y": 0})
+				await get_tree().create_timer(2.5).timeout
+				print("[SHOTS] BLINDED tile=%dpx blind=%s turns=%d cols=%d" % [int(_ow_sprite_px),
+					str(character_data.get("blind_active", false)),
+					int(character_data.get("blind_turns_remaining", 0)), _ow_last_cols])
+				await _dev_shot_capture("blindmap_blinded")
 
 			"hoverproof":
 				# ⛑ WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
@@ -50303,7 +50344,7 @@ func _overworld_display(payload: Dictionary) -> String:
 		# A couple of pixels of slack: BBCode adds no spacing between inline images, but the
 		# panel has padding and a fractional width rounds the wrong way often enough to matter.
 		var fit: int = int(floor((_fitbox.size.x - 6.0) / float(cols_n)))
-		px = clampi(fit, 8, OVERWORLD_SPRITE_PX)
+		px = _overworld_crisp_px(fit)
 	# ...AND IT HAS TO FIT DOWNWARD TOO. Owner 2026-09-15, with a screenshot: *"There is still a
 	# scrollbar for my map."*
 	#
@@ -50332,7 +50373,9 @@ func _overworld_display(payload: Dictionary) -> String:
 		var _res: float = _ow_canvas_reserve if _fitbox == game_output else 0.0
 		var _avail: float = _fitbox.size.y - 6.0 - _extra_rows * _lh2 - _res
 		var fit_h: int = int(floor(maxf(32.0, _avail) / float(rows_n)))
-		px = mini(px, clampi(fit_h, 8, OVERWORLD_SPRITE_PX))
+		# The SAME rule as the width, or a 64px view chosen across would be clamped straight
+		# back to 32 by a height cap that had never heard of the upscale.
+		px = mini(px, _overworld_crisp_px(fit_h))
 	# ⚑ AND THE LINE HAS TO BE AS SHORT AS THE TILE.
 	#
 	# A row of the map is a row of INLINE IMAGES inside a line of text, so the line is as tall as
@@ -50359,6 +50402,8 @@ func _overworld_display(payload: Dictionary) -> String:
 	# against a guessed constant - the tile size changes with the window, the vision radius and
 	# the stance, and a hand-picked margin width would be wrong the first time any of those moved.
 	_ow_map_px_w = float(px * cols_n)
+	_ow_sprite_px = px
+	_ow_last_cols = cols_n
 	_ow_map_px_h = float(px * rows_n)
 	var crop: int = 0
 	# Dungeon entrances are HOVERABLE. Owner 2026-09-11: *"We will also want to make sure the
@@ -50843,6 +50888,34 @@ func _update_dungeon_light(view_x1: int, view_y1: int, view_w: int, view_h: int,
 	_dungeon_light_material.set_shader_parameter("lights", PackedVector2Array(uvs))
 	_dungeon_light_material.set_shader_parameter("light_count", mini(lights.size(), DUNGEON_LIGHT_MAX))
 	_dungeon_light_overlay.visible = true
+
+
+func _overworld_crisp_px(fit: int) -> int:
+	"""The largest tile size that fits AND does not smear the art.
+
+	⚑ BLINDNESS MADE THE MAP A POSTAGE STAMP. Owner: blinded, the overworld is *"a 5x5 cross at
+	30px"* - vision working exactly as designed, drawn in a corner of a canvas with a thousand
+	spare pixels. The tile size was capped at `OVERWORLD_SPRITE_PX` no matter how few tiles there
+	were to draw, so the narrower the view got the more of the screen it wasted.
+
+	The cap was not arbitrary, though, and this is why the fix is a LADDER rather than a bigger
+	number. The art is 32px. Drawn at 51px - which is what a 23-wide view would take if the cap
+	simply rose - every tile is resampled at 1.6x and the pixel art smears, which is the same
+	fault `_dungeon_pick_tile_px` is constrained to multiples of 32 to avoid.
+
+	So: a whole multiple of the source when there is room to grow, the source size when there is
+	not, and the existing shrink-to-fit below that. A normal view still lands on exactly the 32 it
+	lands on today - only a view small enough to afford a clean 2x moves, which is the blinded
+	case and nothing else.
+
+	Stops at 2x deliberately. 5 tiles at 64 is 320px, which is what the owner asked for; the same
+	view would take a clean 7x if it were allowed, and a map of five enormous squares reads as a
+	bug rather than as reduced vision. Raise `_OW_MAX_UPSCALE` if that judgement turns out wrong."""
+	if fit >= OVERWORLD_SPRITE_PX * _OW_MAX_UPSCALE:
+		return OVERWORLD_SPRITE_PX * _OW_MAX_UPSCALE
+	if fit >= OVERWORLD_SPRITE_PX:
+		return OVERWORLD_SPRITE_PX
+	return clampi(fit, 8, OVERWORLD_SPRITE_PX)
 
 
 func _dungeon_pick_tile_px(view_w: int, view_h: int) -> int:

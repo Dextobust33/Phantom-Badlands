@@ -930,9 +930,22 @@ has been used."*
 
 ### Open, in order
 
-- [ ] **Blinded, the overworld map is a 5x5 cross at 30px** — vision working as designed, but a
-      postage stamp. The view is tiny, so the tiles could be drawn at 64px there (5x64 = 320, room
-      to spare) and blindness would be legible instead of merely small. Contained to the tile fit.
+- [x] **Blinded, the overworld map is a 5x5 cross at 30px** — DONE 2026-09-16. Measured before and
+      after in one run: sighted **23 cols at 29px** (unchanged), blinded **5 cols at 64px** (was 29).
+      The fix is a LADDER, not a bigger cap: the art is 32px, so a raised cap would have drawn a
+      normal 23-wide view at 51px and smeared every tile at 1.6x. `_overworld_crisp_px` returns a
+      whole multiple of the source when there is room, the source size when there is not, and the
+      existing shrink-to-fit below - so only a view small enough to afford a clean 2x moves.
+      Stops at 2x deliberately (`_OW_MAX_UPSCALE`); the same view would take a clean 7x and five
+      enormous squares read as a bug rather than as reduced vision.
+
+      **⛑ Three false readings before the number was trustworthy**, all in the harness: the scene
+      WALKED to trigger blind vision, which `send_location_update` only applies on a move that
+      SUCCEEDS and the spawn is hemmed in - a trap already written down in the party scene that I
+      walked into anyway; blindness PERSISTS on the character, so the second run opened already
+      blind and filed a 5x5 map as the sighted control; and the diagnostic print was invisible
+      because shots.py only echoes lines carrying `[SHOTS]`. The scene clears state first and
+      reports blind flag and column count beside the tile size now, so a wrong reading says so.
 - [ ] **Buff icons for the rest.** The remaining combat buffs have no art that honestly represents
       them; `BUFF_ICONS` records what is mapped and why. Either source icons or leave them as
       lettered chips — do NOT map a spare debuff row onto a buff.
