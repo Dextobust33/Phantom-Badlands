@@ -6394,8 +6394,28 @@ func _dev_auto_args() -> Dictionary:
 const SHOT_SETTLE_S: float = 1.4   # let art, sprites and tweens finish before the grab
 
 func _dev_shots_requested() -> Array:
+	"""Which capture scenes this client was asked to run - and get its window out of the way.
+
+	⚑ A CAPTURE CLIENT MUST NOT TAKE OVER THE SCREEN. Owner 2026-09-16: *"Am I crazy or do you
+	keep opening a client?"* They were not: fifteen harness runs in one session, each opening a
+	server window and a client window, each stealing focus from whatever they were typing in.
+	`--screen 1` had been dealt with long ago and only ever addressed WHERE the window went, never
+	that it appeared and grabbed focus at all.
+
+	The screenshot is a VIEWPORT read - `get_viewport().get_texture().get_image()` - not a screen
+	grab, so the frame does not depend on the window being visible, focused, or on top. That is
+	what makes NO_FOCUS safe: the window is still drawn on screen 1, it just never takes the
+	keyboard or drags the pointer off the monitor the owner is working on.
+
+	⛑ MINIMISING IT DOES NOT WORK - measured, not assumed. Rendering stops for a minimised
+	window, so the `await RenderingServer.frame_post_draw` inside the screenshot path never
+	returns and the scene hangs after its first line. That was tried first and is recorded here
+	so the next attempt does not spend a run rediscovering it.
+
+	Only under `--shots`. A hand-launched client is one the owner meant to look at."""
 	if _dev_auto.has("shots"):
 		_dungeon_fit_debug = true
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
 	if not _dev_auto.has("shots"):
 		return []
 	return String(_dev_auto["shots"]).split(",", false)

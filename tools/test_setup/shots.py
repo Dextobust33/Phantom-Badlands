@@ -124,8 +124,13 @@ def main():
         seed_sanctuary_companions(scen.PLAYERS[player_idx][1])
 
     print("[3/4] server")
-    subprocess.Popen([scen.GODOT, "--path", scen.PROJECT, "--screen", "1", "--windowed",
-                      "--resolution", "1280x720", "server/server.tscn"],
+    # ⚑ HEADLESS. The shots server renders nothing anybody looks at, and every launch of it
+    # was a window opening on the owner's desk. Owner 2026-09-16: *"Am I crazy or do you keep
+    # opening a client?"* - fifteen runs in one session, two windows each.
+    #
+    # `run.py` still opens a VISIBLE server on purpose: that harness exists so the owner can
+    # drive the game by hand and may want the log. This one is unattended by definition.
+    subprocess.Popen([scen.GODOT, "--headless", "--path", scen.PROJECT, "server/server.tscn"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     if not runner.wait_for_server():
         print("  server never started listening")
