@@ -5377,6 +5377,32 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       says it cannot make — whether two surfaces with different verbs are the same thing to a
       PLAYER, and whether a button's MODE is ever entered. Those need the game run.
 
+- [ ] **THE VALOR ECONOMY, REALM-WIDE — owner direction 2026-09-17.** Asked to pick a target
+      for quest valor, the owner answered: *"I'm okay with this but honestly valor costs for
+      everything likely need rebalanced across the realm. Some things aren't even actively
+      balanced or used as far as blacksmiths, healing, repairs, etc."*
+
+      ⛑ **SO THE QUEST NUMBERS SHIPPED IN v0.9.802 ARE AN INTERIM ANCHOR, NOT AN ANSWER**, and
+      `QUEST_VALOR_PER_LEVEL` says so in its own comment. They were calibrated against the sinks
+      that exist today — cheapest Sanctuary upgrade 250, ladder to 8000 — which is exactly
+      the set the owner has just said is wrong. Re-deriving them is part of this item, not a
+      separate one.
+
+      What the pass has to cover, in order:
+      1. **Enumerate the sinks and measure which are ever used.** Blacksmith repair, healer,
+         recharge, home stones, bounties, Sanctuary upgrades, clan vault, duel stakes. The owner's
+         claim that some *"aren't even actively balanced or used"* is the thing to verify first —
+         a sink nobody uses is either mispriced or unreachable, and those are different fixes.
+      2. **Enumerate the FAUCETS and measure them per hour of play.** Quest turn-ins, floor-loot
+         coins, corpse sacks, sales. The owner is sitting on **62.4K valor at level 10**, which is
+         the tell that faucets already outrun sinks badly.
+      3. **Then set prices against a stated target** — how many hours of play one Sanctuary
+         upgrade should cost — rather than against each other. (`feedback_tune_to_targets_not_to_each_other`.)
+
+      ⛑ Do NOT start by raising prices. A currency nobody spends is a sink problem, and
+      inflating costs against a 62K balance changes nothing for an established player while
+      pricing a new one out entirely.
+
 - [ ] **Controller support (NEXT).** Godot has joypad input built in; a D-pad or stick gives all
       eight directions natively and the face buttons map to the action bar. Scope it as its own
       piece. Note `_on_move_button` already exists as an orphaned 8-way handler with no caller —

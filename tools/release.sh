@@ -109,7 +109,19 @@ step "GitHub release v$VERSION"
 # entry STOPS the release rather than shipping another placeholder.
 NOTES="releases/release-notes-v$VERSION.md"
 python tools/make_release_notes.py "$VERSION" -o "$NOTES"
-gh release create "v$VERSION" --title "v$VERSION" --notes-file "$NOTES" \
+# ⛑ CREATE BARE, THEN ATTACH ONE AT A TIME. Attaching the assets to `gh release create`
+# means ONE flaky upload destroys the whole release: `gh` deletes the release it just made,
+# so the tag never appears and the build is wasted.
+#
+# That is not hypothetical. v0.9.802 hit **HTTP 500 "Error creating asset temp dir"** twice in
+# a row, on two DIFFERENT assets - transient GitHub flakiness on large uploads, not a bad file.
+# Both attempts rolled back a complete, gate-passed build.
+#
+# A release with no assets is something you can add to; a failed create is something you have
+# to redo. Now a 500 costs one retry of one file.
+gh release create "v$VERSION" --title "v$VERSION" --notes-file "$NOTES"
+
+for asset in \
 	"releases/phantom-badlands-client-v$VERSION.zip" \
 	"releases/phantom-badlands-launcher.zip" \
 	"releases/phantom-badlands-client-linux-v$VERSION.zip" \
@@ -117,6 +129,24 @@ gh release create "v$VERSION" --title "v$VERSION" --notes-file "$NOTES" \
 	"releases/phantom-badlands-pck-v$VERSION.zip" \
 	"releases/phantom-badlands-runtime-r$RUNTIME.zip" \
 	"releases/client-manifest.json"
+do
+	uploaded=0
+	for attempt in 1 2 3 4; do
+		if gh release upload "v$VERSION" "$asset" --clobber >/dev/null 2>&1; then
+			uploaded=1; break
+		fi
+		echo "  retry $attempt: $(basename "$asset")"
+		sleep 5
+	done
+	# A HARD failure, named. A release missing its Linux launcher is worse than no release:
+	# the website serves both platforms and the launcher self-updates from these URLs, so a
+	# silent gap breaks new-player downloads rather than merely inconveniencing them.
+	if [ "$uploaded" != "1" ]; then
+		echo "FAILED to upload $asset after 4 attempts" >&2
+		exit 1
+	fi
+	echo "  ok  $(basename "$asset")"
+done
 
 if [[ "$WITH_SERVER" == "1" ]]; then
 	step "Server deploy (countdown, swap, verify)"
