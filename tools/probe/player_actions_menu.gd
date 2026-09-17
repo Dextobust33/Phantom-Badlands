@@ -129,6 +129,82 @@ func _init() -> void:
 	if btn != null:
 		ck(btn.focus_mode == Control.FOCUS_ALL, "  which is focusable, so a D-pad can reach it")
 
+	print("\n===== 6. THE HELP INDEX — the UI route for /topics and /topic =====")
+	# Those two were discovery and navigation for the whole help system: 36 per-screen topics, and
+	# the panel could show one but never list them. Every screen's `? Help` button was a dead end.
+	var hp = c.global_help_panel
+	ck(hp != null, "the global help panel exists")
+	if hp != null:
+		ck(hp.has_method("show_index"), "it can list its topics")
+		hp.show_index()
+		await process_frame
+		var idx: Node = hp._index_box
+		var n_topics: int = idx.get_child_count() if idx != null else 0
+		print("           the index lists %d topics (HELP_TOPICS has %d)" % [
+			n_topics, hp.HELP_TOPICS.size()])
+		ck(n_topics == hp.HELP_TOPICS.size(), "every registered topic is in the list")
+		# ⛑ Buttons, not clickable BBCode - the whole reason for this audit is controller and
+		# phone, and only a Button takes focus.
+		var all_focusable := true
+		for ti in range(n_topics):
+			var b := idx.get_child(ti) as Button
+			if b == null or b.focus_mode != Control.FOCUS_ALL:
+				all_focusable = false
+		ck(all_focusable, "  and every row is a focusable Button, so a D-pad can walk it")
+		# ...and picking one opens it, with a way back.
+		if n_topics > 0:
+			(idx.get_child(0) as Button).pressed.emit()
+			await process_frame
+			ck(not hp._index_scroll.visible, "picking a topic shows the topic")
+			ck(hp._all_button != null and hp._all_button.visible,
+				"  and an All topics button to get back")
+		hp.visible = false
+
+	print("\n===== 7. THE MENTOR BADGE IS A SETTING =====")
+	# The one persistent preference in the game that could only be set by typing.
+	ck(src.contains("func _toggle_mentor_badge"), "there is a toggle")
+	ck(src.contains('"[7] Mentor Badge: %s"'), "and a settings row that shows its state")
+	ck(src.contains("_toggle_mentor_badge()"), "  wired to a key")
+	# ⛑ The level gate is a SECOND COPY of a server constant. The client greys the row rather
+	# than letting a player press a key and be refused, which is worth the copy - but only if the
+	# two agree.
+	var srv2 := FileAccess.get_file_as_string("res://server/server.gd")
+	var mi := srv2.find("const MENTOR_LEVEL_REQUIRED")
+	var server_level := -1
+	if mi >= 0:
+		# Just the DECLARATION line. Reading a fixed 80 characters swept up the next statement,
+		# so the last "token" carried a newline and was not a valid int - and the check then
+		# reported the constant as MISSING rather than as disagreeing. A parser that reads past
+		# the end of what it is parsing fails in the direction of "nothing found", which reads
+		# like a real fault and sends you looking in the wrong place.
+		var line_end := srv2.find("\n", mi)
+		var decl := srv2.substr(mi, (line_end - mi) if line_end > mi else 80)
+		for tok in decl.replace("=", " ").replace(":", " ").split(" "):
+			if String(tok).strip_edges().is_valid_int():
+				server_level = int(String(tok).strip_edges())
+				break
+	print("           client requires Lv %d, server requires Lv %d" % [
+		c.MENTOR_LEVEL_REQUIRED, server_level])
+	ck(server_level > 0, "the server's constant was found")
+	ck(c.MENTOR_LEVEL_REQUIRED == server_level,
+		"and the client's copy agrees with it (%d vs %d)" % [c.MENTOR_LEVEL_REQUIRED, server_level])
+
+	print("\n===== 8. DONATE HAS A BUTTON, AND ASKS BEFORE IT SPENDS =====")
+	ck(src.contains('"action_data": "pilgrimage_donate"'), "the Titles screen offers Donate")
+	ck(src.contains("func _start_donate_prompt"), "which asks for an amount")
+	ck(src.contains("func _cancel_donate_prompt"), "  and can be backed out of")
+	# ⛑ It spends VALOR, so a typo must not become a donation.
+	c.pending_donate = true
+	c.input_field.text = "not a number"
+	c.send_input()
+	await process_frame
+	ck(not c.pending_donate, "a bad amount ends the prompt rather than looping")
+	c.pending_donate = true
+	c.input_field.text = ""
+	c.send_input()
+	await process_frame
+	ck(not c.pending_donate, "and an empty line cancels rather than donating")
+
 	print("\n===== NOT COVERED HERE =====")
 	print("  Whether the menu lands somewhere sensible on screen, and whether the server")
 	print("  accepts each action for a real second player. Both want two connected clients.")

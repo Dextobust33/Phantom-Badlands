@@ -2299,6 +2299,9 @@ var _player_menu_target: String = ""
 ## new mechanism. Whisper is the one action in the menu that cannot be a single click, because it
 ## needs words.
 var whisper_target: String = ""
+## While true, the next line typed is a Valor amount for the Trial of Wealth. Set by the Donate
+## button on the Titles screen - see `_start_donate_prompt`.
+var pending_donate: bool = false
 var last_online_click_time: float = 0.0  # Track double-click timing
 const DOUBLE_CLICK_TIME: float = 0.4  # 400ms for double-click
 
@@ -5910,6 +5913,11 @@ func _input(event):
 	# ESC leaves whisper mode. Placed beside the bug-report cancel below because it is the same
 	# shape - an input mode the player must be able to back out of without sending anything - and
 	# because a player who opens a whisper by accident must not have to type a line to escape it.
+	if pending_donate and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_cancel_donate_prompt()
+		get_viewport().set_input_as_handled()
+		return
+
 	if whisper_target != "" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		cancel_whisper_to()
 		get_viewport().set_input_as_handled()
@@ -6329,6 +6337,8 @@ func _input(event):
 				_toggle_disable_tutorial()
 			elif keycode == KEY_6:
 				_toggle_map_legend()
+			elif keycode == KEY_7:
+				_toggle_mentor_badge()
 			elif keycode == KEY_8:
 				settings_submenu = "stat_priority"
 				_page_clear()
@@ -11573,7 +11583,13 @@ func update_action_bar():
 				ability_labels[2],
 				ability_labels[3],
 				{"label": "? Help", "action_type": "local", "action_data": "help_title_selection", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				# ⚑ THE TRIAL OF WEALTH, which could only be performed by typing `/donate <amount>` -
+				# on this very screen, which lists the trial and then tells you to type the command.
+				# Owner 2026-09-17: *"Anything that remains needs a way to access it via the UI."*
+				# Elder-only, like the trial: the server refuses anyone else, so offering it to them
+				# would be a button that exists to say no.
+				{"label": "Donate", "action_type": "local", "action_data": "pilgrimage_donate",
+					"enabled": String(character_data.get("title", "")) == "elder"},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -13010,6 +13026,12 @@ func update_action_bar():
 	else:
 		current_actions = [
 			{"label": "Help", "action_type": "local", "action_data": "help", "enabled": true},
+			# ⚑ THE DOOR TO THE HELP INDEX. `/topics` listed the 36 per-screen help topics and
+			# `/topic <key>` opened one - discovery and navigation for the whole help system, with
+			# no UI equivalent: the panel could show a topic but never list them, so every screen's
+			# `? Help` button was a dead end. Owner 2026-09-17: *"Anything that remains needs a way
+			# to access it via the UI."*
+			{"label": "Topics", "action_type": "local", "action_data": "help_topics", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -16532,6 +16554,12 @@ func execute_local_action(action: String):
 			display_character_status()
 		"help":
 			show_help()
+		"pilgrimage_donate":
+			_start_donate_prompt()
+		"help_topics":
+			# The index of every registered help topic - the UI route for `/topics` + `/topic`.
+			if global_help_panel:
+				global_help_panel.show_index()
 		"settings":
 			open_settings()
 		"leaderboard":
@@ -28998,6 +29026,20 @@ func send_input():
 	# whisper option, etc."* Whisper is the one action in that menu that needs WORDS, so the menu
 	# sets a target and this is where the words meet it - the same shape as `bug_report_mode`
 	# below, rather than a new mechanism.
+	# The Trial of Wealth asks for a number. Same place as the whisper branch and for the same
+	# reason: an empty line means "I changed my mind", not "donate nothing".
+	if pending_donate:
+		pending_donate = false
+		input_field.placeholder_text = ""
+		if text.is_empty():
+			display_game("[color=#808080]Donation cancelled.[/color]")
+			return
+		if not text.is_valid_int() or int(text) <= 0:
+			display_game("[color=#FF4444]That is not an amount of Valor.[/color]")
+			return
+		send_to_server({"type": "pilgrimage_donate", "amount": int(text)})
+		return
+
 	if whisper_target != "":
 		if text.is_empty():
 			cancel_whisper_to()
@@ -31443,12 +31485,17 @@ func display_game_settings():
 	display_game("[5] Tutorial on New Character: %s" % tutorial_status)
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
 	display_game("[6] Map Legend: %s" % legend_status)
-	# ⚑ SLOT 7 WAS "Overworld Map Sprites", RETIRED 2026-09-17. Owner, asked whether the
-	# sprites-off path was still worth supporting: *"Retire the text map."* One renderer, so
-	# there is nothing to toggle - and one fewer setting for the controller/phone simplification
-	# the owner wants. The row is left OUT rather than renumbered: the numbers are typed by
-	# players from muscle memory, and the UI audit renumbers the whole screen at once or not at
-	# all. A build with no art says so where the map would be (see `_overworld_display`).
+	# ⚑ SLOT 7 was "Overworld Map Sprites", retired 2026-09-17 with the text map. It is the
+	# MENTOR BADGE now - a per-character preference that could previously only be set by
+	# typing `/mentor on`, which made it the one persistent setting in the game with no UI at
+	# all. Owner 2026-09-17: *"Anything that remains needs a way to access it via the UI."*
+	var mentor_on: bool = bool(character_data.get("mentor_active", false))
+	var mentor_status = "[color=#FFD700]★ ON[/color]" if mentor_on else "[color=#FF6666]OFF[/color]"
+	if int(character_data.get("level", 1)) >= MENTOR_LEVEL_REQUIRED:
+		display_game("[7] Mentor Badge: %s" % mentor_status)
+		display_game("    [color=#808080]New players see a ★ on your name and can ask you for help.[/color]")
+	else:
+		display_game("[color=#808080][7] Mentor Badge: unlocks at Lv %d[/color]" % MENTOR_LEVEL_REQUIRED)
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
 	display_game("[8] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
 	display_game("")
@@ -44208,6 +44255,50 @@ func _toggle_map_legend():
 	if settings_mode and settings_submenu == "game":
 		_page_clear()
 		display_game_settings()
+
+## The level the SERVER requires before it will turn the badge on (`handle_mentor_toggle`).
+## Stated here so the settings row can grey itself out rather than letting a player press a key
+## and be refused - but it IS a second copy of a server constant, so
+## `tools/probe/player_actions_menu.gd` checks the two still agree.
+const MENTOR_LEVEL_REQUIRED := 20
+
+
+func _start_donate_prompt() -> void:
+	"""Ask how much Valor to give to the Shrine of Wealth.
+
+	A number, so it cannot be one click - the same shape as Whisper needing words. Uses the input
+	mode the client already has for the bug report and the post name rather than a new popup."""
+	if String(character_data.get("title", "")) != "elder":
+		display_game("[color=#FF8800]Only Elders may give to the Shrine of Wealth.[/color]")
+		return
+	pending_donate = true
+	if input_field:
+		input_field.placeholder_text = "Valor to donate  (Esc to cancel)"
+		input_field.grab_focus()
+	display_game("[color=#FFD700]How much Valor?[/color] [color=#808080]Type an amount, or press Escape.[/color]")
+
+
+func _cancel_donate_prompt() -> void:
+	if not pending_donate:
+		return
+	pending_donate = false
+	if input_field:
+		input_field.placeholder_text = ""
+	display_game("[color=#808080]Donation cancelled.[/color]")
+
+
+func _toggle_mentor_badge():
+	"""Volunteer as a mentor, or stop. The UI route for `/mentor on|off`.
+
+	The server owns the state and the level gate; this asks for the flip and the reply carries the
+	new value back in `character_update`, so the row cannot show a state the server did not agree
+	to."""
+	if int(character_data.get("level", 1)) < MENTOR_LEVEL_REQUIRED:
+		display_game("[color=#FF8800]Mentor Badge unlocks at Lv %d.[/color]" % MENTOR_LEVEL_REQUIRED)
+		return
+	send_to_server({"type": "mentor_toggle",
+		"active": not bool(character_data.get("mentor_active", false))})
+
 
 func _toggle_condensed_combat_log():
 	"""Toggle the per-turn condensed combat log."""

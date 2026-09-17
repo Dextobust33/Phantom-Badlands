@@ -5180,9 +5180,28 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       each edit** — these scripts do all their work in memory and write at the end, so anything
       that throws in between discards good edits silently.
 
-      **Still to route through the UI before the sweep:** `/mentor`, `/donate`, `/topic` +
-      `/viewtopic` (the last two are the help-topic reader, not a player action). Then the owner's
-      yes on the 36, and their call on the 32 admin commands. Plus the judgements the tool
+      ☑ **AND THE LAST THREE ARE ROUTED (2026-09-17). Every capability now has a UI door.**
+      * **`/topics` + `/topic <key>`** → a **topic INDEX** in the help panel, reached by a
+        **Topics** button beside Help and by an *← All topics* button from any topic. Those two
+        commands were discovery and navigation for the whole help system: 36 per-screen topics,
+        and the panel could show one but never list them — so every screen's `? Help` button was
+        a dead end. The rows are Buttons rather than clickable BBCode, for the same reason the
+        player menu is a PopupMenu: only a Button takes focus.
+      * **`/mentor on|off`** → **settings slot 7**, which fell vacant the same day when the
+        overworld sprite toggle was retired. It was the only persistent preference in the game
+        that could be set only by typing.
+      * **`/donate <amount>`** → a **Donate button on the Titles screen**, where the pilgrimage
+        already lists the Trial of Wealth and then told you to type a command. Like Whisper it
+        needs a value, so the button asks and the next line answers; a bad amount or an empty line
+        ends the prompt rather than spending.
+
+      ⛑ **The mentor row needed the server's level gate, so the client now carries a COPY of a
+      server constant** — worth it, because the row greys itself out instead of letting a player
+      press a key and be refused, but only while the two agree. The probe compares them and is
+      proven to fire by drifting the client's to 25.
+
+      **What is left is entirely the owner's:** yes on the 36 navigation commands, and their call
+      on the 32 admin ones. Nothing is blocked on work. Plus the judgements the tool
       says it cannot make — whether two surfaces with different verbs are the same thing to a
       PLAYER, and whether a button's MODE is ever entered. Those need the game run.
 

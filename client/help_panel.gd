@@ -801,6 +801,11 @@ func _ready() -> void:
 	visible = false
 
 
+var _index_scroll: ScrollContainer = null
+var _index_box: VBoxContainer = null
+var _all_button: Button = null
+
+
 func show_topic(topic_key: String) -> void:
 	var topic = HELP_TOPICS.get(topic_key, null)
 	if topic == null:
@@ -808,9 +813,63 @@ func show_topic(topic_key: String) -> void:
 		_set_content("[color=#FF6644]Help topic missing[/color]", "No content registered for '%s'." % topic_key)
 	else:
 		_set_content(str(topic.get("title", "")), str(topic.get("body", "")))
+	_set_index_visible(false)
+	if _all_button:
+		_all_button.visible = true
 	visible = true
 	if _close_button:
 		_close_button.grab_focus()
+
+
+func show_index() -> void:
+	"""Every registered topic, as a list you can walk.
+
+	\u2691 THE UI ROUTE FOR `/topics` AND `/topic <key>`. Owner 2026-09-17: *"Anything that remains
+	needs a way to access it via the UI."* Those two commands were discovery and navigation for
+	the whole help system and had no equivalent here - the panel could show a topic but never
+	list them, so every screen's `? Help` button was a dead end: you read the page you were on
+	and nothing else.
+
+	Buttons rather than clickable BBCode, for the same reason the player menu is a PopupMenu:
+	this audit exists for controller and phone, and a Button takes focus."""
+	_set_content("Help", "[color=#B8B8B8]Every page in the game that has help. Pick one.[/color]")
+	_build_index_if_needed()
+	_set_index_visible(true)
+	if _all_button:
+		_all_button.visible = false
+	visible = true
+	if _index_box != null and _index_box.get_child_count() > 0:
+		(_index_box.get_child(0) as Control).grab_focus()
+	elif _close_button:
+		_close_button.grab_focus()
+
+
+func _build_index_if_needed() -> void:
+	if _index_box == null or _index_box.get_child_count() > 0:
+		return
+	# Sorted by the TITLE a player reads, not by the key a command took - the keys are internal
+	# (`pvp_combat`, `home_stone_companion`) and sorting by them would order the list by an
+	# implementation detail.
+	var rows: Array = []
+	for k in HELP_TOPICS.keys():
+		rows.append([str(HELP_TOPICS[k].get("title", String(k))), String(k)])
+	rows.sort_custom(func(a, b): return String(a[0]).nocasecmp_to(String(b[0])) < 0)
+	for r in rows:
+		var b := Button.new()
+		b.text = String(r[0])
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.focus_mode = Control.FOCUS_ALL
+		b.custom_minimum_size = Vector2(0, 26)
+		var key := String(r[1])
+		b.pressed.connect(func(): show_topic(key))
+		_index_box.add_child(b)
+
+
+func _set_index_visible(on: bool) -> void:
+	if _index_scroll:
+		_index_scroll.visible = on
+	if _body_label:
+		_body_label.visible = not on
 
 
 func _set_content(title_bb: String, body_bb: String) -> void:
@@ -881,6 +940,17 @@ func _build_layout() -> void:
 	_body_label.custom_minimum_size = Vector2(516, 280)
 	vbox.add_child(_body_label)
 
+	# The INDEX shares the body's slot - one of the two is visible at a time, so the panel never
+	# grows a second scrolling region for the player to lose their place in.
+	_index_scroll = ScrollContainer.new()
+	_index_scroll.custom_minimum_size = Vector2(516, 280)
+	_index_scroll.visible = false
+	vbox.add_child(_index_scroll)
+	_index_box = VBoxContainer.new()
+	_index_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_index_box.add_theme_constant_override("separation", 2)
+	_index_scroll.add_child(_index_box)
+
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 6)
 	vbox.add_child(spacer)
@@ -888,6 +958,14 @@ func _build_layout() -> void:
 	var btn_row := HBoxContainer.new()
 	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(btn_row)
+
+	# Back to the list, from any topic. Hidden while the list IS what is showing.
+	_all_button = Button.new()
+	_all_button.text = "\u2190  All topics"
+	_all_button.custom_minimum_size = Vector2(150, 32)
+	_all_button.focus_mode = Control.FOCUS_ALL
+	_all_button.pressed.connect(show_index)
+	btn_row.add_child(_all_button)
 
 	_close_button = Button.new()
 	_close_button.text = "Close  (Esc / Enter)"
