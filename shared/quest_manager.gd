@@ -5,6 +5,8 @@ extends Node
 
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
 const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
+## For naming a dungeon's grade in the turn-in line ("A6"), rather than printing two numbers.
+const PowerRankScript = preload("res://shared/power_rank.gd")
 
 var quest_db: Node = null
 var trading_post_db: Node = null
@@ -268,7 +270,8 @@ func check_exploration_progress(character: Character, player_x: int, player_y: i
 
 	return updates
 
-func check_dungeon_progress(character: Character, dungeon_type: String) -> Array:
+func check_dungeon_progress(character: Character, dungeon_type: String,
+		cleared_tier: int = 0, cleared_rank: int = 0) -> Array:
 	"""Check and update dungeon quest progress when a dungeon is completed. Returns array of updates."""
 	var updates = []
 
@@ -294,6 +297,17 @@ func check_dungeon_progress(character: Character, dungeon_type: String) -> Array
 		var required_dungeon = quest_data.get("dungeon_type", quest.get("dungeon_type", ""))
 		# Empty dungeon_type means any dungeon counts
 		if required_dungeon == "" or required_dungeon == dungeon_type:
+			# ⚑ REMEMBER THE GRADE, because the payout needs it and nothing else records it.
+			# The BEST grade cleared, not the last: a target of 3 clears done in an H1, a D4 and an
+			# A2 should pay for the A2 - the hardest thing the player actually did - rather than for
+			# whichever run happened to finish the count.
+			if cleared_tier > 0 and cleared_rank > 0:
+				var _old: int = QuestDatabaseScript.quest_grade_index(
+					int(quest_data.get("cleared_grade_tier", 0)),
+					int(quest_data.get("cleared_grade_rank", 0))) if int(quest_data.get("cleared_grade_tier", 0)) > 0 else -1
+				if QuestDatabaseScript.quest_grade_index(cleared_tier, cleared_rank) > _old:
+					quest_data["cleared_grade_tier"] = cleared_tier
+					quest_data["cleared_grade_rank"] = cleared_rank
 			var result = character.update_quest_progress(quest_id, 1)
 			if result.updated:
 				# Use stored quest name if available
@@ -404,16 +418,29 @@ func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 
 	var multiplier = 1.0
 
+	# ⚑ THE DUNGEON'S GRADE. Stamped by `check_dungeon_progress` when the run that settled the
+	# quest finished - see QUEST_GRADE_PER_STEP for why it can only ADD to the board's figure.
+	# Absent on every quest that is not a dungeon clear, and on legacy ones, where it is 1.0.
+	var _grade_mult: float = QuestDatabaseScript.quest_grade_mult(
+		int(quest_data.get("cleared_grade_tier", 0)), int(quest_data.get("cleared_grade_rank", 0)))
+	multiplier *= _grade_mult
+
 	# Apply hotzone intensity multiplier for hotzone quests
 	if quest_type == QuestDatabaseScript.QuestType.HOTZONE_KILL:
 		var avg_intensity = character.get_average_hotzone_intensity(quest_id)
 		# Multiplier: 1.5x at edge (intensity 0), up to 2.5x at center (intensity 1.0)
-		multiplier = 1.5 + avg_intensity
+		# Multiplied in, not assigned: assigning would discard the grade multiplier above.
+		# (A hotzone quest has no dungeon grade today, so this is defensive rather than active -
+		# but the next multiplier added here would have inherited the bug.)
+		multiplier *= 1.5 + avg_intensity
 
 	return {
 		"xp": int(base_rewards.get("xp", 0) * multiplier),
 		"valor": int(base_rewards.get("valor", 0) * multiplier),
-		"multiplier": multiplier
+		"multiplier": multiplier,
+		"grade_multiplier": _grade_mult,
+		"grade_tier": int(quest_data.get("cleared_grade_tier", 0)),
+		"grade_rank": int(quest_data.get("cleared_grade_rank", 0))
 	}
 
 func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
@@ -470,8 +497,21 @@ func turn_in_quest(character: Character, quest_id: String) -> Dictionary:
 	character.complete_quest(quest_id, is_daily)
 
 	var message = "Quest '%s' complete!" % quest_name
-	if rewards.multiplier > 1.0:
-		message += " (%.1fx hotzone bonus!)" % rewards.multiplier
+	# ⚑ ATTRIBUTE THE BONUS, do not just announce a number.
+	#
+	# This line read `" (%.1fx hotzone bonus!)"` for ANY multiplier above 1.0 - so the moment the
+	# dungeon-grade multiplier was added, a dungeon clear in an A6 would have told the player they
+	# had a hotzone bonus. A message that names the wrong cause is worse than no message: it
+	# teaches the player a mechanic that does not exist, and it is the wrong-text class of bug
+	# this repo keeps paying for (see the stat-descriptions rule in CLAUDE.md).
+	var _gm: float = float(rewards.get("grade_multiplier", 1.0))
+	if _gm > 1.0:
+		message += " [color=#B08CD8](%s dungeon: +%d%% pay)[/color]" % [
+			PowerRankScript.label(int(rewards.get("grade_tier", 1)), int(rewards.get("grade_rank", 1))),
+			int(round((_gm - 1.0) * 100.0))]
+	var _other: float = float(rewards.get("multiplier", 1.0)) / maxf(0.0001, _gm)
+	if _other > 1.01:
+		message += " (%.1fx hotzone bonus!)" % _other
 
 	return {
 		"success": true,

@@ -82,6 +82,16 @@ extends Resource
 @export var seen_guide_rations_hint: bool = false
 # 2026-09-15 - the two beats after the dungeon: the first egg, and arriving home.
 @export var seen_guide_egg_hint: bool = false
+## ⚑ THE POST THIS CHARACTER STARTED AT. {"x": int, "y": int, "name": String}, or empty.
+##
+## Owner 2026-09-17, on where the Warden walks you after the starter dungeon: *"Back to where you
+## started."* He used to head for the NEAREST post, which after an eastern starter dungeon is a
+## different place (measured: (65,-9) rather than the Crossroads) - so a brand-new player was
+## delivered somewhere they had never seen and told it was home.
+##
+## Nothing recorded the answer, so it is recorded here, once, at creation. Empty on every legacy
+## character, which is why the escort still falls back to nearest.
+@export var origin_post: Dictionary = {}
 @export var seen_guide_home_hint: bool = false
 # v0.9.582 — fires once on first entry to a threatened post. Closes user
 # feedback "the ! at 0,0 doesn't say what it is when you go there" — the
@@ -2112,6 +2122,7 @@ func to_dict() -> Dictionary:
 		"seen_guide_recovery_hint": seen_guide_recovery_hint,
 		"seen_guide_rations_hint": seen_guide_rations_hint,
 		"seen_guide_egg_hint": seen_guide_egg_hint,
+		"origin_post": origin_post,
 		"seen_guide_home_hint": seen_guide_home_hint,
 		"seen_threatened_post_hint": seen_threatened_post_hint,
 		"seen_signpost_hint": seen_signpost_hint,
@@ -2338,6 +2349,7 @@ func from_dict(data: Dictionary):
 	seen_guide_recovery_hint = bool(data.get("seen_guide_recovery_hint", false))
 	seen_guide_rations_hint = bool(data.get("seen_guide_rations_hint", false))
 	seen_guide_egg_hint = bool(data.get("seen_guide_egg_hint", false))
+	origin_post = data.get("origin_post", {}) if data.get("origin_post", {}) is Dictionary else {}
 	seen_guide_home_hint = bool(data.get("seen_guide_home_hint", false))
 	seen_threatened_post_hint = bool(data.get("seen_threatened_post_hint", false))
 	seen_signpost_hint = bool(data.get("seen_signpost_hint", false))

@@ -3423,6 +3423,15 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	#
 	# The free creation egg is therefore GONE. It was explicitly kept alive only until something
 	# replaced it, and this is that something.
+	# ⚑ WHERE THEY STARTED, recorded now because nothing else ever will.
+	# The Warden walks them home at the end of the chain, and the owner chose that home is the
+	# post they began at rather than whichever is nearest when they climb out - see `origin_post`
+	# on Character. Taken from the creation position, which is the post they are standing in.
+	if chunk_manager:
+		var _op: Dictionary = chunk_manager.get_nearest_npc_post(int(character.x), int(character.y))
+		if not _op.is_empty():
+			character.origin_post = {"x": int(_op.get("x", 0)), "y": int(_op.get("y", 0)),
+				"name": String(_op.get("name", "the post"))}
 	if quest_mgr:
 		var _sq = quest_mgr.accept_quest(character, "wardens_watch_1", character.x, character.y,
 			"", character.level, 0)
@@ -20793,7 +20802,13 @@ func _warden_settle_steps(peer_id: int, character, updates: Array) -> void:
 		# idea what to do."* So he says what is next and rings the way home, which the location
 		# payload's home goal (see _escort_goal_for) keeps pointed at as they walk.
 		if _qid == "wardens_watch_3" and chunk_manager:
-			var _home: Dictionary = chunk_manager.get_nearest_npc_post(int(character.x), int(character.y))
+			# The SAME post `_escort_goal_for` stage 4 will walk them to - it reads `origin_post`
+			# first, so this must too or he rings one place and leads to another. That exact split
+			# (ring, walk and bearing disagreeing) was the bug fixed earlier today for the outbound
+			# leg; this is the homeward one.
+			var _home: Dictionary = character.origin_post if (character.origin_post is Dictionary) else {}
+			if _home.is_empty():
+				_home = chunk_manager.get_nearest_npc_post(int(character.x), int(character.y))
 			if not _home.is_empty():
 				send_to_peer(peer_id, {"type": "mark_tile", "x": int(_home.get("x", 0)), "y": int(_home.get("y", 0)),
 					"label": String(_home.get("name", "the post")), "seconds": 900})
@@ -36073,7 +36088,10 @@ func _complete_dungeon(peer_id: int):
 		character.record_hard_dungeon_completion(dungeon_type)
 
 	# Check dungeon quest progress
-	var quest_updates = quest_mgr.check_dungeon_progress(character, dungeon_type)
+	# The GRADE of the instance just cleared, so the turn-in can pay for it. Both are already
+	# in scope here - `tier` is the instance's grade letter (see `_instance_tier`) and
+	# `inst_sub_tier` its rank.
+	var quest_updates = quest_mgr.check_dungeon_progress(character, dungeon_type, int(tier), int(inst_sub_tier))
 	for update in quest_updates:
 		send_to_peer(peer_id, {
 			"type": "quest_progress",
@@ -36292,7 +36310,7 @@ func _complete_dungeon(peer_id: int):
 			follower.record_dungeon_completion(dungeon_type)
 
 			# Quest progress for follower
-			var f_quest_updates = quest_mgr.check_dungeon_progress(follower, dungeon_type)
+			var f_quest_updates = quest_mgr.check_dungeon_progress(follower, dungeon_type, int(tier), int(inst_sub_tier))
 			for update in f_quest_updates:
 				send_to_peer(pid, {
 					"type": "quest_progress",
@@ -44819,9 +44837,19 @@ func _escort_goal_for(peer_id: int, character) -> Dictionary:
 	# where home was. Now he heads for the nearest post, which the side panel names and his
 	# figure leads toward (read only by the location payload; the walk itself stays step three).
 	if _stage == 4:
-		if chunk_manager == null:
-			return {}
-		var _post: Dictionary = chunk_manager.get_nearest_npc_post(int(character.x), int(character.y))
+		# ⚑ HOME IS WHERE THEY STARTED, not whichever post is nearest.
+		#
+		# Owner 2026-09-17: *"Back to where you started."* Nearest was measured at (65,-9) after an
+		# eastern starter dungeon - not the Crossroads the chain began at - so the tutorial ended by
+		# delivering a brand-new player to a post they had never seen and calling it home.
+		#
+		# `origin_post` is stamped at creation. Legacy characters have none, so nearest stays as the
+		# fallback rather than leaving them with no walk at all.
+		var _post: Dictionary = character.origin_post if (character.origin_post is Dictionary) else {}
+		if _post.is_empty():
+			if chunk_manager == null:
+				return {}
+			_post = chunk_manager.get_nearest_npc_post(int(character.x), int(character.y))
 		if _post.is_empty():
 			return {}
 		var _px := int(_post.get("x", 0))

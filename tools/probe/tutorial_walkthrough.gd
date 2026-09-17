@@ -444,6 +444,29 @@ func _init() -> void:
 	# the dungeon is cleared, so it is not what this measures.
 	sv._escort_retry_ms.erase(PEER)
 	sv.handle_tutorial_ack(PEER, {"ack": "escort_home"})
+	# ⚑ HOME IS WHERE THEY STARTED, not whichever post is nearest.
+	#
+	# Owner 2026-09-17, asked which it should be: *"Back to where you started."* Nearest was
+	# measured at (65,-9) after an eastern starter dungeon - not the Crossroads the chain began
+	# at - so the tutorial ended by delivering a brand-new player somewhere they had never seen.
+	#
+	# Driven rather than read, because the answer comes from `character.origin_post` and the
+	# fallback to nearest has to stay for legacy characters: a source check could not tell a
+	# working preference from one that always falls through.
+	var _prev_origin: Dictionary = ch.origin_post.duplicate() if ch.origin_post is Dictionary else {}
+	ch.origin_post = {"x": int(ch.x) + 120, "y": int(ch.y) - 80, "name": "Probe Origin"}
+	var _og: Dictionary = sv._escort_goal_for(PEER, ch)
+	print("  with an origin recorded, he heads for: %s at %v" % [
+		String(_og.get("name", "(nothing)")), Vector2i(int(_og.get("x", 0)), int(_og.get("y", 0)))])
+	ck(String(_og.get("name", "")) == "Probe Origin",
+		"  and home is the post they STARTED at, not the nearest one")
+	ck(int(_og.get("x", 0)) == int(ch.x) + 120,
+		"    with its own coordinates, so the ring and the walk go there too")
+	ch.origin_post = {}
+	var _ng: Dictionary = sv._escort_goal_for(PEER, ch)
+	ck(not _ng.is_empty() and String(_ng.get("name", "")) != "Probe Origin",
+		"  while a legacy character with no origin still gets a walk (nearest post)")
+	ch.origin_post = _prev_origin
 	var _home_ticks := -1
 	var _home_start := Vector2i(int(ch.x), int(ch.y))
 	for _t in range(260):
@@ -458,7 +481,10 @@ func _init() -> void:
 	ck(ch.seen_guide_home_hint, "  where the Home lesson fires from the real move handler")
 	# The dungeon-completion path must actually CALL the routine exercised above.
 	var _dsrc := FileAccess.get_file_as_string("res://server/server.gd")
-	var _dcall := _dsrc.find("var quest_updates = quest_mgr.check_dungeon_progress(character, dungeon_type)")
+	# Matched on the CALL, not on the whole line: the line gained the cleared dungeon's grade
+	# arguments on 2026-09-17 and an exact-line match broke, which is a brittle check reporting
+	# a fault that was not there.
+	var _dcall := _dsrc.find("var quest_updates = quest_mgr.check_dungeon_progress(character,")
 	ck(_dcall != -1 and _dsrc.substr(_dcall, 600).contains("_warden_settle_steps(peer_id, character, quest_updates)"),
 		"  and dungeon completion calls it, right after reporting the progress")
 	# The post, in case he is not there to settle it: the runtime id carries the npc_ prefix.

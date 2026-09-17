@@ -36,6 +36,10 @@ signal quests_requested
 signal locate_requested(dungeon_id: String)
 
 const HelpPanelScript = preload("res://client/help_panel.gd")
+## For the quest TYPE enum and the grade-bonus ceiling - read off the source of truth rather than
+## written out here, because a hardcoded 1.5 on a card is exactly the "one value, two places" shape
+## that makes a screen promise a number the server does not pay.
+const QuestDatabaseScript = preload("res://shared/quest_database.gd")
 
 # Starter posts where the Pathfinder chain can be turned in from anywhere.
 const STARTER_POSTS := ["haven", "crossroads", "south_gate", "east_market", "west_shrine"]
@@ -368,7 +372,7 @@ func _add_turn_in_card(q: Dictionary) -> void:
 	var row := _make_card(Color(0.23, 0.88, 0.42))
 	var body := _make_body(row)
 	_body_line(body, "[color=#3BE06B]✓ %s[/color]" % String(q.get("name", "Quest")), 15)
-	_body_line(body, "[color=#9ACD32]Reward: %s[/color]" % _format_rewards(q.get("rewards", {})), 12, 18)
+	_body_line(body, "[color=#9ACD32]Reward: %s[/color]" % _format_rewards(q.get("rewards", {}), int(q.get("type", q.get("quest_type", -1)))), 12, 18)
 	var btn := Button.new()
 	btn.text = "Turn In"
 	btn.focus_mode = Control.FOCUS_NONE
@@ -400,7 +404,7 @@ func _add_available_card(q: Dictionary, board_full: bool) -> void:
 	if desc != "":
 		_body_line(body, "[color=#B8B8B8]%s[/color]" % desc, 12, 18)
 	var dir_hint := String(q.get("dungeon_direction", q.get("direction_hint", "")))
-	var reward_line := "[color=#9ACD32]Rewards: %s[/color]" % _format_rewards(q.get("rewards", {}))
+	var reward_line := "[color=#9ACD32]Rewards: %s[/color]" % _format_rewards(q.get("rewards", {}), int(q.get("type", q.get("quest_type", -1))))
 	if dir_hint != "":
 		reward_line += "   [color=#7FB8D8]%s[/color]" % dir_hint
 	_body_line(body, reward_line, 12, 18)
@@ -464,7 +468,15 @@ func _add_active_card(q: Dictionary) -> void:
 		row.add_child(wrap)
 
 
-func _format_rewards(rewards: Dictionary) -> String:
+## Which tasks are settled by clearing a dungeon, and therefore earn the grade bonus. The same
+## two `check_dungeon_progress` accepts - a clear and a fabled-boss hunt end on the same event.
+const _GRADE_SCALED_TYPES := [
+	QuestDatabaseScript.QuestType.DUNGEON_CLEAR,
+	QuestDatabaseScript.QuestType.BOSS_HUNT,
+]
+
+
+func _format_rewards(rewards: Dictionary, quest_type: int = -1) -> String:
 	var parts: Array = []
 	var xp := int(rewards.get("xp", 0))
 	var valor := int(rewards.get("valor", 0))
@@ -481,6 +493,13 @@ func _format_rewards(rewards: Dictionary) -> String:
 		parts.append("[color=#FFD700]title: %s[/color]" % title)
 	if parts.is_empty():
 		return "[color=#808080]—[/color]"
+	# ⚑ SAY THAT THE GRADE PAYS, or the bonus is invisible and the figure above reads as the
+	# whole story. It is worded as a FLOOR because that is what it is: a quest names a dungeon
+	# type, the grade belongs to the instance, and the multiplier only ever adds - so the number
+	# beside it is the least this can pay, never the most. See QUEST_GRADE_PER_STEP.
+	if quest_type in _GRADE_SCALED_TYPES:
+		parts.append("[color=#B08CD8]+up to %d%% for the dungeon's grade[/color]" % int(
+			(QuestDatabaseScript.QUEST_GRADE_MAX - 1.0) * 100.0))
 	return "  ".join(parts)
 
 

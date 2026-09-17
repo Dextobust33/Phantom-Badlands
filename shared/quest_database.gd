@@ -4,6 +4,9 @@ class_name QuestDatabase
 extends Node
 
 const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
+## The grade ladder (H1..S9). Read for its domain rather than restated - `RANKS` is 9, and a
+## hardcoded 8 here would silently collapse the top rank into the second (see power_rank.gd).
+const PowerRankScript = preload("res://shared/power_rank.gd")
 
 # Audit #6 Slice 13 (supersedes Slice 12). The original audit signal said
 # "daily stuff isn't engaging" — Slice 12 misread that as "daily kill-tasks
@@ -130,6 +133,39 @@ static func quest_depth_mult(floors_required: int) -> float:
 	"""Reward multiplier for making a player descend `floors_required` floors."""
 	return clampf(1.0 + float(floors_required - QUEST_DEPTH_PIVOT) * QUEST_DEPTH_PER_FLOOR,
 		QUEST_DEPTH_CLAMP.x, QUEST_DEPTH_CLAMP.y)
+
+
+## ⚑ HOW MUCH THE DUNGEON'S OWN GRADE ADDS TO A QUEST'S PAY.
+##
+## Owner 2026-09-17: *"Yes, grade multiplies the payout."* The third axis of *"rewards should scale
+## with the dungeons difficulty as well as the difficulty of the task you have to do in the
+## dungeon"* - task and depth are handled above, and grade was ignored completely.
+##
+## ⚑ IT ONLY EVER ADDS, and that is deliberate. A quest names a dungeon TYPE, but a dungeon's
+## grade belongs to the INSTANCE, so the same Goblin Caves quest can be settled in an H1 or an A6
+## and the grade is unknowable when the board is written. A turn-in multiplier that could REDUCE
+## the advertised number would be the entrance-screen fault with the sign flipped - owner, on that
+## one: *"We don't need the overworld advertising F something and end up in a C dungeon."* So the
+## board's figure is a FLOOR, the grade is a bonus on top of it, and the card says so.
+##
+## Ladder index: H1 is 1 and S9 is 81 (`PowerRank.LADDER` x `PowerRank.RANKS`, both ascending), so
+## one step is one rank and nine steps are one letter. At 0.006 a letter is worth about +5% and the
+## full climb from H1 to S9 is +48%, clamped at +50%.
+const QUEST_GRADE_PER_STEP := 0.006
+const QUEST_GRADE_MAX := 1.5
+
+
+static func quest_grade_index(tier: int, rank: int) -> int:
+	"""Position on the H1..S9 ladder, 1-81. One definition, so nothing re-derives it."""
+	return (clampi(tier, 1, 9) - 1) * PowerRankScript.RANKS + clampi(rank, 1, PowerRankScript.RANKS)
+
+
+static func quest_grade_mult(tier: int, rank: int) -> float:
+	"""Reward multiplier for settling a quest in a dungeon of this grade. Never below 1.0."""
+	if tier <= 0 or rank <= 0:
+		return 1.0          # unknown grade (a legacy quest, or a non-dungeon task)
+	return clampf(1.0 + float(quest_grade_index(tier, rank) - 1) * QUEST_GRADE_PER_STEP,
+		1.0, QUEST_GRADE_MAX)
 
 
 const DYNAMIC_QUEST_TYPES := [QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.BOSS_HUNT, QuestType.GATHER]
