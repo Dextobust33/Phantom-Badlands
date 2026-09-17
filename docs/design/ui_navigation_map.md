@@ -12,14 +12,15 @@ with the same verb are a merge, an entry point that reaches nothing is a dead bu
 
 | | count |
 |---|---|
-| chat commands whitelisted | 114 |
+| chat commands whitelisted | 90 |
 | ...that are the ONLY door to a surface (need a button before retiring) | **0** |
 | ...that are SPEECH, not navigation (not part of the sweep) | 8 |
 | ...that are ADMIN tools (a separate decision, see CLAUDE.md) | 27 |
-| ...that take a TARGET argument (a button may not be able to) | **21** |
+| ...that take a TARGET argument (a button may not be able to) | **23** |
+| ...kept after a HAND check found no route (see below) | 7 |
 | ...whose surface only COMMANDS reach (need a button first) | **0** |
-| ...reaching a surface a button also reaches (safe to retire) | 20 |
-| ...opening no surface at all (pure navigation, safe to retire) | 5 |
+| ...reaching a surface a button also reaches (safe to retire) | 0 |
+| ...opening no surface at all (pure navigation, safe to retire) | 0 |
 | ...with no arm in `process_command` | **0** |
 | ...handled but not whitelisted (unreachable by typing) | **0** |
 | panel scripts | 29 |
@@ -103,22 +104,38 @@ owner's own tools. Grouped from the whitelist's own line layout, not judged by n
 
 > `/admin`, `/altsprite`, `/banip`, `/broadcast`, `/completequest`, `/condensed`, `/givecompanion`, `/giveconsumable`, `/giveegg`, `/giveitem`, `/givemats`, `/givetool`, `/gmhelp`, `/resetpw`, `/setbp`, `/setgold`, `/setjob`, `/setlevel`, `/setmonstergems`, `/setxp`, `/spawnmonster`, `/spritesize`, `/testfx`, `/teststable`, `/tp`, `/tpstable`, `/unbanip`
 
-**TAKES AN ARGUMENT — check the button can supply it (21).** `/block bob` is not
+**KEPT — the columns call these safe and a hand check says they are not (7).**
+
+The tool can see that a command opens no SURFACE. It cannot see that the CAPABILITY has no
+route, and those are different statements. Each was traced to its handler and no
+non-command caller was found.
+
+| command(s) | why it survives |
+|---|---|
+| `/clear` | no Clear button anywhere |
+| `/crucible` | starts the Elder gauntlet; no UI at all |
+| `/catches`, `/deck` | ONE arm with `deck`, and it is the ZONE deck preview - the Deck shortcut opens the ABILITY deck, a different screen. Retiring it deletes a feature |
+| `/clanposts` | the clan post list; the Clan panel does not show it |
+| `/mentors` | lists online mentors; the player list shows a badge, not a list |
+| `/bountyboard`, `/bb` | `_open_bounty_board()` is called only from this arm. Command-only |
+| `/debughatch` | a dev tool sitting in the player section - belongs in /admin |
+
+**TAKES AN ARGUMENT — check the button can supply it (23).** `/block bob` is not
 replaced by a button that opens the block LIST: *open the screen* and *do this to THAT
 name* are different capabilities, and only the first is what the destination check
 answers. Detected by the arm reading `parts[...]`.
 
-> `/block`, `/bounty`, `/buystone`, `/clancolor`, `/clandesc`, `/clanmotto`, `/clanpost`, `/clanvault`, `/companion`, `/donate`, `/duel`, `/ex`, `/examine`, `/friend`, `/friends`, `/mentor`, `/pet`, `/set_title`, `/settitle`, `/spendstat`, `/topic`, `/trade`, `/tradehistory`, `/trades`, `/unblock`, `/vault`, `/viewtopic`, `/watch`
+> `/block`, `/bounty`, `/bug`, `/buystone`, `/clancolor`, `/clandesc`, `/clanmotto`, `/clanpost`, `/clanvault`, `/companion`, `/donate`, `/duel`, `/ex`, `/examine`, `/find`, `/friend`, `/friends`, `/mentor`, `/pet`, `/report`, `/search`, `/set_title`, `/settitle`, `/spendstat`, `/topic`, `/trade`, `/tradehistory`, `/trades`, `/unblock`, `/vault`, `/viewtopic`, `/watch`
 
 **NEEDS A BUTTON FIRST (0)** — the surface these open is reached from no non-command
 path, so retiring them removes a feature rather than a shortcut.
 
 > None.
 
-**SAFE TO RETIRE (20 + 5)** — 20 open a surface a button also opens, and 5 open no
+**SAFE TO RETIRE (0 + 0)** — 0 open a surface a button also opens, and 0 open no
 surface at all (they send a server message, set a flag or print a line).
 
-> `/bb`, `/blocked`, `/blocklist`, `/bountyboard`, `/bug`, `/catches`, `/clan`, `/clanposts`, `/clear`, `/craft`, `/crucible`, `/debughatch`, `/deck`, `/dungeon`, `/dungeons`, `/feed_all`, `/feedall`, `/find`, `/fish`, `/freq`, `/help`, `/helplist`, `/helptopics`, `/materials`, `/mats`, `/mentors`, `/post`, `/quest`, `/quests`, `/report`, `/search`, `/stats`, `/stones`, `/title`, `/titles`, `/topics`, `/unwatch`
+> 
 
 ### ⛑ These are a feature's ONLY door — give each a button before retiring it
 
@@ -132,87 +149,71 @@ feature.
 
 | command(s) | opens |
 |---|---|
-| `/help` | `show_help` |
 | `/clear` | — |
-| `/testfx` | `display_game` |
+| `/testfx` | — |
 | `/spritesize` | `_show_sprite_size_preview` |
 | `/altsprite` | — |
-| `/condensed` | `display_game` |
-| `/who`, `/players` | `display_game` |
-| `/examine`, `/ex` | `display_game` |
-| `/whisper`, `/w`, `/msg`, `/tell` | `display_game` |
-| `/reply`, `/r` | `display_game` |
-| `/c`, `/cc`, `/clanchat` | `display_game` |
+| `/condensed` | — |
+| `/who`, `/players` | — |
+| `/examine`, `/ex` | — |
+| `/whisper`, `/w`, `/msg`, `/tell` | — |
+| `/reply`, `/r` | — |
+| `/c`, `/cc`, `/clanchat` | — |
 | `/clist`, `/clanlist`, `/clanonline` | — |
-| `/topics`, `/helplist`, `/helptopics` | `display_game` |
 | `/trades`, `/tradehistory` | — |
-| `/friend`, `/friends` | `display_game` |
-| `/freq` | — |
-| `/block` | `display_game` |
-| `/unblock` | `display_game` |
-| `/blocklist`, `/blocked` | — |
-| `/topic`, `/viewtopic` | `display_game`, `global_help_panel.show_topic`, `show_topic` |
+| `/friend`, `/friends` | — |
+| `/block` | — |
+| `/unblock` | — |
+| `/topic`, `/viewtopic` | `global_help_panel.show_topic`, `show_topic` |
 | `/afk`, `/away` | — |
 | `/back`, `/afkoff`, `/here` | — |
-| `/p`, `/pc`, `/partychat` | `display_game` |
-| `/watch` | `display_game` |
-| `/unwatch` | — |
+| `/p`, `/pc`, `/partychat` | — |
+| `/watch` | — |
 | `/bug`, `/report` | — |
-| `/search`, `/find` | `display_game` |
-| `/trade` | `display_game` |
-| `/companion`, `/pet` | `display_game`, `show_companion_info` |
-| `/donate` | `display_game` |
-| `/crucible` | `display_game` |
-| `/fish` | `display_game` |
-| `/craft` | `display_game`, `open_crafting` |
-| `/dungeons`, `/dungeon` | `display_game` |
-| `/materials`, `/mats` | `display_game`, `display_materials` |
-| `/quests`, `/quest` | `display_game` |
-| `/catches`, `/deck` | `display_game` |
-| `/post` | `display_game`, `open_post_status_panel` |
-| `/feedall`, `/feed_all` | `display_game`, `open_post_status_panel` |
-| `/stones` | `display_game`, `open_stones_panel` |
-| `/buystone` | `display_game` |
-| `/stats` | `display_game`, `open_stats_panel` |
-| `/spendstat` | `display_game` |
-| `/clan` | `display_game`, `open_clan_panel` |
-| `/clandesc` | `display_game` |
-| `/clanmotto` | `display_game` |
-| `/clancolor` | `display_game` |
-| `/clanpost` | `display_game` |
-| `/clanposts` | `display_game` |
-| `/mentor` | `display_game` |
-| `/mentors` | `display_game` |
-| `/duel` | `display_game`, `open_duel_outgoing_dialog` |
-| `/bounty` | `_open_bounty_board`, `display_game` |
+| `/search`, `/find` | — |
+| `/trade` | — |
+| `/companion`, `/pet` | `show_companion_info` |
+| `/donate` | — |
+| `/crucible` | — |
+| `/catches`, `/deck` | — |
+| `/buystone` | — |
+| `/spendstat` | — |
+| `/clandesc` | — |
+| `/clanmotto` | — |
+| `/clancolor` | — |
+| `/clanpost` | — |
+| `/clanposts` | — |
+| `/mentor` | — |
+| `/mentors` | — |
+| `/duel` | `open_duel_outgoing_dialog` |
+| `/bounty` | `_open_bounty_board` |
 | `/bountyboard`, `/bb` | `_open_bounty_board` |
-| `/titles`, `/title` | `display_game` |
-| `/set_title`, `/settitle` | `display_game` |
-| `/debughatch` | `display_game` |
-| `/vault`, `/clanvault` | `display_game` |
+| `/set_title`, `/settitle` | — |
+| `/debughatch` | — |
+| `/vault`, `/clanvault` | — |
 | `/admin` | `open_admin_menu` |
 | `/gmhelp` | `display_gm_help` |
-| `/setlevel` | `display_game` |
-| `/setgold` | `display_game` |
-| `/setmonstergems` | `display_game` |
-| `/setxp` | `display_game` |
-| `/setbp` | `display_game` |
+| `/setlevel` | — |
+| `/setgold` | — |
+| `/setmonstergems` | — |
+| `/setxp` | — |
+| `/setbp` | — |
 | `/giveitem` | — |
 | `/giveegg` | — |
 | `/givecompanion` | — |
 | `/spawnmonster` | — |
-| `/givemats` | `display_game` |
-| `/tp` | `display_game` |
+| `/givemats` | — |
+| `/tp` | — |
 | `/tpstable` | — |
 | `/teststable` | — |
 | `/completequest` | — |
-| `/broadcast` | `display_game` |
-| `/giveconsumable` | `display_game` |
-| `/setjob` | `display_game` |
-| `/givetool` | `display_game` |
-| `/banip` | `display_game` |
-| `/unbanip` | `display_game` |
-| `/resetpw` | `display_game` |
+| `/broadcast` | — |
+| `/giveconsumable` | — |
+| `/setjob` | — |
+| `/givetool` | — |
+| `/banip` | — |
+| `/unbanip` | — |
+| `/resetpw` | — |
 
 ## What this tool cannot see
 

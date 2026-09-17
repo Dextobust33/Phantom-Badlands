@@ -234,9 +234,18 @@ def command_destinations(src):
         arms.append(cur)
 
     # How many times each surface-opening call appears in the WHOLE client
+    # \u26d1 PRINTING IS NOT NAVIGATION. `display_game` and `display_chat` put a line of text in the
+    # log; they open nothing. Counting them as surfaces made every arm that prints its answer
+    # look like it opens a screen - and then "a button opens that surface too" was trivially
+    # true, because everything in the client calls `display_game`. That single mistake is most of
+    # why this list read as 78 safe when it is a small fraction of that.
+    NOT_A_SURFACE = {"display_game", "display_chat", "display_game_wide", "show_status"}
+
     def surface_calls(text):
         out = set()
         for m in re.finditer(r"\b((?:_)?(?:display|show|open)_[a-z_0-9]+)\s*\(", text):
+            if m.group(1) in NOT_A_SURFACE:
+                continue
             out.add(m.group(1))
         for m in re.finditer(r"\b([a-z_0-9]+_panel)\s*\.\s*(open[a-z_0-9]*|show[a-z_0-9]*)\s*\(", text):
             out.add("%s.%s" % (m.group(1), m.group(2)))
@@ -263,6 +272,25 @@ def command_destinations(src):
 ## command is FOR, which no amount of source reading can derive.
 ## Filled by `chat_commands` from the whitelist's own line grouping - see the note there.
 ADMIN = set()
+
+## ⚑ CHECKED BY HAND AND NOT SAFE, whatever the columns say. The tool can see that a command
+## opens no SURFACE; it cannot see that the capability has no ROUTE, and those are different
+## statements. Each of these was traced to its handler and no non-command caller was found.
+##
+## Unrecorded, the next reading of this map deletes seven working features - which is the exact
+## failure this file exists to prevent. Delete a row here when you give it a button.
+KEEP_NO_ROUTE = {
+    "clear": "no Clear button anywhere",
+    "crucible": "starts the Elder gauntlet; no UI at all",
+    "clanposts": "the clan post list; the Clan panel does not show it",
+    "mentors": "lists online mentors; the player list shows a badge, not a list",
+    "debughatch": "a dev tool sitting in the player section - belongs in /admin",
+    "catches": "ONE arm with `deck`, and it is the ZONE deck preview - the Deck shortcut opens "
+               "the ABILITY deck, a different screen. Retiring it deletes a feature",
+    "deck": "see `catches` - same arm, and the shortcut is not the same screen",
+    "bountyboard": "`_open_bounty_board()` is called only from this arm. Command-only",
+    "bb": "see `bountyboard`",
+}
 
 SPEECH_COMMANDS = {
     "whisper", "w", "msg", "tell", "reply", "r",
@@ -308,7 +336,12 @@ def command_reach(src, cmd_dest):
         # one of them was sitting in the "safe to retire" list. A detector that recognises one
         # spelling of a thing reports the others as absent, and here "absent" meant "delete it".
         body_txt = r.get("body", "")
-        takes_arg = bool(re.search(r"\bparts\s*\[", body_txt)) \
+        # \u26d1 FOUR SPELLINGS SO FAR: `parts[...]`, `text.split(...)`, `parts.slice(...)` - which
+        # is how `/search <term>` reached the approved list - and `parts.size()`. The last is the
+        # reliable one: an arm that reads arguments has to ASK how many there are first, whatever
+        # it does with them afterwards. The others are kept because an arm could read `parts[1]`
+        # without checking, and being wrong here means deleting a capability.
+        takes_arg = bool(re.search(r"\bparts\s*(\[|\.\s*(size|slice)\s*\()", body_txt)) \
             or bool(re.search(r"\btext\s*\.\s*(split|substr|to_lower|strip_edges)\s*\(", body_txt))
         rows.append({"names": r["names"], "dests": r["dests"], "speech": speech, "admin": admin,
                      "takes_arg": takes_arg,
@@ -352,6 +385,8 @@ def main():
     needs_button = [r for r in rest if r["command_only"]]
     argy = [r for r in rest if r["takes_arg"]]
     plain = [r for r in rest if not r["takes_arg"]]
+    kept = [r for r in plain if any((n in KEEP_NO_ROUTE) for n in r["names"])]
+    plain = [r for r in plain if not any((n in KEEP_NO_ROUTE) for n in r["names"])]
     retirable = [r for r in plain if not r["command_only"] and r["dests"]]
     no_surface = [r for r in plain if not r["dests"]]
 
@@ -382,6 +417,7 @@ def main():
     A("| ...that are SPEECH, not navigation (not part of the sweep) | %d |" % len(speech))
     A("| ...that are ADMIN tools (a separate decision, see CLAUDE.md) | %d |" % len(admin))
     A("| ...that take a TARGET argument (a button may not be able to) | **%d** |" % len(argy))
+    A("| ...kept after a HAND check found no route (see below) | %d |" % len(kept))
     A("| ...whose surface only COMMANDS reach (need a button first) | **%d** |" % len(needs_button))
     A("| ...reaching a surface a button also reaches (safe to retire) | %d |" % len(retirable))
     A("| ...opening no surface at all (pure navigation, safe to retire) | %d |" % len(no_surface))
@@ -475,6 +511,23 @@ def main():
     A("")
     A("> " + ", ".join(sorted("`/%s`" % n for r in admin for n in r["names"])))
     A("")
+    A("**KEPT — the columns call these safe and a hand check says they are not (%d).**" % len(kept))
+    A("")
+    A("The tool can see that a command opens no SURFACE. It cannot see that the CAPABILITY has no")
+    A("route, and those are different statements. Each was traced to its handler and no")
+    A("non-command caller was found.")
+    A("")
+    if kept:
+        A("| command(s) | why it survives |")
+        A("|---|---|")
+        for r in kept:
+            why = ""
+            for n in r["names"]:
+                if n in KEEP_NO_ROUTE:
+                    why = KEEP_NO_ROUTE[n]
+                    break
+            A("| %s | %s |" % (", ".join("`/%s`" % n for n in r["names"]), why))
+    A("")
     A("**TAKES AN ARGUMENT — check the button can supply it (%d).** `/block bob` is not" % len(argy))
     A("replaced by a button that opens the block LIST: *open the screen* and *do this to THAT")
     A("name* are different capabilities, and only the first is what the destination check")
@@ -543,8 +596,8 @@ def main():
     print("  action bar         %d local ids, %d with no case" % (len(offered), len(dead_buttons)))
     print("  orphan handlers    %d _on_* functions nothing connects" % len(orphans))
     print("  command doors      %d arms, %d are a surface's ONLY door" % (len(cmd_dest), len(sole_doors)))
-    print("  retirement         %d speech, %d admin, %d take an argument, %d need a button, %d safe"
-          % (len(speech), len(admin), len(argy), len(needs_button),
+    print("  retirement         %d speech, %d admin, %d argument, %d kept by hand, %d safe"
+          % (len(speech), len(admin), len(argy), len(kept),
              len(retirable) + len(no_surface)))
     if "--print" in sys.argv:
         print()

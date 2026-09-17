@@ -29286,7 +29286,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "clanpost", "clanposts", "vault", "clanvault", "mentor", "mentors", "duel", "bounty", "bountyboard", "bb",
+	var command_keywords = ["clear", "who", "players", "examine", "ex", "watch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "block", "unblock", "debughatch", "catches", "deck", "set_title", "settitle", "buystone", "spendstat", "clandesc", "clancolor", "clanmotto", "clanpost", "clanposts", "vault", "clanvault", "mentor", "mentors", "duel", "bounty", "bountyboard", "bb",
 		"setlevel", "setgold", "setmonstergems", "setxp", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats",
 		"tp", "tpstable", "teststable", "completequest", "broadcast", "gmhelp",
@@ -30034,8 +30034,6 @@ func process_command(text: String):
 		command = command.substr(1)
 
 	match command:
-		"help":
-			show_help()
 		"clear":
 			_page_clear()
 			chat_output.clear()
@@ -30117,29 +30115,6 @@ func process_command(text: String):
 			# Audit #14 v0.9.532 — list online clanmates with level + class.
 			# Server returns clan_list_result; client renders compact roster.
 			send_to_server({"type": "clan_list"})
-		"topics", "helplist", "helptopics":
-			# Audit #15 v0.9.538 — persistent help discovery. Lists every
-			# HELP_TOPICS key + title so players can find a topic without
-			# knowing which panel owns it.
-			var topic_keys = GlobalHelpPanelScript.HELP_TOPICS.keys()
-			topic_keys.sort()
-			display_game("[color=#FFD700]══════ HELP TOPICS (%d) ══════[/color]" % topic_keys.size())
-			for tkey in topic_keys:
-				var topic_entry = GlobalHelpPanelScript.HELP_TOPICS.get(tkey, {})
-				var title_bb = String(topic_entry.get("title", tkey))
-				# Strip BBCode wrapping color tags for the listing — we just
-				# want the plain title text. RichTextLabel's bbcode parser
-				# would render it but a per-entry color overlay is cleaner.
-				var stripped = title_bb
-				while stripped.find("[") >= 0 and stripped.find("]") >= 0:
-					var open_b = stripped.find("[")
-					var close_b = stripped.find("]", open_b)
-					if close_b < 0:
-						break
-					stripped = stripped.substr(0, open_b) + stripped.substr(close_b + 1)
-				display_game("  [color=#9ACD32]%s[/color] [color=#888888]— %s[/color]" % [tkey, stripped])
-			display_game("")
-			display_game("[color=#808080]Use [/color][color=#9ACD32]/topic <key>[/color][color=#808080] to open one in the help panel.[/color]")
 		"trades", "tradehistory":
 			# Audit #14 v0.9.539 — request the caller's trade history.
 			# Optional [N] arg = how many entries (default 10, max 50).
@@ -30186,9 +30161,6 @@ func process_command(text: String):
 						display_game("[color=#FF0000]Usage: /friend remove <username>[/color]")
 				_:
 					display_game("[color=#FF0000]Unknown subcommand '%s'. Try: list, requests, add, accept, reject, cancel, remove.[/color]" % sub)
-		"freq":
-			# Convenience alias for /friend requests.
-			send_to_server({"type": "friend_requests"})
 		"block":
 			# Audit #14 v0.9.540 — block a user (silences whispers + future
 			# friend requests + auto-removes from friend list).
@@ -30201,8 +30173,6 @@ func process_command(text: String):
 				player_unblock(String(parts[1]))
 			else:
 				display_game("[color=#FF0000]Usage: /unblock <username>[/color]")
-		"blocklist", "blocked":
-			send_to_server({"type": "block_list"})
 		"topic", "viewtopic":
 			# Audit #15 v0.9.538 — open any registered help topic by key in
 			# the global help panel. Pairs with /topics for discovery.
@@ -30246,8 +30216,6 @@ func process_command(text: String):
 			else:
 				display_game("[color=#FF0000]Usage: /watch <playername>[/color]")
 				display_game("[color=#808080]Watch another player's game output (requires their approval).[/color]")
-		"unwatch":
-			stop_watching()
 		"bug", "report":
 			# Get optional description from rest of command
 			var description = ""
@@ -30307,71 +30275,11 @@ func process_command(text: String):
 				send_to_server({"type": "start_crucible"})
 			else:
 				display_game("You don't have a character yet")
-		"fish":
-			if has_character:
-				start_gathering_from_node("water")
-			else:
-				display_game("You don't have a character yet")
-		"craft":
-			if has_character:
-				if at_trading_post:
-					open_crafting()
-				else:
-					display_game("[color=#FF4444]You can only craft at Trading Posts![/color]")
-			else:
-				display_game("You don't have a character yet")
-		"dungeons", "dungeon":
-			# ⛑ THIS WAS THE ONLY ROUTE TO THE TEXT DUNGEON LIST - a surface with no button
-			# anywhere in the game, found orphaned by the 2026-09-17 navigation audit. It
-			# overlapped the Atlas almost entirely (both listed dungeons with grade and level
-			# band), so the command opens the Atlas tab and the list retires - rather than the
-			# command being deleted and taking the only door to a feature with it.
-			if has_character:
-				send_to_server({"type": "dungeon_atlas_request"})
-			else:
-				display_game("You don't have a character yet")
-		"materials", "mats":
-			if has_character:
-				display_materials()
-			else:
-				display_game("You don't have a character yet")
-		"quests", "quest":
-			if has_character:
-				send_to_server({"type": "get_quest_log"})
-			else:
-				display_game("You don't have a character yet")
 		"catches", "deck":
 			# Audit #7 zone deck preview — sends a request to the server; server
 			# resolves zone by current location and replies with a `text` payload.
 			if has_character:
 				send_to_server({"type": "request_zone_deck"})
-			else:
-				display_game("You don't have a character yet")
-		"post":
-			# Audit #12 Slice 2 (UI remediation) — `/post` opens the visual
-			# status panel. Server post_status text fallback still ships for
-			# screen readers / log history.
-			if has_character:
-				open_post_status_panel()
-				send_to_server({"type": "post_status"})
-			else:
-				display_game("You don't have a character yet")
-		"feedall", "feed_all":
-			# Audit #12 Slice 3 (UI remediation) — opens the visual post status
-			# panel (which contains the Feed All button). The button itself
-			# sends guard_feed_all and renders the per-guard report.
-			if has_character:
-				open_post_status_panel()
-			else:
-				display_game("You don't have a character yet")
-		"stones":
-			# Audit #4 Slice 1 (UI remediation) — `/stones` opens the visual
-			# vendor panel. Server `list_home_stones` text fallback still ships
-			# the text summary, useful for screen readers and the print-it-to-
-			# game-log power-user habit.
-			if has_character:
-				open_stones_panel()
-				send_to_server({"type": "list_home_stones"})
 			else:
 				display_game("You don't have a character yet")
 		"buystone":
@@ -30386,14 +30294,6 @@ func process_command(text: String):
 					display_game("[color=#FF8800]Usage: /buystone <egg|supplies|equipment|companion>  —  see /stones for prices.[/color]")
 				else:
 					send_to_server({"type": "buy_home_stone", "stone_type": stone_type})
-		"stats":
-			# Audit #3 Slice 1 (UI remediation) — `/stats` opens the visual
-			# panel. Server show_stats text fallback still ships the summary.
-			if has_character:
-				open_stats_panel()
-				send_to_server({"type": "show_stats"})
-			else:
-				display_game("You don't have a character yet")
 		"spendstat":
 			# Audit #3 Slice 1 — spend one banked stat point.
 			# Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>
@@ -30406,14 +30306,6 @@ func process_command(text: String):
 					display_game("[color=#FF8800]Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>  —  see /stats for your bank.[/color]")
 				else:
 					send_to_server({"type": "spend_stat_point", "stat": stat_name})
-		"clan":
-			# Audit #14 Slice 1 — `/clan` opens the visual clan panel (create form
-			# if not in a clan, roster view if in one). Power-user shortcut for the
-			# Clan shortcut button.
-			if has_character:
-				open_clan_panel()
-			else:
-				display_game("You don't have a character yet")
 		"clandesc":
 			# Audit #14 Slice 7 — leader-only clan description setter.
 			# Usage: /clandesc <text> — sets the description; empty clears it.
@@ -30570,13 +30462,6 @@ func process_command(text: String):
 		"bountyboard", "bb":
 			# v0.9.568 — explicit Bounty Board panel shortcut.
 			_open_bounty_board()
-		"titles", "title":
-			# Audit #6 Slice 10 — list earned chain titles. Server formats and
-			# replies with a `text` payload (renders via existing chat path).
-			if has_character:
-				send_to_server({"type": "request_titles"})
-			else:
-				display_game("You don't have a character yet")
 		"set_title", "settitle":
 			# Audit #6 Slice 11 — wear a chain title in chat. Usage:
 			#   /set_title <id>   → wear that title

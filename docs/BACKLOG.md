@@ -5253,6 +5253,34 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       longer exists), kept deliberately as the starting point for the touch controls the phone item
       will need. The tool cannot tell the two apart and says so.
 
+      ☑ **AND THE SWEEP RAN: 119 chat commands → 90.** 24 navigation names (16 arms) plus the 5
+      admin ones. Every retired arm was checked BY HAND against a named route — Help button, Pouch
+      / Post / Stones / Stats / Clan / Quests / Atlas shortcuts, the post panel's own Feed All
+      button, the contextual [R] slot for Craft and Fish, the throne tile for Titles, Escape for
+      unwatch, and the three surfaces built today (Topics, People, Report).
+
+      ⛑ **THE LIST NARROWED FIVE TIMES, from 78 “safe” to 16 — and every correction moved the
+      same way, toward deleting something that works.** Worth keeping as one list, because they
+      are all the same mistake at different depths:
+      1. *“Reachable from somewhere else” counted another COMMAND as somewhere else.*
+      2. *The admin tools were swept by implication* — CLAUDE.md says they stay without an
+         explicit ask.
+      3. *The argument detector knew one spelling* (`parts[`), then a second (`text.split`), then
+         a fourth (`parts.slice`) — `/search <term>` reached the approved list that way, and there
+         is no search box anywhere.
+      4. *“Opens no surface” was read as “safe”*, when the owner's rule is that the CAPABILITY
+         needs a route.
+      5. **`display_game` was being counted as a surface.** It prints a line of text. So every arm
+         that printed its answer read as *opening a screen*, and “a button opens that too” was
+         trivially true because everything in the client calls `display_game`. **That single
+         mistake is most of the difference between 78 and 16.**
+
+      **Seven arms the tool still calls safe are recorded as KEPT** in the map, with the reason
+      each survives — `/clear`, `/crucible`, `/clanposts`, `/mentors`, `/debughatch`,
+      `/catches`+`/deck` (one arm, and it is the ZONE deck, not the ability deck the shortcut
+      opens), `/bountyboard`+`/bb` (`_open_bounty_board` is called from nowhere else). Unrecorded,
+      the next reading of the map deletes seven working features.
+
       Probe: `tools/probe/social_and_bug_routes.gd`, on the real client scene, proven to fire by
       disconnecting the bug button again (3 checks go red).
       ⛑ Its Accept check failed first on MY OWN lambda: a GDScript closure captures by VALUE, so
