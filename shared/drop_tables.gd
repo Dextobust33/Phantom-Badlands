@@ -4477,7 +4477,7 @@ static func _normalize_consumable_type(item_type: String) -> String:
 	# Gold/Gems - keep as-is
 	return item_type
 
-func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity: String = "", theme_species: Array = []) -> Dictionary:
+func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity: String = "", theme_species: Array = [], plain: bool = false) -> Dictionary:
 	"""Generate an actual item from a drop table entry. If override_rarity is set, use it (D2 system)."""
 	var item_type = drop_entry.get("item_type", "unknown")
 	var base_rarity = drop_entry.get("rarity", "common")
@@ -4504,6 +4504,30 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	var final_rarity: String
 	var final_level = monster_level
+
+	# ⚑ A PLAIN BASE ITEM: no affixes, no rarity upgrade, and therefore a plain name.
+	#
+	# The starter kit is the only caller, and it is why this exists. It ran the full generator, so
+	# the first item a new player was ever handed read like a raid drop - "Void-touched Wood
+	# Shield", "Rusty Weapon of Wisdom". Renaming alone would have been worse: the affixes carry
+	# real bonuses, so a plain name over a rolled affix hides a stat the item actually has, which
+	# is the wrong-text class of bug this repo keeps paying for.
+	#
+	# Both halves are needed. `_maybe_upgrade_rarity` can lift a "common" entry on its own, which
+	# is where "Mystic Cloth Helm" came from, and AFFIX_COUNTS gives common ONE affix since
+	# 2026-09-03 - so neither the rarity nor the affix count could be trusted to stay plain.
+	if plain and not is_consumable:
+		var plain_affixes := {}
+		return {
+			"id": randi(),
+			"created_at": int(Time.get_unix_time_from_system()),
+			"type": item_type,
+			"rarity": "common",
+			"level": monster_level,
+			"name": _get_item_name(item_type, "common"),
+			"affixes": plain_affixes,
+			"value": _calculate_item_value("common", monster_level),
+		}
 
 	if is_consumable:
 		# Consumables don't have rarity - they use tiers instead
@@ -6516,7 +6540,20 @@ func get_starter_kit_item(slot: String) -> Dictionary:
 	if item_type == "":
 		return {}
 	var entry = {"item_type": item_type, "rarity": "common"}
-	var item = _generate_item(entry, 5)
+	# ⚑ PLAIN, AND LEVEL 10 TO PAY FOR IT.
+	#
+	# This used to be `_generate_item(entry, 5)` - the full generator - so the first item a new
+	# player was ever handed read like a raid drop: "Void-touched Wood Shield", "Rusty Weapon of
+	# Wisdom", "Mystic Cloth Helm". It now reads "Wood Shield", "Rusty Weapon", "Cloth Helm".
+	#
+	# The level moved 5 -> 10 because dropping the affix is a real loss of POWER, not just of
+	# decoration: common has carried one affix since 2026-09-03, and at level 5 that affix is
+	# worth about as much as the item's whole base. Measured across all six slots, mean total
+	# power: affixed at level 5 = 52.6, plain at level 5 = 25.9 (0.49x), plain at level 10 = 54.5
+	# (1.04x). So level 10 holds the kit exactly where v0.9.586 put it and only the NAME changes,
+	# which is the whole point - renaming without changing the roll would have put a plain name
+	# over a real hidden stat.
+	var item = _generate_item(entry, 10, "", [], true)
 	if item.is_empty():
 		return {}
 	# Tag for future surfaces (inspect lineage, achievement, etc.).

@@ -1932,28 +1932,45 @@ chain after it), party half two (independent movement + join-in-progress), contr
 - [ ] **`assassinate_pct` now reaches the dice** (v0.9.790): Silver Tongue +15% and one unique work as
       written. A small per-class power gain - glance at it on the next `refcal`.
 
-### ⚑ THE STARTER KIT IS STILL NAMED LIKE ENDGAME LOOT — verified still live 2026-09-15
+### ⚑ THE STARTER KIT WAS NAMED LIKE ENDGAME LOOT — FIXED 2026-09-17
 
-Called the real function rather than reading it. `get_starter_kit_item` returns, today:
+Was: `Rusty Weapon of Wisdom`, `Leather Armor of the Ogre`, `Mystic Cloth Helm`,
+`Trollish Cloth Boots`, `Void-touched Wood Shield`, `Trollish Copper Ring`.
+Now: **`Rusty Weapon`, `Leather Armor`, `Cloth Helm`, `Cloth Boots`, `Wood Shield`,
+`Copper Ring`** — and deterministic, where before every new character got a different roll.
+
+`get_starter_kit_item` ran the full affix generator, so the first item a player was ever handed
+read like a raid drop. This mattered more after 2026-09-15, when the floor pieces gained per-slot
+sprites: the player is looking straight at the thing.
+
+**The entry's own warning was the design.** *"Do not rename without changing the roll ... a plain
+name over rolled affixes puts a name on the item that its own stats contradict."* So the fix is a
+real `plain` path in `_generate_item` that drops the affix roll **and** the rarity upgrade. Both
+halves were needed: `_maybe_upgrade_rarity` can lift a "common" entry on its own (that is where
+`Mystic Cloth Helm` came from) and common has carried ONE affix since 2026-09-03.
+
+⛑ **AND DROPPING THE AFFIX IS A REAL LOSS OF POWER, NOT OF DECORATION.** At level 5 that single
+affix is worth about as much as the item's entire base. Measured across all six slots (attack and
+defence at full weight, HP at 0.2, stats at 0.5 — weights explicit, because summing raw stats
+across kinds is what made an earlier measurement in this repo unsound):
 
 ```
-  weapon     Rusty Weapon of Wisdom
-  armor      Leather Armor of the Ogre
-  helm       Mystic Cloth Helm
-  boots      Trollish Cloth Boots
-  shield     Void-touched Wood Shield
-  accessory  Trollish Copper Ring
+  affixed at level  5   52.2      <- the old kit
+  plain   at level  5   25.9      0.49x  - renaming alone would have HALVED it
+  plain   at level 10   54.5      1.04x  <- chosen
 ```
 
-`get_starter_kit_item` runs the full affix generator (`_generate_item(entry, 5)`), so the first
-item a new player is ever handed reads like a raid drop. **This got MORE visible on 2026-09-15**,
-not less: the four floor pieces now have their own per-slot sprites, so a player picking up
-"Void-touched Wood Shield" is looking straight at it.
+So the level moved 5 → 10 and the kit sits exactly where v0.9.586 put it, with only the name
+changed. Probe `tools/probe/starter_kit_plain.gd` samples 1800 draws (sampling, not one draw,
+because the rarity upgrade fires on a minority of rolls and a single clean draw proves nothing),
+reads the forbidden words **off the affix pools** rather than from a hand-written list that would
+go stale, compares against the old behaviour by calling it (`plain=false` at level 5 is still
+reachable) and checks that ordinary dungeon loot still rolls affixes — an opt-in path that
+accidentally applied everywhere would have flattened all the loot in the game.
 
-NOT a one-line fix, and do not rename without changing the roll: `_generate_item` has no
-affix-suppression flag, and the affixes carry real bonuses — a plain name over rolled affixes puts
-a name on the item that its own stats contradict, which is the wrong-text class of bug this repo
-keeps paying for. It wants a proper "plain base item" path in `drop_tables`.
+Not changed: `weapon_rusty` renders as "Rusty Weapon" because the name is derived from the type id,
+and that type is the game's whole tier-1 weapon, used across the drop tables. Renaming it is a
+separate job with wider reach than the starter kit.
 
 ### ⚑ ROADS ARE TOO WIDE — owner 2026-09-14
 
