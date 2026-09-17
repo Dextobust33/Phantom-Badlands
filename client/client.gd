@@ -1845,6 +1845,23 @@ var _mark_until_ms: int = 0
 var _mark_clear_on_leave_post: bool = false
 # World coords of the cell at the centre of the last map payload.
 var _last_map_center: Vector2i = Vector2i(0x7FFFFFFF, 0x7FFFFFFF)
+## The last map payload's MEANING grid, kept so a move can ask what it is walking into.
+##
+## ⚑ It is parsed on every redraw anyway (`MapPayload.cells(payload.meaning)`); keeping the
+## result is what lets `send_move` know, with no round trip, that the next square is a market.
+var _last_meaning: Array = []
+## While this is in the future, the margin widgets stay hidden because a MENU IS COMING.
+##
+## Owner 2026-09-17, on the travel row still being up as a menu opens: *"Yes - hide on the
+## keypress."* Measured cause: bump-to-interact is entirely server-side - the client sends `move`,
+## the server sees a market or a station and replies without moving the player - so for one round
+## trip (71ms to the live server, ~6 frames with the polls either side) the client has no reason
+## to change anything, and the player has pressed a key and is watching an unchanged screen.
+##
+## This is a GUESS, deliberately, and it is allowed to be wrong: the worst case is the travel row
+## blinking off and back within ~100ms when a bump is refused. The owner accepted that trade
+## explicitly against the alternative of the row sitting there every time.
+var _menu_expected_until_ms: int = 0
 const UiSpotlightScript = preload("res://client/ui_spotlight.gd")
 
 # v0.9.490 — global re-openable HelpPanel for topic-based help (Home Stone
@@ -25603,6 +25620,25 @@ func process_raw_buffer():
 		if json.parse(json_str) == OK:
 			handle_server_message(json.data)
 
+## The messages that answer "did that bump open a menu?" - either one of the menu-openers, or a
+## plain `location` meaning the step simply happened. Anything else (chat, a tick, another
+## player's move) must NOT clear the guess, or an unrelated message arriving mid-round-trip puts
+## the travel row back for a frame, which is the flicker this is meant to avoid.
+const _MENU_RESOLVING_MESSAGES := [
+	"location", "market_start", "station_interact", "quest_board_interact", "error",
+	"trading_post", "blacksmith_start", "healer_start", "companion_stable_open",
+	"dungeon_atlas_data", "text",
+]
+
+
+func _resolve_expected_menu(msg_type: String) -> void:
+	"""Stop guessing: the server has answered the move."""
+	if _menu_expected_until_ms == 0:
+		return
+	if msg_type in _MENU_RESOLVING_MESSAGES:
+		_menu_expected_until_ms = 0
+
+
 func handle_server_message(message: Dictionary):
 	var msg_type = message.get("type", "")
 	# ⚑ DECIDE ABOUT THE MARGIN IN THE SAME FRAME THE SCREEN CHANGES.
@@ -25612,6 +25648,10 @@ func handle_server_message(message: Dictionary):
 	# screen for a frame - or however long the poll took to come round - with the travel row
 	# and shortcuts still sitting under it. Deciding after the message is handled means the
 	# screen only ever draws one of the two states, never the mix.
+	# ⚑ THE GUESS ENDS WHEN THE ANSWER ARRIVES. Whatever the server says next about this move
+	# is the truth - a menu opened (its mode now holds the widgets down for a real reason) or it
+	# did not (the row comes back). Cleared BEFORE the sync below, so the sync sees the truth.
+	_resolve_expected_menu(msg_type)
 	if _margin_sync_depth == 0:
 		_margin_sync_depth += 1
 		call_deferred("_margin_sync_after_message")
@@ -31560,7 +31600,60 @@ func send_move(direction: int):
 	if _combat_loot_reveal_active():
 		return
 
+	# ⚑ IF THE NEXT SQUARE RAISES A MENU, GET OUT OF THE WAY NOW.
+	#
+	# Bump-to-interact is decided on the server, which replies and returns WITHOUT moving the
+	# player - so the travel row and the shortcuts sat there for a round trip while the player
+	# waited (measured: 71ms to the live server, ~90-120ms with the polls, six or seven frames of
+	# a pressed key and an unchanged screen). Owner 2026-09-17: *"Yes - hide on the keypress."*
+	#
+	# The client can answer this itself: the map payload's `meaning` grid carries the tile TYPE of
+	# every visible square, and this is the single place a player's move leaves the client.
+	if _tile_opens_menu(direction):
+		_menu_expected_until_ms = Time.get_ticks_msec() + MENU_EXPECTED_WINDOW_MS
+		update_action_bar()
 	send_to_server({"type": "move", "direction": direction})
+
+
+## How long the guess above is allowed to stand. Generous against the 71ms round trip, and short
+## enough that a bump the server silently ignores restores the row before anyone reads it as gone.
+const MENU_EXPECTED_WINDOW_MS := 500
+
+
+func _tile_opens_menu(direction: int) -> bool:
+	"""Would stepping `direction` walk into a tile that raises a menu instead of moving you?
+
+	Read off the cached MEANING grid, which is centred on the player, so the target square is one
+	step from the middle. `WorldSystem.opens_menu_on_bump` owns which types those are - the same
+	list for both halves of the game, guarded by `tools/probe/menu_bump_tiles.gd`.
+
+	False whenever anything is uncertain (no grid yet, a direction this does not map, an edge
+	square). A wrong `false` costs the old behaviour for one move; a wrong `true` blinks the row."""
+	if _last_meaning.is_empty():
+		return false
+	# ⚑ THE SERVER'S OWN TABLE, not a copy. The first version of this function carried its own
+	# and had every entry wrong (0-7 against the game's numpad 1-9), so the mask would have read
+	# the wrong square on every move.
+	var d: Vector2i = WorldSystem.MOVE_DELTAS.get(direction, Vector2i.ZERO)
+	if d == Vector2i.ZERO:
+		return false
+	var rows: int = _last_meaning.size()
+	var cols: int = _last_meaning[0].size() if rows > 0 else 0
+	var mid_r: int = rows / 2
+	var mid_c: int = cols / 2
+	# ⚑ SCREEN ROWS RUN SOUTH, WORLD Y RUNS NORTH. The same inversion that drew the gold ring on
+	# the wrong tile for months, and the Warden on the wrong side of the player twice.
+	var r: int = mid_r - d.y
+	var c: int = mid_c + d.x
+	if r < 0 or c < 0 or r >= rows or c >= cols:
+		return false
+	var m: String = String(_last_meaning[r][c])
+	# Overlays are prefixed `!` and may carry the tile under them after a colon (`!hot:tree`).
+	if m.begins_with("!"):
+		var colon := m.find(":")
+		m = m.substr(colon + 1) if colon >= 0 else ""
+	return WorldSystem.opens_menu_on_bump(m)
+
 
 func _on_move_button(direction: int):
 	"""Handle movement pad button press"""
@@ -35820,6 +35913,11 @@ func _margin_widgets_shown() -> bool:
 	# Checked BEFORE the eligibility early-out below, which answers "they are not floating, they
 	# are laid out in the column" - true when sprites are off, false in all three of these.
 	if dungeon_mode or in_combat or _combat_ui_busy() or _house_room_active():
+		return false
+	# A MENU IS ON ITS WAY. Set by `send_move` when the next square is a market or a station, so
+	# the screen reacts to the keypress rather than to the reply a round trip later. Cleared the
+	# moment the reply resolves the move - see `_resolve_expected_menu`.
+	if Time.get_ticks_msec() < _menu_expected_until_ms:
 		return false
 	if not _ow_canvas_eligible():
 		return true
@@ -50423,6 +50521,8 @@ func _overworld_display(payload: Dictionary) -> String:
 			+ "licence-restricted sprite pack. A release build cannot ship this way; the release "
 			+ "gate fails on it.[/color]\n\n") + MapPayload.inflate(payload)
 	var meaning: Array = MapPayload.cells(payload.get("meaning", {}))
+	# Kept for `send_move`, which needs to know what the next square is before the server says.
+	_last_meaning = meaning
 	var biomes: Array = MapPayload.cells(payload.get("biomes", {}))
 	if meaning.is_empty():
 		return MapPayload.inflate(payload)

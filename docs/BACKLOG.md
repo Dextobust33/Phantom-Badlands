@@ -1429,13 +1429,41 @@ is `job_close`. Every sub-view of the More menu goes through one exit now.
       on the reply. Crafting opened from the menu (`open_crafting`, a local action) flips
       immediately and has never had the problem.
 
-      **So the remaining fix is latency masking, and it is a DESIGN choice rather than a bug fix**
-      — the client would have to hide the margin widgets speculatively, on sending a move into a
-      tile whose meaning it can already see is a menu-opening station. It has the information: the
-      map payload's `meaning` grid carries the tile-type names (`market`, `forge`, `apothecary`,
-      ...) and `send_move` is the single place a player's move goes out. The cost is a new piece of
-      speculative state and one visible failure mode — if the bump is refused, the travel row
-      blinks off and back. **Owner's call; asked 2026-09-17.**
+      ☑ **BUILT 2026-09-17. Owner, given the measurement and the choice: *“Yes - hide on the
+      keypress.”*** The client now guesses, because it can: `send_move` is the single place a
+      player's move leaves the client, and the map payload's `meaning` grid already carries the
+      tile TYPE of every visible square. If the next square opens a menu, the margin widgets go
+      immediately and the server's reply ends the guess (with a 500ms hard expiry, so a reply the
+      list does not recognise cannot hide the row forever). The owner accepted the failure mode
+      explicitly: a refused bump blinks the travel row off and back within ~100ms.
+
+      ⚑ **TWO TABLES, ONE OWNER EACH, because both are the copy-shape this project keeps paying
+      for.** WHICH TILES open a menu is the server's `elif` chain in `handle_move`; WHICH WAY each
+      direction id goes is `move_player`. Both now live in `shared/world_system.gd`
+      (`MENU_ON_BUMP_TILES` + `opens_menu_on_bump`, and `MOVE_DELTAS`, which `move_player` reads
+      instead of its own nine-arm match), and the station half is read from
+      `CraftingDatabase.STATION_SKILL_MAP` rather than retyped.
+
+      ⛑ **I wrote the client's direction table from memory and every entry was wrong** — 0-7,
+      against the game's numpad 1-9 with 5 as stay. The mask would have read the wrong square on
+      every move and presented as the feature simply not working. That is why `move_player` now
+      reads the table rather than the table being a second copy of `move_player`.
+
+      ⛑ **And the tile list was missing three** — `guard`, `throne`, `signpost`. I read the
+      server's chain and stopped three lines early; `tools/probe/menu_bump_tiles.gd` caught all
+      three on its first run, which is the argument for the guard rather than the list.
+
+      ⛑ **The probe's first direction check was CIRCULAR and the injection proved it.** It
+      compared the table against `move_player` — which now reads the table — so flipping north to
+      point south produced zero failures. A single-owner value cannot be checked against itself.
+      It is checked against two INDEPENDENT statements of the same fact now: `move_player`'s own
+      docstring (which spells the numpad out in words) and `_get_direction_text` (which turns a
+      delta into a compass word and carries its own copy of *world y grows north*). Both fire on
+      the flip.
+
+      ⛑ **And one of my injection tests silently did nothing** — the replacement string had the
+      wrong number of spaces and the script had no assert, so “the check does not fire” was itself
+      a false reading. Second time this session. **Every fault injection asserts that it landed.**
 
       Instrument kept: `--shots=stancetiming`. Re-run it after any change to the margin rule.
 - [x] **Icons for the effect chips — SHIPPED v0.9.795/796.** Poison and blind come from

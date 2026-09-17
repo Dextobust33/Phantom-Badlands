@@ -5,6 +5,9 @@ extends Node
 
 ## The wire form of the map, and the only definition of what a payload means. See map_payload.gd.
 const MapPayload = preload("res://shared/map_payload.gd")
+## For `opens_menu_on_bump` - the station list is READ from the crafting database rather than
+## retyped here, so a new station is masked by the client the day it exists.
+const CraftingDatabaseScript = preload("res://shared/crafting_database.gd")
 
 # World boundaries
 const WORLD_MIN_X = -2000
@@ -58,6 +61,56 @@ const NODE_WEIGHTS = {
 const TOTAL_NODE_WEIGHT = 95  # sum of above (water excluded, added via noise)
 
 # Tile rendering data: char, base color, blocks_move, blocks_los
+
+## ⚑ THE TILES THAT OPEN A MENU WHEN YOU WALK INTO THEM.
+##
+## The authority is the server's bump dispatch in `handle_move` - it checks the target tile's type
+## and, for these, sends a message and RETURNS WITHOUT MOVING THE PLAYER. This list exists so the
+## CLIENT can know the same thing without a round trip: owner 2026-09-17, on the travel row still
+## being up as a menu opens, *"Yes - hide on the keypress."*
+##
+## Hand-copying the server's chain into the client would be the one-value-two-places shape that
+## costs this project a bug a week - a station added there would silently stop being masked here.
+## So it is one list, the STATION half is read from `CraftingDatabase.STATION_SKILL_MAP` rather
+## than retyped, and `tools/probe/menu_bump_tiles.gd` fails if the two ever disagree.
+## ⚑ WHICH WAY EACH DIRECTION ID GOES. The NUMPAD layout: 1-9, 5 is stay, and **world y grows
+## NORTH** (which is the opposite of screen rows and has caused its own family of bugs).
+##
+## It lives here, and `move_player` reads it, because the CLIENT needs the same answer: to hide
+## the travel row on the keypress it has to know which square it is about to walk into, before
+## the server says anything. Written from memory instead, the client's copy came out as 0-7 and
+## was wrong in every entry - the mask would have fired on the wrong square every time and
+## presented as the feature not working. Read the constant, never copy it.
+const MOVE_DELTAS := {
+	1: Vector2i(-1, -1),   # southwest
+	2: Vector2i(0, -1),    # south
+	3: Vector2i(1, -1),    # southeast
+	4: Vector2i(-1, 0),    # west
+	5: Vector2i(0, 0),     # stay (rest / search)
+	6: Vector2i(1, 0),     # east
+	7: Vector2i(-1, 1),    # northwest
+	8: Vector2i(0, 1),     # north
+	9: Vector2i(1, 1),     # northeast
+}
+
+
+## ⛑ `guard`, `throne` and `signpost` were MISSING from the first version of this list, and the
+## probe caught all three on its first run - which is the whole argument for the guard rather than
+## the list. Hand-writing it, I read the server's chain and stopped three lines early.
+const MENU_ON_BUMP_TILES: Array[String] = [
+	"market", "inn", "quest_board", "blacksmith", "healer", "companion_stable",
+	"cartographer", "warden", "guard", "throne", "signpost",
+]
+
+
+static func opens_menu_on_bump(tile_type: String) -> bool:
+	"""Does walking into this tile raise a menu instead of moving you?"""
+	if tile_type == "":
+		return false
+	if tile_type in MENU_ON_BUMP_TILES:
+		return true
+	return CraftingDatabaseScript.STATION_SKILL_MAP.has(tile_type)
+
 const TILE_RENDER = {
 	"empty":         {"char": ".", "color": "#6B5B45", "blocks_move": false, "blocks_los": false},
 	"stone":         {"char": "o", "color": "#998877", "blocks_move": true, "blocks_los": true},
@@ -2353,29 +2406,12 @@ func move_player(current_x: int, current_y: int, direction: int,
 	var new_x = current_x
 	var new_y = current_y
 
-	match direction:
-		1:  # Southwest
-			new_x -= 1
-			new_y -= 1
-		2:  # South
-			new_y -= 1
-		3:  # Southeast
-			new_x += 1
-			new_y -= 1
-		4:  # West
-			new_x -= 1
-		6:  # East
-			new_x += 1
-		7:  # Northwest
-			new_x -= 1
-			new_y += 1
-		8:  # North
-			new_y += 1
-		9:  # Northeast
-			new_x += 1
-			new_y += 1
-		5:  # Stay (rest/search)
-			pass
+	# ONE table, `MOVE_DELTAS` - see the note there. This was a nine-arm match, and the client
+	# needed the same answer to know what it is about to walk into, which is how a second copy
+	# gets written from memory and is wrong in every entry.
+	var _d: Vector2i = MOVE_DELTAS.get(direction, Vector2i.ZERO)
+	new_x += _d.x
+	new_y += _d.y
 
 	# Clamp to world bounds
 	new_x = clampi(new_x, WORLD_MIN_X, WORLD_MAX_X)
