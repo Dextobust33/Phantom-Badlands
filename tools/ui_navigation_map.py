@@ -103,6 +103,13 @@ def chat_commands(src):
     if not m:
         return [], []
     listed = re.findall(r'"([^"]+)"', m.group(1))
+    # ⚑ THE ADMIN SET IS ALREADY GROUPED IN THE SOURCE - the player commands are on the array's
+    # FIRST line and the GM ones on the continuation lines after it. Reading that beats judging
+    # each name, and it means the file's own layout is the authority.
+    body_lines = m.group(1).split("\n")
+    ADMIN.clear()
+    for line in body_lines[1:]:
+        ADMIN.update(re.findall(r'"([^"]+)"', line))
 
     # the match arms of process_command: `"a", "b":` at one tab inside the function
     i = src.find("func process_command")
@@ -246,7 +253,59 @@ def command_destinations(src):
             here = len(re.findall(re.escape(d) + r"\s*\(", arm_text))
             if total - here <= 0:
                 only.append(d)
-        rows.append({"names": names, "dests": dests, "only": only})
+        rows.append({"names": names, "dests": dests, "only": only, "body": arm_text})
+    return rows
+
+
+## Commands that are SPEECH rather than navigation. A chat line is the right interface for
+## talking to somebody, so these have no button equivalent, want none, and are not part of the
+## retirement question at all. Kept as a literal list because it is a judgement about what a
+## command is FOR, which no amount of source reading can derive.
+## Filled by `chat_commands` from the whitelist's own line grouping - see the note there.
+ADMIN = set()
+
+SPEECH_COMMANDS = {
+    "whisper", "w", "msg", "tell", "reply", "r",
+    "c", "cc", "clanchat", "p", "pc", "partychat",
+    "afk", "away", "back", "afkoff", "here",
+    "clist", "clanlist", "clanonline", "who", "players",
+}
+
+
+def command_reach(src, cmd_dest):
+    """For each command's destinations: is any of them reached from something that is NOT a
+    command arm?
+
+    ⚑ THE "ONLY DOOR" TEST IS NOT ENOUGH ON ITS OWN. It asks whether a surface is called from
+    anywhere else, and another COMMAND counts as anywhere else - so two commands that open the
+    same screen and nothing else both read as safe, and retiring both removes the feature. The
+    audit's order is map -> give every surviving feature a button -> then retire, so what matters
+    is whether a NON-command path reaches it.
+    """
+    i = src.find("func process_command")
+    j = src.find("\nfunc ", i + 10)
+    cmd_body = src[i:j if j > i else len(src)]
+    rows = []
+    for r in cmd_dest:
+        button_reached = []
+        command_only = []
+        for d in r["dests"]:
+            total = len(re.findall(re.escape(d) + r"\s*\(", src))
+            in_cmds = len(re.findall(re.escape(d) + r"\s*\(", cmd_body))
+            if total - in_cmds > 0:
+                button_reached.append(d)
+            else:
+                command_only.append(d)
+        speech = all((n in SPEECH_COMMANDS) for n in r["names"])
+        admin = any((n in ADMIN) for n in r["names"])
+        # \u2691 DOES IT TAKE AN ARGUMENT? `/block bob` is not replaced by a button that opens the
+        # block LIST - "open the screen" and "do this to THAT name" are different capabilities,
+        # and only the first is what `dests` checks. Detected by the arm reading `parts[...]`,
+        # which is how every command in this file reads its words.
+        takes_arg = bool(re.search(r"\bparts\s*\[", r.get("body", "")))
+        rows.append({"names": r["names"], "dests": r["dests"], "speech": speech, "admin": admin,
+                     "takes_arg": takes_arg,
+                     "button": button_reached, "command_only": command_only})
     return rows
 
 
@@ -257,6 +316,15 @@ def main():
     offered, ab_handled = action_bar(src)
     cmd_dest = command_destinations(src)
     sole_doors = [r for r in cmd_dest if r["only"]]
+    reach = command_reach(src, cmd_dest)
+    speech = [r for r in reach if r["speech"] and not r["admin"]]
+    admin = [r for r in reach if r["admin"]]
+    rest = [r for r in reach if not r["speech"] and not r["admin"]]
+    needs_button = [r for r in rest if r["command_only"]]
+    argy = [r for r in rest if r["takes_arg"]]
+    plain = [r for r in rest if not r["takes_arg"]]
+    retirable = [r for r in plain if not r["command_only"] and r["dests"]]
+    no_surface = [r for r in plain if not r["dests"]]
 
     dead_cmd = [c for c in listed if c not in handled]
     unlisted = [c for c in handled if c not in listed]
@@ -282,6 +350,12 @@ def main():
     A("| chat commands whitelisted | %d |" % len(listed))
     A("| ...that are the ONLY door to a surface (need a button before retiring) | **%d** |"
       % len(sole_doors))
+    A("| ...that are SPEECH, not navigation (not part of the sweep) | %d |" % len(speech))
+    A("| ...that are ADMIN tools (a separate decision, see CLAUDE.md) | %d |" % len(admin))
+    A("| ...that take a TARGET argument (a button may not be able to) | **%d** |" % len(argy))
+    A("| ...whose surface only COMMANDS reach (need a button first) | **%d** |" % len(needs_button))
+    A("| ...reaching a surface a button also reaches (safe to retire) | %d |" % len(retirable))
+    A("| ...opening no surface at all (pure navigation, safe to retire) | %d |" % len(no_surface))
     A("| ...with no arm in `process_command` | **%d** |" % len(dead_cmd))
     A("| ...handled but not whitelisted (unreachable by typing) | **%d** |" % len(unlisted))
     A("| panel scripts | %d |" % len(pl))
@@ -341,6 +415,49 @@ def main():
     A("destination has a button is safe to retire; one whose destination has none needs a button")
     A("first.")
     A("")
+    A("### ⛑ THE RETIREMENT LIST, in the three groups it has to be worked in")
+    A("")
+    A("The audit's order is *map → give every surviving feature a button → then retire the")
+    A("commands*. These are those groups.")
+    A("")
+    A("**SPEECH — not part of the sweep at all (%d).** A chat line is the right interface for" % len(speech))
+    A("talking to somebody; these have no button equivalent and want none. Retiring them because")
+    A("they begin with a slash would delete the ability to whisper.")
+    A("")
+    A("> " + ", ".join(sorted("`/%s`" % n for r in speech for n in r["names"])))
+    A("")
+    A("**ADMIN — a separate decision, and not implied by the ask (%d).** CLAUDE.md: *\"Existing" % len(admin))
+    A("chat admin commands stay as fallbacks — don't migrate in a cleanup pass without explicit")
+    A("ask (muscle memory).\"* And *\"we no longer use those\"* is the opposite of true for the")
+    A("owner's own tools. Grouped from the whitelist's own line layout, not judged by name.")
+    A("")
+    A("> " + ", ".join(sorted("`/%s`" % n for r in admin for n in r["names"])))
+    A("")
+    A("**TAKES AN ARGUMENT — check the button can supply it (%d).** `/block bob` is not" % len(argy))
+    A("replaced by a button that opens the block LIST: *open the screen* and *do this to THAT")
+    A("name* are different capabilities, and only the first is what the destination check")
+    A("answers. Detected by the arm reading `parts[...]`.")
+    A("")
+    A("> " + ", ".join(sorted("`/%s`" % n for r in argy for n in r["names"])))
+    A("")
+    A("**NEEDS A BUTTON FIRST (%d)** — the surface these open is reached from no non-command" % len(needs_button))
+    A("path, so retiring them removes a feature rather than a shortcut.")
+    A("")
+    if needs_button:
+        A("| command(s) | the surface only commands reach |")
+        A("|---|---|")
+        for r in needs_button:
+            A("| %s | `%s` |" % (", ".join("`/%s`" % n for n in r["names"]),
+                                 "`, `".join(r["command_only"])))
+    else:
+        A("> None.")
+    A("")
+    A("**SAFE TO RETIRE (%d + %d)** — %d open a surface a button also opens, and %d open no"
+      % (len(retirable), len(no_surface), len(retirable), len(no_surface)))
+    A("surface at all (they send a server message, set a flag or print a line).")
+    A("")
+    A("> " + ", ".join(sorted("`/%s`" % n for r in (retirable + no_surface) for n in r["names"])))
+    A("")
     A("### ⛑ These are a feature's ONLY door — give each a button before retiring it")
     A("")
     if sole_doors:
@@ -383,6 +500,9 @@ def main():
     print("  panels             %d scripts, %d never opened from client.gd" % (len(pl), len(orphan_panels)))
     print("  action bar         %d local ids, %d with no case" % (len(offered), len(dead_buttons)))
     print("  command doors      %d arms, %d are a surface's ONLY door" % (len(cmd_dest), len(sole_doors)))
+    print("  retirement         %d speech, %d admin, %d take an argument, %d need a button, %d safe"
+          % (len(speech), len(admin), len(argy), len(needs_button),
+             len(retirable) + len(no_surface)))
     if "--print" in sys.argv:
         print()
         print("\n".join(lines))

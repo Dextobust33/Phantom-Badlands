@@ -5133,10 +5133,27 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       wrong. Re-injected at the right line, it flags correctly. **A "0 found" result is worth
       nothing until the injection lands in the function being tested.**
 
-      **What remains of this item:** step two (give every surviving feature a button) and step
-      three (retire the commands). Plus the judgements the tool says it cannot make — whether two
-      surfaces with different verbs are the same thing to a PLAYER, and whether a button's MODE is
-      ever entered. Those need the game run.
+      ☑ **STEP TWO IS ALSO ANSWERED (2026-09-17): nothing needs a button first.** The map now
+      classifies all 86 arms, and the retirement list is four groups rather than one number:
+
+      | group | count | why it is its own group |
+      |---|---|---|
+      | **speech** | 8 arms | `/whisper`, `/reply`, `/partychat`, `/afk`… A chat line IS the right interface for talking. Retiring them because they start with a slash would delete the ability to whisper. |
+      | **admin** | 32 arms | CLAUDE.md: *"don't migrate in a cleanup pass without explicit ask (muscle memory)"* — and *"we no longer use those"* is the opposite of true for the owner's own tools. Grouped from the whitelist's own line layout, not judged by name. |
+      | **takes an argument** | 10 arms | `/block bob`, `/watch bob`, `/trade bob`. *Open the screen* and *do this to THAT name* are different capabilities and only the first was checked. |
+      | **safe to retire** | 36 arms | Their surface is reached from a non-command path, or they open no surface at all. |
+
+      ⛑ **Three times the list had to be narrowed, and each time it was about to delete something
+      that works.** *"Reachable from somewhere else"* counted ANOTHER COMMAND as somewhere else, so
+      two commands opening the same screen both read as safe; the first list swept the admin tools
+      by implication; and the second swept the parameterised actions. Each narrowing came from
+      reading the list rather than from a failing check — which is the argument for bringing a
+      generated list to the owner as GROUPS to approve, not as a number to act on.
+
+      **What remains:** the owner's yes on the 36, whether the 10 argument-takers have a UI that
+      can supply a target, and their call on the 32 admin commands. Plus the judgements the tool
+      says it cannot make — whether two surfaces with different verbs are the same thing to a
+      PLAYER, and whether a button's MODE is ever entered. Those need the game run.
 
 - [ ] **Controller support (NEXT).** Godot has joypad input built in; a D-pad or stick gives all
       eight directions natively and the face buttons map to the action bar. Scope it as its own

@@ -14,6 +14,12 @@ with the same verb are a merge, an entry point that reaches nothing is a dead bu
 |---|---|
 | chat commands whitelisted | 119 |
 | ...that are the ONLY door to a surface (need a button before retiring) | **0** |
+| ...that are SPEECH, not navigation (not part of the sweep) | 8 |
+| ...that are ADMIN tools (a separate decision, see CLAUDE.md) | 32 |
+| ...that take a TARGET argument (a button may not be able to) | **10** |
+| ...whose surface only COMMANDS reach (need a button first) | **0** |
+| ...reaching a surface a button also reaches (safe to retire) | 31 |
+| ...opening no surface at all (pure navigation, safe to retire) | 5 |
 | ...with no arm in `process_command` | **0** |
 | ...handled but not whitelisted (unreachable by typing) | **0** |
 | panel scripts | 28 |
@@ -65,6 +71,41 @@ the only route to the dungeon list**, so deleting commands before the audit woul
 removed features rather than navigation. This is the list to work through — a command whose
 destination has a button is safe to retire; one whose destination has none needs a button
 first.
+
+### ⛑ THE RETIREMENT LIST, in the three groups it has to be worked in
+
+The audit's order is *map → give every surviving feature a button → then retire the
+commands*. These are those groups.
+
+**SPEECH — not part of the sweep at all (8).** A chat line is the right interface for
+talking to somebody; these have no button equivalent and want none. Retiring them because
+they begin with a slash would delete the ability to whisper.
+
+> `/afk`, `/afkoff`, `/away`, `/back`, `/c`, `/cc`, `/clanchat`, `/clanlist`, `/clanonline`, `/clist`, `/here`, `/msg`, `/p`, `/partychat`, `/pc`, `/players`, `/r`, `/reply`, `/tell`, `/w`, `/whisper`, `/who`
+
+**ADMIN — a separate decision, and not implied by the ask (32).** CLAUDE.md: *"Existing
+chat admin commands stay as fallbacks — don't migrate in a cleanup pass without explicit
+ask (muscle memory)."* And *"we no longer use those"* is the opposite of true for the
+owner's own tools. Grouped from the whitelist's own line layout, not judged by name.
+
+> `/admin`, `/altsprite`, `/banip`, `/broadcast`, `/completequest`, `/condensed`, `/giveall`, `/givecompanion`, `/giveconsumable`, `/giveegg`, `/giveitem`, `/givemats`, `/givetool`, `/gmhelp`, `/godmode`, `/heal`, `/resetpw`, `/resetquests`, `/setbp`, `/setgold`, `/setjob`, `/setlevel`, `/setmonstergems`, `/setxp`, `/spawnmonster`, `/spawnwish`, `/spritesize`, `/testfx`, `/teststable`, `/tp`, `/tpstable`, `/unbanip`
+
+**TAKES AN ARGUMENT — check the button can supply it (10).** `/block bob` is not
+replaced by a button that opens the block LIST: *open the screen* and *do this to THAT
+name* are different capabilities, and only the first is what the destination check
+answers. Detected by the arm reading `parts[...]`.
+
+> `/block`, `/companion`, `/donate`, `/ex`, `/examine`, `/friend`, `/friends`, `/pet`, `/topic`, `/trade`, `/tradehistory`, `/trades`, `/unblock`, `/viewtopic`, `/watch`
+
+**NEEDS A BUTTON FIRST (0)** — the surface these open is reached from no non-command
+path, so retiring them removes a feature rather than a shortcut.
+
+> None.
+
+**SAFE TO RETIRE (31 + 5)** — 31 open a surface a button also opens, and 5 open no
+surface at all (they send a server message, set a flag or print a line).
+
+> `/bb`, `/blocked`, `/blocklist`, `/bounty`, `/bountyboard`, `/bug`, `/buystone`, `/catches`, `/clan`, `/clancolor`, `/clandesc`, `/clanmotto`, `/clanpost`, `/clanposts`, `/clanvault`, `/clear`, `/craft`, `/crucible`, `/debughatch`, `/deck`, `/duel`, `/dungeon`, `/dungeons`, `/feed_all`, `/feedall`, `/find`, `/fish`, `/freq`, `/help`, `/helplist`, `/helptopics`, `/materials`, `/mats`, `/mentor`, `/mentors`, `/post`, `/quest`, `/quests`, `/report`, `/search`, `/set_title`, `/settitle`, `/spendstat`, `/stats`, `/stones`, `/title`, `/titles`, `/topics`, `/unwatch`, `/vault`
 
 ### ⛑ These are a feature's ONLY door — give each a button before retiring it
 
