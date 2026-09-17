@@ -1972,24 +1972,28 @@ Not changed: `weapon_rusty` renders as "Rusty Weapon" because the name is derive
 and that type is the game's whole tier-1 weapon, used across the drop tables. Renaming it is a
 separate job with wider reach than the starter kit.
 
-### ⚑ ROADS ARE TOO WIDE — owner 2026-09-14
+### ⚑ ROADS ARE TOO WIDE — ALREADY DONE (2026-09-15). This entry was stale.
 
-Owner, as a sidenote during tutorial testing: *"the paths being 3 wide is a bit excessive, we
-should probably drop them down to 2 wide."*
+Owner 2026-09-14: *"the paths being 3 wide is a bit excessive, we should probably drop them down to
+2 wide."* The entry said *"Not done"* and spelled out the open design question. **It was done the
+next day** — `shared/world_system.gd` carries `ROAD_STAMP_OFFSETS` (a 2x2 block per waypoint) with
+a comment quoting that same line, and `ROAD_HALF_WIDTH` is labelled *"the RETIRED three-wide plus;
+kept only so old roads can be narrowed"*.
 
-Not done. Deliberately NOT folded into the tutorial work, because it is world generation and a
-change there moves ground under every existing map while the opening is still being tested.
+It even answered the question the entry raised. An even width cannot be centred on a waypoint with
+a symmetric plus, so each waypoint stamps a 2x2: east-west reads as two rows, north-south as two
+columns, and a diagonal stays two wide without the blobs a 3x3 square made at every turn. There is
+a migration too — `narrow_old_roads()`, idempotent, because roads are SAVED as waypoints and
+re-stamped every boot, so re-stamping narrower would never have removed the old edge and the live
+world would have kept every existing road three wide.
 
-The lever is `ROAD_HALF_WIDTH` in `shared/world_system.gd`, used by `stamp_paths_into_chunks`.
-Note what the shape actually is before changing the number: it stamps a PLUS, not a square -
-`if absi(_ox) + absi(_oy) > ROAD_HALF_WIDTH: continue` - with a comment saying a square band
-makes a road read as a series of blobs at every turn. So "2 wide" is a question about the
-diamond's radius, not a width in tiles, and it is worth deciding which visual is wanted before
-picking a number.
+Still worth a glance, since narrowing the road narrowed a **safe corridor**: path tiles carry a
+halved encounter rate, and a tenth of it in Travelling stance. That is a balance change, not only a
+cosmetic one, and it has not been measured.
 
-Also worth checking when it changes: roads carry a **halved encounter rate** (and a tenth, for
-Travelling stance) in `check_encounter`, keyed off the path tile. Narrowing the road narrows
-that safe corridor, which is a balance change and not only a cosmetic one.
+⛑ **The third stale "not done" found today** — with the archived player-phantom design and
+dungeon-centred questing. Read the code before working an item, not just the line. The rule already
+in MEMORY.md (*"verify an item is not already built before building it"*) keeps earning its place.
 
 ### ⚑ SCROLLBACK — players cannot see what they just missed (owner 2026-09-14)
 
