@@ -274,6 +274,37 @@ def release_check(c):
     return seeded
 
 
+def feel_check(c):
+    """The v0.9.803 work that no probe can sign off - eight things needing a human eye.
+
+    Every one of these is verified by an automated check already. What is NOT verified is whether
+    any of it FEELS right, and three of them are animations, where "correct" and "good" are
+    different questions:
+
+      1. the played card lifts and flares      (probe: scale 1.000 -> 1.109)
+      2. its ghost flies to the log line       (probe: lands y=279, wanted y=279)
+      3. a potion is free ONCE PER ROUND       (probe: the flag now resets with the round)
+      4. the Menu tree reaches everything      (probe: 30 entries, all dispatch)
+      5. Escape releases the chat box          (never grabs it)
+      6. the four panels click-to-resize       (probe: 152 font sizes, no run-away)
+      7. the help panel fits the screen        (probe: 756px against 1080)
+      8. the quest board states difficulty     (probe: F5 / 5 floors / Lv 26-37)
+
+    Stocked with potions for (3), parked at a post for (8) and for the market/inventory panels in
+    (6), and left healthy because dying halfway through a checklist wastes the run.
+    """
+    give_tools(c)
+    give_materials(c)
+    c["inventory"].append({
+        "name": "Health Potion", "type": "health_potion", "item_type": "health_potion",
+        "is_consumable": True, "quantity": 9, "tier": 1, "level": 1, "value": 25})
+    # HP up: the checklist is long and a death in the middle of it costs the whole run, not
+    # because the fight is the point.
+    c["max_hp"] = max(int(c.get("max_hp", 100)), 900)
+    c["current_hp"] = c["max_hp"]
+    return []
+
+
 SCENARIOS = {
     "healthy": dict(
         doc="Everyone at full HP, standing together. The default sandbox.",
@@ -441,6 +472,15 @@ SCENARIOS = {
              "menu. Parked on a dungeon entrance with food, cycle cards and lots of HP."),
         players=1,
         apply=release_check),
+    "feel_check": dict(
+        doc=("THE v0.9.803 WORK A PROBE CANNOT SIGN OFF - eight things needing a human eye. "
+             "Card flourish + the ghost flying to its log line, one free potion per ROUND, the "
+             "Menu tree, Escape releasing the chat box, click-to-resize on inventory/market/"
+             "crafting/sanctuary, the help panel fitting the screen, and the quest board stating "
+             "a dungeon's grade + floors + level band. Parked AT A POST with potions and high HP."),
+        players=1,
+        at=(57, -11),
+        apply=feel_check),
     "stocked": dict(
         doc="Give everyone a stack of potions (for the combat item rules).",
         players=2,
