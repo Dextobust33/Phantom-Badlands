@@ -740,8 +740,31 @@ predicate now lives in `CraftingDatabase.recipe_matches_filter()` — shared, so
 and the probe runs it over a realistic payload and counts what comes back. Reverting the rule now
 fails.
 
-**Still open in the UI arc:** the recipe DETAIL view (materials, odds, what the thing is actually
-for) has not been touched; crafting station sprites; inventory bloat.
+**✅ AND THE DETAIL SCREEN NOW SAYS WHAT YOU GET.** It explained **how** to craft in real depth —
+materials, where each one drops, success odds, quality bands, the boost ladder — and **never once
+said what the thing was**. No description, no stats. A player could read every number on that page
+and still not know whether the item beat what they were wearing. That is crafting fault #2 exactly:
+*"the recipe surface does not tell a player what to make or why."*
+
+It now opens with the description, then:
+
+```
+Makes:  attack 118   strength 9     (Lv 40, at Standard)
+vs your weapon:  attack +23   defense -4
+```
+
+⛑ **Sized by the SAME `curve_sized_base_stats` call the craft itself makes**, so the preview cannot
+promise one thing and hand over another — these stats used to be hand-authored constants drifting
+against a generated drop curve, which is the fault this whole arc started from. The comparison runs
+through `Character.item_stat_bonuses`, the one aggregator, not a mirror.
+
+⛑ **Found while building it: the client carried its OWN copy of the item-level damping curve**
+(`_get_effective_item_level_for_display`), with a docstring admitting *"this mirrors the server's"*.
+The formula matched — but that is the same shape that produced a design figure **wrong by 50**
+earlier the same day, already copied into a second file and quoted as a target. It delegates now,
+and the probe fails if a re-derivation comes back.
+
+**Still open in the UI arc:** crafting station sprites; inventory bloat.
 
 ## ⚑ EVERY CAPABILITY NEEDS A DOOR — swept 2026-09-18, now a standing probe
 

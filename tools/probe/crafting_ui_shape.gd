@@ -165,6 +165,37 @@ func _init() -> void:
 			int(ceil(float(counts["all"]) / float(_page_size))),
 			maxi(1, int(ceil(float(counts["skill"]) / float(_page_size))))])
 
+	print("")
+	print("===== 7. THE DETAIL SCREEN SAYS WHAT YOU GET =====")
+	# ⛑ IT EXPLAINED HOW TO CRAFT IN DEPTH AND NEVER WHAT THE THING WAS. Materials, where each one
+	# drops, success odds, quality bands, the boost ladder - and no description and no stats. A
+	# player could read every number on that page and still not know whether the item beat what
+	# they were wearing. Owner's crafting fault #2.
+	var srv3 := FileAccess.get_file_as_string("res://server/server.gd")
+	var detail := {
+		"the server sizes the output": srv3.find("\"output_stats\": (CraftingDatabaseScript.curve_sized_base_stats") >= 0,
+		"sized by the SAME call the craft uses": srv3.count("curve_sized_base_stats(recipe, drop_tables)") >= 2,
+		"the screen shows what it makes": cli2.find("[color=#87CEEB]Makes:[/color]") >= 0,
+		"and what the item is for": cli2.find("var _desc := String(recipe.get(\"description\", \"\"))") >= 0,
+		"compared against what you wear": cli2.find("vs your %s:") >= 0,
+		"the comparison uses the shared aggregator": cli2.find("_compute_item_bonuses(_worn)") >= 0,
+	}
+	for k in detail.keys():
+		if bool(detail[k]):
+			print("  ok    %s" % k)
+		else:
+			fails.append(String(k))
+			print("  FAIL  %s -- MISSING" % k)
+	# ⛑ AND NO SECOND COPY OF THE DAMPING CURVE. The client carried its own
+	# `_get_effective_item_level_for_display`, whose docstring SAID it mirrored the server's - the
+	# same shape that produced a design figure wrong by 50 earlier the same day.
+	if cli2.find("return 50.0 + 15.0 * log(excess) / log(2.0)") >= 0:
+		fails.append("the client still has its own copy of the item-level damping curve")
+		print("  FAIL  the client re-derives the damping curve instead of calling the shared one")
+	else:
+		print("  ok    one damping curve, shared")
+
+
 
 	if not fails.is_empty():
 		print("[PROBE] FAIL %d part(s) of the recipe filter are missing:" % fails.size())

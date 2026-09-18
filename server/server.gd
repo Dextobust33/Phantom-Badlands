@@ -26383,6 +26383,20 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"locked": is_locked,
 			"specialist_only": is_specialist_only,
 			"can_commission": can_commission,
+			# ⚑ WHAT YOU ACTUALLY GET, in numbers — owner's crafting fault #2: *"It is not
+			# understandable. The recipe surface does not tell a player what to make or why."*
+			#
+			# ⛑ The detail screen already explained HOW to craft in depth - materials, where each
+			# one drops, success odds, quality bands, the boost ladder - and never once said what
+			# the thing WAS. A player could read every number on that page and still not know
+			# whether the item beat what they were wearing.
+			#
+			# Sized by the SAME call the craft itself makes, so the preview cannot promise one
+			# thing and hand over another. That mattered: these stats used to be hand-authored
+			# constants drifting against a generated drop curve, which is the fault this whole
+			# arc started from.
+			"output_stats": (CraftingDatabaseScript.curve_sized_base_stats(recipe, drop_tables)
+				if String(recipe.get("output_type", "")) in ["weapon", "armor"] else {}),
 			"wanted_count": wanted_count,
 			"wanted_best": wanted_best,
 			"commission_fee": commission_fee(recipe) if specialist_gated else 0,

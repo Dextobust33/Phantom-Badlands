@@ -20285,15 +20285,15 @@ func display_shop_item_details(item: Dictionary):
 	display_game("[color=#808080][%s] Buy  |  [%s] Back to list[/color]" % [get_action_key_name(0), get_action_key_name(1)])
 
 func _get_effective_item_level_for_display(item_level: int) -> float:
-	"""Apply diminishing returns for items above level 50.
-	   Items 1-50: Full linear scaling
-	   Items 51+: Logarithmic scaling (50 + 15 * log2(level - 49))
-	   This mirrors the server's _get_effective_item_level in character.gd"""
-	if item_level <= 50:
-		return float(item_level)
-	# Above 50: diminishing returns using log scaling
-	var excess = item_level - 49
-	return 50.0 + 15.0 * log(excess) / log(2.0)
+	"""The item-level damping curve — the shared one, not a mirror of it.
+
+	⛑ THIS WAS A SECOND COPY, and its own docstring said so: *"This mirrors the server's
+	_get_effective_item_level in character.gd."* The formula happened to match, but the pair is
+	the exact shape that produced a wrong number earlier the same day - `_get_effective_item_level`
+	documented L100 as 85 when it returns 135, and that figure had already been copied into
+	drop_tables.gd and quoted as a design target. A mirror that is right today is a mirror that
+	drifts tomorrow; `_compute_item_bonuses` directly above already solved this the same way."""
+	return preload("res://shared/character.gd")._get_effective_item_level(item_level)
 
 func _compute_item_bonuses(item: Dictionary) -> Dictionary:
 	"""The bonuses an item provides - the server's own function, not a mirror of it (2026-09-15: the
@@ -49023,6 +49023,42 @@ func display_craft_recipe_details():
 
 	_page_clear()
 	display_game("[color=#FFD700]===== %s =====[/color]" % name)
+	display_game("")
+	# ⛑ WHAT IT IS, BEFORE HOW TO MAKE IT. This screen used to open with Skill Required and
+	# Difficulty and never say what the item WAS - a player could read every number on the page
+	# and still not know whether it beat what they were wearing. Owner's crafting fault #2.
+	var _desc := String(recipe.get("description", ""))
+	if _desc != "":
+		display_game("[color=#BBBBBB]%s[/color]" % _desc)
+	var _ostats: Dictionary = recipe.get("output_stats", {}) if recipe.get("output_stats", null) is Dictionary else {}
+	if not _ostats.is_empty():
+		var _parts: Array = []
+		for k in _ostats.keys():
+			var key := String(k)
+			if key in ["level", "value", "durability", "weight"]:
+				continue
+			var v = _ostats[k]
+			if (v is int or v is float) and float(v) != 0.0:
+				_parts.append("[color=#99FF99]%s %d[/color]" % [key.replace("_", " "), int(v)])
+		if not _parts.is_empty():
+			display_game("[color=#87CEEB]Makes:[/color] %s  [color=#808080](Lv %d, at Standard)[/color]" % [
+				"  ".join(_parts), int(_ostats.get("level", 1))])
+			# ⛑ AND AGAINST WHAT YOU ARE WEARING, because "45 attack" is only meaningful next to
+			# the number it would replace. This is the actual decision the screen exists to serve.
+			var _slot := String(recipe.get("output_slot", ""))
+			var _worn = character_data.get("equipped", {}).get(_slot, null)
+			if _worn is Dictionary and not (_worn as Dictionary).is_empty():
+				var _wb: Dictionary = _compute_item_bonuses(_worn)
+				var _cmp: Array = []
+				for k2 in ["attack", "defense"]:
+					if _ostats.has(k2):
+						var mine := int(_wb.get(k2, 0))
+						var theirs := int(_ostats[k2])
+						var d := theirs - mine
+						var col := "#99FF99" if d > 0 else ("#FF9999" if d < 0 else "#BBBBBB")
+						_cmp.append("[color=%s]%s %+d[/color]" % [col, k2, d])
+				if not _cmp.is_empty():
+					display_game("[color=#87CEEB]vs your %s:[/color] %s" % [_slot, "  ".join(_cmp)])
 	display_game("")
 	display_game("Skill Required: %d" % skill_req)
 	display_game("Difficulty: %d" % difficulty)
