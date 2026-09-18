@@ -27706,7 +27706,10 @@ func _craft_structure(recipe: Dictionary, quality: int) -> Dictionary:
 func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
 	"""Create a crafted equipment item"""
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
-	var base_stats = recipe.get("base_stats", {})
+	# ⛑ SIZED BY THE SHARED FUNCTION, NOT HERE. `tools/probe/crafting_worth.gd` measures the
+	# same call, so the probe and the game cannot disagree about what a recipe produces -
+	# which they would the moment the sizing lived only on the server.
+	var base_stats = CraftingDatabaseScript.curve_sized_base_stats(recipe, drop_tables)
 	var scaled_stats = CraftingDatabaseScript.apply_quality_to_stats(base_stats, quality)
 
 	# Generate unique ID

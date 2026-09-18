@@ -7429,6 +7429,43 @@ something was dropped, and it sat unnoticed for eleven days.
       that beats the item it sits on, because HP caps are authored an order of magnitude larger
       than stat caps. It is evidence the cap table was never sized against anything.
 
+      **✅ STEP 8 — LADDER ONE IS FIXED, 2026-09-18.** Owner set the target for the PAIR: *"Beats a
+      typical drop, loses to a lucky one"* — so crafted + runes lands near **1.15x** the median
+      drop, split as `CRAFTED_BASE_SHARE = 0.80` for the canvas and the rest from runes.
+
+      `DropTables.expected_item_power(level)` is the new single source: it **SAMPLES the real
+      generator** and caches per level. Not a fitted formula, deliberately - affix VALUES are
+      linear in level but item TOTALS are not (measured 2.25, 3.6 and 5.6 points per level at
+      levels 8, 45 and 140, because higher levels roll better rarities and so more affixes), and a
+      curve fitted by hand would become another hand-authored ladder drifting against a generated
+      one. Asking the generator cannot drift, because it IS the generator.
+
+      `CraftingDatabase.curve_sized_base_stats(recipe, drop_tables)` rescales a recipe's TOTAL to
+      that curve while leaving its IDENTITY alone - a sword still gives attack, a helm defence.
+      Shared rather than server-side on purpose: the probe calls the same function, so the
+      instrument and the game cannot disagree about what a recipe produces.
+
+      | | before | after |
+      |---|---|---|
+      | median vs drop | 0.49x | **0.80x** (exactly the target) |
+      | per-SLOT spread | 0.12x – 1.04x | uniform ~0.88x |
+      | per-LEVEL spread | 0.06x – 1.38x | 0.62x – 1.14x |
+
+      **The per-slot fault is gone**, and the per-level spread that remains is residual variance
+      between two independent 200-sample medians rather than a game fault.
+
+      ⛑ **TWO INSTRUMENT CORRECTIONS ON THE WAY**, both caught before they became findings:
+      * At 40 samples the curve was **non-monotonic** - 33 at level 5 against 19 at 15, 685 at 140
+        against 603 at 150. Recipes sized against it would have gone BACKWARDS in places, reading
+        as a content mistake and being near-impossible to trace to a sample size. 200 samples is
+        monotonic and agrees with 800 to ~13%. `tools/probe/power_curve.gd` guards the property.
+      * The worth probe originally sampled 60 drops against a curve built from 200, so it reported
+        a per-level spread that was mostly its own variance. Matched to 200 - but still an
+        INDEPENDENT sample, because checking the sizing against the number it was built from would
+        be circular and would report 0.80x forever.
+
+      **Still to do: ladders two and three** - `rune_cap` and the flat `ENCHANTMENT_STAT_CAPS`.
+
       **☑ STEP 7 — AND THE REAL SHAPE, found while starting the fix.** `_roll_affixes` carries the
       line that reframes everything: *"Crafted items get 0 affixes - affixes come from Enchanter
       Runes."* So crafting and enchanting are **designed as a PAIR**: the blacksmith makes a canvas

@@ -4097,6 +4097,67 @@ static func get_post_specialization_bonus(post_id: String, skill_name: String) -
 		return 0
 	return TRADING_POST_SPECIALIZATIONS[post_id].get(skill_name.to_lower(), 0)
 
+## What share of a DROPPED item a crafted one carries BEFORE runes. The blacksmith makes the
+## canvas; the enchanter paints it - `_roll_affixes` says so outright: *"Crafted items get 0
+## affixes - affixes come from Enchanter Runes."*
+##
+## Owner 2026-09-18 set the target for the PAIR: *"Beats a typical drop, loses to a lucky one."*
+## So base + runes lands near 1.15x the median drop, and an unruned crafted item is deliberately
+## a little weaker than a drop, because it is half a product.
+const CRAFTED_BASE_SHARE := 0.80
+
+
+static func curve_sized_base_stats(recipe: Dictionary, drop_tables) -> Dictionary:
+	"""A recipe's output stats, rescaled to the level curve that DROPS are generated from.
+
+	⛑ THE MAGNITUDE IS DERIVED; THE IDENTITY IS NOT. Which stats a recipe gives is authored and
+	stays authored - a sword gives attack, a helm gives defence - and only the TOTAL is rescaled,
+	proportionally, so every recipe keeps its character and loses only its arbitrary size.
+
+	⛑ WHY THIS EXISTS. Measured 2026-09-18: the median crafted item carried **0.49x** the stats of
+	a dropped item at the same level, and the ratio was ERRATIC rather than merely low - 1.38x at
+	item level 90, 0.17x at 150. That is the signature of hand-authored constants sitting beside a
+	generated curve: they can only agree by coincidence, and they agreed at 90 and failed at 100.
+	Owner: *"you're often making things with no real value or use."*
+
+	⛑ SHARED, NOT SERVER-SIDE, ON PURPOSE. `tools/probe/crafting_worth.gd` calls this exact
+	function, so the instrument and the game cannot disagree about what a recipe produces. A copy
+	on the server would let the probe pass while play stayed broken.
+
+	A recipe with no level, no stats, or no drop_tables is returned untouched rather than guessed."""
+	var base: Dictionary = recipe.get("base_stats", {}) if recipe.get("base_stats", null) is Dictionary else {}
+	if base.is_empty() or drop_tables == null:
+		return base
+	var lvl: int = int(base.get("level", 0))
+	if lvl <= 0:
+		return base
+	var current := 0.0
+	for k in base.keys():
+		if String(k) == "level":
+			continue
+		var v = base[k]
+		if v is int or v is float:
+			current += float(v)
+	if current <= 0.0:
+		return base
+	var target: float = float(drop_tables.expected_item_power(lvl)) * CRAFTED_BASE_SHARE
+	if target <= 0.0:
+		return base
+	var mult: float = target / current
+	var out: Dictionary = {}
+	for k in base.keys():
+		if String(k) == "level":
+			out[k] = base[k]
+			continue
+		var v2 = base[k]
+		if v2 is int or v2 is float:
+			# Never round a real stat away to nothing: a recipe that authored 1 point of something
+			# meant the player to have it.
+			out[k] = maxi(1, int(round(float(v2) * mult)))
+		else:
+			out[k] = v2
+	return out
+
 static func apply_quality_to_stats(base_stats: Dictionary, quality: CraftingQuality) -> Dictionary:
 	"""Apply quality multiplier to item stats"""
 	var multiplier = QUALITY_MULTIPLIERS.get(quality, 1.0)

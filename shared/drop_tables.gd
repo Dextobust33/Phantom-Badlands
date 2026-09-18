@@ -4503,6 +4503,74 @@ const DUNGEON_CHEST_CONSUMABLES_BY_TIER = {
 	9: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
 }
 
+## ⚑ THE POWER CURVE EVERY CRAFTED THING IS SIZED AGAINST.
+##
+## Measured 2026-09-18: crafted gear sat at 0.49x a drop and runes at 0.17x / 0.06x / 0.03x by
+## tier, because recipe stats, rune caps and the enchantment ceiling are all HAND-AUTHORED
+## constants while drops are GENERATED off a level curve. Hand-authored beside generated can only
+## agree by coincidence, and measurement showed it agreeing at item level 90 and failing at 100.
+var _power_curve_cache: Dictionary = {}
+
+## How many items to sample when learning the curve at a level. Happens ONCE per level and is
+## then cached, so the cost is paid on the first craft at a level and never again.
+##
+## ⛑ 200, AND 40 WAS MEASURABLY TOO FEW. At 40 the median is not just noisy, it is
+## NON-MONOTONIC: measured 33 at level 5 against 19 at level 15, and 685 at 140 against 603 at
+## 150. Sizing recipes against that would have made a level-15 item weaker than a level-5 one
+## and produced a crafting ladder that goes backwards in places - a defect that would have
+## looked like a content mistake and been almost impossible to trace back to a sample size.
+## At 200 the curve is monotonic (16, 31, 69, 131, 366, 810) and agrees with n=800 to ~13%.
+const POWER_CURVE_SAMPLES := 200
+
+
+func expected_item_power(item_level: int) -> float:
+	"""The stat total a DROPPED item of this level typically carries. Cached per level.
+
+	⛑ SAMPLED FROM THE REAL GENERATOR, NOT FITTED. The temptation is a formula - affix values
+	ARE linear in level (`base + per_level * item_level`) - but the TOTAL is not, because higher
+	levels roll better rarities and therefore MORE affixes: measured 18 at level 8, 162 at 45, 784
+	at 140, which is 2.25, 3.6 and 5.6 points per level. Any curve fitted to that by hand becomes
+	another hand-authored ladder drifting against a generated one, which is the exact fault this
+	function exists to end. Asking the generator cannot drift, because it IS the generator.
+
+	The median rather than the mean: a rare high roll should not drag the target a crafter is
+	sized against, or crafting gets balanced around gear most players never see."""
+	var key: int = maxi(1, int(item_level))
+	if _power_curve_cache.has(key):
+		return float(_power_curve_cache[key])
+	var totals: Array = []
+	var grade_tier: int = int(PowerRank.grade_for_level(key).get("tier", 1))
+	for i in range(POWER_CURVE_SAMPLES):
+		var it: Dictionary = roll_dungeon_chest_equipment(grade_tier, key)
+		if it.is_empty():
+			continue
+		var af = it.get("affixes", null)
+		if not (af is Dictionary) or af.is_empty():
+			continue
+		var t := 0.0
+		for k in af.keys():
+			# Bookkeeping that shares the dictionary with real stats. Summing it would inflate
+			# the target and quietly over-buff every recipe in the game.
+			if String(k) in ["roll_quality", "prefix_name", "suffix_name"]:
+				continue
+			var v = af[k]
+			if v is int or v is float:
+				t += float(v)
+		totals.append(t)
+	if totals.is_empty():
+		# No gear generates at this level. Returning 0 would make every recipe here worthless,
+		# so fall back to the nearest level that DID produce something rather than inventing one.
+		var best: float = 0.0
+		for k2 in _power_curve_cache:
+			if abs(int(k2) - key) <= 20:
+				best = maxf(best, float(_power_curve_cache[k2]))
+		_power_curve_cache[key] = best
+		return best
+	totals.sort()
+	var med: float = float(totals[totals.size() / 2])
+	_power_curve_cache[key] = med
+	return med
+
 func roll_dungeon_chest_equipment(tier: int, item_level: int, rarity_upgrade: int = 0, theme_species: Array = []) -> Dictionary:
 	"""Roll a tier-appropriate equipment piece for a dungeon chest. Returns {}
 	if the chance fails or no base item is available.

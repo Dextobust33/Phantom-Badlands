@@ -25,7 +25,14 @@ const CD := preload("res://shared/crafting_database.gd")
 const DT := preload("res://shared/drop_tables.gd")
 const PR := preload("res://shared/power_rank.gd")
 
-const SAMPLES := 60
+## ⛑ MATCHED TO `POWER_CURVE_SAMPLES`. The sizing derives from a 200-sample median; comparing
+## it against a 60-sample median measures the difference between two SAMPLES as much as the
+## difference between crafted and dropped gear. At 60 this probe reported a per-level spread of
+## 0.53x to 1.07x that was mostly its own variance.
+##
+## Deliberately still an INDEPENDENT sample rather than reading the curve: checking the sizing
+## against the number it was built from would be circular and would report 0.80x forever.
+const SAMPLES := 200
 
 # ⛑ A CRAFTED ITEM AND A DROPPED ITEM DO NOT STORE THEIR STATS THE SAME WAY, and the first
 # run of this probe reported "crafted gear beats drops 52x" because of it. A recipe carries
@@ -71,8 +78,13 @@ func _init() -> void:
 		equip_n += 1
 		if not by_level.has(lvl):
 			by_level[lvl] = []
+		# ⛑ THE SIZED STATS, THE SAME CALL THE SERVER MAKES. Reading the authored `base_stats`
+		# here would measure the recipe TABLE rather than what a player receives, and would
+		# keep reporting the pre-fix number forever while the game was fixed - the exact
+		# shape of instrument defect this arc has already hit twice.
+		var sized: Dictionary = CD.curve_sized_base_stats(r, dt)
 		by_level[lvl].append({"id": String(rid), "name": String(r.get("name", rid)),
-			"total": _stat_total(bs), "skill": int(r.get("skill_required", 0)),
+			"total": _stat_total(sized), "skill": int(r.get("skill_required", 0)),
 			"slot": String(r.get("output_slot", "?"))})
 
 	print("equipment recipes with a level: %d, across %d distinct item levels" % [equip_n, by_level.size()])
