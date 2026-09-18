@@ -94,7 +94,13 @@ CUTS = {
     #
     # The market gets the whole stall now, and the inn gets a BED, which is what a place you rest
     # at should look like.
-    'tile:market':        ('craft_stations', 9, 0, (2, 2)),
+    # ⚑ A STOCKED SHELF, NOT A FISHMONGER'S SLAB - owner 2026-09-18: *"Market is a table of meat,
+    # not terrible but not really fitting."* Correct: `craft_stations` row 9 IS a fishmonger's
+    # stall, so the general market advertised fish and a cleaver. `interiors` (8,12) is a 3x2
+    # counter with three tiers of assorted wares - goods for sale, which is what a market is.
+    # Picked over the loose produce crates because four separate crates read as clutter; this is
+    # one object.
+    'tile:market':        ('interiors', 8, 12, (3, 2)),
     # ⚑ THE INN IS CUT - owner 2026-09-18. Its whole handler was one line calling
     # `handle_trading_post_recharge`, the SAME function the healer calls, so every post carried
     # two tiles doing one job. Removed from the station layout in npc_post_database.
