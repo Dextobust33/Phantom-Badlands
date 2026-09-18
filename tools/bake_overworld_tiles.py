@@ -112,7 +112,16 @@ CUTS = {
     # ⚑ A DOOR IS NOT ONE CELL. `(6, 7)` is a FRAGMENT of the middle of a door - the real art is
     # the 3x2 block at (5,7): lintel, frame, panelling and handle. Owner 2026-09-13: *"I believe
     # post doors may suffer from the same problem."* They did.
-    'tile:door':        ('green_village', 5, 7, (3, 2)),
+    # ⚑ A STONE ARCH WITH ITS DOORS OPEN - owner 2026-09-18: *"The doors in Green Buildings are
+    # better than our current post doors."* They are: green_buildings rows 29-31 carry four
+    # complete 2x2 arched doorways (shut / ajar / open / empty arch) where green_village had a
+    # narrow wooden slab.
+    #
+    # ⛑ THE OPEN ONE, BECAUSE A DOOR TILE IS WALKABLE. `world_system` gives "door"
+    # `blocks_move: false` - players walk straight through it - so a SHUT door would draw a
+    # barrier across a tile you are meant to step onto. (29,30) is the handsome closed pair and
+    # is the wrong picture for this job.
+    'tile:door':        ('green_buildings', 29, 34, (2, 2)),
     'tile:well':        ('green_village', 5, 0, (3, 2)),
     # ⚑ NOT THE SAME CELL AS `well`. Both named `(5, 0, (3,2))` - one copy-pasted line - so they
     # baked byte-identical and a player who built a well got a fountain. That block IS a well
