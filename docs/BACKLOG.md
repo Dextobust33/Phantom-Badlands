@@ -8053,6 +8053,37 @@ something was dropped, and it sat unnoticed for eleven days.
         be organized in a way that makes it easy to understand what peoples options are."* — after
         the content, not before: the UI's job is to present a set of options, and that set is what
         this arc is changing.
+      **✅ SHIPPED 2026-09-18 — and there were TWO gates, the quiet one worse than the famous one.**
+
+      The level-5 trial cap is the one everybody talks about. But `can_gain_job_xp` also read
+      `return gathering_job == job_name` once you had committed — so choosing mining froze
+      **fishing, logging, foraging and soldier permanently**, and the same on the crafting side.
+      **A player who committed had LESS access than one who never did**, which is the opposite of a
+      reward and is not what the cap was ever advertised to do.
+
+      Both are gone. Every job levels freely, forever. Committing now:
+
+      | | before | after |
+      |---|---|---|
+      | your focus | the only job that could pass Lv5 | **+50% XP** (`COMMITTED_JOB_XP_BONUS`) |
+      | every other job | **frozen for the life of the character** | levels normally |
+      | specialist recipes | commitment | commitment (unchanged) |
+      | field service | commitment | commitment (unchanged) |
+
+      Commitment is still one-time and permanent — the cost is that you cannot have a *second*
+      focus's recipes, not that the rest of the game stops paying you. Six player-facing surfaces
+      updated (two hints, the commit confirmation, two "✗ LOCKED" renderings, the help page); the
+      probe fails if any of the old copy survives.
+
+      Probe: `tools/probe/jobs_are_a_carrot_not_a_fence.gd`, which **executes** a character rather
+      than reading source — re-injecting the two gates fails it four ways.
+
+      ⛑ **And its first run reported the bonus as 8.72x, which was the probe's own fault.** It
+      levelled the committed subject to ~10 to make it eligible to commit and left the control at
+      level 1, then compared `job_xp` — which is progress toward the *next* level and **resets on
+      level-up**. Both subjects now level identically first and the test grant is too small to
+      level either. *A baseline mismatch reads exactly like a wild balance bug.*
+
       * *"We may want to do away with locking people at level 5 of gathering/crafting jobs. Maybe
         let players specialize in a job to get additional xp in it and make leveling it give a
         benefit when doing it rather than gate anything."*

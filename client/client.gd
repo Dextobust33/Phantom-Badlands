@@ -33269,7 +33269,9 @@ func _build_progression_vectors_text(char: Dictionary) -> String:
 	var jxp: Dictionary = char.get("job_xp", {})
 	var gather_committed = bool(char.get("gathering_job_committed", false))
 	var gather_job = String(char.get("gathering_job", ""))
-	var gather_commit_hint = "  [color=#888888](trial cap Lv 5 — commit one at any trading post)[/color]" if not gather_committed else ""
+	# The cap and the exclusivity are both gone (2026-09-18) - committing is a BONUS now, so the
+	# hint sells it rather than warning about it.
+	var gather_commit_hint = "  [color=#888888](commit one at a trading post for +50%% XP in it)[/color]" if not gather_committed else ""
 	out += "[color=#9ACD32]Gathering Jobs:[/color]%s\n" % gather_commit_hint
 	out += _format_job_row(["fishing", "mining", "logging"], jlevels, jxp, gather_committed, gather_job, false)
 	out += _format_job_row(["foraging", "soldier"], jlevels, jxp, gather_committed, gather_job, false)
@@ -33277,7 +33279,7 @@ func _build_progression_vectors_text(char: Dictionary) -> String:
 	# --- Specialty jobs (level mirrors crafting_skills via JOB_TO_CRAFT_SKILL) ---
 	var specialty_committed = bool(char.get("specialty_job_committed", false))
 	var specialty_job_name = String(char.get("specialty_job", ""))
-	var specialty_hint = "  [color=#888888](try each to Lv 5 then commit at a bench)[/color]" if not specialty_committed else ""
+	var specialty_hint = "  [color=#888888](commit one at a bench for +50%% XP, its recipes and its field service)[/color]" if not specialty_committed else ""
 	out += "[color=#FFAA66]Specialty Jobs:[/color]%s\n" % specialty_hint
 	out += _format_job_row(["blacksmith", "alchemist", "enchanter"], jlevels, jxp, specialty_committed, specialty_job_name, true, char)
 	out += _format_job_row(["scribe", "builder"], jlevels, jxp, specialty_committed, specialty_job_name, true, char)
@@ -33379,13 +33381,12 @@ func _format_job_row(job_names: Array, jlevels: Dictionary, jxp: Dictionary, is_
 			xp_needed = int(100 * pow(jlv, 1.4))
 
 		var is_committed = is_category_committed and committed_name == jname
-		var is_locked = is_category_committed and committed_name != jname
-		var label_color = "#FFD700" if is_committed else ("#666666" if is_locked else "#FFFFFF")
+		# ⛑ NOT "LOCKED" ANY MORE. Committing used to freeze every other job in the category
+		# permanently; it now only means they are not your focus, so they render normally.
+		var label_color = "#FFD700" if is_committed else "#FFFFFF"
 		var status_marker = ""
 		if is_committed:
 			status_marker = " [color=#FFD700]★[/color]"
-		elif is_locked:
-			status_marker = " [color=#666666]✗[/color]"
 		elif jlv >= 5 and not is_category_committed:
 			status_marker = " [color=#FFFF00]⚡[/color]"
 		var pct = float(xp_cur) / float(xp_needed) if xp_needed > 0 else 0.0
@@ -34208,31 +34209,30 @@ func _display_job_entry(jname: String, jlevels: Dictionary, jxp: Dictionary, is_
 		xp_cur = int(jxp.get(jname, 0))
 		xp_needed = int(100 * pow(jlv, 1.4))  # Job XP formula
 	var is_committed = is_category_committed and committed_name == jname
-	var is_locked = is_category_committed and committed_name != jname
 
+	# ⛑ "LOCKED" IS GONE. Committing used to freeze every other job in the category permanently -
+	# a player who committed had LESS access than one who never did. Now it only means "not your
+	# focus": the others keep levelling, they just do not get the +50%.
 	var status_str = ""
 	if is_committed:
-		status_str = " [color=#00FF00]★ COMMITTED[/color]"
-	elif is_locked:
-		status_str = " [color=#FF4444]✗ LOCKED[/color]"
+		status_str = " [color=#00FF00]★ COMMITTED  [color=#FFD700]+50%% XP[/color][/color]"
 	elif jlv >= 5 and not is_category_committed:
 		status_str = " [color=#FFFF00]⚡ READY TO COMMIT[/color]"
 
 	var xp_bar = ""
-	if not is_locked and jlv < 100:
+	if jlv < 100:
 		var pct = float(xp_cur) / float(xp_needed) if xp_needed > 0 else 0.0
 		var filled = int(pct * 10)
 		xp_bar = " [" + "█".repeat(filled) + "░".repeat(10 - filled) + "] %d/%d" % [xp_cur, xp_needed]
 
-	var color = "#FFD700" if is_committed else ("#808080" if is_locked else "#FFFFFF")
+	var color = "#FFD700" if is_committed else "#FFFFFF"
 	var job_desc = _get_job_description(jname)
 	display_game("[color=%s]  %s Lv%d%s[/color]%s" % [color, jname.capitalize(), jlv, xp_bar, status_str])
 	display_game("[color=#808080]    %s[/color]" % job_desc)
-	# Show current level bonuses
-	if not is_locked:
-		var bonus_text = _get_job_bonus_text(jname, jlv, is_committed)
-		if not bonus_text.is_empty():
-			display_game("[color=#00BFFF]    %s[/color]" % bonus_text)
+	# Show current level bonuses — for every job now, since none of them are frozen.
+	var bonus_text = _get_job_bonus_text(jname, jlv, is_committed)
+	if not bonus_text.is_empty():
+		display_game("[color=#00BFFF]    %s[/color]" % bonus_text)
 
 func display_job_commit_confirm(job_name: String, category: String):
 	"""Show commitment confirmation dialog."""
@@ -34245,8 +34245,10 @@ func display_job_commit_confirm(job_name: String, category: String):
 	display_game("You are about to commit to [color=#FFD700]%s[/color]." % job_name.capitalize())
 	display_game("")
 	display_game("After committing:")
-	display_game("  [color=#00FF00]✓[/color] You can level %s past Lv5 (up to Lv100)" % job_name.capitalize())
-	display_game("  [color=#FF4444]✗[/color] Other %s jobs are capped at Lv5 (trial only)" % category)
+	display_game("  [color=#00FF00]✓[/color] [color=#FFD700]+50%%[/color] XP whenever you work %s" % job_name.capitalize())
+	display_game("  [color=#00FF00]✓[/color] Its specialist recipes, and its field service")
+	display_game("  [color=#00FF00]✓[/color] Every other %s job keeps levelling normally" % category)
+	display_game("  [color=#FFAA00]![/color] You cannot commit to a second %s focus" % category)
 	display_game("")
 	display_game("[%s] [color=#FF4444]Cancel[/color]  |  [%s] [color=#00FF00]Commit![/color]" % [get_action_key_name(0), get_action_key_name(1)])
 
@@ -39556,7 +39558,8 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 
 [b][color=#FFD700]══ JOBS & GATHERING ══[/color][/b]
 [color=#FFD700]Jobs:[/color] 5 Gathering Jobs (Mining, Logging, Foraging, Fishing, Soldier) + 5 Specialty Jobs (Phase 2).
-  Try any job up to Lv5, then commit permanently. More→Jobs to view and commit.
+  Level them all freely. Committing to one gives [color=#FFD700]+50% XP[/color] in it, its specialist
+  recipes and its field service — it never stops the others. More→Jobs to view and commit.
 [color=#00FFFF]Gathering:[/color] Walk to a resource node → press [{k4}] → a grid of face-down cards. Scratch to reveal and keep what you find; more skill = more scratches. Deep-water fishing is a 3-choice chain instead.
   Each correct pick chains to the next round. Wrong pick ends the chain. Higher job level = better hints.
 [color=#FFA500]Fishing:[/color] At water ([color=#00FFFF]~[/color]) | [color=#CD7F32]Mining:[/color] At ore ([color=#CD7F32]O[/color]) | [color=#228B22]Logging:[/color] At forests ([color=#228B22]T[/color]) | [color=#9ACD32]Foraging:[/color] At herbs/bushes

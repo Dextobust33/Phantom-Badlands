@@ -6058,20 +6058,37 @@ func _get_job_xp_needed(current_level: int) -> int:
 	"""Get XP needed for next job level."""
 	return int(100 * pow(current_level, 1.4))
 
+## How much extra job XP your committed focus earns. Specialisation is a CARROT now, not a fence.
+const COMMITTED_JOB_XP_BONUS := 0.5   # +50% XP in the job you committed to
+
+
 func can_gain_job_xp(job_name: String) -> bool:
-	"""Check if player can gain XP in this job.
-	Gathering jobs still require commitment after trial cap.
-	Specialty jobs can always level — specialist_only recipes gate access by commitment."""
-	var jl = job_levels.get(job_name, 1)
-	if job_name in GATHERING_JOBS:
-		if not gathering_job_committed:
-			return jl < JOB_TRIAL_CAP
-		return gathering_job == job_name
-	elif job_name in SPECIALTY_JOBS:
-		if specialty_job_committed:
-			return specialty_job == job_name
-		return true  # Can always level specialty jobs — recipes gate access
-	return false
+	"""Can this job earn XP? Now: yes, for any real job, always.
+
+	⚑ Owner 2026-09-18: *"We may want to do away with locking people at level 5 of
+	gathering/crafting jobs. Maybe let players specialize in a job to get additional xp in it and
+	make leveling it give a benefit when doing it rather than gate anything."*
+
+	⛑ THERE WERE TWO GATES HERE AND THE SECOND WAS THE HARSHER ONE. The level-5 trial cap is the
+	one that gets talked about, but `return gathering_job == job_name` meant that COMMITTING froze
+	every other gathering job **permanently** - pick mining and fishing, logging, foraging and
+	soldier stop earning XP for the life of the character. Same for the crafting side. A player
+	who committed had less access than one who never did, which is the opposite of a reward.
+
+	⛑ COMMITMENT STILL MEANS SOMETHING. It is the key to `specialist_only` recipes and to the
+	field service (Field Repair, Rework a Stat, ...), and it is still a one-time, permanent choice.
+	What it no longer does is take anything away: the cost is that you cannot have a SECOND focus's
+	recipes, not that the rest of the game stops paying you."""
+	return job_name in GATHERING_JOBS or job_name in SPECIALTY_JOBS
+
+
+func job_xp_multiplier(job_name: String) -> float:
+	"""The XP multiplier for this job — the benefit that replaced the fence."""
+	if job_name in GATHERING_JOBS and gathering_job_committed and gathering_job == job_name:
+		return 1.0 + COMMITTED_JOB_XP_BONUS
+	if job_name in SPECIALTY_JOBS and specialty_job_committed and specialty_job == job_name:
+		return 1.0 + COMMITTED_JOB_XP_BONUS
+	return 1.0
 
 func add_job_xp(job_name: String, xp: int) -> Dictionary:
 	"""Add XP to a job. Returns {leveled_up, new_level, char_xp_gained}.
@@ -6079,6 +6096,9 @@ func add_job_xp(job_name: String, xp: int) -> Dictionary:
 	Character XP taper: Lv1-20 = 1.0x, Lv20-50 = 0.5x, Lv50+ = 0.2x"""
 	if not can_gain_job_xp(job_name):
 		return {"leveled_up": false, "new_level": job_levels.get(job_name, 1), "char_xp_gained": 0}
+
+	# The carrot, applied at the one place job XP enters the character.
+	xp = int(round(float(xp) * job_xp_multiplier(job_name)))
 
 	if not job_xp.has(job_name):
 		job_xp[job_name] = 0
