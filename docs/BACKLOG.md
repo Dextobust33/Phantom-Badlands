@@ -6197,6 +6197,36 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
         produce confident nonsense. It also under-reports bleed/poison DoT, lifesteal healing and
         plunder/tribute rewards, which it does not measure.
 
+- [ ] **PATHS NEED A REVAMP — CLASS-SPECIFIC AND LESS CONDITIONAL. Owner direction 2026-09-18:**
+      *"Path's need revamped and should be class specific and less conditional."*
+
+      Two distinct complaints, and they pull in the same direction:
+
+      * **Class-specific.** The trees are per-ARCHETYPE today — 54 nodes across three trees
+        (`project_skill_tree_design`, shipped v0.9.654), so all three mage classes share one path
+        tree. That is the same shape the class ENGINES were taken out of on 2026-09-07, when
+        "one engine shape per archetype" became "one per class" for exactly this reason: an
+        archetype-wide system cannot express what makes a Sage different from a Sorcerer, so it
+        ends up generic and every class in the archetype picks the same nodes.
+      * **Less conditional.** A node whose effect only fires in a narrow circumstance reads as
+        dead weight at the point of choosing, which is where the decision actually happens. This
+        is the `overload` lesson from the card work: a conditional a player cannot evaluate is
+        not a choice, it is a trap.
+
+      **⛑ Do NOT start by writing nodes.** Read the 54 that exist first and classify them by how
+      often their condition is TRUE in a real fight — the simulator can answer that, and the
+      answer decides whether this is a rewrite or a pruning. Writing replacements before
+      measuring the existing ones is how the last three content passes produced work that had to
+      be redone.
+
+      **⛑ THIS IS A PER-CLASS POWER CHANGE, so it belongs to a BALANCE BATCH window** (see
+      "THE BALANCE BATCH"). Schedule it to land with the same-level death-rate work: both are
+      per-class, and per-class is the only kind of change that survives a refit — a global buff
+      is cancelled by the next one. One chain run should cover both.
+
+      Prior art to read before building: `project_skill_tree_design`, `project_engine_shape_per_class`
+      (why archetype-wide became per-class), and the card roster work in `project_card_arc_2026_08_27`.
+
 - [ ] **Dungeon card pass — re-scoped 2026-09-17: the COVERAGE half is done, the POWER half is
       not.** Owner: *"dungeon reward cards likely need reworked and added to add interesting new
       cards that classes may want to swap into their decks."*
@@ -6793,6 +6823,52 @@ down, and these are the ones it keeps sending back — which is what extra lives
       each output against what a dungeon of the same level DROPS. Fault 3 is a claim about
       relative value and cannot be judged without both numbers. Same rule as the equipment
       reference: walk the acquisition paths, do not enumerate the pools.
+- [ ] **SANCTUARY UPGRADES ARE PRICED OUT OF REACH, AND THE LADDER IS DULL. Owner direction
+      2026-09-18:** *"Sanctuary upgrades via baddie points need revamped. Don't like the current
+      sanctuary balance (starting egg slots, companion kennel spots, kennel spots, etc.) most of
+      the choices take too many baddie points, players are playing lots of characters and still
+      not having enough for upgrades. We need more interesting upgrades possibly branching ones
+      even."*
+
+      Three asks: **the prices are too high**, **the named slot upgrades are the wrong shape**, and
+      **the ladder needs more interesting — possibly branching — choices.**
+
+      **⛑ THE ARITHMETIC SUPPORTS THE COMPLAINT, so this is not a feel question.** A death pays
+      `calculate_baddie_points`: XP/100 + 5/gem + kills/10 + 10/quest + milestones (50 at L10,
+      150 at L25, 400 at L50, 1000 at L100). The live L22 test character holds 28,554 XP — **285 BP
+      from the XP term**, and with plausible kills/quests/gems it dies worth roughly 500-600.
+      Against `HOUSE_UPGRADES` in `server/persistence_manager.gd`:
+
+      | upgrade | first level | full ladder |
+      |---|---|---|
+      | `egg_slots` | 500 | 141,500 (9 levels) |
+      | `kennel_capacity` | 1,000 | 297,000 (9) |
+      | `companion_slots` | 2,000 | 237,000 (8) |
+      | `house_size` | 5,000 | 70,000 (3) |
+
+      So **one companion slot costs about four dead characters**, and the companion ladder costs
+      roughly four hundred. That is the owner's *"playing lots of characters and still not having
+      enough"* stated in numbers.
+
+      **⛑ STEP 1 IS A MEASUREMENT, NOT A PRICE CUT.** Read what accounts actually hold and have
+      spent from the live DB — total BP earned per account, current balances, which upgrades are
+      taken and which have never been bought once. A never-bought upgrade is a different problem
+      from an expensive one, and the table above cannot tell them apart. Pricing before that is
+      guessing at the shape of the curve.
+
+      **On branching:** the current ladder is 20+ independent linear tracks, which is why it is
+      dull — nothing is ever given up. Branching means a choice that EXCLUDES something, and that
+      only reads as interesting if the alternatives are legible at the point of choosing. Design
+      the exclusions before the content, and see the Paths item above: it is the same failure mode
+      (a wide menu of small always-good increments is not a decision).
+
+      **⛑ SEQUENCING — this comes BEFORE the Sanctuary redesign below, deliberately.** That item
+      asks where the Sanctuary physically LIVES; this one asks what it is worth visiting for, it is
+      the live complaint, and it is independently shippable. But if both are done in one arc, do
+      the economy first: repricing a ladder and then discovering the redesign replaces half of it
+      is the wasteful order. **Baddie points are NOT valor**, so this does not wait on the
+      realm-wide valor economy pass — the two currencies can be settled independently.
+
 - [ ] **Sanctuary redesign — put the house in the world.** Owner direction 2026-09-01, written
       up as item 15 in `docs/archive/BACKLOG_journal_to_2026-09-07.md`. **Read it before
       building.** Today the Sanctuary is a menu between login and character select
