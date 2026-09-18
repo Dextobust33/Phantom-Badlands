@@ -108,7 +108,15 @@ step "GitHub release v$VERSION"
 # stale separately, which is how this broke. `set -e` means a version with no changelog
 # entry STOPS the release rather than shipping another placeholder.
 NOTES="releases/release-notes-v$VERSION.md"
-python tools/make_release_notes.py "$VERSION" -o "$NOTES"
+# ⛑ AND A NAME, NOT JUST A NUMBER. The launcher draws a release's `name` as a gold bold
+# heading, and this passed "v0.9.802" - so the heading said the version and every headline
+# point sat undifferentiated in the body below it. Owner 2026-09-17: *"bring back the
+# summary line/update name ... instead of just the version number and a wall of text."*
+TITLE_FILE="releases/release-title-v$VERSION.txt"
+python tools/make_release_notes.py "$VERSION" -o "$NOTES" --title-out "$TITLE_FILE"
+RELEASE_TITLE="$(cat "$TITLE_FILE" 2>/dev/null)"
+[ -n "$RELEASE_TITLE" ] || RELEASE_TITLE="v$VERSION"
+echo "  title: $RELEASE_TITLE"
 # ⛑ CREATE BARE, THEN ATTACH ONE AT A TIME. Attaching the assets to `gh release create`
 # means ONE flaky upload destroys the whole release: `gh` deletes the release it just made,
 # so the tag never appears and the build is wasted.
@@ -119,7 +127,7 @@ python tools/make_release_notes.py "$VERSION" -o "$NOTES"
 #
 # A release with no assets is something you can add to; a failed create is something you have
 # to redo. Now a 500 costs one retry of one file.
-gh release create "v$VERSION" --title "v$VERSION" --notes-file "$NOTES"
+gh release create "v$VERSION" --title "$RELEASE_TITLE" --notes-file "$NOTES"
 
 for asset in \
 	"releases/phantom-badlands-client-v$VERSION.zip" \

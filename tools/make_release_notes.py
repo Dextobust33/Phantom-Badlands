@@ -103,6 +103,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("version")
     ap.add_argument("-o", "--out")
+    ap.add_argument("--title-out", dest="title_out",
+                    help="write a one-line release TITLE here (version + the headline change)")
     a = ap.parse_args()
     with open(CLIENT, encoding="utf-8") as fh:
         source = fh.read()
@@ -115,6 +117,25 @@ def main():
             "Add one to client/client.gd before releasing - the launcher's Recent Changes\n"
             "panel has nothing else to show.\n" % a.version)
         return 1
+    # ⛑ THE RELEASE NEEDS A NAME, NOT JUST A NUMBER. Owner 2026-09-17: *"we should bring back
+    # the summary line/update name ... instead of just the version number and a wall of text."*
+    # The launcher already draws the release's `name` as a gold bold heading - but release.sh was
+    # passing `--title "v0.9.802"`, so the heading said the version and the headline points sat
+    # undifferentiated in the body below it. Nothing was hiding the name; nothing had written one.
+    #
+    # The first entry of a release is its headline by construction (the changelog is authored
+    # most-important-first), so the title is that headline, trimmed to fit a heading.
+    if a.title_out:
+        first = entries[0][0] if entries and entries[0] else ""
+        # Drop the ★ / ◆ importance marker: it is a cue INSIDE the list, and a heading
+        # that opens with a floating star reads like a typo.
+        for _m in MARKERS:
+            first = first.replace(_m, " ")
+        first = re.sub(r"\s+", " ", first).strip().rstrip(".")
+        if len(first) > 72:
+            first = first[:69].rstrip() + "..."
+        with open(a.title_out, "w", encoding="utf-8") as fh:
+            fh.write("v%s - %s" % (a.version, first) if first else "v%s" % a.version)
     md = to_markdown(entries)
     if a.out:
         with open(a.out, "w", encoding="utf-8") as fh:

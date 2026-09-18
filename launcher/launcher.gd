@@ -18,7 +18,7 @@ extends Control
 const GITHUB_OWNER = "Dextobust33"
 const GITHUB_REPO = "Phantom-Badlands"
 const MAX_DOWNLOAD_RETRIES = 3
-const LAUNCHER_VERSION = "2.4"  # bump when launcher.gd changes; manifest launcher_version drives self-update
+const LAUNCHER_VERSION = "2.5"  # bump when launcher.gd changes; manifest launcher_version drives self-update
 
 func _is_linux() -> bool:
 	return OS.get_name() == "Linux"
@@ -290,15 +290,59 @@ func _render_changelog(releases: Array) -> void:
 		changelog_label.pop()
 		changelog_label.pop()
 		if bodytext.strip_edges() != "":
-			changelog_label.push_color(Color(0.80, 0.80, 0.86))
-			changelog_label.add_text(_clean_md(bodytext) + "\n")
-			changelog_label.pop()
+			_render_notes_body(_clean_md(bodytext))
 		changelog_label.add_text("\n")
+
+func _render_notes_body(text: String) -> void:
+	"""Draw release notes with the headline of each entry emphasised.
+
+	⛑ STYLED, NEVER PARSED. These notes come from GitHub, so they are drawn with `add_text`,
+	which renders every character literally - a note containing "[img]" shows those five
+	characters. The emphasis comes from `push_bold()` / `push_color()` around the span, which
+	never interprets the text it wraps. That distinction is why the original code stripped
+	markers rather than converting them to BBCode, and it is preserved here.
+	"""
+	for raw_line in text.split("\n"):
+		var line := String(raw_line)
+		if line.strip_edges() == "":
+			changelog_label.add_text("\n")
+			continue
+		var rest := line
+		var bold_open := false
+		while true:
+			var at := rest.find("**")
+			if at < 0:
+				break
+			# The text before the marker, in whichever style is current.
+			if at > 0:
+				_notes_span(rest.substr(0, at), bold_open)
+			rest = rest.substr(at + 2)
+			bold_open = not bold_open
+		if rest != "":
+			_notes_span(rest, bold_open)
+		changelog_label.add_text("\n")
+
+
+func _notes_span(chunk: String, emphasised: bool) -> void:
+	"""One run of text, bright and bold when it is a headline, muted when it is prose."""
+	if emphasised:
+		changelog_label.push_color(Color(1.0, 0.87, 0.45))
+		changelog_label.push_bold()
+	else:
+		changelog_label.push_color(Color(0.80, 0.80, 0.86))
+	changelog_label.add_text(chunk)
+	changelog_label.pop()
+	if emphasised:
+		changelog_label.pop()
+
 
 func _clean_md(s: String) -> String:
 	# Light markdown → plain text so GitHub release notes read cleanly (no bbcode injection:
 	# we use add_text, which renders literally). Drop ** emphasis, tidy bullets, strip images.
-	s = s.replace("**", "").replace("__", "")
+	# ⛑ THE ** MARKERS SURVIVE. They used to be deleted here, which is exactly what turned
+	# "**HEADLINE.** prose" into one flat paragraph - every note is authored in that shape.
+	# `_render_notes_body` consumes them and styles the span instead.
+	s = s.replace("__", "")
 	var lines = s.split("\n")
 	var out: Array = []
 	for ln in lines:
