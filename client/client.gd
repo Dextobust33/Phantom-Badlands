@@ -1557,6 +1557,14 @@ var at_dungeon_entrance: bool = false  # Whether player is at a dungeon entrance
 var dungeon_entrance_info: Dictionary = {}  # Info about the dungeon at this location
 var pending_dungeon_warning: Dictionary = {}  # Pending dungeon entry warning awaiting confirmation
 var pending_hotzone_warning: Dictionary = {}  # Pending hotzone entry warning awaiting confirmation
+## ⛑ ENTERING A HOTZONE MUST NEVER BE SILENT. Below the confirm threshold the game
+## says what you walked into and lets you walk - which is right - but it said it with a
+## `display_game` line that lands in the side log and is gone under the next two fishing
+## results. Owner 2026-09-17: *"I can just walk right in, don't have to confirm anything
+## anymore, very dangerous."* The zone HAD announced itself; he never saw it.
+##
+## 0 when not in one. Pinned by `_sync_side_prompt` for as long as you are standing in it.
+var _in_hotzone_level: int = 0
 
 # Corpse location
 var at_corpse: bool = false  # Whether player is at a corpse
@@ -2034,7 +2042,15 @@ var _ow_page_active: bool = false
 var _ow_wide_page: bool = false
 ## That label. Built on first use, directly above `map_display` in the side column.
 var _ow_side_place: RichTextLabel = null
-const OW_SIDE_MAX_LINES := 60
+const OW_SIDE_MAX_LINES := 120
+## ⚑ HOW MANY THE COLUMN ACTUALLY SHOWS. The log kept 60 lines and roughly SEVEN fit on
+## screen, so it was ninety percent scrollback and the newest line - the one that matters -
+## sat at the bottom of a wall of old fishing results. Owner 2026-09-17: *"it's just full of
+## old fishing notifications that hold no value for me."*
+##
+## The rest is KEPT, not dropped (the cap above doubled, because history is now reachable
+## and worth having); the History button shows it. This is what is shouted, not what exists.
+const OW_SIDE_VISIBLE := 8
 var market_list_flash: String = ""  # Brief success message shown in listing view
 # What each incubating egg would fetch, index-aligned, as the SERVER computes it (market_egg_values).
 var _market_egg_valors: Array = []
@@ -29101,6 +29117,10 @@ func handle_server_message(message: Dictionary):
 		"dungeon_level_warning":
 			handle_dungeon_level_warning(message)
 
+		"hotzone_left":
+			# The pinned HUNTING GROUND banner comes down. See `_in_hotzone_level`.
+			_in_hotzone_level = 0
+			update_action_bar()
 		"hotzone_warning":
 			handle_hotzone_warning(message)
 
@@ -39719,6 +39739,15 @@ func _sync_side_prompt() -> void:
 				get_action_key_name(0), get_action_key_name(1)],
 		])
 		return
+	if _in_hotzone_level > 0:
+		# Not a question - a STATE. It stays up while you stand in the zone, because the
+		# one-off line announcing it was being buried within seconds.
+		set_side_prompt([
+			"[color=#FF8800][b]⚠ HUNTING GROUND[/b][/color]",
+			"[color=#808080]Monsters here run about [/color][color=#FFAA00]Lv %d[/color]" % _in_hotzone_level,
+			"[color=#808080]Richer kills, and elites. Step out to leave.[/color]",
+		])
+		return
 	if not pending_dungeon_warning.is_empty():
 		set_side_prompt([
 			"[color=#FF6666][b]\u26a0 THIS DUNGEON IS ABOVE YOU[/b][/color]",
@@ -39770,6 +39799,54 @@ func set_side_prompt(lines: Array) -> void:
 	_ow_side_prompt.append_text("\n".join(lines))
 
 
+## ⚑ THE HISTORY BUTTON. The column shows the last few lines; this is how the rest is reached.
+## A BUTTON rather than "just scroll up", because the scrollback was the problem - owner: *"dozens
+## below it in the scroll area that make it where I'm not sure what to be looking at."*
+var _ow_history_btn: Button = null
+
+
+func _ensure_side_history_button() -> void:
+	if _ow_history_btn != null and is_instance_valid(_ow_history_btn):
+		return
+	if map_display == null or map_display.get_parent() == null:
+		return
+	var col: Node = map_display.get_parent()
+	_ow_history_btn = Button.new()
+	_ow_history_btn.name = "SideHistory"
+	_ow_history_btn.text = "History"
+	_ow_history_btn.flat = true
+	# FOCUS_NONE for the same reason the shortcut row is: a focused Button eats the spacebar,
+	# which is the action bar's primary key.
+	_ow_history_btn.focus_mode = Control.FOCUS_NONE
+	_ow_history_btn.custom_minimum_size = Vector2(0, 20)
+	_ow_history_btn.add_theme_font_size_override("font_size", 11)
+	_ow_history_btn.pressed.connect(show_side_history)
+	_ow_history_btn.visible = false
+	col.add_child(_ow_history_btn)
+	col.move_child(_ow_history_btn, mini(map_display.get_index() + 1, col.get_child_count() - 1))
+
+
+func _update_side_history_button(hidden: int) -> void:
+	_ensure_side_history_button()
+	if _ow_history_btn == null or not is_instance_valid(_ow_history_btn):
+		return
+	_ow_history_btn.visible = hidden > 0
+	_ow_history_btn.text = "History (%d earlier)" % hidden
+
+
+func show_side_history() -> void:
+	"""The whole side log, on the main canvas where there is room to read it."""
+	_page_clear(true)
+	display_game("[color=#FFD700]═══════ RECENT HISTORY ═══════[/color]")
+	display_game("")
+	if _ow_side_lines.is_empty():
+		display_game("[color=#808080]Nothing yet.[/color]")
+		return
+	# Oldest first, the way a log reads.
+	for line in _ow_side_lines:
+		display_game(String(line))
+
+
 func _ensure_side_place_label() -> void:
 	"""The pinned WHERE YOU ARE label, above the log in the side column."""
 	if _ow_side_place != null and is_instance_valid(_ow_side_place):
@@ -39819,10 +39896,18 @@ func _ow_side_refresh() -> void:
 		was_at_bottom = sb.value >= (sb.max_value - sb.page - 4.0)
 	map_display.scroll_following = false
 	map_display.clear()
-	var shown: Array = _ow_side_lines.duplicate()
+	# ⛑ ONLY THE TAIL. Everything older is kept and reachable through History; showing it
+	# all made the column unreadable, which is how a hotzone warning went unnoticed.
+	var all_lines: Array = _ow_side_lines
+	var hidden: int = maxi(0, all_lines.size() - OW_SIDE_VISIBLE)
+	var shown: Array = all_lines.slice(hidden) if hidden > 0 else all_lines.duplicate()
 	if _ow_side_repeat > 0 and not shown.is_empty():
 		shown[-1] = "%s [color=#808080](x%d)[/color]" % [String(shown[-1]), _ow_side_repeat + 1]
+	if hidden > 0:
+		# Says the history EXISTS. Silently truncating would read as lost messages.
+		shown.push_front("[color=#5A5A66]… %d earlier — History below[/color]" % hidden)
 	map_display.append_text("\n".join(shown))
+	_update_side_history_button(hidden)
 	if sb != null:
 		await get_tree().process_frame
 		if is_instance_valid(map_display) and is_instance_valid(sb):
@@ -50422,6 +50507,7 @@ func handle_hotzone_warning(message: Dictionary):
 	var lv := int(message.get("estimated_level", 1))
 	var mine: int = maxi(1, int(message.get("your_level", character_data.get("level", 1))))
 	var needs_confirm := bool(message.get("confirm", true))
+	_in_hotzone_level = lv
 	var mins := int(message.get("minutes_left", 0))
 
 	_page_clear()

@@ -6039,6 +6039,10 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Clear hotzone tracking if player has left the hotzone
 	if not hotspot_check.in_hotspot and player_in_hotzone.has(peer_id):
 		player_in_hotzone.erase(peer_id)
+		# ⛑ AND TELL THE CLIENT. Entry was announced and departure was not, so the client
+		# had no way to know the state had ended - which is fine for a one-off line and wrong
+		# the moment that state is PINNED on screen, as it now is.
+		send_to_peer(peer_id, {"type": "hotzone_left"})
 
 	# Check for bounty target at this location
 	if _check_bounty_at_location(peer_id, new_pos.x, new_pos.y):
@@ -46812,7 +46816,32 @@ func _merchant_scatter_uniques(circuit_key: String, market_key: String, this_lis
 ## How far above your own level the ground has to be before stepping onto it asks first.
 ## 2.0 is the ratio the Area readout already calls "far above you", so the guard fires exactly
 ## where the colour the player is looking at turns red - one scale, not two.
-const DANGER_STEP_RATIO := 2.0
+## ⚑ WHEN A HOTZONE ASKS BEFORE IT LETS YOU IN — MEASURED, NOT CHOSEN.
+##
+## Owner 2026-09-17: *"Hotzones should warn players and they should have to confirm they want to
+## enter them if it's higher than them. I don't agree that 2x is the correct amount though, it
+## should be something closer to what would typically be a lethal level difference."*
+##
+## 2.0 was a round number nobody measured. `real_combat_sim -- hotzonerisk` measures DEATH rate
+## (not win rate — since retreat exists a non-win is usually a safe retreat, and the prompt is
+## about losing the character) against a monster at RATIO x the player's level, average gear,
+## 120 fights a cell, with the simulated player attempting a real retreat at 30% HP:
+##
+##            1.00x      1.15x      1.30x      1.50x      2.00x
+##   P10  W    2%d        7%d        7%d       22%d       50%d
+##   P10  M   13%d       23%d       18%d       40%d       68%d
+##   P25  W    2%d       17%d       29%d       36%d       56%d
+##   P25  M   14%d       31%d       73%d       78%d       98%d
+##   P60  W    7%d       17%d       32%d       42%d       89%d
+##   P60  M   31%d       55%d       89%d       96%d      100%d
+##   P150 W   14%d       49%d       53%d       91%d      100%d
+##   P150 M   23%d       72%d       93%d       98%d      100%d
+##
+## ⛑ AT THE OLD 2.0 THRESHOLD THE PLAYER DIED BETWEEN HALF AND ALL OF THE TIME — and the
+## game did not ask until then. There is no safe band above parity: by 1.15x the median cell is
+## already ~26% death and the worst is 72%. So the threshold sits just above parity, which is
+## also what the owner asked for in plain words.
+const DANGER_STEP_RATIO := 1.15
 ## How often a hunting-ground encounter is an ELITE, at the edge of the ground and at its heart.
 ## The world's base elite roll is 1% and only above level 15, which is not something a player can
 ## perceive; these are what make a hunting ground read as somewhere different rather than just

@@ -200,6 +200,7 @@ func _audit_registry() -> Dictionary:
 			_verify_starter_decks(); _verify_new_mage_cards(); _verify_dungeon_cards(); _verify_party_combat()],
 		"min_spend": ["min-cost cast vs same-level mob HP", run_min_spend_probe],
 		"difficulty": ["level x gear x enemy-tier feel", run_difficulty_audit],
+		"hotzonerisk": ["DEATH rate by level RATIO - what a hotzone confirm threshold should be", run_hotzone_risk_audit],
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
@@ -454,6 +455,49 @@ func _debug_xp_dump():
 		ch.add_experience(final_xp)
 		print("[XP] P%d vs L%d boss: base_xp=%d  over-lvl mult=%.2f  final_xp=%d  ->  L%d to L%d  (+%d levels)" % [
 			plvl, mlvl, base_xp, mult, final_xp, lvl_before, ch.level, ch.level - lvl_before])
+
+
+func run_hotzone_risk_audit():
+	"""Death rate against a monster at RATIO x the player's level - what "lethal" actually means.
+
+	Owner 2026-09-17, on the hotzone confirm threshold: *"it should be something closer to what
+	would typically be a lethal level difference for the player."* `DANGER_STEP_RATIO := 2.0` was
+	a round number nobody measured.
+
+	\u26d1 DEATH rate, not win rate. A hotzone prompt exists to stop a PERMANENT death, and since
+	retreat exists a non-win is usually a retreat - so win rate, which is what the neighbouring
+	`overlevel` audit reports, answers a different question and would answer it confidently.
+
+	\u26d1 Sampled by RATIO because the live check is a ratio. An absolute delta means 2x at level
+	20 and 1.13x at level 150; the same row would not be the same situation.
+	"""
+	var N := 120
+	var plevels := [10, 25, 60, 150]
+	var ratios := [1.0, 1.15, 1.3, 1.5, 1.75, 2.0, 2.5]
+	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Grifter", "Trk"]]
+	print("\n===== HOTZONE RISK: DEATH RATE BY LEVEL RATIO (%d fights/cell, AVERAGE gear) =====" % N)
+	print("A hotzone asks for confirmation when monster_level / your_level >= DANGER_STEP_RATIO.")
+	print("This is what each ratio actually COSTS. Read the death%% - the win%% is there only to")
+	print("show how much of a non-win is a safe retreat rather than a grave.")
+	print("")
+	for pl in plevels:
+		for c in classes:
+			var row := "P%-4d %-4s" % [pl, c[1]]
+			for rr in ratios:
+				var ml: int = maxi(1, int(round(float(pl) * float(rr))))
+				var deaths := 0
+				var wins := 0
+				for i in range(N):
+					var r = run_fight(pl, "average", "normal", 1.0, 1.0, 1.0, c[0], ml)
+					if bool(r.get("died", false)):
+						deaths += 1
+					if r.win:
+						wins += 1
+				row += "  %.2fx:%2d%%d/%2d%%w" % [rr, int(round(100.0 * deaths / N)), int(round(100.0 * wins / N))]
+			print(row)
+	print("")
+	print("Pick the threshold where death%% stops being a rounding error and starts being a")
+	print("real risk of losing the character - that is what the prompt is for.")
 
 
 func run_overlevel_audit():
