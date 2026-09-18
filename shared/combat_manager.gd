@@ -8716,6 +8716,24 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			_apply_on_taken_hit(combat, _oth_char, _oth_result)
 		else:
 			_apply_on_unharmed_turn(combat, _oth_char, _oth_result)
+		# ⛑ AND REPORT WHAT IT COST, measured the same way this funnel already measures
+		# whether it cost anything: HP before minus HP after. The PARTY path has sent this
+		# since 2026-09-15 and solo never did, so the combat log's round summary could say
+		# what you dealt and nothing about what hit you - the number the owner asked to have
+		# highlighted, being the one a player decides to retreat on.
+		#
+		# It rides the LAST message of the turn, which is the same convention the party path
+		# uses, and it is a TOTAL rather than per-blow: the summary adds them up anyway, and
+		# a total measured from HP cannot disagree with the health bar the way a sum of
+		# individually-parsed numbers can.
+		var _oth_taken: int = maxi(0, _oth_before - int(_oth_char.current_hp))
+		var _oth_msgs: Array = _oth_result.get("messages", []) if _oth_result.get("messages", null) is Array else []
+		if _oth_taken > 0 and not _oth_msgs.is_empty():
+			var _tk: Array = []
+			_tk.resize(_oth_msgs.size())
+			_tk.fill(0)
+			_tk[_tk.size() - 1] = _oth_taken
+			_oth_result["message_taken"] = _tk
 	return _oth_result
 
 func _apply_on_unharmed_turn(combat: Dictionary, character, result: Dictionary) -> void:

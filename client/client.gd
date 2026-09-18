@@ -7407,6 +7407,22 @@ func _dev_run_shots() -> void:
 						_milestone_overlay.visible = false
 						await get_tree().create_timer(0.4).timeout
 					await _dev_shot_capture("combat")
+				# ⛑ DUMP THE LOG, LINE BY LINE. The combat log rework starts from what a round
+				# ACTUALLY emits - how many lines, from which actor, how long - and that is not
+				# knowable by reading the 31 append sites, because the folding depends on the
+				# ORDER the server sends them in.
+				# ⛑ MEASURE WHAT THE PLAYER SEES, NOT THE RAW STRING. The summary carries its
+				# blow-by-blow as `[url=...]` hover text, so the raw line is ~1400 characters while
+				# the VISIBLE line is a dozen. The first version of this dump regex-stripped tags
+				# and reported the hover payload as line length - a number that looked alarming and
+				# meant nothing. `get_parsed_text()` is what is on screen.
+				var _band = combat_scene_panel.get("_battle_log_band")
+				var _seen: String = String(_band.get_parsed_text()) if _band != null else ""
+				var _rows: PackedStringArray = _seen.split("
+")
+				print("[SHOTS] LOG DUMP: %d visible rows" % _rows.size())
+				for _i in range(_rows.size()):
+					print("[SHOTS]  %2d | %3d ch | %s" % [_i, String(_rows[_i]).length(), String(_rows[_i]).substr(0, 110)])
 			"dungeon":
 				# GODMODE FIRST. Every dungeon capture on 2026-09-16 landed in the entrance ambush and
 				# photographed the fight - twice it killed the test character outright, once with
@@ -42441,6 +42457,37 @@ func _party_actor_color(actor_pid: int) -> String:
 				return String(PARTY_ACTOR_COLORS[i % PARTY_ACTOR_COLORS.size()])
 	return String(PARTY_ACTOR_COLORS[0])
 
+func _actor_label(actor: String, actor_pid: int = -1) -> String:
+	"""Who the summary line is FOR, in the player's own words, coloured as the gutter is.
+
+	⛑ The summary replaced a prose line that named the actor inside the sentence ("The Swift
+	Warded Wight drains..."), so the name has to move to the FRONT of the line or it is lost.
+	Colours match `_actor_gutter` exactly, so a member and their companion still read as one group.
+
+	⛑ Every identifier here was checked to exist. The first draft used `monster_data`,
+	`my_peer_id` and `party_member_names`, none of which are real - four parse errors in one
+	function, from writing what the code ought to have been called.
+	"""
+	match actor:
+		"monster":
+			var mname := ""
+			if combat_scene_panel != null and is_instance_valid(combat_scene_panel):
+				mname = String(combat_scene_panel.get("_monster_name"))
+			return "[color=#FF6666]%s[/color]" % (mname if mname != "" else "Enemy")
+		"member":
+			var who := ""
+			for m in _party_combat_members:
+				if m is Dictionary and int(m.get("peer_id", -1)) == actor_pid:
+					who = String(m.get("name", ""))
+					break
+			if who == "" or _party_combat_members.is_empty():
+				who = "You"
+			return "[color=%s]%s[/color]" % [_party_actor_color(actor_pid), who]
+		"companion":
+			return "  [color=%s]%s[/color]" % [_party_actor_color(actor_pid), "Companion"]
+	return ""
+
+
 func _actor_gutter(actor: String, actor_pid: int = -1, target_pid: int = -1) -> String:
 	"""The left marker for a line, by WHO acted.
 
@@ -42519,7 +42566,21 @@ func _display_combat_msg(combat_msg: String):
 		var _can_fold: bool = (_fold_actor != "" and _fold_actor != "neutral"
 			and _fold_key == _log_run_key and combat_scene_panel != null
 			and combat_scene_panel.has_method("append_to_last_log"))
-		if _can_fold:
+		# ⛑ SUMMARISE, DO NOT CONCATENATE. The old fold joined an actor's messages with
+		# separators, which turned five short lines into one 294-character line that wrapped
+		# to five rows anyway - measured, three rounds of a solo fight, before this was
+		# written. `log_actor_action` accumulates the server's own numbers and REWRITES the
+		# actor's line, so it states what they have done so far rather than growing a clause
+		# at a time. The blow-by-blow rides along as the line's hover text.
+		#
+		# The key drops the TARGET. Including it is why the monster broke into three lines a
+		# round - hitting you, then your pet, then you again - and a summary can simply
+		# carry both totals on one line.
+		var _sum_key := "%s:%d" % [_fold_actor, _fold_pid]
+		var _can_summarise: bool = (_fold_actor != "" and _fold_actor != "neutral" and combat_scene_panel != null and combat_scene_panel.has_method("log_actor_action"))
+		if _can_summarise:
+			combat_scene_panel.log_actor_action(_sum_key, _actor_label(_fold_actor, _fold_pid), _pm, enhanced_msg)
+		elif _can_fold:
 			combat_scene_panel.append_to_last_log(enhanced_msg.strip_edges())
 		else:
 			_log_run_key = _fold_key if _fold_actor != "" and _fold_actor != "neutral" else ""

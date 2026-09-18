@@ -6647,12 +6647,18 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	var _msg_actors: Array = result.get("message_actors", []) if result.get("message_actors", null) is Array else []
 	var _msg_dmg: Array = result.get("message_damage", []) if result.get("message_damage", null) is Array else []
 	var _msg_mhp: Array = result.get("message_monster_hp", []) if result.get("message_monster_hp", null) is Array else []
+	# ⛑ WHAT THIS ACTION COST THE PLAYER, attached to the LAST monster-attributed line -
+	# the same shape the party path uses. `message_taken` is per-message when the combat
+	# manager provides it; otherwise the whole drop rides the final monster line, which is
+	# what the round summary totals.
+	var _msg_taken: Array = result.get("message_taken", []) if result.get("message_taken", null) is Array else []
 	var _mi := 0
 	for msg in result.get("messages", []):
 		send_combat_message(peer_id, msg,
 			String(_msg_actors[_mi]) if _mi < _msg_actors.size() else "",
 			int(_msg_dmg[_mi]) if _mi < _msg_dmg.size() else 0,
-			int(_msg_mhp[_mi]) if _mi < _msg_mhp.size() else -1)
+			int(_msg_mhp[_mi]) if _mi < _msg_mhp.size() else -1,
+			int(_msg_taken[_mi]) if _mi < _msg_taken.size() else 0)
 		_mi += 1
 
 	# Slice 2 — promote ability rank-ups to account-level record (survives permadeath)
@@ -21352,7 +21358,7 @@ func _push_first_strike_to_log(peer_id: int, result: Dictionary) -> void:
 		if String(line).strip_edges() != "":
 			send_combat_message(peer_id, String(line), "monster")
 
-func send_combat_message(peer_id: int, message: String, actor: String = "", dmg: int = 0, mhp: int = -1):
+func send_combat_message(peer_id: int, message: String, actor: String = "", dmg: int = 0, mhp: int = -1, taken: int = 0):
 	"""Send a combat message and forward to watchers.
 
 	`actor` (member / companion / monster / neutral) travels with the line so the client can
@@ -21367,6 +21373,13 @@ func send_combat_message(peer_id: int, message: String, actor: String = "", dmg:
 	# moment the lines were reworded to read as one line per action.
 	if dmg > 0:
 		payload["dmg"] = dmg
+	# ⛑ AND DAMAGE THE PLAYER TOOK, MEASURED AS AN HP DELTA - never read off the prose.
+	# The PARTY path has sent this since 2026-09-15 for exactly this reason (*"the client's
+	# text parser took that for damage TO the monster"*); SOLO never did, so the combat
+	# log's new round summary could show what you dealt and nothing about what hit you -
+	# which is the number the owner asked to have highlighted, being the one you retreat on.
+	if taken > 0:
+		payload["taken"] = taken
 		# The monster's HP after THIS hit, so the bar moves on the same line the number pops
 		# on rather than trailing it to the end of the beat.
 		if mhp >= 0:

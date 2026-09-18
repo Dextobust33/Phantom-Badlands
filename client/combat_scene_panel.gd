@@ -5948,9 +5948,121 @@ func update_companion(companion_data: Dictionary) -> void:
 		_refresh_companion()
 
 
+## ⚑ THE ROUND SUMMARY. One line per actor per round, built from the server's own numbers.
+##
+## Owner 2026-09-17: *"get all actions to 1 line (both solo and party). Each line could be
+## expandable or hoverable to see more info."*
+##
+## ⛑ THIS IS ARITHMETIC, NOT CONCATENATION. The previous fold joined an actor's messages with
+## separators, which turned five short lines into one 294-character line that wrapped to five rows
+## anyway. Measured before building. The numbers come from the message metadata the server already
+## sends (`dmg`, `taken`, `ability`), so the summary cannot disagree with the prose it replaces.
+##
+## key -> {
+##   "index": int,          # which line in _log_lines this actor owns THIS round
+##   "label": String,       # who they are, as shown
+##   "hits": int,
+##   "dealt": int, "taken": int,
+##   "abilities": Array[String],
+##   "detail": Array[String],   # the raw blow-by-blow, for the hover
+## }
+var _round_actors: Dictionary = {}
+
+const SUMMARY_DEALT_COLOR := "#8FD98F"
+const SUMMARY_TAKEN_COLOR := "#FF7A7A"
+
+
+func reset_round_summary() -> void:
+	"""A new round begins: every actor starts a fresh line."""
+	_round_actors.clear()
+
+
+func log_actor_action(key: String, label: String, meta: Dictionary, raw_line: String) -> void:
+	"""Fold one message into its actor's line for this round, rewriting that line in place.
+
+	⛑ REWRITES A LINE RATHER THAN APPENDING ONE. That is the whole difference from the old fold:
+	the line says what the actor has done SO FAR this round, recomputed, instead of growing by
+	another clause every time something happens."""
+	if key == "":
+		append_log(raw_line)
+		return
+	if not _round_actors.has(key):
+		_log_lines.append("")
+		if _log_lines.size() > LOG_LINE_LIMIT:
+			_log_lines = _log_lines.slice(_log_lines.size() - LOG_LINE_LIMIT)
+		_round_actors[key] = {
+			"index": _log_lines.size() - 1, "label": label, "hits": 0,
+			"dealt": 0, "taken": 0, "abilities": [], "detail": [],
+		}
+	var a: Dictionary = _round_actors[key]
+	# The line index moves when the log trims off its head; without this the summary would
+	# rewrite whatever line happened to slide into that slot.
+	if int(a["index"]) >= _log_lines.size():
+		a["index"] = _log_lines.size() - 1
+	a["hits"] = int(a["hits"]) + 1
+	a["dealt"] = int(a["dealt"]) + maxi(0, int(meta.get("dmg", 0)))
+	a["taken"] = int(a["taken"]) + maxi(0, int(meta.get("taken", 0)))
+	var ab := String(meta.get("ability", "")).strip_edges()
+	if ab != "" and not (ab in a["abilities"]):
+		a["abilities"].append(ab)
+	if raw_line.strip_edges() != "":
+		a["detail"].append(raw_line.strip_edges())
+	_log_lines[int(a["index"])] = _render_actor_summary(a)
+	if is_inside_tree():
+		_refresh_log()
+
+
+func _render_actor_summary(a: Dictionary) -> String:
+	"""The one line. Actor, what they did, and the numbers - taken pulled out and coloured.
+
+	Owner chose this shape over prose: *"damage taken stands out from damage dealt at a glance"*,
+	because that is the number a player decides to retreat on."""
+	var what := ""
+	var abilities: Array = a["abilities"]
+	if abilities.size() == 1:
+		what = String(abilities[0])
+	elif abilities.size() > 1:
+		what = "%d actions" % abilities.size()
+	elif int(a["hits"]) > 1:
+		what = "%d hits" % int(a["hits"])
+	else:
+		what = "attack"
+	var nums := ""
+	if int(a["dealt"]) > 0:
+		nums += "  [color=%s]%s →[/color]" % [SUMMARY_DEALT_COLOR, _comma(int(a["dealt"]))]
+	if int(a["taken"]) > 0:
+		nums += "  [color=%s]← %s[/color]" % [SUMMARY_TAKEN_COLOR, _comma(int(a["taken"]))]
+	# The whole line is one hover target: the detail is the blow-by-blow it replaced, so nothing
+	# is lost, it is just not all shouted at once.
+	var tip := "\n".join(a["detail"]).replace("[", "(").replace("]", ")")
+	return "[url=%s]▸ %s[/url]  [color=#9A9AA6]%s[/color]%s" % [
+		tip, String(a["label"]), what, nums]
+
+
+func _comma(n: int) -> String:
+	"""1234567 -> 1,234,567. A five-figure hit is unreadable without them."""
+	var sgn := "-" if n < 0 else ""
+	var d := str(absi(n))
+	var out := ""
+	var c := 0
+	for i in range(d.length() - 1, -1, -1):
+		out = d[i] + out
+		c += 1
+		if c % 3 == 0 and i > 0:
+			out = "," + out
+	return sgn + out
+
+
 func append_log(bbcode_line: String) -> void:
 	if bbcode_line.strip_edges() == "":
 		return
+	# ⛑ A NEW ROUND MEANS NEW LINES, AND THIS MUST RUN FOR EVERY DIVIDER. The first
+	# version put the reset inside the `_action_phase_active` branch below, so outside
+	# the action phase it never fired: every actor kept rewriting the line it owned in
+	# round 1 and rounds 2 and 3 came out EMPTY. Measured, not guessed - the log dump
+	# showed three dividers and only three actor lines, all under round 1.
+	if _extract_round_number(bbcode_line) > 0:
+		reset_round_summary()
 	_log_lines.append(bbcode_line)
 	if _log_lines.size() > LOG_LINE_LIMIT:
 		_log_lines = _log_lines.slice(_log_lines.size() - LOG_LINE_LIMIT)
@@ -6188,6 +6300,9 @@ func clear_overlay_logs() -> void:
 
 
 func clear_log(archive: bool = false) -> void:
+	# A fight ending must drop the per-round line indices too, or the next fight's first
+	# actor rewrites a line belonging to the log that was just cleared.
+	reset_round_summary()
 	# When archive=true and there's a current log, snapshot it into _flock_history
 	# so the [L] legacy view can replay prior fights from this flock chain.
 	# v0.9.611 — also archive the per-actor overlay strips (player / monster /

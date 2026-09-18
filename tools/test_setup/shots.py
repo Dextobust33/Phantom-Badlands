@@ -162,8 +162,15 @@ def main():
             said = [l.rstrip() for l in fh if "[SHOTS]" in l or "SCRIPT ERROR" in l]
         if said:
             print("\nclient said:")
-            for l in said[-12:]:
-                print("  " + l)
+            for l in said[-40:]:
+                # ⛑ THE HARNESS MUST NOT DIE PRINTING ITS OWN RESULT. Windows' console codec
+                # is cp1252 and the game's text is full of characters it cannot encode. A
+                # capture that SUCCEEDED then crashed here, losing the diagnostic it had just
+                # collected and reporting a traceback instead.
+                try:
+                    print("  " + l)
+                except UnicodeEncodeError:
+                    print("  " + l.encode("ascii", "replace").decode("ascii"))
     except OSError:
         pass
 
