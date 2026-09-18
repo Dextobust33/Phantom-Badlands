@@ -9790,6 +9790,16 @@ const PLAYER_MENU_ITEMS := [
 	{"id": 0, "label": "Whisper", "verb": "say something privately"},
 	{"id": 1, "label": "Inspect", "verb": "look at their gear and level"},
 	{"id": 2, "label": "Trade", "verb": "offer a trade"},
+	# ⚑ YOU COULD ONLY INVITE SOMEONE BY WALKING INTO THEM. The bump prompt was the ONLY
+	# route into `party_invite` - so forming a party with someone you could see in the
+	# player list meant going and finding them first. The server never required proximity:
+	# `handle_party_invite` resolves the target BY NAME and gates on combat, dungeon, party
+	# state and a cooldown, none of which is a distance. Only the client route was missing.
+	#
+	# This is the same gap as "Duel for Valor" two rows below, which the comment there
+	# describes exactly: a sweep reading "invites exist" would have called the capability
+	# covered, because they do exist - just not anywhere a player can reach them.
+	{"id": 8, "label": "Invite to Party", "verb": "ask them to join your party"},
 	{"id": 3, "label": "Duel", "verb": "challenge them, for nothing but the result"},
 	# ⚑ THE WAGER NEEDED ITS OWN ROW. `player_duel` takes "none" or "valor_10" and the
 	# menu only ever passed "none", so half the feature had no UI route at all - and a sweep
@@ -9843,11 +9853,29 @@ func _on_player_menu_id(id: int) -> void:
 		0: start_whisper_to(target)
 		1: player_examine(target)
 		2: handle_trade_command(target)
+		8: party_invite_player(target)
 		3: player_duel(target, "none")
 		7: player_duel(target, "valor_10")
 		4: request_watch_player(target)
 		5: player_friend_add(target)
 		6: player_block(target)
+
+
+func party_invite_player(target: String) -> void:
+	"""Invite one player to the party, from anywhere they can be named.
+
+	⚑ THE SERVER ALREADY ALLOWED THIS. `handle_party_invite` looks the target up by name and
+	refuses on combat, dungeon, an existing party, a full party, a pending invite and a cooldown -
+	and it has never cared where either player is standing. The bump prompt was simply the only
+	thing that ever sent the message, so the reachable feature was much smaller than the built one.
+
+	Every refusal is reported by the server as text, so this deliberately does NOT pre-check any
+	of them here: a second copy of those conditions on the client is the "one value, two places"
+	shape, and it would go stale the first time one of them changed."""
+	if target == "" or target == character_data.get("name", ""):
+		return
+	send_to_server({"type": "party_invite", "target": target})
+	display_chat("[color=#66D0C0]Party invite sent to %s.[/color]" % target)
 
 
 func start_whisper_to(target: String) -> void:

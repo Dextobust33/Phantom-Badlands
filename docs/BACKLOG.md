@@ -6132,7 +6132,23 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 ## Phase 4 — party (half-built; finish or cut)
 
-- [ ] **Invite window** and **watch-a-teammate's-minigame** — the two remaining Party UI pieces.
+- [x] **Invite window — DONE 2026-09-18, and it was smaller than the line suggested.** Verified
+      before building, per the standing rule, and most of it already existed: the server's
+      `handle_party_invite` resolves its target **by name** and gates on combat, dungeon, party
+      state, a full party, a pending invite and a cooldown - **none of which is a distance**. What
+      was missing was any client route except the walk-into-someone bump prompt, so forming a party
+      with a player you could see in the online list meant going to find them first.
+      Added **Invite to Party** to the player context menu (right-click a name, or the Actions
+      button on the player-info popup, which is the controller-reachable door). No client-side
+      pre-checks: every refusal is already reported by the server, and a second copy of those
+      conditions is the "one value, two places" shape that goes stale.
+      ⛑ **Same shape as the Duel-for-Valor gap**, whose comment sits two rows above it in the same
+      table: the capability existed server-side and the player could not reach it, so a sweep
+      reading *"invites exist"* called it covered. `tools/probe/player_menu_covers_actions.gd` now
+      checks that every menu row dispatches AND that both previously-missed verbs are reachable.
+- [ ] **Watch-a-teammate's-minigame** — the remaining Party UI piece. (`Watch` in the player menu
+      follows another player's game output; this is the narrower case of watching the minigame a
+      party member is playing, live.)
 - [x] **Party rewards — AUDITED 2026-09-10, the live path is correct.** Read AND probed. The
       simultaneous path (`_end_party_combat_all`) skips only `dead` / `fled` / missing members and
       gives every survivor their own XP, companion XP and an INDEPENDENT loot roll, with
