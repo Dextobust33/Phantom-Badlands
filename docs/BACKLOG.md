@@ -858,6 +858,13 @@ Currently queued:
       endgame titles only, so the effect on the aggregate should be small - but the Knight damage
       bonus lands in `calculate_damage` beside the gear multiplier, which is a path the chain does
       measure. Glance at it on the next `refcal`.
+- [ ] **Are any of the 53 dungeon cards worth a deck slot?** The COVERAGE half shipped - all 53
+      exist, themed and sized - but the owner's actual bar was *"cards that classes may want to
+      swap into their decks"*, and nothing has measured whether one clears it. The question is:
+      for each class, does substituting a dungeon card for its weakest deck slot raise the win rate
+      or lower it? **In the batch because it is a sim run and because its OUTPUT is card buffs**,
+      which are per-class power changes. Needs a new audit; there is no existing one for this.
+      Until it runs, *"53 cards exist and all 53 work"* is the honest claim.
 - [ ] **Sage 1.3%, Barbarian 1.2%, Ranger 1.9% death per encounter** against 0.1-0.7% for the rest.
       Real but not broken, and all three clear the endgame bar. **Per-class levers only** - a global
       buff is cancelled by the next refit and cannot close a per-class gap. (Moved here from
@@ -6365,6 +6372,8 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       shape of it is: for each class, does substituting a dungeon card for its weakest deck slot
       raise the win rate or lower it? Until that is run, "53 cards exist and all 53 work" is the
       honest claim and the only one the probe makes.
+      → **Moved to THE BALANCE BATCH 2026-09-18**: it is a sim run, and what it produces is card
+      buffs, which are per-class power changes. Both halves belong in one batch window.
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
@@ -6558,18 +6567,41 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       **This supersedes part of the placement item above:** placement no longer follows a type's
       fixed tier, it follows the instance's rolled grade. Do them together.
 
-- [ ] **DUNGEONS GET A RARITY. Owner 2026-09-11:** *"Dungeons should have a rarity moving
-      forward."* The data is already written and has never been read: `spawn_weight` sits on all
-      53 types with values from 50 down to 1, appears about forty times in
-      `dungeon_database.gd`, and **nothing in the codebase reads it**. Selection is
-      `dungeon_types[randi() % dungeon_types.size()]` - uniform over every type in the game.
-      Two axes to decide between, and they are not the same thing:
-        1. **Type rarity** - a Kelpie Marsh is a rarer sight than a Goblin Caves. That is what
-           `spawn_weight` was authored for; making the picker weighted is a few lines.
-        2. **Grade rarity** - a rank 9 is rarer than a rank 1 in the same country. That belongs
-           with the grade roll in the item above, not with `spawn_weight`.
-      Owner probably means both. Worth confirming which, because (1) alone leaves every grade
-      equally common and the climb the owner described has no scarcity in it.
+- [~] **DUNGEONS GET A RARITY — AXIS 1 WAS ALREADY SHIPPED; AXIS 2 IS NOT WHAT THIS ENTRY SAYS
+      IT IS.** Owner 2026-09-11: *"Dungeons should have a rarity moving forward."* Checked on
+      2026-09-18 before building, per the standing rule, and both halves came back differently
+      than the entry described.
+
+      **✅ AXIS 1 (type rarity) IS DONE AND LIVE.** This entry claimed `spawn_weight` *"is read by
+      nothing in the codebase"* and that selection was uniform. Not true any more:
+      `DungeonDatabase.pick_weighted_type()` reads it, and BOTH live spawn paths call it
+      (`server.gd:32260` and `:32270` via `_pick_weighted_dungeon_type`). There is also a
+      `pick_weighted_type_for_grade()` that additionally weights toward species suited to the
+      country, used by the quest-dungeon path at `:32500`. No uniform picker survives anywhere -
+      the only remaining mention of `randi() % dungeon_types.size()` is inside a docstring
+      describing what it replaced. **Fourth shipped-but-unticked item found this way; see
+      [[feedback_verify_before_building]].**
+
+      **⛑ AXIS 2 (grade rarity) CANNOT BE DONE AS WRITTEN, because there is no roll to weight.**
+      The entry asks that *"a rank 9 is rarer than a rank 1 in the same country"*. Today a
+      dungeon's grade is **deterministic**: `_grade_of_land(x, y)` takes the post-anchored level of
+      the tile and hands it to `PowerRank.grade_for_level`, which is a pure function - same tile,
+      same grade, every time, with no randomness anywhere in the path. So within one country every
+      dungeon is the SAME grade, and a rank 9 is not rare there, it is impossible unless the land
+      itself is rank-9 land. Each grade is exactly as common as the amount of ground at its level.
+
+      **So the real question is a design one, and it is the owner's:** should a dungeon's grade
+      VARY around its land's baseline - so that rank-5 country occasionally produces a rank 8 or 9
+      as a genuine find - or should the grade stay locked to the land, with rarity living entirely
+      in the TYPE (which is what already ships)?
+
+      That is not a weighting change; it is **introducing variance where there is currently none**,
+      and it pulls directly against the fix shipped in v0.9.802. Owner, on that: *"Dungeons should
+      be of appropriate level to the neighborhood they are in."* A rank 9 in rank-5 country is
+      **one grade of extra difficulty** (nine ranks = one grade), which is survivable and probably
+      the interesting version - but it is the same shape as the trap that was just removed, so the
+      variance would need a hard ceiling and the entry screen would have to advertise it loudly.
+      **Ask before building.**
 
 - [x] **A DUNGEON CONTAINS EXACTLY ONE SPECIES, and the Atlas advertises otherwise.** Found  **DONE and VERIFIED 2026-09-13** - `tools/probe/dungeon_species_mix.gd` PASSES: a dungeon holds a mix, and its floor eggs follow what actually spawned.
       2026-09-11 answering the owner's question about how monster tiers work in dungeons.
