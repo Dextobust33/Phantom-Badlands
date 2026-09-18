@@ -54,6 +54,18 @@ func _init() -> void:
 	ck(p._prev_btn.visible and not p._prev_btn.disabled, "Prev is offered when there is a prior fight")
 	ck(p._next_btn.disabled, "...and Next is disabled on the current fight")
 
+	print("")
+	print("===== THE DETAIL IS REACHABLE =====")
+	# ⛑ EVERY SUMMARY LINE IS A `[url]` WHOSE PAYLOAD IS A KEY into the blow-by-blow, so a log
+	# panel without hover wiring renders underlined links that advertise an explanation they
+	# cannot give. This panel shipped with `meta_clicked` alone and exactly that happened.
+	# Owner 2026-09-18: *"The log is working now except for the hover to see the details."*
+	ck(p._body.mouse_filter == Control.MOUSE_FILTER_PASS,
+		"the body takes mouse events (IGNORE makes every hover listener unreachable)")
+	ck(p._body.meta_hover_started.get_connections().size() > 0, "meta_hover_started is wired")
+	ck(p._body.meta_hover_ended.get_connections().size() > 0,
+		"...and meta_hover_ended too - a hover with nothing to close it sticks on screen")
+	ck(p._body.meta_clicked.get_connections().size() > 0, "clicks still route (flock pagination)")
 	p.close()
 	await process_frame
 	ck(not p.visible, "closes")

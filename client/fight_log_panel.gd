@@ -23,6 +23,13 @@ extends Control
 signal closed
 signal step_fight(delta: int)
 signal meta_clicked(meta)
+## ⛑ HOVER, NOT ONLY CLICK. Every summary line wraps itself in a `[url]` whose payload is
+## a KEY into the blow-by-blow, and the in-combat band has been wired to both halves since
+## the summary shipped. This panel was given `meta_clicked` alone, so the detail a line
+## exists to reveal could not be reached from the log the player opens to READ it.
+## Owner 2026-09-18: *"The log is working now except for the hover to see the details."*
+signal meta_hovered(meta)
+signal meta_hover_ended
 
 var _body: RichTextLabel = null
 var _title: Label = null
@@ -139,9 +146,18 @@ func _build() -> void:
 	_body.fit_content = true
 	_body.scroll_active = false
 	_body.selection_enabled = true
+	# PASS, never IGNORE: IGNORE means the label receives no mouse events at all and the
+	# hover listeners above become unreachable while the links still RENDER - an underlined
+	# link that advertises an explanation it cannot give. That shipped once already on
+	# `_monster_name_label`.
+	_body.mouse_filter = Control.MOUSE_FILTER_PASS
 	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_body.meta_clicked.connect(func(m) -> void: meta_clicked.emit(m))
+	# BOTH halves, together - a hover opened with nothing to close it leaves a box stuck on
+	# screen, which is the exact fault `_wire_hover` exists in the combat panel to prevent.
+	_body.meta_hover_started.connect(func(m) -> void: meta_hovered.emit(m))
+	_body.meta_hover_ended.connect(func(_m) -> void: meta_hover_ended.emit())
 	_scroll.add_child(_body)
 
 

@@ -3210,6 +3210,12 @@ func _ready():
 	fight_log_panel.closed.connect(update_action_bar)
 	fight_log_panel.step_fight.connect(_legacy_view_step)
 	fight_log_panel.meta_clicked.connect(_on_game_output_meta_clicked)
+	fight_log_panel.meta_hovered.connect(func(m) -> void:
+		if combat_scene_panel != null and combat_scene_panel.has_method("show_hover_detail"):
+			combat_scene_panel.show_hover_detail(str(m)))
+	fight_log_panel.meta_hover_ended.connect(func() -> void:
+		if combat_scene_panel != null and combat_scene_panel.has_method("hide_hover_detail"):
+			combat_scene_panel.hide_hover_detail())
 	pvp_combat_panel.action_submitted.connect(_on_pvp_combat_action_submitted)
 
 	# Audit #14 Slice 1 — clan create/roster panel.

@@ -4282,6 +4282,18 @@ func _wire_hover(rtl: RichTextLabel) -> void:
 	rtl.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
 
 
+func show_hover_detail(meta: String) -> void:
+	"""The same hover box the in-combat log uses, for the separate fight-log OVERLAY.
+
+	The detail text and the popup both live on this panel, so the overlay - which is a sibling
+	node - asks for them rather than keeping a second copy that could fall out of step."""
+	_show_formula_popup(meta)
+
+
+func hide_hover_detail() -> void:
+	_hide_formula_popup()
+
+
 func _hide_formula_popup() -> void:
 	if _formula_popup != null and is_instance_valid(_formula_popup):
 		_formula_popup.visible = false
