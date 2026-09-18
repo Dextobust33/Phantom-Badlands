@@ -3726,6 +3726,13 @@ func _ready():
 	if game_output and is_instance_valid(game_output):
 		if not game_output.meta_clicked.is_connected(_on_game_output_meta_clicked):
 			game_output.meta_clicked.connect(_on_game_output_meta_clicked)
+	# ⚑ CHAT LINKS ARE CLICKABLE TOO. Nothing was ever connected here, so a `[url]` written
+	# into a chat line rendered as underlined text that did nothing at all - which is worse
+	# than no link, because it advertises an action and then refuses it. Same dispatcher as
+	# game_output, so a meta means one thing wherever it is written.
+	if chat_output and is_instance_valid(chat_output):
+		if not chat_output.meta_clicked.is_connected(_on_game_output_meta_clicked):
+			chat_output.meta_clicked.connect(_on_game_output_meta_clicked)
 
 	# Connect chat tab buttons
 	if chat_tab_button:
@@ -41781,6 +41788,17 @@ func _on_game_output_meta_clicked(meta) -> void:
 	if meta_str.begins_with("atlas_locate:"):
 		# Dungeon Atlas — click a discovered dungeon to locate the nearest active one.
 		send_to_server({"type": "dungeon_locate", "dungeon_type": meta_str.substr(13)})
+		return
+	# ⚑ "SEE THE FIGHT" ON A DEATH ANNOUNCEMENT. Every death has carried its full combat log
+	# in `death_data` since the leaderboard was written, and this client already renders it -
+	# but the only way in was to open the leaderboard and find the row. The moment anyone
+	# wants to know how someone died is the moment it is announced, so the announcement links
+	# to it. The fetch is the EXISTING `get_leaderboard_death` round trip, unchanged.
+	if meta_str.begins_with("deathlog:"):
+		var _dead_name: String = meta_str.substr(9)
+		if _dead_name != "":
+			send_to_server({"type": "get_leaderboard_death", "character_name": _dead_name})
+			display_chat("[color=#888888]Fetching %s's last fight...[/color]" % _dead_name)
 		return
 	match meta_str:
 		"legacy_prev":

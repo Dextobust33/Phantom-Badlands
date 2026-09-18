@@ -1069,13 +1069,28 @@ func get_leaderboard(limit: int = 10) -> Array:
 	return result
 
 func get_leaderboard_death_data(character_name: String, died_at: int = 0) -> Dictionary:
-	"""Get death screen data for a specific leaderboard entry."""
+	"""Death screen data for one leaderboard entry. With no `died_at`, the MOST RECENT death
+	under that name.
+
+	⛑ IT USED TO RETURN WHICHEVER MATCHED FIRST, which is not the same thing and is not
+	anything: `entries` is sorted by LEVEL for the leaderboard display, so a name that has died
+	twice returned whichever of the two happened to rank higher. Harmless while the only caller
+	passed an exact `died_at` from a leaderboard row; wrong the moment a link identifies a death
+	by name alone, which is what the death announcement now does."""
+	var best: Dictionary = {}
+	var best_at: int = -1
 	for entry in leaderboard_data.entries:
-		if entry.get("character_name", "") == character_name:
-			if died_at > 0 and entry.get("died_at", 0) != died_at:
-				continue
-			return entry.get("death_data", {})
-	return {}
+		if entry.get("character_name", "") != character_name:
+			continue
+		var at: int = int(entry.get("died_at", 0))
+		if died_at > 0:
+			if at == died_at:
+				return entry.get("death_data", {})
+			continue
+		if at > best_at:
+			best_at = at
+			best = entry.get("death_data", {})
+	return best
 
 func remove_from_leaderboard(character_name: String) -> bool:
 	"""Remove a specific entry from the leaderboard by character name. Returns true if found and removed."""

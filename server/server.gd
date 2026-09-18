@@ -8318,7 +8318,16 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 	send_to_peer(peer_id, permadeath_msg)
 
 	# Broadcast death announcement to ALL connected players (including those on character select)
-	var death_message = "[color=#FF4444]%s (Level %d) has fallen to %s![/color]" % [character.name, character.level, cause_of_death]
+	# ⚑ AND THE ANNOUNCEMENT LINKS TO HOW IT HAPPENED. Every death has carried its full combat
+	# log in `death_data` since the leaderboard was written, and the client already renders it -
+	# but the ONLY way to reach it was to open the leaderboard, find the row and click it. The
+	# moment anyone wants to know is the moment the death is announced.
+	#
+	# Identified by NAME alone, which is why `get_leaderboard_death_data` was just taught that
+	# no timestamp means the most RECENT death under that name: `add_to_leaderboard` stamps
+	# `died_at` internally and hands back only a rank, so the exact value is not available here
+	# without reaching back into storage for the row that was written a line ago.
+	var death_message = "[color=#FF4444]%s (Level %d) has fallen to %s![/color]  [color=#FFD700][url=deathlog:%s]⚑ see the fight[/url][/color]" % [character.name, character.level, cause_of_death, character.name]
 
 	# Add corpse location hint to death broadcast if corpse was created
 	if not corpse.is_empty():

@@ -175,8 +175,14 @@ static func _avalanche(x: int) -> int:
 	ids - and a raw string hash of those correlates badly in exactly the bits a modulus reads.
 	Returns a non-negative value so `%` behaves."""
 	var z: int = x
-	z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
-	z = (z ^ (z >> 27)) * 0x94D049BB133111EB
+	# ⛑ WRITTEN AS SIGNED DECIMALS, NOT HEX. GDScript parses integer literals as SIGNED
+	# 64-bit, so the usual splitmix64 constants - 0xBF58476D1CE4E5B9 and
+	# 0x94D049BB133111EB - are both "too large to represent" and the engine logs an error
+	# and substitutes. The function still RAN and the probe still passed, on degenerate
+	# arithmetic; the errors only surfaced because a parse check was run on another file
+	# and they scrolled past. These are the same two constants as two's-complement.
+	z = (z ^ (z >> 30)) * -4658895280553007687
+	z = (z ^ (z >> 27)) * -7723592293110705685
 	z = z ^ (z >> 31)
 	return z & 0x3FFFFFFFFFFFFFFF
 

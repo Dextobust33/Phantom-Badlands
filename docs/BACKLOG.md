@@ -6090,8 +6090,26 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       was worse: it listed **Paladin = self-healing** (it is Retribution — Conviction built by
       blows you take) and **Sage = efficient** under its old name rather than the Oracle. All nine
       now name their engine there.
-- [ ] **Death replay / shareable combat log.** When a player dies, the chat message carries a
-      clickable link to the combat log — ideally a replay — so everyone can see how it happened.
+- [x] **Death replay / shareable combat log — THE LINK IS DONE 2026-09-18.** Nearly all of this
+      was already built, which is the point: every death has carried its full `combat_log` inside
+      `death_data` since the leaderboard was written, the server already answers
+      `get_leaderboard_death` with it, and the client already renders it. The only missing piece
+      was a way to ASK - you had to open the leaderboard and find the row. The death announcement
+      now carries **⚑ see the fight**, and it goes to every peer including players sitting on
+      character select.
+      **Chat links were not clickable at all** before this: nothing was ever connected to
+      `chat_output.meta_clicked`, so a `[url]` written into chat rendered as underlined text that
+      did nothing - worse than no link, because it advertises an action and then refuses it. It
+      routes through the same dispatcher as `game_output` so a meta means one thing wherever it is
+      written.
+      **A correctness fix came with it:** the link names a death by NAME (`add_to_leaderboard`
+      stamps `died_at` internally and hands back only a rank), so "no timestamp" had to be taught
+      to mean the most RECENT death under that name. It used to mean "whichever matched first", and
+      `entries` is sorted by LEVEL - so a name that had died twice returned whichever ranked higher.
+      Probe: `tools/probe/death_log_link.gd`, which walks the route rather than the parts.
+      **Still open: the REPLAY.** The entry says *"ideally a replay"* - this ships the log, not a
+      re-animation of the fight. Worth deciding whether the replay is wanted before building it;
+      the data to drive one is already stored.
 - [x] **Combat layout at 1080p — CONFIRMED FINE, CLOSED 2026-09-09.** Owner: *"needs confirmed
       before we work it. May not be an issue anymore."* Captured the real client at 1920x1080 and
       looked: the combat log, monster art, player/companion panel, card row and action bar all sit
