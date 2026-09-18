@@ -23,7 +23,18 @@ const CD := preload("res://shared/crafting_database.gd")
 
 func _init() -> void:
 	var mats: Dictionary = CD.MATERIALS
-	var recipes: Dictionary = CD.RECIPES
+	# ⛑ TWO TABLES CONSUME MATERIALS, NOT ONE, and reading only `RECIPES` made this audit report
+	# six materials as having NO DESTINATION when three of them (ash_wood, oak_wood, darkwood -
+	# the common weight-40 results of chopping) are each used by four `GATHERING_TOOLS` recipes.
+	# An audit written around the wrong unit is as wrong as a guess and far more convincing; this
+	# one had been quoted as a finding and put on the backlog as work to do.
+	#
+	# Derived rather than hand-listed: any const dictionary whose entries carry a `materials` key
+	# is a consumer, so a third table added later is picked up without editing this line.
+	var recipes: Dictionary = {}
+	for src in [CD.RECIPES, CD.GATHERING_TOOLS]:
+		for rid in src:
+			recipes[rid] = src[rid]
 
 	# --- who consumes what
 	var consumed: Dictionary = {}
@@ -110,5 +121,23 @@ func _init() -> void:
 		print("    skill %-6s %d recipes" % [b, int(buckets[b])])
 
 	print("")
-	print("[PROBE] measurement only - no pass/fail. The shape is the finding.")
+	# ⛑ THIS WAS MEASUREMENT-ONLY UNTIL THE COUNT REACHED ZERO (2026-09-18). A probe that only
+	# reports cannot stop a regression, and "6 materials have no destination" sat in the backlog
+	# as a finding for weeks - four of those six being FALSE, because the audit read only
+	# `RECIPES` and not `GATHERING_TOOLS`. Now that the real number is 0, it holds the line: any
+	# new material with nowhere to go fails here rather than waiting to be noticed.
+	#
+	# EDIBLE-ONLY is deliberately NOT a failure. Food is a real destination, and a foraged herb
+	# that is only ever eaten is working as intended.
+	if not orphans.is_empty():
+		print("[PROBE] FAIL %d material(s) have no destination at all: %s" % [
+			orphans.size(), ", ".join(orphans)])
+		print("        Give each a recipe that consumes it, or remove it from MATERIALS.")
+		print("        Prefer a NEW sink over adding it as an ingredient to an existing recipe -")
+		print("        an added ingredient gates that recipe behind whichever job drops it.")
+		quit(1)
+		return
+	print("[PROBE] PASS every one of %d materials has somewhere to go (%d of them as food)." % [
+		mats.size(), food_only.size()])
+	quit()
 	quit()

@@ -1151,6 +1151,41 @@ const RECIPES = {
 		"output_quantity": 2,
 		"craft_time": 1.5
 	},
+	# ⚑ TWO SINKS FOR THE LAST TWO ORPHANED MATERIALS (2026-09-18). `ice_crystal` and `rock_salt`
+	# are weight-35 MINING catches with no destination at all - a player swings a pickaxe, gets
+	# them constantly, and can do nothing with either.
+	#
+	# ⛑ DELIBERATELY NEW RECIPES RATHER THAN NEW INGREDIENTS ON OLD ONES. Folding them into an
+	# existing low-tier recipe would have GATED that recipe behind mining - a forager who never
+	# swings a pickaxe would have lost access to Minor Health Potions. A sink adds a route; an
+	# ingredient removes one.
+	#
+	# They refine into `magic_dust`, which is what the affix rework consumes, so the loop closes:
+	# mine the surplus, refine it, rework a stat you don't want. Rates are value-neutral against
+	# the existing `refine_magic_dust` (2 sap + 1 acorn -> 2 dust, ~16-20 value in for 20 out):
+	# 2 ice_crystal is 24 in, 3 rock_salt is 18 in, both for 20 out.
+	"refine_ice_crystal": {
+		"name": "Refine Ice Crystal",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 1,
+		"difficulty": 5,
+		"materials": {"ice_crystal": 2},
+		"output_type": "material",
+		"output_item": "magic_dust",
+		"output_quantity": 2,
+		"craft_time": 1.5
+	},
+	"refine_rock_salt": {
+		"name": "Refine Rock Salt",
+		"skill": CraftingSkill.ENCHANTING,
+		"skill_required": 1,
+		"difficulty": 5,
+		"materials": {"rock_salt": 3},
+		"output_type": "material",
+		"output_item": "magic_dust",
+		"output_quantity": 2,
+		"craft_time": 1.5
+	},
 	"distill_magic_dust": {
 		"name": "Distill Magic Dust",
 		"skill": CraftingSkill.ENCHANTING,

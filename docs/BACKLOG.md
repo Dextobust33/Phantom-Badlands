@@ -7607,8 +7607,29 @@ something was dropped, and it sat unnoticed for eleven days.
       removed Beast Bane, which was the only consumer of `wyvern_leather`. Folded into Banebrew,
       which reads correctly anyway - a brew that turns on anything should be made of a bit of
       everything. **A cull can orphan a material; re-run `crafting_materials_audit.gd` after one.**
-      Still homeless: `ash_wood`, `darkwood`, `oak_wood`, `freshwater_pearl`, `ice_crystal`,
-      `rock_salt` - three of them still wood, which remains the worst category.
+      **✅ EVERY MATERIAL NOW HAS A DESTINATION — 2026-09-18. And four of the six "orphans" above
+      were never orphans.**
+
+      ⛑ **The audit was reading one of TWO recipe tables.** `crafting_materials_audit.gd` scanned
+      `RECIPES` and not `GATHERING_TOOLS`, so it reported `ash_wood`, `oak_wood`, `darkwood` and
+      `freshwater_pearl` as having no destination when each is used by **four** tool recipes. The
+      three woods are the **weight-40 results of chopping**, so the false finding read as a serious
+      loop failure — logging's main output going nowhere — and sat on this backlog as work to do.
+      *An audit written around the wrong unit is as wrong as a guess and far more convincing.*
+
+      The two real ones were `ice_crystal` and `rock_salt`, both **weight-35 mining** catches.
+      Each now has a `refine_*` sink into **`magic_dust`** — value-neutral against the existing
+      `refine_magic_dust` — which closes a loop, because `magic_dust` is what the **affix rework**
+      consumes. Mine the surplus, refine it, rework a stat you don't want.
+
+      ⛑ **NEW SINKS, NOT NEW INGREDIENTS.** Folding them into an existing low-tier recipe was the
+      tempting fix and would have **gated** that recipe behind mining — a forager who never swings
+      a pickaxe would have lost Minor Health Potions. A sink adds a route; an ingredient removes
+      one.
+
+      The audit is now a **guard** rather than a report: 0 orphans, and any new material with
+      nowhere to go fails it. Edible-only (21 materials) is deliberately not a failure — food is a
+      real destination. Proven by injecting a material with no recipe.
 
       **✅ THE BESTIARY READER — BUILT 2026-09-18.** Owner: *"add an inspect button or something in
       combat where if players have the bestiary for a certain monster they can view all the info on
