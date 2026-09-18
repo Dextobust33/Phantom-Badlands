@@ -12025,7 +12025,13 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
-	elif pending_continue:
+	# ⛑ A PENDING QUESTION OUTRANKS A PENDING ACKNOWLEDGEMENT. `pending_continue` used to
+	# win outright, so when a hotzone or dungeon warning arrived alongside one the bar
+	# offered "Continue" and the real choice - go in, or stay back - had no button at all.
+	# Owner 2026-09-17: *"Was walking on a road and now have a continue. Not sure what
+	# happened."* What happened was a Lv 38 hunting ground asking a question he could not
+	# see or answer. Falling through to the warning branches below is the whole fix.
+	elif pending_continue and pending_dungeon_warning.is_empty() and pending_hotzone_warning.is_empty():
 		# Waiting for player to acknowledge combat results
 		current_actions = [
 			{"label": "Continue", "action_type": "local", "action_data": "acknowledge_continue", "enabled": true},
@@ -17979,11 +17985,14 @@ func execute_local_action(action: String):
 			if not pending_hotzone_warning.is_empty():
 				var warning = pending_hotzone_warning
 				pending_hotzone_warning = {}
+				# Accepted: now you ARE inside, so the status banner replaces the question.
+				_in_hotzone_level = int(warning.get("estimated_level", 0))
 				send_to_server({"type": "hotzone_confirm", "x": warning.x, "y": warning.y})
 			update_action_bar()
 		"hotzone_cancel":
 			# Cancel entering hotzone
 			pending_hotzone_warning = {}
+			_in_hotzone_level = 0
 			_page_clear()
 			display_game("[color=#808080]You stay back from the danger zone.[/color]")
 			update_action_bar()
