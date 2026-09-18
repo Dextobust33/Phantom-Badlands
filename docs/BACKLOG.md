@@ -7762,6 +7762,31 @@ something was dropped, and it sat unnoticed for eleven days.
       **Open:** the enchanter now needs a service of its own — see the reroll loop below. Its
       Recharge is redundant until then.
 
+      **✅ RESOLVED 2026-09-18 — and I was WRONG about two of the three.** "It overlaps with
+      salvage" is not a measurement. Measuring each conversion separately:
+
+      | recipe | verdict | what happened |
+      |---|---|---|
+      | **transmute** | **KEEP, untouched** | moves surplus **UP a tier** at a steady 75-83% return. Salvage cannot do this at all — and it is exactly the shape the owner wants for the surplus loop |
+      | **extract** | **RATE FIXED** | a real cross-type conversion (leather/cloth → enchant mats), but a flat output against a doubling value ladder gave **33%-143%** depending on tier, on a material the recipe picks **for** you. Now priced off `MATERIALS`: **59-83%** everywhere |
+      | **disenchant** | **REBUILT** | genuinely was strictly worse than salvage. Now returns **the runes that went into the item**, plus exactly what salvage would give |
+
+      **The disenchant rebuild is the owner's own suggestion** — *"do you get runes back or
+      something, if not isn't it just like salvage that we already have?"* `_remember_applied_rune`
+      records each rune **at application**, because a finished item keeps only
+      `affixes[stat] = value` and several runes can write the same stat, so working backwards from
+      the number would be a guess. Gear enchanted before this update carries no record and is
+      **told so** rather than left to wonder. It targets the **most-runed** item instead of your
+      cheapest, and a full pack is reported rather than eating the runes silently.
+
+      ⛑ **THE FOURTH VACUOUS CHECK OF THE SESSION, same shape as the other three.** The probe's
+      extract-rate table computed the quantities **itself** from a hardcoded 0.80 and printed a
+      convincing table — and passed clean while the server was reverted to the old flat 2, because
+      nothing in it touched the server's arithmetic. Fixed structurally: the rate is now
+      `CraftingDatabase.extract_output_quantity()`, the server calls it, and the probe calls the
+      same function. Re-injecting the flat rate now fails at 33%.
+      Probe: `tools/probe/specialist_recipes_earn_their_place.gd`.
+
       **⚑ THREE `specialist_only` RECIPES ARE DEAD WEIGHT — measured 2026-09-18, owner's challenge.**
       Owner asked whether transmute/essence and disenchant are worth anything. They are not:
       * **`_craft_disenchant`** (enchanter) — *returns no runes*. Destroys your **lowest-level**

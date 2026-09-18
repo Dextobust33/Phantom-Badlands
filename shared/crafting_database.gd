@@ -155,6 +155,27 @@ static func reforge_stat(item: Dictionary, stat_key: String, quality_mult: float
 	return rolled
 
 # Max different enchantment stats allowed on a single item
+## What fraction of the value an Extract returns. Matches the ~20% toll `transmute` charges to
+## move surplus up a tier - the sibling mechanic, which is why the number is 0.80 and not something
+## chosen fresh.
+const EXTRACT_RETURN := 0.80
+
+
+## How many units of `target_mat` three of `source_mat` should yield.
+##
+## ⛑ A FUNCTION, NOT A CONSTANT, BECAUSE A PROBE HAS TO BE ABLE TO CALL IT. The rate used to be a
+## flat 2 against a hand-authored tier map while the value ladder kept doubling, so the real return
+## ranged from **-20% to -67%** - and the recipe picks the material FOR you, so a player could not
+## steer around the bad rungs. The first probe written for the fix computed the rate ITSELF from a
+## hardcoded 0.80 and passed cleanly while the server was reverted to the flat 2, which is the
+## fourth source-reading check in one session to assert nothing. Priced off `MATERIALS`, so it
+## cannot drift from the economy it is converting.
+static func extract_output_quantity(source_mat: String, target_mat: String, quality_mult: float) -> int:
+	var in_value: float = float(MATERIALS.get(source_mat, {}).get("value", 0)) * 3.0
+	var out_value: float = maxf(1.0, float(MATERIALS.get(target_mat, {}).get("value", 1)))
+	return maxi(1, int(floor(in_value * EXTRACT_RETURN * quality_mult / out_value)))
+
+
 const MAX_ENCHANTMENT_TYPES = 3
 
 # Per-stat enchantment cap per item (max total bonus from enchanting)

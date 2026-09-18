@@ -27587,8 +27587,19 @@ func _craft_extract(character, recipe: Dictionary, quality: int, quality_color: 
 	var essence_map = {1: "magic_dust", 2: "magic_dust", 3: "arcane_crystal", 4: "soul_shard", 5: "soul_shard", 6: "void_essence", 7: "void_essence", 8: "primordial_spark", 9: "primordial_spark"}
 	var target_mat = essence_map.get(best_tier, "magic_dust")
 
+	# ⛑ THE OUTPUT IS DERIVED FROM VALUE, NOT A FLAT 2. A fixed quantity against a hand-authored
+	# tier map produced a wildly inconsistent exchange, because `essence_map` folds two leather
+	# tiers onto one essence while the value ladder keeps doubling. Measured, net value of the
+	# whole trade: ragged -20%, thick +43%, wyvern -48%, void_silk **-67%**. A conversion that
+	# quietly destroys two thirds of what you feed it is not a sink, it is a trap - and this
+	# recipe picks the material FOR you, so you cannot steer around the bad rungs.
+	#
+	# Now it returns a consistent EXTRACT_RETURN of the value it consumed, computed from the same
+	# MATERIALS table the economy is priced from, so it cannot drift when a value changes. That is
+	# the same 20% sink `transmute` already charges to move surplus up a tier, which is the
+	# sibling mechanic and the right thing to match.
 	character.remove_crafting_material(best_mat_id, 3)
-	var output_qty = max(1, int(2 * quality_mult))
+	var output_qty = CraftingDatabaseScript.extract_output_quantity(best_mat_id, target_mat, quality_mult)
 	character.add_crafting_material(target_mat, output_qty)
 
 	var source_name = CraftingDatabaseScript.get_material_name(best_mat_id)
@@ -27596,56 +27607,85 @@ func _craft_extract(character, recipe: Dictionary, quality: int, quality_color: 
 	return "[color=%s]Extracted %dx %s from 3x %s![/color]" % [quality_color, output_qty, target_name, source_name]
 
 func _craft_disenchant(character, recipe: Dictionary, quality: int, quality_color: String) -> String:
-	"""Enchanter specialist: destroy lowest-level inventory item, recover partial materials."""
+	"""Enchanter specialist: unmake an item and RECOVER THE RUNES that went into it.
+
+	⚑ Owner 2026-09-18: *"disenchant do you get runes back or something, if not isn't it just like
+	salvage that we already have?"* It was not, and it was strictly worse: **1 ore at Standard
+	quality** plus a chance of one enchant material, on your **lowest-level** item - which it chose
+	for you - where ordinary free salvage returns ~50% of an item's full crafting materials on an
+	item you pick.
+
+	⛑ SO IT IS NOW A DIFFERENT THING RATHER THAN A WORSE ONE. It returns the runes recorded by
+	`_remember_applied_rune`, AND the same materials salvage would give, and it targets the item
+	carrying the MOST runes instead of the cheapest thing in the bag. That is a niche nothing else
+	covers - undoing your own rune work to move it onto better gear - without beating salvage at
+	its own job on an unenchanted item, where the two are now identical."""
 	var quality_mult = CraftingDatabaseScript.QUALITY_MULTIPLIERS.get(quality, 1.0)
 
-	# Find lowest-level non-quest equipment item in inventory
-	var worst_idx = -1
-	var worst_level = 999999
+	# Target the item with the most recorded runes; fall back to the lowest level, as before, so
+	# the recipe still does something for a bag with no enchanted gear in it.
+	var best_idx = -1
+	var best_runes = -1
+	var best_level = 999999
 	for i in range(character.inventory.size()):
-		var item = character.inventory[i]
-		if item.get("type", "") in ["enhancement_scroll", "quest_item"]:
+		var it = character.inventory[i]
+		if it.get("type", "") in ["enhancement_scroll", "quest_item"]:
 			continue
-		if item.get("is_consumable", false):
+		if it.get("is_consumable", false):
 			continue
-		var item_level = int(item.get("level", 1))
-		if item_level < worst_level:
-			worst_level = item_level
-			worst_idx = i
+		var runes: Array = it.get("applied_runes", []) if it.get("applied_runes", null) is Array else []
+		var lvl: int = int(it.get("level", 1))
+		if runes.size() > best_runes or (runes.size() == best_runes and lvl < best_level):
+			best_runes = runes.size()
+			best_level = lvl
+			best_idx = i
 
-	if worst_idx == -1:
-		# Refund recipe materials
+	if best_idx == -1:
 		for mat_id in recipe.materials:
 			character.add_crafting_material(mat_id, recipe.materials[mat_id])
 		return "[color=#FF4444]No equipment in inventory to disenchant! Materials refunded.[/color]"
 
-	var item = character.inventory[worst_idx]
+	var item = character.inventory[best_idx]
 	var item_name = item.get("name", "Unknown")
+	var recovered: Array = item.get("applied_runes", []) if item.get("applied_runes", null) is Array else []
 
-	# Calculate material recovery: 30-60% based on quality
-	var recovery_pct = 0.30 + (quality_mult - 0.5) * 0.3  # Poor=15%, Standard=30%, Fine=52%, Master=60%
-	recovery_pct = clampf(recovery_pct, 0.15, 0.70)
+	# ⛑ THE MATERIALS ARE WHAT SALVAGE WOULD GIVE, from the same function, so this can never be the
+	# worse choice again. A hand-written recovery formula beside a generated one is exactly how the
+	# old one-ore result drifted out of line without anyone noticing.
+	var mats: Dictionary = drop_tables.get_salvage_value(item)
+	var mat_parts: Array = []
+	for mat_id in mats:
+		var qty: int = maxi(1, int(round(float(mats[mat_id]) * quality_mult)))
+		character.add_crafting_material(String(mat_id), qty)
+		mat_parts.append("%dx %s" % [qty, CraftingDatabaseScript.get_material_name(String(mat_id))])
 
-	# Generate materials based on item level/tier
-	var item_level = int(item.get("level", 1))
-	var tier = clampi(int(item_level / 10) + 1, 1, 9)
-	var ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
-	var base_amount = max(1, int(3 * recovery_pct))
-	var ore_id = ore_tiers[clampi(tier - 1, 0, 8)]
-	character.add_crafting_material(ore_id, base_amount)
+	var returned: Array = []
+	var lost: int = 0
+	for entry in recovered:
+		if not (entry is Dictionary):
+			continue
+		var rune_item = entry.get("item", null)
+		if rune_item is Dictionary and character.add_item(rune_item.duplicate(true)):
+			returned.append(String(entry.get("name", "Rune")))
+		else:
+			lost += 1
 
-	# Bonus: chance for enchant material
-	var bonus_mat = ""
-	if randf() < recovery_pct:
-		bonus_mat = "magic_dust" if tier <= 3 else ("arcane_crystal" if tier <= 5 else "void_essence")
-		character.add_crafting_material(bonus_mat, 1)
+	character.inventory.remove_at(best_idx)
 
-	# Remove item
-	character.inventory.remove_at(worst_idx)
-
-	var result = "[color=%s]Disenchanted %s!\nRecovered: %dx %s[/color]" % [quality_color, item_name, base_amount, CraftingDatabaseScript.get_material_name(ore_id)]
-	if bonus_mat != "":
-		result += "\n[color=#A335EE]Bonus: 1x %s[/color]" % CraftingDatabaseScript.get_material_name(bonus_mat)
+	var result = "[color=%s]Unmade %s.[/color]" % [quality_color, item_name]
+	if not mat_parts.is_empty():
+		result += "
+[color=#00FF00]Recovered: %s[/color]" % ", ".join(mat_parts)
+	if not returned.is_empty():
+		result += "
+[color=#A335EE]Runes returned: %s[/color]" % ", ".join(returned)
+	elif recovered.is_empty():
+		# Say WHY there were none - "no runes in it" and "your runes were eaten" look identical.
+		result += "
+[color=#808080]No runes were in it. (Gear enchanted before this update kept no record.)[/color]"
+	if lost > 0:
+		result += "
+[color=#FF6666]%d rune(s) lost - your pack was full.[/color]" % lost
 	return result
 
 func _craft_scroll(recipe: Dictionary, quality: int) -> Dictionary:
@@ -27955,6 +27995,7 @@ func handle_use_rune(peer_id: int, message: Dictionary):
 			"execute":
 				proc_data = {"bonus_damage": rune.get("rune_proc_value", 50), "proc_chance": rune.get("rune_proc_chance", 0.25), "threshold": 0.3}
 		target_item["proc_effects"][proc_type] = proc_data
+		_remember_applied_rune(target_item, rune)
 		_consume_one_from_stack(character, rune_index)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]Applied %s to your %s! Added %s effect.[/color]" % [rune.get("name", "Rune"), target_item.get("name", "item"), proc_type.replace("_", " ")]})
 	else:
@@ -27971,11 +28012,34 @@ func handle_use_rune(peer_id: int, message: Dictionary):
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No improvement possible — %s already has +%d %s (Rune cap: +%d).[/color]" % [target_item.get("name", "item"), current_value, stat_key.replace("_", " "), rune_cap]})
 			return
 		target_item["affixes"][stat_key] = rune_cap
+		_remember_applied_rune(target_item, rune)
 		_consume_one_from_stack(character, rune_index)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]Applied %s to your %s! %s: +%d → +%d[/color]" % [rune.get("name", "Rune"), target_item.get("name", "item"), stat_key.replace("_", " ").capitalize(), current_value, rune_cap]})
 
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+func _remember_applied_rune(item: Dictionary, rune: Dictionary) -> void:
+	"""Record that this rune went into this item, so Disenchant can give it back.
+
+	⚑ Owner 2026-09-18, on whether the recipe was worth keeping: *"disenchant do you get runes back
+	or something, if not isn't it just like salvage that we already have?"* It was not - it returned
+	ONE ore at Standard quality where ordinary free salvage returns ~50% of an item's full crafting
+	materials, and it chose the item for you. Runes coming back is what makes it a different thing
+	rather than a worse one.
+
+	⛑ RECORDED AT APPLICATION RATHER THAN INFERRED AT REMOVAL. A finished item keeps only
+	`affixes[stat] = value`, and several runes can write the same stat, so working backwards from
+	the number would be a guess. Items enchanted BEFORE this shipped carry no record and will
+	return materials only - which the player is told, rather than left to wonder about."""
+	if not (item.get("applied_runes", null) is Array):
+		item["applied_runes"] = []
+	item["applied_runes"].append({
+		"id": String(rune.get("id", rune.get("recipe_id", ""))),
+		"name": String(rune.get("name", "Rune")),
+		"item": rune.duplicate(true),
+	})
+
 
 func _quality_to_rarity(quality: int) -> String:
 	"""Convert crafting quality to item rarity"""
