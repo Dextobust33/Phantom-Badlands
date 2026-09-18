@@ -126,6 +126,37 @@ func _init() -> void:
 	ck(p.get("_flight_ghost") == null, "no ghost node is left behind")
 
 	print("")
+	print("===== AND ON THE PATH THE GAME ACTUALLY USES =====")
+	# ⛑ THE SUMMARY IS A THIRD WRITER. `log_actor_action` REWRITES an actor's line in place
+	# rather than appending one, and it is the path nearly every card result takes since the
+	# round summary landed - so hooking `append_log` and `append_to_last_log` left the animation
+	# firing only on the fallback. Owner 2026-09-18: *"I believe I seen 1 or 2 still fire but not
+	# consistently."* Checking only the append path is how that shipped, so it is checked here.
+	p.reset_round_summary()
+	p.arm_card_flight("magic_bolt", 1.0)
+	ck(str(p.get("_flight_armed")) != "", "re-armed for the summary path")
+	# The panel hides itself once the first section's action phase lapses, and firing into a
+	# hidden panel is correctly refused - so put it back on screen with no frame in between,
+	# or `_process` takes it away again before the line is written.
+	p.visible = true
+	p.log_actor_action("player:-1", "You", {"dmg": 576, "ability": "Magic Bolt"},
+		"[color=#FFFFFF]you blast the Wight for 576 damage!![/color]")
+	for _i in range(4):
+		await process_frame
+	var ghost2 = p.get("_flight_ghost")
+	ck(ghost2 != null and is_instance_valid(ghost2),
+		"a SUMMARISED line launches a ghost too (this is the real path)")
+	ck(str(p.get("_flight_armed")) == "", "...and it disarms")
+	if ghost2 != null and is_instance_valid(ghost2):
+		var s2: Vector2 = ghost2.global_position
+		var last2: Vector2 = s2
+		for _i in range(90):
+			await process_frame
+			if not is_instance_valid(ghost2):
+				break
+			last2 = ghost2.global_position
+		ck(last2.y != s2.y, "...and travels (y %.0f -> %.0f)" % [s2.y, last2.y])
+	print("")
 	if fails == 0:
 		print("[PROBE] PASS the card flies to the player's own log row")
 	else:

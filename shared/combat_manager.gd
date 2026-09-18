@@ -1625,6 +1625,46 @@ func _note_dmg(combat: Dictionary, messages: Array, amount: int) -> void:
 		_mhp = int(combat["monster"].get("current_hp", -1))
 	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount, "mhp": _mhp})
 
+func _append_monster_turn_lines(combat: Dictionary, result: Dictionary, monster_msg: String, hp_before: int) -> void:
+	"""Put the monster's turn into the result AND record what it cost, together.
+
+	⛑ THE TWO MUST BE DONE IN ONE PLACE BECAUSE THEY ARE INDEXED AGAINST EACH OTHER. The
+	server reads `message_taken[i]` alongside `messages[i]`, so the damage total has to name a
+	line in THIS array. It was being built in `process_monster_turn`'s funnel instead, against
+	that function's own `messages` array - which the solo paths never append, because they read
+	the singular joined `message` and split it. So the array was the wrong length, keyed to lines
+	that were never sent, and in solo `result.message_taken` was simply never set at all.
+
+	The visible result: the round summary could show what you DEALT and nothing about what hit
+	you. Owner 2026-09-18, on the monster's line: *"it's not showing a damage number unless
+	hovered."* The hover worked because the blow-by-blow is the raw prose, which always had the
+	number in it; the summary is built from metadata, which did not.
+
+	⛑ MEASURED AS AN HP DELTA, NEVER READ OFF THE PROSE. The party path learned this on
+	2026-09-15 - "The Goblin hits Warden Hollis for 43 damage!" has no "you" in it, so a text
+	parser credited it to the monster. A total taken from HP before/after cannot disagree with
+	the health bar.
+
+	It rides the LAST monster line, the same convention the party path uses, and it is a TOTAL
+	rather than per-blow: the summary adds them up anyway."""
+	_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
+	var first: int = result.messages.size()
+	for _mline in monster_msg.split("\n"):
+		if String(_mline).strip_edges() != "":
+			result.messages.append(String(_mline))
+	_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
+	var taken: int = maxi(0, hp_before - int(combat.character.current_hp))
+	if taken <= 0 or result.messages.size() <= first:
+		return
+	# Padded to the full length, because the server reads this array POSITIONALLY against
+	# `messages` - a short array silently attributes the damage to the wrong line.
+	var tk: Array = result.get("message_taken", []) if result.get("message_taken", null) is Array else []
+	while tk.size() < result.messages.size():
+		tk.append(0)
+	tk[result.messages.size() - 1] = int(tk[result.messages.size() - 1]) + taken
+	result["message_taken"] = tk
+
+
 func _mark_actor(combat: Dictionary, from_index: int, actor: String) -> void:
 	"""Record that messages from `from_index` onward belong to `actor`."""
 	if not (combat.get("_actor_marks", null) is Array):
@@ -2706,11 +2746,7 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 			# Split into real messages, every line gets its own gutter and the fold applies to them
 			# like anything else. The dividers go with it: the gutter IS the frame now, and it marks
 			# every line rather than just bracketing the group.
-			_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
-			for _mline in monster_msg.split("\n"):
-				if String(_mline).strip_edges() != "":
-					result.messages.append(String(_mline))
-			_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
+			_append_monster_turn_lines(combat, result, monster_msg, player_hp_before_monster)
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
 		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
@@ -5323,11 +5359,7 @@ func _process_ability_command_inner(peer_id: int, ability_name: String, arg: Str
 			# Split into real messages, every line gets its own gutter and the fold applies to them
 			# like anything else. The dividers go with it: the gutter IS the frame now, and it marks
 			# every line rather than just bracketing the group.
-			_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
-			for _mline in monster_msg.split("\n"):
-				if String(_mline).strip_edges() != "":
-					result.messages.append(String(_mline))
-			_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
+			_append_monster_turn_lines(combat, result, monster_msg, player_hp_before_monster)
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
 		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
@@ -8740,24 +8772,11 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			_apply_on_taken_hit(combat, _oth_char, _oth_result)
 		else:
 			_apply_on_unharmed_turn(combat, _oth_char, _oth_result)
-		# ⛑ AND REPORT WHAT IT COST, measured the same way this funnel already measures
-		# whether it cost anything: HP before minus HP after. The PARTY path has sent this
-		# since 2026-09-15 and solo never did, so the combat log's round summary could say
-		# what you dealt and nothing about what hit you - the number the owner asked to have
-		# highlighted, being the one a player decides to retreat on.
-		#
-		# It rides the LAST message of the turn, which is the same convention the party path
-		# uses, and it is a TOTAL rather than per-blow: the summary adds them up anyway, and
-		# a total measured from HP cannot disagree with the health bar the way a sum of
-		# individually-parsed numbers can.
-		var _oth_taken: int = maxi(0, _oth_before - int(_oth_char.current_hp))
-		var _oth_msgs: Array = _oth_result.get("messages", []) if _oth_result.get("messages", null) is Array else []
-		if _oth_taken > 0 and not _oth_msgs.is_empty():
-			var _tk: Array = []
-			_tk.resize(_oth_msgs.size())
-			_tk.fill(0)
-			_tk[_tk.size() - 1] = _oth_taken
-			_oth_result["message_taken"] = _tk
+		# What the turn COST is recorded by `_append_monster_turn_lines`, where the monster's
+		# lines are actually put into the result. It was ALSO done here, against THIS function's
+		# `messages` array - which the solo paths never append, because they read the singular
+		# joined `message` and split it. Two owners for one value, and the one that ran was
+		# indexed against an array that was never sent.
 	return _oth_result
 
 func _apply_on_unharmed_turn(combat: Dictionary, character, result: Dictionary) -> void:

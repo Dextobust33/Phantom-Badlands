@@ -4529,6 +4529,29 @@ func arm_card_flight(card_name: String, speed: float = 1.0) -> void:
 		return
 
 
+func _note_result_line(line_index: int, sample: String) -> void:
+	"""A log line just received the result of an action - fly the played card to it if one is armed.
+
+	⛑ ONE TRIGGER, BECAUSE THERE ARE NOW THREE WRITERS. The flight was hooked into
+	`append_log` and `append_to_last_log`, and then the round summary added a THIRD way for a
+	line to be written (`log_actor_action`, which rewrites an actor's line in place rather than
+	appending one). The summary is the path almost every card result takes now, so the animation
+	survived only on the fallback path. Owner 2026-09-18: *"I believe I seen 1 or 2 still fire
+	but not consistently."* - consistent with exactly that.
+
+	This has now been the SECOND time this feature was hooked to a specific writer and the game
+	quietly stopped using that writer, so the hook lives in one place the writers call rather
+	than being copied into each of them.
+
+	Round dividers are excluded: they carry no result and would steal the flight from the line
+	that does."""
+	if _flight_armed == "" or _is_round_divider(sample):
+		return
+	if line_index < 0 or line_index >= _log_lines.size():
+		return
+	_fire_card_flight(line_index, _flight_speed)
+
+
 func _fire_card_flight(paragraph_index: int, speed: float = 1.0) -> void:
 	"""Send a ghost of the armed card to the log row that just received its effect."""
 	var card := _flight_armed
@@ -6039,6 +6062,9 @@ func log_actor_action(key: String, label: String, meta: Dictionary, raw_line: St
 	if raw_line.strip_edges() != "":
 		a["detail"].append(raw_line.strip_edges())
 	_log_lines[int(a["index"])] = _render_actor_summary(a)
+	# The summary REWRITES a line rather than appending one, so the flight has to be
+	# triggered here as well - this is the path nearly every card result takes now.
+	_note_result_line(int(a["index"]), raw_line)
 	if is_inside_tree():
 		_refresh_log()
 
@@ -6125,8 +6151,7 @@ func append_log(bbcode_line: String) -> void:
 	# The first line after the card is committed IS the card's result - that is what
 	# the paced queue delivers - so the trigger is simply "the next line", minus the
 	# round dividers, which carry no result and would steal the flight.
-	if _flight_armed != "" and not _is_round_divider(bbcode_line):
-		_fire_card_flight(_log_lines.size() - 1, _flight_speed)
+	_note_result_line(_log_lines.size() - 1, bbcode_line)
 	# v0.9.415 — during action_phase, also route to the per-actor overlay log
 	# (classified from the line itself if no actor hint was passed).
 	if _action_phase_active:
@@ -6150,11 +6175,8 @@ func append_to_last_log(bbcode_fragment: String) -> void:
 		append_log(bbcode_fragment)
 		return
 	_log_lines[_log_lines.size() - 1] += "[color=#5A5A66]  ·  [/color]" + bbcode_fragment
-	# ⛑ AND THE FOLD PATH FIRES IT TOO. A card's result usually does not start a new
-	# line at all - it is folded onto the actor's existing one - so hooking only
-	# `append_log` missed the common case entirely.
-	if _flight_armed != "" and not _is_round_divider(bbcode_fragment):
-		_fire_card_flight(_log_lines.size() - 1, _flight_speed)
+	# The fold path fires it too: a card's result often does not start a new line at all.
+	_note_result_line(_log_lines.size() - 1, bbcode_fragment)
 	if is_inside_tree():
 		_refresh_log()
 

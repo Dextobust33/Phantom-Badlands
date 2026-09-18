@@ -693,6 +693,31 @@ Live-test findings from the owner, and what each turned out to be:
       tree, and [L] now asks the question the button asks - *is there a log* - instead of *is the
       rewards card still on screen*. The log survives until the next fight resets the panel.
 
+- [x] **The monster's line carried no damage number.** Owner: *"it's not showing a damage number
+      unless hovered."* `message_taken` was being built in `process_monster_turn`'s funnel, against
+      THAT function's `messages` array - which the solo paths never append, because they read the
+      singular joined `message` and split it. So the array was the wrong length, keyed to lines
+      nobody sent, and in solo `result.message_taken` was never set at all. The hover worked
+      because it shows the raw prose, which always had the number; the summary is built from
+      metadata, which did not. Now recorded by `_append_monster_turn_lines`, where the monster's
+      lines actually enter the result, so the count and the index cannot drift apart.
+- [x] **The card-flight animation fired "1 or 2" times, not every cast.** It was hooked into
+      `append_log` and `append_to_last_log`; the round summary added a THIRD writer
+      (`log_actor_action`, which rewrites a line in place), and that is the path nearly every card
+      result takes now. Second time this feature was hooked to a specific writer and the game
+      stopped using that writer, so the trigger is one `_note_result_line` the writers call.
+      `tools/probe/card_flight.gd` now drives the summary path too - it was passing on the append
+      path alone, which is exactly how this shipped.
+- [x] **The fight log is a PANEL now, not text painted into `game_output`.** Owner agreed: *"I'm
+      fine with us going to a new Log or popup window or whatever works."* Painting the shared
+      output window caused three separately-reported bugs at once - it flashed and vanished
+      (whatever repainted that window next won), closing it left the text on screen (*"It says
+      press L to close at the bottom but I have to press space to close, which also forces me to
+      rest or meditate"*), and keeping it up at all meant HIDING the combat scene panel, which is
+      why it was gated on the victory card. `client/fight_log_panel.gd` owns its own surface. The
+      `_victory_legacy_view` bool is gone with it: the panel's visibility is the single answer, so
+      state and screen cannot disagree. Probe: `tools/probe/fight_log_panel_builds.gd`.
+
 **Still open from the same test:** same-level death rates (P60 Wizard 31% at its own level against
 a ~0.3% target) and Threat-quest rewards, both deliberately untouched here.
 

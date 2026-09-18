@@ -696,7 +696,6 @@ var _pending_flock_archive: bool = false
 # (attacks, damage, abilities) and not just the post-combat chrome.
 var _pending_flock_archive_request: bool = false
 var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly after combat ends
-var _victory_legacy_view: bool = false  # player toggled to the old full-screen text view via [L]; suppresses the scene panel until they toggle back or continue
 # v0.9.611 — index of the flock fight currently shown in the legacy text
 # view. -1 means "current fight" (panel's live log); 0..N-1 indexes into
 # combat_scene_panel.get_flock_history(). ← / → cycles through fights.
@@ -1905,6 +1904,8 @@ const SocialPanelScript = preload("res://client/social_panel.gd")
 var social_panel = null
 const MenuTreePanelScript = preload("res://client/menu_tree_panel.gd")
 var menu_tree_panel = null
+const FightLogPanelScript = preload("res://client/fight_log_panel.gd")
+var fight_log_panel = null
 var pvp_combat_panel = null
 
 # Audit #14 Slice 1 — visual clan create/roster panel (no chat-command-first).
@@ -3204,6 +3205,11 @@ func _ready():
 	menu_tree_panel = MenuTreePanelScript.new()
 	add_child(menu_tree_panel)
 	menu_tree_panel.action_chosen.connect(_on_menu_tree_action)
+	fight_log_panel = FightLogPanelScript.new()
+	add_child(fight_log_panel)
+	fight_log_panel.closed.connect(update_action_bar)
+	fight_log_panel.step_fight.connect(_legacy_view_step)
+	fight_log_panel.meta_clicked.connect(_on_game_output_meta_clicked)
 	pvp_combat_panel.action_submitted.connect(_on_pvp_combat_action_submitted)
 
 	# Audit #14 Slice 1 — clan create/roster panel.
@@ -4524,18 +4530,14 @@ func _process(delta):
 		# hide the scene anymore. Kept the variable in case future modes need
 		# to opt out.
 		var _scene_temporarily_hidden = false
-		# The player is reading the fight log, so suppress the scene panel over it.
-		#
-		# ⛑ THIS USED TO REQUIRE THE REWARDS CARD TO STILL BE UP, and that is what made [L]
-		# look broken rather than gated: opening the view set the flag, and this branch cleared
-		# it again on the very next frame the card was gone, repainting the overworld over the
-		# log the player had just asked for. The log outlives the card - it survives until the
-		# next combat resets the panel - so the view now closes when the PLAYER closes it, or
-		# when a new fight starts and there is a different log to be reading.
-		if _victory_legacy_view and not _now_in_combat:
-			_scene_temporarily_hidden = true
-		elif _now_in_combat:
-			_victory_legacy_view = false
+		# ⛑ THE FIGHT LOG NO LONGER HIDES ANYTHING. It used to be painted into `game_output`,
+		# so the only way to make room for it was to suppress the combat scene panel - which in
+		# turn is why it could only be opened while the victory card was up, and why a single
+		# step killed it. It is an overlay now (`fight_log_panel`) and simply draws on top, so
+		# there is nothing to get out of its way. A new fight still closes it: the player is
+		# being shown a different log, and the panel is about to reset the one they were reading.
+		if _now_in_combat and fight_log_panel != null and fight_log_panel.visible:
+			fight_log_panel.close()
 		# v0.9.414 — keep the panel visible while the action phase is still
 		# active (queue draining + deferred victory FX/card pending). Without
 		# this, in_combat = false fires immediately on combat_end and the
@@ -6100,10 +6102,10 @@ func _input(event):
 			# polling.
 			set_meta("hotkey_0_pressed", true)
 			_post_loot_victory_persists = false
-			# Also close the legacy view if it was open — Space is "I'm
-			# done with the victory recap, take me back." (game_output is
-			# cleared unconditionally below as of v0.9.653.)
-			_victory_legacy_view = false
+			# Space is "I'm done with the victory recap, take me back", so it also shuts the
+			# fight log if the player left it open.
+			if fight_log_panel != null and is_instance_valid(fight_log_panel):
+				fight_log_panel.close()
 			# v0.9.625 — explicit cleanup instead of waiting for the safety
 			# net's next-frame fire.
 			# v0.9.626 — also nuke the deferred victory payload + FX flag.
@@ -6183,9 +6185,11 @@ func _input(event):
 				# rewards card was still on screen; a single step clears that while the log itself is
 				# untouched, so the key went dead with no sign of why. It now asks the same question
 				# the "Last Fight Log" menu entry asks: is there a log?
-				if _victory_legacy_view:
-					_victory_legacy_view = false
-					update_action_bar()
+				if fight_log_panel != null and fight_log_panel.visible:
+					# The panel owns "is it open"; its `closed` signal clears the flag. Setting the
+					# flag here instead is what used to leave the log on screen with the state saying
+					# it was shut - the footer offered [L] to close and only Space appeared to work.
+					fight_log_panel.close()
 					get_viewport().set_input_as_handled()
 					return
 				if _open_last_fight_log():
@@ -9469,7 +9473,8 @@ func _on_continue_pressed():
 	if combat_scene_panel and combat_scene_panel.has_method("hide_death_card"):
 		combat_scene_panel.hide_death_card()
 	_combat_scene_force_visible = false
-	_victory_legacy_view = false
+	if fight_log_panel != null and is_instance_valid(fight_log_panel):
+		fight_log_panel.close()
 	# Reset all game state from the dead character
 	_reset_character_state()
 	# Return to house (Sanctuary) instead of character select
@@ -16827,6 +16832,17 @@ func continue_flock_encounter():
 	flock_pending = false
 	flock_monster_name = ""
 	send_to_server({"type": "continue_flock"})
+
+func _fight_log_open() -> bool:
+	"""Is the fight-log overlay up?
+
+	⛑ DERIVED, NOT MIRRORED. This used to be a bool kept alongside the view, and the two drifted
+	apart in both directions: [L] cleared the bool without taking the text off the screen (so the log
+	stayed up while the state said it was shut), and `_process` cleared the bool while the text was
+	still being read. One value with several owners - the shape CLAUDE.md names. The panel's own
+	visibility is the single answer now, so nothing can disagree with it."""
+	return fight_log_panel != null and is_instance_valid(fight_log_panel) and fight_log_panel.visible
+
 
 func _blocking_overlay_open() -> bool:
 	"""Is a panel up that must swallow the hotkeys?
@@ -41669,10 +41685,10 @@ func _on_game_output_meta_clicked(meta) -> void:
 		return
 	match meta_str:
 		"legacy_prev":
-			if _victory_legacy_view:
+			if _fight_log_open():
 				_legacy_view_step(-1)
 		"legacy_next":
-			if _victory_legacy_view:
+			if _fight_log_open():
 				_legacy_view_step(1)
 
 
@@ -41705,7 +41721,6 @@ func _end_victory_review(reason: String) -> void:
 	_pending_victory_card_payload = null
 	_pending_victory_fx_play = false
 	_combat_scene_linger_until_ms = 0
-	_victory_legacy_view = false
 	if combat_scene_panel and is_instance_valid(combat_scene_panel):
 		# FX hides BEFORE the card: the card is drawn over the FX overlay, so hiding the card
 		# first exposes a frame of monster ASCII underneath (v0.9.628).
@@ -41735,7 +41750,6 @@ func _open_last_fight_log() -> bool:
 		have = not combat_scene_panel.get_flock_history().is_empty()
 	if not have:
 		return false
-	_victory_legacy_view = true
 	_legacy_view_fight_index = -1
 	_render_legacy_combat_log()
 	update_action_bar()
@@ -41743,85 +41757,57 @@ func _open_last_fight_log() -> bool:
 
 
 func _render_legacy_combat_log() -> void:
-	"""v0.9.611 — render the [L] legacy text view for ONE fight at a time.
-	`_legacy_view_fight_index` decides which:
-	  -1            = current fight (panel's live log_lines)
-	  0..N-1        = archived flock fight from combat_scene_panel._flock_history
-	Footer offers ← / → to flip between fights, [L] to close."""
-	if combat_scene_panel == null:
+	"""Put one fight on the fight-log overlay. `_legacy_view_fight_index` decides which:
+	  -1     = the current fight (the panel's live log lines)
+	  0..N-1 = an archived flock fight
+
+	⛑ THIS BUILDS A STRING; IT NO LONGER PAINTS `game_output`. Painting the shared output
+	window is what made the view flash and vanish (whatever repainted that window next won),
+	made closing it leave the text behind, and forced it to be gated on the victory card - the
+	only way to keep the window free was to hide the combat panel. `fight_log_panel` owns its
+	own surface, so none of that applies. See the header of `client/fight_log_panel.gd`."""
+	if combat_scene_panel == null or fight_log_panel == null:
 		return
-	_page_clear()
 	var history: Array = []
 	if combat_scene_panel.has_method("get_flock_history"):
 		history = combat_scene_panel.get_flock_history()
-	# Total fights in chain = archived + 1 (current)
 	var total: int = history.size() + 1
-	# Clamp index to valid range
 	if _legacy_view_fight_index < -1:
 		_legacy_view_fight_index = -1
 	if _legacy_view_fight_index >= history.size():
 		_legacy_view_fight_index = -1
-	# Compute display fight number (1-indexed): current is the last, archives
-	# count from 1 to history.size().
-	var fight_num: int
-	if _legacy_view_fight_index == -1:
-		fight_num = total
-	else:
-		fight_num = _legacy_view_fight_index + 1
-	# Header bar: ◀ Fight N of M ▶
-	var nav_left: String = "◀" if total > 1 else " "
-	var nav_right: String = "▶" if total > 1 else " "
-	var current_tag: String = "  [color=#888888](current)[/color]" if _legacy_view_fight_index == -1 else ""
-	display_game("[color=#5C4D33]──────── %s   Fight %d of %d%s   %s ────────[/color]" % [nav_left, fight_num, total, current_tag, nav_right])
-	# Render content per source
-	var monster_name: String = ""
-	var monster_color: String = "#FFFFFF"
-	var monster_level: int = 0
-	var monster_art: String = ""
+	var fight_num: int = total if _legacy_view_fight_index == -1 else _legacy_view_fight_index + 1
+	var parts: Array = []
 	var log_lines: Array = []
 	if _legacy_view_fight_index == -1:
-		# Live: pull header + log from the panel
 		if combat_scene_panel.has_method("get_monster_header_bbcode"):
 			var header: Array = combat_scene_panel.get_monster_header_bbcode()
 			if header.size() == 2:
-				display_game(header[0])
-				display_game(header[1])
-				display_game("")
+				parts.append(header[0])
+				parts.append(header[1])
+				parts.append("")
 		if combat_scene_panel.has_method("get_log_lines"):
 			log_lines = combat_scene_panel.get_log_lines()
 	else:
 		var entry: Dictionary = history[_legacy_view_fight_index]
-		monster_name = str(entry.get("monster_name", "Enemy"))
-		monster_color = str(entry.get("color", "#FFFFFF"))
-		monster_level = int(entry.get("level", 0))
-		monster_art = str(entry.get("art", ""))
 		log_lines = entry.get("lines", [])
-		display_game("[color=%s][b]%s[/b][/color]  [color=#FFD700]Lv %d[/color]" % [monster_color, monster_name, monster_level])
-		if monster_art != "":
-			display_game(monster_art)
-		display_game("")
-	display_game("[color=#5C4D33]──────── Combat Log ────────[/color]")
+		parts.append("[color=%s][b]%s[/b][/color]  [color=#FFD700]Lv %d[/color]" % [
+			str(entry.get("color", "#FFFFFF")), str(entry.get("monster_name", "Enemy")),
+			int(entry.get("level", 0))])
+		if str(entry.get("art", "")) != "":
+			parts.append(str(entry.get("art", "")))
+		parts.append("")
+	parts.append("[color=#5C4D33]──────── Combat Log ────────[/color]")
 	for line in log_lines:
-		display_game(line)
-	display_game("[color=#5C4D33]──────────────────────────[/color]")
+		parts.append(line)
+	var title: String = "Fight Log"
 	if total > 1:
-		# v0.9.612 — clickable BBCode pagination. Dim out the link the
-		# player can't use (e.g., already at fight 1 = no Prev).
-		var prev_disabled: bool = (_legacy_view_fight_index == 0)
-		var next_disabled: bool = (_legacy_view_fight_index == -1)
-		var prev_link: String
-		var next_link: String
-		if prev_disabled:
-			prev_link = "[color=#444444]◀ Prev Fight[/color]"
-		else:
-			prev_link = "[color=#FFD700][url=legacy_prev]◀ Prev Fight[/url][/color]"
-		if next_disabled:
-			next_link = "[color=#444444]Next Fight ▶[/color]"
-		else:
-			next_link = "[color=#FFD700][url=legacy_next]Next Fight ▶[/url][/color]"
-		display_game("%s     %s     [color=#888888][L] to close[/color]" % [prev_link, next_link])
-	else:
-		display_game("[color=#888888][L] to close[/color]")
+		title = "Fight %d of %d%s" % [fight_num, total,
+			"  (current)" if _legacy_view_fight_index == -1 else ""]
+	fight_log_panel.show_log(title, "
+".join(parts),
+		total > 1 and _legacy_view_fight_index != 0,
+		total > 1 and _legacy_view_fight_index != -1)
 
 
 func _legacy_view_step(delta: int) -> void:
@@ -51120,8 +51106,8 @@ func _dungeon_redraw_blocked() -> bool:
 	The guard lives in `display_dungeon_floor` rather than at those seventeen sites, because the
 	question "may I paint right now" belongs to the thing doing the painting. Adding it to the
 	callers would be seventeen chances to miss one - and the next caller would miss it too."""
-	if _victory_legacy_view:
-		return true            # the [L] full-text log is up and owns the panel
+	if _fight_log_open():
+		return true            # the fight-log overlay is up and owns the screen
 	if game_state == GameState.DEAD:
 		return true            # the death screen is up; the floor is not what you are reading
 	if combat_scene_panel and is_instance_valid(combat_scene_panel):
