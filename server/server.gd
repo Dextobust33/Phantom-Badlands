@@ -26282,6 +26282,15 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 	var effective_mats: Dictionary = _get_effective_craft_materials(peer_id)
 
 	# Build recipe list with player's materials
+	# Open commission jobs at this post, fetched ONCE rather than per recipe.
+	var _open_commissions_here: Array = []
+	var _bench_post_id: String = _get_market_post_id(peer_id)
+	if _bench_post_id != "":
+		for o in persistence.get_market_orders(_bench_post_id):
+			if o is Dictionary and String(o.get("item_type", "")) == "commission":
+				if String(o.get("account_id", "")) != String(peers[peer_id].account_id if peers.has(peer_id) else ""):
+					_open_commissions_here.append(o)
+
 	var recipe_list = []
 	for recipe_entry in recipes:
 		var recipe_id = recipe_entry.id
@@ -26317,6 +26326,18 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 				"description": "Find a Recipe Scroll to learn this recipe.",
 			})
 			continue
+
+		# ⛑ DEMAND IS SHOWN WHERE THE CRAFTER IS ALREADY LOOKING. A commission board nobody opens
+		# is a commission board nobody fills, and the owner's point stands: the answer has to be a
+		# surface, not a capability. So a recipe YOU CAN MAKE carries the count and best price of
+		# open jobs wanting it, right there in the list you already read.
+		var wanted_count: int = 0
+		var wanted_best: int = 0
+		if not specialist_gated and not is_locked and not _open_commissions_here.is_empty():
+			for o in _open_commissions_here:
+				if String(o.get("recipe_id", "")) == String(recipe_id):
+					wanted_count += 1
+					wanted_best = maxi(wanted_best, int(o.get("per_unit_valor", 0)))
 
 		# ⛑ A SPECIALIST-GATED RECIPE IS NOW COMMISSIONABLE, not simply refused - provided you meet
 		# its skill yourself. A commission lends a FOCUS, never a SKILL, which is what keeps
@@ -26362,6 +26383,8 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"locked": is_locked,
 			"specialist_only": is_specialist_only,
 			"can_commission": can_commission,
+			"wanted_count": wanted_count,
+			"wanted_best": wanted_best,
 			"commission_fee": commission_fee(recipe) if specialist_gated else 0,
 			"specialist_gated": specialist_gated,
 			"description": description,

@@ -2373,6 +2373,13 @@ var whisper_target: String = ""
 ## While true, the next line typed is a Valor amount for the Trial of Wealth. Set by the Donate
 ## button on the Titles screen - see `_start_donate_prompt`.
 var pending_donate: bool = false
+## While set, the next line typed is the Valor fee for a commission posted from the bench.
+## ⛑ THE DOOR THE SERVER HALF DID NOT HAVE. `market_order_create` learned to take a `recipe_id`
+## and nothing could send one - the "capability built, route missing" defect this arc has already
+## hit six times. It lives at the BENCH rather than in the market panel because that is where a
+## player meets the problem: looking at a recipe they cannot make.
+var pending_commission_recipe: String = ""
+var pending_commission_name: String = ""
 var last_online_click_time: float = 0.0  # Track double-click timing
 const DOUBLE_CLICK_TIME: float = 0.4  # 400ms for double-click
 
@@ -6126,6 +6133,14 @@ func _input(event):
 		get_viewport().set_input_as_handled()
 		return
 
+	if pending_commission_recipe != "" and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		pending_commission_recipe = ""
+		pending_commission_name = ""
+		if input_field:
+			input_field.placeholder_text = ""
+		display_game("[color=#808080]Commission cancelled.[/color]")
+		get_viewport().set_input_as_handled()
+		return
 	if pending_donate and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		_cancel_donate_prompt()
 		get_viewport().set_input_as_handled()
@@ -13232,7 +13247,8 @@ func update_action_bar():
 					{"label": _none_label, "action_type": "local", "action_data": "craft_boost_none", "enabled": true},
 					{"label": _refined_label, "action_type": "local", "action_data": "craft_boost_refined", "enabled": true},
 					{"label": _master_label, "action_type": "local", "action_data": "craft_boost_master", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": ("Post Job" if _is_comm else "---"), "action_type": ("local" if _is_comm else "none"),
+						"action_data": ("craft_post_job" if _is_comm else ""), "enabled": _is_comm},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 			else:
@@ -13244,7 +13260,12 @@ func update_action_bar():
 					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
 					{"label": _craft_label, "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
 					{"label": "Temper", "action_type": "local", "action_data": "crafting_temper_select", "enabled": can_temper and crafting_boost_tier == "none"},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					# ⛑ BOTH ROUTES, SIDE BY SIDE. The NPC job (the Craft button, relabelled
+					# "Commission") is the guaranteed floor; posting to players is the better deal
+					# when someone takes it. Offering only one of them would have left the other
+					# undiscoverable.
+					{"label": ("Post Job" if _is_comm else "---"), "action_type": ("local" if _is_comm else "none"),
+						"action_data": ("craft_post_job" if _is_comm else ""), "enabled": _is_comm},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": _none_label, "action_type": "local", "action_data": "craft_boost_none", "enabled": true},
 					{"label": _refined_label, "action_type": "local", "action_data": "craft_boost_refined", "enabled": true},
@@ -17875,6 +17896,8 @@ func execute_local_action(action: String):
 				update_action_bar()
 		"inventory_cancel":
 			cancel_inventory_action()
+		"craft_post_job":
+			_start_commission_prompt()
 		"rework_start":
 			# ⛑ ONE ENTRY FOR BOTH ROUTES. The server decides whether this player may rework here
 			# (at a post, or a committed Enchanter anywhere) and says so plainly if not. A client
@@ -30084,6 +30107,28 @@ func send_input():
 	# (it clears it), and Esc is how you change your mind.
 	if _prompt_action != "":
 		_answer_text_prompt(text)
+		return
+
+	if pending_commission_recipe != "":
+		var _rid := pending_commission_recipe
+		var _rname := pending_commission_name
+		pending_commission_recipe = ""
+		pending_commission_name = ""
+		input_field.placeholder_text = ""
+		if text.is_empty():
+			display_game("[color=#808080]Commission cancelled.[/color]")
+			return
+		if not text.is_valid_int() or int(text) <= 0:
+			display_game("[color=#FF4444]That is not an amount of Valor.[/color]")
+			return
+		send_to_server({
+			"type": "market_order_create",
+			"item_type": "commission",
+			"recipe_id": _rid,
+			"item_name": _rname,
+			"quantity": 1,
+			"per_unit_valor": int(text),
+		})
 		return
 
 	if pending_donate:
@@ -45515,6 +45560,33 @@ func _toggle_map_legend():
 const MENTOR_LEVEL_REQUIRED := 20
 
 
+func _start_commission_prompt() -> void:
+	"""Offer the selected recipe to other players as a paid job.
+
+	⚑ Owner 2026-09-18: *"how do players actually do those things? Remember the answers should be
+	UI based where possible."* The server half shipped with no door at all - this is it.
+
+	⛑ AT THE BENCH, ON THE RECIPE. A player meets this problem while looking at something they
+	cannot make; sending them to the market panel to hunt for a recipe picker would be a door in
+	the wrong room. The NPC button sits beside it, so the two ways through are offered together."""
+	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
+		return
+	var recipe = crafting_recipes[crafting_selected_recipe]
+	if not recipe.get("specialist_gated", false):
+		display_game("[color=#FFAA00]You can make that yourself - no need to commission it.[/color]")
+		return
+	pending_commission_recipe = String(recipe.get("id", ""))
+	pending_commission_name = String(recipe.get("name", "item"))
+	var npc_fee := int(recipe.get("commission_fee", 0))
+	display_game("[color=#C8A24A]Offer [b]%s[/b] to other crafters.[/color]" % pending_commission_name)
+	display_game("[color=#808080]They supply the materials and their own quality - a good crafter")
+	display_game("beats the %d Valor NPC job, which is always Standard.[/color]" % npc_fee)
+	display_game("[color=#FFD700]How much Valor will you pay?[/color] [color=#808080]Type an amount, or press Escape.[/color]")
+	if input_field:
+		input_field.placeholder_text = "Valor offered  (Esc to cancel)"
+		input_field.grab_focus()
+
+
 func _start_donate_prompt() -> void:
 	"""Ask how much Valor to give to the Shrine of Wealth.
 
@@ -48737,6 +48809,12 @@ func display_craft_recipe_list():
 				display_game("[color=#444444]    %s[/color]" % description)
 			if mat_line != "":
 				display_game(mat_line)
+			# ⛑ DEMAND, WHERE THE CRAFTER ALREADY LOOKS. A separate board would be a room nobody
+			# enters; this puts "someone is paying for this" on the line they are reading anyway.
+			var _wanted := int(recipe.get("wanted_count", 0))
+			if _wanted > 0:
+				display_game("      [color=#C8A24A]★ %d player(s) want this — up to %d Valor. Craft it, then fill the job at the Market.[/color]" % [
+					_wanted, int(recipe.get("wanted_best", 0))])
 		elif is_specialist_gated:
 			# ⛑ COMMISSIONABLE, not refused. 43% of recipes are specialist-gated, so a flat red
 			# "you cannot" was the single most common thing the bench told a player.

@@ -158,7 +158,45 @@ func _init() -> void:
 		_ok("and the drain honours it on next login")
 
 	print("")
-	print("===== 6. THE ROUTE IS COMPLETE =====")
+	print("===== 6. CAN A PLAYER ACTUALLY DO EITHER OF THESE? =====")
+	# ⚑ Owner 2026-09-18: *"You mention commission it from an NPC and post it to a player but how do
+	# players actually do those things? Remember the answers should be UI based where possible."*
+	#
+	# ⛑ AND THEY COULD NOT. The player half shipped with the server accepting a `recipe_id` on
+	# `market_order_create` and NOTHING ANYWHERE ABLE TO SEND ONE - the "capability built, route
+	# missing" defect, for the seventh time in this arc. A capability with no surface is not a
+	# feature, so every step of both journeys is a check here rather than an assumption.
+	var journey := {
+		# Route A - the NPC job, on the recipe you cannot make.
+		"A1 the list says it can be commissioned": cli.find("commission from a %s (%d Valor)") >= 0,
+		"A2 the recipe opens instead of bouncing": cli.find("recipe.get(\"can_commission\", false)") >= 0,
+		"A3 the button names the price": cli.find("Commission (%dv)") >= 0,
+		"A4 pressing it sends the flag": cli.find("msg[\"commission\"] = true") >= 0,
+		# Route B - posting the job to other players, from the same screen.
+		# ⛑ B1 MUST NAME THE BUTTON, NOT THE ACTION ID. The first version searched for
+		# `"craft_post_job"`, which the HANDLER case also contains - so deleting the button
+		# entirely still passed. Two checks matching one string are one check.
+		"B1 a Post Job button exists": cli.find("\"action_data\": (\"craft_post_job\"") >= 0,
+		"B2 clicking it is handled": cli.find("		\"craft_post_job\":") >= 0,
+		"B3 it asks what you will pay": cli.find("func _start_commission_prompt") >= 0,
+		"B4 Escape cancels the prompt": cli.find("pending_commission_recipe = \"\"") >= 0,
+		"B5 the answer creates the order": cli.find("\"item_type\": \"commission\",") >= 0,
+		"B6 and it carries the recipe": cli.find("\"recipe_id\": _rid,") >= 0,
+		# Route C - the crafter finding the work.
+		"C1 the server counts open jobs": srv.find("var _open_commissions_here: Array = []") >= 0,
+		"C2 it ships them per recipe": srv.find("\"wanted_count\": wanted_count,") >= 0,
+		"C3 the crafter SEES the demand": cli.find("player(s) want this — up to %d Valor") >= 0,
+	}
+	var jk: Array = journey.keys()
+	jk.sort()
+	for k in jk:
+		if bool(journey[k]):
+			_ok(String(k))
+		else:
+			_fail("%s -- NO DOOR" % k)
+
+	print("")
+	print("===== 7. THE ROUTE IS COMPLETE =====")
 	var checks := {
 		"server accepts the flag": srv.find("message.get(\"commission\", false)") >= 0,
 		"server requires a post": srv.find("Commissioning needs a %s at a trading post") >= 0,

@@ -8112,6 +8112,33 @@ something was dropped, and it sat unnoticed for eleven days.
         the real dict through both the online path and the offline queue, and the drain honours it.
       Proven by injecting the rebuild and watching it fail.
 
+      **⚑ AND THE OWNER CAUGHT THAT IT HAD NO DOOR.** *"You mention commission it from an NPC and
+      post it to a player but how do players actually do those things? Remember the answers should
+      be UI based where possible."*
+
+      ⛑ **The player half shipped with the server accepting a `recipe_id` and NOTHING able to send
+      one** — `market_order_create` was reachable only through a market panel that had no recipe
+      picker. That is the **"capability built, route missing"** defect for the **seventh time in
+      this arc**, and I walked into it one commit after writing a probe section about it.
+
+      **Both doors are at the BENCH, on the recipe**, because that is where a player meets the
+      problem. Sending them to the market panel to hunt for a recipe picker would be a door in the
+      wrong room.
+
+      | you are looking at | you see |
+      |---|---|
+      | a recipe you cannot make | `Commission (540v)` — NPC, instant, Standard quality |
+      | …the same recipe | `Post Job` — name your price, a player fills it at **their** quality |
+      | a recipe you **can** make | `★ 2 player(s) want this — up to 1200 Valor` |
+
+      That third row is the half that makes the loop close: **demand is shown where the crafter is
+      already looking.** A separate commission board is a room nobody enters.
+
+      ⛑ **A FIFTH VACUOUS CHECK, caught the same way.** The probe's "a Post Job button exists"
+      searched for `"craft_post_job"` — which the HANDLER case also contains — so deleting the
+      button entirely passed clean. **Two checks matching one string are one check.** B1 now names
+      the button's `action_data` form, and removing the button fails.
+
       The crafter's name is stamped into `crafted_by` on hand-over. **Noted for the UI pass:**
       `crafted_by` is written in four places and **read by none** — crafters currently get no
       visible credit anywhere.
