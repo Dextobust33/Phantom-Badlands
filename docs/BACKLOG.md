@@ -7005,6 +7005,35 @@ down, and these are the ones it keeps sending back — which is what extra lives
 ## Phase 8 — later / unscheduled
 
 - [ ] **Prize Shuffle** loot-minigame redesign (combat done; gathering and crafting remain).
+- [ ] **⚑ INVENTORY BLOAT — owner direction 2026-09-18, raised while scoping crafting.** Three
+      complaints, one disease: the player's bag fills with things they did not choose and cannot
+      triage.
+
+      1. **Consumables and tools eat backpack slots.** *"Items and tools can buildup and takeover
+         your backpack slots. We may want to have a separate item pouch or unlimited items."*
+      2. **Tools specifically are a chore.** *"They are currently a pain to have to go back and
+         craft and then they take up an inventory slot, it's hard to tell if you have backups
+         etc."* So: where tools live, whether they stack, and whether the player can SEE their
+         spares at a glance.
+      3. **Auto-salvage must be understandable and configurable IN the inventory.** *"They should
+         be able to understand it and set it up easily so it can autosalvage or autojunk to then be
+         listed automatically next time they go to the market. For example lets say they only want
+         things that give them an HP and Wit increase, if they can easily set that up then they
+         could make it where any equipment they get that isn't an upgrade to both of those gets
+         autosalvaged or autojunked without them ever having to manage it."*
+
+      **⛑ The rule the owner described is a KEEP rule, not a junk rule** - "I want HP and Wits" -
+      and everything failing it is disposed of. That is the right way round: a junk-list needs
+      maintaining forever as new items appear, while a keep-rule covers items that do not exist yet.
+
+      **Check what exists before building:** there is already an auto-salvage path
+      (`awaiting_salvage_result`, inventory-full auto-salvage on party reward equipment) and a
+      market listing flow. This is likely a RULES + UI job on top of machinery that is already
+      there, not a new system - verify first.
+
+      Sits next to the crafting arc because it is the same complaint from the other end: crafting
+      asks *"what do I do with these materials"*, this asks *"why do I have all this at all"*.
+
 - [ ] **CRAFTING REASSESSMENT — scoped by the owner 2026-09-17, and it is most of the system.**
       Asked how much of crafting was in scope, the owner answered *"Most of it"*: *"Players gather
       a bunch of materials and don't really have useful things to do with them. It is all too
@@ -7127,6 +7156,23 @@ down, and these are the ones it keeps sending back — which is what extra lives
       Masterwork 1.50x - the whole spread a player can influence is **+50%**, and **Fine to
       Masterwork is +20%**. On a 50 HP potion that is +25 HP and +10 HP. Felt on gear; invisible on
       a flat-restore consumable, which is the complaint in numbers.
+
+      **⚑ DECISIONS TAKEN 2026-09-18, and they are the plan for the consumable half:**
+      * **Potions: cut most of the 19 opaque ones, rename the survivors.** Not a pure rename - the
+        owner's second reason is bloat, not just clarity (see the inventory item below).
+      * **Quality on a consumable is NOT a multiplier.** Owner: *"crafting quality for consumables
+        would come in the form of making the next item in the tier from a great craft or getting
+        bonus items (example: you made an extremely potent healing potion, you dilute it into 2)."*
+        So a great craft either **promotes to the next tier up** or **yields extra**. That is a much
+        better fit than +20%: both outcomes are things a player can see in their inventory, where
+        `1.25x on a flat restore` is invisible. It also pairs with the **cheaper material cost**
+        specialisation the owner picked.
+      * **The combat item list must say what an item GIVES, computed.** Owner: *"the item info in
+        combat needs improved so players can see what they do at a glance, Also shouldn't require
+        them trying to do math, should just tell how much it will give them back."* So the list
+        shows the ACTUAL number for this character (`restores 340 HP`), never a percentage the
+        player has to apply to their own max. This is the same fault as the old stat descriptions:
+        a number the player must compute is a number they do not have.
 
       **⚑ TWO MORE DIRECTIONS, owner 2026-09-18:**
       * *"The UI for crafting will likely need redesigned as well once we are done. We want it to
