@@ -1971,6 +1971,9 @@ var sanctuary_stable_panel = null
 # Audit #13 Slice 2 — Bestiary panel (Sanctuary monster kill ledger).
 const BestiaryPanelScript = preload("res://client/bestiary_panel.gd")
 var bestiary_panel = null
+## Which creature the bestiary should scroll to and highlight when it next opens. Set by the
+## in-combat "Know This Foe" button; cleared once the panel has used it.
+var _bestiary_focus: String = ""
 
 # P2 (2026-08-26) — Quest Board panel (replaces the game_output quest text blob).
 const QuestBoardPanelScript = preload("res://client/quest_board_panel.gd")
@@ -3129,6 +3132,9 @@ func _ready():
 		combat_scene_panel.client_ref = self
 		# v0.9.417 — Lufia is the only layout; no runtime switching anymore.
 		# Combat readability #5 — in-panel item picker signals
+		# ⚑ "Know This Foe" opens the bestiary focused on what is in front of the player.
+		if not combat_scene_panel.bestiary_requested.is_connected(_on_bestiary_requested):
+			combat_scene_panel.bestiary_requested.connect(_on_bestiary_requested)
 		combat_scene_panel.picker_item_chosen.connect(_on_combat_picker_chosen)
 		combat_scene_panel.picker_canceled.connect(_on_combat_picker_canceled)
 		combat_scene_panel.picker_prev_page.connect(_on_combat_picker_prev_page)
@@ -41334,6 +41340,21 @@ func _handle_clan_action_result(message: Dictionary) -> void:
 	if feedback != "":
 		display_game(feedback)
 
+func _on_bestiary_requested(monster_name: String) -> void:
+	"""Open the bestiary focused on one creature - the one being fought.
+
+	⛑ THE PANEL ALREADY EXISTED AND WAS REACHABLE ONLY FROM THE MENU, out of combat, which is
+	the wrong moment: what a monster can DO matters while it is doing it. This is the same shape
+	as the party invite, Duel for Valor, the fight log and the death log - the capability was
+	built and the route was not. Sixth time in this arc.
+
+	The focus is remembered rather than passed through the request, because the server reply is
+	the existing `bestiary_data` broadcast and giving it a new field for one caller would make
+	every other caller carry it."""
+	_bestiary_focus = monster_name
+	open_bestiary_panel()
+
+
 func open_bestiary_panel() -> void:
 	"""Audit #13 Slice 2 — open the Bestiary panel. Requests fresh summary
 	from the server; the panel renders locked / unlocked based on the upgrade
@@ -41345,7 +41366,7 @@ func open_bestiary_panel() -> void:
 		input_field.release_focus()
 	# Show locked placeholder immediately so the panel is responsive while we
 	# wait on the server fetch.
-	bestiary_panel.open({"level": 0, "entries": [], "unique_count": 0, "total_kills": 0})
+	bestiary_panel.open({"level": 0, "entries": [], "unique_count": 0, "total_kills": 0}, _bestiary_focus)
 	send_to_server({"type": "bestiary_request"})
 
 func close_bestiary_panel() -> void:

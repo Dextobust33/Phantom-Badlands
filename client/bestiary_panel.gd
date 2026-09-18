@@ -22,6 +22,8 @@ var _body_vbox: VBoxContainer
 var _empty_label: RichTextLabel
 
 var _summary: Dictionary = {}
+## The creature to pin to the top, set when opened from a fight.
+var _focus_name: String = ""
 
 
 func _ready() -> void:
@@ -31,7 +33,13 @@ func _ready() -> void:
 	visible = false
 
 
-func open(summary: Dictionary) -> void:
+func open(summary: Dictionary, focus_name: String = "") -> void:
+	"""Show the bestiary. `focus_name` pins one creature to the TOP and highlights it.
+
+	⛑ THE FOCUS IS WHY THE IN-COMBAT BUTTON IS WORTH ANYTHING. Opening an alphabetical list of
+	everything the player has ever killed, while something is hitting them, answers nothing - the
+	question is always about ONE creature."""
+	_focus_name = focus_name
 	refresh(summary)
 	visible = true
 
@@ -179,11 +187,49 @@ func _render_body() -> void:
 
 	_empty_label.visible = false
 
+	# ⚑ THE FOCUSED CREATURE GOES FIRST. Opened from a fight, the player is asking about ONE
+	# thing, and making them scroll an alphabetical list of everything they have ever killed -
+	# while it hits them - is the same as not answering.
+	#
+	# ⛑ IT IS NOT FILTERED TO ONE ROW, on purpose: the owner also asked to *"compare that
+	# monster to others they know"*, and the cheapest honest version of that is putting it at
+	# the top of the others with the same columns beside it.
+	var ordered: Array = []
+	var rest: Array = []
 	for e_var in entries:
 		if not (e_var is Dictionary):
 			continue
-		var entry: Dictionary = e_var
-		_body_vbox.add_child(_make_row(entry, level))
+		if _focus_name != "" and String(e_var.get("name", "")) == _focus_name:
+			ordered.append(e_var)
+		else:
+			rest.append(e_var)
+	# The focused creature may be one the player has never killed - then there is no row for it,
+	# and saying so is more use than silently showing the ordinary list.
+	if _focus_name != "" and ordered.is_empty():
+		var unknown := RichTextLabel.new()
+		unknown.bbcode_enabled = true
+		unknown.fit_content = true
+		unknown.scroll_active = false
+		unknown.add_theme_font_size_override("normal_font_size", 12)
+		unknown.text = "[color=#C8A24A]You have never killed a %s. A Bestiary Page would write one for you.[/color]" % _focus_name
+		_body_vbox.add_child(unknown)
+	ordered.append_array(rest)
+	for e_var2 in ordered:
+		var entry: Dictionary = e_var2
+		var row: Control = _make_row(entry, level)
+		if _focus_name != "" and String(entry.get("name", "")) == _focus_name:
+			# Tint the focused row so it is findable once the list scrolls.
+			var sb2 := StyleBoxFlat.new()
+			sb2.bg_color = Color(0.18, 0.15, 0.06, 0.95)
+			sb2.border_color = Color(0.78, 0.64, 0.29)
+			sb2.set_border_width_all(2)
+			sb2.set_corner_radius_all(3)
+			sb2.content_margin_left = 10
+			sb2.content_margin_top = 4
+			sb2.content_margin_right = 10
+			sb2.content_margin_bottom = 4
+			row.add_theme_stylebox_override("panel", sb2)
+		_body_vbox.add_child(row)
 
 
 func _make_row(entry: Dictionary, level: int) -> Control:
@@ -223,6 +269,24 @@ func _make_row(entry: Dictionary, level: int) -> Control:
 		var first_ts: int = int(entry.get("first_killed_at", 0))
 		var last_ts: int = int(entry.get("last_killed_at", 0))
 		parts.append("[color=#888888]first %s · last %s[/color]" % [_fmt_date(first_ts), _fmt_date(last_ts)])
+	# ⚑ A PAGE OVERRIDES THE UPGRADE TIER. A scribed Bestiary Page buys the FULL entry for one
+	# species without buying the tier, which is the entire reason to craft one.
+	var has_page: bool = bool(entry.get("has_page", false))
+	if has_page:
+		parts.append("[color=#C8A24A]⚑ page[/color]")
+	# The stats only travel for species the server could resolve; absent for anything renamed
+	# or removed from the monster table since the kill was recorded.
+	if (level >= 2 or has_page) and int(entry.get("base_hp", 0)) > 0:
+		parts.append("[color=#FF8888]%d hp[/color] [color=#FFAA66]%d str[/color] [color=#88CCFF]%d def[/color] [color=#AAFFAA]%d spd[/color]" % [
+			int(entry.get("base_hp", 0)), int(entry.get("base_strength", 0)),
+			int(entry.get("base_defense", 0)), int(entry.get("base_speed", 0))])
+	if has_page:
+		var ab = entry.get("abilities", [])
+		if ab is Array and not ab.is_empty():
+			var names: Array = []
+			for a in ab:
+				names.append(String(a).replace("_", " "))
+			parts.append("[color=#DD99DD]%s[/color]" % ", ".join(names))
 	label.text = "  ".join(parts)
 	row.add_child(label)
 	return row

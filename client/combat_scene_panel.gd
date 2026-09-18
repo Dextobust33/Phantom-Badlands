@@ -239,6 +239,9 @@ var _picker_pageinfo_label: Label
 var _picker_prev_btn: Button
 var _picker_next_btn: Button
 var _picker_cancel_btn: Button
+## ⚑ The player asked what they are fighting. Carries the monster NAME so the client can open
+## the bestiary focused on it rather than on an alphabetical list.
+signal bestiary_requested(monster_name: String)
 signal picker_item_chosen(slot: int)  # 1-based slot on the current page
 signal picker_canceled
 signal picker_prev_page
@@ -581,6 +584,26 @@ func _build_layout() -> void:
 	_review_button.pressed.connect(_on_review_button_pressed)
 	add_child(_review_button)
 	call_deferred("_position_review_button")
+
+	# ⚑ KNOW YOUR ENEMY, FROM INSIDE THE FIGHT. Owner 2026-09-18: *"it may be beneficial for
+	# us to add an inspect button or something in combat where if players have the bestiary
+	# for a certain monster they can view all the info on it while in or out of battle."*
+	#
+	# The bestiary panel already existed and was reachable only from the menu, out of combat -
+	# which is the wrong moment. What a monster can DO matters while it is doing it.
+	_bestiary_button = Button.new()
+	_bestiary_button.text = "📖 Know This Foe"
+	_bestiary_button.tooltip_text = "Everything you have recorded about this creature"
+	_bestiary_button.add_theme_font_size_override("font_size", 15)
+	_bestiary_button.custom_minimum_size = Vector2(168, 36)
+	_bestiary_button.focus_mode = Control.FOCUS_NONE
+	# Same z as the review button: clickable over the victory card too, since "what WAS that"
+	# is a question players ask after it kills them as much as during.
+	_bestiary_button.z_index = 200
+	_bestiary_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_bestiary_button.visible = false
+	_bestiary_button.pressed.connect(func() -> void: bestiary_requested.emit(_monster_name))
+	add_child(_bestiary_button)
 
 	# v0.9.611 — pagination controls for Review FX across flock chains.
 	# Sit just below the Review FX button in a horizontal row. Hidden by
@@ -1643,6 +1666,7 @@ var _help_button: Button = null
 # (top-right of the combat panel root) lets the player re-enter the FX scene
 # with the latest round's per-actor strips scrollable for re-reading.
 var _review_button: Button = null
+var _bestiary_button: Button = null
 var _in_review_phase: bool = false
 var _overlay_player_log: RichTextLabel = null
 var _overlay_monster_log: RichTextLabel = null
@@ -1855,6 +1879,15 @@ func _position_review_button() -> void:
 	var _help_h: float = _help_button.custom_minimum_size.y if (_help_button and is_instance_valid(_help_button)) else 0.0
 	var _review_y: float = 6.0 + (_help_h + 6.0 if _help_h > 0.0 else 0.0)
 	_review_button.position = Vector2(maxf(0.0, panel_w - btn_w - 8.0), _review_y)
+	# Stacked under Review Damage, same column, so the top-right corner reads as one strip of
+	# "things I can look at" rather than buttons scattered around the frame.
+	if _bestiary_button != null and is_instance_valid(_bestiary_button):
+		_bestiary_button.size = Vector2(btn_w, btn_h)
+		_bestiary_button.position = Vector2(maxf(0.0, panel_w - btn_w - 8.0), _review_y + btn_h + 6.0)
+		# Visible whenever there is a named foe to ask about. Deliberately NOT gated on owning a
+		# bestiary page: a player who has never seen this creature should still be able to press
+		# it and be told they know nothing, which is the moment they learn the page exists.
+		_bestiary_button.visible = _monster_name != ""
 
 
 func _position_review_pagination_widgets() -> void:

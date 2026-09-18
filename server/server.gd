@@ -16173,6 +16173,44 @@ func handle_dungeon_atlas_request(peer_id: int):
 		"cartography_sense_rank": CARTOGRAPHY_SENSE_RANK,
 		"at_post": _player_at_npc_post(peer_id)})
 
+func _enrich_bestiary_summary(summary: Dictionary, account_id: String) -> void:
+	"""Attach what a player can actually DO something with: the species' real stats, and whether
+	this account holds a scribed Page for it.
+
+	⚑ Owner 2026-09-18: *"it may be beneficial for us to add an inspect button or something in
+	combat where if players have the bestiary for a certain monster they can view all the info on
+	it while in or out of battle, and also compare that monster to others they know."*
+
+	⛑ THE CLIENT HAS NO MONSTER DATA AT ALL. It carries `known_enemy_hp`, a cache of HP it has
+	personally seen, and nothing else - no stats, no abilities, no affinity. So a comparison
+	between two species cannot be assembled there however the UI is written, and a panel that
+	compared KILL COUNTS would answer a question nobody asked. The stats have to travel.
+
+	⛑ A PAGE OVERRIDES THE UPGRADE TIER. `bestiary_level` gates how much of the history the
+	panel shows; a scribed Page buys the full entry for ONE species without buying the tier, which
+	is the whole point of crafting one."""
+	var entries = summary.get("entries", [])
+	if not (entries is Array):
+		return
+	for e in entries:
+		if not (e is Dictionary):
+			continue
+		var nm: String = String(e.get("name", ""))
+		e["has_page"] = persistence.has_bestiary_page(account_id, nm)
+		var bs: Dictionary = monster_db.base_stats_for_name(nm)
+		if bs.is_empty():
+			continue
+		# Only what a player would compare ON. Sending the whole row would ship drop tables and
+		# gold values to a panel that has no use for them.
+		e["base_level"] = int(bs.get("base_level", 0))
+		e["base_hp"] = int(bs.get("base_hp", 0))
+		e["base_strength"] = int(bs.get("base_strength", 0))
+		e["base_defense"] = int(bs.get("base_defense", 0))
+		e["base_speed"] = int(bs.get("base_speed", 0))
+		e["description"] = String(bs.get("description", ""))
+		var abil = bs.get("abilities", [])
+		e["abilities"] = abil if abil is Array else []
+
 func handle_bestiary_request(peer_id: int):
 	"""Audit #13 Slice 2 — return the account's bestiary summary (sorted by
 	kill count desc) and the current upgrade level (0 = locked / 1-3 = tiers
@@ -16186,6 +16224,7 @@ func handle_bestiary_request(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "No account context."})
 		return
 	var summary = persistence.get_bestiary_summary(account_id)
+	_enrich_bestiary_summary(summary, account_id)
 	send_to_peer(peer_id, {
 		"type": "bestiary_data",
 		"summary": summary,

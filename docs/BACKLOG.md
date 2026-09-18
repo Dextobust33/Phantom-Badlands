@@ -7610,12 +7610,27 @@ something was dropped, and it sat unnoticed for eleven days.
       Still homeless: `ash_wood`, `darkwood`, `oak_wood`, `freshwater_pearl`, `ice_crystal`,
       `rock_salt` - three of them still wood, which remains the worst category.
 
-      **⚑ NEW, owner 2026-09-18 while approving the Bestiary Page:** *"it may be beneficial for us
-      to add an inspect button or something in combat where if players have the bestiary for a
-      certain monster they can view all the info on it while in or out of battle, and also compare
-      that monster to others they know."* So the Page needs a READER, and the reader belongs in
-      combat as well as out of it - knowing a monster's abilities matters most while it is hitting
-      you. The COMPARE half is the interesting part and has no equivalent anywhere in the game yet.
+      **✅ THE BESTIARY READER — BUILT 2026-09-18.** Owner: *"add an inspect button or something in
+      combat where if players have the bestiary for a certain monster they can view all the info on
+      it while in or out of battle, and also compare that monster to others they know."*
+      A **Know This Foe** button sits in the combat panel's top-right strip and opens the bestiary
+      **focused on what you are fighting** - pinned to the top, highlighted, with the rest of your
+      ledger beneath it in the same columns, which is the cheapest honest version of *compare*.
+      ⛑ **The panel already existed and was reachable only from the menu, out of combat** - the
+      wrong moment, because what a monster can DO matters while it is doing it. **Sixth time in
+      this arc** the capability was built and the route was not: party invite, Duel for Valor, the
+      fight log, the death log, the Bestiary Page itself, now this.
+      ⛑ **The client has no monster data at all** - it carries `known_enemy_hp`, HP it has
+      personally seen, and nothing else. So a comparison could not be assembled client-side however
+      the UI were written, and a panel comparing KILL COUNTS would have answered a question nobody
+      asked. HP / strength / defence / speed / abilities now travel with the summary, via a new
+      `MonsterDatabase.base_stats_for_name()` (the bestiary only ever has a name).
+      ⛑ **A Page overrides the upgrade tier**, which is the entire reason to craft one: it buys the
+      full entry for ONE species - stats AND abilities - without buying the tier.
+      ⛑ The button is deliberately **not** gated on owning a page: a player who knows nothing
+      presses it and is told *"you have never killed a Wight - a Bestiary Page would write one for
+      you"*, which is the moment they learn the item exists.
+      Probe: `tools/probe/bestiary_reader.gd`.
 
       **✅ CUTS APPROVED:** the **18 combat scrolls** (one-shot spells competing with both cards and
       potions for the same moment, and the bulk of what makes Scribing unreadable) and Scribing's

@@ -563,6 +563,25 @@ func base_level_for_name(base_name: String) -> int:
 	return 0
 
 
+func base_stats_for_name(base_name: String) -> Dictionary:
+	"""A species' base stats looked up by NAME rather than by enum.
+
+	⛑ THE BESTIARY ONLY EVER HAS A NAME. Kills are recorded under `monster_base_name`, so every
+	surface that wants to SHOW a player what they know about a species - the panel, the in-combat
+	reader, a comparison between two of them - starts from a string and has nothing to turn it
+	into. `base_level_for_name` above already walks the enum this way for exactly that reason;
+	this returns the whole row instead of one field, so callers stop needing one helper per stat.
+
+	Empty dictionary for an unknown name, never a guess: a variant prefix the table does not
+	carry must not quietly resolve to some other creature."""
+	if base_name == "":
+		return {}
+	for t in MonsterType.values():
+		var d: Dictionary = get_monster_base_stats(t)
+		if String(d.get("name", "")) == base_name:
+			return d
+	return {}
+
 func get_monster_base_stats(type: MonsterType) -> Dictionary:
 	"""Get base statistics for a monster type"""
 	match type:
