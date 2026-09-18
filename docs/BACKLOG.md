@@ -746,6 +746,49 @@ three-entry array sitting next to a five-entry one.
 Probe: `tools/probe/inventory_pressure_and_autosalvage.gd` — nine behaviour cases run against the
 real rule, proven by injecting "locked items are no longer protected".
 
+## ⚑ THE POST ART PASS — SHIPPED 2026-09-18 (owner-reviewed, on screen)
+
+Owner walked the posts and flagged nine things. **Every one was right**, and three were fragments
+rather than bad choices — the earlier multi-tile pass fixed 19 tiles and left these behind.
+
+| tile | was | now |
+|---|---|---|
+| **post door** | narrow wooden slab | `green_buildings (29,34)` — stone arch, **doors open** |
+| **quest board** | a roadside signpost, 1 cell | `interiors (3,15)` 3×3 — a board covered in pinned notices |
+| **post centre** (`post_marker`) | crossed swords with the tips **cut off** | `sun_city (23,16)` 3×3 banner |
+| **market** | a fishmonger's slab — fish and a cleaver | `interiors (8,12)` 3×2 stocked shelf of wares |
+| **apothecary** | a copper alembic | `interiors (8,10)` 3×2 shelf of potion bottles |
+| **blacksmith** | "a big stove" | a **person** (`5_4`) |
+| **healer** | a chest with a cross | a **person** (`m3_4`) |
+| **cartographer** | a literal rectangle of wall texture | a **person** (`m2_7`) |
+| **anvil** | — | new; the smithing station the blacksmith no longer has to be |
+| **inn** | duplicate of the healer | **cut** |
+
+⛑ **THE NPC PRECEDENT WAS ALREADY IN THE BAKER, UNUSED.** `bake_warden` says it outright: *"He is
+a PERSON, so his tile is a person — taken from the same overworld sprite set the players use rather
+than drawn as a piece of furniture."* The Warden got that treatment and the other three did not, so
+you walked up to a **stove** to talk to a smith. `bake_person` is that routine extracted, so all
+four scale and anchor identically.
+
+⛑ **THE DOOR IS THE OPEN ONE FOR A MECHANICAL REASON.** `world_system` gives `door`
+`blocks_move: false` — players walk **through** it — so the handsome shut pair would have drawn a
+barrier across a tile you are meant to step onto.
+
+⛑ **THE INN WAS MEASURED BEFORE IT WAS CUT.** `_handle_inn_interact` was one line calling
+`handle_trading_post_recharge` — **the same function the healer calls**. Two tiles per post doing
+one job. And the migration written to strip it from the 120 saved posts was then deleted: a saved
+post stores only geometry and derives its stations from the list every read, so the cut reaches the
+live world immediately and that code would have walked a dictionary that does not exist.
+
+⛑ **PICK SPANS BY RENDERING THEM, NEVER BY READING COORDINATES.** The anvil went in **one column
+off**, splitting the grey anvil and gluing the left edge of the brown one to it — the exact fault
+this whole pass exists to fix. Every pick after it was rendered side by side first.
+
+**ASCII art also fixed:** the blacksmith and healer stopped re-rolling a new face every visit. The
+persistent variant already existed and these were the last two callers of the random one, so a
+wandering merchant kept his face while the smith you visit daily did not. Seeded on post + role.
+The **rescue NPC keeps random art on purpose** — that one *is* a different stranger each time.
+
 ## ⚑ TEACH THE GATHER → CRAFT LOOP — owner direction 2026-09-18, NOT STARTED
 
 *"There should be a tutorial or help guide that introduces or walks players through how to
@@ -866,7 +909,11 @@ The formula matched — but that is the same shape that produced a design figure
 earlier the same day, already copied into a second file and quoted as a target. It delegates now,
 and the probe fails if a re-derivation comes back.
 
-**Still open in the UI arc:** crafting station sprites; inventory bloat.
+**✅ THE STATION SPRITES ARE DONE (2026-09-18)** — owner reviewed them on screen and every call
+they made was right. The post door, quest board, post centre, market, apothecary and three NPCs
+were all replaced; the inn was cut. See "THE POST ART PASS" below.
+
+**Still open in the UI arc:** nothing. Inventory bloat is measured and filed with a trigger.
 
 ## ⚑ EVERY CAPABILITY NEEDS A DOOR — swept 2026-09-18, now a standing probe
 
