@@ -134,26 +134,27 @@ func _init() -> void:
 	else:
 		_ok("field_remedy  does not exceed max hp")
 
-	# --- recharge: all three pools drained -> full -------------------------------------------
+	# --- rework: the enchanter OPENS A PANEL, it is not an instant effect -------------------
+	# ⛑ THE ONE SERVICE THAT COMPOUNDS, so it is shaped differently on purpose. The other four
+	# restore to a ceiling and stop mattering; a reroll repeated enough converges on a perfect
+	# item. Its brakes are material cost, a rising price and a hard per-item cap, all proven in
+	# `affix_reroll_bounded.gd`. Here we only assert it does NOT behave like the instant four.
 	var ch3 = _make()
-	ch3.current_mana = 0
-	ch3.current_stamina = 0
-	ch3.current_energy = 0
-	var msg_recharge := ch3.apply_specialist_service("recharge")
-	var short: Array = []
-	if ch3.current_mana < ch3.get_total_max_mana():
-		short.append("mana")
-	if ch3.current_stamina < ch3.get_total_max_stamina():
-		short.append("stamina")
-	if ch3.current_energy < ch3.get_total_max_energy():
-		short.append("energy")
-	if not short.is_empty():
-		_fail("recharge left %s below max" % ", ".join(short))
-	elif msg_recharge == "":
-		_fail("recharge filled the pools but returned no message")
+	if ch3.apply_specialist_service("rework") != "":
+		_fail("rework returned an instant effect -- it must open the rework panel instead")
 	else:
-		_ok("recharge      mana/stamina/energy 0 -> %d/%d/%d" % [
-			ch3.current_mana, ch3.current_stamina, ch3.current_energy])
+		_ok("rework        correctly has no instant effect (panel service)")
+	if not bool(CharacterScript.SPECIALIST_SERVICES.get("enchanter", {}).get("opens_panel", false)):
+		_fail("the enchanter service is not marked opens_panel, so the client will send the wrong message")
+	else:
+		_ok("rework        marked opens_panel")
+	# ⛑ And the retired one must be GONE, not merely unreferenced. Owner 2026-09-18: Field Remedy
+	# and Recharge "seem rather identical" - they were two halves of the post healer's single
+	# service. Leaving a dead "recharge" branch behind would let it drift back in.
+	if _make().apply_specialist_service("recharge") != "":
+		_fail("the retired 'recharge' service still does something")
+	else:
+		_ok("recharge      retired; it was the healer's other half")
 
 	# --- make_camp: safe passage steps granted, and never REDUCED ----------------------------
 	var ch4 = _make()
@@ -213,6 +214,10 @@ func _init() -> void:
 		"client has a button": client_src.find("\"action_data\": \"specialist_service\"") >= 0,
 		"client handles the click": client_src.find("\"specialist_service\":") >= 0,
 		"ally variant wired": client_src.find("\"specialist_service_ally\":") >= 0,
+		"reroll route registered": srv_src.find("\"affix_reroll\":") >= 0,
+		"reroll quote route registered": srv_src.find("\"affix_reroll_quote\":") >= 0,
+		"reroll handler defined": srv_src.find("func handle_affix_reroll(") >= 0,
+		"reroll charges materials": srv_src.find("remove_crafting_material") >= 0,
 	}
 	for k in checks.keys():
 		if bool(checks[k]):

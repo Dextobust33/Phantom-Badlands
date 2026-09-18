@@ -2426,6 +2426,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_dungeon_locate(peer_id, message)
 		"specialist_service":
 			handle_specialist_service(peer_id, message)
+		"affix_reroll":
+			handle_affix_reroll(peer_id, message)
+		"affix_reroll_quote":
+			handle_affix_reroll_quote(peer_id, message)
 		"house_upgrade":
 			handle_house_upgrade(peer_id, message)
 		"house_discard_item":
@@ -47817,6 +47821,15 @@ func handle_specialist_service(peer_id: int, message: Dictionary) -> void:
 			"message": "[color=#FF6666]Your trade has no field service.[/color]"})
 		return
 
+	# ⛑ A PANEL SERVICE BRANCHES OUT BEFORE THE COOLDOWN, because opening a window is not the
+	# act - the rework itself is, and `handle_affix_reroll` gates that with materials, a rising
+	# price and a per-item cap. Spending a 180s cooldown merely to LOOK at the panel would punish
+	# the player for reading their own options.
+	if bool(svc.get("opens_panel", false)):
+		send_to_peer(peer_id, {"type": "open_affix_rework", "service": String(svc.get("id", "")),
+			"name": String(svc.get("name", ""))})
+		return
+
 	var now: int = int(Time.get_unix_time_from_system())
 	var last: int = int(_specialist_service_at.get(peer_id, 0))
 	var wait: int = Character.SPECIALIST_SERVICE_COOLDOWN_SEC - (now - last)
@@ -47870,6 +47883,10 @@ func _perform_specialist_service(service_id: String, _actor, target) -> String:
 	# Node with a heavy _ready that the headless probes all read as TEXT rather than instantiate.
 	# That is precisely how a service ships "wired" and inert. `chart_course` stays because it
 	# genuinely needs live world state (active_dungeons).
+	if service_id == "rework":
+		# Handled in handle_specialist_service, which opens the panel. Named here so the
+		# reachability check in specialist_services.gd can see that something serves it.
+		return ""
 	if service_id == "chart_course":
 		return _chart_course_for(target)
 	return target.apply_specialist_service(service_id, SPECIALIST_CAMP_STEPS)
@@ -47931,3 +47948,118 @@ func _chart_course_for(target) -> String:
 	else:
 		body = "to the [b]%s[/b], %d tiles away - near (%d, %d)" % [compass, best_dist, bx, by]
 	return "[color=#5AC8FF]You chart them a course. Nearest %s: %s.[/color]" % [best_name, body]
+
+
+
+func _is_committed_enchanter(character) -> bool:
+	return character.specialty_job_committed and String(character.specialty_job) == "enchanter"
+
+
+func handle_affix_reroll_quote(peer_id: int, message: Dictionary) -> void:
+	# What would reworking this item cost, and which stats can be reworked? Read-only.
+	# The client needs this before it can draw the panel, and quoting from the server keeps the
+	# price in ONE place - a client that computed its own would be a second copy of the cost
+	# curve, which is how the two drift and a player gets charged something they were not shown.
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var idx: int = int(message.get("item_index", -1))
+	if idx < 0 or idx >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "error", "message": "No such item."})
+		return
+	var item: Dictionary = character.inventory[idx]
+	var spec: bool = _is_committed_enchanter(character)
+	var cost: Dictionary = drop_tables.affix_reroll_cost(item, spec)
+	send_to_peer(peer_id, {
+		"type": "affix_reroll_quote",
+		"item_index": idx,
+		"item_name": String(item.get("name", "?")),
+		"stats": drop_tables.rerollable_affixes(item),
+		"affixes": item.get("affixes", {}),
+		"reroll_count": int(item.get("reroll_count", 0)),
+		"max_rerolls": DropTablesScript.MAX_AFFIX_REROLLS,
+		"cost": cost,
+		"is_specialist": spec,
+		"at_post": _player_at_npc_post(peer_id),
+	})
+
+
+func handle_affix_reroll(peer_id: int, message: Dictionary) -> void:
+	"""Rework one stat on one item into a different one.
+
+	⚑ Owner 2026-09-18: *"making some type of loop that players can participate in to roll off a
+	stat they don't like into something they do like (kind of like Diablo 3). It should be possible
+	to do in town but easier to do through crafting focused individuals."*
+
+	⛑ AND THE BOUND, same message: *"we don't want a player to just be able to keep buffing their
+	same item for free infinitely."* Four of the five brakes live in `drop_tables.reroll_affix`
+	(replace-never-add, same-pool-only, fresh-roll-can-be-worse, hard cap). The fifth is here: the
+	cost is CHARGED, and the enchanter's specialisation is a discount that never reaches zero.
+	`affix_reroll_bounded.gd` proves all five, including by injecting a waived cost."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var spec: bool = _is_committed_enchanter(character)
+	# ⛑ THE TOWN ROUTE IS WHAT KEEPS THIS CONVENIENCE RATHER THAN ACCESS. A player with no
+	# enchanter friend walks to a post and pays valor; the enchanter skips the walk and the valor
+	# and pays fewer materials. Nobody is locked out of reworking a stat.
+	if not spec and not _player_at_npc_post(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]You need a workbench for this. Visit a trading post — or ask a committed Enchanter, who can do it anywhere.[/color]"})
+		return
+
+	var idx: int = int(message.get("item_index", -1))
+	if idx < 0 or idx >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "error", "message": "No such item."})
+		return
+	var item: Dictionary = character.inventory[idx]
+	var stat_key: String = String(message.get("stat", ""))
+
+	var cost: Dictionary = drop_tables.affix_reroll_cost(item, spec)
+	if bool(cost.get("capped", false)):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]%s has been reworked as many times as it will take.[/color]" % item.get("name", "That item")})
+		return
+	var mats: Dictionary = cost.get("materials", {})
+	if not character.has_crafting_materials(mats):
+		var want: Array = []
+		for m in mats.keys():
+			want.append("%dx %s" % [int(mats[m]), CraftingDatabaseScript.get_material_name(String(m))])
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Not enough materials — this rework needs %s.[/color]" % ", ".join(want)})
+		return
+	var valor_cost: int = int(cost.get("valor", 0))
+	var account_id = peers[peer_id].account_id
+	if valor_cost > 0 and not persistence.spend_valor(account_id, valor_cost):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]The rework costs %d valor and you have %d.[/color]" % [valor_cost, persistence.get_valor(account_id)]})
+		return
+
+	# ⛑ MATERIALS COME OUT ONLY AFTER THE REROLL SUCCEEDS, so a refusal never eats them. Valor is
+	# already spent above, which is why every refusal that can happen is checked BEFORE it.
+	var res: Dictionary = drop_tables.reroll_affix(item, stat_key)
+	if not bool(res.get("ok", false)):
+		if valor_cost > 0:
+			persistence.add_valor(account_id, valor_cost)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % res.get("error", "That cannot be reworked.")})
+		return
+	for m in mats.keys():
+		character.remove_crafting_material(String(m), int(mats[m]))
+
+	var line := "[color=#A335EE]%s reworked.[/color]\n[color=#FF9999]- %s %s[/color]\n[color=#99FF99]+ %s %s[/color]" % [
+		item.get("name", "Item"),
+		str(res.get("old_value", 0)), _stat_label(String(res.get("old_stat", ""))),
+		str(res.get("new_value", 0)), _stat_label(String(res.get("new_stat", "")))]
+	# The remaining count is shown EVERY time, because the cap is the thing that makes this
+	# finite and a player who does not know it exists will feel cheated when they hit it.
+	line += "\n[color=#808080]%d rework(s) left on this item.[/color]" % int(res.get("remaining", 0))
+	if spec:
+		line += " [color=#5AC8FF](Enchanter's discount applied.)[/color]"
+	send_to_peer(peer_id, {"type": "text", "message": line})
+	save_character(peer_id)
+	# No inventory_update message exists in this protocol - character_update carries the
+	# inventory, and inventing a second refresh path would be a message the client never reads.
+	send_character_update(peer_id)
+
+
+func _stat_label(stat_key: String) -> String:
+	# Player-facing name for an affix stat key. Falls back to a de-underscored key rather than
+	# printing the raw identifier at someone.
+	var pretty: String = stat_key.replace("_bonus", "").replace("_", " ")
+	return pretty.strip_edges()

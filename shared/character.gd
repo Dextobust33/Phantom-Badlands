@@ -709,9 +709,13 @@ const SPECIALIST_SERVICES := {
 		"mirrors": "the post healer",
 	},
 	"enchanter": {
-		"id": "recharge", "name": "Recharge",
-		"desc": "Refill a caster's mana, a warrior's stamina, a trickster's energy.",
-		"mirrors": "resting, without the time",
+		"id": "rework", "name": "Rework a Stat",
+		"desc": "Roll a stat you don't want into a different one, anywhere, at a discount.",
+		"mirrors": "the same rework a post offers, for valor",
+		# ⛑ NOT AN INSTANT EFFECT LIKE THE OTHER FOUR. It needs the player to choose an item and a
+		# stat, so `apply_specialist_service` returns "" for it and the button opens the rework
+		# panel instead. See `handle_affix_reroll`.
+		"opens_panel": true,
 	},
 	"scribe": {
 		"id": "chart_course", "name": "Chart a Course",
@@ -792,20 +796,6 @@ func apply_specialist_service(service_id: String, camp_steps: int = 25) -> Strin
 			for c in cured:
 				parts.append("%s cured" % c)
 			return "[color=#00FF00]You set them right again (%s).[/color]" % ", ".join(parts)
-		"recharge":
-			var filled: bool = false
-			if current_mana < get_total_max_mana():
-				current_mana = get_total_max_mana()
-				filled = true
-			if current_stamina < get_total_max_stamina():
-				current_stamina = get_total_max_stamina()
-				filled = true
-			if current_energy < get_total_max_energy():
-				current_energy = get_total_max_energy()
-				filled = true
-			if not filled:
-				return "[color=#888888]They have nothing left to fill.[/color]"
-			return "[color=#00FFFF]You draw the weariness out of them. Their reserves are full.[/color]"
 		"make_camp":
 			# The camp REUSES safe passage rather than inventing a second way to quiet a tile.
 			# Two systems answering one question is how they drift apart.

@@ -6718,3 +6718,173 @@ func get_starter_kit_item(slot: String) -> Dictionary:
 	# Tag for future surfaces (inspect lineage, achievement, etc.).
 	item["starter_kit"] = true
 	return item
+
+
+# ===== AFFIX REROLL (owner 2026-09-18) =====
+# "making some type of loop that players can participate in to roll off a stat they don't like
+# into something they do like (kind of like Diablo 3). It should be possible to do in town but
+# easier to do through crafting focused individuals maybe?"
+#
+# ⛑ AND THE BOUND, owner in the same breath: "we don't want these things to make it where players
+# can infinitely upgrade for free... We don't want a player to just be able to keep buffing their
+# same item for free infinitely."
+#
+# That constraint is what shapes this, because a reroll is UNLIKE every other specialist service.
+# Repair, heal, recharge and camp all RESTORE TO A CEILING - repeating them once you are at the
+# ceiling does nothing, so "free, on a cooldown" is self-limiting. A reroll COMPOUNDS. Repeat it
+# enough and you converge on a perfect item, and a cooldown only makes that slow rather than
+# bounded. So this carries three separate brakes, and none of them is the cooldown:
+#
+#   1. IT REPLACES, IT NEVER ADDS.        The affix COUNT stays whatever the item's rarity gives
+#                                         it (AFFIX_COUNTS). You cannot roll your way to more.
+#   2. IT CANNOT REACH A BETTER POOL.     The replacement is drawn from THE SAME pool the old
+#                                         affix came from, so a rare can never reroll into the
+#                                         epic-only CHASE_SUFFIX_POOL. Without this, rerolling
+#                                         would be a back door to rarity.
+#   3. THE VALUE IS ROLLED FRESH, AND     There is no preview and no take-back. D3 lets you keep
+#      IT CAN COME OUT WORSE.             the better of the two, which - given enough attempts -
+#                                         converges on the maximum roll. That is precisely the
+#                                         "keep buffing the same item" failure. Here the new roll
+#                                         stands, so a reroll is a LATERAL trade: you are changing
+#                                         WHICH stat you have, not how much of it.
+#
+#   ...plus a hard per-item cap (MAX_AFFIX_REROLLS) and a cost that RISES with each reroll on that
+#   item, so even the lateral trade is finite. The specialist's discount is a discount; it never
+#   reaches zero. See `affix_reroll_cost`.
+
+## How many times a single item may ever be rerolled. A hard stop rather than a soft economic
+## one, because a purely economic brake is only as strong as the weakest material source - and
+## salvage is a free universal firehose.
+const MAX_AFFIX_REROLLS := 5
+
+## What the enchanter's specialisation is worth: a discount on the materials, never a waiver.
+## Owner: "maybe some discount but not a gate."
+const SPECIALIST_REROLL_DISCOUNT := 0.5
+
+
+func rerollable_affixes(item: Dictionary) -> Array:
+	"""Which stat keys on this item can be rerolled.
+
+	⛑ Procs and bookkeeping are excluded via SALVAGE_AFFIX_SKIP_KEYS - the same list salvage
+	uses, rather than a second hand-written one that would drift from it."""
+	var out: Array = []
+	var affixes = item.get("affixes", {})
+	if not (affixes is Dictionary):
+		return out
+	for key in affixes.keys():
+		var k := String(key)
+		if k in SALVAGE_AFFIX_SKIP_KEYS:
+			continue
+		var v = affixes[key]
+		if v is int or v is float:
+			out.append(k)
+	out.sort()
+	return out
+
+
+func _affix_slot_for(item: Dictionary, stat_key: String) -> String:
+	"""Is this stat the item's prefix, its suffix, or a bonus roll?
+
+	⛑ DERIVED, NOT STORED. A finished `affixes` dict is FLAT - `{attack_bonus: 29, roll_quality:
+	45, suffix_name: "of Striking"}` - so which slot a stat came from is not recorded anywhere.
+	It is recoverable by asking which pool holds an entry with BOTH that name and that stat, and
+	that is worth doing rather than adding a parallel field the old saves would not have."""
+	var affixes = item.get("affixes", {})
+	var pname := String(affixes.get("prefix_name", ""))
+	var sname := String(affixes.get("suffix_name", ""))
+	for e in PREFIX_POOL:
+		if String(e.get("name", "")) == pname and String(e.get("stat", "")) == stat_key:
+			return "prefix"
+	for e in SUFFIX_POOL:
+		if String(e.get("name", "")) == sname and String(e.get("stat", "")) == stat_key:
+			return "suffix"
+	return "bonus"
+
+
+func affix_reroll_cost(item: Dictionary, is_specialist: bool = false) -> Dictionary:
+	"""What one more reroll of this item costs. Returns {materials:{id:qty}, valor:int, capped:bool}.
+
+	⛑ THE COST RISES WITH EACH REROLL ON THIS ITEM, which is the second brake. A flat cost plus a
+	free universal material source (salvage) is not a brake at all.
+
+	⛑ IT IS PAID IN THE ENCHANT MATERIALS SALVAGE PRODUCES. That is deliberate: those materials
+	currently have almost nowhere to go, which is fault #1 of the crafting arc ("materials have no
+	destination"). This gives the salvage ladder a sink without inventing a new currency."""
+	var done: int = int(item.get("reroll_count", 0))
+	if done >= MAX_AFFIX_REROLLS:
+		return {"materials": {}, "valor": 0, "capped": true}
+	var level: int = int(item.get("level", 1))
+	var tier_index: int = clampi(int(level / 15), 0, SALVAGE_ENCHANT_TIERS.size() - 1)
+	var mat_id: String = SALVAGE_ENCHANT_TIERS[tier_index]
+	# 1, 2, 3, 5, 7 across the five allowed rerolls - superlinear, so the last one hurts.
+	var qty: int = int(round(1.0 + float(done) * float(done) * 0.35 + float(done)))
+	var valor: int = 20 + done * 25
+	if is_specialist:
+		# A DISCOUNT, NEVER A WAIVER. maxi(1, ...) is the floor that keeps it from reaching zero,
+		# and it is the line the owner drew.
+		qty = maxi(1, int(ceil(float(qty) * SPECIALIST_REROLL_DISCOUNT)))
+		valor = 0
+	return {"materials": {mat_id: qty}, "valor": valor, "capped": false}
+
+
+func reroll_affix(item: Dictionary, stat_key: String) -> Dictionary:
+	"""Replace one affix with a DIFFERENT stat from the same pool. Mutates `item`.
+
+	Returns {ok, error, old_stat, old_value, new_stat, new_value, new_name}."""
+	var affixes = item.get("affixes", {})
+	if not (affixes is Dictionary) or affixes.is_empty():
+		# ⛑ A CRAFTED ITEM HAS NO AFFIXES AT ALL - `_roll_affixes` returns {} for them, because
+		# crafted power comes from Enchanter Runes instead. Saying so beats a silent no-op.
+		return {"ok": false, "error": "That was crafted, not found — its power comes from runes, not affixes."}
+	if int(item.get("reroll_count", 0)) >= MAX_AFFIX_REROLLS:
+		return {"ok": false, "error": "This item has been reworked as many times as it will take (%d)." % MAX_AFFIX_REROLLS}
+	if not (stat_key in rerollable_affixes(item)):
+		return {"ok": false, "error": "That is not a stat this item can have reworked."}
+
+	var slot := _affix_slot_for(item, stat_key)
+	# BRAKE 2: the replacement comes from the SAME pool. A bonus roll draws the combined pool
+	# WITHOUT the chase pool, so no amount of rerolling reaches an epic-only stat.
+	var pool: Array = []
+	match slot:
+		"prefix":
+			pool = PREFIX_POOL
+		"suffix":
+			pool = SUFFIX_POOL
+		_:
+			pool = PREFIX_POOL + SUFFIX_POOL
+
+	var present: Array = rerollable_affixes(item)
+	var candidates: Array = []
+	for e in pool:
+		var st := String(e.get("stat", ""))
+		# A different stat, and not one the item already carries — rerolling into a duplicate
+		# would silently merge into the existing key and read as "nothing happened".
+		if st != stat_key and not (st in present):
+			candidates.append(e)
+	if candidates.is_empty():
+		return {"ok": false, "error": "There is nothing else that slot could become."}
+
+	var level: int = int(item.get("level", 1))
+	var pick: Dictionary = candidates[randi() % candidates.size()]
+	# BRAKE 3: a fresh roll from the item's own level range. It can land lower than what it
+	# replaced, and it stands.
+	var rolled: Dictionary = _calculate_affix_value(pick, level, _get_stat_roll_range(level))
+	var old_value = affixes[stat_key]
+
+	affixes.erase(stat_key)
+	affixes[String(pick.get("stat", ""))] = rolled.value
+	if slot == "prefix":
+		affixes["prefix_name"] = pick.get("name", "")
+	elif slot == "suffix":
+		affixes["suffix_name"] = pick.get("name", "")
+	item["affixes"] = affixes
+	item["reroll_count"] = int(item.get("reroll_count", 0)) + 1
+
+	return {
+		"ok": true, "error": "",
+		"old_stat": stat_key, "old_value": old_value,
+		"new_stat": String(pick.get("stat", "")), "new_value": rolled.value,
+		"new_name": String(pick.get("name", "")),
+		"reroll_count": int(item["reroll_count"]),
+		"remaining": MAX_AFFIX_REROLLS - int(item["reroll_count"]),
+	}

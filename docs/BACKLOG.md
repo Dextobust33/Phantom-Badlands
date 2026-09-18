@@ -7778,6 +7778,40 @@ something was dropped, and it sat unnoticed for eleven days.
       **Design question to settle first:** D3 rerolls one affix into a *different stat* (pick from
       2 offers, repeatable at rising cost) — that is the version that answers "roll off a stat I
       don't like". Rerolling the same stat's *value* is just `_craft_reforge` again.
+      **✅ SERVER HALF SHIPPED 2026-09-18.** Reworks one affix into a **different stat** (the D3
+      shape). `drop_tables.reroll_affix` / `rerollable_affixes` / `affix_reroll_cost`,
+      `server.handle_affix_reroll` + `_quote`, enchanter service is now **Rework a Stat**.
+
+      **⚑ THE BOUND — owner, same message:** *"we don't want these things to make it where players
+      can infinitely upgrade for free... We don't want a player to just be able to keep buffing
+      their same item for free infinitely."*
+      A reroll is **structurally unlike the other four services**, and that is the thing to hold on
+      to. Repair / heal / camp all **restore to a ceiling** — repeating them at the ceiling does
+      nothing, so free-plus-cooldown is self-limiting. A reroll **compounds**, and a cooldown only
+      makes compounding slow rather than bounded. So it carries five brakes, none of which is the
+      cooldown:
+
+      | # | brake | why |
+      |---|---|---|
+      | 1 | replaces, never adds | affix COUNT stays whatever rarity gave it; you cannot roll your way to more |
+      | 2 | same pool only | a rare can never reach the epic-only `CHASE_SUFFIX_POOL` — rerolling must not be a back door to rarity |
+      | 3 | fresh roll, no undo | **measured 37% come out worse.** D3 lets you keep the better of two, which converges on max — that *is* the "keep buffing" failure |
+      | 4 | hard cap | `MAX_AFFIX_REROLLS = 5` per item, absolute |
+      | 5 | rising, non-zero cost | town 1→2→4→7→11 mats + 20→120 valor; enchanter 1→1→2→4→6 mats, 0 valor. The specialisation is a **discount, never a waiver** |
+
+      Paid in the **salvage enchant ladder** (`magic_dust` → `primordial_spark`), which gives those
+      materials a destination — fault #1 of the crafting arc.
+
+      ⛑ **The chase-pool check was VACUOUS on first writing and only fault injection found it.**
+      The sample item was *uncommon* (2 affixes = prefix + suffix), so it has no **bonus** slot and
+      the branch that could reach the chase pool never ran — deliberately routing the chase pool
+      into that branch still produced a clean pass. The probe now uses an epic+ item and *prints
+      how many rerolls actually hit a bonus slot* (294 of 600), so it cannot go quiet again.
+
+      **Still to do:** the client rework panel (item → stat → confirm, showing cost and reworks
+      remaining), and a town entry point. Deferred: reworking an **ally's** item — the other four
+      services act on an adjacent player, this one does not yet.
+
 
       ⛑ **Two traps found while building it, both worth keeping:**
       * **Chart a Course nearly retired a Sanctuary upgrade.** The first version pointed at the
