@@ -37,23 +37,87 @@ const THREAT_RELIEF_REWARDS_BY_TIER := {
 	9: {"xp": 2700, "valor": 300},
 }
 const THREAT_RELIEF_REWARDS_DEFAULT := {"xp": 500, "valor": 80}
+## What clearing a threat is worth ON TOP of the ordinary dungeon quest it resembles.
+##
+## ⛑ MEASURED AGAINST THE BOARD, NOT CHOSEN BECAUSE IT SOUNDED RIGHT. A threat bounty is a
+## full dungeon clear plus an emergency, so the thing it has to stand beside is the MEDIAN
+## dungeon quest at the same post - the median and not the best, because a board carries seven
+## of wildly different sizes and measuring against the largest drives the figure far too high.
+##
+## Before: 0.64x median XP at Haven collapsing to 0.06x at Northwatch - it did not scale, which
+## is exactly what the owner said. At 1.8 it holds roughly parity the whole way out:
+##   Haven (lvl 5)        1.14x median XP   |  Northeast (lvl 28)  0.93x  |  Northwatch (37)  0.83x
+## `tools/probe/threat_quest_rewards.gd` re-measures this and fails if it drifts out of band.
+const THREAT_URGENCY_MULT := 1.8
 
-static func get_threat_relief_rewards(dungeon_type: String) -> Dictionary:
-	"""Look up the appropriate {xp, valor} reward for a threat-relief quest
-	pointing at the given dungeon_type. Tier is read from DungeonDatabase
-	DUNGEON_TYPES so the formula stays in sync with dungeon balance edits."""
-	# The type's DESIGN WEIGHT, deliberately, and NOT the instance's grade.
-	#
-	# Everywhere else a dungeon reward is sized by the instance (see `roll_treasure`). Here it
-	# must not be: this is called TWICE for the same quest - once when it is offered, and again
-	# from `quest_from_id` when a saved one is rehydrated - and that second call has only the
-	# type, because the quest id encodes post+type and nothing else. Grading by the instance
-	# would promise one reward and pay another, which is worse than being consistently coarse.
-	#
-	# Making it grade-accurate means putting the grade in the quest record. Filed, not assumed.
+static func area_level_for_post(post_id: String) -> int:
+	"""The expected monster level around a post. STATIC twin of `_get_area_level_for_post`,
+	which is the instance method every dynamic quest already scales against.
+
+	Static because the threat-relief path reaches this from the SERVER through the script
+	rather than through a QuestDatabase instance. Same formula, deliberately - a second
+	distance-to-level rule is precisely the kind of duplicate that drifts."""
+	var c := post_coords(post_id)
+	return maxi(1, int(sqrt(float(c.x * c.x + c.y * c.y)) * 0.5))
+
+
+static func get_threat_relief_rewards(dungeon_type: String, post_id: String = "") -> Dictionary:
+	"""{xp, valor} for a threat-relief bounty: the dungeon type's weight, scaled by WHERE it is.
+
+	⛑ THE TABLE ALONE DOES NOT SCALE, AND THAT WAS THE COMPLAINT. Owner, on the quest board:
+	*"the Threat quest doesn't seem to scale and is low rewards."* It was a flat lookup on the
+	dungeon TYPE, so driving a threat off a post at level 200 paid exactly what the same type of
+	threat paid at level 10 - while every other quest on the same board had been re-anchored to
+	the land. A threat bounty is a full dungeon clear plus an emergency, and it was the cheapest
+	thing on the board.
+
+	The tier table stays, but as what it actually is: a WEIGHT for how serious that kind of
+	dungeon is, not a payout. The level anchor is the post's own area level - the same quantity
+	`_scale_quest_rewards` uses - so threat quests move with the board around them instead of
+	carrying a second reward scheme that has to be remembered separately.
+
+	⛑ ANCHORED ON THE POST, NOT THE INSTANCE, AND THAT IS LOAD-BEARING. This is called TWICE
+	for one quest - once when offered, once when `quest_from_id` rehydrates a saved one - and the
+	quest id encodes post + type and nothing else. The post is therefore knowable both times; the
+	dungeon instance is not. Grading by the instance would advertise one reward and pay another.
+	(That constraint is why the original was flat; it rules out the INSTANCE, not the LAND.)
+
+	With no `post_id` the old flat table is returned unchanged, so any caller not yet passing one
+	keeps exactly its previous behaviour rather than silently getting a different number."""
+	# The type's DESIGN WEIGHT, deliberately, and NOT the instance's grade - see above.
 	var dungeon_info: Dictionary = DungeonDatabaseScript.DUNGEON_TYPES.get(dungeon_type, {})
 	var tier: int = int(dungeon_info.get("base_tier", 0))
-	return THREAT_RELIEF_REWARDS_BY_TIER.get(tier, THREAT_RELIEF_REWARDS_DEFAULT)
+	var base: Dictionary = THREAT_RELIEF_REWARDS_BY_TIER.get(tier, THREAT_RELIEF_REWARDS_DEFAULT)
+	if post_id == "":
+		return base
+	var lvl: int = area_level_for_post(post_id)
+	# Same exponent and same base level as `_scale_quest_rewards`, so a threat bounty and an
+	# ordinary quest at one post grow together rather than diverging.
+	const BASE_LEVEL := 5
+	var scale: float = 1.0
+	if lvl > BASE_LEVEL:
+		scale = pow(float(lvl) + 1.0, 2.2) / pow(float(BASE_LEVEL) + 1.0, 2.2)
+	# ⛑ NO CAP HERE, AND THE FIRST VERSION OF THIS FIX HAD ONE BY MISTAKE. It borrowed
+	# `QUEST_XP_REANCHOR_CAP`, which bounds something else: how far a dungeon quest may be
+	# RE-anchored above a base that is ALREADY level-scaled. This base is a flat table with
+	# no level in it, so the same constant simply froze the payout - measured at 4,000 XP for
+	# both a level-28 post and a level-37 one, which is the complaint restated rather than
+	# fixed. This is the plain area curve `_scale_quest_rewards` applies to everything else.
+	var xp: int = int(float(base.get("xp", 0)) * scale * THREAT_URGENCY_MULT)
+	# Valor is linear and is rebuilt rather than multiplied, exactly as the dungeon-quest path
+	# rebuilds it: the flat table has no level in it to scale, so there is nothing to lift.
+	# The tier weight rides as a modest multiplier so a T9 threat still outpays a T2 one.
+	var tier_mult: float = 1.0 + 0.10 * float(maxi(0, tier - 2))
+	var valor: int = int(clampf(
+		(QUEST_VALOR_BASE + float(lvl) * QUEST_VALOR_PER_LEVEL) * tier_mult * THREAT_URGENCY_MULT,
+		QUEST_VALOR_CLAMP.x, QUEST_VALOR_CLAMP.y))
+	# Never below the table it replaced: this may only ever raise a threat bounty. A change
+	# that pays LESS anywhere would be a regression dressed as a fix.
+	return {
+		"xp": maxi(xp, int(base.get("xp", 0))),
+		"valor": maxi(valor, int(base.get("valor", 0))),
+	}
+
 
 # Quest type constants
 enum QuestType {
@@ -1898,7 +1962,10 @@ func _regenerate_threat_relief_quest(quest_id: String) -> Dictionary:
 	var dungeon_type = rest.substr(at_idx + 1)
 	if post_id == "" or dungeon_type == "":
 		return {}
-	var rewards: Dictionary = get_threat_relief_rewards(dungeon_type)
+	# The rehydrate path passes the post too, or a saved quest would pay the flat table
+	# while the board that offered it advertised the scaled figure - the two-paths-read-
+	# same-field shape that made these quests pay ZERO for a fortnight in v0.9.596.
+	var rewards: Dictionary = get_threat_relief_rewards(dungeon_type, post_id)
 	return {
 		"id": quest_id,
 		"name": "Drive Off the threat",

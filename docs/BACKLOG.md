@@ -743,11 +743,36 @@ printed beside every line so `taken=0` is readable rather than ambiguous.
    `PanelContainer`, not a window that can take focus. Rather than a third guess, the handler now
    logs every request AND every debounce - the client log will say whether the key arrived.
    *Owner reported it working again in round 4, so it may be intermittent.*
-3. **The first line of a fight renders unsummarised.** `start_combat` sends its narration as one
-   joined `message` string with no actor array, so the monster's opening strike arrives untagged
-   and prints as raw prose above the summarised lines. Cosmetic, one line per fight.
-4. **Threat quest rewards** - owner: they *"don't seem to scale and is low rewards"*. Deliberately
-   untouched through the whole log arc; flat `THREAT_RELIEF_REWARDS` table.
+3. **The first line of a fight renders unsummarised.** Cosmetic, one line per fight. Owner's
+   Harpy screenshot shows `▸ Harpy 3 hits` (summarised) followed by `The Harpy attacks but
+   misses!` (raw green prose) in the same round.
+   **Narrowed 2026-09-18, and the obvious suspects are both cleared:** `_push_first_strike_to_log`
+   DOES tag its lines `"monster"`, and the `combat_start` narration goes to `display_game`, which
+   is `game_output` - hidden behind the battle scene during a fight - not the log band. So neither
+   is the source. Not reproduced: two `logmeta` runs emitted no untagged line at all, so it needs
+   a fight with the specific shape (monster wins initiative, ambusher, or a summoner/Blinding
+   monster like the Harpy). **Get a repro before theorising further** - three plausible causes have
+   already been eliminated by reading, which is the point at which reading stops paying.
+4. ~~**Threat quest rewards.**~~ **DONE 2026-09-18.** Owner: they *"don't seem to scale and is
+   low rewards."* Both halves were true and they were one cause: the reward was a flat lookup on
+   the dungeon TYPE, so a threat at a level-200 post paid what the same type paid outside Haven,
+   while every other quest on that board had already been re-anchored to the land.
+   Now anchored on the POST's area level - the same quantity `_scale_quest_rewards` uses - with the
+   tier table demoted to what it always was, a weight for how serious that kind of dungeon is.
+   Anchored on the post and not the dungeon INSTANCE deliberately: the pricing runs twice for one
+   quest (offer, then rehydrate from a quest id that encodes post + type only), so the instance is
+   unknowable the second time. That constraint is what made the original flat - it rules out the
+   instance, not the land.
+   **Sized against a target, not a number that looked big.** Measured against the MEDIAN dungeon
+   quest on the same board (the median, not the best - a board carries seven of wildly different
+   sizes): it was 0.64x median XP at Haven collapsing to **0.06x** at Northwatch. Now 1.14x / 0.94x
+   / 0.83x across the same three posts, valor 2.29x / 1.12x / 1.00x. It can only ever raise a
+   bounty - the old table is a floor.
+   **The first attempt was wrong and the measurement is what said so:** it borrowed
+   `QUEST_XP_REANCHOR_CAP`, which bounds a re-anchor above an already level-scaled base, and
+   applied it to a flat one - freezing the payout at 4,000 XP for both a level-28 and a level-37
+   post. That passed every check written at the time, because none of them compared it to the
+   board. `tools/probe/threat_quest_rewards.gd` now does, and asserts the band.
 5. **Same-level death rates** - P60 Wizard measured 31% death at its own level against a ~0.3%
    target. Flagged repeatedly, never actioned.
 

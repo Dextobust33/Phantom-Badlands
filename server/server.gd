@@ -17507,7 +17507,9 @@ func _generate_threat_relief_quest(tp: Dictionary, completed_quests: Array, acti
 		return {}
 	if quest_id in completed_quests:
 		return {}
-	var rewards: Dictionary = QuestDatabaseScript.get_threat_relief_rewards(dungeon_type)
+	# The POST is passed so the bounty is anchored to the land, like every other quest on
+	# this board. Without it the lookup falls back to the flat tier table it used to be.
+	var rewards: Dictionary = QuestDatabaseScript.get_threat_relief_rewards(dungeon_type, tp.id)
 	var dungeon_name: String = str(threat.get("dungeon_name", "the threatening dungeon"))
 	var direction: String = str(threat.get("direction", "nearby"))
 	var distance: int = int(threat.get("distance", 0))
