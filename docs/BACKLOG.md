@@ -7057,6 +7057,40 @@ down, and these are the ones it keeps sending back — which is what extra lives
       `stats` key, so every drop summed to zero. Fixed before it was believed - and it is the
       reason the probe now names the container it reads.
 
+      **☑ STEP 2 DONE 2026-09-18 — WHERE A MATERIAL GOES, after the owner redirected the arc.**
+      Asked to pick a power ratio for crafted gear, the owner declined the question and named the
+      real one: *"I want to get rid of a lot of the level gated grindy crafts unless they are for
+      something that's actually useful and easy for the players to understand, trade, and use. No
+      one wants to sit around and craft a ton of dust, logs, etc... Seems like many materials just
+      pile up or players get them and don't care because they don't know what to do with them. May
+      be that we have to simplify or categorize them better as well."*
+
+      `tools/probe/crafting_materials_audit.gd`, over **131 materials and 258 recipes**:
+
+      * **9 materials have NO destination at all** - no recipe consumes them and they are not
+        edible: `ash_wood`, `darkwood`, `ironwood`, `oak_wood`, `worldtree_branch`, `black_pearl`,
+        `freshwater_pearl`, `rock_salt`, `ice_crystal`.
+        **⛑ FIVE OF THE NINE ARE WOOD — over half the wood in the game is unusable**, and chopping
+        is one of the gathering jobs. That is the owner's *"a ton of dust, logs"* found in the data.
+      * **16 more are EDIBLE ONLY** - no recipe wants them, and eating is all there is: 8 of 23
+        herbs, 5 of 17 plants, and the single meat type.
+      * **17 recipes produce another MATERIAL** rather than anything a player can use - the
+        intermediate tier the owner wants gone unless it earns its place.
+      * **Gating is heavily back-loaded: 138 of 258 recipes sit above skill 25**, and 72 above 50.
+        A player meets the useful half of the book only after grinding the half that is not.
+
+      ⛑ **The first version of this probe reported 25 orphans (19%) and would have pointed the
+      redesign at the wrong half of the list.** It did not know that `FOOD_MATERIAL_TYPES` is read
+      at three places in `server.gd`, so a herb no recipe consumes can still be eaten. Eating is a
+      destination. Checked before reporting rather than after.
+
+      **What this says about the fix:** the material list does not need trimming so much as
+      *sorting into destinations*. Three groups fall straight out of the data - materials with a
+      real recipe use, materials that are only food, and materials with nothing at all - and the
+      third group is small enough (9) to be fixed by giving them uses rather than deleting them.
+      The 17 material-making recipes and the 138 recipes gated above skill 25 are where the
+      *"grindy"* complaint actually lives.
+
       Four faults named, and they are separate problems:
       1. **Materials have no destination.** Gathering produces a pile the player cannot spend on
          anything they want. (Pairs with the egg/companion sinks — same disease, different
