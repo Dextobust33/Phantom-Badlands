@@ -732,11 +732,12 @@ printed beside every line so `taken=0` is readable rather than ambiguous.
 
 ### ▶ OPEN AFTER v0.9.803 — START HERE NEXT SESSION
 
-1. **⛑ THE CURVE IS STALE FOR ETHEREAL FIGHTS.** The companion now acts through an ethereal dodge,
-   which is a player-power change, and CLAUDE.md's standing rule is that any such change
-   invalidates `reference_monster_curve.json`. It is narrow (Ethereal monsters, 33% of attacks)
-   and was shipped without re-calibrating because the release was asked for. Run `preflight`, then
-   the chain (`speciescal` → `refcal` → `rolecal`, ~25 min) before trusting any balance number.
+1. ~~**The curve is stale for Ethereal fights.**~~ **CLOSED by owner decision, 2026-09-18.** The
+   companion now acts through an ethereal dodge, which is technically a player-power change and so
+   would normally invalidate `reference_monster_curve.json`. Owner: *"I'm fine with ethereal fights,
+   I don't think its enough of a change to worry about player-power from."* Recorded rather than
+   deleted, because the standing rule is real and the next person to read it should see that this
+   was an explicit waiver for a narrow case (Ethereal monsters, 33% of attacks), not an oversight.
 2. **F12 does not fire while a combat line is hovered** (owner, 2026-09-18). Not reproduced and not
    explained: nothing in the hover path touches key input and the hover popup is a plain
    `PanelContainer`, not a window that can take focus. Rather than a third guess, the handler now
