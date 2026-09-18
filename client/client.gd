@@ -2221,7 +2221,16 @@ const COMBAT_SPEEDS: Array = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
 # arrow". A parallel list of display strings is also simply clearer than trimming zeros off a
 # float at runtime.
 const COMBAT_SPEED_LABELS: Array = ["0.5x", "0.75x", "1x", "1.5x", "2x", "3x"]
-var combat_speed: float = 1.5
+## ⚑ COMBAT SPEED IS REBASED. Owner 2026-09-17: *"the default battle speed for everyone
+## should be changed and it should be around 1.20 if we go by our current speeds (we should make
+## this new speed 1.0 and scale off of it but everyone should get defaulted to 1.0 and have to
+## change manually again."*
+##
+## So 1.0 on the dial now MEANS the old 1.20, and every other notch scales off that. The stored
+## number is what the player sees; `combat_speed_effective()` is what the animations use, and
+## nothing outside that function needs to know the two differ.
+const COMBAT_SPEED_BASE: float = 1.20
+var combat_speed: float = 1.0
 var _combat_speed_label: Label = null
 # Account-level minigame-skip preferences (see _save_keybinds). The SERVER stores these on
 # the character, which is what actually gates the minigame - so they persisted per
@@ -13503,16 +13512,16 @@ func send_combat_command(command: String, target: String = ""):
 			# bar, not in the hand - so `flourish_card` finds nothing and says so, and the
 			# client, which owns the bar, lights the right control instead. The feedback
 			# belongs to the ACT, not to cards.
-			if not combat_scene_panel.flourish_card(base_cmd, combat_speed):
+			if not combat_scene_panel.flourish_card(base_cmd, combat_speed_effective()):
 				if combat_scene_panel.has_method("flourish_control") and action_buttons.size() > 0:
 					var _btn: Button = action_buttons[0] as Button
 					if _btn != null and _btn.visible:
-						combat_scene_panel.flourish_control(_btn, combat_speed)
+						combat_scene_panel.flourish_control(_btn, combat_speed_effective())
 			# ...and ARM the flight. It does not launch here: the card's result arrives through
 			# the paced combat queue a few hundred ms later, so the log row to land on does not
 			# exist yet. The panel fires it when the player's line actually appears.
 			if combat_scene_panel.has_method("arm_card_flight"):
-				combat_scene_panel.arm_card_flight(base_cmd, combat_speed)
+				combat_scene_panel.arm_card_flight(base_cmd, combat_speed_effective())
 
 	# #76 — lock in for this party round: flip to waiting, block re-submit, and post a
 	# PERSISTENT locked-in line to the combat panel log (game_output gets wiped by the
@@ -19066,6 +19075,16 @@ func _flush_party_notices() -> void:
 	# fight's UI is busy, leaving last_known_level untouched), so re-run it here to let it fire.
 	update_player_level()
 	_drain_new_player_modals()
+
+
+func combat_speed_effective() -> float:
+	"""The multiplier the ANIMATIONS use, as distinct from the number on the dial.
+
+	⛑ EVERY CONSUMER ASKS THIS, never `combat_speed` directly. The dial was rebased on
+	2026-09-17 so its 1.0 means the old 1.20, and a consumer reading the raw value would silently be
+	running 20% slow - which is exactly the kind of near-miss that never gets reported because it
+	looks almost right."""
+	return maxf(0.05, combat_speed) * COMBAT_SPEED_BASE
 
 
 func _step_combat_speed(dir: int) -> void:
@@ -29168,7 +29187,19 @@ func handle_server_message(message: Dictionary):
 			var toast_msg = String(message.get("message", ""))
 			var toast_dur = float(message.get("duration", 5.0))
 			if toast_msg != "":
-				show_toast(toast_msg, toast_dur)
+				# ⛑ ON THE OVERWORLD IT GOES IN THE COLUMN, NOT OVER THE MAP. Owner 2026-09-17:
+				# *"The popup for sensing a corpse should be in the right column now instead of a
+				# popup."* The toast overlay predates the column: when everything was one text
+				# panel, a floating hint was the only way not to be buried. The column IS that
+				# place now, and a popup over the map is the more intrusive of the two.
+				#
+				# Still a toast everywhere else - in a dungeon or a fight there is no column to
+				# put it in, and dropping the message entirely is what the Player-Visible Output
+				# Rule exists to prevent.
+				if _ow_text_in_column():
+					_ow_side_add(toast_msg)
+				else:
+					show_toast(toast_msg, toast_dur)
 
 func _process_combat_start(message: Dictionary):
 	# HOVERABLE NUMBERS MUST LOOK HOVERABLE AGAIN.
@@ -31050,8 +31081,16 @@ func _load_keybinds():
 					sfx_volume = clampf(float(data["sfx_volume"]), 0.0, 1.0)
 				if data.has("music_volume"):
 					music_volume = clampf(float(data["music_volume"]), 0.0, 1.0)
-				if data.has("combat_speed"):
+				# ⛑ A PREFERENCE SAVED BEFORE THE REBASE IS DISCARDED, ONCE. The dial's numbers
+				# changed meaning on 2026-09-17 - 1.0 now means the old 1.20 - so honouring an old
+				# saved 1.5 would silently run that player at 1.8. Owner: *"everyone should get
+				# defaulted to 1.0 and have to change manually again."* Changing only the DEFAULT
+				# would have missed exactly the players who had opinions, since a saved preference
+				# outranks a default.
+				if data.has("combat_speed") and bool(data.get("combat_speed_rebased", false)):
 					combat_speed = clampf(float(data["combat_speed"]), 0.25, 4.0)
+				else:
+					combat_speed = 1.0
 				if data.has("skip_gather_minigame"):
 					pref_skip_gather = bool(data["skip_gather_minigame"])
 				if data.has("skip_craft_minigame"):
@@ -31089,6 +31128,9 @@ func _save_keybinds():
 	# in practice) so the pace a player chose is still there next session - owner: "remember it
 	# and stay there until they adjust again."
 	save_data["combat_speed"] = combat_speed
+	# Marks this preference as living on the post-2026-09-17 scale. Without it the next
+	# load resets to 1.0, which is what makes the one-time reset exactly one time.
+	save_data["combat_speed_rebased"] = true
 	save_data["skip_gather_minigame"] = pref_skip_gather
 	save_data["skip_craft_minigame"] = pref_skip_craft
 	save_data["skip_harvest_minigame"] = pref_skip_harvest
@@ -50529,7 +50571,16 @@ func handle_hotzone_warning(message: Dictionary):
 	_in_hotzone_level = lv
 	var mins := int(message.get("minutes_left", 0))
 
-	_page_clear()
+	# ⛑ DO NOT TAKE THE CANVAS FOR A SIX-LINE NOTICE. `_page_clear()` wipes the main
+	# panel and turns this into a full-screen text page, so walking into a hunting ground
+	# made the MAP DISAPPEAR. Owner 2026-09-17, with a screenshot: *"it takes over my map
+	# completely, is that intended?"* It was not intended; it was inherited from when this
+	# screen was a wall that stopped you, and it survived the rewrite that made it an offer.
+	#
+	# The map stays. The notice goes where every other piece of news goes - the side
+	# column - and the part that must not scroll away is pinned by `_sync_side_prompt`.
+	if not _ow_text_in_column():
+		_page_clear()
 	display_game("[color=#FFAA33]═══════ HUNTING GROUND ═══════[/color]")
 	display_game("")
 	display_game("[color=#FFD700]Something has drawn the phantoms here.[/color]")

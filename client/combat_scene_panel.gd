@@ -4753,6 +4753,12 @@ func _hand_anim_scale() -> float:
 	"""The player's combat-speed setting, so the deal keeps pace with everything else. A player
 	at 3x has said they do not want to watch animations; making this one exempt would be the
 	same mistake as the playback queue ignoring it."""
+	# ⛑ ASK FOR THE EFFECTIVE SPEED, NOT THE RAW SETTING. The dial was rebased on
+	# 2026-09-17 so its 1.0 means the old 1.20; reading `combat_speed` directly would run
+	# this one animation 20% slower than every other, which is the kind of near-miss
+	# nobody reports because it looks almost right.
+	if client_ref != null and client_ref.has_method("combat_speed_effective"):
+		return 1.0 / maxf(0.25, float(client_ref.combat_speed_effective()))
 	if client_ref != null and "combat_speed" in client_ref:
 		return 1.0 / maxf(0.25, float(client_ref.combat_speed))
 	return 1.0
