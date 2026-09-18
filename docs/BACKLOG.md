@@ -634,22 +634,18 @@ Asked because the arc had run out of defects and into design. All four answered.
         * it must degrade: a player who has turned effects down, or a round resolving several
           cards at once, must not end up with a screen full of flying cards.
 
-- [ ] **ACTION POSES FOR THE 40 SPRITES THAT LACK THEM — this is ART, not generation.** Owner
-      2026-09-14 asked whether a pose could be copied from a character with similar equipment.
-      Measured before answering, because the instinct is half right:
-        * `$tf_template.png` is a blank base body, so every character IS built on one skeleton.
-          Two different characters in the same stand frame agree on **89% of their silhouette**,
-          and 73% of the shared pixels differ only in COLOUR.
-        * But the template carries **walk cycles only** — 12 frames, four directions, three steps.
-          There is no template action pose to copy from; the sword-raises and casts in
-          `expansion/animation1.png` were drawn per character on top of that skeleton.
-        * So a transfer is not a copy. The 11% that does NOT match between two characters is
-          exactly the part that moves: hair, cape, sleeve, weapon. When the arm goes up the
-          sleeve goes with it, and that sleeve belongs to the TARGET character. Doing it properly
-          means segmenting clothing from body per sprite and redrawing it in the new pose.
-      **Coverage today:** `chara1-5` (40 sprites) have laugh / nod / pose / shake / surprise;
-      `military1-3` (24) have pose only; `npc1-2` (16) have nothing but walk frames.
-      Worth doing as authored art when there is appetite. Not worth generating.
+- [✗] **ACTION POSES — REMOVED FROM THE BACKLOG 2026-09-18, owner's call.** *"Action poses should
+      be removed then if you can't fill in the other 40 from the templates like we discussed."*
+      **Could not be, and it was measured rather than assumed:** `$tf_template.png` carries **walk
+      cycles only** - 12 frames, four directions, three steps - so there is no template action pose
+      to copy FROM. The sword-raises and casts in `expansion/animation1.png` were drawn per
+      character on top of the shared skeleton. Two characters agree on 89% of their silhouette, but
+      the 11% that differs is exactly the part that MOVES: hair, cape, sleeve, weapon. When the arm
+      goes up the sleeve goes with it, and that sleeve belongs to the target character - so a
+      transfer means segmenting clothing from body per sprite and redrawing it.
+      Kept as a record of the measurement so the question is not re-asked. Coverage as it stands:
+      `chara1-5` (40) have laugh / nod / pose / shake / surprise; `military1-3` (24) have pose only;
+      `npc1-2` (16) have walk frames only. If there is ever appetite it is authored ART.
 
 - [~] **⛑ INSTANCED CARDS — two of the three complaints ANSWERED 2026-09-16, one still open.**
       Owner, live 2026-09-14: *"Players aren't seeing or understanding what cards they are getting
@@ -6241,15 +6237,8 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       POSITION, so every path gets the same answer with nobody having to remember.
       Probe: a stub resolver drives the advertised grade to 2/3 and 7/8 and every quest follows.
 
-- [ ] ~~**Dungeon level mismatch — BLOCKED, needs a second example.**~~ Owner reported a 1-1 wolf
-      dungeon advertising "recommended level 3" while floor-1 wolves were level 6. A real defect
-      was found and fixed in v0.9.758 (the warning quoted `min_level`, a static field on the
-      dungeon TYPE, while monsters are sized from the INSTANCE and scale per floor). But the
-      specific 3-to-6 gap could NOT be reproduced: tier 1 sub-tier 1 computes to a level 1-2 band,
-      so something else may also be involved. Owner 2026-09-08: *"something we will need another
-      example of since you were unable to find its cause."* Do not guess at a second fix — wait
-      for a repro with the DUNGEON NAME, then trace that instance's `dungeon_level`.
-
+- [x] **Dungeon level mismatch — RESOLVED, confirmed by the owner 2026-09-18.** Was blocked on a
+      second example that never came; the grade-follows-the-land work in v0.9.802-803 covers it.
 - [x] **DONE 2026-09-11 — help screen fixed and pinned by `tools/probe/help_topics.gd`.** All 26
       audited entries corrected after re-verifying each against the code; the main help page, which
       had shown every key binding as `[%s]` because its format string failed on every call, now
@@ -6300,8 +6289,9 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       `characters`/`peers`/`persistence`, so a live two-client run is the only way to confirm the
       equipment actually lands. Also still open: rotate the leader between fights, and splitting
       gathering/crafting rewards.
-- [ ] **"Party play isn't working properly"** (owner, 2026-08-26) — no repro captured. ASK for the
-      symptom before investigating.
+- [✗] **~~"Party play isn't working properly"~~ — WITHDRAWN 2026-09-18.** Owner: *"an old report
+      that's no longer valid and can be removed."* It sat since 2026-08-26 with no repro ever
+      captured; party combat has been rebuilt several times since.
 - [x] **Leader logout no longer strands the party — FIXED 2026-09-10, and it was THREE paths.**
       Only `handle_disconnect` cleaned up party state. `handle_logout_character` and
       `handle_logout_account` erased the character and left the player in `active_parties` and
