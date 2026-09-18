@@ -697,6 +697,38 @@ companion out. The rest of the batch is still not urgent; this one is. **Owner's
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
 nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
+## ⚑ EVERY CAPABILITY NEEDS A DOOR — swept 2026-09-18, now a standing probe
+
+Owner, after catching that the player-commission half had no UI at all: *"You might want to do a
+similar check for other work completed this session to ensure players can actually interact with or
+make use of things implemented."*
+
+**`tools/probe/session_capabilities_have_doors.gd`** walks every capability built that day and
+asserts a surface exists for each. **This arc has shipped a capability with no door SEVEN times** —
+party invite, Duel for Valor, the fight log, the death log, the Bestiary Page, the bestiary reader,
+and the player commission. The failure is always invisible server-side: the handler is right, the
+data is right, and nothing on screen can reach it.
+
+**One real gap the sweep found:** **safe passage had no indicator anywhere.** Three things grant it
+(Scroll of Safe Passage, Scroll of Long Passage, a Builder's Make Camp) and a player could carry 40
+quiet steps with no surface saying so — then wonder why encounters stopped, and later why they
+started again. Now on the HUD as `🛡 Unnoticed N`, deliberately **outside** the danger branch so it
+does not appear from nowhere when you walk out of a safe zone.
+
+Corrected while sweeping: `crafted_by` **is** displayed (client.gd ~20431). An earlier note here
+claiming otherwise was wrong.
+
+⛑ **TWO MORE FAKE CHECKS, and the second is a new shape worth naming:**
+1. *"a Post Job button exists"* searched for `"craft_post_job"` — which the **handler** also
+   contains — so deleting the button passed. **Two checks matching one string are one check.**
+2. *"a Rework button exists"* searched for `rework_start`, which also sits on a **"Pick Item"**
+   button *inside* the rework flow — a flow only reachable **from the deleted button**. It passed
+   while the way in was gone. **A door you can only open from behind is not a door.**
+
+Both now name the entry button's literal form. That is **five vacuous checks in one session**, every
+one found by fault injection and none by review — so injection is not optional, it is the step that
+tells you whether a check is a check.
+
 ## ▶ NEXT SESSION — START HERE
 
 ### ✅ COMBAT LOG REWORK — SHIPPED v0.9.803 (2026-09-18)

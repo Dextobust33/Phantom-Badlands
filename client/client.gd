@@ -38012,9 +38012,21 @@ func update_region_label():
 		region_label.visible = false
 		return
 
+	# ⛑ SAFE PASSAGE HAD NO INDICATOR AT ALL. Three things grant it - the Scroll of Safe Passage,
+	# the Scroll of Long Passage and a Builder's Make Camp - and a player could carry 40 quiet
+	# steps without one surface saying so, then wonder why encounters stopped and later why they
+	# started again. A timed buff the player cannot see is a buff they cannot plan around.
+	#
+	# Appended OUTSIDE the danger branch on purpose: it must show in a safe zone too, or walking
+	# from town into the wild would make it appear from nowhere.
+	var _sp: int = int(character_data.get("safe_passage_steps", 0))
+	var passage_tag: String = ""
+	if _sp > 0:
+		passage_tag = " [color=#C8A24A]🛡 Unnoticed %d[/color]" % _sp
+
 	var area_line: String
 	if hud_area_is_safe:
-		area_line = "[color=#9ACD32]Area:[/color] [color=#00FF00]Safe Zone[/color]"
+		area_line = "[color=#9ACD32]Area:[/color] [color=#00FF00]Safe Zone[/color]" + passage_tag
 	else:
 		var danger = ""
 		if hud_area_is_hotspot:
@@ -38040,6 +38052,7 @@ func update_region_label():
 		# risk" tones distinct from each other.
 		if hud_in_pvp_zone:
 			apex_tag += " [color=#FF2020]⚔ PvP[/color]"
+
 		# Audit #11 v0.9.517 — Threat corridor HUD. Surfaces existing Slice 9
 		# threat-corridor mechanic so players SEE the active hostile spillover
 		# from a nearby T2+ dungeon (existing mechanic since v0.9.454).
@@ -38072,7 +38085,7 @@ func update_region_label():
 		# can exist anywhere, which means the number on this line is now the player's ONLY
 		# warning, and under permadeath it has to carry that weight.
 		area_line = "[color=#9ACD32]Area:[/color] %s%s%s%s" % [
-			_area_level_tag(hud_area_level), danger, apex_tag, threat_tag]
+			_area_level_tag(hud_area_level), danger, apex_tag + passage_tag, threat_tag]
 
 	# Slice 6k — Region line now shows the authored region name (e.g.,
 	# "Greenmeadow Reach") instead of the generic tier name. Tier color +
