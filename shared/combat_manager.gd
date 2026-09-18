@@ -10886,6 +10886,22 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	if dmg_mult_chase > 1.0:
 		raw_damage = int(raw_damage * dmg_mult_chase)
 
+	# ⚑ KNIGHT: +15% DAMAGE. The title UI and the help page have promised this since the
+	# status was written, and `get_knight_damage_bonus()` had NO CALLERS - so a player
+	# knighted by the High King got a prefix and nothing else.
+	#
+	# ⛑ THE TELL WAS ITS OWN SIBLING. `get_knight_market_bonus()` is wired at FOUR sites in
+	# server.gd; the damage half of the same status, defined eight lines below it in the same
+	# file, was wired nowhere. Nobody implements half a title on purpose - that asymmetry is
+	# what says this was an oversight rather than a design decision, and it is why the promise
+	# is being kept rather than deleted.
+	#
+	# Placed beside the gear multiplier deliberately: same stage, before defense, so it scales
+	# outgoing damage the way the card previews already assume a %damage source does.
+	var knight_mult: float = 1.0 + character.get_knight_damage_bonus()
+	if knight_mult > 1.0:
+		raw_damage = int(raw_damage * knight_mult)
+
 	# Monster defense reduces damage by a percentage (not flat)
 	var defense_constant = cfg.get("defense_formula_constant", 100)
 	var defense_max = cfg.get("defense_max_reduction", 0.6)

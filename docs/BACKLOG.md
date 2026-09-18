@@ -853,6 +853,11 @@ Currently queued:
       is an interim anchor calibrated against sinks the owner has already said are wrong, so any
       valor number tuned before it lands is tuned against a moving target.
 - [ ] **Forcefield's 3-6x nerf still wants a live feel check** (from the 2026-09-02 balance day).
+- [ ] **Knight +15% damage and Mentee +50% XP now reach the dice** (2026-09-18). Both were dead
+      when the curve was last fitted, so the reference player has never carried either. Rare
+      endgame titles only, so the effect on the aggregate should be small - but the Knight damage
+      bonus lands in `calculate_damage` beside the gear multiplier, which is a path the chain does
+      measure. Glance at it on the next `refcal`.
 - [ ] **Sage 1.3%, Barbarian 1.2%, Ranger 1.9% death per encounter** against 0.1-0.7% for the rest.
       Real but not broken, and all three clear the endgame bar. **Per-class levers only** - a global
       buff is cancelled by the next refit and cannot close a per-class gap. (Moved here from
@@ -6004,10 +6009,22 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Several of those (the Reveals, Bulwark, Executioner-family triggers) are wired and proven by
       `upgrade_new_wired.gd` / `upgrade_triggers.gd`. Derive the list from what actually fires,
       or delete the section — a stale list reads as a real finding.
-- [ ] **Knight +15% damage and Mentee +30% XP are DEAD — owner's call.** Both are promised in
-      the title UI and help, and `get_knight_damage_bonus` / `get_mentee_xp_bonus` /
-      `get_mentee_extra_xp_bonus` have no callers. Same shape as `gold_find`. Wire them (a
-      player-power change, rare endgame titles only) or remove the promise.
+- [x] **Knight +15% damage and Mentee +50% XP — WIRED 2026-09-18.** Both were promised in the
+      title UI, the help page and `titles.gd`, and all three getters had **no callers** - a player
+      knighted by the High King got a blue prefix and nothing else.
+      **Wired rather than deleted, and the sibling is why.** `get_knight_market_bonus` is called at
+      six sites in server.gd; the damage half of the same status, defined eight lines below it in
+      the same file, was called nowhere. Nobody implements half a title on purpose, so this reads
+      as an oversight, not a design decision - and deleting would take something from players who
+      earned a rare title.
+      **One judgment call, stated because it is arguable:** Mentee is applied OUTSIDE the 1.50x
+      XP cap. That cap exists to stop race x class x Sanctuary snowballing (audit #2); a Human
+      Ranger with a maxed Sanctuary is already at 1.50, so folding Mentee in would make the grant
+      do nothing for exactly the accounts most likely to hold it - wired and still dead, which is
+      the fault being fixed. Reverse it if that reads wrong.
+      Probe: `tools/probe/title_bonuses_reach_the_dice.gd`, which EXECUTES rather than greps -
+      every one of these functions existed and returned the right number, so reading the source
+      proved nothing. Measured 1,100 vs 1,650 XP on two otherwise identical characters.
 - [x] **FIXED 2026-09-11 — the first-gather tutorial is sent again, and says what really happens.**
       It was only called from three handlers nothing routes to, so no new player had seen it since
       v0.9.369; its text described the retired wait-and-react game. Now sent from

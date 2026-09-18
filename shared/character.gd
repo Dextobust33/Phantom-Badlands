@@ -2885,7 +2885,20 @@ func add_experience(amount: int) -> Dictionary:
 	var combined_mult = get_xp_multiplier() * house_xp_mult
 	if combined_mult > 1.50:
 		combined_mult = 1.50
-	var final_amount = int(amount * combined_mult)
+	# ⚑ MENTEE: +50% XP (0.30 base + 0.20 extra), AFTER the cap and deliberately so.
+	#
+	# Both getters had NO CALLERS, so an Elder could grant Mentee status and the player got a
+	# prefix and no XP at all - while the title screen and `titles.gd` both say "+50% XP".
+	#
+	# ⛑ WHY OUTSIDE THE 1.50x CAP, which is the one real judgment call here. That cap exists
+	# for a named reason: to stop RACE x CLASS x SANCTUARY snowballing (audit #2, "Human Ranger
+	# +30% stacking with Human +10%"). A Human Ranger with a maxed Sanctuary is already AT
+	# 1.50, so folding Mentee in would mean the grant does literally nothing for exactly the
+	# veteran accounts most likely to have it - i.e. it would look wired and still be dead,
+	# which is the fault being fixed. Mentorship is a granted, revocable, below-L500 boost and
+	# is not part of the stack the cap was drawn around.
+	var mentee_mult: float = 1.0 + get_mentee_xp_bonus() + get_mentee_extra_xp_bonus()
+	var final_amount = int(amount * combined_mult * mentee_mult)
 	experience += final_amount
 	var leveled_up = false
 	var levels_gained = 0
