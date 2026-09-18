@@ -6983,6 +6983,39 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 - [ ] **Real sinks for excess eggs and companions**: shops, breeders, trainers, fusers, companion
       tasks. Much is already scaffolded (fusion, breeder NPCs, egg market, kennel).
+- [ ] **⚑ POST SERVICES ARE THIN — owner direction 2026-09-18. Three parts.**
+
+      1. **The healer has no reason to offer anything but the cheap option.** *"The healer options
+         may need looked at as well, there's no real reason to do anything other than a quick heal
+         for reviving companions."* So the expensive options are dominated - measure what each
+         costs and gives before redesigning, because "dominated" is a claim about the numbers.
+      2. **Wandering blacksmiths and healers** - *"we may want to add in wandering blacksmiths and
+         healers when we do the living world arc."* Filed against that arc rather than here.
+      3. **Merchants move too slowly and are empty when you meet them — MEASURED 2026-09-18, and
+         both halves are real.** *"Current merchants also move way too slow from post to post and
+         seem to pretty much never have anything for sale when you see them out and around."*
+
+         * **Speed: `MERCHANT_SPEED = 0.025` tiles per second - one tile every FORTY SECONDS.**
+           A hundred-tile leg between two posts takes over an hour of real time. Relative to a
+           player, who moves a tile per keypress, a merchant is very nearly stationary.
+         * **Stock: a road merchant has NO inventory of its own.** `_flatten_carried_to_shop_items`
+           builds its shop entirely from **carried market LISTINGS** - things other players have
+           listed, which the courier is moving between posts. There is an explicit
+           *"The merchant has nothing to sell right now"* branch and **no fallback stock at all**.
+           So with a small or quiet player base, a road merchant is empty by construction.
+
+         ⛑ **The two faults compound, which is why it reads as "pointless" rather than "slow".**
+         A slow merchant is one you meet rarely; an empty one makes the rare meeting worthless.
+         Fixing only the speed would give players more frequent encounters with nothing to buy.
+
+         **Shape of the fix:** give road merchants their OWN generated stock as a floor - the post
+         merchants already have `generate_shop_inventory(player_level, seed, specialty)` - and keep
+         carried listings on top as the interesting half, since those are real player goods at a
+         convenience markup. Then raise the speed, which also makes the market more responsive
+         because couriers ARE the market's logistics.
+         ⛑ Check against the known *"Merchant / market-house balancing"* item (Sun Keep's market
+         near-empty, 3 shrine items) - that is the POST side of what may be one supply problem.
+
 - [ ] **Living world / rework the posts.** Designed 2026-09-04 as **step 4 of the companion
       spine**, and the detail is in `docs/archive/BACKLOG_journal_to_2026-09-07.md` (item 16) —
       not undesigned, just archived. Scope: companions living around the posts, **NPCs, wandering
@@ -7419,6 +7452,28 @@ something was dropped, and it sat unnoticed for eleven days.
         shows the ACTUAL number for this character (`restores 340 HP`), never a percentage the
         player has to apply to their own max. This is the same fault as the old stat descriptions:
         a number the player must compute is a number they do not have.
+
+      **⚑ SPECIALISATION SHOULD BUY A SERVICE, NOT JUST A NUMBER — owner 2026-09-18.**
+      *"We could possibly make it where if players choose to make a crafting profession their focus
+      they get a quality of life improvement for themselves and other players. Examples would be
+      like Blacksmith focused character able to repair their own gear or other players. We still
+      need a place players can repair their equipment in posts so it's technically not gating
+      content just providing convenience."*
+
+      ⛑ **This is the strongest idea in the arc so far, and it is worth saying why.** Every other
+      specialisation reward considered (bonus XP, cheaper materials, better quality) is a private
+      number. A SERVICE is social: it gives a specialist a reason to be wanted by other players,
+      which is the first crafting hook in the design that reaches outward. And it costs nothing in
+      balance terms, because the post still does it - the specialist is convenience, not access.
+      That distinction is the owner's and it is the whole safety argument: **a service a post also
+      provides can never gate content.**
+      Pairs with the **cheaper material cost** and **better quality** perks already chosen.
+
+      **⚑ THE TOWN BLACKSMITH REPAIRS; IT NO LONGER UPGRADES — owner 2026-09-18.** *"The Blacksmith
+      in town should repair gear but no longer do any upgrading as that should be done through the
+      crafting now."* Upgrading belongs to the crafting system, which is where the materials and
+      the skill live. Check what the NPC currently offers before cutting - the upgrade path may be
+      the only route to something.
 
       **⚑ TWO MORE DIRECTIONS, owner 2026-09-18:**
       * *"The UI for crafting will likely need redesigned as well once we are done. We want it to
