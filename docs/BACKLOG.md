@@ -7009,6 +7009,60 @@ down, and these are the ones it keeps sending back — which is what extra lives
 ## Phase 8 — later / unscheduled
 
 - [ ] **Prize Shuffle** loot-minigame redesign (combat done; gathering and crafting remain).
+## ⚑ RESTORED FROM THE ARCHIVE 2026-09-18 — four items that were dropped, not finished
+
+Owner, after the player-phantoms design turned up archived rather than listed: *"were there other
+things we discussed around then that could have been archived instead of properly added to the
+backlog?"* Audited `docs/archive/BACKLOG_journal_to_2026-09-07.md` against this file. **Four were
+lost.** (The other two archives are genuinely complete: `QUEST_AND_DUNGEON_REDESIGN.md` says ALL
+PHASES COMPLETE, and `ROADMAP.md`'s "future considerations" are shipped or trivial.)
+
+⛑ The tell on the second one below is that **this backlog already REFERENCES the Unburied** - the
+high-level win-target item says *"revisit alongside the Unburied"* - while the item defining it was
+nowhere in the file. A reference to something that is not here is the cheapest possible signal that
+something was dropped, and it sat unnoticed for eleven days.
+
+- [ ] **AN UPGRADED CARD SHOULD LOOK UPGRADED — owner 2026-09-04, still not started.**
+      *"Upgrading a card and then the card looking exactly the same and the description being
+      exactly the same sucks."* Listing upgrades in the description shipped; that is the floor.
+      - [ ] **Preview on the pick screen.** Hovering an upgrade shows YOUR card with it applied -
+            *"if I'm upgrading Analyze and I hover over a Mending upgrade it should show my Analyze
+            card with the Mending effect"* - and hovering that preview shows what it would then do,
+            all before committing.
+      - [ ] **The card itself changes.** An upgraded Analyze is visibly a different card in the
+            deck screen AND the combat hand, not the same art with a line appended.
+      - [ ] The estimate must follow: `_card_damage_multiplier` counts only `power` picks, so an
+            upgraded card can still show an unupgraded number.
+      **Groundwork exists:** `card_upgrades.gd` carries `name` + `desc` per upgrade,
+      `_ability_desc_bbcode` is the single description builder, and the hand cell and deck card are
+      both built from one `build_deck_card` path. A preview is composition, not new plumbing.
+
+- [ ] **THE UNBURIED — the permadeath counterweight. Owner direction 2026-09-07, named by the
+      owner, never started.** An aspirational milestone admits a player to the Unburied:
+      **great powers that affect the realm and other players** (the first genuinely social endgame
+      hook in the design), **3 extra lives**, and possibly a late endgame loop granting one more for
+      a hard-won achievement - deliberately not easy, so members do not become unkillable.
+      **This is the mechanism that breaks the compounding maths at the top of the ladder**, and it
+      is why *"most characters die"* and *"a careful player reaches the top"* are not in conflict.
+      Supersedes the vaguer `project_permadeath_may_change` note.
+      The name is exact against the setting bible: a phantom is a dead thing the ground refuses to
+      keep down, and these are the ones it keeps sending back - which is what extra lives ARE.
+
+- [ ] **NINE CLASSES, THREE CARD POOLS — the identity gap is structural. Owner 2026-09-05.**
+      *"We will want each class in each archetype to have their own identity. All three warrior,
+      mage, and trickster identities should feel different enough that you know you're playing
+      them."* Card access is keyed to `get_class_path()` - the ARCHETYPE - so all three warriors
+      draw the same nine cards, all three mages the same nine, all three tricksters the same nine.
+      **PARTLY ADDRESSED:** the engine work of 2026-09-07 gave each of the nine classes its own
+      engine SHAPE, which is real differentiation. The CARD POOL is still archetype-wide.
+      ⛑ **This is the same fault as the Paths revamp** the owner raised on 2026-09-18, one layer
+      down - an archetype-wide system cannot express what separates a Sage from a Sorcerer. Do them
+      together or decide deliberately not to.
+      Its case study, also archived: *"the three tricksters are nearly one class"*.
+
+- [ ] **MAGIC BOLT — damage vs investment is opaque and punishing** (owner 2026-09-06). Present in
+      this file already; listed here so the archive audit is complete rather than partial.
+
 - [ ] **⚑ CRAFTING STATION SPRITES NEED INDIVIDUAL REVIEW — owner direction 2026-09-18.**
       *"All of the crafting stations sprites likely need to be reviewed individually. I think many
       of them were multiblock sprites that got ripped into 1 and they don't seem very clear or
@@ -7189,9 +7243,23 @@ down, and these are the ones it keeps sending back — which is what extra lives
       |---|---|---|
       | Blacksmithing 68 | **7 slots × 9 item levels**, one recipe each, plus 7 upgrades | **no cull** - fix the STATS |
       | Enchanting 56 | **13 stats × 3 tiers** (Minor/Greater/Supreme) + 7 specials | **no cull** - names already state their effect |
-      | Construction 52 | a build kit of 49 distinct structures, **41 at skill ≤25** | **no cull** - not gated, not duplicated |
+      | Construction 52 | a build kit of 49 distinct structures, **41 at skill ≤25** | ⚠ **owner overrode this - see below** |
       | Alchemy 38 | 13 clear ladder potions + **19 opaque** + 3 | **CULL** - cut most of the 19, rename survivors |
       | Scribing 44 | seven output types, no identity | **CULL to ~6-10** |
+
+      **⚠ CONSTRUCTION — OWNER OVERRODE THE "NO CULL" READING, 2026-09-18.** The data says the 49
+      structures are distinct and mostly ungated, which is why I read it as healthy. The owner's
+      objection is not about duplication, it is about **effort per piece**: *"I think it takes too
+      much investment for a player to want to micromanage each piece. I'm not saying we need to
+      remove them but anything that stays within it needs to have a justifiable purpose. We've
+      talked about play posts that can be bought with valor and them putting down a completed post
+      and that may replace a lot of what construction offers."*
+      So the test for a structure is **"would a player place this one deliberately"**, not "is it
+      distinct" - and placing 49 things one at a time is the chore, however good each one is.
+      ⛑ **This is blocked on PLAYER PHANTOMS**, which is exactly the prefab-post feature described:
+      buy a semi-randomised completed post with valor and place it. If that ships, most of
+      Construction's reason to exist moves into it, and the cull becomes "what do you still place
+      by hand ON a post you already own". **Decide Construction after phantoms, not before.**
 
       **So the cull is two crafters, not five**, and the other three need their NUMBERS fixed
       (derive output stats from the drop curve) rather than their content deleted. That is a much
