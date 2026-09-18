@@ -1996,6 +1996,15 @@ var _ow_rendering: bool = false
 ## True while a location message is being handled, so its text goes to the side column from the
 ## first line rather than flashing on the canvas until the map redraws over it.
 var _ow_location_pass: bool = false
+## ⚑ HOW MANY LINES THE PLAYER HAS ALREADY SEEN. Everything after this index arrived
+## since their last STEP, which is the beat a player actually experiences - they press a
+## direction, things happen, they read the result.
+##
+## ⛑ MARKING ONLY THE NEWEST LINE WAS NOT ENOUGH. Owner 2026-09-17: *"Did you make
+## any differentiation for new items in the right column players need to look at or does
+## it all still bleed together with prior items?"* It did: if five things happened on one
+## step, four of them looked exactly like lines from three steps ago.
+var _ow_side_seen: int = 0
 ## The width, in pixels, of the map as it was last drawn - see `_place_map_widgets`.
 var _ow_map_px_w: float = 0.0
 ## The tile size the overworld last drew at - see `_overworld_crisp_px`.
@@ -26870,6 +26879,8 @@ func handle_server_message(message: Dictionary):
 				# is also what makes a station page vanish when you walk away from the station.
 				_ow_side_location.clear()
 				_ow_page_active = false
+				# A new step: everything currently in the log is now OLD.
+				_ow_side_seen = _ow_side_lines.size()
 				# Walking away closes a wide page too - it was a screen you opened, not a place.
 				_ow_wide_page = false
 			# Who is walking with you. Read before anything draws, so the escort appears on the
@@ -39974,6 +39985,12 @@ func _ow_side_refresh() -> void:
 	# ⛑ AND THE NEWEST LINE IS MARKED. In a column of same-coloured text the eye has
 	# nothing to land on; the owner could not tell what was new. A caret costs one
 	# character and answers "what should I be looking at".
+	# ⛑ A "SINCE YOUR LAST STEP" RULE, not just a mark on the final line. The beat a
+	# player lives in is the STEP: press a direction, things happen, read what happened.
+	# Everything below this rule is the answer to "what did that do".
+	var first_new: int = maxi(0, _ow_side_seen - hidden)
+	if first_new < shown.size() and _ow_side_seen < all_lines.size():
+		shown.insert(first_new, "[color=#FFD166]── new ──────────────[/color]")
 	if not shown.is_empty():
 		shown[-1] = "[color=#FFD166]▸[/color] %s" % String(shown[-1])
 	if hidden > 0:
