@@ -4458,8 +4458,9 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 ## before and after. The lift is real anyway: the pivot sits at the card's BOTTOM edge, so
 ## scaling up grows it upward out of the row. `pivot_offset`, `scale` and `modulate` are
 ## render-time only, so the layout never sees them and the neighbours never reflow.
-const CARD_FLOURISH_SEC := 0.42
-const CARD_FLOURISH_SCALE := 1.10
+const CARD_FLOURISH_SEC := 0.50
+## 1.10 was a 15px lift on a 150px card and the owner could not see it. 1.22 reads.
+const CARD_FLOURISH_SCALE := 1.22
 
 var _card_flourish_tweens: Dictionary = {}
 
@@ -4483,6 +4484,12 @@ var _flight_tween: Tween = null
 ## The player's combat-speed setting, captured when the card is played so the flight matches the
 ## pace of the log it is chasing.
 var _flight_speed: float = 1.0
+
+
+func _is_round_divider(line: String) -> bool:
+	"""A round marker rather than something an actor did. It carries no result, so it must not
+	steal the flight from the line that does."""
+	return _extract_round_number(line) > 0
 
 
 func arm_card_flight(card_name: String, speed: float = 1.0) -> void:
@@ -4541,7 +4548,10 @@ func _fire_card_flight(paragraph_index: int, speed: float = 1.0) -> void:
 	ghost.global_position = _flight_from.position
 	_flight_ghost = ghost
 
-	var dur: float = maxf(CARD_FLIGHT_SEC / maxf(speed, 0.25), 0.2)
+	# ⛑ FLOORED AT 0.38s, NOT 0.2s. The flight DOES follow the log's pace - it is
+	# chasing a line - but at the owner's 3x the old floor made it a 0.18s streak that
+	# could not be followed by eye. A flight nobody can track communicates nothing.
+	var dur: float = maxf(CARD_FLIGHT_SEC / maxf(speed, 0.25), 0.38)
 	var tw := create_tween()
 	_flight_tween = tw
 	# Same idiom as `_play_hand_cycle` and the flourish: ONE parallel block sequenced by delays.
@@ -4565,7 +4575,7 @@ func _build_flight_ghost(card_name: String) -> Control:
 	a single Label rather than a rebuilt card face, and it is destroyed on arrival."""
 	var lbl := Label.new()
 	lbl.text = _display_name_for_card(card_name)
-	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_font_size_override("font_size", 19)
 	lbl.add_theme_color_override("font_color", Color(1.0, 0.92, 0.65))
 	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	lbl.add_theme_constant_override("outline_size", 5)
@@ -4619,8 +4629,16 @@ func flourish_card(card_name: String, speed: float = 1.0) -> void:
 
 
 func _flourish_cell(cell: Control, speed: float = 1.0) -> void:
-	# A faster playback gets a shorter flourish, floored so it cannot become a flicker.
-	var dur: float = maxf(CARD_FLOURISH_SEC / maxf(speed, 0.25), 0.16)
+	# ⛑ THE FLOURISH DOES NOT SCALE WITH COMBAT SPEED. It used to divide by it, and the
+	# owner plays at 3x - which made the whole rise 0.056s, about three frames. Owner
+	# 2026-09-17: *"If there is a card flourish I'm not really noticing it. Maybe it's too
+	# subtle?"* It was three frames long.
+	#
+	# The combat-speed slider paces the LOG PLAYBACK - the rhythm of results arriving.
+	# This is acknowledgement of a click, which happens at human speed whatever the log
+	# is doing, so it keeps its own duration. `speed` is still accepted so callers do not
+	# have to know that, and so this can be reconsidered without touching them.
+	var dur: float = CARD_FLOURISH_SEC
 	# One tween per cell, killed first: replaying the same card before the last flourish ended
 	# would otherwise stack two tweens on one node and leave it at whatever scale lost the race.
 	var key := cell.get_instance_id()
@@ -4641,7 +4659,7 @@ func _flourish_cell(cell: Control, speed: float = 1.0) -> void:
 	tw.set_parallel(true)
 	var rise := dur * 0.35
 	tw.tween_property(cell, "scale", Vector2(CARD_FLOURISH_SCALE, CARD_FLOURISH_SCALE), rise).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_property(cell, "modulate", Color(1.35, 1.32, 1.15, 1.0), rise)
+	tw.tween_property(cell, "modulate", Color(1.9, 1.8, 1.4, 1.0), rise)
 	tw.tween_property(cell, "scale", Vector2.ONE, dur * 0.55).set_delay(rise).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tw.tween_property(cell, "modulate", Color(1, 1, 1, 1), dur * 0.55).set_delay(rise)
 
@@ -5910,11 +5928,22 @@ func append_log(bbcode_line: String) -> void:
 		_log_lines = _log_lines.slice(_log_lines.size() - LOG_LINE_LIMIT)
 	if is_inside_tree():
 		_refresh_log()
-	# ⚑ THE ARMED CARD FLIES TO **THIS** LINE, if this is the player's. Fired here
-	# rather than at play time because the result arrives through the paced queue
-	# hundreds of ms later - launching on the click would land on a row that does not
-	# exist yet, which the backlog item warns reads as a bug rather than a flourish.
-	if _flight_armed != "" and _classify_overlay_actor(bbcode_line) == "player":
+	# ⚑ THE ARMED CARD FLIES TO **THIS** LINE. Fired here rather than at play time
+	# because the result arrives through the paced queue hundreds of ms later -
+	# launching on the click would land on a row that does not exist yet.
+	#
+	# ⛑ IT USED TO ASK `_classify_overlay_actor(line) == "player"` AND THEREFORE
+	# ALMOST NEVER FIRED. The line a player actually sees is the FOLDED one - combat
+	# puts an actor's whole round on a single line behind a status prefix, like
+	# "blinded (37t) · Arcane energy surges as you blast..." - and the classifier
+	# reads that as `ambient`. Owner 2026-09-17: *"Not seeing this either, maybe again
+	# too subtle or mistimed?"* It was neither: it never happened. My probe passed
+	# because I fed it a clean line I had written myself instead of one from the game.
+	#
+	# The first line after the card is committed IS the card's result - that is what
+	# the paced queue delivers - so the trigger is simply "the next line", minus the
+	# round dividers, which carry no result and would steal the flight.
+	if _flight_armed != "" and not _is_round_divider(bbcode_line):
 		_fire_card_flight(_log_lines.size() - 1, _flight_speed)
 	# v0.9.415 — during action_phase, also route to the per-actor overlay log
 	# (classified from the line itself if no actor hint was passed).
@@ -5939,6 +5968,11 @@ func append_to_last_log(bbcode_fragment: String) -> void:
 		append_log(bbcode_fragment)
 		return
 	_log_lines[_log_lines.size() - 1] += "[color=#5A5A66]  ·  [/color]" + bbcode_fragment
+	# ⛑ AND THE FOLD PATH FIRES IT TOO. A card's result usually does not start a new
+	# line at all - it is folded onto the actor's existing one - so hooking only
+	# `append_log` missed the common case entirely.
+	if _flight_armed != "" and not _is_round_divider(bbcode_fragment):
+		_fire_card_flight(_log_lines.size() - 1, _flight_speed)
 	if is_inside_tree():
 		_refresh_log()
 

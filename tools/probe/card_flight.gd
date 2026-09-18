@@ -68,12 +68,12 @@ func _init() -> void:
 	p.arm_card_flight("magic_bolt", 1.0)
 	ck(str(p.get("_flight_armed")) == "magic_bolt", "playing the card ARMS the flight")
 
-	# A monster line must NOT fire it - the flight belongs to the player's own result.
-	p.append_log("[color=#FF6666]The Wight Weapon Master drains 31 life from you![/color]")
+	# ⛑ A ROUND DIVIDER MUST NOT STEAL IT. It carries no result, so the flight has to wait
+	# for the line that does.
+	p.append_log("[color=#808080]— Round 3 —[/color]")
 	for _i in range(3):
 		await process_frame
-	var still_armed: bool = str(p.get("_flight_armed")) != ""
-	ck(still_armed, "a MONSTER line does not fire the flight (still armed)")
+	ck(str(p.get("_flight_armed")) != "", "a ROUND DIVIDER does not fire the flight (still armed)")
 
 	# Now the player's own line.
 	var expect_index: int = int(p.get("_log_lines").size())   # the line about to be appended
@@ -82,7 +82,12 @@ func _init() -> void:
 	# only be played with the combat scene up. Setting it a frame earlier does not survive:
 	# something in the client re-hides the panel whenever no fight is really running.
 	p.visible = true
-	p.append_log("[color=#FFFFFF]you blast the Wight Weapon Master with magic for 576 damage!![/color]")
+	# ⛑ THE LINE A PLAYER ACTUALLY SEES, not one I wrote to be easy. Combat FOLDS an actor's
+	# whole round onto a single line behind a status prefix, and the first version of this probe
+	# used a clean "you blast ..." string instead - so it passed while the feature, which asked
+	# `_classify_overlay_actor(line) == "player"`, read the real folded line as `ambient` and
+	# never fired once in play. A probe fed idealised input tests the input, not the feature.
+	p.append_log("[color=#FFFFFF]blinded (37t) · Arcane energy surges as you blast the Wight Weapon Master with magic for 576 damage!![/color]")
 	for _i in range(4):
 		await process_frame
 
