@@ -7310,9 +7310,32 @@ something was dropped, and it sat unnoticed for eleven days.
       problem is entirely POWER (0.37x), not coverage, and the fix is the same stat derivation
       every other slot needs.
 
-      **Still to measure before the stat work:** whether RUNES are worth their materials, the same
-      way `crafting_worth.gd` measured gear. 46 rune recipes is the second-largest block in the
-      game and nothing has compared what one gives against what it costs.
+      **☑ STEP 6 DONE 2026-09-18 — RUNES ARE WORSE THAN THE GEAR WAS, and they get worse as they
+      get grander.** `tools/probe/rune_worth.gd`, comparing each rune's `rune_cap` against the
+      median total of a REAL drop at the level that tier is used:
+
+      | tier | rune adds | of the item it sits on |
+      |---|---|---|
+      | minor | **0.17x** | |
+      | greater | **0.06x** | |
+      | supreme | **0.03x** | |
+
+      **A Supreme Rune — the top of a 46-recipe block, behind high enchanting skill and expensive
+      materials — adds three percent of what the item already carries.** A Minor Rune of Strength
+      adds 2 points to an item carrying 18.
+
+      ⛑ **AND THE DIRECTION IS THE FINDING.** Crafted gear was erratic; runes are **monotonically
+      worse the higher you climb**, which is the clearest possible signature of the same root
+      cause: gear totals are GENERATED and run 18 → 162 → 784 across the three bands (a 44x climb)
+      while rune caps are hand-authored and run roughly 2-25 → 8-80 → 16-180 (about 7x). The ladder
+      simply cannot keep pace, and every tier a player climbs makes their reward smaller.
+      One outlier worth keeping: **Minor Rune of Vitality at 1.39x** is the only rune in the game
+      that beats the item it sits on, because HP caps are authored an order of magnitude larger
+      than stat caps. It is evidence the cap table was never sized against anything.
+
+      **So enchanting joins blacksmithing:** no cull, but its numbers must be derived from the same
+      curve the drops use. That is now **three of five crafters** whose fix is one shared change -
+      derive output from the drop curve - rather than content work.
 
       **✅ SCRIBING HAS AN IDENTITY, AGREED 2026-09-18: *the crafter who makes the world
       survivable*.** Every item reduces a RISK or a COST rather than adding power - which keeps
