@@ -50,6 +50,8 @@ func _capability(title: String, server_proof: String, doors: Dictionary) -> void
 
 func _init() -> void:
 	_cli = FileAccess.get_file_as_string("res://client/client.gd")
+	var _panel := FileAccess.get_file_as_string("res://client/crafting_panel.gd")
+	var _invp := FileAccess.get_file_as_string("res://client/inventory_panel.gd")
 	_srv = FileAccess.get_file_as_string("res://server/server.gd")
 	_chr = FileAccess.get_file_as_string("res://shared/character.gd")
 
@@ -132,6 +134,56 @@ func _init() -> void:
 			"Refine Rock Salt is a real recipe":
 				FileAccess.get_file_as_string("res://shared/crafting_database.gd").find("\"refine_rock_salt\"") >= 0,
 		})
+
+	print("")
+	print("===== THE DOOR MUST BE ON THE SURFACE THE GAME ACTUALLY SHOWS =====")
+	# ⚑ THE MOST EXPENSIVE MISTAKE OF THIS SESSION. Owner 2026-09-18, testing the crafting arc:
+	# *"Action bar buttons? They should be UI buttons."* ... *"I left clicked Iron sword and don't
+	# see any description about attack or comparing my weapon."* ... *"All I see are the locked
+	# items that I can't click."*
+	#
+	# ⛑ EVERY ONE OF THOSE WAS ONE FAULT: the whole crafting UI redesign went into `client.gd`'s
+	# TEXT renderers - `display_craft_recipe_list`, `display_craft_recipe_details`, the action bar -
+	# and `client/crafting_panel.gd` had replaced all three. The panel is shown whenever
+	# `crafting_mode` is on, so the player never saw a single line of it.
+	#
+	# And the probe PASSED, because it grepped client.gd for the strings and found them - in the
+	# dead path. A door in a room nobody enters is not a door, and checking client.gd cannot tell
+	# the difference. **When a screen has a panel, the panel IS the screen.**
+	print("")
+	print("  CRAFTING — the panel, not the text fallback")
+	var panel_doors := {
+		"filters are panel BUTTONS": _panel.find("_filter_buttons[String(f[\"id\"])] = fb") >= 0,
+		"each filter shows its count": _panel.find("btn.text = \"%s (%d)\"") >= 0,
+		"the panel owns the filtering": _panel.find("func _apply_filter") >= 0,
+		"gated rows are CLICKABLE when commissionable": _panel.find("if recipe.get(\"can_commission\", false):") >= 0,
+		"the craft button offers the commission": _panel.find("_craft_button.text = \"COMMISSION") >= 0,
+		"a Post Job button exists in the panel": _panel.find("_post_job_button.text = \"Post Job for a Player\"") >= 0,
+		"the detail says what it MAKES": _panel.find("[color=#87CEEB]Makes:[/color]") >= 0,
+		"and compares it to what you wear": _panel.find("vs your %s:") >= 0,
+		"demand is shown on rows you can make": _panel.find("◆ %d wanted, up to %dv") >= 0,
+	}
+	for k in panel_doors.keys():
+		if bool(panel_doors[k]):
+			_ok(String(k))
+		else:
+			_fail("%s -- IN THE TEXT PATH ONLY" % k)
+	# ⛑ AND THE INDEX MUST SURVIVE FILTERING. The panel shows a filtered list while the client
+	# indexes the unfiltered one, so emitting the filtered position would craft a DIFFERENT recipe
+	# than the one clicked - silently, and only while a filter is active.
+	if _panel.find("_src_index.append(i)") < 0:
+		_fail("the panel does not map filtered rows back to the client's indices")
+	else:
+		_ok("a filtered row still crafts the recipe you clicked")
+
+	print("")
+	print("  REWORK — the result has to survive the next character_update")
+	# Owner: *"Rework screen pulled up some text then it disappears."* The Player-Visible Output
+	# Rule in CLAUDE.md names this exact step and it was skipped.
+	if _cli.find("elif pending_inventory_action in [\"rework_select\", \"rework_stat\"]:") < 0:
+		_fail("the rework modes still fall through to display_inventory() and get wiped")
+	else:
+		_ok("rework modes bypass the inventory refresh")
 
 	print("")
 	print("===== CAPABILITIES THAT NEED NO NEW DOOR =====")

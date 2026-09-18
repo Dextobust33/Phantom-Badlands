@@ -55,6 +55,21 @@ var _help_panel: Control = null
 var _skill_label: Label
 var _bonus_label: RichTextLabel
 var _skill_chip_row: HBoxContainer
+
+## Which question the recipe list is answering. Measured before designing: blacksmithing is 68
+## recipes = 14 pages, and a level-1 blacksmith has ONE recipe at their skill.
+const FILTER_CHIPS := [
+	{"id": "ready", "label": "Can Make", "help": "Recipes you can act on right now — you have the materials, or it can be commissioned."},
+	{"id": "skill", "label": "At My Skill", "help": "Everything your skill allows, whether or not you have the materials."},
+	{"id": "wanted", "label": "Wanted", "help": "Recipes another player is paying for right now."},
+	{"id": "all", "label": "All", "help": "Every recipe for this trade, including ones you cannot reach yet."},
+]
+var _filter_row: HBoxContainer
+var _filter_buttons: Dictionary = {}
+var _filter: String = "ready"
+var _recipes_all: Array = []
+## Filtered row -> its position in the unfiltered list the client holds.
+var _src_index: Array = []
 var _skill_chip_buttons: Dictionary = {}
 var _recipe_list_vbox: VBoxContainer
 var _detail_root: VBoxContainer
@@ -67,6 +82,7 @@ var _qty_minus: Button
 var _qty_plus: Button
 var _qty_max: Button
 var _craft_button: Button
+var _post_job_button: Button
 var _detail_empty: Label
 var _status_label: RichTextLabel
 
@@ -149,6 +165,28 @@ func _build_layout() -> void:
 		btn.pressed.connect(_on_skill_chip_pressed.bind(chip["id"]))
 		_skill_chip_row.add_child(btn)
 		_skill_chip_buttons[chip["id"]] = btn
+
+	# ⚑ THE FILTER ROW — owner 2026-09-18: *"Action bar buttons? They should be UI buttons."*
+	#
+	# ⛑ AND THE FIRST VERSION OF THIS SHIPPED INTO THE WRONG SURFACE ENTIRELY. The filters, the
+	# detail stats and the commission labels were all written into `client.gd`'s TEXT renderers -
+	# `display_craft_recipe_list` / `display_craft_recipe_details` / the action bar - which this
+	# panel replaced. The probe grepped client.gd, found every string, and passed. The player saw
+	# none of it. **When this project has a panel for a screen, the panel IS the screen.**
+	_filter_row = HBoxContainer.new()
+	_filter_row.add_theme_constant_override("separation", 4)
+	root_vbox.add_child(_filter_row)
+	for f in FILTER_CHIPS:
+		var fb := Button.new()
+		fb.toggle_mode = true
+		fb.focus_mode = Control.FOCUS_NONE
+		fb.add_theme_font_size_override("font_size", 11)
+		fb.custom_minimum_size = Vector2(0, 24)
+		fb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		fb.tooltip_text = String(f["help"])
+		fb.pressed.connect(_on_filter_pressed.bind(String(f["id"])))
+		_filter_row.add_child(fb)
+		_filter_buttons[String(f["id"])] = fb
 
 	# Body: recipe list (left) + detail (right)
 	var body := HBoxContainer.new()
@@ -271,6 +309,19 @@ func _build_layout() -> void:
 	_craft_button.pressed.connect(_on_craft_pressed)
 	_detail_root.add_child(_craft_button)
 
+	# ⛑ THE SECOND ROUTE NEEDS ITS OWN BUTTON, IN THE PANEL. Both ways through a gated recipe are
+	# offered together or the other one is undiscoverable - and the first attempt at this put the
+	# button on the ACTION BAR, which this panel replaced.
+	_post_job_button = Button.new()
+	_post_job_button.text = "Post Job for a Player"
+	_post_job_button.focus_mode = Control.FOCUS_NONE
+	_post_job_button.add_theme_font_size_override("font_size", 13)
+	_post_job_button.custom_minimum_size = Vector2(0, 30)
+	_post_job_button.tooltip_text = "Offer this to other crafters. They supply the materials and their own quality — a good crafter beats the NPC job, which is always Standard."
+	_post_job_button.pressed.connect(_on_post_job_pressed)
+	_post_job_button.visible = false
+	_detail_root.add_child(_post_job_button)
+
 	_detail_empty = Label.new()
 	_detail_empty.text = "Select a recipe on the left."
 	_detail_empty.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
@@ -356,14 +407,88 @@ func set_upcoming_unlocks(unlocks: Array) -> void:
 
 # Called by client.gd whenever the recipe list / materials change (server craft_list response,
 # materials update, character_update, etc.).
+func _on_post_job_pressed() -> void:
+	if client_ref == null or _selected_index < 0 or _selected_index >= _recipes.size():
+		return
+	client_ref.crafting_selected_recipe = _selected_index
+	client_ref._start_commission_prompt()
+
+
+func _on_filter_pressed(filter_id: String) -> void:
+	_filter = filter_id
+	_selected_index = -1
+	_apply_filter()
+	_rebuild_recipe_list()
+	_refresh_filter_chips()
+	_refresh_detail()
+
+
+func _apply_filter() -> void:
+	"""Narrow the full list to the question being asked.
+
+	⛑ THE PREDICATE IS SHARED with the server-side notion of what each field means -
+	`CraftingDatabase.recipe_matches_filter` - so the panel, the text fallback and the probe all
+	agree. Three copies of a filter is how one of them starts showing a recipe the others hide."""
+	var CD = preload("res://shared/crafting_database.gd")
+	var out: Array = []
+	_src_index.clear()
+	for i in range(_recipes_all.size()):
+		var r = _recipes_all[i]
+		if r is Dictionary and CD.recipe_matches_filter(r, _filter):
+			# ⛑ WHERE THIS ROW CAME FROM. The panel shows a FILTERED list and the client indexes
+			# the UNFILTERED one, so emitting the filtered position would craft a different recipe
+			# than the one clicked - silently, and only when a filter is active. The map is kept
+			# rather than the index recomputed, because a recomputation is a second rule.
+			_src_index.append(i)
+			out.append(r)
+	_recipes = out
+
+
+func _filter_counts() -> Dictionary:
+	var CD = preload("res://shared/crafting_database.gd")
+	var c := {}
+	for f in FILTER_CHIPS:
+		var fid := String(f["id"])
+		var n := 0
+		for r in _recipes_all:
+			if r is Dictionary and CD.recipe_matches_filter(r, fid):
+				n += 1
+		c[fid] = n
+	return c
+
+
+func _refresh_filter_chips() -> void:
+	"""Every chip carries its COUNT, so the player can see where their options are without
+	pressing each one to find out."""
+	var counts := _filter_counts()
+	for f in FILTER_CHIPS:
+		var fid := String(f["id"])
+		var btn: Button = _filter_buttons.get(fid)
+		if btn == null:
+			continue
+		var n := int(counts.get(fid, 0))
+		btn.text = "%s (%d)" % [String(f["label"]), n]
+		btn.button_pressed = (fid == _filter)
+		# A filter with nothing behind it is dimmed rather than hidden - a chip that vanishes
+		# makes the row jump about, and "Wanted 0" is itself information.
+		btn.add_theme_color_override("font_color",
+			Color(1, 0.84, 0) if fid == _filter else (Color(0.45, 0.45, 0.45) if n == 0 else Color(0.8, 0.8, 0.8)))
+
+
 func populate(skill: String, recipes: Array, materials: Dictionary, skill_level: int, post_bonus: int, job_bonus: Dictionary, selected_index: int, craft_quantity: int) -> void:
 	if not is_inside_tree():
 		return
 	_current_skill = skill
-	_recipes = recipes
+	_recipes_all = recipes
+	_apply_filter()
+	# ⛑ THE SELECTION IS AN INDEX INTO THE FILTERED LIST. Carrying the caller's index straight
+	# across would select a different recipe than the one the player clicked the moment a filter
+	# is active - silently, and only for gated or material-short rows.
+	_selected_index = _src_index.find(selected_index) if selected_index >= 0 else -1
 	_materials = materials
-	_selected_index = selected_index
 	_craft_quantity = max(1, craft_quantity)
+
+	_refresh_filter_chips()
 
 	# Header
 	if skill != "":
@@ -464,14 +589,28 @@ func _make_recipe_button(recipe: Dictionary, index: int) -> Button:
 		btn.add_theme_color_override("font_color", Color(0.45, 0.45, 0.45))
 		btn.disabled = true
 	elif is_specialist_gated:
-		label = "[Spec]  %s" % name
-		btn.add_theme_color_override("font_color", Color(1.0, 0.45, 0.27))
-		btn.disabled = true
+		# ⛑ COMMISSIONABLE ROWS ARE NOT DISABLED. Owner 2026-09-18: *"All I see are the locked
+		# items that I can't click."* 43% of recipes are specialist-gated, so a flat un-clickable
+		# row was the most common thing this list showed - and there is now something to DO with
+		# every one of them: commission it from a post NPC, or post the job for another player.
+		if recipe.get("can_commission", false):
+			label = "%s   commission %dv" % [name, int(recipe.get("commission_fee", 0))]
+			btn.add_theme_color_override("font_color", Color(0.78, 0.64, 0.29))
+		else:
+			label = "[Spec]  %s (Lv%d)" % [name, skill_req]
+			btn.add_theme_color_override("font_color", Color(1.0, 0.45, 0.27))
+			btn.disabled = true
 	else:
 		var color := Color(0, 1, 0) if can_craft else Color(0.7, 0.7, 0.7)
 		btn.add_theme_color_override("font_color", color)
 		var spec_tag = " ★" if recipe.get("specialist_only", false) else ""
 		label = "%s%s  Lv%d" % [name, spec_tag, skill_req]
+		# Demand shown where the crafter already looks — a commission board nobody opens is a
+		# commission board nobody fills.
+		var wanted := int(recipe.get("wanted_count", 0))
+		if wanted > 0:
+			label += "    ◆ %d wanted, up to %dv" % [wanted, int(recipe.get("wanted_best", 0))]
+			btn.add_theme_color_override("font_color", Color(0.78, 0.64, 0.29))
 
 	btn.text = label
 	btn.pressed.connect(_on_recipe_pressed.bind(index))
@@ -521,6 +660,50 @@ func _refresh_detail() -> void:
 	# Audit #4 Slice 3.8 (v0.9.547) — "Quality Rating" replaces "Success". Crafts
 	# never fail — this number is the roll pivot that controls where the quality
 	# bands sit, not a chance of failure. Higher = better quality distribution.
+	# ⚑ WHAT IT MAKES, BEFORE HOW TO MAKE IT — owner 2026-09-18: *"I left clicked Iron sword and
+	# don't see any description about attack or comparing my weapon, only Skill req difficulty
+	# quality materials etc."*
+	#
+	# ⛑ The description WAS here, but LAST - under skill, difficulty, the quality bands and the
+	# market average - and the numbers that answer "is this better than what I am holding" were
+	# not here at all. A player could read the whole pane and still not know what the item was.
+	var ostats: Dictionary = recipe.get("output_stats", {}) if recipe.get("output_stats", null) is Dictionary else {}
+	if not ostats.is_empty():
+		var parts: Array = []
+		for k in ostats.keys():
+			var key := String(k)
+			if key in ["level", "value", "durability", "weight"]:
+				continue
+			var v = ostats[k]
+			if (v is int or v is float) and float(v) != 0.0:
+				parts.append("[color=#99FF99]%s %d[/color]" % [key.replace("_", " "), int(v)])
+		if not parts.is_empty():
+			meta_lines.append("[color=#87CEEB]Makes:[/color] %s   [color=#888888](Lv %d, at Standard)[/color]" % [
+				"   ".join(parts), int(ostats.get("level", 1))])
+			# ⛑ AND AGAINST WHAT YOU WEAR, because "118 attack" means nothing without the number
+			# it would replace. This is the decision the pane exists to serve.
+			var slot := String(recipe.get("output_slot", ""))
+			if client_ref != null and slot != "":
+				var worn = client_ref.character_data.get("equipped", {}).get(slot, null)
+				if worn is Dictionary and not (worn as Dictionary).is_empty():
+					var wb: Dictionary = preload("res://shared/character.gd").item_stat_bonuses(worn)
+					var cmp_parts: Array = []
+					for k2 in ["attack", "defense"]:
+						if ostats.has(k2):
+							var d := int(ostats[k2]) - int(wb.get(k2, 0))
+							var col := "#99FF99" if d > 0 else ("#FF9999" if d < 0 else "#BBBBBB")
+							cmp_parts.append("[color=%s]%s %+d[/color]" % [col, k2, d])
+					if not cmp_parts.is_empty():
+						meta_lines.append("[color=#87CEEB]vs your %s:[/color] %s" % [slot, "   ".join(cmp_parts)])
+	var desc_top := str(recipe.get("description", ""))
+	if desc_top != "":
+		meta_lines.append("[color=#BBBBBB]%s[/color]" % desc_top)
+	if is_specialist_gated:
+		if recipe.get("can_commission", false):
+			meta_lines.append("[color=#C8A24A]Specialist work — you have the skill but not the focus. Commission it for %d Valor, or Post Job to have a player make it.[/color]" % int(recipe.get("commission_fee", 0)))
+		else:
+			meta_lines.append("[color=#FF6666]Specialist work — reach the skill yourself before you can commission it.[/color]")
+	meta_lines.append("")
 	meta_lines.append("[color=#87CEEB]Skill Req:[/color] %d   [color=#87CEEB]Difficulty:[/color] %d   [color=#87CEEB]Quality Rating:[/color] %d%%" % [skill_req, difficulty, success_chance])
 	meta_lines.append("[color=#888888]Crafts always produce an item — even a Poor roll gives 50%% stats.[/color]")
 	# Audit #8 Layer 5 — quality odds bar (recomputed live when boost changes).
@@ -544,9 +727,6 @@ func _refresh_detail() -> void:
 	var market_avg := int(recipe.get("avg_market_price", 0))
 	if market_avg > 0:
 		meta_lines.append("[color=#FFD700]Recent market avg:[/color] %d Valor [color=#888888](rolling)[/color]" % market_avg)
-	var description := str(recipe.get("description", ""))
-	if description != "":
-		meta_lines.append("[color=#888888]%s[/color]" % description)
 	_detail_meta.text = "\n".join(meta_lines)
 
 	# Materials (scaled by boost mat_mult × quantity; boost forces qty=1, so
@@ -580,13 +760,23 @@ func _refresh_detail() -> void:
 	_qty_plus.disabled = _craft_quantity >= max_qty
 	_qty_max.disabled = _craft_quantity == max_qty
 
+	if _post_job_button:
+		_post_job_button.visible = is_specialist_gated and bool(recipe.get("can_commission", false))
+
 	# Craft button state
 	if is_locked:
 		_craft_button.text = "Locked (Lv%d required)" % skill_req
 		_craft_button.disabled = true
 	elif is_specialist_gated:
-		_craft_button.text = "Specialist Job Required"
-		_craft_button.disabled = true
+		# ⛑ A GATED RECIPE IS AN OFFER NOW, NOT A REFUSAL. "Specialist Job Required" was a dead
+		# end on 43% of the list; a player with the skill can pay a post NPC to do the work, or
+		# post the job for a real crafter.
+		if recipe.get("can_commission", false):
+			_craft_button.text = "COMMISSION  %d Valor" % int(recipe.get("commission_fee", 0))
+			_craft_button.disabled = false
+		else:
+			_craft_button.text = "Specialist Job Required (Lv%d)" % skill_req
+			_craft_button.disabled = true
 	elif not _can_afford_with_boost(materials, boost_mat_mult, _craft_quantity):
 		# Boost may put a craftable recipe out of reach — recompute against
 		# the boosted cost so the button reflects the real state.
@@ -688,7 +878,10 @@ func _on_skill_chip_pressed(skill_id: String) -> void:
 
 
 func _on_recipe_pressed(index: int) -> void:
-	emit_signal("recipe_selected", index)
+	_selected_index = index
+	# Emit the index into the list the CLIENT holds, not the filtered one shown here.
+	var src: int = int(_src_index[index]) if index >= 0 and index < _src_index.size() else index
+	emit_signal("recipe_selected", src)
 
 
 func _on_qty_minus_pressed() -> void:

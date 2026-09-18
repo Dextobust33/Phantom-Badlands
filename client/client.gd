@@ -28245,6 +28245,14 @@ func handle_server_message(message: Dictionary):
 						display_inventory()
 						display_game("[color=#FFD700]%s to lock/unlock another item, or [%s] to go back:[/color]" % [get_selection_keys_text(max(1, inv.size())), get_action_key_name(0)])
 						update_action_bar()
+					elif pending_inventory_action in ["rework_select", "rework_stat"]:
+						# ⛑ THE BYPASS THE CHECKLIST ASKS FOR, AND I SKIPPED IT. Owner 2026-09-18:
+						# *"Rework screen pulled up some text then it disappears."* Without this the
+						# rework picker falls to the `else` below, which calls `display_inventory()`
+						# and wipes game_output - so the item list, the cost and the result all
+						# flash and vanish on the next character_update. CLAUDE.md's Player-Visible
+						# Output Rule names this exact step and I did not follow it.
+						pass
 					elif pending_inventory_action == "viewing_materials":
 						# Materials view - don't redisplay inventory, keep showing materials
 						pass
@@ -48777,8 +48785,11 @@ func handle_craft_list(message: Dictionary):
 	crafting_skill_level = message.get("skill_level", 1)
 	crafting_post_bonus = message.get("post_bonus", 0)
 	crafting_job_bonus = message.get("job_bonus", {})
+	# ⛑ THE PANEL OWNS FILTERING NOW. Two filters meant two different lists and two different
+	# meanings for the same index; the client keeps the WHOLE list so the index the panel emits
+	# always points at the right recipe.
 	crafting_recipes_all = message.get("recipes", [])
-	_apply_craft_filter()
+	crafting_recipes = crafting_recipes_all
 	crafting_materials = message.get("materials", {})
 	# v0.9.635 — Track pouch-only materials separately so @-wildcard group
 	# counts match the server's can_craft check. Server intentionally excludes

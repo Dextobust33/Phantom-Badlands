@@ -11,6 +11,7 @@ directly so the characters are ALREADY in that state when they log in.
 THE SERVER MUST BE STOPPED while this runs - it holds characters in memory and saves over
 whatever is on disk. The script refuses to run if port 9080 is listening.
 """
+import io
 import json
 import os
 import re
@@ -274,6 +275,113 @@ def release_check(c):
     return seeded
 
 
+HOUSES = os.path.join(os.path.dirname(SAVE_DIR), "houses.json")
+
+
+def grant_valor(account_ids, amount):
+    """Put Valor in the test accounts.
+
+    ⛑ VALOR IS NOT ON THE CHARACTER. It lives on the ACCOUNT's house record, so passing
+    `valor=30000` in a scenario spec does nothing at all - the key is not read, and the scenario
+    would have launched looking correct while every commission and rework refused for lack of
+    funds. Written here so the scenario cannot make a promise the harness does not keep.
+    """
+    try:
+        with io.open(HOUSES, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return
+    houses = data.get("houses", data)
+    changed = False
+    for acc in account_ids:
+        h = houses.get(acc)
+        if isinstance(h, dict):
+            h["valor"] = max(int(h.get("valor", 0)), int(amount))
+            changed = True
+    if changed:
+        with io.open(HOUSES, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+        print("  granted %d valor to %d account(s)" % (amount, len(account_ids)))
+
+
+def crafting_arc(c):
+    """The 2026-09-18 crafting arc: everything a probe cannot sign off.
+
+    Fifteen commits of crafting work are verified by automated checks - the numbers are right,
+    the rules hold, every capability has a door. What NO probe can say is whether any of it reads
+    well to a person, and two items here are art, where "loads correctly" and "looks like a forge"
+    are different questions entirely.
+
+    Set up so that each thing is reachable without hunting:
+      * committed ENCHANTER, so the field service, the specialist recipes and the +50% all apply
+      * ENCHANTING skill 40, so some recipes are makeable, some are gated, some are out of reach -
+        which is the only way to see the four filters actually differ
+      * BLACKSMITHING skill 35 but NOT committed, which is the commission case: you have the skill
+        and not the focus
+      * a rune already applied to the worn weapon, so Disenchant has something to give back
+      * dropped gear with affixes in the pack, so Rework has a target
+      * 30k valor, so a commission and a posted job are both affordable
+    """
+    c["current_hp"] = c.get("max_hp", 100)
+    give_tools(c)
+    give_materials(c)
+
+    # A committed enchanter: unlocks the field service (Rework a Stat) and enchanting's own
+    # specialist recipes, and pays +50% enchanting XP.
+    c["specialty_job"] = "enchanter"
+    c["specialty_job_committed"] = True
+    skills = c.setdefault("crafting_skills", {})
+    skills["enchanting"] = 40
+    skills["blacksmithing"] = 35      # skill without the focus - the commission case
+    skills["alchemy"] = 12
+    jobs = c.setdefault("job_levels", {})
+    jobs["enchanter"] = 40
+    jobs["blacksmith"] = 35
+
+    # Materials the enchanting ladder actually wants, plus the two new refine inputs.
+    pouch = c.setdefault("crafting_materials", {})
+    for mat, qty in (("magic_dust", 60), ("arcane_crystal", 25), ("soul_shard", 10),
+                     ("ice_crystal", 12), ("rock_salt", 15), ("steel_ore", 40),
+                     ("mithril_ore", 20), ("thick_leather", 20), ("binding_thread", 20)):
+        pouch[mat] = int(pouch.get(mat, 0)) + qty
+
+    # Gear with affixes, so Rework has something to trade. Two pieces: one worn, one loose.
+    c["inventory"].append({
+        "id": "test_rework_blade", "name": "Mighty Iron Blade of Striking",
+        "type": "weapon", "item_type": "weapon", "slot": "weapon",
+        "level": 30, "rarity": "rare",
+        "affixes": {"attack_bonus": 41, "str_bonus": 12,
+                    "prefix_name": "Mighty", "suffix_name": "of Striking", "roll_quality": 62},
+    })
+    # A piece that has ALREADY been reworked twice, so the cap is visible mid-ladder rather than
+    # only at 0 or 5.
+    c["inventory"].append({
+        "id": "test_reworked_ring", "name": "Fortified Silver Ring",
+        "type": "ring", "item_type": "ring", "slot": "ring",
+        "level": 28, "rarity": "rare", "reroll_count": 2,
+        "affixes": {"defense_bonus": 22, "hp_bonus": 60, "prefix_name": "Fortified"},
+    })
+
+    # A rune already in the worn weapon, so Disenchant has a rune to hand back rather than the
+    # "gear enchanted before this update kept no record" path.
+    worn = c.setdefault("equipped", {}).get("weapon")
+    if isinstance(worn, dict) and worn:
+        worn.setdefault("affixes", {})["attack_bonus"] = 18
+        worn["applied_runes"] = [{
+            "id": "rune_minor_attack", "name": "Minor Rune of Attack",
+            "item": {"id": "rune_give_back", "type": "rune", "name": "Minor Rune of Attack",
+                     "rune_stat": "attack_bonus", "rune_cap": 18, "target_slot": "weapon",
+                     "is_consumable": True, "quantity": 1, "rarity": "uncommon"},
+        }]
+
+    # Spare runes to apply, so the rune -> rework -> disenchant loop can be walked in one sitting.
+    c["inventory"].append({
+        "id": "rune_spare_1", "type": "rune", "name": "Minor Rune of Defense",
+        "rune_stat": "defense_bonus", "rune_cap": 15, "target_slot": "armor,helm,shield",
+        "is_consumable": True, "quantity": 3, "rarity": "uncommon"})
+    return []
+
+
 def feel_check(c):
     """The v0.9.803 work that no probe can sign off - things needing a human eye.
 
@@ -488,6 +596,18 @@ SCENARIOS = {
              "menu. Parked on a dungeon entrance with food, cycle cards and lots of HP."),
         players=1,
         apply=release_check),
+    "crafting_arc": dict(
+        doc=("THE 2026-09-18 CRAFTING ARC - everything a probe cannot sign off, plus the two "
+             "ART items that need your eye. A committed ENCHANTER at a post: enchanting 40 "
+             "(some recipes makeable, some gated, some out of reach), blacksmithing 35 WITHOUT "
+             "the focus (the commission case), a rune already in the worn weapon, two affixed "
+             "items to Rework, and 30k valor. Walk the crafting stations around the post for "
+             "the sprite review."),
+        players=2,
+        at=(57, -11),
+        grant_valor=30000,
+        apply=crafting_arc),
+
     "feel_check": dict(
         doc=("THE v0.9.803 WORK A PROBE CANNOT SIGN OFF - eight things needing a human eye. "
              "Card flourish + the ghost flying to its log line, one free potion per ROUND, the "
@@ -633,6 +753,10 @@ def main():
         if isinstance(notes, list) and notes:
             for note in notes:
                 print("           play: %s" % note)
+    # ⛑ VALOR LAST, AND ONLY FOR SCENARIOS THAT NEED IT. It lives on the account's house record,
+    # not the character file every other setting here writes.
+    if spec.get("grant_valor"):
+        grant_valor([acc for (_u, acc, _c, _f) in roster], int(spec["grant_valor"]))
     print("scenario %r applied for %d player(s)." % (name, n))
     return 0
 
