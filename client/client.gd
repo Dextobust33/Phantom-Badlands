@@ -13451,6 +13451,17 @@ func send_combat_command(command: String, target: String = ""):
 	if target != "" and target != "self":
 		_payload["target"] = target   # v0.9.740 — buff aimed at a teammate
 	send_to_server(_payload)
+	# ⚑ THE CARD REACTS, AND IT IS HOOKED HERE FOR A REASON. This is where the CLICK
+	# route and the HOTKEY route meet, after every gate and beside the actual send - so
+	# the flourish cannot play for a press the game then refuses, and it cannot be
+	# mouse-only. Owner 2026-09-14: *"a cool animation showing it is being used."*
+	if combat_scene_panel != null and is_instance_valid(combat_scene_panel) \
+			and combat_scene_panel.has_method("flourish_card"):
+		# Scaled by the player's own combat speed control, so the flourish cannot lag
+		# behind the line it belongs to at 3x. There is no "effects off" preference in
+		# the game to honour - the item assumes one exists; it does not, and inventing a
+		# flag nobody can set would be worse than using the knob that is really there.
+			combat_scene_panel.flourish_card(base_cmd, combat_speed)
 
 	# #76 — lock in for this party round: flip to waiting, block re-submit, and post a
 	# PERSISTENT locked-in line to the combat panel log (game_output gets wiped by the

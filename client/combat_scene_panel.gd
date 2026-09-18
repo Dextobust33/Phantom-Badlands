@@ -4446,6 +4446,73 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	return root
 
 
+## ⚑ THE PLAYED CARD REACTS. Owner 2026-09-14: *"It would be nice for it to have a cool
+## animation showing it is being used."*
+##
+## A lift, a brightening and a settle - the card rises out of the row, flares, and drops back. It
+## reads as "this one, now" without moving anything else in the strip, which matters because the
+## strip is a container: animating `position` would make its neighbours reflow.
+## ⛑ NO `position` TWEEN - THE CONTAINER OWNS IT. The strip is an HBoxContainer, which
+## rewrites its children's positions on every layout pass, so tweening `position:y` animates
+## NOTHING. The first version did exactly that and the probe caught it - the cell read y=0.0
+## before and after. The lift is real anyway: the pivot sits at the card's BOTTOM edge, so
+## scaling up grows it upward out of the row. `pivot_offset`, `scale` and `modulate` are
+## render-time only, so the layout never sees them and the neighbours never reflow.
+const CARD_FLOURISH_SEC := 0.42
+const CARD_FLOURISH_SCALE := 1.10
+
+var _card_flourish_tweens: Dictionary = {}
+
+
+func flourish_card(card_name: String, speed: float = 1.0) -> void:
+	"""Play the "this card was just used" flourish on whichever cell holds it.
+
+	⛑ CALLED FROM `send_combat_command`, the one place a card is actually committed, so the
+	CLICK route and the HOTKEY route both animate. Hooking the click handler instead would have
+	animated only the mouse, which is not how most people play once they know the cards.
+
+	Silent and harmless when the card is not on screen - a copy played from a menu, a party member's
+	card, a name that does not match - because a missing flourish must never be an error."""
+	if card_name == "":
+		return
+	var base := Character.card_base(card_name)
+	for i in range(_hand_cells.size()):
+		var cell: PanelContainer = _hand_cells[i]
+		if cell == null or not is_instance_valid(cell) or not cell.visible:
+			continue
+		if Character.card_base(str(cell.get_meta("card_name", ""))) != base:
+			continue
+		_flourish_cell(cell, speed)
+		return
+
+
+func _flourish_cell(cell: Control, speed: float = 1.0) -> void:
+	# A faster playback gets a shorter flourish, floored so it cannot become a flicker.
+	var dur: float = maxf(CARD_FLOURISH_SEC / maxf(speed, 0.25), 0.16)
+	# One tween per cell, killed first: replaying the same card before the last flourish ended
+	# would otherwise stack two tweens on one node and leave it at whatever scale lost the race.
+	var key := cell.get_instance_id()
+	var prev = _card_flourish_tweens.get(key, null)
+	if prev != null and is_instance_valid(prev):
+		prev.kill()
+	# Bottom-centre pivot: the card grows UPWARD from where it sits, which IS the lift. No
+	# `position` tween - the HBoxContainer owns position and rewrites it every layout pass.
+	cell.pivot_offset = Vector2(cell.size.x * 0.5, cell.size.y)
+	# ⛑ BUILT IN `_play_hand_cycle`'s IDIOM - parallel steps sequenced by `set_delay` - and
+	# NOT with `chain()` between two `set_parallel(true)` blocks. The chained version advanced
+	# (its elapsed time climbed every frame) and applied NOTHING, which is the worst kind of
+	# broken: the tween reports `is_running() == true` the whole way and the screen never moves.
+	# The deal-in animation twenty lines below has used this shape for months and works, so the
+	# flourish uses the shape that is known good here rather than the one that reads better.
+	var tw := create_tween()
+	_card_flourish_tweens[key] = tw
+	tw.set_parallel(true)
+	var rise := dur * 0.35
+	tw.tween_property(cell, "scale", Vector2(CARD_FLOURISH_SCALE, CARD_FLOURISH_SCALE), rise).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(cell, "modulate", Color(1.35, 1.32, 1.15, 1.0), rise)
+	tw.tween_property(cell, "scale", Vector2.ONE, dur * 0.55).set_delay(rise).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(cell, "modulate", Color(1, 1, 1, 1), dur * 0.55).set_delay(rise)
+
 func _on_hand_cell_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if index < 0 or index >= _hand_cells.size():
