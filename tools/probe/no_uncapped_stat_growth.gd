@@ -24,6 +24,7 @@ extends SceneTree
 
 const DT := preload("res://shared/drop_tables.gd")
 const CD := preload("res://shared/crafting_database.gd")
+const CharacterScript := preload("res://shared/character.gd")
 
 var _fails: Array = []
 
@@ -155,6 +156,44 @@ func _init() -> void:
 	print("   lands at a median of %d after 100 at Masterwork)" % int(compounded[compounded.size() / 2]))
 	if int(compounded[compounded.size() / 2]) < 200:
 		_fail("the contrast case did not compound - this check is not measuring what it claims")
+
+	print("")
+	print("===== 3c. THE WISH UPGRADE GOES THROUGH THE DAMPED ROUTE ONLY =====")
+	# ⛑ THE THIRD ONE THE SWEEP FOUND, and the one that shows why the sweep had to keep going.
+	# `_upgrade_single_item` bumped `level` (correct - `_get_effective_item_level` is logarithmic
+	# above 50, so L1000 counts as 148) AND wrote raw stat fields at +8% compounding with no
+	# damping at all. Measured on crafted armour at 50 defense, 9 upgrades a wish:
+	#   1 wish -> 95    3 -> 358    5 -> 1410    10 -> 44799
+	# from a `wish_granter` monster at 10% per kill, so repeatable.
+	#
+	# Worse, the weapon branch wrote `damage`, which NO aggregator reads - so the headline of an
+	# "Equipment Upgrade (x15)" wish did nothing whatsoever. Dead for most items, uncapped for the
+	# rest, from the same six lines.
+	var wish_src_ok := true
+	for shape in ["item[\"damage\"] = current_dmg", "item[\"defense\"] = current_def", "item[\"speed\"] = current_speed"]:
+		if srv.find(shape) >= 0:
+			_fail("the wish upgrade still writes a raw stat: %s" % shape)
+			wish_src_ok = false
+	if wish_src_ok:
+		_ok("the wish upgrade writes level only - no undamped stat writes")
+	# And the damping it now relies on must still be logarithmic, or removing the raw writes
+	# would have handed the job to something linear.
+	var l100: float = CharacterScript._get_effective_item_level(100)
+	var l1000: float = CharacterScript._get_effective_item_level(1000)
+	if l1000 >= l100 * 2.0:
+		_fail("_get_effective_item_level is no longer damping (L100=%.0f, L1000=%.0f)" % [l100, l1000])
+	else:
+		_ok("item level stays damped: L100 counts as %.0f, L1000 as %.0f" % [l100, l1000])
+	# ⛑ AND THE COMMENT MUST MATCH THE FUNCTION. This printed line is how the 50-point error in
+	# `_get_effective_item_level`'s docstring was found on 2026-09-18 - it had said L100 = 85 and
+	# L1000 = 148 (it computed `15 * log2(51)` and dropped the `50 +`), and that figure had
+	# already been copied into drop_tables.gd and quoted as a design target. Asserting it here
+	# means the next edit to either cannot silently disagree.
+	var char_src := FileAccess.get_file_as_string("res://shared/character.gd")
+	if char_src.find("L100 = %d" % int(l100)) < 0:
+		_fail("_get_effective_item_level's docstring does not state its real L100 (%.0f)" % l100)
+	else:
+		_ok("the docstring's worked examples match what the function returns")
 
 	print("")
 	print("===== 4. THE SANCTIONED PATH REPLACES AND IS CAPPED =====")

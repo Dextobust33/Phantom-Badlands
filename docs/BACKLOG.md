@@ -7932,6 +7932,38 @@ something was dropped, and it sat unnoticed for eleven days.
       own assertion — if that stops compounding, the test is no longer measuring what it claims.
       **A source-text check cannot answer a question about behaviour over many applications.**
 
+      **✅ AND A THIRD — the WISH equipment upgrade, 2026-09-18.** `_upgrade_single_item` did two
+      things, and only one of them was right:
+
+      | write | verdict |
+      |---|---|
+      | `item["level"] += 1` | **correct** — `_get_effective_item_level` damps it logarithmically above 50 |
+      | `item["damage"] += 8%` | **read by nothing.** No aggregator consumes a top-level `damage` key, so the weapon branch — the headline of an *"Equipment Upgrade (x15)"* wish — did **nothing at all** |
+      | `item["defense"]`/`["speed"]` += 8% | read **only** when `item.crafted`, and there it compounded with **no damping** |
+
+      Measured, crafted armour at 50 defense, a wish granting a midpoint 9 upgrades, from a
+      `wish_granter` monster at **10% per kill** so it repeats:
+
+      | wishes | upgrades | defense |
+      |---|---|---|
+      | 1 | 9 | 95 |
+      | 3 | 27 | 358 |
+      | 5 | 45 | 1,410 |
+      | 10 | 90 | **44,799** |
+
+      Dead for most items and uncapped for the rest, from the same six lines. **Item power already
+      has one owner** — `level`, through the damped curve. Two systems answering "how strong is
+      this item", one damped and one not, was the whole fault; the raw writes are gone and the
+      damped route is the only one.
+
+      ⛑ **AND THE PROBE CAUGHT A WRONG NUMBER THAT HAD ALREADY SPREAD.** Printing
+      `_get_effective_item_level`'s real output beside its docstring showed the docstring was
+      **50 too low in every worked example** — it computed `15 * log2(51) = 85` and dropped the
+      `50 +`. True values: **L100 = 135, L200 = 159, L500 = 182, L1000 = 198** (not 85/109/132/148).
+      The wrong figure had already been copied into `drop_tables.gd` and quoted as a design target,
+      and I repeated it in this arc's own comments before the probe printed it. Both copies fixed,
+      and the probe now asserts the docstring matches the function.
+
       Probe: `tools/probe/no_uncapped_stat_growth.gd` — guards the **rule**, not the instance. It
       fails on any `affixes[key] = old + amount` write anywhere in the server, so the next one
       written by someone who never heard of the blacksmith is caught too. Proven by injecting that

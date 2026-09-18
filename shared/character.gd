@@ -1765,18 +1765,19 @@ static func _get_rarity_multiplier(rarity: String) -> float:
 
 static func _get_effective_item_level(item_level: int) -> float:
 	"""Apply diminishing returns for items above level 50.
-	   Items 1-50: Full linear scaling
-	   Items 51+: Logarithmic scaling (50 + 15 * log2(level - 49))
-	   NERFED: Starts earlier (50 vs 100), smaller scaling factor (15 vs 20)
-	   This means a L100 item is ~equivalent to L80, L200 to ~L100, L500 to ~L120"""
+	   Items 1-50: full linear scaling. Items 51+: 50 + 15 * log2(level - 49).
+
+	⛑ EVERY WORKED NUMBER IN THIS COMMENT USED TO BE 50 TOO LOW, and they were quoted elsewhere.
+	The old text read "L100 = 50 + 15 * log2(51) ≈ 50 + 15 * 5.67 = 85" - it computed
+	15 * 5.67 = 85 and then dropped the `50 +`. All four examples, and the summary line ("a L100
+	item is ~equivalent to L80"), were wrong by exactly 50. Found 2026-09-18 by a probe PRINTING
+	the function's output next to the comment, which is the only reason anyone noticed; the
+	numbers had been read and re-quoted as design targets.
+
+	   Actual values, computed:
+	   L51 = 65   L100 = 135   L200 = 159   L500 = 182   L1000 = 198"""
 	if item_level <= 50:
 		return float(item_level)
-	# Above 50: diminishing returns using log scaling
-	# Formula: 50 + 15 * log2(level - 49)
-	# L100 = 50 + 15 * log2(51) ≈ 50 + 15 * 5.67 = 85
-	# L200 = 50 + 15 * log2(151) ≈ 50 + 15 * 7.24 = 109
-	# L500 = 50 + 15 * log2(451) ≈ 50 + 15 * 8.82 = 132
-	# L1000 = 50 + 15 * log2(951) ≈ 50 + 15 * 9.89 = 148
 	var excess = item_level - 49
 	return 50.0 + 15.0 * log(excess) / log(2.0)
 

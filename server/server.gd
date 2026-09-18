@@ -8009,24 +8009,23 @@ func _upgrade_single_item(item: Dictionary) -> Dictionary:
 	var new_level = current_level + 1
 	item["level"] = new_level
 
-	# Upgrade stats based on item type
-	var item_type = item.get("item_type", "")
-
-	if "weapon" in item_type:
-		var current_dmg = item.get("damage", 10)
-		item["damage"] = current_dmg + max(1, int(current_dmg * 0.08))
-	elif "armor" in item_type:
-		var current_def = item.get("defense", 5)
-		item["defense"] = current_def + max(1, int(current_def * 0.08))
-	elif "shield" in item_type:
-		var current_def = item.get("defense", 3)
-		item["defense"] = current_def + max(1, int(current_def * 0.08))
-	elif "helm" in item_type:
-		var current_def = item.get("defense", 2)
-		item["defense"] = current_def + max(1, int(current_def * 0.08))
-	elif "boots" in item_type:
-		var current_speed = item.get("speed", 5)
-		item["speed"] = current_speed + max(1, int(current_speed * 0.08))
+	# ⛑ THE LEVEL BUMP ABOVE IS THE WHOLE UPGRADE, AND IT USED NOT TO BE.
+	#
+	# This also wrote raw stat fields - `damage` +8%, `defense` +8%, `speed` +8%, each compounding
+	# off the current value. Two things were wrong with that:
+	#
+	#   `damage` IS READ BY NOTHING. No aggregator consumes a top-level `damage` key, so the
+	#   weapon branch - the headline of an "Equipment Upgrade (x15)" wish - did nothing at all.
+	#
+	#   `defense` and `speed` are read ONLY when `item.crafted` is true, and there they compounded
+	#   with no damping whatsoever. Measured on crafted armour at 50 defense, a wish granting a
+	#   midpoint 9 upgrades: 1 wish -> 95, 3 wishes -> 358, 5 -> 1410, 10 -> 44799. The source is
+	#   a `wish_granter` monster at 10% per kill, so it repeats.
+	#
+	# Item POWER already has one owner: `level`, through `_get_effective_item_level`, which is
+	# logarithmic above 50 on purpose - L100 counts as 135, L500 as 182, L1000 as 198. Two systems
+	# answering "how strong is this item", one damped and one not, is the whole fault. The damped
+	# one is the real one, so it is now the only one.
 
 	# Update name to reflect new level
 	var base_name = item.get("base_name", "")

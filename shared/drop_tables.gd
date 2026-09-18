@@ -4987,7 +4987,7 @@ const AFFIX_COUNTS = {
 	# item's power run on different curves:
 	#
 	#   base stats  effective_level * rarity_mult, and `_get_effective_item_level` is
-	#               LOGARITHMIC above 50 - a level-1000 item counts as 148
+	#               LOGARITHMIC above 50 - a level-1000 item counts as 198
 	#   affixes     base + per_level * item_level, LINEAR in the raw level and uncapped
 	#
 	# The character's own stats scale linearly too (~1013 strength at L1000, ~5013 at L5000),
