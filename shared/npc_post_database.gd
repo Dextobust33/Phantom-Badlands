@@ -351,6 +351,81 @@ static func densify_posts(existing_posts: Array, seed: int) -> Array:
 
 	return posts
 
+## ⚑ SUFFIXES FOR A POST WHOSE NAME IS ALREADY TAKEN. In-setting words rather than numbers,
+## because this is a name a player reads on a map and "Iron Peak 2" is not a place.
+const NAME_DISAMBIGUATORS := ["Reach", "Hollow", "Rise", "Watch", "Deep", "Verge", "Cross",
+	"Rest", "Gate", "End"]
+
+
+static func deduplicate_post_names(posts: Array) -> int:
+	"""Give every post a unique NAME, so its synthesised id is unique too. Returns how many changed.
+
+	⛑ THE ID IS THE NAME. `WorldSystem.npc_post_id()` builds a post's id out of its name because
+	posts carry no id of their own, and the server keys its coordinate table by that id. Two posts
+	sharing a name therefore share a key, and one of them silently answers for the other - which had
+	a board at distance 74 being priced as though it stood at distance 3037, for a payout roughly
+	3000x too large. Unique names are the fix and are worth having on their own: two places called
+	"Iron Peak" is confusing on a map regardless of what it does to arithmetic.
+
+	⛑ THE ONE NEAREST THE ORIGIN KEEPS THE PLAIN NAME. The rule has to be deterministic or a
+	post would be renamed differently on the next boot and its id - and every quest id built from it
+	- would move again. Distance, then x, then y: a total order that depends on nothing but the
+	post's own position, which never changes.
+	"""
+	var by_name := {}
+	for post in posts:
+		var nm := String(post.get("name", "unknown"))
+		if not by_name.has(nm):
+			by_name[nm] = []
+		by_name[nm].append(post)
+
+	# Every name in use, so a generated name cannot collide with a DIFFERENT post's real name.
+	var taken := {}
+	for nm in by_name.keys():
+		taken[String(nm).to_lower()] = true
+
+	var changed := 0
+	for nm in by_name.keys():
+		var group: Array = by_name[nm]
+		if group.size() < 2:
+			continue
+		# Deterministic: nearest to the origin first, ties broken by x then y.
+		group.sort_custom(func(a, b):
+			var da: float = float(a.get("x", 0)) * float(a.get("x", 0)) + float(a.get("y", 0)) * float(a.get("y", 0))
+			var db: float = float(b.get("x", 0)) * float(b.get("x", 0)) + float(b.get("y", 0)) * float(b.get("y", 0))
+			if da != db:
+				return da < db
+			if float(a.get("x", 0)) != float(b.get("x", 0)):
+				return float(a.get("x", 0)) < float(b.get("x", 0))
+			return float(a.get("y", 0)) < float(b.get("y", 0)))
+		# group[0] keeps the plain name; the rest are renamed.
+		for i in range(1, group.size()):
+			var post = group[i]
+			var base := String(nm)
+			var picked := ""
+			# ⛑ START FROM A POSITION-DERIVED OFFSET, not from index 0. Trying the list in
+			# order gave SIXTEEN OF EIGHTEEN posts the name "... Reach", because each base name
+			# is different so the first suffix is always free. Deterministic (the position never
+			# changes, so neither does the name) but varied.
+			var _off: int = absi(int(post.get("x", 0)) * 31 + int(post.get("y", 0)) * 17) % NAME_DISAMBIGUATORS.size()
+			for _si in range(NAME_DISAMBIGUATORS.size()):
+				var suffix = NAME_DISAMBIGUATORS[(_off + _si) % NAME_DISAMBIGUATORS.size()]
+				# Never "Wind Keep Keep": a suffix already present in the name reads as a stutter.
+				if base.to_lower().ends_with(" " + String(suffix).to_lower()):
+					continue
+				var candidate := "%s %s" % [base, suffix]
+				if not taken.has(candidate.to_lower()):
+					picked = candidate
+					break
+			if picked == "":
+				# Every suffix taken - fall back to the coordinates, which are unique by construction.
+				picked = "%s %d.%d" % [base, int(post.get("x", 0)), int(post.get("y", 0))]
+			taken[picked.to_lower()] = true
+			post["name"] = picked
+			changed += 1
+	return changed
+
+
 static func backfill_post_fields(posts: Array, seed: int) -> Array:
 	"""Slice 6L — migrate posts saved before tier/region_name existed. Re-uses
 	the world seed so the same world reload produces stable names across

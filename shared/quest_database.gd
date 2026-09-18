@@ -2664,7 +2664,18 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 
 	# Rewards scale with effective level (area + player) using pow() to match monster XP
 	# Player-level scaling: high-level players at low-level posts still get reasonable quest XP
-	var effective_reward_level = max(area_level, int(capped_level * 0.8))
+	# ⛑ REWARDS DO NOT SCALE TO THE PLAYER. Owner 2026-09-17: *"maybe it's scaling to my
+	# character level? It shouldn't matter what level I am for reward calculations."*
+	#
+	# This used to be `max(area_level, capped_level * 0.8)`, so a level-20 character at a
+	# starter post (area_level ~5) was paid from 16 instead of 5 - and XP goes as
+	# level^2.2, so that alone inflated the board by about TEN TIMES. It is the direct
+	# cause of *"The XP on all the others looks like it may be way too high"*.
+	#
+	# The job is worth what the job is worth. REQUIREMENTS still scale to the player
+	# (`capped_level` is untouched below) - how many you must kill and how tough they are
+	# should follow you. What you are PAID follows the place and the task.
+	var effective_reward_level = area_level
 	var level_factor = pow(effective_reward_level + 1, 2.2)
 	var tier_base_xp = 3 + index * 2
 	# Distance bonus: further posts give better rewards to incentivize exploration

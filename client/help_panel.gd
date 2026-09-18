@@ -848,6 +848,25 @@ func show_index() -> void:
 		_close_button.grab_focus()
 
 
+func _plain_title(raw: String) -> String:
+	"""A topic title with its BBCode removed, for surfaces that render text literally.
+
+	Every title is authored with colour tags because the panel HEADING is a RichTextLabel. A Button
+	is not, so it needs the words alone."""
+	var out := ""
+	var depth := 0
+	for i in range(raw.length()):
+		var ch := raw[i]
+		if ch == "[":
+			depth += 1
+		elif ch == "]":
+			if depth > 0:
+				depth -= 1
+		elif depth == 0:
+			out += ch
+	return out.strip_edges()
+
+
 func _build_index_if_needed() -> void:
 	if _index_box == null or _index_box.get_child_count() > 0:
 		return
@@ -860,7 +879,12 @@ func _build_index_if_needed() -> void:
 	rows.sort_custom(func(a, b): return String(a[0]).nocasecmp_to(String(b[0])) < 0)
 	for r in rows:
 		var b := Button.new()
-		b.text = String(r[0])
+		# ⛑ STRIP THE BBCODE. A Button renders its text LITERALLY, and all 36 topic
+		# titles are authored with colour tags for the panel heading - so the index I built
+		# listed every entry as "[color=#FFD700]Inventory[/color]". Owner 2026-09-17:
+		# *"they all have color tags in their selections like [color=...]"*. The heading
+		# still uses the tagged title; only the button needs it plain.
+		b.text = _plain_title(String(r[0]))
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.focus_mode = Control.FOCUS_ALL
 		b.custom_minimum_size = Vector2(0, 26)

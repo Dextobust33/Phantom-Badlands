@@ -707,7 +707,20 @@ func _ready():
 		if pre_size < NpcPostDatabaseScript.POST_COUNT_TARGET:
 			npc_posts = NpcPostDatabaseScript.densify_posts(npc_posts, chunk_manager.world_seed)
 		var did_densify = npc_posts.size() > pre_size
-		if did_backfill or did_densify:
+		# ⛑ UNIQUE NAMES, BECAUSE THE NAME *IS* THE ID. `WorldSystem.npc_post_id()`
+		# synthesises a post's id from its name, and the coordinate table below is keyed by
+		# that id - so two posts sharing a name share a key and one answers for the other.
+		# Measured on the owner's world: 17 of 102 names duplicated across 120 posts, and a
+		# board at distance 74 was being priced as though it stood at distance 3037. XP goes
+		# as pow(area_level+1, 2.2), so that 42x error in the level was ~3000x in the payout
+		# - the 117,780,523 XP quest the owner photographed on 2026-09-17.
+		#
+		# Runs BEFORE the coordinate registration below, and persists, so the rename happens
+		# once and every later boot is a no-op.
+		var renamed: int = NpcPostDatabaseScript.deduplicate_post_names(npc_posts)
+		if renamed > 0:
+			log_message("Renamed %d duplicate post name(s) - a post's id is built from its name" % renamed)
+		if did_backfill or did_densify or renamed > 0:
 			chunk_manager.save_npc_posts(npc_posts)
 			if did_densify:
 				log_message("Audit #11 Slice 5: densified %d → %d NPC posts" % [pre_size, npc_posts.size()])
