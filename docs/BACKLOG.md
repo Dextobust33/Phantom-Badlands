@@ -1395,7 +1395,8 @@ does, presses whatever slot 0 actually holds, and prints whether the world came 
 binding in one run, and it also caught its own first version pressing `jobs_close` when the action
 is `job_close`. Every sub-view of the More menu goes through one exit now.
 
-- [ ] *"Market and alchemy crafting still display Travel stances for a brief second before it hides
+- [x] **DONE 2026-09-17 — hidden on the keypress, and the cause was the server round trip,
+      not the frame ordering.** Was: *"Market and alchemy crafting still display Travel stances for a brief second before it hides
       when they are opened, the stances need to hide before those menus are drawn, not after."*
       ☑ **MEASURED 2026-09-17, and the answer moves the item.** New shots scene `stancetiming`
       prints a PER-FRAME timeline (a row only when something changes) of the stance bar, the
@@ -1474,9 +1475,11 @@ is `job_close`. Every sub-view of the More menu goes through one exit now.
 - [x] **Dungeon and party-combat screens — REVIEWED WITH THE OWNER 2026-09-16** across several
       rounds of captures (party dungeon at 64px tiles, party combat, the completion screen). What
       came out of it is recorded in the v0.9.795/796 blocks above.
-- [ ] **Hotkey buttons in combat and dungeons** - one styling function, so they should carry over,
-      but they have not been SEEN there. That is the "checked the ingredients, never called the
-      lookup" trap.
+- [x] **DONE 2026-09-17 — SEEN in both, which is what the item asked for.** Captured a dungeon
+      floor and a combat round: the hotkey pills (`Space Q W E R 1 2 3 4 5`) are present and
+      styled in both, and the shortcut row carries into the dungeon too. The worry was unfounded
+      — but it was the right worry, and the only way to retire it was to look. Was: one styling
+      function, so they should carry over, but they have not been SEEN there.
 
 ### ⛑ WHAT THIS SESSION COST, AND THE TWO LESSONS WORTH KEEPING
 
@@ -1994,7 +1997,26 @@ chain after it), party half two (independent movement + join-in-progress), contr
       applied at the **release gate** instead, as a new `overworld_art` check — which is where
       fatal belongs, at the build, rather than in front of a player who cannot do anything about
       it. Verified: `[BUILDVERIFY] overworld_art=true`.
-- [ ] **The Coords/Area boxes can cover the corners of the map** — **re-scoped 2026-09-17, and it
+- [x] **CLOSED 2026-09-17 by measuring it — it describes a configuration that no longer exists.**
+      The item asked for *"the screen measured, not the code reasoned about"*, so:
+
+      * **Captured all three states it names.** In a **dungeon** the right column is the run log and
+        there is no overworld map on screen at all; in **combat** the battle scene fills the screen,
+        same. Neither shows a Coords or Area box anywhere.
+      * **Measured the rects** (`tools/probe/map_widget_overlap.gd`) in the exact layout the item is
+        about, the one `_place_map_widgets(false)` builds: each box is **240x52 = 1.1% of the map**,
+        at the top-left and top-right — and **both are not visible** there, so real coverage is
+        **0%**. The derived estimate this item carried (*"the top four rows of about a third of the
+        width at each corner"*) was in TEXT-CELL terms and was several times too big; it was
+        describing the retired text map.
+
+      ⛑ **AND THE PROBE'S FIRST RUN WAS WRONG IN THE FLATTERING DIRECTION.**
+      `coord_post_label` is built lazily by `_ensure_coord_post_label()` on the first location
+      update, so headless it was simply **null** — the probe printed "(absent)" and then a
+      confident **0.0%** for a box that did not exist. A measurement that silently drops one of the
+      two things it measures is worse than none. It builds both before measuring now.
+
+      Was: **The Coords/Area boxes can cover the corners of the map** — **re-scoped 2026-09-17, and it
       was never really about the ring.** Read off `_place_map_widgets`: on the sprite canvas — the
       only overworld renderer now — those boxes live in the **margins beside** the map, so there is
       nothing to occlude. They *"float over its corners"* only when the map is drawn into
@@ -5040,7 +5062,11 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       could not be rebound at all, in the exact menu a numpad-less player is sent to.
       The help popup no longer opens with "the best way to control your character is the numpad".
 
-- [ ] **⚑ FULL UI / NAVIGATION AUDIT — and it goes BEFORE controller support.**
+- [x] **DONE 2026-09-17 — ⚑ FULL UI / NAVIGATION AUDIT.** The map is a generated tool
+      (`tools/ui_navigation_map.py`), every capability has a UI door, and the sweep ran twice:
+      **119 chat commands → 72**. The map reports **0 arms are a surface's ONLY door** and
+      **0 kept by hand**. What remains is 8 speech commands, 27 admin (kept by CLAUDE.md rule)
+      and 17 argument-taking arms whose capability is reachable. Was:
       Owner 2026-09-17: *"At some point we need to go through every menu path in the game, assess
       what is still being used and what can be removed/retired, as well as ways to simplify them.
       We mentioned controller support or phone support at some point, that simplification will be
@@ -5403,7 +5429,41 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       inflating costs against a 62K balance changes nothing for an established player while
       pricing a new one out entirely.
 
-- [ ] **Controller support (NEXT).** Godot has joypad input built in; a D-pad or stick gives all
+- [x] **MOSTLY DONE 2026-09-17 — controller support, slices 1 and 2.**
+
+      ⚑ **MEASURED FIRST, AND THE MEASUREMENT IS THE WHOLE STORY.** The engine ships **91
+      default actions and only SIX carry any joypad binding**. `ui_up/down/left/right` have the
+      D-pad AND the left stick, so focus navigation between Buttons already worked - which is why
+      the audit made every new panel row a real `Button`. But **`ui_accept` and `ui_cancel` have
+      no pad event at all**, so a pad could move the highlight over every screen in the game and
+      never press anything. Two events was the difference between unusable and usable, and no
+      amount of UI work would have found it - it is in the engine's defaults, not in this codebase.
+
+      Set from CODE, like `vsync_mode` and `max_fps`, because the editor strips project.godot
+      settings it considers default on every `--editor --quit`. `--buildverify` reports them and
+      the release gate asserts them.
+
+      ⛑ **AND THE GATE CAUGHT AN ORDERING BUG ON ITS FIRST RUN** - `--buildverify` prints and
+      quits at the top of `_ready`, and the binding call sat 160 lines below it, so it reported
+      `ui_accept=0` in a build that had them. The probe missed it because it waits eight frames.
+      **Anything `--buildverify` reports must be established ABOVE the `--buildverify` block.**
+
+      Mapping: D-pad/stick move (reusing `_arrow_mask_to_dir`, the ONE direction table - writing a
+      second one is what made the client's directions wrong in every entry last time); A/X/Y/LB/RB
+      are action slots 0-4; B backs out; left-stick click hunts; **Back** focuses the action bar
+      (all ten buttons are already `FOCUS_ALL`, measured 10/10, so that is the whole feature for
+      slots 5-9); **Start** opens the Menu tree, which is the pad's guaranteed door because the
+      shortcut row is deliberately `FOCUS_NONE`.
+
+      Probe: `tools/probe/controller_bindings.gd` injects a real pad event rather than re-reading
+      what the code wrote, and records the engine default that motivated the work. Proven to fire.
+
+- [ ] **⛑ CONTROLLER: NOT ONE KEY HAS BEEN PRESSED ON A REAL PAD.** `Input.get_connected_joypads()`
+      was **empty** for every measurement above. Everything is verified by injected events and by
+      reading the InputMap, which proves the WIRING and says nothing about the FEEL: whether the
+      move cooldown suits a held stick, whether the deadzone is right, whether Back-to-focus-the-bar
+      is discoverable, or whether a diagonal is comfortable. That needs a pad in a hand.
+      Was: Godot has joypad input built in; a D-pad or stick gives all
       eight directions natively and the face buttons map to the action bar. Scope it as its own
       piece. Note `_on_move_button` already exists as an orphaned 8-way handler with no caller —
       an on-screen pad that was built and removed — and it is the natural target for both a
