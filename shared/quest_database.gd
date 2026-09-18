@@ -2928,6 +2928,19 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 		# is the GRADE that has to match, and in BOTH directions: no E2 reachable from
 		# level-14 country, and no H1 sitting in high country either.
 		var _land: Dictionary = _land_grade_for_post(trading_post_id)
+		# ⚑ AND ABOUT ONE QUEST IN TWELVE POINTS AT A RARE ONE. Owner 2026-09-18, agreeing to
+		# variance: *"it would help keep those finds interesting and diversify the Quests offered
+		# on the board BUT, it shouldn't be huge jumps like we had before where it goes up entire
+		# grades."* So: 1-3 ranks, clamped inside the same letter, never a new grade.
+		#
+		# ⛑ KEYED ON `quest_id`, WHICH IS WHAT MAKES IT SAFE. This grade is stamped into the
+		# quest and the server builds the instance from it, but the board, the accept path and
+		# the turn-in all pass through here - so a `randi()` would advertise one grade and
+		# deliver another, which is precisely the v0.9.802 bug ("Board showed H2, where it
+		# points me shows G2"). This function ALREADY seeds from `quest_id.hash()` for the same
+		# reason, twenty lines up; the variance simply joins that discipline.
+		_land = PowerRankScript.varied_grade(int(_land.get("tier", 1)),
+			int(_land.get("rank", 0)), "q:" + quest_id)
 		var _d_tier: int = int(_land.get("tier", dungeon_info.get("base_tier", 1)))
 		var _d_rank: int = int(_land.get("rank", 0))
 		if _d_rank <= 0:

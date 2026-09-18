@@ -32349,6 +32349,16 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 	# The TYPE is untouched - a Goblin Dungeon in high country stays possible and stays
 	# deliberate. It is the GRADE that now matches, in both directions.
 	var _land_g: Dictionary = _grade_of_land(world_x, world_y)
+	# ⚑ AND A RARE ONE STANDS ABOVE ITS LAND. About one dungeon in twelve rolls 1-3 ranks
+	# higher, clamped inside its own letter - owner 2026-09-18, wanting *"some variance and
+	# rare finds"* but explicitly NOT *"huge jumps like we had before where it goes up entire
+	# grades (like a G2 where an H2 normally is)"*.
+	#
+	# Keyed on the dungeon's POSITION, so the roll is a pure function of which dungeon this
+	# is. The overworld marker, the entry warning and the Atlas each work the grade out
+	# independently; a `randi()` here would let them disagree, which is v0.9.802's bug.
+	_land_g = PowerRankScript.varied_grade(int(_land_g.get("tier", 1)),
+		int(_land_g.get("rank", 1)), "wd:%d,%d" % [world_x, world_y])
 	var _base_tier: int = int(_land_g.get("tier", dungeon_data.get("base_tier", 1)))
 	var sub_tier = int(_land_g.get("rank", 0))
 	if sub_tier <= 0:
@@ -32613,6 +32623,16 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	# The GRADE is a reading of the land, not a number off the type. This is what makes an A5
 	# Goblin Dungeon possible and what stops a G2 standing in L15-17 country.
 	var _land: Dictionary = _grade_of_land(world_x, world_y)
+	# ⚑ AND A RARE ONE STANDS ABOVE ITS LAND. About one dungeon in twelve rolls 1-3 ranks
+	# higher, clamped inside its own letter - owner 2026-09-18, wanting *"some variance and
+	# rare finds"* but explicitly NOT *"huge jumps like we had before where it goes up entire
+	# grades (like a G2 where an H2 normally is)"*.
+	#
+	# Keyed on the dungeon's POSITION, so the roll is a pure function of which dungeon this
+	# is. The overworld marker, the entry warning and the Atlas each work the grade out
+	# independently; a `randi()` here would let them disagree, which is v0.9.802's bug.
+	_land = PowerRankScript.varied_grade(int(_land["tier"]), int(_land["rank"]),
+		"wd:%d,%d" % [world_x, world_y])
 	var grade_tier: int = int(_land["tier"])
 	var sub_tier: int = int(_land["rank"])
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(grade_tier, sub_tier)

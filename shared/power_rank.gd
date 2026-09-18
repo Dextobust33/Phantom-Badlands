@@ -155,6 +155,66 @@ static func grade_for_level(level: int) -> Dictionary:
 	return {"tier": t, "rank": rank_for_level(t, level)}
 
 
+## How often a dungeon is a RARE FIND - one in this many stands above its land.
+##
+## Owner 2026-09-18: *"I'm fine with some variance and rare finds, it would help keep those finds
+## interesting and diversify the Quests offered on the board BUT, it shouldn't be huge jumps like
+## we had before where it goes up entire grades (like a G2 where an H2 normally is)."*
+const RARE_GRADE_ONE_IN: int = 12
+## The most ranks a rare find may add. THREE, and the ceiling is the point rather than the number:
+## one rank is ~3% power and nine ranks is a whole grade, so +3 is about +9% - a real find that is
+## never a trap. The letter is clamped separately below, so this cannot reach the next grade even
+## at the top of a band.
+const RARE_GRADE_MAX_BUMP: int = 3
+
+
+static func _avalanche(x: int) -> int:
+	"""Scramble an integer so every input bit affects every output bit (splitmix64 finaliser).
+
+	Needed because `varied_grade` is keyed on STRUCTURED strings - world coordinates and quest
+	ids - and a raw string hash of those correlates badly in exactly the bits a modulus reads.
+	Returns a non-negative value so `%` behaves."""
+	var z: int = x
+	z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
+	z = (z ^ (z >> 27)) * 0x94D049BB133111EB
+	z = z ^ (z >> 31)
+	return z & 0x3FFFFFFFFFFFFFFF
+
+static func varied_grade(tier: int, rank: int, key: String) -> Dictionary:
+	"""A dungeon's grade, which is USUALLY its land's and occasionally a little above it.
+
+	⛑ DETERMINISTIC FROM `key`, NOT RANDOM, AND THAT IS THE WHOLE DESIGN. A dungeon's grade is
+	read from several places at different times - the overworld marker, the quest board, the
+	accept path, the entry warning, the turn-in - and they must all agree. Rolling `randi()` at
+	any one of them recreates the exact bug fixed in v0.9.802, where the board advertised H2 and
+	the dungeon behind it was G2. Owner then: *"Board showed H2, where it points me shows G2."*
+
+	Hashing the dungeon's own identity instead means every caller computes the same answer with
+	no storage, no threading it through as an argument, and no way for two surfaces to disagree.
+	Pass something stable and unique to the dungeon: its world position, or a quest id.
+
+	⛑ THE LETTER NEVER CHANGES. `mini(..., RANKS)` clamps inside the tier, so G5 can become G8
+	and can never become F1. That is the owner's explicit constraint - the variance exists to make
+	a find interesting, not to put a grade of extra difficulty in front of someone who read the
+	map and thought they were safe. It also means this cannot undo the v0.9.802 fix that made a
+	dungeon match its neighbourhood."""
+	if key == "" or RARE_GRADE_ONE_IN <= 1:
+		return {"tier": tier, "rank": rank}
+	# ⛑ THE HASH IS AVALANCHED FIRST, AND A PROBE IS WHY. Taking `hash(key) % 12` directly
+	# looked fine across a broad sweep (7.4% raised, near the 8.3% target) and was BROKEN for
+	# the keys this actually receives: 300 dungeons along one line - "wd:0,0", "wd:13,0",
+	# "wd:26,0" ... - every one came back with the identical grade, because Godot's string
+	# hash carries structure in its low bits and structured keys are all this is ever given.
+	# The aggregate rate hid it completely; only asking "do two dungeons in the same country
+	# ever differ" found it. Mixing decorrelates the bits before any modulus touches them.
+	var h: int = _avalanche(hash(key))
+	# Two independent draws, from DIFFERENT parts of the mixed word rather than from the same
+	# low bits: whether it is rare, and by how much.
+	if (h % RARE_GRADE_ONE_IN) != 0:
+		return {"tier": tier, "rank": rank}
+	var bump: int = 1 + ((h >> 20) % RARE_GRADE_MAX_BUMP)
+	return {"tier": tier, "rank": mini(rank + bump, RANKS)}
+
 static func letter(tier: int) -> String:
 	"""The tier's letter. Clamped rather than erroring: a bad tier must still print something."""
 	return LADDER[clampi(tier - 1, 0, LADDER.size() - 1)]

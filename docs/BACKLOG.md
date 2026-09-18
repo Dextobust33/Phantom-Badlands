@@ -6582,26 +6582,35 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       describing what it replaced. **Fourth shipped-but-unticked item found this way; see
       [[feedback_verify_before_building]].**
 
-      **⛑ AXIS 2 (grade rarity) CANNOT BE DONE AS WRITTEN, because there is no roll to weight.**
-      The entry asks that *"a rank 9 is rarer than a rank 1 in the same country"*. Today a
-      dungeon's grade is **deterministic**: `_grade_of_land(x, y)` takes the post-anchored level of
-      the tile and hands it to `PowerRank.grade_for_level`, which is a pure function - same tile,
-      same grade, every time, with no randomness anywhere in the path. So within one country every
-      dungeon is the SAME grade, and a rank 9 is not rare there, it is impossible unless the land
-      itself is rank-9 land. Each grade is exactly as common as the amount of ground at its level.
+      **✅ AXIS 2 (grade rarity) — DONE 2026-09-18, after an owner decision.** It could not be
+      done as the entry described it, because there was no roll to weight: a dungeon's grade was
+      **deterministic** from the land, so within one country every dungeon was the same grade and a
+      rank 9 there was not rare, it was impossible. The real question was whether to INTRODUCE
+      variance. Owner: *"I'm fine with some variance and rare finds, it would help keep those finds
+      interesting and diversify the Quests offered on the board BUT, it shouldn't be huge jumps
+      like we had before where it goes up entire grades (like a G2 where an H2 normally is)."*
 
-      **So the real question is a design one, and it is the owner's:** should a dungeon's grade
-      VARY around its land's baseline - so that rank-5 country occasionally produces a rank 8 or 9
-      as a genuine find - or should the grade stay locked to the land, with rarity living entirely
-      in the TYPE (which is what already ships)?
+      Chosen from measured options: **1-3 ranks above the land, clamped inside the same letter,
+      about one dungeon in twelve.** One rank is ~3% power and nine ranks is a whole grade, so the
+      cap is ~+9% - a real find that is never a trap. `PowerRank.varied_grade()`, applied at both
+      world spawn paths and at the quest board.
 
-      That is not a weighting change; it is **introducing variance where there is currently none**,
-      and it pulls directly against the fix shipped in v0.9.802. Owner, on that: *"Dungeons should
-      be of appropriate level to the neighborhood they are in."* A rank 9 in rank-5 country is
-      **one grade of extra difficulty** (nine ranks = one grade), which is survivable and probably
-      the interesting version - but it is the same shape as the trap that was just removed, so the
-      variance would need a hard ceiling and the entry screen would have to advertise it loudly.
-      **Ask before building.**
+      **⛑ HASHED FROM THE DUNGEON'S IDENTITY, NEVER `randi()`**, and that is the whole safety
+      argument. A grade is computed independently by the overworld marker, the quest board, the
+      accept path, the entry warning and the turn-in; a roll at any of them re-creates v0.9.802's
+      bug, which the owner met as *"Board showed H2, where it points me shows G2."* The key is the
+      world POSITION for a spawned dungeon and the QUEST ID for a board quest - both stable for the
+      life of the thing they identify, so every surface computes the same answer with no storage.
+
+      **⛑ AND THE PROBE CAUGHT A REAL DEFECT THAT THE AGGREGATE HID.** The first version took
+      `hash(key) % 12` directly. Across a broad sweep that measured **7.4% raised against an 8.3%
+      target - correct** - and it was badly broken for the keys this actually receives: 300
+      dungeons along one line (`wd:0,0`, `wd:13,0`, `wd:26,0` ...) every one came back with the
+      **identical** grade, because Godot's string hash carries structure in its low bits and
+      structured keys are all this is ever given. The rate after the fix is *also* 7.4% - the
+      aggregate could never have found it. Only asking "do two dungeons in the same country ever
+      differ" did (1 distinct rank before, 4 after). The hash is avalanched before any modulus now.
+      `tools/probe/rare_dungeon_grade.gd`.
 
 - [x] **A DUNGEON CONTAINS EXACTLY ONE SPECIES, and the Atlas advertises otherwise.** Found  **DONE and VERIFIED 2026-09-13** - `tools/probe/dungeon_species_mix.gd` PASSES: a dungeon holds a mix, and its floor eggs follow what actually spawned.
       2026-09-11 answering the owner's question about how monster tiers work in dungeons.
