@@ -4107,6 +4107,67 @@ static func get_post_specialization_bonus(post_id: String, skill_name: String) -
 const CRAFTED_BASE_SHARE := 0.80
 
 
+## What share of a DROPPED item the RUNES on a crafted one contribute. With CRAFTED_BASE_SHARE
+## this makes the pair 1.15x a median drop - the owner's *"beats a typical drop, loses to a lucky
+## one"*.
+const RUNE_SHARE := 0.35
+
+
+static func enchant_cap(stat: String, item: Dictionary, drop_tables) -> int:
+	"""The most of `stat` an item may carry from enchanting, scaled to the ITEM'S LEVEL.
+
+	⛑ THIS WAS A FLAT NUMBER AND IT WAS THE BINDING CONSTRAINT ON THE WHOLE SYSTEM.
+	`ENCHANTMENT_STAT_CAPS` is authored as attack 60, defense 60, max_hp 200, the stats 20 - and
+	it did not move with level. At item level 8 a +60 attack ceiling is more than TRIPLE the whole
+	item, whose median total is about 18. At level 140 the same ceiling is under 8% of an item
+	totalling 784. So no rune rebalance could ever have escaped it: the cap binds first, and a fix
+	that touched only rune values would have measured better in a probe and changed nothing in
+	play above the mid game.
+
+	⛑ THE AUTHORED RATIOS ARE KEPT; ONLY THE SIZE IS DERIVED. attack 60 against strength 20 says
+	the author thought three points of attack were worth one of strength, and that judgement is
+	preserved by scaling every entry against the table's own mean. Same principle as
+	`curve_sized_base_stats`: the identity is authored, the magnitude is measured.
+
+	Falls back to the flat table when there is no level or no drop_tables, so nothing can end up
+	with NO cap - an uncapped enchantment is worse than a badly sized one."""
+	var flat: int = int(ENCHANTMENT_STAT_CAPS.get(stat, 60))
+	if drop_tables == null or not (item is Dictionary):
+		return flat
+	var lvl: int = int(item.get("level", 0))
+	if lvl <= 0:
+		return flat
+	var power: float = float(drop_tables.expected_item_power(lvl))
+	if power <= 0.0:
+		return flat
+	# The whole enchantment budget for this item, split across the types it may carry.
+	var per_type: float = (power * RUNE_SHARE) / float(maxi(1, MAX_ENCHANTMENT_TYPES))
+	# ...then weighted by how generous the author was with THIS stat relative to the others.
+	#
+	# ⛑ NORMALISED AGAINST THE TOP FEW, NOT THE WHOLE TABLE, and measurement is why. Dividing
+	# by the mean of all thirteen entries looked right and put the PAIR at 1.68x a drop instead
+	# of the target 1.15x - uniformly, at every level, which is the tell that the mechanism was
+	# sound and only the constant was wrong. The cause: a player enchants the three stats with
+	# the BIGGEST caps (max_hp 200, max_mana 150, attack 60), and those sit far above a mean
+	# dragged down by ten entries of 15-20. Sizing a budget against the average while players
+	# spend it on the maximum overshoots by exactly that ratio.
+	#
+	# So the reference is the best-case build - the three largest - which is what balance should
+	# be sized against anyway.
+	var sorted_caps: Array = []
+	for k in ENCHANTMENT_STAT_CAPS:
+		sorted_caps.append(float(ENCHANTMENT_STAT_CAPS[k]))
+	sorted_caps.sort()
+	sorted_caps.reverse()
+	var top_n: int = mini(MAX_ENCHANTMENT_TYPES, sorted_caps.size())
+	var total := 0.0
+	for i in range(top_n):
+		total += float(sorted_caps[i])
+	var mean: float = total / float(maxi(1, top_n))
+	if mean <= 0.0:
+		return flat
+	return maxi(1, int(round(per_type * (float(flat) / mean))))
+
 static func curve_sized_base_stats(recipe: Dictionary, drop_tables) -> Dictionary:
 	"""A recipe's output stats, rescaled to the level curve that DROPS are generated from.
 

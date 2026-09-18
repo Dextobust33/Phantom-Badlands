@@ -11600,7 +11600,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			var all_stats = ["attack", "defense", "speed", "max_hp", "strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
 			var applied_count = 0
 			for s in all_stats:
-				var cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(s, 60)
+				var cap = CraftingDatabaseScript.enchant_cap(s, target_item, drop_tables)
 				var current = target_item["enchantments"].get(s, 0)
 				if current < cap:
 					var actual_bonus = mini(bonus, cap - current)
@@ -11622,7 +11622,7 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				send_character_update(peer_id)
 				return
 		else:
-			var cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+			var cap = CraftingDatabaseScript.enchant_cap(stat, target_item, drop_tables)
 			var current = target_item["enchantments"].get(stat, 0)
 			if current >= cap:
 				send_to_peer(peer_id, {
@@ -26408,6 +26408,11 @@ func _get_recipe_description(recipe: Dictionary) -> String:
 			var stat = effect.get("stat", "attack")
 			var bonus = effect.get("bonus", 0)
 			var target = recipe.get("target_slot", "gear")
+			# ⛑ THE FLAT TABLE ON PURPOSE HERE. This is recipe DESCRIPTION text - "up to +N" shown
+			# before the player has chosen an item - so there is no item to scale against. Every
+			# other cap site takes `target_item` and uses `enchant_cap`; this one cannot, and
+			# inventing a level to make it look consistent would print a number the player will
+			# not get.
 			var recipe_max = recipe.get("max_enchant_value", CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60))
 			return "+%d %s to %s (up to +%d)" % [bonus, stat, target, recipe_max]
 		"enhancement":
@@ -27023,8 +27028,8 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
 						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 					# Check global per-stat cap
-					elif current_value >= CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60):
-						var stat_cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+					elif current_value >= CraftingDatabaseScript.enchant_cap(stat, target_item, drop_tables):
+						var stat_cap = CraftingDatabaseScript.enchant_cap(stat, target_item, drop_tables)
 						result_message = "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [target_item.get("name", "item"), stat, stat_cap]
 						for mat_id in recipe.materials:
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
@@ -27039,7 +27044,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 						else:
 							# Clamp bonus to tightest of recipe bracket and global cap
-							var stat_cap_val = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+							var stat_cap_val = CraftingDatabaseScript.enchant_cap(stat, target_item, drop_tables)
 							var effective_cap = mini(recipe_enchant_max, stat_cap_val)
 							var remaining = effective_cap - current_value
 							if bonus > remaining:
@@ -28054,8 +28059,8 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 						for mat_id in recipe.materials:
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
 						result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
-					elif current_value >= CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60):
-						var stat_cap = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+					elif current_value >= CraftingDatabaseScript.enchant_cap(stat, target_item, drop_tables):
+						var stat_cap = CraftingDatabaseScript.enchant_cap(stat, target_item, drop_tables)
 						result_message = "[color=#FFFF00]%s has reached the %s enchantment cap (+%d)![/color]" % [target_item.get("name", "item"), stat, stat_cap]
 						for mat_id in recipe.materials:
 							character.add_crafting_material(mat_id, recipe.materials[mat_id])
@@ -28068,7 +28073,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 								character.add_crafting_material(mat_id, recipe.materials[mat_id])
 							result_message += "\n[color=#FFFF00]Materials refunded.[/color]"
 						else:
-							var stat_cap_val = CraftingDatabaseScript.ENCHANTMENT_STAT_CAPS.get(stat, 60)
+							var stat_cap_val = CraftingDatabaseScript.enchant_cap(stat, target_item, drop_tables)
 							var effective_cap = mini(recipe_enchant_max, stat_cap_val)
 							var remaining = effective_cap - current_value
 							if bonus > remaining:

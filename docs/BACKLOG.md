@@ -853,6 +853,12 @@ Currently queued:
       is an interim anchor calibrated against sinks the owner has already said are wrong, so any
       valor number tuned before it lands is tuned against a moving target.
 - [ ] **Forcefield's 3-6x nerf still wants a live feel check** (from the 2026-09-02 balance day).
+- [ ] **Crafted gear and enchanting were re-sized to the drop curve** (2026-09-18). The crafted +
+      runed PAIR moved from ~0.5x a drop to **1.15x**, and the per-item enchantment ceiling now
+      scales with level instead of being flat. The reference player has never carried crafted gear,
+      so the chain has never seen this - and gear is one of the things it is most sensitive to.
+      Re-measure with `crafted_pair_worth.gd` after any drop-table change, since the target is
+      derived from the drop generator and moves with it.
 - [ ] **Knight +15% damage and Mentee +50% XP now reach the dice** (2026-09-18). Both were dead
       when the curve was last fitted, so the reference player has never carried either. Rare
       endgame titles only, so the effect on the aggregate should be small - but the Knight damage
@@ -7464,7 +7470,39 @@ something was dropped, and it sat unnoticed for eleven days.
         INDEPENDENT sample, because checking the sizing against the number it was built from would
         be circular and would report 0.80x forever.
 
-      **Still to do: ladders two and three** - `rune_cap` and the flat `ENCHANTMENT_STAT_CAPS`.
+      **✅ STEP 9 — LADDERS TWO AND THREE, and the PAIR lands on target, 2026-09-18.**
+      `CraftingDatabase.enchant_cap(stat, item, drop_tables)` replaces the flat per-item ceiling at
+      **all nine enforcement sites** (one is left flat on purpose: it renders recipe DESCRIPTION
+      text before any item is chosen, so there is nothing to scale against and inventing a level
+      would print a number the player will not get).
+
+      **Measured, the pair is now 1.15x a median drop at EVERY level** - 5 through 150, worst 1.15x,
+      best 1.15x. The attack ceiling is **1 at item level 8 and 35 at level 140**, where it was a
+      flat 60 at both: at level 8 that flat cap was more than triple the entire item.
+
+      ⛑ **THE AUTHORED RATIOS SURVIVE; ONLY THE SIZE IS DERIVED.** attack 60 against strength 20
+      says the author thought three points of attack were worth one of strength, and that judgement
+      is preserved by scaling each entry against the table's own reference. Same principle as
+      `curve_sized_base_stats`.
+
+      ⛑ **AND THE REFERENCE HAD TO BE THE TOP THREE, NOT THE MEAN — caught by measuring.** The
+      first version divided by the mean of all thirteen entries and put the pair at **1.68x**
+      instead of 1.15x, *uniformly at every level* - which is the tell that the mechanism was sound
+      and only the constant was wrong. The cause: a player enchants the three stats with the
+      BIGGEST caps (max_hp 200, max_mana 150, attack 60), and those sit far above a mean dragged
+      down by ten entries of 15-20. **Sizing a budget against the average while players spend it on
+      the maximum overshoots by exactly that ratio.**
+
+      ⛑ **`rune_worth.gd` IS NOW SUPERSEDED for the "is enchanting worth it" question** and says so
+      at the top. The binding constraint is the item ceiling, not `rune_cap` - at level 140 the
+      ceiling is ~35 while a Supreme rune's own cap is 16-180 - so a low ratio there no longer
+      means enchanting is weak, and reading it that way would send someone to buff a constant that
+      does not bind. `crafted_pair_worth.gd` is the instrument that answers the question now, and
+      it measures the CEILING for exactly this reason.
+
+      **⚑ FOR THE BALANCE BATCH:** this is a real player-power change - crafted gear went from
+      0.49x a drop to a 1.15x pair - and the reference player has never carried crafted gear at
+      all. It wants the chain.
 
       **☑ STEP 7 — AND THE REAL SHAPE, found while starting the fix.** `_roll_affixes` carries the
       line that reframes everything: *"Crafted items get 0 affixes - affixes come from Enchanter

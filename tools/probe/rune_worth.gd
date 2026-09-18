@@ -11,6 +11,17 @@ extends SceneTree
 ## agree by coincidence. That is exactly the fault that measurement found in crafted gear - 1.38x
 ## at item level 90 and 0.17x at 150 - and there is no reason to assume runes escaped it.
 ##
+## ⛑ SUPERSEDED FOR THE 'IS ENCHANTING WORTH IT' QUESTION — read `crafted_pair_worth.gd`
+## INSTEAD. As of 2026-09-18 the binding constraint is no longer `rune_cap` but the per-ITEM
+## ceiling `CraftingDatabase.enchant_cap`, which now scales with the item's level. At level 140
+## the attack ceiling is ~35 while a Supreme rune's own cap is 16-180, so the ITEM stops you
+## first and the rune's number is no longer what decides anything.
+##
+## This probe still answers a real and narrower question - *are the authored rune_cap constants
+## sensibly sized* - and its numbers below are the historical record of why the ceiling had to
+## change. But a low ratio here no longer means enchanting is weak, and reading it that way
+## would send someone to buff a constant that does not bind.
+##
 ## Run:
 ##   godot --headless --path . --script res://tools/probe/rune_worth.gd
 
