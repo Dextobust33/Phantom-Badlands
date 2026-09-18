@@ -7600,13 +7600,22 @@ something was dropped, and it sat unnoticed for eleven days.
         had no entry for "attack", and "restore" does not match "restorative". A heuristic not
         updated alongside the content reports the CONTENT as broken. Fixed; one name (*"Battle
         Elixir"*) was genuinely vague and became "Attack & Defense Elixir".
-      * **Quality on a consumable is NOT a multiplier.** Owner: *"crafting quality for consumables
-        would come in the form of making the next item in the tier from a great craft or getting
-        bonus items (example: you made an extremely potent healing potion, you dilute it into 2)."*
-        So a great craft either **promotes to the next tier up** or **yields extra**. That is a much
-        better fit than +20%: both outcomes are things a player can see in their inventory, where
-        `1.25x on a flat restore` is invisible. It also pairs with the **cheaper material cost**
-        specialisation the owner picked.
+      * **✅ QUALITY ON A CONSUMABLE IS YIELD, NOT POTENCY — DONE 2026-09-18.** Owner: *"you made
+        an extremely potent healing potion, you dilute it into 2."* `QUALITY_YIELD`: Poor 1,
+        Standard 1, **Fine 2, Masterwork 3**, Failed 0, and the craft message says why the extras
+        are there so a Masterwork does not read as a bug.
+        ⛑ **And the potency multiplier was REMOVED, not left alongside it.** Keeping both would
+        compound - a Masterwork would give three potions each 50% stronger, i.e. **4.5x** a Standard
+        craft rather than 3x. That is the kind of silent stacking that reads as *"crafting is
+        overpowered"* months later with no obvious cause. Quality owns one lever.
+        ⛑ **A knock-on worth as much as the mechanic: identical potions now STACK.** The crafted
+        name carried the quality word ("Fine Health Potion"), so one recipe crafted five times made
+        five near-duplicate piles. Owner, on inventory: *"Items and tools can buildup and takeover
+        your backpack slots."* That is a real bloat win falling out of the change for free. The
+        enhancement scroll KEEPS its prefix, because quality still scales a scroll's bonus.
+        **Not done: the "promote to the next tier" half.** Yield covers the owner's example; tier
+        promotion needs a recipe-to-recipe ladder mapping that does not exist yet.
+        Probe: `tools/probe/consumable_quality_yield.gd`.
       * **✅ THE COMBAT ITEM LIST SAYS WHAT AN ITEM GIVES — DONE 2026-09-18.** Owner: *"the item
         info in combat needs improved so players can see what they do at a glance, Also shouldn't
         require them trying to do math, should just tell how much it will give them back."*

@@ -26952,10 +26952,20 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"consumable":
 				crafted_item = _create_crafted_consumable(recipe, quality)
 				crafted_item["crafted_by"] = character.name
-				crafted_item["quantity"] = quantity
+				# ⚑ A GOOD CRAFT YIELDS MORE, RATHER THAN STRONGER. Fine gives 2, Masterwork 3 -
+				# the owner's *"you made an extremely potent healing potion, you dilute it into 2"*.
+				# The old +25%/+50% potency was invisible on a flat restore; two extra potions in
+				# the bag is not.
+				var _q_yield: int = int(CraftingDatabaseScript.QUALITY_YIELD.get(quality, 1))
+				var _total_qty: int = maxi(1, quantity * _q_yield)
+				crafted_item["quantity"] = _total_qty
 				character.add_item(crafted_item)
-				var qty_label = "%dx " % quantity if quantity > 1 else ""
-				result_message = "[color=%s]Created %s%s %s![/color]" % [quality_color, qty_label, quality_name, recipe.name]
+				var qty_label = "%dx " % _total_qty if _total_qty > 1 else ""
+				# Say WHY there are extra, or a Masterwork craft looks like a bug.
+				var _bonus_note: String = ""
+				if _q_yield > 1:
+					_bonus_note = "  [color=#9ACD32](a %s craft yields %d)[/color]" % [quality_name.to_lower(), _q_yield]
+				result_message = "[color=%s]Created %s%s![/color]%s" % [quality_color, qty_label, recipe.name, _bonus_note]
 			"enhancement":
 				# Create enhancement scroll as inventory item
 				var effect = recipe.get("effect", {})
@@ -27760,17 +27770,20 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 	"""Create a crafted consumable item"""
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var effect = recipe.get("effect", {})
-	var multiplier = CraftingDatabaseScript.QUALITY_MULTIPLIERS[quality]
-
-	# Scale effect by quality. Both `amount` (flat) and `bonus_pct` (percent)
-	# are scaled so the inspect description and the actual applied buff/heal
-	# both reflect quality. Duration is left fixed — quality changes potency,
-	# not how long the effect lasts.
+	# ⚑ QUALITY NO LONGER CHANGES POTENCY ON A CONSUMABLE — it changes how MANY you get.
+	# See `QUALITY_YIELD`. This used to scale `amount` and `bonus_pct` by 0.5x to 1.5x, which
+	# on a flat restore is invisible: Fine to Masterwork is +20%, or ten HP on a fifty HP
+	# potion. Owner: *"a lot of items that could get quality that didn't benefit enough to
+	# justify even having it."*
+	#
+	# ⛑ AND IT MUST NOT DO BOTH. Leaving the multiplier here while the caller also multiplies
+	# the COUNT would compound - a Masterwork craft would give three potions each 50% stronger,
+	# which is 4.5x a Standard craft rather than 3x. Quality owns one lever now.
+	#
+	# A knock-on worth naming: every potion of a given recipe is now IDENTICAL, so they stack in
+	# the bag instead of sitting in five near-duplicate piles labelled Poor / Fine / Masterwork.
+	# That is a real inventory-bloat win and it falls out of the change for free.
 	var scaled_effect = effect.duplicate()
-	if scaled_effect.has("amount"):
-		scaled_effect["amount"] = int(scaled_effect["amount"] * multiplier)
-	if scaled_effect.has("bonus_pct"):
-		scaled_effect["bonus_pct"] = int(scaled_effect["bonus_pct"] * multiplier)
 
 	var item_id = "crafted_%s_%d" % [recipe.name.to_lower().replace(" ", "_"), randi()]
 
@@ -27798,7 +27811,16 @@ func _create_crafted_consumable(recipe: Dictionary, quality: int) -> Dictionary:
 
 	var item = {
 		"id": item_id,
-		"name": "%s %s" % [quality_name, recipe.name] if quality != CraftingDatabaseScript.CraftingQuality.STANDARD else recipe.name,
+		# ⚑ NO QUALITY PREFIX ON A CONSUMABLE ANY MORE. It used to read "Fine Health Potion",
+		# which is now noise twice over: quality no longer changes anything about the item (it
+		# changes how MANY you get), and a different NAME means a different inventory stack - so
+		# a player who crafted one potion five times ended up with five near-duplicate piles
+		# labelled Poor / Standard / Fine / Masterwork. Owner, on inventory: *"Items and tools
+		# can buildup and takeover your backpack slots."* Identical potions stack now.
+		#
+		# The enhancement-scroll branch above keeps its prefix on purpose: quality still scales
+		# a scroll's bonus, so there the word means something.
+		"name": recipe.name,
 		"type": consumable_type,
 		"slot": "",
 		"level": 1,

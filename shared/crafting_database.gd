@@ -56,6 +56,28 @@ const QUALITY_MULTIPLIERS = {
 	CraftingQuality.MASTERWORK: 1.5
 }
 
+## ⚑ WHAT A GOOD CRAFT GIVES YOU ON A CONSUMABLE: MORE OF IT, not a stronger one.
+##
+## Owner 2026-09-18: *"crafting quality for consumables would come in the form of making the next
+## item in the tier from a great craft or getting bonus items (example: you made an extremely
+## potent healing potion, you dilute it into 2)."*
+##
+## ⛑ BECAUSE THE MULTIPLIER WAS INVISIBLE. `QUALITY_MULTIPLIERS` runs Standard 1.00 to
+## Masterwork 1.50, so the whole spread a player can influence is +50% and Fine to Masterwork is
+## +20% - on a 50 HP potion that is +25 and +10. Owner: *"a lot of items that could get quality
+## that didn't benefit enough to justify even having it."* Two extra potions in the bag is a
+## thing a player can SEE; ten more HP on one of them is not.
+##
+## It also pairs with the cheaper-material-cost specialisation: both make a good crafter get MORE
+## out of the same pile, which is one idea rather than two.
+const QUALITY_YIELD := {
+	CraftingQuality.FAILED: 0,
+	CraftingQuality.POOR: 1,
+	CraftingQuality.STANDARD: 1,
+	CraftingQuality.FINE: 2,
+	CraftingQuality.MASTERWORK: 3,
+}
+
 # Quality color codes for display
 const QUALITY_COLORS = {
 	CraftingQuality.FAILED: "#808080",
