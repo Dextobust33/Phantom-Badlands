@@ -7808,9 +7808,23 @@ something was dropped, and it sat unnoticed for eleven days.
       into that branch still produced a clean pass. The probe now uses an epic+ item and *prints
       how many rerolls actually hit a bonus slot* (294 of 600), so it cannot go quiet again.
 
-      **Still to do:** the client rework panel (item → stat → confirm, showing cost and reworks
-      remaining), and a town entry point. Deferred: reworking an **ally's** item — the other four
-      services act on an adjacent player, this one does not yet.
+      **✅ CLIENT SHIPPED 2026-09-18 too.** `Rework` button on the inventory bar → item picker →
+      stat picker → result. **One panel serves both routes**, because the server already decides
+      whether this player may rework from here (at a post, or a committed Enchanter anywhere) and
+      says so plainly if not — a client-side copy of that rule would be a second place for it to
+      drift. The enchanter's field button opens the same panel via `open_affix_rework`.
+      The cap and the cost are shown **before** the player commits, every time; a cap discovered
+      only at the refusal reads as the game breaking.
+      Deferred: reworking an **ally's** item — the other four services act on an adjacent player,
+      this one does not, so its "... for Ally" button is deliberately hidden rather than shown
+      and broken.
+
+      ⛑ **A second vacuous check, same session, caught the same way.** The probe asserted
+      `count("rework_stat") >= 4` against an actual count of 7, so deleting an entire
+      exclusion-list entry still passed. Each of the three lists is now named individually, and
+      the re-injection fails. **A threshold well below the real value is not a check** — it is a
+      number that happens to be true. That is now twice in one feature that fault injection found
+      a probe asserting nothing.
 
 
       ⛑ **Two traps found while building it, both worth keeping:**

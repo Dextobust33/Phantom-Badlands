@@ -218,6 +218,23 @@ func _init() -> void:
 		"reroll quote route registered": srv_src.find("\"affix_reroll_quote\":") >= 0,
 		"reroll handler defined": srv_src.find("func handle_affix_reroll(") >= 0,
 		"reroll charges materials": srv_src.find("remove_crafting_material") >= 0,
+		"server opens the panel": srv_src.find("\"open_affix_rework\"") >= 0,
+		"client opens the panel": client_src.find("\"open_affix_rework\":") >= 0,
+		"client reads the quote": client_src.find("\"affix_reroll_quote\":") >= 0,
+		"client asks for a quote": client_src.find("{\"type\": \"affix_reroll_quote\"") >= 0,
+		"client sends the reroll": client_src.find("{\"type\": \"affix_reroll\"") >= 0,
+		"client has a Rework button": client_src.find("\"action_data\": \"rework_start\"") >= 0,
+		"client handles the Rework click": client_src.find("\"rework_start\":") >= 0,
+		# ⛑ EACH EXCLUSION LIST NAMED INDIVIDUALLY. The first version of this asserted
+		# `count("rework_stat") >= 4` against an actual count of 7 - so deleting a whole
+		# exclusion entry still passed, and the injection proved it. A threshold well below the
+		# real value is not a check, it is a number that happens to be true.
+		"excluded from the action-bar poll": client_src.find(
+			"\"rune_apply\", \"rework_select\", \"rework_stat\"] and not monster_select_mode") >= 0,
+		"excluded from item-selection mode": client_src.find(
+			"\"affix_filter_select\", \"rework_select\", \"rework_stat\"]") >= 0,
+		"excluded from the double-trigger guard": client_src.find(
+			"\"rune_apply\", \"rework_select\", \"rework_stat\"]:") >= 0,
 	}
 	for k in checks.keys():
 		if bool(checks[k]):

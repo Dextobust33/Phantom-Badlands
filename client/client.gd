@@ -1325,6 +1325,7 @@ var last_item_use_result: String = ""  # Store last item use result to display a
 var awaiting_item_use_result: bool = false  # Flag to capture next text message as item use result
 var rune_apply_mode: bool = false  # Selecting equipped gear slot to apply a rune
 var rune_apply_index: int = -1  # Inventory index of the rune being applied
+var rework_item_index: int = -1  # Inventory index of the item being reworked (affix reroll)
 
 # Auto-salvage affix filter
 var affix_filter_page: int = 0
@@ -4760,7 +4761,7 @@ func _process(delta):
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
 	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "salvage_result_shown", "affix_filter_select", "rune_apply"] and not monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "salvage_result_shown", "affix_filter_select", "rune_apply", "rework_select", "rework_stat"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key
@@ -4824,6 +4825,40 @@ func _process(delta):
 					update_action_bar()
 			else:
 				set_meta("runekey_%d_pressed" % i, false)
+
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action == "rework_select":
+		var rework_items = get_meta("rework_item_list", [])
+		for i in range(mini(9, rework_items.size())):
+			if is_item_select_key_pressed(i):
+				if not get_meta("reworkitemkey_%d_pressed" % i, false):
+					set_meta("reworkitemkey_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					set_meta("itemkey_%d_pressed" % i, true)
+					rework_item_index = int(rework_items[i])
+					# Ask the SERVER what this costs and what can be reworked. The client never
+					# computes the price - one copy of the cost curve, server-side.
+					send_to_server({"type": "affix_reroll_quote", "item_index": rework_item_index})
+			else:
+				set_meta("reworkitemkey_%d_pressed" % i, false)
+
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action == "rework_stat":
+		var rework_stats = get_meta("rework_stat_list", [])
+		for i in range(mini(9, rework_stats.size())):
+			if is_item_select_key_pressed(i):
+				if not get_meta("reworkkey_%d_pressed" % i, false):
+					set_meta("reworkkey_%d_pressed" % i, true)
+					# MANDATORY per Pitfall #10 - without this the key fires again in the next
+					# mode on the following frame.
+					_consume_item_select_key(i)
+					set_meta("itemkey_%d_pressed" % i, true)
+					send_to_server({"type": "affix_reroll", "item_index": rework_item_index,
+						"stat": String(rework_stats[i])})
+					# Reuse the read-the-result flow so the server's reply is not wiped by the
+					# character_update that follows it (v0.9.634 pattern).
+					pending_inventory_action = "awaiting_salvage_result"
+					update_action_bar()
+			else:
+				set_meta("reworkkey_%d_pressed" % i, false)
 
 	# Merchant item selection with keybinds when action is pending
 	if game_state == GameState.PLAYING and not input_field.has_focus() and at_merchant and pending_merchant_action == "sell":
@@ -5609,7 +5644,7 @@ func _process(delta):
 	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode and not _testfx_step_active
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
-		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "salvage_result_shown", "affix_filter_select"]
+		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "salvage_result_shown", "affix_filter_select", "rework_select", "rework_stat"]
 
 		for i in range(10):  # All 10 action bar slots
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
@@ -12597,7 +12632,11 @@ func update_action_bar():
 					# serving a neighbour are both ordinary things to want, and a single button
 					# that silently picks whichever is adjacent spends the cooldown on the wrong
 					# one - which, at three minutes, the player cannot take back.
-					if _adjacent_player_name() != "":
+					# ⛑ NOT FOR A PANEL SERVICE. The rework needs an item and a stat chosen from
+					# the actor's own pack, so "do it to your neighbour" has nothing to act on
+					# yet - offering the button would be a button that cannot work. Reworking an
+					# ally's item is filed, not built.
+					if not bool(_svc.get("opens_panel", false)) and _adjacent_player_name() != "":
 						commit_buttons.append({"label": "... for Ally",
 							"action_type": "local", "action_data": "specialist_service_ally",
 							"enabled": true})
@@ -12883,6 +12922,32 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_inventory_action == "rework_select":
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "rework_cancel", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_inventory_action == "rework_stat":
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "rework_cancel", "enabled": true},
+				{"label": "Pick Item", "action_type": "local", "action_data": "rework_start", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif pending_inventory_action == "salvage_select":
 			# Salvage submenu - show salvage and discard options
 			var player_level = character_data.get("level", 1)
@@ -13097,7 +13162,7 @@ func update_action_bar():
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "inventory_back", "enabled": true},
 				{"label": "Salvage", "action_type": "local", "action_data": "inventory_salvage", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Rework", "action_type": "local", "action_data": "rework_start", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -17801,6 +17866,20 @@ func execute_local_action(action: String):
 				update_action_bar()
 		"inventory_cancel":
 			cancel_inventory_action()
+		"rework_start":
+			# ⛑ ONE ENTRY FOR BOTH ROUTES. The server decides whether this player may rework here
+			# (at a post, or a committed Enchanter anywhere) and says so plainly if not. A client
+			# that tried to gate it too would be a second copy of the rule.
+			inventory_mode = true
+			pending_inventory_action = "rework_select"
+			_display_rework_item_picker()
+			update_action_bar()
+		"rework_cancel":
+			pending_inventory_action = ""
+			set_meta("rework_stat_list", [])
+			rework_item_index = -1
+			display_inventory()
+			update_action_bar()
 		"rune_apply_cancel":
 			rune_apply_mode = false
 			rune_apply_index = -1
@@ -25002,6 +25081,99 @@ func _display_usable_items_page():
 		display_game(last_item_use_result)
 		last_item_use_result = ""
 
+func _display_rework_item_picker() -> void:
+	"""List the inventory items that have a stat worth reworking."""
+	_page_clear()
+	display_game("[color=#A335EE]===== REWORK A STAT =====[/color]")
+	display_game("")
+	display_game("[color=#808080]Roll a stat you don't want into a different one. The new value is")
+	display_game("rolled fresh — it can come out lower, and it stands.[/color]")
+	display_game("")
+	var inv: Array = character_data.get("inventory", [])
+	var idx_list: Array = []
+	var shown := 0
+	for i in range(inv.size()):
+		var it = inv[i]
+		if not (it is Dictionary):
+			continue
+		var affixes = it.get("affixes", {})
+		if not (affixes is Dictionary) or affixes.is_empty():
+			continue
+		# Same skip list the server uses, so the client cannot offer a stat the server refuses.
+		var stat_n := 0
+		for k in affixes.keys():
+			if String(k) in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance"]:
+				continue
+			var v = affixes[k]
+			if v is int or v is float:
+				stat_n += 1
+		if stat_n == 0:
+			continue
+		if shown >= 9:
+			break
+		var done: int = int(it.get("reroll_count", 0))
+		var left_txt := ""
+		if done > 0:
+			left_txt = " [color=#808080](%d rework(s) used)[/color]" % done
+		display_game("[color=#FFD700][%d][/color] %s [color=#808080]— %d stat(s)[/color]%s" % [
+			shown + 1, it.get("name", "Item"), stat_n, left_txt])
+		idx_list.append(i)
+		shown += 1
+	display_game("")
+	if shown == 0:
+		# ⛑ SAYS WHY, rather than showing an empty list. Crafted gear genuinely has no affixes -
+		# its power comes from runes - and a blank screen reads as a bug.
+		display_game("[color=#FFAA00]Nothing in your pack has a reworkable stat.[/color]")
+		display_game("[color=#808080]Only found gear carries affixes; crafted gear takes runes instead.[/color]")
+	else:
+		display_game("[color=#FFD700]Press 1-%d to choose an item.[/color]" % shown)
+	set_meta("rework_item_list", idx_list)
+
+
+func _display_rework_quote(msg: Dictionary) -> void:
+	"""Show what can be reworked on the chosen item, and what it costs."""
+	_page_clear()
+	display_game("[color=#A335EE]===== REWORK: %s =====[/color]" % msg.get("item_name", "Item"))
+	display_game("")
+	var done: int = int(msg.get("reroll_count", 0))
+	var maxr: int = int(msg.get("max_rerolls", 5))
+	# The cap is stated UP FRONT, every time. It is what makes this finite, and a player who
+	# only discovers it on the refusal will read it as the game breaking.
+	display_game("[color=#808080]Reworks used: %d of %d.[/color]" % [done, maxr])
+	var cost: Dictionary = msg.get("cost", {})
+	if bool(cost.get("capped", false)):
+		display_game("")
+		display_game("[color=#FFAA00]This item has been reworked as many times as it will take.[/color]")
+		set_meta("rework_stat_list", [])
+		pending_inventory_action = "rework_stat"
+		update_action_bar()
+		return
+	var mats: Dictionary = cost.get("materials", {})
+	var parts: Array = []
+	for m in mats.keys():
+		parts.append("%dx %s" % [int(mats[m]), String(m).replace("_", " ")])
+	var valor: int = int(cost.get("valor", 0))
+	if valor > 0:
+		parts.append("%d valor" % valor)
+	display_game("[color=#FFD700]Cost: %s[/color]%s" % [", ".join(parts),
+		" [color=#5AC8FF](Enchanter's discount)[/color]" if bool(msg.get("is_specialist", false)) else ""])
+	display_game("")
+	var affixes: Dictionary = msg.get("affixes", {})
+	var stats: Array = msg.get("stats", [])
+	for i in range(mini(9, stats.size())):
+		var k := String(stats[i])
+		display_game("[color=#FFD700][%d][/color] %s [color=#99FF99]%s[/color]" % [
+			i + 1, k.replace("_bonus", "").replace("_", " "), str(affixes.get(k, ""))])
+	display_game("")
+	if stats.is_empty():
+		display_game("[color=#FFAA00]Nothing on this item can be reworked.[/color]")
+	else:
+		display_game("[color=#FFD700]Press 1-%d to roll that stat into a different one.[/color]" % stats.size())
+	set_meta("rework_stat_list", stats)
+	pending_inventory_action = "rework_stat"
+	update_action_bar()
+
+
 func _display_rune_apply_slots(rune_item: Dictionary):
 	"""Display equipped gear slots that match a rune's target_slot"""
 	var allowed_slots = rune_item.get("target_slot", "").split(",")
@@ -28010,7 +28182,7 @@ func handle_server_message(message: Dictionary):
 						# Refresh unequip slot list after unequipping
 						_page_clear()
 						_show_unequip_slots()
-					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "affix_filter_select", "rune_apply"]:
+					elif pending_inventory_action in ["inspect_item", "inspect_equipped_item", "equip_confirm", "discard_item", "salvage_select", "sort_select", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "affix_filter_select", "rune_apply", "rework_select", "rework_stat"]:
 						# Player is in a sub-view — don't refresh, keep current display
 						pass
 					else:
@@ -29421,6 +29593,17 @@ func handle_server_message(message: Dictionary):
 		# Wandering NPC encounter messages
 		"blacksmith_encounter":
 			handle_blacksmith_encounter(message)
+
+		"affix_reroll_quote":
+			_display_rework_quote(message)
+
+		"open_affix_rework":
+			# The committed Enchanter's field service. Same panel as the town route - the server
+			# already decided this player is allowed to use it from here.
+			inventory_mode = true
+			pending_inventory_action = "rework_select"
+			_display_rework_item_picker()
+			update_action_bar()
 
 		"blacksmith_done":
 			pending_blacksmith = false
