@@ -26848,6 +26848,14 @@ func handle_server_message(message: Dictionary):
 				display_examine_result(message)
 
 		"location":
+			# ⛑ THE HOTZONE BANNER IS DERIVED FROM THE LOCATION, NOT FROM AN EVENT. It used
+			# to be raised by the warning and lowered by a single `hotzone_left` message sent
+			# from ONE of the 44 server paths that move a character - so declining a zone, or
+			# leaving one by road, teleport or dungeon exit, left it pinned forever describing
+			# somewhere the player was not. Every move sends a location; a state read from the
+			# location cannot be missed.
+			if message.has("in_hotzone"):
+				_in_hotzone_level = int(message.get("hotzone_level", 0)) if bool(message["in_hotzone"]) else 0
 			# ⚑ THE WHOLE LOCATION PASS BELONGS TO THE SIDE COLUMN.
 			#
 			# Its text is printed before update_map redraws, so each of those lines spent a frame

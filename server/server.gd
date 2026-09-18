@@ -8631,7 +8631,20 @@ func send_location_update(peer_id: int):
 			persistence.record_region_visit(atlas_account_id, atlas_region_name)
 
 	# Send map display as description
+	# ⛑ THE HOTZONE STATE RIDES THE LOCATION, IT IS NOT AN EVENT. It used to be announced
+	# by a single `hotzone_left` message from ONE of the 44 places that move a character,
+	# so every other path - road travel, a teleport, a dungeon exit, a respawn - left the
+	# client's pinned banner claiming a zone the player had walked out of. Owner 2026-09-17:
+	# *"I had entered a hotzone a while before this, is it possible that was still lingering
+	# from that?"* Yes, and from a declined one too.
+	#
+	# Derived state cannot be missed: every move sends a location, and the location says
+	# whether you are standing in one. Same lesson as `_sync_side_prompt` on the client.
+	var _loc_hot = world_system.get_hotspot_at(character.x, character.y)
+	var _loc_in_hot: bool = bool(_loc_hot.in_hotspot) and not world_system.is_safe_zone(character.x, character.y)
 	var location_msg = {
+		"in_hotzone": _loc_in_hot,
+		"hotzone_level": int(world_system.get_monster_level_range(character.x, character.y).base_level) if _loc_in_hot else 0,
 		"type": "location",
 		"x": character.x,
 		"y": character.y,
