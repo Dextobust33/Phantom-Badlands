@@ -3674,7 +3674,23 @@ const MERCHANT_FIRST_NAMES = ["Grim", "Kira", "Marcus", "Zara", "Lou", "Mira", "
 	"Finn", "Nora", "Brock", "Ivy", "Cole", "Luna", "Rex", "Faye", "Jax", "Wren"]
 
 # Merchant travel parameters
-const MERCHANT_SPEED = 0.025  # Tiles per second (1 tile every 40 seconds; v0.9.731 +25% for faster courier circuits)
+## ⚑ COURIERS THAT ACTUALLY MAKE CIRCUITS. Owner 2026-09-18: *"Current merchants also move
+## way too slow from post to post."*
+##
+## Was **0.025** - one tile every FORTY SECONDS. Against `MERCHANT_REST_TIME` of 300s, a leg of
+## a couple of hundred tiles took over two hours, so a merchant spent ~96% of its life in
+## transit and was very nearly stationary relative to a player, who moves a tile per keypress.
+## A courier that rests five minutes and walks for two hours is not making circuits.
+##
+## ⛑ SIZED AGAINST THE REST CONSTANT, BECAUSE THE ROUTE LENGTHS COULD NOT BE MEASURED HEADLESS
+## (the road graph needs world generation, and `compute_merchant_circuits` returns nothing
+## without it). At 0.25 a ~200-tile leg is ~13 minutes against a 5-minute rest - travel a
+## small multiple of rest rather than 25x it. **Wants a live check**: the honest claim is that
+## the ratio is now sane, not that 13 minutes is the right number.
+##
+## Raising this also makes the MARKET more responsive, which is a second reason to want it:
+## couriers are the market's logistics, carrying player listings between posts.
+const MERCHANT_SPEED = 0.25  # Tiles per second (1 tile every 4 seconds)
 const MERCHANT_REST_TIME = 300.0  # 5 minutes rest at each trading post
 
 # Cache for merchant positions (cleared periodically)

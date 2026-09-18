@@ -14746,7 +14746,22 @@ func trigger_merchant_encounter(peer_id: int):
 	var greeting = "[color=#FFD700]A %s approaches on the road![/color]\n" % merchant.name
 	greeting += "[color=#808080]\"I'm on my way to %s.\"[/color]\n\n" % dest_name
 
-	if carried_items.size() == 0:
+	# ⚑ A ROAD MERCHANT CARRIES ITS OWN WARES TOO, NOT ONLY OTHER PLAYERS' LISTINGS.
+	#
+	# Owner 2026-09-18: *"merchants... seem to pretty much never have anything for sale when you
+	# see them out and around."* They did not, and it was BY CONSTRUCTION rather than bad luck:
+	# this shop was built entirely from `merchant_inventory` - market listings other players had
+	# posted, which the courier is moving between posts. With a small or quiet player base that
+	# is empty almost always, so the "nothing to sell" branch below was the NORMAL case rather
+	# than the edge, and meeting a merchant was pointless almost always.
+	#
+	# The carried listings stay, and stay the interesting half - they are real player goods at a
+	# convenience markup. This puts a FLOOR underneath them from the same generator the post
+	# merchants already use, seeded on the merchant so its stock does not shuffle while you are
+	# standing there looking at it.
+	var own_stock: Array = get_or_generate_merchant_inventory(
+		"road_" + merchant_id, character.level, hash(merchant_id), String(merchant.get("specialty", "")))
+	if carried_items.size() == 0 and own_stock.is_empty():
 		greeting += "[color=#AAAAAA]The merchant has nothing to sell right now.[/color]\n"
 		greeting += "[Space] Leave"
 		merchant["shop_items"] = []
@@ -14764,7 +14779,11 @@ func trigger_merchant_encounter(peer_id: int):
 	# ({item:{...}, base_valor, quantity, account_id, ...}) — flatten them into the
 	# flat shop-item shape the client display + buy path expect (name/level/price
 	# live at the top level). Without this the list shows "Unknown (Lv1) - 100 Valor".
-	merchant["shop_items"] = _flatten_carried_to_shop_items(carried_items)
+	# Carried player listings FIRST - they are the reason to stop a courier - with the
+	# merchant's own stock underneath as the floor.
+	var shop: Array = _flatten_carried_to_shop_items(carried_items)
+	shop.append_array(own_stock)
+	merchant["shop_items"] = shop
 	merchant["road_merchant"] = true
 	merchant["merchant_id"] = merchant_id
 	at_merchant[peer_id] = merchant

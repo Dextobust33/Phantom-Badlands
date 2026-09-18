@@ -7008,7 +7008,23 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
          A slow merchant is one you meet rarely; an empty one makes the rare meeting worthless.
          Fixing only the speed would give players more frequent encounters with nothing to buy.
 
-         **Shape of the fix:** give road merchants their OWN generated stock as a floor - the post
+         **✅ BOTH FIXED 2026-09-18.** Road merchants now generate their own stock from the same
+         `get_or_generate_merchant_inventory` the post merchants use, keyed `road_<id>` so it is
+         stable while the player stands there. Carried player listings still come FIRST - they are
+         the reason to stop a courier - with the generated stock as a floor beneath them, and the
+         "nothing to sell" branch now requires BOTH to be empty. `MERCHANT_SPEED` 0.025 → **0.25**.
+         ⛑ **The speed was sized against `MERCHANT_REST_TIME`, not measured**, because the road
+         graph needs world generation and `compute_merchant_circuits` returns nothing headless. A
+         200-tile leg is now **13 minutes against a 5-minute rest (2.7x)** where it was over two
+         hours (25x+). The honest claim is that the RATIO is sane now, not that 13 minutes is the
+         right number - **it wants a live check.**
+         Probe: `tools/probe/road_merchant_stock.gd`, which asserts the ratio rather than the
+         constant, so a future route change that lengthens legs still reads correctly.
+         ⛑ Still open and NOT addressed here: the POST side - see *"Merchant / market-house
+         balancing"* (Sun Keep's market near-empty). This fix gives couriers a floor; it does not
+         tell us whether post markets have a supply problem of their own.
+
+         ~~Shape of the fix:~~ give road merchants their OWN generated stock as a floor - the post
          merchants already have `generate_shop_inventory(player_level, seed, specialty)` - and keep
          carried listings on top as the interesting half, since those are real player goods at a
          convenience markup. Then raise the speed, which also makes the market more responsive
