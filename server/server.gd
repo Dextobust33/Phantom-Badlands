@@ -26241,6 +26241,11 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			})
 			continue
 
+		# ⛑ A SPECIALIST-GATED RECIPE IS NOW COMMISSIONABLE, not simply refused - provided you meet
+		# its skill yourself. A commission lends a FOCUS, never a SKILL, which is what keeps
+		# levelling a trade you did not commit to worth doing.
+		var can_commission: bool = specialist_gated and not is_locked and _has_materials_in_dict(
+			recipe.materials, effective_mats, character.crafting_materials)
 		var can_craft = not is_locked and not specialist_gated and _has_materials_in_dict(recipe.materials, effective_mats, character.crafting_materials)
 		# Audit #4 Slice 3.7 (v0.9.546) — the recipe preview must match the
 		# formula the actual craft uses. Auto-skip path uses score=3 (35 base
@@ -26279,6 +26284,8 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"output_type": recipe.output_type,
 			"locked": is_locked,
 			"specialist_only": is_specialist_only,
+			"can_commission": can_commission,
+			"commission_fee": commission_fee(recipe) if specialist_gated else 0,
 			"specialist_gated": specialist_gated,
 			"description": description,
 			"bulk_craftable": is_bulk,
@@ -26524,6 +26531,20 @@ func _get_recipe_description(recipe: Dictionary) -> String:
 		_:
 			return ""
 
+## What a post NPC charges to do another trade's specialist work for you.
+##
+## ⛑ PRICED OFF THE RECIPE'S OWN SKILL REQUIREMENT, so it tracks the content rather than being a
+## flat number that goes stale as recipes are added. A skill-15 scroll costs a few hundred; a
+## skill-90 Primordial Blade costs thousands. You still supply every material and still need the
+## skill yourself - the fee buys the FOCUS you did not commit to.
+const COMMISSION_VALOR_BASE := 60
+const COMMISSION_VALOR_PER_SKILL := 8
+
+
+func commission_fee(recipe: Dictionary) -> int:
+	return COMMISSION_VALOR_BASE + COMMISSION_VALOR_PER_SKILL * int(recipe.get("skill_required", 1))
+
+
 func handle_craft_item(peer_id: int, message: Dictionary):
 	"""Attempt to craft an item"""
 	if not characters.has(peer_id):
@@ -26559,11 +26580,41 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "You haven't discovered this recipe yet! Find a Recipe Scroll."})
 		return
 
-	# Check specialist-only gating
+	# ⚑ SPECIALIST GATING, AND THE COMMISSION THAT BRIDGES IT — owner 2026-09-18.
+	#
+	# Measured: **109 of 254 recipes (43%) are `specialist_only`**, Scribing 65%, spread across
+	# every skill band rather than confined to the endgame. Committing to Blacksmith meant 87 of
+	# them were permanently unreachable, with no alternative route - no post will sell you a Void
+	# Blade. The owner chose to keep the identity and add a way through:
+	# *"commission another player (or a post NPC as a fallback)"*.
+	#
+	# ⛑ A COMMISSION LENDS YOU A FOCUS, NEVER A SKILL. You must still meet the recipe's own skill
+	# requirement yourself (checked above, before this). That is what keeps levelling a crafting
+	# skill you did not commit to worth doing - it is the prerequisite for commissioning that
+	# trade's work - and it stops a commission being a way to skip crafting progression entirely.
+	var _is_commission: bool = bool(message.get("commission", false))
 	if recipe.get("specialist_only", false) and not character.can_use_specialist_recipe(skill_name):
 		var required_job = character.CRAFT_SKILL_TO_JOB.get(skill_name, "specialist")
-		send_to_peer(peer_id, {"type": "error", "message": "This recipe requires committing as a %s!" % required_job.capitalize()})
-		return
+		if not _is_commission:
+			send_to_peer(peer_id, {"type": "error",
+				"message": "This recipe is %s specialist work. Commit as a %s, or [b]Commission[/b] it here." % [
+					required_job.capitalize(), required_job.capitalize()]})
+			return
+		# Commissioned: a post NPC of that trade does the work for a fee.
+		if not _player_at_npc_post(peer_id):
+			send_to_peer(peer_id, {"type": "error",
+				"message": "Commissioning needs a %s at a trading post." % required_job.capitalize()})
+			return
+		var fee: int = commission_fee(recipe)
+		var comm_account = peers[peer_id].account_id if peers.has(peer_id) else ""
+		if not persistence.spend_valor(comm_account, fee):
+			send_to_peer(peer_id, {"type": "error",
+				"message": "The %s wants [b]%d Valor[/b] for that commission - you have %d." % [
+					required_job.capitalize(), fee, persistence.get_valor(comm_account)]})
+			return
+	elif _is_commission:
+		# Not a recipe that needs commissioning - do not charge for nothing.
+		_is_commission = false
 
 	# Tempered craft: resource gambling for guaranteed bonus stat
 	var temper_target = message.get("temper_target", "")
@@ -26894,6 +26945,12 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	# which threshold their roll landed in.
 	var _roll_data: Dictionary = CraftingDatabaseScript.roll_quality_detailed(skill_level, recipe.difficulty, tempered_bonus, auto_score, _boost_shift, _boost_no_poor)
 	var quality = int(_roll_data["quality"])
+	# ⛑ A COMMISSION IS ALWAYS STANDARD, NEVER FAILED AND NEVER FINE. Fixing it low is what keeps a
+	# real specialist worth finding - their quality ladder (66% Masterwork at skill 60) is the
+	# thing the NPC cannot match. Fixing it at STANDARD rather than rolling also means the fee buys
+	# a known outcome, which is what you want from paying a professional.
+	if _is_commission:
+		quality = CraftingDatabaseScript.CraftingQuality.STANDARD
 	# Stash on a peer-keyed slot so _finalize_craft can read it later.
 	pending_craft_sessions[peer_id] = {"craft_roll_data": _roll_data}
 	# Audit #4 Slice 3 — Specialist save: 5% chance on Refined/Master rolls to

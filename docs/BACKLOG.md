@@ -8053,6 +8053,48 @@ something was dropped, and it sat unnoticed for eleven days.
         be organized in a way that makes it easy to understand what peoples options are."* — after
         the content, not before: the UI's job is to present a set of options, and that set is what
         this arc is changing.
+      **⚑ AND THE OWNER CAUGHT THE HOLE THIS LEFT.** *"When you say the cost is that you can't have
+      a second focus's recipes what does that mean exactly. Seems like that would gate recipes
+      behind your commitment."* It did. **Measured: 109 of 254 recipes (43%) are `specialist_only`**
+      — Scribing 64%, and spread across every skill band rather than confined to the endgame. A
+      committed Blacksmith could never make 87 of them, permanently, with **no alternative route**:
+      no post sells you a Void Blade. That sits badly beside *"rather than gate anything."*
+
+      **✅ COMMISSION ROUTE SHIPPED 2026-09-18 (owner's choice of three).** A post NPC of the right
+      trade will do the work for a fee. Identity stays strong; nothing is unreachable.
+
+      ⛑ **THE LOAD-BEARING RULE — a commission lends a FOCUS, never a SKILL.** This came straight
+      out of the owner's follow-up: *"what does continuing to level up a none commited job do if
+      you can't build specialty items for it?"* If a commission lent the skill too, levelling an
+      uncommitted trade would be pointless **and** commissioning would be a way to skip crafting
+      progression outright. So you still meet the recipe's own skill requirement yourself — which
+      makes levelling a trade you did not commit to directly worth doing, because it is the
+      prerequisite for commissioning that trade's work. The probe asserts this **by ORDER**: the
+      skill check must sit before the commission fork, and moving it after fails.
+
+      **What levelling an uncommitted job actually buys — measured, since the owner asked:**
+      * **Gathering** (every reader of `job_levels` in the codebase is one): hint accuracy
+        (`level/100`), scratch-off slots and budget, chain caps, catch depth, and soldier's
+        monster-part drop rate. All real, all commitment-independent.
+      * **Crafting**: the number that matters is `crafting_skills`, not `job_levels` — two separate
+        ladders, and a craft grants full XP to the skill and half to the job. On a difficulty-35
+        recipe, skill 1 → 60 moves success **5% → 95%** and Masterwork share **0% → 66%**, plus the
+        57% of that trade's recipes which are not gated, plus the right to commission the rest.
+
+      A commission is pinned to **STANDARD** quality and can never reach Fine or Masterwork, so a
+      real specialist stays worth finding — their ladder is the thing the NPC cannot match. The fee
+      is `60 + 8 × skill_required` (100 Valor at skill 5, 780 at skill 90), so it tracks the content
+      instead of going stale as recipes are added. You still supply every material.
+
+      ⛑ **It reuses the entire craft pipeline behind one flag.** A parallel `commission_item`
+      handler would have been a second copy of item production, XP, quality and party sharing —
+      which is how two paths drift until they disagree in front of a player.
+
+      **Still open:** the PLAYER half of the commission — posting a job another player fulfils, at
+      *their* quality, paying them instead of a sink. That is the social version and the reason the
+      owner picked this option over the two simpler ones.
+      Probe: `tools/probe/commission_lends_focus_not_skill.gd`.
+
       **✅ SHIPPED 2026-09-18 — and there were TWO gates, the quiet one worse than the famous one.**
 
       The level-5 trial cap is the one everybody talks about. But `can_gain_job_xp` also read

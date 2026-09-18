@@ -13215,12 +13215,17 @@ func update_action_bar():
 			var _none_label = ("● None" if crafting_boost_tier == "none" else "None")
 			var _refined_label = ("● Refined" if crafting_boost_tier == "refined" else "Refined")
 			var _master_label = ("● Master" if crafting_boost_tier == "master" else "Master")
+			# ⛑ THE BUTTON SAYS WHICH IT IS AND WHAT IT COSTS. A "Craft!" that silently spends
+			# Valor is the kind of surprise this project has already been burned by - the fee is
+			# in the label, not only in the detail text.
+			var _is_comm: bool = sel_recipe.get("specialist_gated", false) and sel_recipe.get("can_commission", false)
+			var _craft_label: String = ("Commission (%dv)" % int(sel_recipe.get("commission_fee", 0))) if _is_comm else "Craft!"
 			if is_bulk:
 				# Boost forces qty=1; -Qty/+Qty/Max hide once boosted.
 				var _show_qty = (crafting_boost_tier == "none")
 				current_actions = [
 					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
-					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
+					{"label": _craft_label, "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
 					{"label": ("-Qty" if _show_qty else "---"), "action_type": ("local" if _show_qty else "none"), "action_data": ("craft_qty_down" if _show_qty else ""), "enabled": _show_qty and craft_quantity > 1},
 					{"label": ("+Qty" if _show_qty else "---"), "action_type": ("local" if _show_qty else "none"), "action_data": ("craft_qty_up" if _show_qty else ""), "enabled": _show_qty and craft_quantity < sel_recipe.get("max_craftable", 1)},
 					{"label": ("Max" if _show_qty else "---"), "action_type": ("local" if _show_qty else "none"), "action_data": ("craft_qty_max" if _show_qty else ""), "enabled": _show_qty and craft_quantity < sel_recipe.get("max_craftable", 1)},
@@ -13237,7 +13242,7 @@ func update_action_bar():
 				var can_temper = sel_recipe.get("can_craft", false) and sel_recipe.get("output_type", "") in ["weapon", "armor"]
 				current_actions = [
 					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
-					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
+					{"label": _craft_label, "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
 					{"label": "Temper", "action_type": "local", "action_data": "crafting_temper_select", "enabled": can_temper and crafting_boost_tier == "none"},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -48733,11 +48738,18 @@ func display_craft_recipe_list():
 			if mat_line != "":
 				display_game(mat_line)
 		elif is_specialist_gated:
-			# Specialist-only recipe player can't use
+			# ⛑ COMMISSIONABLE, not refused. 43% of recipes are specialist-gated, so a flat red
+			# "you cannot" was the single most common thing the bench told a player.
 			var required_job = _craft_skill_to_job_name(crafting_skill)
-			display_game("[color=#FF4444][%s] [SPECIALIST] %s (Requires %s)[/color]" % [
-				get_action_key_name(display_idx + 4), name, required_job
-			])
+			if recipe.get("can_commission", false):
+				display_game("[color=#C8A24A][%s] [SPECIALIST] %s — commission from a %s (%d Valor)[/color]" % [
+					get_action_key_name(display_idx + 4), name, required_job,
+					int(recipe.get("commission_fee", 0))
+				])
+			else:
+				display_game("[color=#FF4444][%s] [SPECIALIST] %s (Requires %s)[/color]" % [
+					get_action_key_name(display_idx + 4), name, required_job
+				])
 			if description != "":
 				display_game("[color=#884444]    %s[/color]" % description)
 			if mat_line != "":
@@ -48784,9 +48796,9 @@ func select_craft_recipe(index: int):
 		var skill_req = recipe.get("skill_required", 1)
 		display_game("[color=#FF4444]This recipe requires %s level %d to unlock![/color]" % [crafting_skill.capitalize(), skill_req])
 		return
-	if recipe.get("specialist_gated", false):
+	if recipe.get("specialist_gated", false) and not recipe.get("can_commission", false):
 		var required_job = _craft_skill_to_job_name(crafting_skill)
-		display_game("[color=#FF4444]This recipe requires committing as a %s![/color]" % required_job)
+		display_game("[color=#FF4444]%s specialist work — commit as one, or reach the skill yourself to commission it.[/color]" % required_job)
 		return
 
 	crafting_selected_recipe = actual_idx
@@ -49009,7 +49021,8 @@ func _on_craft_panel_recipe_selected(index: int) -> void:
 	if index < 0 or index >= crafting_recipes.size():
 		return
 	var recipe = crafting_recipes[index]
-	if recipe.get("locked", false) or recipe.get("specialist_gated", false):
+	# A commissionable recipe opens like any other; the Commission button does the rest.
+	if recipe.get("locked", false) or (recipe.get("specialist_gated", false) and not recipe.get("can_commission", false)):
 		return
 	crafting_selected_recipe = index
 	craft_quantity = 1
@@ -50654,6 +50667,11 @@ func confirm_craft():
 		boost_tier = crafting_panel.get_boost_tier()
 
 	var msg = {"type": "craft_item", "recipe_id": recipe_id}
+	# ⛑ THE SAME MESSAGE, ONE FLAG. A commission runs the whole ordinary craft pipeline - same
+	# materials, same item production, same XP - and differs only in who is holding the tools.
+	# A parallel "commission_item" path would have been a second copy of the entire craft.
+	if recipe.get("specialist_gated", false) and recipe.get("can_commission", false):
+		msg["commission"] = true
 	if boost_tier != "none":
 		msg["boost_tier"] = boost_tier
 		# Server forces quantity=1 when boost is active; don't even send qty.
