@@ -7544,9 +7544,9 @@ something was dropped, and it sat unnoticed for eleven days.
       | item | what it does | status |
       |---|---|---|
       | **Safe Passage Scroll** | no encounters for N steps | ✅ **BUILT 2026-09-18** |
-      | **Remains Ledger** | your corpse's exact location and contents | ✅ approved |
-      | **Waypoint Seal** | mark a spot, return to it once | ✅ approved |
-      | **Bestiary Page** | permanently reveal one species, account-wide | ✅ approved |
+      | **Remains Ledger** | your corpse's exact location and contents | ✅ **BUILT 2026-09-18** |
+      | **Waypoint Seal** | mark a spot, return to it once | ✅ **BUILT 2026-09-18** |
+      | **Bestiary Page** | permanently reveal one species, account-wide | ✅ **EXTENDED 2026-09-18** |
       | ~~Scouting Report~~ | read a dungeon before entering | ❌ **cut - already covered twice** |
       | **Muster Sigil** | a party member joins you from anywhere | ⏸ deferred to the party arc |
 
@@ -7578,6 +7578,37 @@ something was dropped, and it sat unnoticed for eleven days.
 
       **Waypoint Seal pairs with post-to-post road travel** (also approved 2026-09-18): roads
       connect posts, the Seal connects the places that are not posts.
+
+      **✅ THE OTHER THREE — BUILT 2026-09-18.**
+      * **Remains Ledger** (skill 20) — exact coordinates, distance, direction AND contents of your
+        last character's remains. ⛑ Worth more than it sounds: a corpse does **not** lie where you
+        died. `_create_corpse_from_character` spawns it at a RANDOM spot at **half your distance
+        from origin**, and the death notice gives only a compass direction and a distance rounded
+        to ten tiles - so recovery is a genuine search, and this turns it into a walk.
+        It needed new plumbing: corpses were keyed by `character_name` only, and under permadeath
+        the player asking is a DIFFERENT character, so nothing linked anyone to their own remains.
+        New corpses carry `account_id`; older ones fall back to the name rather than vanishing.
+      * **Waypoint Seal** (skill 26) — first use marks, second use returns. ⛑ **Refused
+        underground both ways**: marking inside a dungeon would store a world coordinate that is
+        not where the player is, and returning out of one would bypass every exit rule a dungeon
+        has, including the food and the walk back that are the run's real costs. Marking does not
+        consume it, so a misplaced seal costs a walk rather than the item.
+      * **Bestiary Page — EXTENDED, NOT BUILT, and that is the fifth shipped-but-unticked item.**
+        A recipe with that exact id already existed, revealing a **random** unknown monster's HP to
+        the **character** - which permadeath erases, so a page bought with materials was worth
+        exactly one life. It now records **the foe in front of you** first (the moment knowing
+        matters is while it is hitting you) and writes to the **account**, so it outlives the
+        character that made it. The GDScript parser caught the duplicate id, which is luckier than
+        it should have been - the audit trail said `bestiary 1 recipes` and I did not follow it up.
+
+      **✅ AND THE ORPHANED MATERIALS: 9 → 6.** `silverleaf`, `black_pearl`, `ironwood` and
+      `worldtree_branch` all now have a recipe that wants them.
+      ⛑ **The potion cull created a NEW orphan and the audit caught it:** collapsing the five Banes
+      removed Beast Bane, which was the only consumer of `wyvern_leather`. Folded into Banebrew,
+      which reads correctly anyway - a brew that turns on anything should be made of a bit of
+      everything. **A cull can orphan a material; re-run `crafting_materials_audit.gd` after one.**
+      Still homeless: `ash_wood`, `darkwood`, `oak_wood`, `freshwater_pearl`, `ice_crystal`,
+      `rock_salt` - three of them still wood, which remains the worst category.
 
       **⚑ NEW, owner 2026-09-18 while approving the Bestiary Page:** *"it may be beneficial for us
       to add an inspect button or something in combat where if players have the bestiary for a

@@ -1764,6 +1764,36 @@ func record_bestiary_kill(account_id: String, monster_name: String, monster_leve
 		}
 	save_house(account_id, house)
 
+func grant_bestiary_page(account_id: String, monster_name: String) -> bool:
+	"""Mark one species as FULLY known for this account, whatever the bestiary upgrade level.
+
+	⚑ A scribed Bestiary Page. Kills have always been recorded (`record_bestiary_kill` tracks
+	them even when the upgrade is locked); the UPGRADE decides how much of that history you are
+	shown. A Page buys the full entry for ONE species without buying the tier.
+
+	⛑ IT SURVIVES DEATH, which is what makes it an investment rather than a consumable. Under
+	permadeath almost nothing a player earns outlives them; account-level knowledge does, and
+	that is precisely why a page of it is worth materials."""
+	if account_id == "" or monster_name == "":
+		return false
+	var house = get_house(account_id)
+	if house == null:
+		return false
+	if not house.has("bestiary_pages"):
+		house["bestiary_pages"] = {}
+	if house["bestiary_pages"].has(monster_name):
+		return false   # already known - the caller refunds rather than eating the page
+	house["bestiary_pages"][monster_name] = true
+	save_houses()
+	return true
+
+
+func has_bestiary_page(account_id: String, monster_name: String) -> bool:
+	var house = get_house(account_id)
+	if house == null or not house.has("bestiary_pages"):
+		return false
+	return bool(house["bestiary_pages"].get(monster_name, false))
+
 func get_bestiary(account_id: String) -> Dictionary:
 	"""Return the raw bestiary dict (monster_name → entry). Empty if account
 	has no house or has never killed anything."""

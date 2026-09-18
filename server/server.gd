@@ -8260,6 +8260,16 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 
 	# Create corpse BEFORE clearing dungeon state (need in_dungeon flag for location)
 	var corpse = _create_corpse_from_character(character, cause_of_death)
+	# ⚑ WHOSE REMAINS THESE ARE, BY ACCOUNT. A corpse was keyed only by `character_name`,
+	# and under permadeath the player asking about it is a DIFFERENT character - so nothing
+	# linked a player to their own remains. The Remains Ledger needs that link, and so would
+	# any future "your last three deaths" surface.
+	#
+	# Corpses written before this have no `account_id`; the Ledger falls back to matching the
+	# character NAME, which still works for anyone who has not yet lost that name to a
+	# re-roll. Old records are not rewritten - there is nothing to rewrite them FROM.
+	if peers.has(peer_id):
+		corpse["account_id"] = String(peers[peer_id].get("account_id", ""))
 
 	# Clear dungeon state if player was in a dungeon
 	if character.in_dungeon:
@@ -11861,12 +11871,24 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			character.use_consumable_stack(index)
 		else:
 			character.remove_item(index)
+		# ⚑ THE FOE IN FRONT OF YOU FIRST, then a random unknown. Owner-agreed 2026-09-18:
+		# the Page is one of the Scribe's items and its job is to make the world legible - and
+		# the moment knowing about something MATTERS is while it is hitting you. Falling back to
+		# a random unknown keeps the old out-of-combat behaviour rather than removing it.
+		var _forced: String = ""
+		if combat_mgr.active_combats.has(peer_id):
+			# `base_name`, the key the bestiary already records kills under: a "Swift Warded Wight"
+			# must write the page for WIGHTS, not for one variant combination never met again.
+			var _bp_m: Dictionary = combat_mgr.active_combats[peer_id].get("monster", {})
+			_forced = String(_bp_m.get("base_name", _bp_m.get("name", "")))
 		# Find a monster type the player doesn't fully know
 		var all_monsters = monster_db.get_all_monster_names()
 		var unknown = []
 		for mname in all_monsters:
 			if not character.knows_monster(mname, 9999):
 				unknown.append(mname)
+		if _forced != "" and not character.knows_monster(_forced, 9999):
+			unknown = [_forced]
 		if unknown.is_empty():
 			send_to_peer(peer_id, {
 				"type": "text",
@@ -11875,6 +11897,14 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		else:
 			var chosen = unknown[randi() % unknown.size()]
 			character.record_monster_kill(chosen, 9999)
+			# ⚑ AND IT IS WRITTEN TO THE ACCOUNT, SO IT OUTLIVES THIS CHARACTER.
+			#
+			# ⛑ `record_monster_kill` writes to the CHARACTER, and under permadeath that is erased
+			# with them - so a page bought with materials was worth exactly one life. Account-level
+			# knowledge is the only kind that survives here, which is precisely what makes a page of
+			# it worth crafting rather than a consumable worth hoarding.
+			if peers.has(peer_id):
+				persistence.grant_bestiary_page(String(peers[peer_id].get("account_id", "")), chosen)
 			send_to_peer(peer_id, {
 				"type": "text",
 				"message": "[color=#87CEEB]You study the %s![/color]\n[color=#00FF00]You now know the true HP of [color=#FFD700]%s[/color]![/color]" % [item_name, chosen]
@@ -12066,6 +12096,55 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 		# Don't update character yet - wait for selection
 		return
+	elif effect.has("waypoint_seal"):
+		# ⚑ WAYPOINT SEAL — mark a spot with the first use, return to it with the second.
+		#
+		# One seal does both jobs, which is why it is a Seal rather than two items: the player
+		# carries one thing and decides when to spend each half of it.
+		#
+		# ⛑ REFUSED IN A DUNGEON, both ways. Marking inside one would store a world coordinate
+		# that is not where the player actually is, and returning out of one would be a free
+		# escape that bypasses every exit rule a dungeon has - including the food and the walk
+		# back out, which are the run's real costs.
+		if character.in_dungeon:
+			send_to_peer(peer_id, {"type": "text",
+				"message": "[color=#FF6666]The seal will not take underground. Find the surface first.[/color]"})
+			# Hand the item back: it was not spent on anything.
+			character.add_item(item.duplicate(true))
+		elif not character.waypoint_set:
+			character.waypoint_x = character.x
+			character.waypoint_y = character.y
+			character.waypoint_set = true
+			# The seal is NOT consumed on marking - it is consumed on the return, so a player who
+			# marks the wrong tile has lost nothing but a walk.
+			character.add_item(item.duplicate(true))
+			send_to_peer(peer_id, {"type": "text",
+				"message": "[color=#C8A24A]You press the seal into the ground at (%d, %d).[/color]
+[color=#808080]Use it again anywhere to return here.[/color]" % [character.x, character.y]})
+		else:
+			var _wx: int = character.waypoint_x
+			var _wy: int = character.waypoint_y
+			character.waypoint_set = false
+			character.x = _wx
+			character.y = _wy
+			send_to_peer(peer_id, {"type": "text",
+				"message": "[color=#C8A24A]The seal burns away and the ground pulls you back to (%d, %d).[/color]" % [_wx, _wy]})
+			send_location_update(peer_id)
+	elif effect.has("remains_ledger"):
+		# ⚑ REMAINS LEDGER — exactly where your last character fell, and what is still on them.
+		#
+		# ⛑ THIS IS WORTH MORE THAN IT SOUNDS BECAUSE A CORPSE DOES NOT LIE WHERE YOU DIED.
+		# `_create_corpse_from_character` spawns it at a RANDOM location at HALF your distance
+		# from origin, and the death message gives only a compass direction and a distance
+		# rounded to ten tiles. Recovering your own gear is therefore a genuine search, and this
+		# turns it into a walk - which is exactly the Scribe's remit: reduce a COST, add no power.
+		var _acct: String = String(peers[peer_id].get("account_id", "")) if peers.has(peer_id) else ""
+		var _mine: Dictionary = _latest_remains_for(_acct, character.name)
+		if _mine.is_empty():
+			send_to_peer(peer_id, {"type": "text",
+				"message": "[color=#888888]The ledger stays blank. Nothing of yours lies out there.[/color]"})
+		else:
+			send_to_peer(peer_id, {"type": "text", "message": _remains_ledger_text(_mine, character)})
 	elif effect.has("safe_passage"):
 		# ⚑ SAFE PASSAGE SCROLL — N steps during which the wilderness leaves you alone.
 		#
@@ -40752,6 +40831,69 @@ func _is_registered_companion(character, comp: Dictionary) -> bool:
 			return true
 	return false
 
+
+func _latest_remains_for(account_id: String, current_name: String) -> Dictionary:
+	"""The most recent corpse belonging to this account.
+
+	⛑ ACCOUNT FIRST, NAME AS A FALLBACK. Corpses written before 2026-09-18 carry no
+	`account_id`, so matching on the character NAME is the only handle they have - and it still
+	works for anyone who has not re-rolled that name since. Returning nothing for an old corpse
+	would make the Ledger look broken to exactly the veteran players most likely to buy one."""
+	var best: Dictionary = {}
+	var best_at: int = -1
+	for c in persistence.get_corpses():
+		if not (c is Dictionary):
+			continue
+		var owns: bool = false
+		if account_id != "" and String(c.get("account_id", "")) == account_id:
+			owns = true
+		elif String(c.get("account_id", "")) == "" and String(c.get("character_name", "")) == current_name:
+			owns = true
+		if not owns:
+			continue
+		var at: int = int(c.get("created_at", 0))
+		if at > best_at:
+			best_at = at
+			best = c
+	return best
+
+
+func _remains_ledger_text(corpse: Dictionary, reader) -> String:
+	"""What the ledger says: where they lie, how far, and what is still on them."""
+	var cx: int = int(corpse.get("x", 0))
+	var cy: int = int(corpse.get("y", 0))
+	var dist: int = int(round(sqrt(float(pow(cx - reader.x, 2) + pow(cy - reader.y, 2)))))
+	var dir: String = _get_compass_direction(reader.x, reader.y, cx, cy)
+	var who: String = String(corpse.get("character_name", "someone"))
+	var out: String = "[color=#C8A24A]The ledger fills itself in.[/color]
+"
+	out += "[color=#FFD700]%s lies at (%d, %d)[/color] — [color=#808080]%d tiles %s of you.[/color]
+" % [
+		who, cx, cy, dist, dir]
+	# ⛑ THE CONTENTS ARE THE POINT. Knowing WHERE is only half a decision - whether the walk is
+	# worth making depends on what is still on them, and the player has no other way to find out
+	# without making the walk first.
+	var contents: Dictionary = corpse.get("contents", {}) if corpse.get("contents", null) is Dictionary else {}
+	var lines: Array = []
+	for it in contents.get("items", []):
+		if it is Dictionary:
+			lines.append("  %s" % String(it.get("name", "something")))
+	if contents.get("active_companion", null) != null:
+		lines.append("  %s (companion)" % String(contents["active_companion"].get("name", "a companion")))
+	if contents.get("other_companion", null) != null:
+		lines.append("  %s (companion)" % String(contents["other_companion"].get("name", "a companion")))
+	if contents.get("egg", null) != null:
+		lines.append("  an egg")
+	var gems: int = int(contents.get("monster_gems", 0))
+	if gems > 0:
+		lines.append("  %d monster gem%s" % [gems, "" if gems == 1 else "s"])
+	if lines.is_empty():
+		out += "[color=#808080]Nothing of worth remains on them.[/color]"
+	else:
+		out += "[color=#9ACD32]Still on them:[/color]
+" + "
+".join(lines)
+	return out
 
 func _create_corpse_from_character(character: Character, cause_of_death: String) -> Dictionary:
 	"""Create a corpse from a dead character's possessions."""

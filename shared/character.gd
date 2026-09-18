@@ -488,6 +488,18 @@ const OFF_AFFINITY_MULT_BY_RANK: Array = [0.75, 0.81, 0.87, 0.94, 1.0]
 ## Cloak is on until something turns it off, so it is a STATE you sit in; this is a budget spent
 ## by walking, which is what makes it a consumable worth carrying rather than a mode.
 @export var safe_passage_steps: int = 0
+## ⚑ WAYPOINT SEAL — one marked spot, and one journey back to it.
+##
+## Pairs with post-to-post road travel (approved 2026-09-18): roads connect POSTS, and the Seal
+## connects the places that are not posts - a dungeon mouth, a gathering patch, a corpse you
+## could not carry everything back from.
+##
+## ⛑ ONE AT A TIME, AND SPENT ON USE. A stack of permanent bookmarks would turn the map into a
+## menu and quietly retire travel altogether, which is the thing road travel was careful not to
+## do ("it costs TIME AND RESOURCES, not nothing").
+@export var waypoint_x: int = 0
+@export var waypoint_y: int = 0
+@export var waypoint_set: bool = false
 const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed regen)
 
 # Title System - prestigious titles with special abilities
@@ -2212,6 +2224,9 @@ func to_dict() -> Dictionary:
 		"swap_attack_with_ability": swap_attack_with_ability,
 		"cloak_active": cloak_active,
 		"safe_passage_steps": safe_passage_steps,
+		"waypoint_x": waypoint_x,
+		"waypoint_y": waypoint_y,
+		"waypoint_set": waypoint_set,
 		"title": title,
 		"title_data": title_data,
 		"knight_status": knight_status,
@@ -2529,6 +2544,9 @@ func from_dict(data: Dictionary):
 	# Safe Passage DOES persist: it was paid for with materials and is spent by walking, so
 	# logging out must not consume it. That is the opposite of cloak, which is free to re-enter.
 	safe_passage_steps = int(data.get("safe_passage_steps", 0))
+	waypoint_x = int(data.get("waypoint_x", 0))
+	waypoint_y = int(data.get("waypoint_y", 0))
+	waypoint_set = bool(data.get("waypoint_set", false))
 
 	# Title system
 	title = data.get("title", "")

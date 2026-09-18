@@ -1913,7 +1913,12 @@ const RECIPES = {
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 60,
 		"difficulty": 70,
-		"materials": {"dragon_blood": 3, "phoenix_petal": 2, "void_essence": 1},
+		# ⚑ PARTS FROM SEVERAL FAMILIES, because it works on all of them. Collapsing the five
+		# Banes left `wyvern_leather` with no recipe at all - it was Beast Bane's material -
+		# so the cull created a new orphan of exactly the kind this arc exists to remove.
+		# Folding it in fixes that and reads correctly: a brew that turns on anything should
+		# be made of a bit of everything.
+		"materials": {"dragon_blood": 2, "wyvern_leather": 2, "phoenix_petal": 1, "void_essence": 1},
 		"output_type": "consumable",
 		"output_slot": "",
 		"effect": {"type": "bane", "monster_type": "any", "bonus_pct": 30, "duration_battles": 3},
@@ -2444,7 +2449,11 @@ const RECIPES = {
 		"skill": CraftingSkill.SCRIBING,
 		"skill_required": 20,
 		"difficulty": 30,
-		"materials": {"fine_parchment": 2, "ink": 3, "magic_dust": 1},
+		# ⚑ `worldtree_branch` had NO destination at all - no recipe wanted it and it is not
+		# edible. Five of the nine wood types were in that state, which is the owner's "no one
+		# wants to sit around and craft a ton of dust, logs" in the data. A page about the
+		# world's creatures is a fair home for a branch of the world tree.
+		"materials": {"fine_parchment": 2, "ink": 3, "magic_dust": 1, "worldtree_branch": 1},
 		"output_type": "bestiary",
 		"specialist_only": true,
 		"craft_time": 4.0
@@ -3335,6 +3344,32 @@ const RECIPES = {
 	# ⚑ THE SCRIBE MAKES THE WORLD SURVIVABLE. Owner-agreed identity 2026-09-18: every Scribing
 	# item reduces a RISK or a COST rather than adding power, which keeps the crafter out of the
 	# weapon/armour balance question and means it can never become mandatory.
+	"remains_ledger": {
+		"name": "Remains Ledger",
+		"skill": CraftingSkill.SCRIBING,
+		"skill_required": 20,
+		"difficulty": 32,
+		# `black_pearl` had NO destination at all before this - no recipe wanted it and it is not
+		# edible. The Scribe is a natural home for the orphans.
+		"materials": {"fine_parchment": 1, "ink": 2, "black_pearl": 1},
+		"output_type": "consumable",
+		# Worth more than it sounds: a corpse does NOT lie where you died. It spawns at a random
+		# spot at HALF your distance from origin, and the death notice gives only a compass
+		# direction and a distance rounded to ten tiles.
+		"effect": {"type": "remains_ledger", "remains_ledger": true},
+		"craft_time": 3.0
+	},
+	"waypoint_seal": {
+		"name": "Waypoint Seal",
+		"skill": CraftingSkill.SCRIBING,
+		"skill_required": 26,
+		"difficulty": 38,
+		# `ironwood` was another orphan - five of the nine wood types had no use whatsoever.
+		"materials": {"parchment": 2, "arcane_ink": 1, "ironwood": 2},
+		"output_type": "consumable",
+		"effect": {"type": "waypoint_seal", "waypoint_seal": true},
+		"craft_time": 3.5
+	},
 	"scroll_of_safe_passage": {
 		"name": "Safe Passage Scroll",
 		"skill": CraftingSkill.SCRIBING,
