@@ -23,6 +23,7 @@ extends SceneTree
 ##   godot --headless --path . --script res://tools/probe/no_uncapped_stat_growth.gd
 
 const DT := preload("res://shared/drop_tables.gd")
+const CD := preload("res://shared/crafting_database.gd")
 
 var _fails: Array = []
 
@@ -98,6 +99,62 @@ func _init() -> void:
 			_fail("unbounded stat growth: %s" % b)
 	else:
 		_ok("no `affixes[key] = old + amount` write remains")
+
+	print("")
+	print("===== 3b. NOR DOES ANY ROLL COMPOUND OFF THE CURRENT VALUE =====")
+	# ⛑ THE ADDITIVE SWEEP ABOVE MISSED A SECOND ONE, AND THAT IS THE LESSON. `_craft_reforge`
+	# wrote `target_item[stat_key]`, not `target_item["affixes"][key]`, and it MULTIPLIED rather
+	# than added - so it slipped past a check written around the blacksmith's exact shape.
+	#
+	# Measured before the fix, median of 400 runs starting at attack 100:
+	#   STANDARD    100 -> 42 after 100 reforges   (a multiplicative walk's median sits below
+	#                                               its mean, so "reroll +/-10%" quietly ate the
+	#                                               stat - a trap, not a wash)
+	#   MASTERWORK  100 -> 769 after 100 reforges  (expected 1.025x per reforge, exponential)
+	#
+	# The cause in one word: the roll read the CURRENT value as its basis. It now reads a stored
+	# original, so the band is fixed and repeating it drifts nowhere.
+	# ⛑ DRIVEN WITH A REAL ITEM, REPEATEDLY. Two earlier versions of this check asserted nothing:
+	# one looked for the name `reforge_base` and an absent literal (an injection setting
+	# `base_val = old_val` passed it clean), and one looped while passing a CONSTANT base, so the
+	# loop was decoration. "Does this compound?" is a question about what happens to an item over
+	# many reforges, so the probe reforges an item many times and looks at the item.
+	for qname in ["STANDARD", "FINE", "MASTERWORK"]:
+		var qm: float = {"STANDARD": 1.0, "FINE": 1.25, "MASTERWORK": 1.5}[qname]
+		var finals: Array = []
+		for _run in range(300):
+			var it: Dictionary = {"attack": 100}
+			for _step in range(100):
+				CD.reforge_stat(it, "attack", qm, randf())
+			finals.append(int(it["attack"]))
+		finals.sort()
+		var med: int = int(finals[finals.size() / 2])
+		var hi_seen: int = int(finals[finals.size() - 1])
+		# Band is [0.90 x 100, (1 + 0.10 x qm) x 100]. Anything outside it after a hundred
+		# reforges means the value drifted, in whichever direction.
+		var band_hi: int = int(100.0 * (1.0 + 0.10 * qm))
+		if med < 88 or med > band_hi + 3:
+			_fail("%s drifted to a median of %d after 100 reforges (band 90-%d)" % [qname, med, band_hi])
+		elif hi_seen > band_hi + 3:
+			_fail("%s reached %d, above its band ceiling of %d" % [qname, hi_seen, band_hi])
+		else:
+			_ok("%-10s median %d, max %d after 100 reforges (band 90-%d)" % [qname, med, hi_seen, band_hi])
+	# ⛑ AND THE DANGER IS DEMONSTRATED, not just the fix. Feeding the roll its own output is what
+	# the shipped code did; printing where that lands is what makes the numbers above mean
+	# something rather than look like an arbitrary band.
+	var compounded: Array = []
+	for _run in range(300):
+		var v: int = 100
+		for _step in range(100):
+			var tmp: Dictionary = {"attack": v}
+			CD.reforge_stat(tmp, "attack", 1.5, randf())
+			v = int(tmp["attack"])
+		compounded.append(v)
+	compounded.sort()
+	print("  (for contrast: re-pinning the base every reforge - what the shipped code did -")
+	print("   lands at a median of %d after 100 at Masterwork)" % int(compounded[compounded.size() / 2]))
+	if int(compounded[compounded.size() / 2]) < 200:
+		_fail("the contrast case did not compound - this check is not measuring what it claims")
 
 	print("")
 	print("===== 4. THE SANCTIONED PATH REPLACES AND IS CAPPED =====")

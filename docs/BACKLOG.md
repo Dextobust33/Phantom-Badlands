@@ -7899,6 +7899,39 @@ something was dropped, and it sat unnoticed for eleven days.
       answer rather than a dead button. The replacement is `Inventory → Rework`, which **trades**
       one stat for another instead of adding to it and is capped at 5 per item.
 
+      **✅ AND A SECOND ONE, FOUND BY THE SAME SWEEP — `_craft_reforge`, 2026-09-18.** The Reforge
+      recipe (*"reroll weapon/armor stats ±10%"*) read the value it was about to overwrite, so the
+      roll **compounded** — a multiplicative random walk with no ceiling. It slipped past the first
+      probe because it writes `item[stat]`, not `item["affixes"][key]`, and **multiplies** rather
+      than adds.
+
+      **Measured**, attack 100, median of 400 runs:
+
+      | quality | 10× | 25× | 50× | 100× |
+      |---|---|---|---|---|
+      | STANDARD | 93 | 84 | 71 | **42** |
+      | MASTERWORK | 122 | 160 | 254 | **769** |
+
+      **Both ends were wrong, which is why nobody caught it.** At Masterwork the expected
+      multiplier is 1.025 per reforge, so it grows exponentially. At Standard the expected
+      multiplier is exactly 1.000 — but the **median** of a multiplicative walk sits below its
+      mean, so "reroll ±10%" quietly destroyed more than half the stat. A trap at low quality and
+      a money printer at high, from one line.
+
+      Fixed by rolling against the stat's **original** value, pinned on first reforge. Reforging
+      is now what it claims to be: a lateral reroll in a fixed band, repeatable without ratcheting
+      either way. No cap needed — there is nothing left to compound.
+
+      ⛑ **THREE PROBE CHECKS IN ONE SESSION ASSERTED NOTHING, and this one took two attempts.**
+      v1 looked for the name `reforge_base` and an absent literal — an injection setting
+      `base_val = old_val` defeated the fix entirely and passed clean. v2 looped 100 times while
+      passing a **constant** base, so the loop was decoration. The fix was structural: the
+      base-pinning moved **inside** `CraftingDatabase.reforge_stat`, so there is no argument a
+      caller can get wrong, and the probe now reforges a **real item dictionary 100 times** and
+      reads the item. It also prints the compounding case (median **538**) as a contrast, with its
+      own assertion — if that stops compounding, the test is no longer measuring what it claims.
+      **A source-text check cannot answer a question about behaviour over many applications.**
+
       Probe: `tools/probe/no_uncapped_stat_growth.gd` — guards the **rule**, not the instance. It
       fails on any `affixes[key] = old + amount` write anywhere in the server, so the next one
       written by someone who never heard of the blacksmith is caught too. Proven by injecting that

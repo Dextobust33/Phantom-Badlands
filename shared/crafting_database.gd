@@ -119,6 +119,41 @@ const BOOST_CONFIG = {
 # Max upgrade levels that can be applied to a single item via crafting
 const MAX_UPGRADE_LEVELS = 50
 
+
+## Reforge ONE stat on an item, and pin the reference the roll is measured against.
+##
+## ⛑ THE BASE-PINNING IS INSIDE THIS FUNCTION ON PURPOSE. `_craft_reforge` used to roll off the
+## value it was about to overwrite, so the result COMPOUNDED - a multiplicative random walk with
+## no ceiling. Measured at attack 100, median of 400 runs, after 100 reforges: STANDARD fell to
+## **42** (a walk's median sits below its mean, so "reroll ±10%" quietly ate the stat) and
+## MASTERWORK climbed to **769** (expected 1.025x per reforge). A trap at low quality and a money
+## printer at high, from one line.
+##
+## The first fix passed the base in from the caller, and that was still wrong in a way that took
+## a fault injection to see: a caller that passes `old_val` defeats it completely while every
+## source-text check still passes. Owning the reference HERE means there is no argument a caller
+## can get wrong, and a probe can drive the whole property with a real item dictionary.
+static func reforge_stat(item: Dictionary, stat_key: String, quality_mult: float, rng_unit: float) -> int:
+	if not item.has(stat_key):
+		return 0
+	var cur: int = int(item[stat_key])
+	if cur <= 0:
+		return cur
+	if not (item.get("reforge_base", null) is Dictionary):
+		item["reforge_base"] = {}
+	var base_map: Dictionary = item["reforge_base"]
+	# The FIRST reforge of this stat fixes the reference for every later one, so repeating it
+	# oscillates inside a band instead of ratcheting.
+	if not base_map.has(stat_key):
+		base_map[stat_key] = cur
+	var base_val: int = int(base_map[stat_key])
+	var band: float = 0.10 * quality_mult
+	var lo: int = int(base_val * (1.0 - 0.10))
+	var hi: int = int(base_val * (1.0 + band))
+	var rolled: int = maxi(1, lo + int(rng_unit * float(maxi(0, hi - lo))))
+	item[stat_key] = rolled
+	return rolled
+
 # Max different enchantment stats allowed on a single item
 const MAX_ENCHANTMENT_TYPES = 3
 
