@@ -589,9 +589,16 @@ func _make_recipe_button(recipe: Dictionary, index: int) -> Button:
 
 	var label := name
 	if is_locked:
+		# ⚡ A LOCKED ROW IS STILL CLICKABLE. Owner 2026-09-18, after being pointed at
+		# commissions twice: *"I still don't understand how to put in a commission. Lets say I want
+		# a Stone Wall... I see Locked Stone Wall (Lv3) on the left. I can't click it because it is
+		# locked so how could I put a commission out for one?"*
+		#
+		# ⛑ EXACTLY. Disabling the row disabled the ONE thing a player under the skill
+		# requirement can do about it - ask somebody else to make it. The CRAFT button stays
+		# disabled, because they still cannot make it; the detail pane and Post Job do not.
 		label = "Locked  %s (Lv%d)" % [name, skill_req]
 		btn.add_theme_color_override("font_color", Color(0.45, 0.45, 0.45))
-		btn.disabled = true
 	elif is_specialist_gated:
 		# ⛑ COMMISSIONABLE ROWS ARE NOT DISABLED. Owner 2026-09-18: *"All I see are the locked
 		# items that I can't click."* 43% of recipes are specialist-gated, so a flat un-clickable
@@ -601,9 +608,10 @@ func _make_recipe_button(recipe: Dictionary, index: int) -> Button:
 			label = "%s   commission %dv" % [name, int(recipe.get("commission_fee", 0))]
 			btn.add_theme_color_override("font_color", Color(0.78, 0.64, 0.29))
 		else:
+			# Same reasoning as the locked row above: you cannot make it, which is precisely when
+			# posting the job to a real crafter is the answer.
 			label = "[Spec]  %s (Lv%d)" % [name, skill_req]
 			btn.add_theme_color_override("font_color", Color(1.0, 0.45, 0.27))
-			btn.disabled = true
 	else:
 		var color := Color(0, 1, 0) if can_craft else Color(0.7, 0.7, 0.7)
 		btn.add_theme_color_override("font_color", color)
@@ -768,11 +776,19 @@ func _refresh_detail() -> void:
 	_qty_max.disabled = _craft_quantity == max_qty
 
 	if _post_job_button:
-		_post_job_button.visible = is_specialist_gated and bool(recipe.get("can_commission", false))
+		# ⛑ SHOWN ON EVERY RECIPE THIS PLAYER CANNOT MAKE, not only the specialist ones. A
+		# recipe above your crafting skill is the commonest reason to want somebody else to make
+		# something, and it was the one case with no button. The server applies the same rule: it
+		# refuses a commission only when you could have made the thing yourself.
+		_post_job_button.visible = is_locked or is_specialist_gated
+		_post_job_button.text = "Post Job for a Player"
+		_post_job_button.tooltip_text = ("You cannot make this yet. Offer it to other crafters -"
+			+ " they supply the materials and their own quality, and a good crafter beats the NPC"
+			+ " job, which is always Standard.")
 
 	# Craft button state
 	if is_locked:
-		_craft_button.text = "Locked (Lv%d required)" % skill_req
+		_craft_button.text = "Locked - %s Lv%d needed" % [str(recipe.get("skill_name", "skill")).capitalize(), skill_req]
 		_craft_button.disabled = true
 	elif is_specialist_gated:
 		# ⛑ A GATED RECIPE IS AN OFFER NOW, NOT A REFUSAL. "Specialist Job Required" was a dead

@@ -1,6 +1,8 @@
 extends Control
 class_name SocialPanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 ## Friends, requests and blocked players — the surface the friend system never had.
 ##
 ## Owner 2026-09-17: *"Anything that remains needs a way to access it via the UI."*
@@ -265,7 +267,7 @@ func _build_layout() -> void:
 	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(btn_row)
 	var close_btn := Button.new()
-	close_btn.text = "Close  (Esc)"
+	close_btn.text = PanelCloseKeysScript.CLOSE_HINT
 	close_btn.custom_minimum_size = Vector2(200, 32)
 	close_btn.focus_mode = Control.FOCUS_ALL
 	close_btn.pressed.connect(close)
@@ -281,10 +283,9 @@ func show_status(text: String) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
-			get_viewport().set_input_as_handled()
-			close()
+	if PanelCloseKeysScript.wants_close(event):
+		get_viewport().set_input_as_handled()
+		close()
 
 
 func blocks_hotkeys() -> bool:

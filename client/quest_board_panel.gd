@@ -1,6 +1,8 @@
 extends Control
 class_name QuestBoardPanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 # P2 (2026-08-26) — Quest Board panel. Replaces the scrolling game_output text blob
 # (where turn-ins and available quests shared one confusing number-key sequence) with a
 # real card UI: three clearly-separated sections, each card carrying its OWN explicit
@@ -511,10 +513,9 @@ func _on_close() -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
-			get_viewport().set_input_as_handled()
-			_on_close()
+	if PanelCloseKeysScript.wants_close(event):
+		get_viewport().set_input_as_handled()
+		_on_close()
 
 
 func _build_layout() -> void:
@@ -569,6 +570,7 @@ func _build_layout() -> void:
 
 	var close_btn := Button.new()
 	close_btn.text = "X"
+	close_btn.tooltip_text = PanelCloseKeysScript.CLOSE_HINT
 	close_btn.tooltip_text = "Close (Esc)"
 	close_btn.focus_mode = Control.FOCUS_NONE
 	close_btn.custom_minimum_size = Vector2(32, 28)

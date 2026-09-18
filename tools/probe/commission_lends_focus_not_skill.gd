@@ -118,7 +118,16 @@ func _init() -> void:
 	var player_half := {
 		"commission is an order type": srv.find("\"monster_part\", \"commission\"]") >= 0,
 		"it names a recipe": srv.find("order[\"recipe_id\"] = commission_recipe_id") >= 0,
-		"only gated recipes qualify": srv.find("post a normal buy order instead") >= 0,
+		# ⚡ THE RULE WIDENED ON 2026-09-18. It used to admit `specialist_only` recipes and nothing
+		# else, so a recipe merely above your SKILL - the commonest reason to want help - was
+		# refused. Owner: *"Lets say I want a Stone Wall... I see Locked Stone Wall (Lv3) on the
+		# left. I can't click it because it is locked so how could I put a commission out for
+		# one?"* What it must still refuse is a commission for work you could simply do yourself.
+		"work you CAN do is refused": srv.find("You can make that yourself - post a normal buy order instead.") >= 0,
+		"work above your SKILL qualifies": srv.find("var _could_make_it: bool = (not bool(comm_recipe.get(\"specialist_only\", false))) and _cs_level >= _cs_req") >= 0,
+		"and the panel lets you click a locked row":
+			FileAccess.get_file_as_string("res://client/crafting_panel.gd").find(
+				"_post_job_button.visible = is_locked or is_specialist_gated") >= 0,
 		"filled with YOUR OWN craft": srv.find("a commission is filled with your own work") >= 0,
 		"the crafter is credited": srv.find("inv_item[\"crafted_by\"] = character.name") >= 0,
 	}

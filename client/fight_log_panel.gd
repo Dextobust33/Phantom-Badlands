@@ -1,4 +1,6 @@
 extends Control
+
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
 ## The last fight's blow-by-blow, as an OVERLAY rather than text in the shared output window.
 ##
 ## ⛑ WHY THIS IS A PANEL AND NOT `display_game()` CALLS. The [L] view used to paint itself into
@@ -159,7 +161,7 @@ func _build() -> void:
 	head.add_child(_skip_btn)
 
 	var close_btn := Button.new()
-	close_btn.text = "Close  [L]"
+	close_btn.text = PanelCloseKeysScript.CLOSE_HINT + "  [L]"
 	close_btn.focus_mode = Control.FOCUS_ALL
 	close_btn.pressed.connect(close)
 	head.add_child(close_btn)
@@ -331,7 +333,8 @@ func close() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_L or event.keycode == KEY_ESCAPE:
-			close()
-			get_viewport().set_input_as_handled()
+	if PanelCloseKeysScript.wants_close(event) or (
+			event is InputEventKey and event.pressed and not event.echo
+			and (event as InputEventKey).keycode == KEY_L):
+		close()
+		get_viewport().set_input_as_handled()

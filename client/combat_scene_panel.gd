@@ -5355,9 +5355,18 @@ func _refresh_hand() -> void:
 			if value_pip:
 				value_pip.visible = false
 
-		# v0.9.697 — Mage Meteor DISCHARGES Focus (bigger per-Focus bonus, resets ramp).
+		# v0.9.697 — Mage Meteor DISCHARGES the ramp (bigger per-point bonus, resets it).
 		# Not gated; the note shows the payoff for spending the ramp now.
+		#
+		# ⚑ THE METER'S OWN NAME, NOT THE WORD "FOCUS". Owner 2026-09-18: *"Cataclysm on the card
+		# says Ramp focus first. The Sorcerer doesn't use Focus."* Right - the Sorcerer's engine is
+		# Volatility and the Sage's is Insight; only the Wizard's is Focus. The Devastate branch a
+		# few lines above already used `_momentum_name` for exactly this reason and this branch
+		# typed the literal, so the one card that discharges the ramp was the one card that named
+		# it wrong. `_focus_label_text` is set from the server's `focus_label`, which reads
+		# `CombatManager.class_engine_label`.
 		if _focus_active and _card == "meteor" and effect_lbl:
+			var _fname := _focus_label_text if _focus_label_text != "" else "Focus"
 			if _focus >= _focus_max:
 				effect_lbl.text = "Discharge! +%d%%" % int(_focus * 25)
 				effect_lbl.add_theme_color_override("font_color", Color("#7AE0FF"))
@@ -5365,7 +5374,7 @@ func _refresh_hand() -> void:
 				effect_lbl.text = "Discharge +%d%%" % int(_focus * 25)
 				effect_lbl.add_theme_color_override("font_color", Color("#5AC8FF"))
 			else:
-				effect_lbl.text = "Ramp Focus first"
+				effect_lbl.text = "Ramp %s first" % _fname
 				effect_lbl.add_theme_color_override("font_color", Color("#6E7E8A"))
 
 		var upg_lbl: RichTextLabel = cell.find_child("Upgrades", true, false)

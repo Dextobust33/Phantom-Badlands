@@ -23,9 +23,9 @@ with the same verb are a merge, an entry point that reaches nothing is a dead bu
 | ...opening no surface at all (pure navigation, safe to retire) | 0 |
 | ...with no arm in `process_command` | **0** |
 | ...handled but not whitelisted (unreachable by typing) | **0** |
-| panel scripts | 30 |
+| panel scripts | 31 |
 | ...never opened from `client.gd` | **0** |
-| local action-bar ids offered | 382 |
+| local action-bar ids offered | 389 |
 | ...with no case in `execute_local_action` (click does nothing) | **0** |
 | `_on_*` handlers nothing connects (a feature with no door) | **1** |
 
@@ -48,15 +48,16 @@ point for the touch controls the phone-support item will need.
 
 | panel | calls from client.gd | how it is reached | verb (its own docstring) |
 |---|---|---|---|
-| `combat_scene_panel.gd` | 425 | TRAVEL_FX_DURATION, _force_end_action_phase, _hide_formula_popup, _show_formula_popup, add_companion_damage, add_monster_damage | JRPG-style battle scene overlay. Top half is the scene (player+companion |
+| `combat_scene_panel.gd` | 451 | TRAVEL_FX_DURATION, _force_end_action_phase, _hide_formula_popup, _show_formula_popup, add_companion_damage, add_monster_damage | JRPG-style battle scene overlay. Top half is the scene (player+companion |
 | `market_panel.gd` | 57 | close_picker, get_status, has_method, is_picker_open, open_card_picker, open_egg_picker | Visual market surface: tabs (Browse / My Listings), filter chips, sort cycler, |
+| `crafting_panel.gd` | 14 | _on_filter_pressed, _on_recipe_pressed, get_boost_tier, has_method, populate, set_allow_skill_switch | Visual crafting surface: recipe list on the left, detail + Craft on the right. |
 | `companions_panel.gd` | 11 | clear_inspect, hide, populate_companions, populate_eggs, show_inspect, visible | Tabbed surface for the More → Companions and More → Eggs screens. |
 | `inventory_panel.gd` | 9 | has_method, has_signal, populate, set_client, set_status, visible | — |
-| `crafting_panel.gd` | 8 | get_boost_tier, has_method, populate, set_allow_skill_switch, set_boost_tier, set_upcoming_unlocks | Visual crafting surface: recipe list on the left, detail + Craft on the right. |
+| `menu_tree_panel.gd` | 7 | _rebuild, all_action_ids, close, open | Everything the game can do, in one place, as a two-level tree. |
+| `fight_log_panel.gd` | 6 | close, play_replay, show_log | The last fight's blow-by-blow, as an OVERLAY rather than text in the shared output window. |
 | `help_panel.gd` | 6 | close, open, show_index, show_topic | Audit #4 Slice 1A (v0.9.485) — reusable in-place help overlay. Distinct from |
 | `quest_board_panel.gd` | 6 | get, open_atlas, open_board, visible | P2 (2026-08-26) — Quest Board panel. Replaces the scrolling game_output text blob |
 | `ability_panel.gd` | 5 | has_method, populate, update_deck_collection, visible | v0.9.322 — Combat Deck viewer (formerly Ability Loadout). Shows the |
-| `menu_tree_panel.gd` | 5 | _rebuild, all_action_ids, close, open | Everything the game can do, in one place, as a two-level tree. |
 | `pvp_combat_panel.gd` | 5 | end_combat, note_opponent_submitted, note_self_submitted, open_combat, update_state | Audit #14 PvP Slice B.2 (v0.9.563) — Combat-scene PvP panel. |
 | `clan_panel.gd` | 4 | close, open, refresh, show_action_result | Audit #14 Slice 1 — visual Clan panel (per "no chat-command-first" rule). |
 | `clan_vault_panel.gd` | 4 | close, open, refresh, set_inventory | Audit #14 Slice 6 — visual Clan Vault panel. Promotes v0.9.446's |

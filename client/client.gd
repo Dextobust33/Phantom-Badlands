@@ -197,13 +197,26 @@ func _get_monster_art():
 
 # Trader art helper - for wandering NPCs (blacksmith, healer)
 var _trader_art_script = null
+var _post_art_key: String = ""
+
+
 func _post_npc_art_seed(role: String) -> int:
 	"""A stable art seed for a post's resident NPC — the POST plus the ROLE.
 
 	Keyed on both so the same smith greets you every visit AND the healer beside him is a
-	different person. Falls back to coordinates away from a named post, which still beats
-	re-rolling a new face on every screen."""
-	var post_name := String(character_data.get("current_post_name", ""))
+	different person.
+
+	⚡ THE FIRST VERSION OF THIS READ A FIELD NOTHING WRITES. Owner 2026-09-18: *"the Healer's
+	ASCII art is changing still, almost seems different if I bump into it from different sides."*
+	It was: this hashed a `current_post_ name` field on character_data, which is set nowhere,
+	so every call fell through to the player's own x,y - and bumping the healer from the north and
+	from the west are two different tiles, so they were two different people. The fix that looked
+	like it worked was worth nothing, and only the owner standing in front of it found that out.
+
+	`_post_art_key` is the post's own coordinates, sent by the server with the encounter. It cannot
+	drift with where the player is standing. The positional fallback is kept for an NPC met away
+	from any post, where a stranger IS a stranger."""
+	var post_name := _post_art_key
 	if post_name == "":
 		post_name = "%d,%d" % [int(character_data.get("x", 0)), int(character_data.get("y", 0))]
 	return hash(post_name + "|" + role)
@@ -226,6 +239,8 @@ const CharacterScript = preload("res://shared/character.gd")
 # Shared combat script, preloaded so the client can read the SERVER'S cost table instead of
 # keeping a hand-maintained copy of it. The copy had gone stale on every ability.
 const CombatManagerScript = preload("res://shared/combat_manager.gd")
+## The baker's record of what every overworld image looks like - see the --buildverify block.
+const _ArtFingerprint = preload("res://shared/overworld_art_fingerprint.gd")
 # v0.9.580 — client-side access to trading-post names so the "Turn in elsewhere"
 # hint in display_quest_list can be replaced with "Turn in at <PostName>". Just
 # need the static const TRADING_POSTS — no instantiation required.
@@ -2874,6 +2889,60 @@ func _ready():
 		# silently falls back to the shrunken 32px tiles and everything still "works".
 		_OverworldRoom._load_big_spans()
 		print("[BUILDVERIFY] big_tiles=", _OverworldRoom._big_spans.size())
+		# ⚡ AND WHAT THE ART LOOKS LIKE, not just that some of it is present.
+		#
+		# Owner 2026-09-18, live, about the tile at the centre of every post: *"it was still going
+		# back to the sword sprite when I stepped away from it"* - a sprite this repo replaced in a
+		# commit that is an ANCESTOR of the released tag. The PNG was right on disk and right in
+		# git; the build drew the old one, because Godot only re-imports on an editor pass.
+		#
+		# ⛑ THE TWO LINES ABOVE COULD NOT HAVE CAUGHT IT. `overworld_art` says one file exists and
+		# `big_tiles` counts a manifest - both true of a build carrying every tile from a month ago.
+		# That is the ingredients, not the function. This loads each PACKED texture and compares it
+		# to the fingerprint the baker wrote from the source, so "the picture in the build is not
+		# the picture we baked" is a gate failure instead of something a player reports.
+		var _art_bad: Array = []
+		var _art_n := 0
+		for _k in _ArtFingerprint.ART.keys():
+			var _want: Array = _ArtFingerprint.ART[_k]
+			var _tex := load("res://client/sprites/overworld32/%s.png" % _k) as Texture2D
+			if _tex == null:
+				_art_bad.append("%s MISSING" % _k)
+				continue
+			var _im := _tex.get_image()
+			if _im == null:
+				_art_bad.append("%s UNREADABLE" % _k)
+				continue
+			if _im.is_compressed():
+				_im.decompress()
+			_im.convert(Image.FORMAT_RGBA8)
+			_art_n += 1
+			if _im.get_width() != int(_want[0]) or _im.get_height() != int(_want[1]):
+				_art_bad.append("%s is %dx%d, baked %dx%d" % [
+					_k, _im.get_width(), _im.get_height(), int(_want[0]), int(_want[1])])
+				continue
+			var _tr := 0
+			var _tg := 0
+			var _tb := 0
+			var _ta := 0
+			for _y in range(_im.get_height()):
+				for _x in range(_im.get_width()):
+					var _c := _im.get_pixel(_x, _y)
+					_tr += int(_c.r * 255.0)
+					_tg += int(_c.g * 255.0)
+					_tb += int(_c.b * 255.0)
+					_ta += int(_c.a * 255.0)
+			var _px := maxi(1, _im.get_width() * _im.get_height())
+			var _got := [_tr / _px, _tg / _px, _tb / _px, _ta / _px]
+			for _i in range(4):
+				if absi(int(_got[_i]) - int(_want[_i + 2])) > _ArtFingerprint.TOLERANCE:
+					_art_bad.append("%s is a DIFFERENT PICTURE (rgba %s, baked %s)" % [
+						_k, str(_got), str([_want[2], _want[3], _want[4], _want[5]])])
+					break
+		print("[BUILDVERIFY] overworld_art_checked=", _art_n)
+		print("[BUILDVERIFY] overworld_art_stale=", _art_bad.size())
+		for _b in _art_bad:
+			print("[BUILDVERIFY]   stale_art: ", _b)
 		# v0.9.790: an off-map mark draws an arrow instead of nothing. `build` gained its 7th arg.
 		var _mark_arrow_live := false
 		for _m in (load("res://client/overworld_room.gd") as Script).get_script_method_list():
@@ -3368,7 +3437,17 @@ func _ready():
 	# Switching tab RE-ASKS the server instead of caching: a stale Atlas still showing a quest
 	# you turned in two screens ago is worse than a round trip nobody notices.
 	quest_board_panel.atlas_requested.connect(func(): send_to_server({"type": "dungeon_atlas_request"}))
-	quest_board_panel.quests_requested.connect(func(): send_to_server({"type": "get_quest_log"}))
+	# ⚡ BACK TO THE VIEW YOU CAME FROM. Owner 2026-09-18: *"When at the Quest board if I swap to
+	# the dungeons tab listed at the top then back to Quests it says You have no active quests
+	# instead of showing the quest board again."*
+	#
+	# ⛑ The Quests tab always asked for the QUEST LOG - the active-only "Your Quests" view opened
+	# from the map - so returning from the Atlas silently changed which screen you were on, and a
+	# player with nothing active landed on an empty page where the board had been. The escape key a
+	# few thousand lines down already made this distinction with `_quest_panel_active_only`; the tab
+	# did not, which is one flag read in one place and not the other.
+	quest_board_panel.quests_requested.connect(func():
+		send_to_server({"type": "get_quest_log" if _quest_panel_active_only else "trading_post_quests"}))
 	quest_board_panel.locate_requested.connect(func(did): send_to_server({"type": "dungeon_locate", "dungeon_type": did}))
 
 	# Combat scratch-off panel (user-requested 2026-05-14). Parented to
@@ -23442,7 +23521,15 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 	var s_int := _get_card_effective_stat("intelligence")
 	var s_wits := _get_card_effective_stat("wits")
 	# v0.9.694 — mirror the authoritative estimate so pip/description/effect agree.
-	var est_dmg := int(_ability_card_estimate(ability_name).get("damage", 0))
+	# ⛑ THE FACE'S OWN NUMBERS. Every headline figure below must come from here rather than be
+	# re-derived: the face reads `_ability_card_estimate`, which prefers the SERVER's quote, and a
+	# second formula is a number the fight will not pay. Owner 2026-09-18: *"My Frost nova shows 42
+	# damage on the card face but if I hover it I see 50 in the description."* It did - 42 was the
+	# anchored cast, 50 was a `30 x (1 + INT x 4%)` line left behind when the spell was anchored.
+	var _est: Dictionary = _ability_card_estimate(ability_name)
+	var est_dmg := int(_est.get("damage", 0))
+	var est_heal := int(_est.get("heal", -1))
+	var est_shield := int(_est.get("shield", -1))
 	ability_name = Character.card_base(ability_name)   # the copy's number is in est_dmg; the text is the card's
 	# v0.9.698 — companion cards: headline number (damage/heal) from the pip helper +
 	# the card's own flavor text. Buff/utility companion cards show just their flavor.
@@ -23491,9 +23578,10 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 				return "A shield of faith closes around you: %s defense for [b]5[/b] rounds." % _desc_num("+%d%%" % int(30 + sqrt(float(s_str)) * 3), "30 + √STR × 3")
 			return "Buff yourself: %s defense for [b]5[/b] rounds." % _desc_num("+%d%%" % int(30 + sqrt(float(s_str)) * 3), "30 + √STR × 3")
 		"rally":
+			var _hv: int = est_heal if est_heal >= 0 else int(30 + sqrt(float(s_con)) * 10)
 			if String(character_data.get("class", "")) == "Paladin":
-				return "Lay on hands: heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(int(30 + sqrt(float(s_con)) * 10), "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
-			return "Heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(int(30 + sqrt(float(s_con)) * 10), "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
+				return "Lay on hands: heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(_hv, "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
+			return "Heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(_hv, "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
 		# --- Mage (v0.9.698) ---
 		"magic_bolt":
 			if est_dmg > 0:
@@ -23516,11 +23604,17 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 			# The old text promised a shield 3-6x larger than the ability grants, which a player
 			# reported immediately: "the text says it gives a much larger shield than it does".
 			# Mirrors combat_manager FORCEFIELD_SHARE_OF_BAR (0.25) x the ability stat ratio.
-			var _ff_hp: float = float(character_data.get("total_max_hp", character_data.get("max_hp", 1)))
-			var _ff_lvl: float = maxf(1.0, float(character_data.get("level", 1)))
-			var _ff_ratio: float = pow(maxf(0.05, float(s_int) / (_ff_lvl + 13.0)), 0.5)
+			# The SERVER's quote when there is one - the same number the card face shows. The
+			# local formula stays only for the screens reached outside a fight, where no combat
+			# state has arrived and there is nothing to mirror.
+			var _ff_val: int = est_shield
+			if _ff_val < 0:
+				var _ff_hp: float = float(character_data.get("total_max_hp", character_data.get("max_hp", 1)))
+				var _ff_lvl: float = maxf(1.0, float(character_data.get("level", 1)))
+				var _ff_ratio: float = pow(maxf(0.05, float(s_int) / (_ff_lvl + 13.0)), 0.5)
+				_ff_val = int(_ff_hp * 0.25 * _ff_ratio)
 			return "Raise a shield that absorbs the next %s damage." % _desc_num(
-				int(_ff_hp * 0.25 * _ff_ratio), "25% of max HP, scaled by INT")
+				_ff_val, "25% of max HP, scaled by INT")
 		"haste":
 			return "[b]Arcane Surge[/b]: gain %s spell damage and a %s double-cast chance for [b]4[/b] rounds." % [_desc_num("+%d%%" % int(40 + float(s_int) / 4.0), "40 + INT ÷ 4"), _desc_num("25%", "chance each damage spell casts twice")]
 		"paralyze":
@@ -23528,7 +23622,10 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"banish":
 			return "%s chance to [b]banish[/b] the enemy out of the fight (70%% chance it still drops loot)." % _desc_num("%d%%" % clampi(40 + int(float(s_int) / 3.0), 1, 75), "40 + INT ÷ 3 (max 75%)")
 		"frost_nova":
-			return "Deal %s frost damage and [b]chill[/b] the foe so its NEXT attack likely misses (%s accuracy). Builds Focus. A survival lever — not a heal." % [_desc_num(int(30 * (1.0 + float(s_int) * 0.04)), "30 × (1 + INT×4%) × Focus × rank/tier"), _desc_num("−30%", "one attack; scales with spend, capped 45%")]
+			# "Builds Focus" was wrong for two of the three Mages holding this card: the Sorcerer
+			# builds Volatility and the Sage builds Insight. Same fault as Cataclysm's card face.
+			var _fn_eng := CombatManagerScript.class_engine_label(String(character_data.get("class", "")))
+			return "Deal %s frost damage and [b]chill[/b] the foe so its NEXT attack likely misses (%s accuracy). Builds %s. A survival lever — not a heal." % [_desc_num(est_dmg, "a share of the health bar you are fighting, from INT × your rank/tier"), _desc_num("−30%", "one attack; scales with spend, capped 45%"), _fn_eng]
 		"overload":
 			return "Sear yourself for %s to supercharge your spells by %s [b]for 3 rounds[/b]. Costs HP, not mana — pure glass-cannon burst (blocked below 25%% HP)." % [_desc_num("12% max HP", "self-damage, no self-heal so it can't loop"), _desc_num("+120%", "does not stack with Arcane Surge — the bigger buff wins")]
 		# --- Trickster (v0.9.698) ---
@@ -23630,13 +23727,23 @@ func _ability_card_estimate(ability_name: String) -> Dictionary:
 	rx.compile("~\\s*([0-9]+)")  # v0.9.699 — match any "~N" (Gambit's is "~N @X%", no "dmg")
 	var m = rx.search(txt)
 	if m != null:
-		return {"damage": int(m.get_string(1)), "heal": -1}
+		return {"damage": int(m.get_string(1)), "heal": -1, "shield": -1}
 	var rh := RegEx.new()
 	rh.compile("Heal\\s+([0-9]+)")
 	var mh = rh.search(txt)
 	if mh != null:
-		return {"damage": -1, "heal": int(mh.get_string(1))}
-	return {"damage": -1, "heal": -1}
+		return {"damage": -1, "heal": int(mh.get_string(1)), "shield": -1}
+	# ⚡ AND SHIELDS. Owner 2026-09-18: *"Forcefield same kind of problem, text on card
+	# doesn't match number in description."* The face reads the server's quote through this
+	# function and the description had its own copy of the formula, because this parser only
+	# understood damage and healing - so a shield was the one headline number with no shared
+	# source.
+	var rs := RegEx.new()
+	rs.compile("Shield\\s+([0-9]+)")
+	var ms = rs.search(txt)
+	if ms != null:
+		return {"damage": -1, "heal": -1, "shield": int(ms.get_string(1))}
+	return {"damage": -1, "heal": -1, "shield": -1}
 
 func _ability_primary_value(ability_name: String) -> Dictionary:
 	"""v0.9.694 — the card's headline damage or heal pip. For known abilities it
@@ -23650,6 +23757,8 @@ func _ability_primary_value(ability_name: String) -> Dictionary:
 			return {"kind": "damage", "value": int(est.damage)}
 		if int(est.get("heal", -1)) >= 0:
 			return {"kind": "heal", "value": int(est.heal)}
+		if int(est.get("shield", -1)) >= 0:
+			return {"kind": "shield", "value": int(est.shield)}
 		return {"kind": "", "value": 0}
 	# Companion + dungeon cards (not in the estimator) — power × Attack × rank/tier mult.
 	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
@@ -37427,10 +37536,18 @@ func _sync_margin_widgets() -> void:
 	# function's own docstring already signed up for. The expensive part - re-parenting the
 	# chat box, re-laying the margins - stays behind the change check.
 	_map_widgets_visible(want == 1)
-	# ...and the dungeon dock tears itself down the moment you are not underground. It is
-	# self-gating, so calling it here costs an `if` when there is nothing to do.
-	if not dungeon_mode:
-		_place_dungeon_dock()
+	# ...and the dungeon dock tears itself down the moment something else owns the canvas. It is
+	# self-gating (`_dungeon_dock_wanted`), so calling it here costs a couple of comparisons when
+	# there is nothing to do.
+	#
+	# ⚡ THE `if not dungeon_mode` THAT USED TO GUARD THIS WAS EXACTLY BACKWARDS. Owner
+	# 2026-09-18: *"In the inventory while in the dungeon the Sort and Salvage dropdowns are behind
+	# the Party bar."* The party strip is added to the canvas at RUNTIME, so it is the LAST child
+	# and draws over every panel in that container. `_place_dungeon_dock` already knew to stand
+	# down when a panel is open - and underground it was only ever called from the dungeon GRID
+	# RENDER, which does not run when you open your inventory. So the one state where the strip
+	# exists was the one state where nothing re-asked whether it should be showing.
+	_place_dungeon_dock()
 	if want == _margin_widgets_last:
 		return
 	_margin_widgets_last = want
@@ -37516,6 +37633,9 @@ func _dungeon_threat_counts() -> Dictionary:
 	return {"alive": alive, "alert": alert}
 
 
+var _dungeon_key_last: String = ""
+
+
 func _place_dungeon_dock() -> void:
 	"""⚑ THE PARTY STRIP AND THE KEY LIVE AT THE BOTTOM OF THE DUNGEON CANVAS.
 
@@ -37581,8 +37701,14 @@ func _place_dungeon_dock() -> void:
 		if _dungeon_key_label.get_parent() != null:
 			_dungeon_key_label.get_parent().remove_child(_dungeon_key_label)
 		canvas.add_child(_dungeon_key_label)
-	_dungeon_key_label.clear()
-	_dungeon_key_label.append_text("[center]%s[/center]" % _dungeon_key_text(13, false))
+	# ⛑ REBUILD THE KEY ONLY WHEN IT CHANGES. This function is called every frame now rather than
+	# once per dungeon redraw, and `_dungeon_key_text` walks the floor's theme legend to build a
+	# string - which is per-frame work for a label that changes when the floor does.
+	var _key_txt := "[center]%s[/center]" % _dungeon_key_text(13, false)
+	if _dungeon_key_label.get_parsed_text() == "" or _dungeon_key_last != _key_txt:
+		_dungeon_key_last = _key_txt
+		_dungeon_key_label.clear()
+		_dungeon_key_label.append_text(_key_txt)
 	_dungeon_key_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_dungeon_key_label.offset_left = 12.0
 	_dungeon_key_label.offset_right = -12.0
@@ -45872,7 +45998,12 @@ func _start_commission_prompt() -> void:
 	if crafting_selected_recipe < 0 or crafting_selected_recipe >= crafting_recipes.size():
 		return
 	var recipe = crafting_recipes[crafting_selected_recipe]
-	if not recipe.get("specialist_gated", false):
+	# ⛑ LOCKED COUNTS. Owner 2026-09-18: *"Lets say I want a Stone Wall... I see Locked Stone
+	# Wall (Lv3) on the left. I can't click it because it is locked so how could I put a commission
+	# out for one?"* The gate here matched the server's old one - specialist recipes only - so a
+	# recipe above your crafting skill, which is the commonest reason to want somebody else to make
+	# something, bounced off both. Mirrors the server: refused only when you could make it yourself.
+	if not (recipe.get("specialist_gated", false) or recipe.get("locked", false)):
 		display_game("[color=#FFAA00]You can make that yourself - no need to commission it.[/color]")
 		return
 	pending_commission_recipe = String(recipe.get("id", ""))
@@ -47609,6 +47740,7 @@ func _sync_map_sprites_overlay() -> void:
 
 func handle_blacksmith_encounter(message: Dictionary):
 	"""Handle blacksmith encounter display"""
+	_post_art_key = String(message.get("post_key", ""))
 	pending_blacksmith = true
 	blacksmith_upgrade_mode = ""
 	blacksmith_items = message.get("items", [])
@@ -47762,6 +47894,7 @@ func handle_blacksmith_upgrade_select_affix(message: Dictionary):
 
 func handle_healer_encounter(message: Dictionary):
 	"""Handle healer encounter display"""
+	_post_art_key = String(message.get("post_key", ""))
 	pending_healer = true
 	healer_costs = {
 		"quick": message.get("quick_heal_cost", 0),

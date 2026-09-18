@@ -66,6 +66,11 @@ extends Resource
 @export var seen_quest_board_hint: bool = false
 @export var seen_dungeon_hint: bool = false
 @export var seen_crafting_hint: bool = false
+## One-shot teaching for the two crafting rules that are COUNTER-INTUITIVE and would otherwise read
+## as bugs: a Rework can come out WORSE, and a commission is always Standard quality. Reference help
+## is what a player goes looking for; a hint is what reaches a player who does not know to look.
+@export var seen_rework_hint: bool = false
+@export var seen_commission_hint: bool = false
 
 # ONBOARDING 2026-09-14 - Warden's Watch teaching beats. One panel per system, fired the first
 # time that system actually matters to this character rather than all at once at creation, and
@@ -2321,6 +2326,8 @@ func to_dict() -> Dictionary:
 		"seen_quest_board_hint": seen_quest_board_hint,
 		"seen_dungeon_hint": seen_dungeon_hint,
 		"seen_crafting_hint": seen_crafting_hint,
+		"seen_rework_hint": seen_rework_hint,
+		"seen_commission_hint": seen_commission_hint,
 		"seen_guide_items_hint": seen_guide_items_hint,
 		"seen_guide_equipment_hint": seen_guide_equipment_hint,
 		"seen_guide_combat_hint": seen_guide_combat_hint,
@@ -2552,6 +2559,8 @@ func from_dict(data: Dictionary):
 	seen_quest_board_hint = bool(data.get("seen_quest_board_hint", false))
 	seen_dungeon_hint = bool(data.get("seen_dungeon_hint", false))
 	seen_crafting_hint = bool(data.get("seen_crafting_hint", false))
+	seen_rework_hint = bool(data.get("seen_rework_hint", false))
+	seen_commission_hint = bool(data.get("seen_commission_hint", false))
 	seen_guide_items_hint = bool(data.get("seen_guide_items_hint", false))
 	seen_guide_equipment_hint = bool(data.get("seen_guide_equipment_hint", false))
 	seen_guide_combat_hint = bool(data.get("seen_guide_combat_hint", false))

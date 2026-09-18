@@ -735,6 +735,17 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 		stations[i] = stations[j]
 		stations[j] = tmp
 
+	# ⛑ BIGGEST PICTURE FIRST. The greedy walk below commits as it goes, so whatever it happens to
+	# reach first takes the roomy middle and the three-by-three companion stable is left squeezing
+	# into a corner. Sorting by footprint - the standard first-fit-decreasing move - cut forced
+	# overlaps across the 120-post world from 10 to 0 with no post losing a service. The SHUFFLE
+	# above still decides which spot each one lands in, so posts stay different from each other;
+	# this only fixes the ORDER they get to choose in.
+	stations.sort_custom(func(a, b):
+		var sa: Vector2i = StationArtFootprint.span_for(String(a))
+		var sb: Vector2i = StationArtFootprint.span_for(String(b))
+		return (sa.x * sa.y) > (sb.x * sb.y))
+
 	# Build the candidate tile list — every interior floor tile except:
 	#  • the post marker at (px, py)
 	#  • tiles that are cardinally adjacent to any door (keep entries clear)
@@ -759,9 +770,27 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 		candidates[j] = tmp
 
 	# Greedy placement: walk the shuffled candidates and place a station
-	# whenever the tile has no already-placed station cardinally adjacent.
-	# This guarantees every station has open corridor on at least some side.
+	# whenever the tile has no already-placed station cardinally adjacent AND no station's ART
+	# would land on top of another station.
+	#
+	# ⚑ SPACING IS ABOUT THE PICTURE, NOT THE CELL. Owner 2026-09-18, live: *"Warden hollis is
+	# also standing on a portion of the Quest board."* He was. The cardinal-adjacency rule below
+	# is the only spacing this function ever enforced, and it reasons about ONE cell per station -
+	# while the map draws a quest board three cells wide and three tall, a forge three by two, the
+	# post marker three by three. The Warden was placed one east and one north of the board, which
+	# breaks no rule here and sits squarely inside the board's art.
+	#
+	# ⛑ SO THE FOOTPRINT IS PART OF THE RULE NOW, rather than each oversized tile being shrunk
+	# one at a time as somebody notices it. Nine tiles reach past the cell the old rule protects;
+	# fixing the board would have left eight. `station_art_footprint.gd` is written by the baker
+	# that decides the spans, so this cannot drift from what is actually drawn.
 	var placed: Dictionary = {}  # "x,y" -> true
+	# Cells covered by art already laid down, INCLUDING the post marker and (at the Crossroads)
+	# the throne, both of which are stamped after this loop and would otherwise be invisible to it.
+	var art: Dictionary = {}     # "x,y" -> the station whose art covers it
+	_claim_art(art, px, py, "post_marker")
+	if is_crossroads:
+		_claim_art(art, throne_spot.x, throne_spot.y, "throne")
 	var placed_count = 0
 	var total_stations = stations.size()
 	for cand in candidates:
@@ -769,13 +798,19 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 			break
 		if _has_cardinal_neighbor(cand.x, cand.y, placed):
 			continue
+		if not _art_fits(art, placed, cand.x, cand.y, stations[placed_count]):
+			continue
 		_place_station(chunk_manager, cand.x, cand.y, stations[placed_count])
 		placed["%d,%d" % [cand.x, cand.y]] = true
+		_claim_art(art, cand.x, cand.y, stations[placed_count])
 		placed_count += 1
 
 	# Fallback: if the spacing constraint was too strict (tiny post), place
 	# leftover stations wherever there's still a free candidate, ignoring the
 	# adjacency rule. Better to have a cramped station than none at all.
+	# ⛑ THE FALLBACK RELAXES ADJACENCY, NOT THE ART RULE. A cramped post is fine; a station
+	# standing inside another station's picture is the bug this pass exists to remove, and it
+	# looks identical whichever loop placed it.
 	if placed_count < total_stations:
 		for cand in candidates:
 			if placed_count >= total_stations:
@@ -783,14 +818,138 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 			var key = "%d,%d" % [cand.x, cand.y]
 			if placed.has(key):
 				continue
+			if not _art_fits(art, placed, cand.x, cand.y, stations[placed_count]):
+				continue
 			_place_station(chunk_manager, cand.x, cand.y, stations[placed_count])
 			placed[key] = true
+			_claim_art(art, cand.x, cand.y, stations[placed_count])
 			placed_count += 1
+	# Last resort: a post whose interior genuinely cannot hold every service without art touching
+	# art. Better a crowded station than a missing one - a player who cannot find the healer has a
+	# worse problem than one whose healer overlaps the well.
+	#
+	# ⛑ LEAST-BAD, NOT FIRST-FREE. Taking the first free tile put ten stations inside another
+	# station's picture across four T5+ posts (measured), because the companion stable is three
+	# cells square and an 11x11 main room runs out of room for it. Scoring the remaining candidates
+	# by how many cells they would actually collide in, and taking the minimum, drops that to the
+	# handful that are truly forced - and a zero-scoring tile is simply a legal placement the two
+	# loops above missed because they commit greedily in shuffle order.
+	while placed_count < total_stations:
+		var best: Vector2i = Vector2i(-99999, -99999)
+		var best_cost: int = 1 << 30
+		for cand in candidates:
+			var key = "%d,%d" % [cand.x, cand.y]
+			if placed.has(key):
+				continue
+			var cost: int = _art_conflict_cost(art, placed, cand.x, cand.y, stations[placed_count])
+			if cost < best_cost:
+				best_cost = cost
+				best = cand
+				if cost == 0:
+					break
+		if best.x == -99999:
+			break  # genuinely nowhere left to stand
+		_place_station(chunk_manager, best.x, best.y, stations[placed_count])
+		placed["%d,%d" % [best.x, best.y]] = true
+		_claim_art(art, best.x, best.y, stations[placed_count])
+		placed_count += 1
 
 	# Crossroads: throne is always dead-center of the south wall so it's easy
 	# to find and anchor the capital visually.
 	if is_crossroads:
 		_place_station(chunk_manager, throne_spot.x, throne_spot.y, "throne")
+
+## ⚑ HOW BIG A STATION'S PICTURE IS, read off the table the baker writes.
+##
+## `overworld_room.gd` PASS 2 anchors full-size art to the BOTTOM of its base cell and centres it
+## horizontally:  bx = x*CELL + (CELL - w)/2,  by = (y+1)*CELL - h.  North is +y in world space
+## (`world_system.get_direction_offset` puts south at dy = -1) and the map draws north at the top,
+## so art growing upward on screen grows toward HIGHER world y. Getting that backwards is how the
+## first version of the overlap probe blamed the wrong tile.
+const StationArtFootprint := preload("res://shared/station_art_footprint.gd")
+
+
+static func _art_cells(x: int, y: int, station_type: String) -> Array:
+	"""Every cell the station's art covers, its own included.
+
+	An EVEN column span straddles: a 2-wide image centred on a cell covers half of each
+	neighbour. Half a tile of furniture drawn over somebody is still drawn over somebody, so a
+	straddled cell counts."""
+	var span: Vector2i = StationArtFootprint.span_for(station_type)
+	var rows: int = maxi(1, span.x)
+	var cols: int = maxi(1, span.y)
+	# Horizontal reach from the base column. Centring C columns puts the image's left edge at
+	# (C-1)/2 cells to the left, so an ODD span lands on cell boundaries and an EVEN one hangs a
+	# half-cell over each side - rounded UP, because half a tile of furniture drawn over somebody
+	# is still drawn over somebody.  C=1 -> 0,  C=2 -> 1,  C=3 -> 1,  C=4 -> 2.
+	var reach: int = int(ceil((cols - 1) / 2.0))
+	var out: Array = []
+	for dy in range(0, rows):
+		for dx in range(-reach, reach + 1):
+			out.append(Vector2i(x + dx, y + dy))
+	return out
+
+
+static func _claim_art(art: Dictionary, x: int, y: int, station_type: String) -> void:
+	for c in _art_cells(x, y, station_type):
+		art["%d,%d" % [c.x, c.y]] = station_type
+
+
+static func _art_fits(art: Dictionary, placed: Dictionary, x: int, y: int, station_type: String) -> bool:
+	"""True when this station can stand here without art overlapping art, in either direction."""
+	# Nobody else's picture may already cover the tile it would stand on...
+	if art.has("%d,%d" % [x, y]):
+		return false
+	# ...and its own picture may not cover anybody else's tile, nor any cell already spoken for.
+	for c in _art_cells(x, y, station_type):
+		var k := "%d,%d" % [c.x, c.y]
+		if placed.has(k) or art.has(k):
+			return false
+	return true
+
+
+static func _art_conflict_cost(art: Dictionary, placed: Dictionary, x: int, y: int, station_type: String) -> int:
+	"""How many cells this placement would collide in. 0 means `_art_fits` would accept it."""
+	var cost: int = 0
+	if art.has("%d,%d" % [x, y]):
+		cost += 1
+	for c in _art_cells(x, y, station_type):
+		var k := "%d,%d" % [c.x, c.y]
+		if placed.has(k):
+			cost += 1
+		elif art.has(k):
+			cost += 1
+	return cost
+
+
+## ⚡ WHICH POST OWNS THIS SPOT - the identity that art keyed to a place must use.
+##
+## Owner 2026-09-18: *"the Healer's ASCII art is changing still, almost seems different if I bump
+## into it from different sides."* The client was hashing the PLAYER's x,y, so two approach tiles
+## were two different people. A post's own coordinates never move and are the same from every side.
+##
+## ⛑ STATIC AND SHARED SO THE CHECK CAN RUN THE REAL RULE. The previous attempt at this lived
+## in the client, read a field nothing wrote, and passed review - the fault was only visible to
+## somebody standing in front of it. `tools/probe/post_npc_art_is_stable.gd` calls this function
+## from eight approach tiles.
+const POST_ART_KEY_RADIUS := 40
+
+
+static func post_art_key_for(posts: Array, x: int, y: int) -> String:
+	"""The "<px>,<py>" of the post whose grounds (x, y) is in, or "" out in the wild."""
+	var best := ""
+	var best_dist_sq: int = POST_ART_KEY_RADIUS * POST_ART_KEY_RADIUS
+	for post in posts:
+		var px: int = int((post as Dictionary).get("x", 0))
+		var py: int = int((post as Dictionary).get("y", 0))
+		var ddx: int = px - x
+		var ddy: int = py - y
+		var dist_sq: int = ddx * ddx + ddy * ddy
+		if dist_sq < best_dist_sq:
+			best_dist_sq = dist_sq
+			best = "%d,%d" % [px, py]
+	return best
+
 
 static func _tile_touches_door(x: int, y: int, door_tiles: Dictionary) -> bool:
 	"""True if (x,y) or any of its 4 cardinal neighbors is a door tile."""

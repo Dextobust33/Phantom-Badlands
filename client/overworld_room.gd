@@ -49,17 +49,23 @@ static var _big_spans: Dictionary = {}
 static var _big_loaded := false
 
 
+## ⚑ ONE SPAN TABLE, TWO READERS. This used to parse `big/big_tiles.json` at runtime - a RAW
+## file, the shape that has shipped stale twice (VERSION.txt, the monster curve) - and the SERVER
+## could not read it at all, because it lives under `client/sprites/`. So `_place_stations` sized
+## its spacing rule to one cell per station while the map drew a three-by-three quest board, and
+## the Warden ended up standing inside it (owner, 2026-09-18).
+##
+## The baker writes both now, from the same `CUTS` spans, and this reads the GDScript one: it is
+## compiled into the build like any other script, so it cannot be missing from a .pck, and the
+## server reads the identical table. The JSON is still written for tooling.
+const StationArtFootprint := preload("res://shared/station_art_footprint.gd")
+
+
 static func _load_big_spans() -> void:
 	if _big_loaded:
 		return
 	_big_loaded = true
-	var f := FileAccess.open(BIG_DIR + "big_tiles.json", FileAccess.READ)
-	if f == null:
-		return
-	var parsed = JSON.parse_string(f.get_as_text())
-	f.close()
-	if parsed is Dictionary:
-		_big_spans = parsed
+	_big_spans = StationArtFootprint.SPANS
 
 
 static func _big_img(tile_name: String) -> Image:

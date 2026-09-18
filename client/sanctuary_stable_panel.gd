@@ -1,6 +1,8 @@
 extends Control
 class_name SanctuaryStablePanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 # v0.9.497 — Unified Sanctuary Companion Stable.
 #
 # Replaces the legacy K (Kennel) + F (Fusion Station) tiles in the Sanctuary
@@ -103,13 +105,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if _help_panel != null and _help_panel.visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
-			get_viewport().set_input_as_handled()
-			if _inspect_view != null and _inspect_view.visible:
-				_set_tab(_current_tab)   # Esc steps back out of an inspect page first
-			else:
-				_on_close()
+	if PanelCloseKeysScript.wants_close(event):
+		get_viewport().set_input_as_handled()
+		if _inspect_view != null and _inspect_view.visible:
+			_set_tab(_current_tab)   # a close key steps back out of an inspect page first
+		else:
+			_on_close()
 
 
 func show_with_data(payload: Dictionary) -> void:
@@ -560,7 +561,7 @@ func _build_layout() -> void:
 	header_row.add_child(help_btn)
 
 	_close_btn = Button.new()
-	_close_btn.text = "Close (Esc)"
+	_close_btn.text = PanelCloseKeysScript.CLOSE_HINT
 	_close_btn.focus_mode = Control.FOCUS_NONE
 	_close_btn.custom_minimum_size = Vector2(110, 26)
 	_close_btn.pressed.connect(_on_close)

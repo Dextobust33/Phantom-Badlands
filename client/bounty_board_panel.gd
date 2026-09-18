@@ -1,6 +1,8 @@
 extends Control
 class_name BountyBoardPanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 # v0.9.568 — Bounty Board panel (Slice 3 of the v0.9.568 polish batch).
 # Lifts Audit #14 Slice E's bounty system out of chat-only V1 into a real
 # UI surface. Renders the bounty_list_result payload (still server-sourced,
@@ -177,7 +179,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key = event.keycode
-		if key == KEY_ESCAPE:
+		if PanelCloseKeysScript.wants_close(event):
 			get_viewport().set_input_as_handled()
 			_on_close()
 		elif key >= KEY_1 and key <= KEY_9:
@@ -246,6 +248,7 @@ func _build_layout() -> void:
 
 	var close_btn = Button.new()
 	close_btn.text = "X"
+	close_btn.tooltip_text = PanelCloseKeysScript.CLOSE_HINT
 	close_btn.tooltip_text = "Close (Esc)"
 	close_btn.focus_mode = Control.FOCUS_NONE
 	close_btn.custom_minimum_size = Vector2(32, 26)

@@ -1,6 +1,8 @@
 extends Control
 class_name CraftRevealPanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 # Audit #4 Slice 3.5 — Unified Craft Summary panel.
 # Replaces both the old reveal animation panel AND the trailing
 # crafting-success text page. Shows the full transparent chain:
@@ -510,7 +512,7 @@ func _input(event: InputEvent) -> void:
 		_try_craft_again()
 		get_viewport().set_input_as_handled()
 		return
-	if event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER, KEY_ESCAPE]:
+	if PanelCloseKeysScript.wants_close(event):
 		_try_continue()
 		get_viewport().set_input_as_handled()
 

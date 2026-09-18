@@ -974,6 +974,49 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ LIVE-PLAY REPORT BATCH — 2026-09-18 evening (11 reports, all fixed)
+
+The owner played the v0.9.805 build and reported eleven faults in quick succession. Each was
+traced to a CAUSE rather than patched where it showed, and most of the causes turned out to be
+shared with something else on this list.
+
+| # | reported | cause | fix |
+|---|---|---|---|
+| 1 | Warden Hollis standing on the quest board | `_place_stations` guaranteed only that no two stations are CARDINALLY adjacent, while the map draws art up to 3x3 — nine tiles reach past the one cell the rule protects | station placement is FOOTPRINT-aware; the baker writes `shared/station_art_footprint.gd`, read by both the placer and the renderer |
+| 2 | Enchanting table is "a piece of another sprite" | the spec took column 1 of a TWO-column desk, sawing the book and the desk in half | `craft_stations (7,0) 2x2` — the whole desk |
+| 3 | post centre is "a big 3x3 blue thing", then "the half sword sprite" when you walk away | TWO faults: the 3x3 is a hanging WALL BANNER, and the sword means the previous bake **never reached the build** | fountain (`sun_city 22,4`), plus an art-freshness gate (below) |
+| 4 | healer's art still changes, "different if I bump into it from different sides" | `_post_npc_art_seed` hashed `current_post_name` — **a field nothing has ever written** — so it always fell through to the PLAYER's x,y | the server sends the post's own coordinates; probe executes it from 2,880 standing positions |
+| 5 | "I still don't understand how to put in a commission… Locked Stone Wall (Lv3), I can't click it" | both client and server admitted `specialist_only` recipes ONLY, so a recipe above your SKILL — the commonest reason to want help — was refused | posting a job works on anything you cannot make; locked rows are clickable; the first-time hint now fires |
+| 6 | panels close with X or Escape, others with Space | of 31 panel scripts, 8 took Escape only, 3 took Space, the rest closed via the action bar | one `client/panel_close_keys.gd`; ten panels route through it and say so on the button |
+| 7 | Cataclysm says "Ramp Focus first"; the Sorcerer has no Focus | the Meteor branch typed the literal while the Devastate branch two blocks above used `_momentum_name` | reads the meter's own label |
+| 8 | Frost Nova 42 on the card, 50 on hover; Forcefield the same | the description arms re-derived their own figures; the shield case had no shared source at all because the parser only understood damage and healing | every headline number comes from `_ability_card_estimate`, which prefers the SERVER's quote |
+| 9 | "Chaos bolt shows as Magic bolt in the combat log" | `ability_line(…, "title", "Magic Bolt")` fell back to the literal at the call site | a `title` falls back to the class's own name, keeping the template's decoration |
+| 10 | Quest board → Dungeons → Quests says "You have no active quests" | the tab always asked for the quest LOG; the Escape path already made this distinction and the tab did not | the tab returns to the view you came from |
+| 11 | "the warden doesn't go around hotzones" | a hotzone does not BLOCK movement, so `move_player` — deliberately the only authority on what blocks a step — says yes, and shortest-path walks a level-1 through the worst ground on the map | the escort prefers hotzone-free ground, with a fallback so a route is never lost. Measured: 3 of 4 dangerous routes diverted, **+0.0 tiles** average detour |
+
+**And one that was not reported as art at all.** Report 3's second half — *"still going back to the
+sword sprite"* — is a sprite this repo replaced in a commit that is an **ancestor of the released
+tag**. The PNG was right on disk and right in git; the build drew the old one, because Godot only
+re-imports on an editor pass and **the release gate had never looked at a pixel**. `overworld_art=true`
+(one file exists) and `big_tiles=20` (a manifest has rows) are both true of a build carrying every
+tile from a month ago — the ingredients, not the function. The baker now writes
+`shared/overworld_art_fingerprint.gd` and `--buildverify` recomputes it from the **packed** textures;
+the gate fails on any mismatch.
+
+**Also fixed while in there:** a threat-relief bounty was a `DUNGEON_CLEAR`, so accepting one built
+a PERSONAL dungeon "25-40 tiles from the player" — which is exactly the 38 tiles the owner measured
+when the board had advertised 70 west. Its own text promises *"completing this clears the post's
+Under Threat state"*, which clearing a private copy cannot do, so the reward was **unreachable**,
+not merely mislabelled. It binds the real threatening instance now, and a shared world dungeon is
+never erased on one player's turn-in.
+
+**New probes (all proven to fire):** `post_art_does_not_cover_people`, `post_npc_art_is_stable`,
+`card_is_called_one_thing`, `panels_close_the_same_way`, `escort_walks_around_danger`.
+
+**Open, owner's call:** the post-centre fountain was baked as the recommendation without a pick —
+`tools/tile_region_sheet.py post_marker` re-renders the alternatives, and it is one line in `CUTS`.
+
+
 ### ✅ COMBAT LOG REWORK — SHIPPED v0.9.803 (2026-09-18)
 
 Owner: *"start the combat log rework. Once we get it right we can cut a new release."* Four rounds

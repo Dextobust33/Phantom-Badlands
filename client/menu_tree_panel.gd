@@ -1,6 +1,8 @@
 extends Control
 class_name MenuTreePanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 ## Everything the game can do, in one place, as a two-level tree.
 ##
 ## Owner 2026-09-17: *"all slash commands should be accessible through a UI element that makes
@@ -254,7 +256,7 @@ func _build_layout() -> void:
 	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(btn_row)
 	var close_btn := Button.new()
-	close_btn.text = "Close  (Esc)"
+	close_btn.text = PanelCloseKeysScript.CLOSE_HINT
 	close_btn.custom_minimum_size = Vector2(200, 32)
 	close_btn.focus_mode = Control.FOCUS_ALL
 	close_btn.pressed.connect(close)
@@ -274,10 +276,9 @@ static func all_action_ids() -> Array:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
-			get_viewport().set_input_as_handled()
-			close()
+	if PanelCloseKeysScript.wants_close(event):
+		get_viewport().set_input_as_handled()
+		close()
 
 
 func blocks_hotkeys() -> bool:

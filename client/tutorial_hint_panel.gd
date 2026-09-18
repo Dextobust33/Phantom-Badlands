@@ -1,6 +1,8 @@
 extends Control
 class_name TutorialHintPanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 # Audit #3 Slice 4 — modal overlay for tutorial/teaching messages. Replaces
 # the v0.9.474 game_output-text version of the progression hint per the
 # feedback rule "teaching messages must render in overlays, not chat."
@@ -62,11 +64,9 @@ func show_hint(title: String, body: String, opt_out_text: String = "",
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		var key = event.keycode
-		if key == KEY_ESCAPE or key == KEY_ENTER or key == KEY_KP_ENTER or key == KEY_SPACE:
-			get_viewport().set_input_as_handled()
-			_on_dismiss()
+	if PanelCloseKeysScript.wants_close(event):
+		get_viewport().set_input_as_handled()
+		_on_dismiss()
 
 
 func _build_layout() -> void:

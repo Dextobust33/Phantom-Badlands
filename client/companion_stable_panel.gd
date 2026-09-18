@@ -1,6 +1,8 @@
 extends Control
 class_name CompanionStablePanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 # Audit #4 Slice 1A (v0.9.485+) — visual UI for the Companion Stable at T5+
 # NPC posts.
 #
@@ -105,10 +107,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if _help_panel != null and _help_panel.visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
-			get_viewport().set_input_as_handled()
-			_on_close()
+	if PanelCloseKeysScript.wants_close(event):
+		get_viewport().set_input_as_handled()
+		_on_close()
 
 
 func show_with_payload(payload: Dictionary) -> void:
@@ -773,7 +774,7 @@ func _build_layout() -> void:
 	header.add_child(help_btn)
 
 	_close_btn = Button.new()
-	_close_btn.text = "Close (Esc)"
+	_close_btn.text = PanelCloseKeysScript.CLOSE_HINT
 	_close_btn.focus_mode = Control.FOCUS_NONE
 	_close_btn.pressed.connect(_on_close)
 	header.add_child(_close_btn)

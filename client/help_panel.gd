@@ -1,6 +1,8 @@
 extends Control
 class_name HelpPanel
 
+const PanelCloseKeysScript := preload("res://client/panel_close_keys.gd")
+
 # Audit #4 Slice 1A (v0.9.485) — reusable in-place help overlay. Distinct from
 # TutorialHintPanel (which is a one-shot, server-pushed teaching modal): this
 # panel is reopenable from any screen via a small Help button, drawing topic
@@ -912,11 +914,9 @@ func _set_content(title_bb: String, body_bb: String) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		var key = event.keycode
-		if key == KEY_ESCAPE or key == KEY_ENTER or key == KEY_KP_ENTER:
-			get_viewport().set_input_as_handled()
-			_on_close()
+	if PanelCloseKeysScript.wants_close(event):
+		get_viewport().set_input_as_handled()
+		_on_close()
 
 
 ## ⚑ THE PANEL NEVER OUTGROWS THE SCREEN. Both scrolling regions are sized from the viewport

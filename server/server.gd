@@ -10230,6 +10230,7 @@ func _handle_blacksmith_station(peer_id: int, character):
 
 	send_to_peer(peer_id, {
 		"type": "blacksmith_encounter",
+		"post_key": post_art_key(peer_id),
 		"message": msg,
 		"items": damaged_items,
 		"repair_all_cost": repair_all_cost,
@@ -10328,6 +10329,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			# Send updated encounter
 			send_to_peer(peer_id, {
 				"type": "blacksmith_encounter",
+				"post_key": post_art_key(peer_id),
 				"message": "[color=#DAA520]'Anything else need fixing?'[/color]",
 				"items": encounter.items,
 				"repair_all_cost": encounter.repair_all_cost,
@@ -10365,6 +10367,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 		# Return to main blacksmith menu
 		send_to_peer(peer_id, {
 			"type": "blacksmith_encounter",
+			"post_key": post_art_key(peer_id),
 			"message": "[color=#DAA520]'Changed your mind? Anything else?'[/color]",
 			"items": encounter.get("items", []),
 			"repair_all_cost": encounter.get("repair_all_cost", 0),
@@ -10446,6 +10449,8 @@ func _handle_healer_station(peer_id: int, character):
 	send_to_peer(peer_id, {
 		"type": "healer_encounter",
 		"message": msg,
+		# The post that owns this healer, so the client draws the SAME person every visit.
+		"post_key": post_art_key(peer_id),
 		"quick_heal_cost": quick_heal_cost,
 		"full_heal_cost": full_heal_cost,
 		"cure_all_cost": cure_all_cost,
@@ -14466,6 +14471,64 @@ func _maybe_send_signpost_hint(peer_id: int) -> void:
 	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
+func _maybe_send_rework_hint(peer_id: int) -> void:
+	"""Fired the first time a player opens the Rework panel.
+
+	⚑ IT WARNS, IT DOES NOT SELL. A Rework can come out WORSE - measured, 37% do - and that is
+	deliberate: it is a lateral trade, which is what stops it being a way to buff one item forever.
+	A player who learns that by losing 40 attack will read it as a bug, so they are told first."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_rework_hint:
+		return
+	character.seen_rework_hint = true
+	_send_hint(peer_id, "[color=#A335EE]⚒ Rework a Stat[/color]", (
+		"This trades a stat you do not want for a [color=#FFD700]different one[/color] — it is not an upgrade.
+
+"
+		+ "[color=#FF9999]The new value is rolled fresh, it can come out LOWER, and it stands.[/color] "
+		+ "No preview, no taking it back — that is what keeps it from being a way to polish one "
+		+ "item forever.
+
+"
+		+ "Each item takes [color=#FFD700]%d[/color] reworks and no more, the price rises every time, and the "
+		+ "count left is shown before you commit."
+	) % DropTablesScript.MAX_AFFIX_REROLLS)
+	save_character(peer_id)
+
+
+func _maybe_send_commission_hint(peer_id: int) -> void:
+	"""Fired the first time a player opens a recipe they can commission.
+
+	⚑ THE LEAST DISCOVERABLE THING IN THE ARC. 43% of recipes belong to one focus, and until now
+	that was simply a wall. A player who has been reading "Specialist Job Required" for months
+	will not notice the button changed unless somebody says so."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_commission_hint:
+		return
+	character.seen_commission_hint = true
+	_send_hint(peer_id, "[color=#C8A24A]✋ Somebody else's trade[/color]", (
+		"Some of these you cannot make yourself — they belong to another crafting focus, or they "
+		+ "are above your skill. That is not a wall; it is a job you hand to somebody else.
+
+"
+		+ "• [color=#C8A24A]Commission[/color] — a post NPC does the work for Valor, on a recipe whose "
+		+ "skill you already meet. Always [color=#FFFFFF]Standard[/color] "
+		+ "quality, so it is a floor, never the best you can get.
+"
+		+ "• [color=#C8A24A]Post Job[/color] — works on [color=#FFD700]anything[/color] you cannot make, skill or "
+		+ "no skill. Name a price and let a real crafter make it at [color=#88FF88]their[/color] "
+		+ "quality. Usually better, and the Valor goes to them instead of the shop.
+
+"
+		+ "You supply the materials either way."
+	))
+	save_character(peer_id)
+
+
 func _maybe_send_crafting_hint(peer_id: int) -> void:
 	"""Audit #3 Slice 5 — first crafting station open teaches the transparency
 	stack (material sources, quality odds, market avg, skill preview)."""
@@ -14475,16 +14538,32 @@ func _maybe_send_crafting_hint(peer_id: int) -> void:
 	if character.seen_crafting_hint:
 		return
 	character.seen_crafting_hint = true
-	var title = "[color=#FFD700]🛠 Crafting[/color]"
+	# ⛑ REWRITTEN 2026-09-18, because the old text had gone stale in the ways that matter most. It
+	# described a bench with no filters (there are four now), never mentioned that the detail pane
+	# tells you what the item IS, and closed on "Pick ONE specialty per character" - which now
+	# reads as a warning about a lock that no longer exists. Committing takes nothing away.
+	var title = "[color=#FFD700]🛠 The Bench[/color]"
 	var body = (
-		"Each recipe shows you everything you need to plan the craft:\n\n"
-		+ "• [color=#88FF88]Material sources[/color] under each ingredient — where to gather it.\n"
-		+ "• [color=#88FFFF]Quality odds[/color] — Poor / Standard / Fine / Masterwork % at your skill.\n"
-		+ "• [color=#FFD700]Recent market avg[/color] — is the craft worth your time?\n"
-		+ "• [color=#FFE066]Coming Up[/color] — what unlocks at higher skill.\n\n"
-		+ "Pick ONE specialty per character (Blacksmith / Alchemy / Enchant / Scribe / "
-		+ "Construction). Use the bench's recipes to gain skill XP."
-	)
+		"The four buttons above the recipe list are the question you are asking:
+
+"
+		+ "• [color=#00FF00]Can Make[/color] — you have the materials right now
+"
+		+ "• [color=#FFFFFF]At My Skill[/color] — everything your skill allows
+"
+		+ "• [color=#C8A24A]Wanted[/color] — a recipe another player is paying for
+"
+		+ "• [color=#808080]All[/color] — including what is still ahead of you
+
+"
+		+ "Pick a recipe and the panel tells you [color=#87CEEB]what it makes[/color] and how that compares to "
+		+ "the piece you are wearing, before it tells you how to make it.
+
+"
+		+ "[color=#FFD700]Skill is what matters.[/color] It drives your success AND your chance of a better item. "
+		+ "Committing to a trade pays [color=#FFD700]+%d%%[/color] XP in it and [color=#88FF88]costs you nothing "
+		+ "elsewhere[/color] — every other job keeps levelling."
+	) % int(Character.COMMITTED_JOB_XP_BONUS * 100.0)
 	_send_hint(peer_id, title, body)
 	save_character(peer_id)
 
@@ -17596,6 +17675,11 @@ func _generate_threat_relief_quest(tp: Dictionary, completed_quests: Array, acti
 		"is_threat_relief": true,
 		"threat_color": color,
 		"threat_tier": tier,
+		# ⚡ WHICH DUNGEON, not which KIND of dungeon. The id can only carry the post and the
+		# TYPE, and a type cannot answer "where is it" - the same distinction `base_tier` vs `tier`
+		# is documented for in CLAUDE.md. The description above quotes THIS instance's bearing, so
+		# the quest has to be able to point at it.
+		"threat_instance_id": String(threat.get("instance_id", "")),
 	}
 
 func handle_trading_post_recharge(peer_id: int):
@@ -19867,9 +19951,27 @@ func handle_market_order_create(peer_id: int, message: Dictionary):
 		if comm_recipe.is_empty():
 			send_to_peer(peer_id, {"type": "market_error", "message": "Unknown recipe."})
 			return
-		if not bool(comm_recipe.get("specialist_only", false)):
+		# ⚡ "WORK YOU CANNOT DO" INCLUDES WORK YOU ARE NOT GOOD ENOUGH FOR YET.
+		#
+		# Owner 2026-09-18: *"I still don't understand how to put in a commission. Lets say I want
+		# a Stone Wall. At the construction crafting place I see Locked Stone Wall (Lv3) on the
+		# left. I can't click it because it is locked so how could I put a commission out for
+		# one?"*
+		#
+		# ⛑ THEY COULD NOT, AND THE RULE WAS THE REASON. This only ever admitted
+		# `specialist_only` recipes, so the commonest thing a player wants help with - a recipe
+		# whose SKILL they have not reached - was refused with a message telling them to buy one
+		# instead, for an item nobody stocks. Posting a job is asking somebody ELSE to do the
+		# work; your own skill has nothing to do with whether you may ask. What it must still
+		# refuse is a commission for something you could simply make yourself, which is a worse
+		# buy order.
+		var _cs_name := CraftingDatabaseScript.get_skill_name(comm_recipe.get("skill", 0))
+		var _cs_level := int(character.get_crafting_skill(_cs_name))
+		var _cs_req := int(comm_recipe.get("skill_required", 1))
+		var _could_make_it: bool = (not bool(comm_recipe.get("specialist_only", false))) and _cs_level >= _cs_req
+		if _could_make_it:
 			send_to_peer(peer_id, {"type": "market_error",
-				"message": "Anyone with the skill can make that - post a normal buy order instead."})
+				"message": "You can make that yourself - post a normal buy order instead."})
 			return
 		item_name = String(comm_recipe.get("name", commission_recipe_id))
 		if quantity != 1:
@@ -20397,6 +20499,40 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 		# For DUNGEON_CLEAR quests, create a personal dungeon instance for this player
 		if quest.get("type") == quest_db.QuestType.DUNGEON_CLEAR:
 			var dungeon_type = quest.get("dungeon_type", "")
+			# ⚡ A THREAT-RELIEF BOUNTY POINTS AT THE DUNGEON THAT IS ACTUALLY THREATENING THE POST.
+			#
+			# Owner 2026-09-18: *"I just took a threat quest from the crossroads. On the questboard
+			# it said it was 70 some tiles west. After taking it and looking at my quests it's
+			# actually Northeast much less tiles. It is a Jabberwock's Thicket [D2] at 0,38"*
+			#
+			# ⛑ IT WAS NOT A DISPLAY BUG, AND NO DISPLAY FIX COULD HAVE REACHED IT. Threat relief
+			# is a DUNGEON_CLEAR, so accepting it ran the line below and built a PERSONAL instance
+			# "25-40 tiles from the player's current location" - which is exactly the 38 tiles the
+			# owner measured. The board named the real threat 70 west; the quest then sent them to
+			# a private copy that had never threatened anything. And the bounty's own text promises
+			# *"completing this clears the post's Under Threat state"*, which clearing a personal
+			# copy cannot do - so the reward was unreachable, not merely mislabelled.
+			#
+			# Resolved LIVE rather than from the id, because the id can only carry post + type. If
+			# the threat has since been cleared by somebody else there is nothing to bind and the
+			# personal-instance path still runs, which is the right fallback: the player keeps a
+			# playable quest instead of an empty one.
+			if bool(quest.get("is_threat_relief", false)):
+				var _tr_inst := _threat_instance_for_quest(quest)
+				if _tr_inst != "":
+					if not player_dungeon_instances.has(peer_id):
+						player_dungeon_instances[peer_id] = {}
+					player_dungeon_instances[peer_id][quest_id] = _tr_inst
+					log_message("Bound threat-relief quest %s to WORLD dungeon %s for %s" % [
+						quest_id, _tr_inst, character.name])
+					send_to_peer(peer_id, {
+						"type": "quest_accepted",
+						"quest_id": quest_id,
+						"quest_name": quest.get("name", "Quest"),
+						"message": result.message
+					})
+					save_character(peer_id)
+					return
 			var instance_id = _create_player_dungeon_instance(peer_id, quest_id, dungeon_type, character.level, "", "", 0, _quest_rank(quest), _quest_tier(quest))
 			if instance_id != "":
 				# Store mapping of quest to dungeon instance for this player
@@ -26409,6 +26545,15 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 	# (would leak unknown content). Player sees what's coming up if they keep
 	# leveling — closes the audit's "What unlocks at higher skill?" question
 	# and finishes the 7-layer transparency stack.
+	# ⚡ SAY IT ONCE, THE FIRST TIME THERE IS SOMETHING TO SAY. Owner 2026-09-18, after being
+	# pointed at commissions twice: *"I still don't understand how to put in a commission."* The
+	# feature was built, had buttons, and nothing anywhere told a player it existed - so the hint
+	# fires the first time their bench actually contains a recipe they could have made for them.
+	for _r in recipe_list:
+		if bool(_r.get("can_commission", false)) or bool(_r.get("locked", false)):
+			_maybe_send_commission_hint(peer_id)
+			break
+
 	var upcoming_pool: Array = []
 	for r in recipe_list:
 		if not r.get("locked", false):
@@ -32462,6 +32607,28 @@ func _sweep_personal_dungeons() -> void:
 		log_message("[DUNGEON-CLEANUP] swept personal dungeon %s (%s)" % [iid, String(row[1])])
 
 
+func _threat_instance_for_quest(quest: Dictionary) -> String:
+	"""The live world dungeon a threat-relief bounty refers to, or "" if it is gone.
+
+	Prefers the id recorded when the board built the quest; falls back to asking the post's own
+	threat state again, because a quest RELOADED from disk goes through
+	`_regenerate_threat_relief_quest`, which can only reconstruct the post and the dungeon type."""
+	var recorded := String(quest.get("threat_instance_id", ""))
+	if recorded != "" and active_dungeons.has(recorded):
+		return recorded
+	var post_id := String(quest.get("trading_post", ""))
+	if post_id == "":
+		return ""
+	var coords = quest_db.post_coords(post_id)
+	var state: Dictionary = _compute_post_threat_state(int(coords.x), int(coords.y))
+	if not bool(state.get("threatened", false)):
+		return ""
+	if String(state.get("dungeon_type", "")) != String(quest.get("dungeon_type", "")):
+		return ""
+	var live := String(state.get("instance_id", ""))
+	return live if active_dungeons.has(live) else ""
+
+
 func _cleanup_player_dungeon(peer_id: int, quest_id: String):
 	"""Clean up a player's personal dungeon instance when quest is completed/abandoned"""
 	if not player_dungeon_instances.has(peer_id):
@@ -32472,7 +32639,15 @@ func _cleanup_player_dungeon(peer_id: int, quest_id: String):
 
 	var instance_id = player_dungeon_instances[peer_id][quest_id]
 
-	_erase_dungeon_instance(instance_id)
+	# ⛑ ONLY A PERSONAL INSTANCE IS DESTROYED. A threat-relief bounty binds the SHARED world
+	# dungeon that is actually menacing the post, and erasing that on one player's turn-in would
+	# delete it out from under everyone else standing in it. A world dungeon has no
+	# `owner_peer_id`; that is the same test `handle_dungeon_enter` uses to decide who may go in.
+	var _inst = active_dungeons.get(instance_id, null)
+	if _inst is Dictionary and not (_inst as Dictionary).has("owner_peer_id"):
+		log_message("Quest %s released world dungeon %s (not erased - it is shared)" % [quest_id, instance_id])
+	else:
+		_erase_dungeon_instance(instance_id)
 
 	# Remove from player's tracking
 	player_dungeon_instances[peer_id].erase(quest_id)
@@ -34261,6 +34436,30 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 		best["distance"] = int(sqrt(float(best_dist_sq)))
 	return best
 
+func post_art_key(peer_id: int) -> String:
+	"""A stable identity for the POST a player is standing in, for art that must not re-roll.
+
+	⚡ Owner 2026-09-18, twice: *"regarding the Blacksmith and healer they shouldn't rotate
+	through ASCII art each time you talk to them. They should pick one for that post and stick
+	with it"* - and then, after the first attempt: *"the Healer's ASCII art is changing still,
+	almost seems different if I bump into it from different sides."*
+
+	⛑ IT WAS, AND THE FIRST FIX WAS VACUOUS. `_post_npc_art_seed` keyed on
+	`character_data.current_post_name` - a field NOTHING IN THE CODEBASE EVER WRITES - so every
+	call took the fallback branch and hashed the player's CURRENT x,y. Bumping the healer from the
+	north and from the west are two different tiles, so they were two different people. A helper
+	that reads a field nobody sets looks exactly like one that works.
+
+	The POST is the thing that owns the NPC, so the post's own coordinates are the key. They never
+	move, they are the same from every approach, and they differ between posts - which is the whole
+	of what the owner asked for. Away from a post this returns "" and the client keeps its old
+	positional fallback, which is the right behaviour for a stranger met in the wild."""
+	if not characters.has(peer_id):
+		return ""
+	var character = characters[peer_id]
+	return NpcPostDatabaseScript.post_art_key_for(chunk_manager.get_npc_posts(), character.x, character.y)
+
+
 func _get_post_threat_info(peer_id: int) -> Dictionary:
 	"""Audit #11 Slice 7 — threat-aware market modifier.
 
@@ -35408,8 +35607,12 @@ func _add_dungeon_directions_to_quests(quests: Array, _tp_x: int, _tp_y: int) ->
 
 		# Check if this is a dungeon-routed quest (clear / rescue / fabled boss / gather).
 		if quest.get("type") in [quest_db.QuestType.DUNGEON_CLEAR, quest_db.QuestType.RESCUE, quest_db.QuestType.BOSS_HUNT, quest_db.QuestType.GATHER]:
-			# Add note about personal dungeon being created
-			var dungeon_hint = "\n\n[color=#00FFFF]A personal dungeon will be created for you nearby when you accept this quest.[/color]"
+			# A threat-relief bounty sends you to the REAL dungeon menacing this post, so promising
+			# a private copy here contradicted both the bearing printed above it and what accepting
+			# actually does.
+			var dungeon_hint := "\n\n[color=#00FFFF]A personal dungeon will be created for you nearby when you accept this quest.[/color]"
+			if bool(quest.get("is_threat_relief", false)):
+				dungeon_hint = "\n\n[color=#00FFFF]This is the real dungeon menacing the post - the bearing above is where to go.[/color]"
 			updated_quest["description"] = quest.get("description", "") + dungeon_hint
 
 		updated_quests.append(updated_quest)
@@ -45119,19 +45322,35 @@ func _escort_path(character, gx: int, gy: int, home: bool, quick: bool = false) 
 	and a route that has to pass through the post. So: tight, then wide, then wide THROUGH posts."""
 	if world_system == null or character == null:
 		return []
-	var p: Array = _escort_path_search(character, gx, gy, home, ESCORT_PATH_PAD, false)
+	# ⚡ AND HE WALKS AROUND DANGER. Owner 2026-09-18: *"If a hotzone is near the starter dungeon
+	# warden hollis has a rough time getting to it as he doesn't go around hotzones."*
+	#
+	# ⛑ A HOTZONE DOES NOT BLOCK MOVEMENT, so `move_player` - which is deliberately the ONLY
+	# authority on what blocks a step - says yes to every tile in one, and a shortest-path search
+	# then walks the escort and the level-one player it is leading straight through the most
+	# dangerous ground on the map. It is the guided FIRST WALK of a permadeath game.
+	#
+	# Danger is a preference, not a wall, so it is a first try rather than a rule: ask for a route
+	# that avoids hotzones, and fall back to the existing ladder when there is not one. A player
+	# whose dungeon sits INSIDE a hotzone still gets taken there.
+	var p: Array = _escort_path_search(character, gx, gy, home, ESCORT_PATH_PAD, false, true)
+	if p.is_empty():
+		p = _escort_path_search(character, gx, gy, home, ESCORT_PATH_PAD, false, false)
 	# A goal with NO route costs the whole wide search - measured 300-550ms - so a re-plan after a
 	# refused step asks only the tight box. The full search runs once per walk.
 	if quick:
 		return p
 	if p.is_empty():
-		p = _escort_path_search(character, gx, gy, home, ESCORT_PATH_WIDE_PAD, false)
+		p = _escort_path_search(character, gx, gy, home, ESCORT_PATH_WIDE_PAD, false, true)
 	if p.is_empty():
-		p = _escort_path_search(character, gx, gy, home, ESCORT_PATH_WIDE_PAD, true)
+		p = _escort_path_search(character, gx, gy, home, ESCORT_PATH_WIDE_PAD, false, false)
+	if p.is_empty():
+		p = _escort_path_search(character, gx, gy, home, ESCORT_PATH_WIDE_PAD, true, false)
 	return p
 
 
-func _escort_path_search(character, gx: int, gy: int, home: bool, pad: int, through_posts: bool) -> Array:
+func _escort_path_search(character, gx: int, gy: int, home: bool, pad: int, through_posts: bool,
+		avoid_hotzones: bool = false) -> Array:
 	var start := Vector2i(int(character.x), int(character.y))
 	var goal := Vector2i(gx, gy)
 	var minx: int = mini(start.x, gx) - pad
@@ -45139,6 +45358,19 @@ func _escort_path_search(character, gx: int, gy: int, home: bool, pad: int, thro
 	var miny: int = mini(start.y, gy) - pad
 	var maxy: int = maxi(start.y, gy) + pad
 	var through: Array = ["warden"]
+	# ⛑ ONE WINDOW SCAN, NOT ONE PER TILE. `_is_hotspot` scans an 11x11 block of hashes per
+	# call, and this search visits up to ESCORT_PATH_MAX_NODES tiles - which would be ~4.8M hash
+	# lookups on a search already measured at 300-550ms. `_collect_hotspot_clusters` does the
+	# window scan once for the whole box and `_is_hotspot_in_clusters` then walks a handful of
+	# circles per tile; the map renderer made exactly this trade for the same reason.
+	var hot_clusters: Array = []
+	if avoid_hotzones:
+		hot_clusters = world_system._collect_hotspot_clusters(minx, maxx, miny, maxy)
+		if hot_clusters.is_empty():
+			return []   # nothing to avoid - let the ordinary search answer rather than repeat it
+		# A start or goal standing IN one cannot be routed around; say so now instead of searching.
+		if world_system._is_hotspot_in_clusters(start.x, start.y, hot_clusters) 				or world_system._is_hotspot_in_clusters(gx, gy, hot_clusters):
+			return []
 	var may_use_posts: bool = through_posts or home or world_system._is_npc_post_interior(start.x, start.y) \
 		or world_system._is_npc_post_interior(gx, gy)
 	var prev := {start: start}
@@ -45158,6 +45390,8 @@ func _escort_path_search(character, gx: int, gy: int, home: bool, pad: int, thro
 			if n.x < minx or n.x > maxx or n.y < miny or n.y > maxy:
 				continue
 			if not may_use_posts and n != goal and world_system._is_npc_post_interior(n.x, n.y):
+				continue
+			if avoid_hotzones and world_system._is_hotspot_in_clusters(n.x, n.y, hot_clusters):
 				continue
 			prev[n] = cur
 			queue.append(n)

@@ -4521,12 +4521,78 @@ const ABILITY_LINES_BY_CLASS := {
 }
 
 static func ability_line(character, ability_name: String, key: String, fallback: String) -> String:
-	"""The class-specific log line for this card, or the shared one."""
+	"""The class-specific log line for this card, or the shared one.
+
+	⚑ A `title` FALLS BACK TO THE CLASS'S OWN NAME FOR THE CARD, never to the literal at the call
+	site. Owner 2026-09-18: *"Chaos bolt shows as Magic bolt in the combat log. We gotta fix these
+	naming differences for each class."* The Sorcerer's Magic Bolt is Chaos Bolt on the card, in
+	the deck screen and in `-- cardnames`, and was "Magic Bolt" in the log because this function
+	was handed the string `"Magic Bolt"` and nothing knew any better.
+
+	⛑ SO THE LITERAL IS A STYLE TEMPLATE NOW, NOT A NAME. Fifteen call sites pass a title, some
+	plain ("Power Strike") and some shouted ("WAR CRY!", "❄ FROST NOVA!"), and re-deriving the
+	name while keeping the decoration means a class rename reaches the log without anyone
+	remembering to visit it - which is the seventh surface in CLAUDE.md's "a rename touches SEVEN
+	surfaces" and the one that keeps getting missed."""
 	if character == null:
 		return fallback
 	var per: Dictionary = ABILITY_LINES_BY_CLASS.get(ability_name, {})
 	var mine: Dictionary = per.get(String(character.class_type), {})
-	return String(mine.get(key, fallback))
+	if mine.has(key):
+		return String(mine[key])
+	if key == "title":
+		return _styled_title(display_name_for(character, ability_name), fallback)
+	return fallback
+
+
+static func _styled_title(display: String, template: String) -> String:
+	"""`display`, wearing the decoration of `template`.
+
+	The template's leading non-letter run (a glyph and its space) and its trailing exclamation
+	marks are kept, and the name is shouted when the template shouts. "❄ FROST NOVA!" over
+	"Frost Nova" gives "❄ FROST NOVA!"; the same template over the Sorcerer's name for the card
+	gives that name, shouted, with the snowflake."""
+	if template == "":
+		return display
+	var lead := ""
+	var i := 0
+	while i < template.length() and not _is_letter(template[i]):
+		lead += template[i]
+		i += 1
+	var tail := ""
+	var j := template.length() - 1
+	while j >= i and template[j] == "!":
+		tail = "!" + tail
+		j -= 1
+	var core := template.substr(i, j - i + 1)
+	var shouted: bool = core != "" and core == core.to_upper() and core != core.to_lower()
+	return lead + (display.to_upper() if shouted else display) + tail
+
+
+static func _is_letter(c: String) -> bool:
+	return (c >= "a" and c <= "z") or (c >= "A" and c <= "Z")
+
+
+static func display_name_for(character, ability_name: String) -> String:
+	"""The player-facing name of a card FOR THIS CHARACTER - the static half of
+	`_ability_display_name`, so log lines and other static helpers can reach it.
+
+	⛑ ONE TABLE, NOT TWO. `_ability_display_name` stays as the instance entry point every existing
+	caller uses and now delegates here, rather than this becoming a second copy of the lookup -
+	which is exactly the fault that produced the wrong name in the first place."""
+	var base := String(Character.card_base(ability_name))
+	if base.begins_with("dungeon_card_"):
+		return DropTablesScript.card_display_name(base)
+	if base.begins_with("companion_card_"):
+		return "%s's Gift" % base.trim_prefix("companion_card_").capitalize()
+	if character != null and ABILITY_DISPLAY_BY_CLASS.has(base):
+		var per_class: Dictionary = ABILITY_DISPLAY_BY_CLASS[base]
+		var mine := String(per_class.get(String(character.class_type), ""))
+		if mine != "":
+			return mine
+	if ABILITY_DISPLAY_NAMES.has(base):
+		return String(ABILITY_DISPLAY_NAMES[base])
+	return base.replace("_", " ").capitalize()
 
 # Damage reduction granted by CONSTITUTION, as a fraction. Read against the same level-scaled
 # baseline the ability-damage ratio uses (`level + 13`), so a character who keeps their CON in
@@ -12516,23 +12582,10 @@ func _ability_display_name(_character, ability_name: String) -> String:
 	this, the rank-up notification used the raw internal id ('Tactical retreat')
 	while the card in the player's hand showed 'Recharge' — players couldn't
 	connect the two and reported phantom ranks-ups on abilities they 'don't have'."""
-	ability_name = Character.card_base(ability_name)   # a copy is named for its card
-	# v0.9.680 — companion cards: "<Type>'s Gift" from the id.
-	# #38 — dungeon cards resolve to their proper name via the shared table.
-	if ability_name.begins_with("dungeon_card_"):
-		return DropTablesScript.card_display_name(ability_name)
-	if ability_name.begins_with("companion_card_"):
-		return "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
-	# A class-specific name wins: the same card is Assassinate / Perfect Heist / Killing Shot
-	# depending on who is holding it.
-	if _character != null and ABILITY_DISPLAY_BY_CLASS.has(ability_name):
-		var per_class: Dictionary = ABILITY_DISPLAY_BY_CLASS[ability_name]
-		var mine := String(per_class.get(String(_character.class_type), ""))
-		if mine != "":
-			return mine
-	if ABILITY_DISPLAY_NAMES.has(ability_name):
-		return String(ABILITY_DISPLAY_NAMES[ability_name])
-	return ability_name.replace("_", " ").capitalize()
+	# A copy is named for its card; a class-specific name wins (the same card is Assassinate /
+	# Perfect Heist / Killing Shot depending on who is holding it). The lookup itself lives in
+	# `display_name_for` so the static log-line helper reads the SAME table.
+	return display_name_for(_character, ability_name)
 
 func _ability_alias_to_card(ability_name: String) -> String:
 	"""Normalize an inbound ability command (which may be an alias like

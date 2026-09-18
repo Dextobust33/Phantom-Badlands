@@ -87,7 +87,16 @@ CUTS = {
     # different things - which is what they are.
     'tile:apothecary':    ('interiors', 8, 10, (3, 2)),
     'tile:workbench':     ('craft_stations', 5, 0, (2, 2)),
-    'tile:enchant_table': ('craft_stations', 7, 1, (2, 1)),
+    # ⚑ THE RIGHT-HAND COLUMN OF A TWO-COLUMN DESK. Owner 2026-09-18, twice: *"Enchanting table
+    # looks like a piece of another sprite."* and then, from the live server, *"The Enchanting
+    # table in the crossroads is still the old 1 tile sprite that doesn't fit."*
+    #
+    # ⛑ IT WAS LITERALLY A PIECE OF ANOTHER SPRITE. `craft_stations` rows 7-8, columns 0-1 are
+    # ONE desk: an open book on the left, a blue focusing crystal on a red-and-gold cushion on
+    # the right, sharing a single wooden top and a single set of legs. The old spec took column 1
+    # alone, so the book was cut off and the desk was sawn down the middle - which is exactly
+    # what the owner saw. Taking the whole 2x2 block gives the complete piece of furniture.
+    'tile:enchant_table': ('craft_stations', 7, 0, (2, 2)),
     # ⚑ THESE TWO WERE HALVES OF ONE PICTURE.
     #
     # Owner 2026-09-13: *"The market and the sprite that say I'm fully rested seem to be parts of
@@ -180,12 +189,26 @@ CUTS = {
     # ⚑ 4.4 FROM THE QUEST BOARD. `(4,6)` and `quest_board`'s `(4,5)` are neighbouring cells of
     # one sheet, so the two were all but identical at the 26px the map draws - and they sit side
     # by side inside every post. A framed sign with a blue emblem measures 51 apart instead.
-    # ⚑ A BANNER, NOT A SWORD FRAGMENT - owner 2026-09-18: *"Sword center at 0,0 looks odd."*
-    # This is the tile at the CENTRE of all 120 posts, so it is among the most-seen art in the
-    # game, and it was a single 32px cell of crossed blades with the tips cut off at the edge.
-    # sun_city (23,16) is a complete 3x3 hanging banner - a landmark that says "somebody claims
-    # this ground", which is what a post centre is.
-    'tile:post_marker':      ('sun_city', 23, 16, (3, 3)),
+    # ⚑ A FOUNTAIN, AFTER A SWORD FRAGMENT AND THEN A WALL BANNER. This is the tile at the CENTRE
+    # of all 120 posts, so it is among the most-seen art in the game, and it has been wrong twice:
+    #
+    #   * owner 2026-09-18: *"Sword center at 0,0 looks odd."* - it was a single 32px cell of
+    #     crossed blades with the tips cut off at the sheet edge.
+    #   * owner, same day, on the replacement: *"The center tile shows a big 3x3 blue thing for
+    #     some reason when I'm near it then goes to the half sword sprite once I walk away from
+    #     it. Neither of these are good."* The "blue thing" is sun_city (23,16), which is a hanging
+    #     WALL BANNER - blue and cream stripes - and its shrunk single-cell version is those
+    #     stripes, which is not a landmark at all.
+    #
+    # ⛑ A TOWN FOUNTAIN IS WHAT SITS AT THE CENTRE OF A SETTLEMENT, and unlike a banner it survives
+    # the shrink to one cell: the grey rim and blue basin still read at the 26 pixels the minimap
+    # draws. The craftable `fountain` tile is a small green_village water feature and this is a
+    # broad stone plaza basin, so the confusion audit keeps them apart.
+    #
+    # ⛑ AND THE "STILL A SWORD WHEN I WALK AWAY" HALF WAS NOT A PICK AT ALL - the replacement had
+    # never reached the build. See `write_art_fingerprints`: the release gate compares every packed
+    # texture against what the baker produced now, so a bake that does not ship fails the gate.
+    'tile:post_marker':      ('sun_city', 22, 4, (3, 3)),
     'tile:garden_plot':      ('sun_city', 13, 17, (2, 2)),
     'tile:tent':             ('farmlands_v3', 14, 2, (2, 2)),
     'tile:cage':             ('farmlands_v3', 21, 15),
@@ -744,6 +767,8 @@ def main():
     print('cut %d tiles from real art' % cut)
     with open(os.path.join(OUT, 'big', 'big_tiles.json'), 'w', encoding='utf-8') as f:
         json.dump(big_manifest, f, indent='	', sort_keys=True)
+    write_footprint_script(big_manifest)
+    write_art_fingerprints(OUT)
     print('%d tiles also kept at full size (up to %dx%d cells)' % (
         len(big_manifest),
         max([v[1] for v in big_manifest.values()] or [0]),
@@ -851,6 +876,122 @@ def bake_tinted_markers(out_dir):
                 px[x, y] = (int(nr * 255), int(ng * 255), int(nb * 255), a)
         im.save(os.path.join(out_dir, 'overlay', name + '.png'))
     print('derived %d tinted dungeon marker(s)' % len(TINTED_MARKERS))
+
+
+FOOTPRINT_SCRIPT = 'shared/station_art_footprint.gd'
+
+
+def write_footprint_script(big_manifest):
+    """Emit the spans as a GDScript const so the SERVER can read them too.
+
+    ⚑ THE PLACER HAS TO KNOW HOW BIG THE ART IS. Owner 2026-09-18, live: *"Warden hollis is also
+    standing on a portion of the Quest board."* He was: `_place_stations` guarantees only that no
+    two stations are CARDINALLY adjacent, while `overworld_room` PASS 2 draws a 3x3 quest board
+    across nine cells - so the placer happily put the Warden in one of the eight it does not know
+    about. Every 3-row tile in the game can do this; the board is just the one that did.
+
+    ⛑ ONE TABLE, TWO READERS - NOT TWO TABLES. `big_tiles.json` lives under `client/sprites/` and
+    is a raw file; the server cannot rely on it and hand-copying the numbers into GDScript is the
+    exact `one value, two places` shape that has produced most of this project's stale-text bugs.
+    So the baker, which is where the spans are DECIDED, writes both, and the client reads this
+    script too - there is one authored copy and it is this function's input."""
+    lines = [
+        '## GENERATED by tools/bake_overworld_tiles.py - DO NOT HAND-EDIT.',
+        '##',
+        "## How many cells each tile's full-size art covers, as [rows, cols]. The renderer anchors",
+        '## the art to the BOTTOM of its base cell and centres it horizontally, so a span of R rows',
+        '## reaches R-1 cells NORTH and C columns reaches out to either side. `npc_post_database`',
+        '## uses this to keep one station art off another station tile, and `overworld_room`',
+        '## uses it to decide which tiles get drawn in the big-art pass.',
+        '##',
+        '## Re-run the baker after changing any span in CUTS; `tools/probe/post_art_does_not_cover_people.gd`',
+        '## fails if this file and the layout disagree.',
+        '',
+        'const SPANS := {',
+    ]
+    for name in sorted(big_manifest):
+        sr, sc = big_manifest[name]
+        lines.append('	"%s": [%d, %d],' % (name, sr, sc))
+    lines.append('}')
+    lines.append('')
+    lines.append('')
+    lines.append('static func span_for(tile_name: String) -> Vector2i:')
+    lines.append('	"""Rows and columns of art for a tile, or (1, 1) when it is a plain single cell."""')
+    lines.append('	var s = SPANS.get(tile_name, null)')
+    lines.append('	if s == null:')
+    lines.append('		return Vector2i(1, 1)')
+    lines.append('	return Vector2i(int(s[0]), int(s[1]))')
+    lines.append('')
+    with open(FOOTPRINT_SCRIPT, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines))
+    print('wrote %s (%d spans)' % (FOOTPRINT_SCRIPT, len(big_manifest)))
+
+
+FINGERPRINT_SCRIPT = 'shared/overworld_art_fingerprint.gd'
+
+
+def write_art_fingerprints(out_dir):
+    """Record what every baked tile LOOKS LIKE, so a build cannot ship the previous picture.
+
+    ⚡ THE ART HAS SHIPPED STALE AT LEAST ONCE. Owner 2026-09-18, on the live server, about the
+    tile at the centre of every post: *"it was still going back to the sword sprite when I stepped
+    away from it"* - a sprite this repo replaced, in a commit that is an ancestor of the released
+    tag. The PNG was correct on disk and in git; what reached the player was the old picture,
+    because Godot only re-imports on an editor pass and the release gate never looked at the art.
+
+    ⛑ AND NOTHING COULD HAVE CAUGHT IT. `--buildverify` asserted `overworld_art=true` (one file
+    exists) and `big_tiles=20` (the manifest is present). Both are true of a build carrying every
+    tile from a month ago. That is the "verify the FUNCTION, not the ingredients" rule in CLAUDE.md
+    read the wrong way round: the count was checked, the picture never was.
+
+    So the baker writes a fingerprint of each image and `--buildverify` recomputes it from the
+    PACKED texture. Sizes must match exactly; channel averages are compared with a tolerance,
+    because an imported texture may be VRAM-compressed (`overworld_room._img` decompresses, which
+    is how we know it can be). A tolerance of a few levels still separates any two DIFFERENT
+    pictures by a mile - a blue-striped banner against a grey stone fountain is not a near miss."""
+    import os as _os
+    from PIL import Image as _I
+    rows = []
+    for kind in ('ground', 'tile', 'overlay', 'big'):
+        d = _os.path.join(out_dir, kind)
+        if not _os.path.isdir(d):
+            continue
+        for f in sorted(_os.listdir(d)):
+            if not f.endswith('.png'):
+                continue
+            im = _I.open(_os.path.join(d, f)).convert('RGBA')
+            w, h = im.size
+            px = im.load()
+            tr = tg = tb = ta = 0
+            for y in range(h):
+                for x in range(w):
+                    r, g, b, a = px[x, y]
+                    tr += r
+                    tg += g
+                    tb += b
+                    ta += a
+            n = max(1, w * h)
+            rows.append(('%s/%s' % (kind, f[:-4]), w, h,
+                         tr // n, tg // n, tb // n, ta // n))
+    lines = [
+        '## GENERATED by tools/bake_overworld_tiles.py - DO NOT HAND-EDIT.',
+        '##',
+        '## What every baked overworld image LOOKS LIKE: [width, height, avg R, avg G, avg B, avg A].',
+        '## `client.gd --buildverify` recomputes these from the PACKED textures and the release gate',
+        '## fails on any mismatch, so a build cannot ship the previous picture with the new version',
+        '## number stamped beside it. See `write_art_fingerprints` for why averages and not a hash.',
+        '',
+        'const TOLERANCE := 8',
+        '',
+        'const ART := {',
+    ]
+    for name, w, h, r, g, b, a in rows:
+        lines.append('	"%s": [%d, %d, %d, %d, %d, %d],' % (name, w, h, r, g, b, a))
+    lines.append('}')
+    lines.append('')
+    with open(FINGERPRINT_SCRIPT, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines))
+    print('wrote %s (%d images)' % (FINGERPRINT_SCRIPT, len(rows)))
 
 
 def _warn_adjacent_sources():

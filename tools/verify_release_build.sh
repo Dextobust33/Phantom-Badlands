@@ -81,7 +81,8 @@ fi
 # you're doing whatever you're doing."* Verified the probe reports the same values either
 # way - vsync_mode=1 and max_fps=60 are set from code in _ready, not from the window - so
 # nothing the gate asserts is lost by not drawing anything.
-timeout 120 "$EXE" --headless --buildverify > "$OUT" 2>&1
+# 180s, not 120: the art-freshness check reads every pixel of 113 packed textures.
+timeout 180 "$EXE" --headless --buildverify > "$OUT" 2>&1
 
 echo "--- $EXE"
 grep '\[BUILDVERIFY\]' "$OUT" || true
@@ -151,6 +152,30 @@ else
 ' "big_tiles" "$BIG_TILES"
   fail=1
 fi
+# â AND THE ART IN THE BUILD IS THE ART WE BAKED.
+#
+# Owner 2026-09-18, live, about the tile at the centre of every post: *"it was still going back to
+# the sword sprite when I stepped away from it"* - a sprite replaced in a commit that is an
+# ancestor of the released tag. The PNG was right on disk and right in git; the build drew the old
+# picture, because Godot only re-imports on an editor pass and nothing here ever looked at a pixel.
+#
+# â `overworld_art` and `big_tiles` above are the INGREDIENTS - a file exists, a manifest has
+# rows - and both are true of a build carrying every tile from a month ago. `--buildverify` now
+# loads each packed texture and compares it against the fingerprint the baker wrote from the
+# source. Any count below the full set means images are missing from the .pck; any stale one means
+# the export ran on an un-imported bake.
+ART_N="$(field overworld_art_checked)"
+ART_STALE="$(field overworld_art_stale)"
+if [ "${ART_N:-0}" -ge 100 ] 2>/dev/null && [ "${ART_STALE:-1}" = "0" ]; then
+  printf '  ok    %-22s %s images, none stale
+' "overworld_art_fresh" "$ART_N"
+else
+  printf '  FAIL  %-22s %s images checked, %s STALE (want 100+ and 0)
+'     "overworld_art_fresh" "${ART_N:-0}" "${ART_STALE:-?}"
+  grep "stale_art:" "$OUT" | head -12
+  fail=1
+fi
+
 # The calibrated monster curve is DATA, not code, so none of the freshness probes above would
 # notice it missing from an export - and without it every monster silently reverts to legacy
 # base_level scaling. Added with v0.9.777, which shipped a re-calibration of the role layer.
