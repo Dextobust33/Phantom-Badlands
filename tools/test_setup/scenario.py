@@ -275,20 +275,29 @@ def release_check(c):
 
 
 def feel_check(c):
-    """The v0.9.803 work that no probe can sign off - eight things needing a human eye.
+    """The v0.9.803 work that no probe can sign off - things needing a human eye.
+
+    ROUND TWO (2026-09-17 evening). The first pass found three REAL defects rather than matters
+    of taste - the card flight never fired at all, the help index printed raw BBCode, and a quest
+    board offered 117 million XP - so this scenario is now also the confirmation pass before a
+    release.
+
 
     Every one of these is verified by an automated check already. What is NOT verified is whether
     any of it FEELS right, and three of them are animations, where "correct" and "good" are
     different questions:
 
-      1. the played card lifts and flares      (probe: scale 1.000 -> 1.109)
-      2. its ghost flies to the log line       (probe: lands y=279, wanted y=279)
-      3. a potion is free ONCE PER ROUND       (probe: the flag now resets with the round)
-      4. the Menu tree reaches everything      (probe: 30 entries, all dispatch)
-      5. Escape releases the chat box          (never grabs it)
-      6. the four panels click-to-resize       (probe: 152 font sizes, no run-away)
-      7. the help panel fits the screen        (probe: 756px against 1080)
-      8. the quest board states difficulty     (probe: F5 / 5 floors / Lv 26-37)
+      1. the card flourish, now 4x longer      (was 3 frames at the owner's 3x speed)
+      2. the ghost flight, which NEVER FIRED   (it asked a classifier that read the real
+                                                folded combat line as "ambient")
+      3. the right column: last 8 + History    (kept 60 while ~7 fit)
+      4. the HUNTING GROUND banner, pinned     (entry was announced into the buried log)
+      5. the hotzone confirm at 1.15x          (was 2.0x = 50-100% death, measured)
+      6. quest XP no longer scales to YOU      (was ~10x at a starter post)
+      7. the quest board's grade + level band  (and the grade is the one you get)
+      8. post names are unique                 (two "Iron Peak" priced one board from
+                                                3000 tiles away - 117 million XP)
+      9. the help index without [color=] tags  (a Button renders text literally)
 
     Stocked with potions for (3), parked at a post for (8) and for the market/inventory panels in
     (6), and left healthy because dying halfway through a checklist wastes the run.
