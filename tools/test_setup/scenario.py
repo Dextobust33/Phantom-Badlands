@@ -597,14 +597,19 @@ SCENARIOS = {
         players=1,
         apply=release_check),
     "crafting_arc": dict(
-        doc=("THE 2026-09-18 CRAFTING ARC - everything a probe cannot sign off, plus the two "
-             "ART items that need your eye. A committed ENCHANTER at a post: enchanting 40 "
-             "(some recipes makeable, some gated, some out of reach), blacksmithing 35 WITHOUT "
-             "the focus (the commission case), a rune already in the worn weapon, two affixed "
-             "items to Rework, and 30k valor. Walk the crafting stations around the post for "
-             "the sprite review."),
-        players=2,
-        at=(57, -11),
+        doc=("THE 2026-09-18 CRAFTING ARC. ONE character, AT a post, carrying everything each "
+             "test needs. Committed ENCHANTER (enchanting 40, so some recipes are makeable, some "
+             "gated, some out of reach), blacksmithing 35 WITHOUT the focus (the commission "
+             "case), a rune already in the worn weapon for Disenchant, two affixed items for "
+             "Rework - one of them 2/5 reworks used - and 30k Valor. "
+             "ONE player on purpose: the first version launched two in a party for no reason, "
+             "which is setup the scenario is meant to REMOVE."),
+        players=1,
+        # ⛑ CROSSROADS (0,0) IS A REAL POST TILE, VERIFIED with find_tile --kind=post. The first
+        # version used the default anchor (57,-11), which is open country - and `handle_craft_list`
+        # RETURNS EARLY unless you are at a post, so the bench opened empty and every crafting test
+        # in the scenario was unreachable. The capture found that; reading the code did not.
+        at=(0, 0),
         grant_valor=30000,
         apply=crafting_arc),
 

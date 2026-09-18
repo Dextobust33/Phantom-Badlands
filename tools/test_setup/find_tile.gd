@@ -43,6 +43,13 @@ func _init():
 		"water":   want = [WS.Terrain.WATER, WS.Terrain.DEEP_WATER]
 		"ore":     want = [WS.Terrain.MOUNTAINS]
 		"forest":  want = [WS.Terrain.FOREST, WS.Terrain.DEEP_FOREST]
+		"post":
+			# ⛑ A POST IS NOT A TERRAIN. Crafting, commissioning and every bench test refuse
+			# unless `is_trading_post_tile` is true, and the default scenario anchor (57,-11) is
+			# open country - so the crafting scenario parked its character somewhere the feature
+			# could not run at all, and the capture came back with an empty recipe list. Asking
+			# the same predicate the SERVER asks is the only way to place this correctly.
+			want = []
 		_:         want = [WS.Terrain.PLAINS]
 
 	# Spiral outward so we get the CLOSEST match rather than any match.

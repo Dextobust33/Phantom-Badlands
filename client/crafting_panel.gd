@@ -183,6 +183,10 @@ func _build_layout() -> void:
 		fb.add_theme_font_size_override("font_size", 11)
 		fb.custom_minimum_size = Vector2(0, 24)
 		fb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# ⛑ LABELLED AT BIRTH. `_refresh_filter_chips()` fills in the counts, but it only runs on
+		# populate - so before the first list arrives the row drew as four BLANK boxes. The capture
+		# showed exactly that, and a blank button is indistinguishable from a broken one.
+		fb.text = String(f["label"])
 		fb.tooltip_text = String(f["help"])
 		fb.pressed.connect(_on_filter_pressed.bind(String(f["id"])))
 		_filter_row.add_child(fb)
@@ -705,7 +709,10 @@ func _refresh_detail() -> void:
 			meta_lines.append("[color=#FF6666]Specialist work — reach the skill yourself before you can commission it.[/color]")
 	meta_lines.append("")
 	meta_lines.append("[color=#87CEEB]Skill Req:[/color] %d   [color=#87CEEB]Difficulty:[/color] %d   [color=#87CEEB]Quality Rating:[/color] %d%%" % [skill_req, difficulty, success_chance])
-	meta_lines.append("[color=#888888]Crafts always produce an item — even a Poor roll gives 50%% stats.[/color]")
+	# ⛑ ONE PERCENT SIGN. `%%` only collapses when the string is FORMATTED - this append has no
+	# `% [...]` after it, so it rendered literally as "50%% stats" on screen. Caught by looking at
+	# a screenshot; no amount of reading the line makes it obvious.
+	meta_lines.append("[color=#888888]Crafts always produce an item — even a Poor roll gives 50% stats.[/color]")
 	# Audit #8 Layer 5 — quality odds bar (recomputed live when boost changes).
 	# Server seeds `quality_odds` for the base distribution; recompute via
 	# CraftingDatabase.quality_distribution when a boost is active.

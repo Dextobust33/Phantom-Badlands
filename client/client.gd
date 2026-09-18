@@ -6842,6 +6842,105 @@ func _dev_run_shots() -> void:
 				else:
 					print("[SHOTS] menutree FAIL panel is null")
 
+			"crafting":
+				# ⚑ THE CRAFTING ARC, PHOTOGRAPHED. Owner 2026-09-18, after a test session where
+				# four of their eight reports were one fault: *"fix the scenario and verify
+				# everything yourself before relaunching."*
+				#
+				# ⛑ THIS EXISTS BECAUSE SOURCE-READING CHECKS COULD NOT SEE THE FAULT. The entire
+				# crafting UI had been written into client.gd's text renderers while
+				# `crafting_panel.gd` was the live screen, and every probe passed because the
+				# strings WERE in client.gd - in the path nobody sees. A capture is the only check
+				# that cannot be fooled that way: if the panel does not draw it, it is not there.
+				# ⛑ BLACKSMITHING, NOT ENCHANTING. Enchanting makes runes and materials - it has
+				# NO weapon or armour recipes at all - so a capture aimed there can never show the
+				# "Makes:" line or a comparison, and the scenario's committed Enchanter cannot be
+				# gated out of its own trade either. Blacksmithing carries both: real gear stats,
+				# and (at skill 35 without the focus) the commission case.
+				crafting_mode = true
+				request_craft_list("blacksmithing")
+				await get_tree().create_timer(1.8).timeout
+				await _dev_shot_capture("craft_01_list_can_make")
+				if crafting_panel and crafting_panel.has_method("_on_filter_pressed"):
+					crafting_panel._on_filter_pressed("all")
+					await get_tree().create_timer(0.9).timeout
+					await _dev_shot_capture("craft_02_filter_all")
+					crafting_panel._on_filter_pressed("skill")
+					await get_tree().create_timer(0.9).timeout
+					await _dev_shot_capture("craft_03_filter_at_skill")
+					# A recipe you CAN make: the detail should lead with what it makes.
+					# ⛑ IT MUST BE A WEAPON OR ARMOUR. The first capture picked "Refine Magic
+					# Dust" - a MATERIAL recipe, which correctly has no `output_stats` - so the
+					# shot proved nothing about the "Makes:" line it was taken to verify. A
+					# capture aimed at the wrong subject is as useless as no capture.
+					var made := -1
+					for i in range(crafting_panel._recipes.size()):
+						var r_i: Dictionary = crafting_panel._recipes[i]
+						if bool(r_i.get("can_craft", false)) and String(r_i.get("output_type", "")) in ["weapon", "armor"]:
+							made = i
+							break
+					if made < 0:
+						for i in range(crafting_panel._recipes.size()):
+							if String(crafting_panel._recipes[i].get("output_type", "")) in ["weapon", "armor"]:
+								made = i
+								break
+					if made >= 0:
+						crafting_panel._on_recipe_pressed(made)
+						await get_tree().create_timer(1.0).timeout
+						var _rm: Dictionary = crafting_panel._recipes[made]
+						print("[SHOTS] craft detail subject=%s type=%s output_stats=%d" % [
+							str(_rm.get("name", "?")), str(_rm.get("output_type", "?")),
+							(_rm.get("output_stats", {}) as Dictionary).size()])
+						await _dev_shot_capture("craft_04_detail_makeable")
+					else:
+						print("[SHOTS] craft FAIL no makeable recipe in the At My Skill view")
+					# A gated one: it must be CLICKABLE and offer the commission.
+					crafting_panel._on_filter_pressed("all")
+					await get_tree().create_timer(0.7).timeout
+					var gated := -1
+					for i in range(crafting_panel._recipes.size()):
+						if bool(crafting_panel._recipes[i].get("can_commission", false)):
+							gated = i
+							break
+					if gated >= 0:
+						crafting_panel._on_recipe_pressed(gated)
+						await get_tree().create_timer(1.0).timeout
+						await _dev_shot_capture("craft_05_detail_commission")
+						print("[SHOTS] craft commission row=%s craft_btn=%s post_job_visible=%s" % [
+							str(crafting_panel._recipes[gated].get("name", "?")),
+							str(crafting_panel._craft_button.text),
+							str(crafting_panel._post_job_button.visible)])
+					else:
+						print("[SHOTS] craft FAIL no commissionable recipe found")
+				else:
+					print("[SHOTS] craft FAIL crafting panel missing")
+				crafting_mode = false
+				await get_tree().create_timer(0.5).timeout
+
+			"rework":
+				# The rework flow, which the owner watched vanish off the screen. A capture after
+				# the picker AND after a character_update is the only way to prove the text holds.
+				inventory_mode = true
+				pending_inventory_action = "rework_select"
+				_display_rework_item_picker()
+				await get_tree().create_timer(1.0).timeout
+				await _dev_shot_capture("rework_01_item_picker")
+				var rl: Array = get_meta("rework_item_list", [])
+				print("[SHOTS] rework pickable items=%d" % rl.size())
+				if rl.size() > 0:
+					rework_item_index = int(rl[0])
+					send_to_server({"type": "affix_reroll_quote", "item_index": rework_item_index})
+					await get_tree().create_timer(1.4).timeout
+					await _dev_shot_capture("rework_02_stat_picker")
+					# Force the refresh that used to wipe it, then look again.
+					send_to_server({"type": "request_character"})
+					await get_tree().create_timer(1.4).timeout
+					await _dev_shot_capture("rework_03_after_refresh")
+					print("[SHOTS] rework stats offered=%d" % (get_meta("rework_stat_list", []) as Array).size())
+				pending_inventory_action = ""
+				inventory_mode = false
+				await get_tree().create_timer(0.5).timeout
+
 			"scouting":
 				# ⚑ SCOUTING, LOOKED AT. Owner 2026-09-13: *"Scouting is busted"* - the map drew
 				# as horizontal bands separated by black, because +2 vision made the row of

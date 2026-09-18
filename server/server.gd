@@ -26360,6 +26360,10 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"quality_odds": quality_odds,
 			"avg_market_price": avg_market_price,
 			"output_type": recipe.output_type,
+			# ⛑ THE SLOT, so the detail pane can compare against what you are WEARING. Without it
+			# the "vs your weapon" line silently never renders - which is exactly what a capture
+			# showed after I had already claimed the comparison worked.
+			"output_slot": recipe.get("output_slot", ""),
 			"locked": is_locked,
 			"specialist_only": is_specialist_only,
 			"can_commission": can_commission,

@@ -88,12 +88,19 @@ def main():
     # Trickster (--player=3, a Ranger) is needed to verify that half of the status strip.
     argv = sys.argv[1:]
     player_idx = 0
+    scenario_name = "healthy"
     rest = []
     for a in argv:
         if a.startswith("--res="):
             globals()["SHOT_RES"] = a.split("=", 1)[1]
         elif a.startswith("--player="):
             player_idx = int(a.split("=", 1)[1])
+        elif a.startswith("--scenario="):
+            # ⛑ THE SCENARIO WAS HARDCODED TO "healthy", so a capture could only ever photograph
+            # the default sandbox. Verifying a FEATURE means photographing the fixture built for
+            # it - a crafting capture against a character with no skills, no commitment and no
+            # materials shows an empty bench and proves nothing.
+            scenario_name = a.split("=", 1)[1]
         else:
             rest.append(a)
     scenes = rest or DEFAULT_SCENES
@@ -108,9 +115,10 @@ def main():
     # The scenario builds only as many characters as its spec asks for ("healthy" = 2), so
     # --player=3 logged in as a character that had never been created: the client sat at the
     # login screen and the run captured NOTHING. Widen the roster to cover the index asked for.
-    if player_idx + 1 > scen.SCENARIOS["healthy"].get("players", 2):
-        scen.SCENARIOS["healthy"]["players"] = player_idx + 1
-    sys.argv = [sys.argv[0], "healthy"]
+    if player_idx + 1 > scen.SCENARIOS[scenario_name].get("players", 2):
+        scen.SCENARIOS[scenario_name]["players"] = player_idx + 1
+    print("      scenario: %s" % scenario_name)
+    sys.argv = [sys.argv[0], scenario_name]
     if scen.main() != 0:
         return 1
     print("[2/4] credentials + admin")
