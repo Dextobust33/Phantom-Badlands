@@ -697,6 +697,59 @@ companion out. The rest of the batch is still not urgent; this one is. **Owner's
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
 nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
+## ⚑ TEACH THE GATHER → CRAFT LOOP — owner direction 2026-09-18, NOT STARTED
+
+*"There should be a tutorial or help guide that introduces or walks players through how to
+efficiently make their equipment and how to further improve it, gain the affixes it wants, reroll,
+etc. In general the gather, craft loop."*
+
+**This is the last piece of the crafting arc, and it is deliberately last:** the loop it has to
+teach has been changing all day, and a guide written before the content settled would have been
+wrong by evening.
+
+⛑ **MEASURED, so the scope is not a guess.** The existing `CRAFTING & GATHERING` help topic is
+**1,242 characters** and covers exactly two things: salvage, and "stand on a resource and press R".
+Checked against the concepts a player actually needs:
+
+| concept | in the help today |
+|---|---|
+| runes / enchanting / affixes | ✗ |
+| rework, reroll | ✗ |
+| commission (NPC or player) | ✗ |
+| quality, Masterwork, temper, boost | ✗ |
+| specialist, commitment | ✗ |
+| disenchant, transmute | ✗ |
+| tools | ✓ (the only one) |
+
+**14 of 15 core concepts are unmentioned**, and most of them either shipped today or were reworked
+today.
+
+**⛑ USE THE TWO SURFACES THAT ALREADY EXIST — do not build a third.**
+* `show_help()` topics (~30 of them, keyword-searchable) — the reference half. Extend
+  `CRAFTING & GATHERING`, and probably split it: gathering, crafting, improving an item.
+* `client/tutorial_hint_panel.gd` — the existing one-shot modal for first-time teaching, with a
+  `disable_tutorial` flag already respected. This is the *walkthrough* half: fire a hint the first
+  time a player stands at a bench, first salvages, first sees a rune, first hits a `Wanted` job.
+
+**The loop to teach, in the order a player meets it:**
+1. **Gather** → materials have a destination (every one of the 131 now does).
+2. **Craft** → the bench answers questions now: *Can Make / At My Skill / Wanted / All*, and the
+   detail screen says what the item is and how it compares to what you wear.
+3. **Improve it** → runes add affixes; **Rework** trades a stat you don't want for one you do
+   (5 per item, and it can roll lower); reforge rerolls within a fixed band.
+4. **What you can't make** → commission it from a post NPC, or post the job for a player.
+5. **Specialise** → committing pays **+50% XP**, unlocks that trade's recipes and its field
+   service, and costs you nothing elsewhere.
+
+**Two things the guide must be honest about**, because both are counter-intuitive and both will
+otherwise read as bugs: a **Rework can come out worse** (37% do), and a **commission is always
+Standard quality** — a real crafter is better.
+
+⛑ **AND IT MUST BE GENERATED WHERE IT CAN BE.** Numbers in this guide — the rework cap, the
+commission fee curve, the +50%, quality odds — are all constants that have already moved once
+today. Any figure typed into help text is a second copy waiting to go stale; pull them from
+`CraftingDatabase` / `Character` the way the changelog and `equipment_reference` already do.
+
 ## ⚑ THE CRAFTING RECIPE LIST CAN BE ASKED A QUESTION — shipped 2026-09-18
 
 Owner: *"The UI for crafting will likely need redesigned as well once we are done. We want it to be
