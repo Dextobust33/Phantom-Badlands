@@ -331,8 +331,12 @@ Asked because the arc had run out of defects and into design. All four answered.
       new work is the ENTRY into it, not the fight. Read the existing half-one notes below before
       designing.
 
-      **Prerequisite:** independent movement. Today party members move as one; the pull and the
-      run-in join are both meaningless until they can be apart.
+      **Prerequisite:** independent movement. **Confirmed by the owner 2026-09-18:** *"if we get
+      that party play working party members will no longer blindly follow the leader they will
+      instead be able to move around and act as we discussed."* So follow-the-leader is REPLACED,
+      not supplemented - which is what makes the proximity pull and the run-in join meaningful.
+      A **Muster Sigil** (a scribed item letting a member join you from anywhere) is parked against
+      this arc rather than the crafting one; decide it when the movement half works.
 
 - [ ] **PARTY PLAY — HALF TWO (the mechanics underneath the model above): independent movement + join-in-progress combat.** (Half one, dungeon
       party combat, is built and live; the onboarding guide it blocked has shipped.) Original title:
@@ -7156,6 +7160,45 @@ down, and these are the ones it keeps sending back — which is what extra lives
       Masterwork 1.50x - the whole spread a player can influence is **+50%**, and **Fine to
       Masterwork is +20%**. On a 50 HP potion that is +25 HP and +10 HP. Felt on gear; invisible on
       a flat-restore consumable, which is the complaint in numbers.
+
+      **✅ SCRIBING HAS AN IDENTITY, AGREED 2026-09-18: *the crafter who makes the world
+      survivable*.** Every item reduces a RISK or a COST rather than adding power - which keeps
+      Scribing out of the weapon/armour balance question, gives it ground no other crafter touches,
+      and means it can never become mandatory, the failure mode of a crafter that makes power.
+      Names state their effect, per the potion finding above.
+
+      | item | what it does | status |
+      |---|---|---|
+      | **Safe Passage Scroll** | no encounters for N steps | ✅ approved |
+      | **Remains Ledger** | your corpse's exact location and contents | ✅ approved |
+      | **Waypoint Seal** | mark a spot, return to it once | ✅ approved |
+      | **Bestiary Page** | permanently reveal one species, account-wide | ✅ approved |
+      | ~~Scouting Report~~ | read a dungeon before entering | ❌ **cut - already covered twice** |
+      | **Muster Sigil** | a party member joins you from anywhere | ⏸ deferred to the party arc |
+
+      **⛑ THE SCOUTING REPORT WAS CUT BECAUSE IT WAS A THIRD OWNER OF A SOLVED JOB**, and the
+      owner spotted it before I did: *"Are you suggesting we remove the ability to see whats in a
+      dungeon when you step on its entrance space without these... I would want to ensure we aren't
+      making a chore for players (like tools currently are)."* Checked rather than argued:
+      the **entrance screen** already gives monster levels colour-coded against your own,
+      modifiers, floors, ground, food and exit; and **Cartography rank + Locate** already handles
+      finding a dungeon remotely, with its own progression and Valor cost. A scroll would have sold
+      players something the game gives free, and charged them a slot and a craft for it.
+
+      **Waypoint Seal pairs with post-to-post road travel** (also approved 2026-09-18): roads
+      connect posts, the Seal connects the places that are not posts.
+
+      **⚑ NEW, owner 2026-09-18 while approving the Bestiary Page:** *"it may be beneficial for us
+      to add an inspect button or something in combat where if players have the bestiary for a
+      certain monster they can view all the info on it while in or out of battle, and also compare
+      that monster to others they know."* So the Page needs a READER, and the reader belongs in
+      combat as well as out of it - knowing a monster's abilities matters most while it is hitting
+      you. The COMPARE half is the interesting part and has no equivalent anywhere in the game yet.
+
+      **✅ CUTS APPROVED:** the **18 combat scrolls** (one-shot spells competing with both cards and
+      potions for the same moment, and the bulk of what makes Scribing unreadable) and Scribing's
+      **8 material-making recipes**. Scribing goes from 44 recipes to roughly 6-10, each obviously
+      worth making.
 
       **⚑ DECISIONS TAKEN 2026-09-18, and they are the plan for the consumable half:**
       * **Potions: cut most of the 19 opaque ones, rename the survivors.** Not a pure rename - the
