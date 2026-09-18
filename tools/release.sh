@@ -127,7 +127,18 @@ echo "  title: $RELEASE_TITLE"
 #
 # A release with no assets is something you can add to; a failed create is something you have
 # to redo. Now a 500 costs one retry of one file.
-gh release create "v$VERSION" --title "$RELEASE_TITLE" --notes-file "$NOTES"
+# ⛑ AND A RE-RUN MUST NOT DIE ON ITS OWN TAG. 2026-09-18: a release run was interrupted after it
+# had created the release; every retry then hit `HTTP 422 Release.tag_name already exists`, took
+# the script's exit code to 1, and reported failure for a release that had in fact completed -
+# assets attached, server deployed and hash-verified. The whole point of "create bare, then attach
+# one at a time" is that a half-finished release is something you can finish; that only holds if
+# finishing it is not blocked by the half that already exists.
+if gh release view "v$VERSION" >/dev/null 2>&1; then
+  echo "  release v$VERSION already exists - updating its notes and attaching assets"
+  gh release edit "v$VERSION" --title "$RELEASE_TITLE" --notes-file "$NOTES"
+else
+  gh release create "v$VERSION" --title "$RELEASE_TITLE" --notes-file "$NOTES"
+fi
 
 for asset in \
 	"releases/phantom-badlands-client-v$VERSION.zip" \
