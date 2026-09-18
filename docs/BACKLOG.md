@@ -7015,6 +7015,48 @@ down, and these are the ones it keeps sending back — which is what extra lives
       the identity of each type of crafter. We want interesting options that are beneficial for
       players rather than grindy crap that no one wants."*
 
+      **☑ STEP 1 DONE 2026-09-18 — FAULT 3 IS MEASURED, and it is the one that had to go first.**
+      *"You're often making things with no real value or use"* is testable, and the answer decides
+      how much of faults 1, 2 and 4 are really content problems: if crafted gear were competitive,
+      the job would be legibility and destination. It is not competitive.
+
+      `tools/probe/crafting_worth.gd` compares all **58 craftable weapons/armour** against gear
+      produced by the REAL drop generator at the recipe's own item level (per the equipment rule -
+      call the generator, never read the table). **Median crafted item is 0.49x a drop. 40 of 58
+      are below 0.80x; only 6 are above 1.25x; p10 is 0.12x.**
+
+      **⛑ AND IT IS TWO DISTINCT FAULTS, WHICH THE AVERAGE HIDES.**
+
+      *Per SLOT* - half the gear is fine and half is nowhere:
+
+      | slot | median vs drop | | slot | median vs drop |
+      |---|---|---|---|---|
+      | amulet | **1.04x** | | weapon | **0.37x** |
+      | armor | **1.04x** | | shield | **0.25x** |
+      | helm | 0.81x | | boots | 0.21x |
+      | | | | ring | **0.12x** |
+
+      A single "crafting is weak" number would send someone to buff all of it and overshoot the
+      half that already works.
+
+      *Per LEVEL* - **erratic, not decaying**, and that distinction changes the fix. Measured:
+      0.31x at item level 5, 0.52 at 15, 0.46 at 30, 0.26 at 50, 0.72 at 70, 1.01 at 80, 1.38 at
+      90, then 0.27 at 100 and 0.17 at 150. A band where crafting is genuinely good sits between
+      two where it collapses. A decay would be corrected with a scaling term; this is what happens
+      when recipe stats are **hand-authored constants** and drops are **generated off a level
+      curve** - the two can only agree by coincidence, and at 90 they happen to while at 100 they
+      happen not to.
+
+      **So the fix for fault 3 is structural, not a pass of number edits:** derive recipe output
+      stats from the same curve the drop generator uses, with a deliberate offset per slot, so
+      crafted gear holds a known relationship to drops at every level instead of drifting.
+      **What that offset should BE is an owner decision** - see the questions below.
+
+      ⛑ The first run of this probe reported *"crafted gear beats drops 52x"* and printed a
+      confident verdict under it. A recipe stores `base_stats`; a drop stores `affixes` and has no
+      `stats` key, so every drop summed to zero. Fixed before it was believed - and it is the
+      reason the probe now names the container it reads.
+
       Four faults named, and they are separate problems:
       1. **Materials have no destination.** Gathering produces a pile the player cannot spend on
          anything they want. (Pairs with the egg/companion sinks — same disease, different
