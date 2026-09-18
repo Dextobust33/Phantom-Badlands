@@ -6036,7 +6036,22 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Both pages now match the code, and `help_topics.gd` checks against the dispatch.
       The three dead handlers (`handle_fish_start` / `handle_mine_start` / `handle_log_start`)
       are still in server.gd; delete them in a cleanup pass.
-- [ ] **Buff panel, party half.** Same strip for each party member, plus a STACKING indicator.
+- [x] **Buff panel, party half — DONE 2026-09-18.** A teammate's card carried name, an HP bar and
+      a resource bar, so in a party you could watch an ally dying with no way to see WHY - no
+      poison, no blind, no shield, no mitigation. The member payload simply did not carry the
+      fields; the player has had that strip since solo combat.
+      Sent through `status_display_fields`, the SAME builder the player's own strip uses, whose
+      docstring already said the party payload should hand it the member's real view. That matters:
+      this strip went missing from party fights once before (2026-09-15) precisely because only the
+      solo state carried the fields, and a second per-member builder is how they would drift again.
+      **Stacking: grouped, not de-duplicated.** The same buff applied twice used to draw two
+      identical chips, which reads as a rendering glitch - and on a member card, a third the width,
+      it pushes the rest off the row. It is one chip with `×N` now, keeping the entry with the
+      LONGEST remaining duration, because that is the one that answers "how long do I have this".
+      Dropping the repeat instead would have hidden real information: a doubled buff is worth
+      roughly twice as much and there is no other way to know it landed.
+      Probe: `tools/probe/party_buff_strip.gd` - executes the chip builder and asserts one chip,
+      the ×2 mark, the longer duration, and a single-buff control that must carry no count.
 - [x] **Card upgrade preview — DONE 2026-09-07.** The estimate counted `power` picks alone while
       the combat manager applied nine more multipliers from hard-coded literals, so five upgrades
       silently moved the real hit while the card kept printing its old number: Overdraw / Reckless

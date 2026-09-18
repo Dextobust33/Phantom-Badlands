@@ -14667,7 +14667,18 @@ func get_party_combat_state(leader_id: int) -> Dictionary:
 			"max_energy": ch.get_total_max_energy(),
 			"class_type": ch.class_type,
 			"is_dead": pid in combat.dead_members,
-			"is_fled": pid in combat.fled_members
+			"is_fled": pid in combat.fled_members,
+			# ⚑ EACH MEMBER CARRIES THEIR OWN BUFFS AND DEBUFFS. The payload had HP, resources,
+			# class and dead/fled - so in a party you could see that an ally was hurt and never
+			# WHY: no poison, no blind, no shield, no mitigation. The player has had that strip
+			# since solo combat; teammates had nothing.
+			#
+			# ⛑ THROUGH `status_display_fields`, THE SAME BUILDER THE PLAYER USES. Its own
+			# docstring already says the party payload should hand it the member's real view -
+			# this is that. A second per-member status builder is how the two drift, and the last
+			# time this exact strip went missing in party combat it was because the solo state
+			# was the only thing that carried the fields.
+			"status": status_display_fields(ch, _party_member_view(combat, pid))["player_status"],
 		})
 	return {
 		"monster_name": monster.get("name", "Monster"),

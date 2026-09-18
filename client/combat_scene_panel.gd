@@ -833,6 +833,22 @@ func _build_party_member_card() -> PanelContainer:
 	res_bar.custom_minimum_size = Vector2(COMPACT_BAR_W, 8)
 	mstats.add_child(res_bar)
 	card.set_meta("res_bar", res_bar)
+	# ⚑ THE MEMBER'S BUFF / DEBUFF CHIPS. The player has had this strip since solo combat;
+	# teammates showed HP and resources only, so you could see an ally was dying and not
+	# why - no poison, no blind, no shield, no mitigation. Same chip builder as the player,
+	# so a debuff looks identical whoever is carrying it.
+	var status_lbl := RichTextLabel.new()
+	status_lbl.bbcode_enabled = true
+	status_lbl.fit_content = true
+	status_lbl.scroll_active = false
+	status_lbl.custom_minimum_size = Vector2(COMPACT_BAR_W, 0)
+	status_lbl.add_theme_font_size_override("normal_font_size", 10)
+	# PASS, not IGNORE - the chips carry [url] hover text explaining each effect, and IGNORE
+	# would render them underlined and unreachable. That exact fault shipped once already.
+	status_lbl.mouse_filter = Control.MOUSE_FILTER_PASS
+	_wire_hover(status_lbl)
+	mstats.add_child(status_lbl)
+	card.set_meta("status_lbl", status_lbl)
 
 	# 2) member sprite portrait — 168x138 box, sprite fills (keep-aspect), flipped H
 	#    vs the player (party is RIGHT of the enemy -> faces LEFT toward it).
@@ -959,6 +975,14 @@ func set_party_members(members: Array, skip_bars: bool = false) -> void:
 			status = "  (FLED)"
 		name_lbl.text = pname + status
 		name_lbl.add_theme_color_override("font_color", Color("#FF6B6B") if is_dead else Color("#8FE3FF"))
+		# The member's own buffs/debuffs, built by the SAME function that builds the player's.
+		var st_lbl: RichTextLabel = card.get_meta("status_lbl", null)
+		if st_lbl != null and is_instance_valid(st_lbl):
+			var mstatus: Dictionary = m.get("status", {}) if m.get("status", null) is Dictionary else {}
+			# A dead or fled member's effects are no longer acting on anything; showing them
+			# would be reporting state that has stopped mattering.
+			st_lbl.text = "" if (is_dead or is_fled) else _build_player_status_bbcode(mstatus)
+			st_lbl.visible = st_lbl.text != ""
 		# Battler sprite (player system) — resolve id from stored battler_id, else
 		# class+name; load idle frames for animation; tint; dim when KO'd/fled.
 		var sprite: TextureRect = card.get_meta("sprite")
@@ -3275,14 +3299,34 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 	# strength, defense, speed, vampiric, etc.). Server passes an array of
 	# {type, value, duration} dicts.
 	var buffs = s.get("buffs", [])
+	# ⚑ ONE CHIP PER EFFECT, WITH A STACK COUNT. The same buff applied twice used to draw two
+	# identical chips side by side, which reads as a rendering glitch rather than as "this is
+	# on you twice" - and on a party member card, where the strip is a third the width, two
+	# copies of one chip push the rest off the row entirely.
+	#
+	# ⛑ GROUPED, NOT DE-DUPLICATED. Dropping the repeats would hide real information: a
+	# doubled buff is worth roughly twice as much, and the player has no other way to know it
+	# landed. The kept entry is the one with the LONGEST remaining duration, because that is
+	# the one that answers "how long do I have this for".
+	var _stack_n: Dictionary = {}
+	var _stack_best: Dictionary = {}
 	if buffs is Array:
-		for b in buffs:
-			if not (b is Dictionary):
+		for b0 in buffs:
+			if not (b0 is Dictionary):
 				continue
-			var btype: String = str(b.get("type", "")).to_lower()
+			var t0: String = str(b0.get("type", "")).to_lower()
+			if t0 == "" or int(b0.get("duration", 0)) <= 0:
+				continue
+			_stack_n[t0] = int(_stack_n.get(t0, 0)) + 1
+			if not _stack_best.has(t0) or int(b0.get("duration", 0)) > int(_stack_best[t0].get("duration", 0)):
+				_stack_best[t0] = b0
+	if buffs is Array:
+		for btype_key in _stack_best.keys():
+			var b: Dictionary = _stack_best[btype_key]
+			var btype: String = String(btype_key)
 			var bdur: int = int(b.get("duration", 0))
-			if btype == "" or bdur <= 0:
-				continue
+			var _n: int = int(_stack_n.get(btype_key, 1))
+			var _stack_tag: String = ("  ×%d" % _n) if _n > 1 else ""
 			# 2026-09-07 — show the MAGNITUDE, not just the timer. A chip reading "Iron Skin 4T"
 			# told the player how long something lasted without ever saying what it was worth.
 			#
@@ -3296,11 +3340,11 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 			var dur_txt := ("this fight" if bdur >= CombatManager.REST_OF_COMBAT_DISPLAY_MIN
 				else "%dT" % bdur)
 			if bval > 0:
-				chips.append(_format_status_chip(btype, "+%d%% %s" % [bval, dur_txt]))
+				chips.append(_format_status_chip(btype, "+%d%% %s%s" % [bval, dur_txt, _stack_tag]))
 			elif bval < 0:
-				chips.append(_format_status_chip(btype, "%d%% %s" % [bval, dur_txt]))
+				chips.append(_format_status_chip(btype, "%d%% %s%s" % [bval, dur_txt, _stack_tag]))
 			else:
-				chips.append(_format_status_chip(btype, dur_txt))
+				chips.append(_format_status_chip(btype, dur_txt + _stack_tag))
 	# Total damage reduction, with its sources. Most of it is NOT a buff — CON grants it from the
 	# stat and the class engines grant it from banked stacks — so it appeared on no surface, and a
 	# player could hold 25% from their own engine without knowing. It also makes the decision to
