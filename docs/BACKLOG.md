@@ -718,7 +718,41 @@ Live-test findings from the owner, and what each turned out to be:
       `_victory_legacy_view` bool is gone with it: the panel's visibility is the single answer, so
       state and screen cannot disagree. Probe: `tools/probe/fight_log_panel_builds.gd`.
 
-**Still open from the same test:** same-level death rates (P60 Wizard 31% at its own level against
+- [x] **The enemy line still had no damage number (second round on this).** Two separate causes.
+      The server-side accounting was fixed first, but the SOLO client handler then dropped `taken`
+      on the floor while copying `actor` / `dmg` / `mhp` out of the message - and it only attached
+      metadata at all when `actor` or `dmg` was set, so a monster line reporting damage to YOU had
+      no metadata and fell out of the summariser entirely. Separately, `handle_use_item` fanned its
+      messages out with a bare `send_combat_message(peer_id, msg)` - no actor, no damage, no taken.
+      Using an item takes a combat TURN, so the monster's reply came back through that loop
+      untagged. One `send_combat_result_messages()` owns the four parallel arrays now.
+      **Measured end to end**: HP 889→798, server sent `taken=91`, line renders `▸ Ogre attack ← 91`.
+- [x] **The card flew to the round header instead of the action's line.** The flight aims at a
+      PARAGRAPH of the visible band, and `_refresh_log` is what puts the line into that band. Fired
+      before the refresh, the index clamped to the last paragraph that existed - the divider.
+      `append_log` had always refreshed first, which is why only the two new call sites were wrong.
+- [x] **A basic attack did not travel to the log.** `arm_card_flight` searches the HAND and gives
+      up silently when nothing matches, which is always true for "attack" - it lives on the action
+      bar. The flourish already had that fallback; the flight had only half the pair.
+- [x] **The log panel opened behind the victory card** (z-index) and **the ASCII art sheared**
+      (proportional font; now the same Consolas the combat panel uses for art).
+
+### ⛑ THE HARNESS GODMODES THE PLAYER, WHICH ZEROES WHAT WAS BEING MEASURED
+
+The `combat` shots scene godmodes the character so a capture cannot lose its own subject - right
+for a screenshot, useless for "how much damage did the player take", because godmode means the
+answer is always zero. Run to check the damage number, it reported `taken=0` for a reason with
+nothing to do with the code under test. The second attempt was gentler but no better: a monster
+eight levels down missed twice and was shielded once, so nothing reached HP and zero was *correct*.
+A reading that is right for the wrong reason is indistinguishable from the bug.
+
+`logmeta` is the scene that can actually see it - no godmode, a same-level monster, and the
+player's HP printed beside every line so `taken=0` is readable rather than ambiguous.
+
+**Still open from the same test:** F12 does not fire while a combat line is hovered (owner
+2026-09-18) - nothing in the hover path touches key input and the hover popup is a plain
+`PanelContainer`, so rather than guess a third time the handler now logs every request and logs
+when it debounces; the client log will say which it is. Also same-level death rates (P60 Wizard 31% at its own level against
 a ~0.3% target) and Threat-quest rewards, both deliberately untouched here.
 
 

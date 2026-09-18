@@ -4552,6 +4552,25 @@ func _note_result_line(line_index: int, sample: String) -> void:
 	_fire_card_flight(line_index, _flight_speed)
 
 
+func arm_flight_from_control(label: String, source: Control, speed: float = 1.0) -> void:
+	"""Arm the flight for something that is NOT a card in the hand - a basic attack.
+
+	⛑ ATTACK IS NOT IN THE HAND, SO `arm_card_flight` COULD NEVER FIND IT. It searches the
+	hand cells for a matching card and gives up silently when there is none, which is exactly
+	what happens for "attack" - it lives on the ACTION BAR. So cards flew to the log and a basic
+	attack did nothing, with no error anywhere. Owner 2026-09-18: *"Attacking with space doesn't
+	have the Attack word travel from the Action bar up to the combat log like the cards do."*
+
+	The flourish already had this shape - `flourish_card` returns false and the client lights the
+	bar button instead - so the flight now has the matching pair rather than only half of it."""
+	_flight_armed = ""
+	_flight_speed = maxf(speed, 0.25)
+	if label == "" or source == null or not is_instance_valid(source) or not source.visible:
+		return
+	_flight_armed = label
+	_flight_from = Rect2(source.global_position, source.size)
+
+
 func _fire_card_flight(paragraph_index: int, speed: float = 1.0) -> void:
 	"""Send a ghost of the armed card to the log row that just received its effect."""
 	var card := _flight_armed
@@ -4610,6 +4629,8 @@ func _build_flight_ghost(card_name: String) -> Control:
 	at once must not end up with a screen full of flying cards."* One ghost exists at a time, it is
 	a single Label rather than a rebuilt card face, and it is destroyed on arrival."""
 	var lbl := Label.new()
+	# "attack" is not a card id, so it has no hand cell to read a display name from -
+	# `_display_name_for_card` prettifies the id, which gives the word "Attack".
 	lbl.text = _display_name_for_card(card_name)
 	lbl.add_theme_font_size_override("font_size", 19)
 	lbl.add_theme_color_override("font_color", Color(1.0, 0.92, 0.65))
@@ -6062,11 +6083,15 @@ func log_actor_action(key: String, label: String, meta: Dictionary, raw_line: St
 	if raw_line.strip_edges() != "":
 		a["detail"].append(raw_line.strip_edges())
 	_log_lines[int(a["index"])] = _render_actor_summary(a)
-	# The summary REWRITES a line rather than appending one, so the flight has to be
-	# triggered here as well - this is the path nearly every card result takes now.
-	_note_result_line(int(a["index"]), raw_line)
 	if is_inside_tree():
 		_refresh_log()
+	# ⛑ AFTER THE REFRESH, NOT BEFORE. The flight aims at a PARAGRAPH of the visible band,
+	# and `_refresh_log` is what puts this line into that band. Fired first, the band still
+	# held the previous content, the index clamped to the last paragraph that existed - the
+	# round divider - and every card flew to the round header. Owner 2026-09-18: *"The card
+	# traveling to the log seems to go to the round header instead of the line where you did
+	# the action."* `append_log` has always refreshed first, which is why it aimed correctly.
+	_note_result_line(int(a["index"]), raw_line)
 
 
 func _render_actor_summary(a: Dictionary) -> String:
@@ -6175,10 +6200,11 @@ func append_to_last_log(bbcode_fragment: String) -> void:
 		append_log(bbcode_fragment)
 		return
 	_log_lines[_log_lines.size() - 1] += "[color=#5A5A66]  ·  [/color]" + bbcode_fragment
-	# The fold path fires it too: a card's result often does not start a new line at all.
-	_note_result_line(_log_lines.size() - 1, bbcode_fragment)
 	if is_inside_tree():
 		_refresh_log()
+	# The fold path fires it too: a card's result often does not start a new line at all.
+	# After the refresh, for the reason given in `log_actor_action`.
+	_note_result_line(_log_lines.size() - 1, bbcode_fragment)
 
 func append_log_actor(actor: String, bbcode_line: String) -> void:
 	"""v0.9.415 — explicit actor routing for the per-actor overlay logs.

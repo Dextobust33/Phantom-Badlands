@@ -33,6 +33,11 @@ var _next_btn: Button = null
 
 func _ready() -> void:
 	top_level = true
+	# ⛑ ABOVE THE VICTORY CARD. That card is drawn at z_index 150 INSIDE the combat scene
+	# panel, and this overlay is a sibling of that panel - so without a higher z the log
+	# opened UNDERNEATH it and looked like nothing had happened. Owner 2026-09-18: *"If
+	# pressed while the victory card is up it goes behind the victory card."*
+	z_index = 4000
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build()
 	visible = false
@@ -122,6 +127,15 @@ func _build() -> void:
 
 	_body = RichTextLabel.new()
 	_body.bbcode_enabled = true
+	# ⛑ MONOSPACE, BECAUSE THE LOG CARRIES ASCII ART. The monster header is drawn with
+	# spaces and box characters, and in a proportional face every row is a different width -
+	# the art shears. Owner 2026-09-18: *"The monsters ASCII art on the log is skewed."* The
+	# combat panel loads the same file for the same reason.
+	var mono: FontFile = load("res://font/Consolas/consolas.ttf") as FontFile
+	if mono != null:
+		_body.add_theme_font_override("normal_font", mono)
+		_body.add_theme_font_override("bold_font", mono)
+	_body.add_theme_font_size_override("normal_font_size", 14)
 	_body.fit_content = true
 	_body.scroll_active = false
 	_body.selection_enabled = true

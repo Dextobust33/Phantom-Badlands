@@ -6643,23 +6643,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			send_combat_message(peer_id, msg)
 		return
 
-	# Send all combat messages, each with who produced it when the shared code knows.
-	var _msg_actors: Array = result.get("message_actors", []) if result.get("message_actors", null) is Array else []
-	var _msg_dmg: Array = result.get("message_damage", []) if result.get("message_damage", null) is Array else []
-	var _msg_mhp: Array = result.get("message_monster_hp", []) if result.get("message_monster_hp", null) is Array else []
-	# ⛑ WHAT THIS ACTION COST THE PLAYER, attached to the LAST monster-attributed line -
-	# the same shape the party path uses. `message_taken` is per-message when the combat
-	# manager provides it; otherwise the whole drop rides the final monster line, which is
-	# what the round summary totals.
-	var _msg_taken: Array = result.get("message_taken", []) if result.get("message_taken", null) is Array else []
-	var _mi := 0
-	for msg in result.get("messages", []):
-		send_combat_message(peer_id, msg,
-			String(_msg_actors[_mi]) if _mi < _msg_actors.size() else "",
-			int(_msg_dmg[_mi]) if _mi < _msg_dmg.size() else 0,
-			int(_msg_mhp[_mi]) if _mi < _msg_mhp.size() else -1,
-			int(_msg_taken[_mi]) if _mi < _msg_taken.size() else 0)
-		_mi += 1
+	send_combat_result_messages(peer_id, result)
 
 	# Slice 2 — promote ability rank-ups to account-level record (survives permadeath)
 	if result.has("mastery_rank_changed"):
@@ -7838,9 +7822,9 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": result.message})
 		return
 
-	# Send all combat messages
-	for msg in result.messages:
-		send_combat_message(peer_id, msg)
+	# Using an item takes a combat TURN, so this result carries the monster's reply too -
+	# it needs the same actor/damage tagging every other action gets, not a bare loop.
+	send_combat_result_messages(peer_id, result)
 
 	# Accumulate messages in combat log for death screen
 	if combat_mgr.active_combats.has(peer_id):
@@ -21357,6 +21341,33 @@ func _push_first_strike_to_log(peer_id: int, result: Dictionary) -> void:
 	for line in lines:
 		if String(line).strip_edges() != "":
 			send_combat_message(peer_id, String(line), "monster")
+
+func send_combat_result_messages(peer_id: int, result: Dictionary) -> void:
+	"""Fan a combat result's messages out to the player, each carrying WHO produced it and the
+	numbers the client needs.
+
+	⛑ ONE FAN-OUT, BECAUSE A SECOND ONE FORWARDED NOTHING. `handle_use_item` looped over the
+	same kind of result with a bare `send_combat_message(peer_id, msg)` - no actor, no damage, no
+	damage taken. Using an item TAKES A COMBAT TURN, so the monster's reply came back through
+	that loop untagged, dropped out of the round summary and rendered as raw prose with no
+	number, while the identical line from an attack summarised correctly.
+
+	Four parallel arrays indexed against `messages` is precisely the thing that must not be
+	copied to a second site: a caller that forwards three of them looks right and is wrong only
+	for the lines it drops."""
+	var actors: Array = result.get("message_actors", []) if result.get("message_actors", null) is Array else []
+	var dmg: Array = result.get("message_damage", []) if result.get("message_damage", null) is Array else []
+	var mhp: Array = result.get("message_monster_hp", []) if result.get("message_monster_hp", null) is Array else []
+	var taken: Array = result.get("message_taken", []) if result.get("message_taken", null) is Array else []
+	var i := 0
+	for msg in result.get("messages", []):
+		send_combat_message(peer_id, msg,
+			String(actors[i]) if i < actors.size() else "",
+			int(dmg[i]) if i < dmg.size() else 0,
+			int(mhp[i]) if i < mhp.size() else -1,
+			int(taken[i]) if i < taken.size() else 0)
+		i += 1
+
 
 func send_combat_message(peer_id: int, message: String, actor: String = "", dmg: int = 0, mhp: int = -1, taken: int = 0):
 	"""Send a combat message and forward to watchers.

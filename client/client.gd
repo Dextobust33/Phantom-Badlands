@@ -7416,6 +7416,35 @@ func _dev_run_shots() -> void:
 				print("[SHOTS] LOG DUMP: %d visible rows" % _rows.size())
 				for _i in range(_rows.size()):
 					print("[SHOTS]  %2d | %3d ch | %s" % [_i, String(_rows[_i]).length(), String(_rows[_i]).substr(0, 110)])
+			"logmeta":
+				# ⛑ NO GODMODE, DELIBERATELY - AND THAT IS THE WHOLE POINT OF A SEPARATE SCENE.
+				# The `combat` scene godmodes the player so a capture cannot lose its own subject,
+				# which is right for a screenshot and useless here: godmode means the player takes
+				# ZERO damage, and "damage taken" is the exact quantity being measured. Running the
+				# existing scene to check it would have reported taken=0 for a reason that has
+				# nothing to do with the code under test.
+				#
+				# So the subject is protected a different way: a monster well BELOW the character,
+				# which lands hits without ever threatening the character it is measuring.
+				_dev_log_meta = true
+				# Level-8-BELOW was too gentle to be a measurement: it missed twice and was shielded
+				# once, so nothing reached HP. At the character's own level it lands real blows, and
+				# with ~900 HP and three rounds the subject is still in no danger.
+				var _lvl: int = maxi(1, int(character_data.get("level", 10)))
+				send_to_server({"type": "gm_spawnmonster", "monster_name": "Ogre", "level": _lvl})
+				await get_tree().create_timer(2.6).timeout
+				for _r in range(4):
+					if not in_combat:
+						break
+					send_to_server({"type": "combat", "command": "attack"})
+					await get_tree().create_timer(2.4).timeout
+				await get_tree().create_timer(1.5).timeout
+				var _b = combat_scene_panel.get("_battle_log_band")
+				var _rows: PackedStringArray = (String(_b.get_parsed_text()) if _b != null else "").split("\n")
+				print("[SHOTS] RENDERED: %d rows" % _rows.size())
+				for _i in range(_rows.size()):
+					print("[SHOTS]  %2d | %s" % [_i, String(_rows[_i]).substr(0, 90)])
+				_dev_log_meta = false
 			"dungeon":
 				# GODMODE FIRST. Every dungeon capture on 2026-09-16 landed in the entrance ambush and
 				# photographed the fight - twice it killed the test character outright, once with
@@ -13537,15 +13566,21 @@ func send_combat_command(command: String, target: String = ""):
 			# bar, not in the hand - so `flourish_card` finds nothing and says so, and the
 			# client, which owns the bar, lights the right control instead. The feedback
 			# belongs to the ACT, not to cards.
-			if not combat_scene_panel.flourish_card(base_cmd, combat_speed_effective()):
+			var _is_card: bool = combat_scene_panel.flourish_card(base_cmd, combat_speed_effective())
+			if not _is_card:
 				if combat_scene_panel.has_method("flourish_control") and action_buttons.size() > 0:
 					var _btn: Button = action_buttons[0] as Button
 					if _btn != null and _btn.visible:
 						combat_scene_panel.flourish_control(_btn, combat_speed_effective())
+						# ...and it FLIES from the bar too. The flourish already had this fallback;
+						# the flight did not, so a basic attack lit its button and then nothing
+						# travelled, while every card did. Same act, half the feedback.
+						if combat_scene_panel.has_method("arm_flight_from_control"):
+							combat_scene_panel.arm_flight_from_control(base_cmd, _btn, combat_speed_effective())
 			# ...and ARM the flight. It does not launch here: the card's result arrives through
 			# the paced combat queue a few hundred ms later, so the log row to land on does not
 			# exist yet. The panel fires it when the player's line actually appears.
-			if combat_scene_panel.has_method("arm_card_flight"):
+			if _is_card and combat_scene_panel.has_method("arm_card_flight"):
 				combat_scene_panel.arm_card_flight(base_cmd, combat_speed_effective())
 			# ...and tell the log WHAT was played. The solo server sends no ability name, so
 			# without this the round summary counts hits and a cast reads as "5 hits".
@@ -27915,7 +27950,9 @@ func handle_server_message(message: Dictionary):
 			# one renderer serves both instead of a solo-only special case.
 			var _cm_actor := str(message.get("actor", ""))
 			var _cm_dmg := int(message.get("dmg", 0))
-			if _cm_actor != "" or _cm_dmg > 0:
+			# `taken` counts too: a monster line that only reports damage TO YOU has no `dmg`,
+			# and dropping its meta is what left it rendering as raw prose with no summary line.
+			if _cm_actor != "" or _cm_dmg > 0 or int(message.get("taken", 0)) > 0:
 				var _cm_meta := {}
 				if _cm_actor != "":
 					_cm_meta["actor"] = _cm_actor
@@ -27929,6 +27966,13 @@ func handle_server_message(message: Dictionary):
 					# number popped up but rather a while after".
 					if int(message.get("mhp", -1)) >= 0:
 						_cm_meta["mhp"] = int(message["mhp"])
+				# ⛑ AND WHAT IT COST YOU. The server has sent `taken` since the round summary landed
+				# and this handler dropped it on the floor, so the monster's summary line could state
+				# what you DEALT and nothing about what hit you - the one number a player decides to
+				# retreat on. Owner 2026-09-18: *"no damage number on the enemy line without hovering."*
+				# The hover was right because it shows the raw prose, which always carried the number.
+				if int(message.get("taken", 0)) > 0:
+					_cm_meta["taken"] = int(message["taken"])
 				combat_msg_queue.append({"raw": combat_msg, "meta": _cm_meta})
 			else:
 				combat_msg_queue.append({"raw": combat_msg})
@@ -40476,8 +40520,16 @@ func _on_screenshot_button_pressed() -> void:
 	"""v0.9.663 — dev/QA screenshot. Saves the current frame to
 	res://claude_screenshots/ (project dir when run from source)."""
 	var _now_ss: int = Time.get_ticks_msec()
+	# ⛑ SAY THAT IT FIRED, ALWAYS. Owner 2026-09-18: *"F12 doesn't work while hovering
+	# combat lines, that's why you weren't getting screenshots."* Reading the code did not
+	# explain it - nothing in the hover path touches key input - and a silent early return
+	# looks exactly like a key that never arrived. So the log distinguishes the two rather
+	# than a third guess being made about which it is.
+	print("[SCREENSHOT] requested at %d ms" % _now_ss)
 	if _now_ss - int(get_meta("last_ss_ms", -9999)) < 800:
-		return  # debounce — the button was double-firing per click
+		# Was a silent `return`, so a debounced press was indistinguishable from a dead key.
+		print("[SCREENSHOT] debounced (%d ms since the last one)" % (_now_ss - int(get_meta("last_ss_ms", -9999))))
+		return
 	set_meta("last_ss_ms", _now_ss)
 	await RenderingServer.frame_post_draw
 	var img: Image = get_viewport().get_texture().get_image()
@@ -42587,6 +42639,17 @@ func _display_combat_msg(combat_msg: String):
 	# The MONSTER's header is kept: it is the only line that says WHO it turned on (its body
 	# line reads "attacks but misses!" with no target in it).
 	var _pm := _party_fx_meta
+	# ⛑ WHAT THE SERVER ACTUALLY SENT, for the `logmeta` shots scene. The round summary is
+	# built from this dictionary, so when a line renders without a number the question is
+	# always "was it in the metadata" - and that cannot be answered from the rendered text.
+	if _dev_log_meta:
+		# ⛑ HP BESIDE IT, OR `taken=0` IS UNREADABLE. The first run of this scene reported zero
+		# on every monster line and could not say why: two of the three swings MISSED and the		
+		# third was absorbed by a shield, so nothing was taken and zero was correct. A reading
+		# that is right for the wrong reason looks exactly like the bug being measured.
+		print("[SHOTS] meta actor=%-9s dmg=%-7d taken=%-7d hp=%-5d | %s" % [
+			str(_pm.get("actor", "-")), int(_pm.get("dmg", 0)), int(_pm.get("taken", 0)),
+			int(character_data.get("current_hp", -1)), String(combat_msg).substr(0, 52)])
 	# 2026-09-04 — the MONSTER's header is skipped now too. It was kept on the reasoning that it
 	# is "the only line that says WHO it turned on", but its body line already does: "The
 	# Venomous Goblin attacks test002's Wight Wisp for 36 damage". So it cost an extra line for
@@ -44772,6 +44835,7 @@ var _last_combat_actor: String = ""
 # (who acted, who was hit, and the HP as of that beat) so the round animates actor by
 # actor instead of dumping at once. Empty for solo combat, which is untouched.
 var _party_fx_meta: Dictionary = {}
+var _dev_log_meta: bool = false  # `logmeta` shots scene: echo each line's server metadata
 # v0.9.739 — the card we locked in this co-op round, held so its animation can play on
 # our own beat during playback instead of at submit time. Cleared when it fires, and on
 # every combat start / round boundary so a stale command can never animate.
