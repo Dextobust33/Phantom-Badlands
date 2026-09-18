@@ -7009,6 +7009,26 @@ down, and these are the ones it keeps sending back — which is what extra lives
 ## Phase 8 — later / unscheduled
 
 - [ ] **Prize Shuffle** loot-minigame redesign (combat done; gathering and crafting remain).
+- [ ] **⚑ CRAFTING STATION SPRITES NEED INDIVIDUAL REVIEW — owner direction 2026-09-18.**
+      *"All of the crafting stations sprites likely need to be reviewed individually. I think many
+      of them were multiblock sprites that got ripped into 1 and they don't seem very clear or
+      memorable on the map."*
+
+      The suspicion is specific and checkable: a sprite authored as part of a MULTI-TILE building
+      and then cropped to a single tile shows a fragment - half a roof, a corner of a wall - which
+      reads as noise at map scale. That is a different fault from "the art is poor", and it has a
+      different fix: either restore the multi-tile footprint (the overworld already supports
+      multi-cell tiles - the release gate counts **19 of them**) or choose a single-tile sprite
+      that is legible on its own.
+
+      **A station has to be recognisable at a glance from across the map**, because that is the
+      entire job it does there - the player is looking for the anvil, not admiring it.
+
+      **Measure first:** list every station, the sprite each one resolves to, and whether that
+      sprite is a crop of a larger source. Capture them at real map scale side by side - a sprite
+      that is unclear in a file browser may be fine in place, and vice versa, and this codebase has
+      a standing rule that art questions are settled by looking rather than by reading paths.
+
 - [ ] **⚑ INVENTORY BLOAT — owner direction 2026-09-18, raised while scoping crafting.** Three
       complaints, one disease: the player's bag fills with things they did not choose and cannot
       triage.
@@ -7160,6 +7180,35 @@ down, and these are the ones it keeps sending back — which is what extra lives
       Masterwork 1.50x - the whole spread a player can influence is **+50%**, and **Fine to
       Masterwork is +20%**. On a 50 HP potion that is +25 HP and +10 HP. Felt on gear; invisible on
       a flat-restore consumable, which is the complaint in numbers.
+
+      **☑ STEP 5 DONE 2026-09-18 — THE PER-CRAFTER CULL, and it is FAR smaller than 258 suggests.**
+      The owner chose *"decide per crafter after the identity pass"*. Done, and three of the five
+      turn out to need **no cull at all** - they are systematic LADDERS, not bloat:
+
+      | crafter | shape | verdict |
+      |---|---|---|
+      | Blacksmithing 68 | **7 slots × 9 item levels**, one recipe each, plus 7 upgrades | **no cull** - fix the STATS |
+      | Enchanting 56 | **13 stats × 3 tiers** (Minor/Greater/Supreme) + 7 specials | **no cull** - names already state their effect |
+      | Construction 52 | a build kit of 49 distinct structures, **41 at skill ≤25** | **no cull** - not gated, not duplicated |
+      | Alchemy 38 | 13 clear ladder potions + **19 opaque** + 3 | **CULL** - cut most of the 19, rename survivors |
+      | Scribing 44 | seven output types, no identity | **CULL to ~6-10** |
+
+      **So the cull is two crafters, not five**, and the other three need their NUMBERS fixed
+      (derive output stats from the drop curve) rather than their content deleted. That is a much
+      cheaper arc than the recipe count implied, and it protects content that is already working.
+
+      **⛑ AND I HAD TO CORRECT MYSELF ON BLACKSMITHING.** I reported *"49 armour recipes against 9
+      weapons - the thinnest category is also the weakest, inside the largest crafter"* and called
+      it a hole. It is not: `armor` is an output TYPE covering six slots while `weapon` is one
+      slot, so **per slot they are identical** - one recipe per level, and weapons are among the
+      most complete rows in the grid (9 of 9 levels; amulet, boots, helm, ring and shield each miss
+      level 90). Comparing a category to a slot produced a finding that was not there. The weapon
+      problem is entirely POWER (0.37x), not coverage, and the fix is the same stat derivation
+      every other slot needs.
+
+      **Still to measure before the stat work:** whether RUNES are worth their materials, the same
+      way `crafting_worth.gd` measured gear. 46 rune recipes is the second-largest block in the
+      game and nothing has compared what one gives against what it costs.
 
       **✅ SCRIBING HAS AN IDENTITY, AGREED 2026-09-18: *the crafter who makes the world
       survivable*.** Every item reduces a RISK or a COST rather than adding power - which keeps
