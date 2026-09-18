@@ -293,7 +293,48 @@ Asked because the arc had run out of defects and into design. All four answered.
       are proven only by their helpers: the entry-warning display (axis two) and the dungeon
       completion/teleport path around the co-op unique roll. Live checks owed.
 
-- [ ] **PARTY PLAY — HALF TWO: independent movement + join-in-progress combat.** (Half one, dungeon
+- [ ] **⚑ PARTY PLAY FOLLOWS THE DRAGON QUEST IX MODEL — owner direction 2026-09-18.**
+      *"For party play we should probably go in the style of Dragon Quest IX: Sentinels of the
+      starry skies... when a party member nearby enters combat it will pull nearby party members
+      into the combat as well (we will have to figure out the best way to handle this as players
+      may both be moving around at the same time and could possibly enter 2 separate combats very
+      close to the same time). Party Players could also join mid-battle as they could visually tell
+      on the map if a player was in battle and they could run into them to enter it."*
+
+      **What this decides.** Half two was already "independent movement + join-in-progress"; this
+      names the MODEL, which settles the open question of how a party that walks around separately
+      ever fights together. Two mechanisms, and the second is the fallback for the first:
+
+      * **PROXIMITY PULL.** A party member entering combat drags nearby members in with them.
+      * **RUN-IN JOIN.** A member who was not pulled can see on the map that a teammate is
+        fighting and walk into them to join. This is also what makes the pull radius forgiving:
+        being out of range is not an exclusion, it is a short walk.
+
+      **⛑ THE RACE THE OWNER NAMED IS THE REAL DESIGN PROBLEM, and it is not an edge case.** Two
+      members moving at once can each trigger an encounter within the same tick, so "pull nearby
+      members in" is ambiguous by construction - each fight tries to claim the other's owner.
+      Options, cheapest first:
+        1. **One combat per party, ever.** The party holds a single combat slot; whoever claims it
+           first wins and the second trigger JOINS that fight instead of starting one. Simplest,
+           and it cannot produce a split party. Cost: the second monster is either discarded or
+           added to the first fight.
+        2. **Claim with a tie-break.** Both start, and a deterministic rule (lower peer id, or the
+           earlier server-stamped tick) folds the loser's encounter into the winner's.
+        3. **Let both exist and let members choose.** Most faithful to two people genuinely far
+           apart; most work, and it needs the map to show WHICH fight is which.
+      Whichever is chosen, **the decision belongs to the server on one clock** - the bug this
+      shape produces is two clients each believing they started the fight, which is exactly the
+      class `_combat_ui_busy` was introduced to kill.
+
+      **⛑ CHECK WHAT ALREADY EXISTS FIRST.** Party combat is BUILT - shared monster debuffs,
+      per-member rewards, the flatten-log-per-recipient path, `_PARTY_SHARED_MONSTER_KEYS`. The
+      new work is the ENTRY into it, not the fight. Read the existing half-one notes below before
+      designing.
+
+      **Prerequisite:** independent movement. Today party members move as one; the pull and the
+      run-in join are both meaningless until they can be apart.
+
+- [ ] **PARTY PLAY — HALF TWO (the mechanics underneath the model above): independent movement + join-in-progress combat.** (Half one, dungeon
       party combat, is built and live; the onboarding guide it blocked has shipped.) Original title:
       PARTY PLAY IN DUNGEONS + JOIN-IN-PROGRESS COMBAT.
       This is what *"party play isn't working properly"* (2026-08-26, never reproduced) actually
@@ -6146,9 +6187,10 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       table: the capability existed server-side and the player could not reach it, so a sweep
       reading *"invites exist"* called it covered. `tools/probe/player_menu_covers_actions.gd` now
       checks that every menu row dispatches AND that both previously-missed verbs are reachable.
-- [ ] **Watch-a-teammate's-minigame** — the remaining Party UI piece. (`Watch` in the player menu
-      follows another player's game output; this is the narrower case of watching the minigame a
-      party member is playing, live.)
+- [→] **Watch-a-teammate's-minigame** — **OPTIONAL, moved to the END of the backlog** (owner,
+      2026-09-18: *"Minigame watch is an optional, it can go to the end."*). `Watch` in the player
+      menu already follows another player's game output; this is only the narrower live-minigame
+      case.
 - [x] **Party rewards — AUDITED 2026-09-10, the live path is correct.** Read AND probed. The
       simultaneous path (`_end_party_combat_all`) skips only `dead` / `fled` / missing members and
       gives every survivor their own XP, companion XP and an INDEPENDENT loot roll, with
@@ -6242,6 +6284,41 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
       Prior art to read before building: `project_skill_tree_design`, `project_engine_shape_per_class`
       (why archetype-wide became per-class), and the card roster work in `project_card_arc_2026_08_27`.
+
+- [ ] **COMBAT TACTICS / GAMBITS — owner direction 2026-09-18, INTERESTED not committed.**
+      *"Another thing I'm interested in is possibly setting up AI like tactics for combat where you
+      can set what your character should do each turn (kind of like Final Fantasy XII's Gambit
+      system, or siralim ultimate)."*
+
+      A player authors an ordered list of **condition → action** rules and the character acts on
+      the first match. FF XII: a short list of purchasable gambit slots, each `target/condition`
+      paired with an action, evaluated top-down. Siralim Ultimate: the same idea taken much
+      further - per-creature, many conditions, and deep enough that building the list IS the game.
+
+      **⛑ WHY THIS IS A BIG DECISION AND NOT A FEATURE.** It changes what combat IS. Today every
+      round is a live choice from a hand of cards, which is what the card arc has been built
+      around; a gambit list is the player deciding ONCE and then watching. The two can coexist -
+      FF XII lets you override any turn - but they pull against each other, and the standing rule
+      is that *decisions* are the point of a fight, not its length
+      ([[feedback_length_is_not_the_goal]]). A gambit system that is good enough removes the
+      decision it was built to serve.
+
+      **Where it clearly EARNS its place, and this is the strongest argument for it:**
+      * **The companion**, which already acts on its own with no player input at all - a tactics
+        list is pure gain there, because there is no decision being replaced.
+      * **Party members' absent characters**, if party play ever allows a member to be AI-run.
+      * **Trivial fights**, which the auto-resolve already skips - a tactics list is the same
+        instinct applied to fights that are nearly trivial.
+
+      **⛑ So the cheap first slice is the COMPANION, not the player.** It tests the whole idea -
+      UI for building rules, the evaluator, whether players enjoy authoring them - against a
+      combatant whose turn is currently invisible and unchosen. If it is fun there, widening it to
+      the player is a scope decision made with evidence instead of a guess. **Ask the owner before
+      building the player-facing half.**
+
+      Open questions, none answered: how many rules, are slots earned or free, does a card's
+      resource cost gate a rule, what happens when no rule matches (attack? skip?), and does a
+      gambit-run turn still animate at full speed or fast-forward.
 
 - [ ] **Dungeon card pass — re-scoped 2026-09-17: the COVERAGE half is done, the POWER half is
       not.** Owner: *"dungeon reward cards likely need reworked and added to add interesting new
@@ -6849,28 +6926,54 @@ down, and these are the ones it keeps sending back — which is what extra lives
       Three asks: **the prices are too high**, **the named slot upgrades are the wrong shape**, and
       **the ladder needs more interesting — possibly branching — choices.**
 
-      **⛑ THE ARITHMETIC SUPPORTS THE COMPLAINT, so this is not a feel question.** A death pays
-      `calculate_baddie_points`: XP/100 + 5/gem + kills/10 + 10/quest + milestones (50 at L10,
-      150 at L25, 400 at L50, 1000 at L100). The live L22 test character holds 28,554 XP — **285 BP
-      from the XP term**, and with plausible kills/quests/gems it dies worth roughly 500-600.
-      Against `HOUSE_UPGRADES` in `server/persistence_manager.gd`:
+      **⛑ MEASURED ON THE LIVE SERVER 2026-09-18, AND IT IS WORSE THAN THE COMPLAINT.** My first
+      pass at this estimated ~500-600 BP per death from the formula and a level-22 character. That
+      was wrong, and wrong in the direction that matters - **the level-22 character was my test
+      character, not a player.** The owner: *"I don't know if your estimation of how many valor
+      players are usually getting is correct."* It was not. Read off `leaderboard.json` (81 real
+      deaths) and `houses.json` (13 accounts):
 
-      | upgrade | first level | full ladder |
-      |---|---|---|
-      | `egg_slots` | 500 | 141,500 (9 levels) |
-      | `kennel_capacity` | 1,000 | 297,000 (9) |
-      | `companion_slots` | 2,000 | 237,000 (8) |
-      | `house_size` | 5,000 | 70,000 (3) |
+      **Where players actually die.** Median death is **level 3**, mean 5.8, median XP at death
+      **355**. Restricted to the last 7 / 14 / 30 / 60 days the median is 4 / 3 / 3 / 3 - so this is
+      not an artefact of old characters from a different balance era, which was the owner's
+      specific worry. Of 60 deaths in the last 60 days, **46 are at level 5 or below**; two are
+      above level 21.
 
-      So **one companion slot costs about four dead characters**, and the companion ladder costs
-      roughly four hundred. That is the owner's *"playing lots of characters and still not having
-      enough"* stated in numbers.
+      At a median death that is `355/100` = **3 BP from the XP term**, plus 0 from kills (median 9,
+      and it pays per 10), plus quests and gems, and **no level milestone at all** - the first is
+      at L10, which 80% of deaths never reach.
 
-      **⛑ STEP 1 IS A MEASUREMENT, NOT A PRICE CUT.** Read what accounts actually hold and have
-      spent from the live DB — total BP earned per account, current balances, which upgrades are
-      taken and which have never been bought once. A never-bought upgrade is a different problem
-      from an expensive one, and the table above cannot tell them apart. Pricing before that is
-      guessing at the shape of the curve.
+      **What accounts have actually earned, ever:**
+
+      | | BP earned (lifetime) | unspent | upgrade levels owned |
+      |---|---|---|---|
+      | best account | 7,022 | 1,672 | **4** |
+      | 2nd | 4,307 | 7 | 3 |
+      | 3rd | 1,878 | 878 | 2 |
+      | median of 13 accounts | **0** | 0 | 0 |
+
+      Seven of thirteen accounts have earned **zero**. The most invested account in the game has
+      died 45 times (~156 BP per death, lifted by two rare high-level characters) and owns
+      **gathering_bonus 1, resource_regen 1, storage_slots 2**. Its 1,672 unspent is not enough for
+      one `companion_slots` level.
+
+      **⛑ AND THE DECISIVE NUMBER: NINETEEN OF THE ~25 UPGRADES HAVE NEVER BEEN BOUGHT ONCE, BY
+      ANYONE.** Across every account in the game, six upgrade types have ever been purchased, nine
+      levels in total. Every upgrade the owner named by hand - `companion_slots`,
+      `kennel_capacity`, `egg_slots` past level 1 - is in the never-bought set, along with
+      `house_size`, `post_slots`, `xp_bonus`, `hp_bonus`, `flee_chance` and all six stat bonuses.
+      That is not an expensive ladder, it is an **unreachable** one: most of the content has never
+      been seen by a player.
+
+      (13 accounts is a small sample and the game is young - but the finding is not a rate, it is
+      that a majority of the content has zero purchases, and that does not need a large n.)
+
+      **☑ STEP 1 (the measurement) IS DONE — it is the block above.** What it changes about the
+      job: this is not a price cut. A ladder where 19 of 25 tracks have never been touched is not
+      mispriced at the margin, it is out of reach entirely, and shaving costs by 30% would move
+      nothing. The two things to settle are **what a death should be worth** (the curve pays almost
+      nothing below L10, which is where essentially every death happens) and **what the first rung
+      of each track costs**, since no track is ever entered.
 
       **On branching:** the current ladder is 20+ independent linear tracks, which is why it is
       dull — nothing is ever given up. Branching means a choice that EXCLUDES something, and that
