@@ -7333,6 +7333,33 @@ something was dropped, and it sat unnoticed for eleven days.
       that beats the item it sits on, because HP caps are authored an order of magnitude larger
       than stat caps. It is evidence the cap table was never sized against anything.
 
+      **☑ STEP 7 — AND THE REAL SHAPE, found while starting the fix.** `_roll_affixes` carries the
+      line that reframes everything: *"Crafted items get 0 affixes - affixes come from Enchanter
+      Runes."* So crafting and enchanting are **designed as a PAIR**: the blacksmith makes a canvas
+      with base stats and no affixes, and the enchanter paints it with runes. A dropped item's
+      affixes are what that pair is supposed to compete with.
+
+      That is a good identity and it explains why both measured low - each was authored as if it
+      were the whole answer, or neither was sized against anything. But it also means **the fix
+      must size the PAIR**, not the two halves separately.
+
+      **⛑ AND THERE ARE THREE FLAT LADDERS AGAINST ONE GENERATED CURVE, not two:**
+      1. recipe `base_stats` - hand-authored constants (median **0.49x** a drop, erratic by level);
+      2. `rune_cap` per recipe - hand-authored (**0.17x / 0.06x / 0.03x** by tier, worsening);
+      3. **`ENCHANTMENT_STAT_CAPS` - a hard per-item ceiling that is FLAT ACROSS EVERY LEVEL.**
+         attack 60, defense 60, max_hp 200, the stats 20 each, with `MAX_ENCHANTMENT_TYPES = 3`.
+         Enforced at five sites in `server.gd`.
+
+      **The third is the most damaging because it cannot scale at all.** At item level 8 a +60
+      attack ceiling is more than triple the whole item (median total 18). At level 140 the same
+      ceiling is under 8% of it (median 784). No rune rebalance can escape it - the cap binds
+      first - so a fix that touched only rune values would measure better in a probe and change
+      nothing in play above the mid game.
+
+      **So the shared fix is one idea applied in three places:** derive all three from the same
+      level curve the drop generator uses, and size the crafted-plus-runed PAIR against a dropped
+      item rather than sizing either half alone.
+
       **So enchanting joins blacksmithing:** no cull, but its numbers must be derived from the same
       curve the drops use. That is now **three of five crafters** whose fix is one shared change -
       derive output from the drop curve - rather than content work.
