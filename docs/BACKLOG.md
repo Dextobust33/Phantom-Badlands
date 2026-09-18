@@ -7070,12 +7070,31 @@ something was dropped, and it sat unnoticed for eleven days.
       **53 dungeon cards** (one exclusive per dungeon type) and **companion cards**, both
       cross-class pools a player can differentiate with.
 
-      **⛑ So this is a DESIGN QUESTION, not a defect, and it needs the owner:** should the
-      learnable pools diverge per class, or are per-class starters + per-class engines + the
-      dungeon/companion pools enough identity? Measuring whether players actually converge in
-      practice is possible but premature - decide the intent first.
-      Related: the **Paths revamp** (owner 2026-09-18) is the same question one layer down. If the
-      answer here is "archetype is fine", it is probably fine there too.
+      **✅ ANSWERED BY THE OWNER 2026-09-18: diverge.** *"Archetype-wide is what we are trying to get
+      away from. We've done that well with the current class engine of each and card naming/slight
+      differences."* So this stays open as real work, and the Paths revamp inherits the same answer
+      - class-specific, not archetype-specific.
+
+      **⛑ AND THE MECHANISM ALREADY EXISTS, which changes the cost enormously.**
+      `ABILITY_DISPLAY_BY_CLASS` in `combat_manager.gd` maps card id → class → name, and it already
+      covers **18 of the 27 archetype cards with 28 class-specific renames** (a Ninja
+      *Hamstrings* where a Grifter *Sabotages*; a Wizard drops a *Meteor*, a Sorcerer a
+      *Cataclysm*, a Sage an *Unmaking*). So the naming layer is roughly two thirds done.
+
+      **The proposed ladder, cheapest first — NOT three separate pools:**
+      1. **Finish the naming layer.** 9 cards still read identically across their archetype. Pure
+         fiction work, zero balance risk, and it is the thing a player notices first.
+      2. **Per-class numeric variation on shared cards.** The owner's *"slight differences"*. A
+         Barbarian's Cleave and a Fighter's should not be the same numbers. Carries balance risk,
+         so it belongs to a **BALANCE BATCH** window.
+      3. **One or two EXCLUSIVE cards per class**, not a separate nine. Nine to eighteen new cards
+         rather than a rewrite, and it keeps the shared spine that makes an archetype legible at
+         all - a Sage and a Sorcerer should still both read as mages.
+
+      ⛑ **Three fully separate pools is the expensive version and probably the wrong one**: it is
+      ~18 new cards to author and balance, the payoff lands only on players deep enough to have
+      rebuilt their decks, and it risks dissolving the archetype as a readable idea. Recommending
+      1 → 3 → 2 in that order, with 2 deferred to a batch.
 
 - [ ] **MAGIC BOLT — damage vs investment is opaque and punishing** (owner 2026-09-06). Present in
       this file already; listed here so the archive audit is complete rather than partial.
