@@ -4223,6 +4223,12 @@ func _show_formula_popup(formula: String, mono: bool = false) -> void:
 	now it only ever held a line of formula text."""
 	if formula == "":
 		return
+	# A combat-log summary line hands us a KEY, not its text: the blow-by-blow is far too
+	# long and too full of markup to ride inside a BBCode attribute.
+	if formula.begins_with("cdet:"):
+		formula = String(_log_detail.get(formula, ""))
+		if formula == "":
+			return
 	_ensure_formula_popup()
 	if _mono_font != null and _formula_popup_lbl != null:
 		if mono:
@@ -5967,14 +5973,31 @@ func update_companion(companion_data: Dictionary) -> void:
 ##   "detail": Array[String],   # the raw blow-by-blow, for the hover
 ## }
 var _round_actors: Dictionary = {}
+## Hover text for each summary line, keyed by a SHORT id that goes in the `[url=]`.
+## The text itself never goes near the attribute - see `_render_actor_summary`.
+var _log_detail: Dictionary = {}
+## ⛑ WHAT THE PLAYER PLAYED, because the SOLO server never says. `send_combat_message`
+## carries actor, dmg, monster-hp and now taken - but no ability, so the summary could
+## only ever count hits. Owner 2026-09-17: *"It still said you attack for a bit in round
+## 2 even though I was buffing."* The client knows: it is the card it just committed.
+var _player_action_name: String = ""
 
 const SUMMARY_DEALT_COLOR := "#8FD98F"
 const SUMMARY_TAKEN_COLOR := "#FF7A7A"
 
 
+func note_player_action(card_name: String) -> void:
+	"""The card the player just committed, for this round's summary line.
+
+	The solo path sends no `ability` field, so without this a cast reads as "5 hits" - which is
+	both wrong and useless, since hits is what an ATTACK does."""
+	_player_action_name = card_name
+
+
 func reset_round_summary() -> void:
 	"""A new round begins: every actor starts a fresh line."""
 	_round_actors.clear()
+	_player_action_name = ""
 
 
 func log_actor_action(key: String, label: String, meta: Dictionary, raw_line: String) -> void:
@@ -6003,6 +6026,10 @@ func log_actor_action(key: String, label: String, meta: Dictionary, raw_line: St
 	a["dealt"] = int(a["dealt"]) + maxi(0, int(meta.get("dmg", 0)))
 	a["taken"] = int(a["taken"]) + maxi(0, int(meta.get("taken", 0)))
 	var ab := String(meta.get("ability", "")).strip_edges()
+	# The server names the ability in PARTY combat and not in solo; the client knows what
+	# it played either way, so a missing name falls back to that rather than to "hits".
+	if ab == "" and key.begins_with("member") and _player_action_name != "":
+		ab = _player_action_name
 	if ab != "" and not (ab in a["abilities"]):
 		a["abilities"].append(ab)
 	if raw_line.strip_edges() != "":
@@ -6034,9 +6061,17 @@ func _render_actor_summary(a: Dictionary) -> String:
 		nums += "  [color=%s]← %s[/color]" % [SUMMARY_TAKEN_COLOR, _comma(int(a["taken"]))]
 	# The whole line is one hover target: the detail is the blow-by-blow it replaced, so nothing
 	# is lost, it is just not all shouted at once.
-	var tip := "\n".join(a["detail"]).replace("[", "(").replace("]", ")")
+	# ⛑ THE DETAIL IS STORED AND KEYED, NEVER PUT IN THE ATTRIBUTE. The first version
+	# packed the whole multi-line blow-by-blow into `[url=...]`, and a BBCode attribute
+	# cannot contain newlines - so the tag never closed and the entire round rendered as
+	# RAW MARKUP on screen. From the owner's screenshot, verbatim on his combat log:
+	#   [url=(color=#FF00FF)You (color=#9932CC)... cast ...(/color) ...
+	# The `[`->`(` escaping meant to make it safe is also what turned the tooltip into junk.
+	var _key: String = "cdet:%d" % int(a["index"])
+	_log_detail[_key] = "
+".join(a["detail"])
 	return "[url=%s]▸ %s[/url]  [color=#9A9AA6]%s[/color]%s" % [
-		tip, String(a["label"]), what, nums]
+		_key, String(a["label"]), what, nums]
 
 
 func _comma(n: int) -> String:

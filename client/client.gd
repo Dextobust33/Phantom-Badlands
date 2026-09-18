@@ -2005,6 +2005,9 @@ var _ow_location_pass: bool = false
 ## it all still bleed together with prior items?"* It did: if five things happened on one
 ## step, four of them looked exactly like lines from three steps ago.
 var _ow_side_seen: int = 0
+## Where the player stood when that count was taken. The marker moves when the POSITION
+## does, not on every location message - gathering sends a stream of them from one tile.
+var _ow_side_seen_at: Vector2i = Vector2i(-99999, -99999)
 ## The width, in pixels, of the map as it was last drawn - see `_place_map_widgets`.
 var _ow_map_px_w: float = 0.0
 ## The tile size the overworld last drew at - see `_overworld_crisp_px`.
@@ -13553,6 +13556,10 @@ func send_combat_command(command: String, target: String = ""):
 			# exist yet. The panel fires it when the player's line actually appears.
 			if combat_scene_panel.has_method("arm_card_flight"):
 				combat_scene_panel.arm_card_flight(base_cmd, combat_speed_effective())
+			# ...and tell the log WHAT was played. The solo server sends no ability name, so
+			# without this the round summary counts hits and a cast reads as "5 hits".
+			if combat_scene_panel.has_method("note_player_action"):
+				combat_scene_panel.note_player_action(_ability_display_name(base_cmd))
 
 	# #76 — lock in for this party round: flip to waiting, block re-submit, and post a
 	# PERSISTENT locked-in line to the combat panel log (game_output gets wiped by the
@@ -26895,8 +26902,17 @@ func handle_server_message(message: Dictionary):
 				# is also what makes a station page vanish when you walk away from the station.
 				_ow_side_location.clear()
 				_ow_page_active = false
-				# A new step: everything currently in the log is now OLD.
-				_ow_side_seen = _ow_side_lines.size()
+				# ⛑ ONLY WHEN THE PLAYER ACTUALLY MOVED. A location update is not a step: gathering
+				# sends a stream of them from one tile, and resetting on each made the "new" rule
+				# jump to the bottom and vanish between frames. Owner 2026-09-17: *"When gathering
+				# new flashes really fast then disappears over there."*
+				#
+				# The boundary is meant to answer "what did that STEP do", so it moves when the
+				# position does - and a burst of results from standing still all stay NEW together.
+				var _here := Vector2i(int(message.get("x", 0)), int(message.get("y", 0)))
+				if _here != _ow_side_seen_at:
+					_ow_side_seen_at = _here
+					_ow_side_seen = _ow_side_lines.size()
 				# Walking away closes a wide page too - it was a screen you opened, not a place.
 				_ow_wide_page = false
 			# Who is walking with you. Read before anything draws, so the escort appears on the
@@ -50700,9 +50716,14 @@ func handle_hotzone_warning(message: Dictionary):
 			"intensity": message.get("intensity", 0.5),
 			"estimated_level": lv,
 		}
-		display_game("[color=#FF6666]This is well above your level.[/color]")
-		display_game("[color=#808080]Press [%s] to go in, [%s] to stay back.[/color]" % [
-			get_action_key_name(0), get_action_key_name(1)])
+		# ⛑ THE QUESTION LIVES ONLY IN THE PINNED PROMPT, NOT IN THE LOG. Written to both,
+		# the log keeps a copy that cannot be answered: the owner declined a zone, walked
+		# away, and his newest log line still read *"Press [Space] to go in, [Q] to stay
+		# back"* with no such choice available. The pinned prompt already carries it and
+		# clears the moment it is answered - which is the whole reason it was pinned.
+		#
+		# The log keeps the OFFER (what the ground pays, how long it lasts); that stays true
+		# whether or not you go in.
 	else:
 		# No question asked - clear any stale pending state so the action bar does not offer a
 		# confirmation for a step that already happened.
