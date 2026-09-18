@@ -4458,7 +4458,11 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 ## before and after. The lift is real anyway: the pivot sits at the card's BOTTOM edge, so
 ## scaling up grows it upward out of the row. `pivot_offset`, `scale` and `modulate` are
 ## render-time only, so the layout never sees them and the neighbours never reflow.
-const CARD_FLOURISH_SEC := 0.50
+## ⛑ 0.42 -> 0.50 -> 0.85. Owner 2026-09-17, after the first lengthening: *"I can tell
+## there is a flourish or something now but it happens so fast that it's hard to tell
+## what's going on."* A flourish you cannot READ is decoration; the point is to say WHICH
+## card acted, so it has to last long enough to look at.
+const CARD_FLOURISH_SEC := 0.85
 ## 1.10 was a 15px lift on a 150px card and the owner could not see it. 1.22 reads.
 const CARD_FLOURISH_SCALE := 1.22
 
@@ -4474,7 +4478,10 @@ var _card_flourish_tweens: Dictionary = {}
 ## ⛑ ARMED BY THE PLAY, FIRED BY THE LINE. A card's result arrives through the paced combat
 ## queue, not when you click, so the row to land on does not exist at play time. `_flight_armed`
 ## holds the card between the two.
-const CARD_FLIGHT_SEC := 0.55
+## ⛑ 0.55 -> 1.10, and the floor with it. Owner: *"It happens so fast I can't really
+## follow it (even on 1.5x for all of these)."* The ghost has to be TRACKABLE from the
+## card to the line or it communicates nothing at all - that connection IS the feature.
+const CARD_FLIGHT_SEC := 1.10
 const CARD_FLIGHT_FADE := 0.22
 
 var _flight_armed: String = ""
@@ -4551,7 +4558,7 @@ func _fire_card_flight(paragraph_index: int, speed: float = 1.0) -> void:
 	# ⛑ FLOORED AT 0.38s, NOT 0.2s. The flight DOES follow the log's pace - it is
 	# chasing a line - but at the owner's 3x the old floor made it a 0.18s streak that
 	# could not be followed by eye. A flight nobody can track communicates nothing.
-	var dur: float = maxf(CARD_FLIGHT_SEC / maxf(speed, 0.25), 0.38)
+	var dur: float = maxf(CARD_FLIGHT_SEC / maxf(speed, 0.25), 0.7)
 	var tw := create_tween()
 	_flight_tween = tw
 	# Same idiom as `_play_hand_cycle` and the flourish: ONE parallel block sequenced by delays.
@@ -4606,7 +4613,7 @@ func _kill_card_flight() -> void:
 	_flight_ghost = null
 
 
-func flourish_card(card_name: String, speed: float = 1.0) -> void:
+func flourish_card(card_name: String, speed: float = 1.0) -> bool:
 	"""Play the "this card was just used" flourish on whichever cell holds it.
 
 	⛑ CALLED FROM `send_combat_command`, the one place a card is actually committed, so the
@@ -4616,7 +4623,7 @@ func flourish_card(card_name: String, speed: float = 1.0) -> void:
 	Silent and harmless when the card is not on screen - a copy played from a menu, a party member's
 	card, a name that does not match - because a missing flourish must never be an error."""
 	if card_name == "":
-		return
+		return false
 	var base := Character.card_base(card_name)
 	for i in range(_hand_cells.size()):
 		var cell: PanelContainer = _hand_cells[i]
@@ -4625,7 +4632,20 @@ func flourish_card(card_name: String, speed: float = 1.0) -> void:
 		if Character.card_base(str(cell.get_meta("card_name", ""))) != base:
 			continue
 		_flourish_cell(cell, speed)
-		return
+		return true
+	# Nothing in hand matches - the caller decides what to light up instead (Attack).
+	return false
+
+
+func flourish_control(ctrl: Control, speed: float = 1.0) -> void:
+	"""The same acknowledgement, on any Control.
+
+	⛑ A BASIC ATTACK IS AN ACTION TOO. Owner 2026-09-17: *"Also, attack will want to do this as
+	well."* Attack is not a card - it lives on the action bar, not in the hand - so nothing in
+	`_hand_cells` can ever match it. The feedback belongs to the ACT, not to cards specifically, so
+	the client hands us the button when `flourish_card` finds nothing."""
+	if ctrl != null and is_instance_valid(ctrl) and ctrl.visible:
+		_flourish_cell(ctrl, speed)
 
 
 func _flourish_cell(cell: Control, speed: float = 1.0) -> void:
@@ -4660,8 +4680,10 @@ func _flourish_cell(cell: Control, speed: float = 1.0) -> void:
 	var rise := dur * 0.35
 	tw.tween_property(cell, "scale", Vector2(CARD_FLOURISH_SCALE, CARD_FLOURISH_SCALE), rise).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(cell, "modulate", Color(1.9, 1.8, 1.4, 1.0), rise)
-	tw.tween_property(cell, "scale", Vector2.ONE, dur * 0.55).set_delay(rise).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tw.tween_property(cell, "modulate", Color(1, 1, 1, 1), dur * 0.55).set_delay(rise)
+	# A HOLD at the top before it settles. Rising and falling back-to-back reads as a
+	# twitch; the pause is what makes it legible as "this card".
+	tw.tween_property(cell, "scale", Vector2.ONE, dur * 0.45).set_delay(rise + dur * 0.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(cell, "modulate", Color(1, 1, 1, 1), dur * 0.45).set_delay(rise + dur * 0.2)
 
 func _on_hand_cell_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:

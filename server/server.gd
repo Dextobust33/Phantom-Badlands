@@ -31734,6 +31734,15 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 	# An inherited grade when the tile had one, else the type's design weight as a seed.
 	var grade_tier: int = force_tier if force_tier > 0 else int(dungeon_data.get("base_tier", 1))
 	var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(grade_tier, sub_tier)
+	# ⛑ SAY WHAT WAS ADVERTISED AND WHAT WAS BUILT, on one line. Owner 2026-09-17:
+	# *"Quest board said H2, actual dungeon shows G2."* Three separate reports over three
+	# months have been this same shape - advertised one grade, delivered another - and
+	# each was diagnosed by reading code rather than by looking, because nothing ever
+	# wrote down which number went in and which came out. Now it does.
+	log_message("Dungeon instance %s (%s): force_tier=%d force_sub=%d -> GRADE %s (tier=%d rank=%d), levels %d-%d" % [
+		instance_id, dungeon_type, force_tier, force_sub_tier,
+		PowerRankScript.label(grade_tier, sub_tier), grade_tier, sub_tier,
+		int(sub_range.min_level), int(sub_range.max_level)])
 
 	# Scale dungeon level to player, clamped to rank range
 	var dungeon_level = clampi(player_level, sub_range.min_level, sub_range.max_level)

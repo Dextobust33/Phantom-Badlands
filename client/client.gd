@@ -13498,7 +13498,16 @@ func send_combat_command(command: String, target: String = ""):
 		# behind the line it belongs to at 3x. There is no "effects off" preference in
 		# the game to honour - the item assumes one exists; it does not, and inventing a
 		# flag nobody can set would be worse than using the knob that is really there.
-			combat_scene_panel.flourish_card(base_cmd, combat_speed)
+			# ⛑ AND A BASIC ATTACK LIGHTS UP ITS BUTTON. Owner 2026-09-17: *"Also, attack
+			# will want to do this as well."* Attack is not a card - it lives on the action
+			# bar, not in the hand - so `flourish_card` finds nothing and says so, and the
+			# client, which owns the bar, lights the right control instead. The feedback
+			# belongs to the ACT, not to cards.
+			if not combat_scene_panel.flourish_card(base_cmd, combat_speed):
+				if combat_scene_panel.has_method("flourish_control") and action_buttons.size() > 0:
+					var _btn: Button = action_buttons[0] as Button
+					if _btn != null and _btn.visible:
+						combat_scene_panel.flourish_control(_btn, combat_speed)
 			# ...and ARM the flight. It does not launch here: the card's result arrives through
 			# the paced combat queue a few hundred ms later, so the log row to land on does not
 			# exist yet. The panel fires it when the player's line actually appears.
@@ -39903,9 +39912,19 @@ func _ow_side_refresh() -> void:
 	var shown: Array = all_lines.slice(hidden) if hidden > 0 else all_lines.duplicate()
 	if _ow_side_repeat > 0 and not shown.is_empty():
 		shown[-1] = "%s [color=#808080](x%d)[/color]" % [String(shown[-1]), _ow_side_repeat + 1]
+	# ⛑ AND THE NEWEST LINE IS MARKED. In a column of same-coloured text the eye has
+	# nothing to land on; the owner could not tell what was new. A caret costs one
+	# character and answers "what should I be looking at".
+	if not shown.is_empty():
+		shown[-1] = "[color=#FFD166]▸[/color] %s" % String(shown[-1])
 	if hidden > 0:
-		# Says the history EXISTS. Silently truncating would read as lost messages.
-		shown.push_front("[color=#5A5A66]… %d earlier — History below[/color]" % hidden)
+		# ⛑ A RULE, NOT JUST A SENTENCE. Owner 2026-09-17: *"We need a clear delineation
+		# between the scrollable or old section of the right column and the new information,
+		# still having a hard time telling what I should be looking at."* The first version
+		# said "… 22 earlier" in the same grey as everything else and read as one more log
+		# line. A horizontal rule is a boundary you see without reading.
+		shown.push_front("[color=#3A3A46]────────────────────[/color]")
+		shown.push_front("[color=#6A6250]… %d earlier[/color]" % hidden)
 	map_display.append_text("\n".join(shown))
 	_update_side_history_button(hidden)
 	if sb != null:
