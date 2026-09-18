@@ -1729,6 +1729,32 @@ static func _actors_for(total: int, marks: Array, default_actor: String) -> Arra
 	return out
 
 func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
+	"""The companion acts, and ITS LINES ARE MARKED AS ITS OWN.
+
+	⛑ THE MARKING LIVES HERE BECAUSE A CALL SITE FORGOT IT. There are two callers - the
+	basic-attack path and the CAST path - and only the first marked the companion. The second
+	indented the companion's lines and stopped there, so they inherited the PLAYER mark still in
+	force and the round summary folded pet and owner onto one line. Owner 2026-09-17, comparing
+	two rounds of the same fight: *"I did a forcefield and my companion was in that line as well
+	as me... Round 2 my stuff and my companions are on different lines unlike round 1."* Casting
+	merged them; attacking did not.
+
+	Marking at the site of the ACTION rather than at each call site retires the class instead of
+	patching the one caller that was wrong: a third caller cannot reintroduce it by forgetting,
+	which is exactly how the second one came to be wrong. Costs one wrapper.
+
+	The PLAYER mark is restored afterwards so whatever the caller emits next is attributed the
+	way it was before - the wrapper adds the companion's span, it does not change the default.
+	(The monster's turn marks itself, so it is unaffected either way.)
+	"""
+	var _mark_from: int = messages.size()
+	_process_companion_attack_body(combat, messages)
+	if messages.size() > _mark_from:
+		_mark_actor(combat, _mark_from, ACTOR_COMPANION)
+		_mark_actor(combat, messages.size(), ACTOR_PLAYER)
+
+
+func _process_companion_attack_body(combat: Dictionary, messages: Array) -> void:
 	"""Process companion attack during player's turn.
 	Called by both regular attacks and ability usage."""
 	var character = combat.character
@@ -3180,10 +3206,8 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		combat["_mhp_after_player"] = int(monster.get("current_hp", 0))
 		_process_companion_attack(combat, messages)
 		_indent_new_messages(messages, _ca, "   ")
-		# The bracket that already existed to INDENT the companion's lines now also names them.
-		if messages.size() > _ca:
-			_mark_actor(combat, _ca, ACTOR_COMPANION)
-			_mark_actor(combat, messages.size(), ACTOR_PLAYER)
+		# Naming the companion's lines used to happen HERE, and only here - which is why the
+		# cast path below did not do it. `_process_companion_attack` marks its own now.
 		if monster.current_hp <= 0:
 			return _attach_actors(combat, _process_victory_with_abilities(combat, messages))
 

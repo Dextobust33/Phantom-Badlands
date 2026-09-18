@@ -658,6 +658,45 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ COMBAT LOG REWORK — BUILT 2026-09-17, UNRELEASED (owner: *"once we get it right we can cut a new release"*)
+
+One SUMMARISED line per actor per round, built from the server's own `dmg` / `taken` / `ability`
+metadata rather than by joining prose. Measured first: a three-round solo fight emitted 12 lines,
+the worst two at **294 and 311 characters**, which wrapped to five or six rows each - so the fold
+that already existed was trading line COUNT for line LENGTH and gaining nothing.
+
+Live-test findings from the owner, and what each turned out to be:
+
+- [x] **Raw BBCode dumped into the log.** A multi-line blow-by-blow was being put in a `[url=]`
+      ATTRIBUTE, and a BBCode attribute cannot contain newlines, so the tag never closed. Keyed
+      `_log_detail` dictionary instead of inlining the text.
+- [x] **The card name vanished from the line.** `reset_round_summary()` cleared
+      `_player_action_name`, but the round divider arrives AFTER the player acts and BEFORE the
+      action lines - so it wiped the name every round.
+- [x] **Only the actor's name was hoverable, not the numbers.** The `[url]` wrapped the label
+      alone; owner: *"I can't hover the 106 but instead have to hover the You."* Whole line now.
+- [x] **Companion merged into the player's line in one round and not the next.**
+      `_process_companion_attack` has two callers and only the basic-attack one marked the
+      companion as the actor, so CASTING a card left its lines inheriting the player's mark.
+      **Fixed at the action, not the call site** - the mark moved inside the function, so a third
+      caller cannot forget it. Probe: `tools/probe/companion_lines_are_marked.gd`, proven to fire
+      by re-injecting the original fault.
+- [x] **[L] after a fight showed the overworld.** Owner: *"I only pressed L, never space so I
+      didn't dismiss the card."* They had not - **walking** dismissed it. Three sites tore down the
+      victory review and each cleared a different subset of its four fields; none cleared
+      `pending_continue`. So a step hid the card (closing [L]'s gate) while the action bar still
+      offered "Continue" for a card that was gone. That stray Continue was reported separately the
+      same day (*"Was walking on a road and now have a continue"*) and patched at the action bar -
+      the symptom. One `_end_victory_review()` now clears all four together.
+- [x] **The log had no discoverable way in at all.** CLAUDE.md's own rule: a hotkey may supplement
+      a button, never be the sole entry point. Added **Character → Last Fight Log** to the menu
+      tree, and [L] now asks the question the button asks - *is there a log* - instead of *is the
+      rewards card still on screen*. The log survives until the next fight resets the panel.
+
+**Still open from the same test:** same-level death rates (P60 Wizard 31% at its own level against
+a ~0.3% target) and Threat-quest rewards, both deliberately untouched here.
+
+
 ### ⛑ "COMPLETE THE BACKLOG TODAY AND TOMORROW" — what that can and cannot mean
 
 Owner 2026-09-17: *"I'd like to get it completed over the course of today and tomorrow."*

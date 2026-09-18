@@ -5997,7 +5997,11 @@ func note_player_action(card_name: String) -> void:
 func reset_round_summary() -> void:
 	"""A new round begins: every actor starts a fresh line."""
 	_round_actors.clear()
-	_player_action_name = ""
+	# ⛑ THE PLAYED CARD SURVIVES THE ROUND RESET. Clearing it here looked tidy and was
+	# wrong: the player acts, THEN the server sends the "Round N" divider, THEN the
+	# action lines - so the reset wiped the name a frame before the lines that needed
+	# it. Owner 2026-09-17: *"Round 1 still says You 2 hits 106."* It is valid until the
+	# player acts again, which is exactly when `note_player_action` overwrites it.
 
 
 func log_actor_action(key: String, label: String, meta: Dictionary, raw_line: String) -> void:
@@ -6070,7 +6074,10 @@ func _render_actor_summary(a: Dictionary) -> String:
 	var _key: String = "cdet:%d" % int(a["index"])
 	_log_detail[_key] = "
 ".join(a["detail"])
-	return "[url=%s]▸ %s[/url]  [color=#9A9AA6]%s[/color]%s" % [
+	# ⛑ THE WHOLE LINE IS THE HOVER TARGET. Wrapping only the name meant the numbers -
+	# the part a player actually points at - were dead. Owner: *"I can't hover the 106
+	# but instead have to hover the You."*
+	return "[url=%s]▸ %s  [color=#9A9AA6]%s[/color]%s[/url]" % [
 		_key, String(a["label"]), what, nums]
 
 

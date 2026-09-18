@@ -4524,12 +4524,17 @@ func _process(delta):
 		# hide the scene anymore. Kept the variable in case future modes need
 		# to opt out.
 		var _scene_temporarily_hidden = false
-		# Player pressed [L] during the rewards / death interlude — they
-		# want the legacy full-screen text view, so suppress the panel
-		# until they toggle back or press Space to continue.
-		if _victory_legacy_view and not _now_in_combat and (_victory_card_up or _death_card_up):
+		# The player is reading the fight log, so suppress the scene panel over it.
+		#
+		# ⛑ THIS USED TO REQUIRE THE REWARDS CARD TO STILL BE UP, and that is what made [L]
+		# look broken rather than gated: opening the view set the flag, and this branch cleared
+		# it again on the very next frame the card was gone, repainting the overworld over the
+		# log the player had just asked for. The log outlives the card - it survives until the
+		# next combat resets the panel - so the view now closes when the PLAYER closes it, or
+		# when a new fight starts and there is a different log to be reading.
+		if _victory_legacy_view and not _now_in_combat:
 			_scene_temporarily_hidden = true
-		else:
+		elif _now_in_combat:
 			_victory_legacy_view = false
 		# v0.9.414 — keep the panel visible while the action phase is still
 		# active (queue draining + deferred victory FX/card pending). Without
@@ -5683,15 +5688,7 @@ func _process(delta):
 					# that victory screen. It should go back to the screen
 					# that shows their Floor, defeated, steps, etc.'
 					if _post_loot_victory_persists:
-						_post_loot_victory_persists = false
-						_pending_victory_card_payload = null
-						_pending_victory_fx_play = false
-						_combat_scene_linger_until_ms = 0
-						if combat_scene_panel:
-							if combat_scene_panel.has_method("hide_fx_overlay_only"):
-								combat_scene_panel.hide_fx_overlay_only()
-							if combat_scene_panel.has_method("hide_victory_card"):
-								combat_scene_panel.hide_victory_card()
+						_end_victory_review("walked away in a dungeon")
 					_send_dungeon_move(dungeon_dir)
 					last_move_time = current_time
 
@@ -5835,18 +5832,7 @@ func _process(delta):
 					# v0.9.627 — zero linger so panel hides THIS frame
 					# instead of lingering for 2.4s (3-4 movement ticks).
 					if _post_loot_victory_persists:
-						_post_loot_victory_persists = false
-						_pending_victory_card_payload = null
-						_pending_victory_fx_play = false
-						_combat_scene_linger_until_ms = 0
-						# v0.9.628 — FX hides first (under the card),
-						# then card hides. Prevents 1-frame monster ASCII
-						# flash when the card hides first and exposes FX.
-						if combat_scene_panel:
-							if combat_scene_panel.has_method("hide_fx_overlay_only"):
-								combat_scene_panel.hide_fx_overlay_only()
-							if combat_scene_panel.has_method("hide_victory_card"):
-								combat_scene_panel.hide_victory_card()
+						_end_victory_review("walked away on the overworld")
 					send_move(move_dir)
 					# Don't clear trading post UI - server will notify if we leave.
 					# In build mode, redraw the active build prompt so the menu
@@ -6193,16 +6179,16 @@ func _input(event):
 		if input_field == null or not input_field.has_focus():
 			if combat_scene_panel:
 				# v0.9.609 — dropped the `pending_continue` requirement.
-				var _victory_up = combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active()
-				var _death_up = combat_scene_panel.has_method("is_death_interlude_active") and combat_scene_panel.is_death_interlude_active() and game_state == GameState.DEAD
-				if _victory_up or _death_up:
-					# v0.9.611 — paginated. Open the legacy view on the CURRENT
-					# fight. The handler below intercepts ← / → / [ / ] inside
-					# the legacy view to flip to prior fights in the chain.
-					_victory_legacy_view = not _victory_legacy_view
-					if _victory_legacy_view:
-						_legacy_view_fight_index = -1  # current fight
-						_render_legacy_combat_log()
+				# 2026-09-17 — and dropped the INTERLUDE requirement too. [L] used to ask whether the
+				# rewards card was still on screen; a single step clears that while the log itself is
+				# untouched, so the key went dead with no sign of why. It now asks the same question
+				# the "Last Fight Log" menu entry asks: is there a log?
+				if _victory_legacy_view:
+					_victory_legacy_view = false
+					update_action_bar()
+					get_viewport().set_input_as_handled()
+					return
+				if _open_last_fight_log():
 					get_viewport().set_input_as_handled()
 					return
 		# v0.9.612 — keyboard pagination removed (← / → conflict with overworld
@@ -16929,6 +16915,14 @@ func execute_local_action(action: String):
 			# ⚑ The worst thing in the game to be command-only: a player who has just hit a bug is
 			# exactly the one who does not know the command for reporting it.
 			generate_bug_report("")
+		"last_fight_log":
+			# ⚑ [L] WAS THE ONLY WAY IN, AND IT IS NOT DISCOVERABLE. CLAUDE.md: a hotkey may be a
+			# power-user supplement to a button, never the sole entry point. Worse, [L] was gated on
+			# the victory interlude, so it stopped working the moment the player took a step -
+			# while the action bar still said "Continue". Owner 2026-09-17: *"I attempted to press L
+			# to see the log after battle and instead [the overworld] showed."*
+			if not _open_last_fight_log():
+				display_game("[color=#888888]No battle to look back on yet.[/color]")
 		"clear_log":
 			_page_clear()
 			chat_output.clear()
@@ -41680,6 +41674,72 @@ func _on_game_output_meta_clicked(meta) -> void:
 		"legacy_next":
 			if _victory_legacy_view:
 				_legacy_view_step(1)
+
+
+func _end_victory_review(reason: String) -> void:
+	"""Stop reviewing the last fight. EVERY field that means "the player is still on the
+	victory card" is cleared here, together, because they were being cleared apart.
+
+	⛑ THIS RETIRES A CLASS OF BUG, IT IS NOT A NEW GUARD. Three sites tore down the victory
+	review and each cleared a DIFFERENT subset: the _process safety net cleared the payload and
+	the linger, the overworld-move and dungeon-move handlers cleared those plus the persist
+	flag, and none of the three cleared `pending_continue`. So walking away from a victory card
+	hid the card while leaving the action bar holding a "Continue" for a thing that no longer
+	existed - and left `is_victory_interlude_active()` false while the bar still said the fight
+	was being reviewed.
+
+	Both of the owner's reports on 2026-09-17 are that one split:
+	  - *"Was walking on a road and now have a continue. Not sure what happened."* - the button
+	    outliving the card. Patched then at the ACTION BAR, which was the symptom.
+	  - *"I attempted to press L to see the log after battle and instead [the overworld] showed...
+	    I only pressed L, never space so I didn't dismiss the card."* - [L] is gated on the panel's
+	    interlude flag, which the walk had already cleared, while the bar still offered Continue.
+	    From where the player sits the card was never dismissed, so the gate is invisible.
+
+	One caller cannot now clear three of the four fields, which is the only way this came about.
+	`reason` is carried for the log line when diagnosing a card that vanished too early."""
+	if reason == "":
+		pass  # accepted and unused; kept so call sites must say WHY they are ending the review
+	pending_continue = false
+	_post_loot_victory_persists = false
+	_pending_victory_card_payload = null
+	_pending_victory_fx_play = false
+	_combat_scene_linger_until_ms = 0
+	_victory_legacy_view = false
+	if combat_scene_panel and is_instance_valid(combat_scene_panel):
+		# FX hides BEFORE the card: the card is drawn over the FX overlay, so hiding the card
+		# first exposes a frame of monster ASCII underneath (v0.9.628).
+		if combat_scene_panel.has_method("hide_fx_overlay_only"):
+			combat_scene_panel.hide_fx_overlay_only()
+		if combat_scene_panel.has_method("hide_victory_card"):
+			combat_scene_panel.hide_victory_card()
+
+
+func _open_last_fight_log() -> bool:
+	"""Show the blow-by-blow of the most recent fight. Returns false when there is nothing to show.
+
+	⛑ THE LOG OUTLIVES THE VICTORY CARD, and until now the only way to READ it did not. The
+	panel keeps `_log_lines` (and the flock archive) until the next combat calls
+	`reset_for_new_combat`, so the text is sitting there long after the card is gone - but [L]
+	asked `is_victory_interlude_active()`, a flag that a single step clears. The player's own test:
+	card up, Continue showing, press [L], get the overworld.
+
+	So the gate is "is there a log", which is the question actually being asked, rather than "is
+	the rewards card still on screen", which is a different one that merely used to coincide."""
+	if combat_scene_panel == null or not is_instance_valid(combat_scene_panel):
+		return false
+	var have: bool = false
+	if "_log_lines" in combat_scene_panel and combat_scene_panel._log_lines is Array:
+		have = not combat_scene_panel._log_lines.is_empty()
+	if not have and combat_scene_panel.has_method("get_flock_history"):
+		have = not combat_scene_panel.get_flock_history().is_empty()
+	if not have:
+		return false
+	_victory_legacy_view = true
+	_legacy_view_fight_index = -1
+	_render_legacy_combat_log()
+	update_action_bar()
+	return true
 
 
 func _render_legacy_combat_log() -> void:

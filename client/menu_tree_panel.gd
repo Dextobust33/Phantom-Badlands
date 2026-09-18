@@ -33,6 +33,7 @@ const TREE: Array = [
 	["Character", [
 		["Stats", "stats_shortcut", "Attributes, and spending points"],
 		["Deck", "deck_shortcut", "Your combat cards"],
+		["Last Fight Log", "last_fight_log", "The blow-by-blow of your last battle"],
 		["Companions", "companions", "Companions and eggs"],
 		["Inventory", "inventory_shortcut", "Carried items"],
 		["Pouch", "pouch_shortcut", "Materials and catches"],
