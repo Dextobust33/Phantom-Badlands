@@ -81,7 +81,11 @@ CUTS = {
     # --- NPC POST STATIONS. The craft_stations pack was bought for exactly these. Each station
     # is drawn two or three cells across, so they are region cuts shrunk to one tile.
     'tile:forge':         ('craft_stations', 0, 0, (3, 2)),
-    'tile:apothecary':    ('craft_stations', 3, 6, (2, 2)),
+    # ⚑ THE POTION SHELF - owner 2026-09-18, approving the suggestion. `interiors` (8,10) is the
+    # same 3x2 counter the market now uses, stocked with blue bottles instead of assorted wares,
+    # so the alchemist's bench and the general market read as the same KIND of place stocked with
+    # different things - which is what they are.
+    'tile:apothecary':    ('interiors', 8, 10, (3, 2)),
     'tile:workbench':     ('craft_stations', 5, 0, (2, 2)),
     'tile:enchant_table': ('craft_stations', 7, 1, (2, 1)),
     # ⚑ THESE TWO WERE HALVES OF ONE PICTURE.
