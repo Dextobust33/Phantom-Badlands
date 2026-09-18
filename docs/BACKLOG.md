@@ -192,7 +192,7 @@ All of this came out of the distribution work. Recorded before starting any of i
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
-## ⚑ WHERE THE LIST STANDS — 53 open, 210 done (recounted 2026-09-16 evening)
+## ⚑ WHERE THE LIST STANDS — recounted 2026-09-18 after v0.9.803 (the combat log arc closed)
 
 Counted mechanically (`- [ ]` vs `- [x]` across this file), not estimated. **The working order is
 the RECOMMENDED ORDER in the NEXT SESSION block.** The breakdown below is from 2026-09-13 and is now approximate — the onboarding arc closed a large share of
@@ -658,103 +658,97 @@ nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
 ## ▶ NEXT SESSION — START HERE
 
-### ✅ COMBAT LOG REWORK — BUILT 2026-09-17, UNRELEASED (owner: *"once we get it right we can cut a new release"*)
+### ✅ COMBAT LOG REWORK — SHIPPED v0.9.803 (2026-09-18)
 
-One SUMMARISED line per actor per round, built from the server's own `dmg` / `taken` / `ability`
-metadata rather than by joining prose. Measured first: a three-round solo fight emitted 12 lines,
-the worst two at **294 and 311 characters**, which wrapped to five or six rows each - so the fold
-that already existed was trading line COUNT for line LENGTH and gaining nothing.
+Owner: *"start the combat log rework. Once we get it right we can cut a new release."* Four rounds
+of live testing; every item below was reported from play and confirmed fixed from play.
 
-Live-test findings from the owner, and what each turned out to be:
+**The shape.** One SUMMARISED line per actor per round, built from the server's own `dmg` /
+`taken` / `ability` metadata rather than by joining prose. Measured first: a three-round solo fight
+emitted 12 lines, the worst two at **294 and 311 characters**, which wrapped to five or six rows
+each - so the fold that already existed was trading line COUNT for line LENGTH and gaining nothing.
+Each line carries its blow-by-blow as hover text, so nothing is lost.
 
-- [x] **Raw BBCode dumped into the log.** A multi-line blow-by-blow was being put in a `[url=]`
-      ATTRIBUTE, and a BBCode attribute cannot contain newlines, so the tag never closed. Keyed
-      `_log_detail` dictionary instead of inlining the text.
-- [x] **The card name vanished from the line.** `reset_round_summary()` cleared
-      `_player_action_name`, but the round divider arrives AFTER the player acts and BEFORE the
-      action lines - so it wiped the name every round.
-- [x] **Only the actor's name was hoverable, not the numbers.** The `[url]` wrapped the label
-      alone; owner: *"I can't hover the 106 but instead have to hover the You."* Whole line now.
-- [x] **Companion merged into the player's line in one round and not the next.**
-      `_process_companion_attack` has two callers and only the basic-attack one marked the
-      companion as the actor, so CASTING a card left its lines inheriting the player's mark.
-      **Fixed at the action, not the call site** - the mark moved inside the function, so a third
-      caller cannot forget it. Probe: `tools/probe/companion_lines_are_marked.gd`, proven to fire
-      by re-injecting the original fault.
-- [x] **[L] after a fight showed the overworld.** Owner: *"I only pressed L, never space so I
-      didn't dismiss the card."* They had not - **walking** dismissed it. Three sites tore down the
-      victory review and each cleared a different subset of its four fields; none cleared
-      `pending_continue`. So a step hid the card (closing [L]'s gate) while the action bar still
-      offered "Continue" for a card that was gone. That stray Continue was reported separately the
-      same day (*"Was walking on a road and now have a continue"*) and patched at the action bar -
-      the symptom. One `_end_victory_review()` now clears all four together.
-- [x] **The log had no discoverable way in at all.** CLAUDE.md's own rule: a hotkey may supplement
-      a button, never be the sole entry point. Added **Character → Last Fight Log** to the menu
-      tree, and [L] now asks the question the button asks - *is there a log* - instead of *is the
-      rewards card still on screen*. The log survives until the next fight resets the panel.
+**Round 1 — rendering**
+- [x] Raw BBCode dumped on screen. The multi-line blow-by-blow was in a `[url=]` ATTRIBUTE, and a
+      BBCode attribute cannot contain newlines, so the tag never closed. Keyed `_log_detail` now.
+- [x] The card name vanished. `reset_round_summary()` cleared `_player_action_name`, but the round
+      divider arrives AFTER the player acts and BEFORE the action lines, wiping it every round.
+- [x] Only the actor's name was hoverable. *"I can't hover the 106."* Whole line is the target.
 
-- [x] **The monster's line carried no damage number.** Owner: *"it's not showing a damage number
-      unless hovered."* `message_taken` was being built in `process_monster_turn`'s funnel, against
-      THAT function's `messages` array - which the solo paths never append, because they read the
-      singular joined `message` and split it. So the array was the wrong length, keyed to lines
-      nobody sent, and in solo `result.message_taken` was never set at all. The hover worked
-      because it shows the raw prose, which always had the number; the summary is built from
-      metadata, which did not. Now recorded by `_append_monster_turn_lines`, where the monster's
-      lines actually enter the result, so the count and the index cannot drift apart.
-- [x] **The card-flight animation fired "1 or 2" times, not every cast.** It was hooked into
-      `append_log` and `append_to_last_log`; the round summary added a THIRD writer
-      (`log_actor_action`, which rewrites a line in place), and that is the path nearly every card
-      result takes now. Second time this feature was hooked to a specific writer and the game
-      stopped using that writer, so the trigger is one `_note_result_line` the writers call.
-      `tools/probe/card_flight.gd` now drives the summary path too - it was passing on the append
-      path alone, which is exactly how this shipped.
-- [x] **The fight log is a PANEL now, not text painted into `game_output`.** Owner agreed: *"I'm
-      fine with us going to a new Log or popup window or whatever works."* Painting the shared
-      output window caused three separately-reported bugs at once - it flashed and vanished
-      (whatever repainted that window next won), closing it left the text on screen (*"It says
-      press L to close at the bottom but I have to press space to close, which also forces me to
-      rest or meditate"*), and keeping it up at all meant HIDING the combat scene panel, which is
-      why it was gated on the victory card. `client/fight_log_panel.gd` owns its own surface. The
-      `_victory_legacy_view` bool is gone with it: the panel's visibility is the single answer, so
-      state and screen cannot disagree. Probe: `tools/probe/fight_log_panel_builds.gd`.
+**Round 2 — attribution and reachability**
+- [x] Companion merged into the player's line on a CAST and not on an attack. Two callers,
+      only one marked the companion. **Fixed at the action, not the call site** - the mark moved
+      inside `_process_companion_attack`, so no caller can forget it.
+      Probe: `tools/probe/companion_lines_are_marked.gd`.
+- [x] [L] after a fight showed the overworld. *"I only pressed L, never space."* He hadn't -
+      **walking** dismissed the card. Three sites tore down the victory review and each cleared a
+      different subset of its four fields; none cleared `pending_continue`. One
+      `_end_victory_review()` clears all four. (The stray "Continue" reported separately the same
+      day was the same fault seen from the other side.)
+- [x] The log had no discoverable entry point. Added **Menu → Character → Last Fight Log**;
+      [L] now asks *is there a log* rather than *is the rewards card still up*.
 
-- [x] **The enemy line still had no damage number (second round on this).** Two separate causes.
-      The server-side accounting was fixed first, but the SOLO client handler then dropped `taken`
-      on the floor while copying `actor` / `dmg` / `mhp` out of the message - and it only attached
-      metadata at all when `actor` or `dmg` was set, so a monster line reporting damage to YOU had
-      no metadata and fell out of the summariser entirely. Separately, `handle_use_item` fanned its
-      messages out with a bare `send_combat_message(peer_id, msg)` - no actor, no damage, no taken.
-      Using an item takes a combat TURN, so the monster's reply came back through that loop
-      untagged. One `send_combat_result_messages()` owns the four parallel arrays now.
-      **Measured end to end**: HP 889→798, server sent `taken=91`, line renders `▸ Ogre attack ← 91`.
-- [x] **The card flew to the round header instead of the action's line.** The flight aims at a
-      PARAGRAPH of the visible band, and `_refresh_log` is what puts the line into that band. Fired
-      before the refresh, the index clamped to the last paragraph that existed - the divider.
-      `append_log` had always refreshed first, which is why only the two new call sites were wrong.
-- [x] **A basic attack did not travel to the log.** `arm_card_flight` searches the HAND and gives
-      up silently when nothing matches, which is always true for "attack" - it lives on the action
-      bar. The flourish already had that fallback; the flight had only half the pair.
-- [x] **The log panel opened behind the victory card** (z-index) and **the ASCII art sheared**
-      (proportional font; now the same Consolas the combat panel uses for art).
+**Round 3 — the log becomes a panel**
+- [x] It was painted into `game_output`, the label the map, location text, merchant screens and
+      combat all paint into. One decision, three reported bugs: it flashed and vanished; closing it
+      left the text on screen so only Space worked (*"which also forces me to rest or meditate"*);
+      and keeping it up meant HIDING the combat panel, hence the victory-card gate.
+      `client/fight_log_panel.gd` owns its own surface. Owner agreed: *"I'm fine with us going to a
+      new Log or popup window."* The `_victory_legacy_view` bool went with it - panel visibility is
+      the single answer. Probe: `tools/probe/fight_log_panel_builds.gd`.
+- [x] Enemy line had no damage number. THREE causes in sequence: `message_taken` was built in
+      `process_monster_turn`'s funnel against an array the solo paths never append; the solo client
+      handler then dropped `taken` while copying `actor`/`dmg`/`mhp`, and only attached metadata at
+      all when `actor` or `dmg` was set - so a monster line whose only number is damage to YOU had
+      no metadata and fell out of the summariser entirely; and `handle_use_item` fanned its messages
+      out with no tagging whatsoever. One `send_combat_result_messages()` owns the four parallel
+      arrays now. **Measured end to end**: HP 889→798, `taken=91`, line renders `▸ Ogre attack ← 91`.
+- [x] The card flew to the round header. The flight aims at a PARAGRAPH of the visible band and
+      `_refresh_log` is what puts the line there; fired first, the index clamped to the divider.
+- [x] A basic attack did not travel. `arm_card_flight` searches the HAND and gives up silently -
+      always true for "attack", which is on the action bar. Added `arm_flight_from_control`.
+- [x] Panel opened behind the victory card (z-index); ASCII art sheared (now Consolas).
 
-### ⛑ THE HARNESS GODMODES THE PLAYER, WHICH ZEROES WHAT WAS BEING MEASURED
+**Round 4 — the last two**
+- [x] Hover details unreachable from the log PANEL. It got `meta_clicked` and no hover wiring, so
+      the links rendered and could not be used. Both halves wired, guarded by the probe.
+- [x] Companion skipped round 1 against a Harpy. The Harpy is **Ethereal**; that 33% dodge branch
+      returned before the companion acted. An ordinary miss already fell through, which is why this
+      was the one case that looked broken. Owner's call: the companion acts when the PLAYER misses
+      or is dodged, and still loses its turn to webbed / lulled / charmed / madness.
 
-The `combat` shots scene godmodes the character so a capture cannot lose its own subject - right
-for a screenshot, useless for "how much damage did the player take", because godmode means the
-answer is always zero. Run to check the damage number, it reported `taken=0` for a reason with
-nothing to do with the code under test. The second attempt was gentler but no better: a monster
-eight levels down missed twice and was shielded once, so nothing reached HP and zero was *correct*.
-A reading that is right for the wrong reason is indistinguishable from the bug.
+### ⛑ WHEN THE HARNESS PROTECTS ITS SUBJECT, IT CAN DELETE THE QUANTITY BEING MEASURED
 
-`logmeta` is the scene that can actually see it - no godmode, a same-level monster, and the
-player's HP printed beside every line so `taken=0` is readable rather than ambiguous.
+The `combat` shots scene godmodes the character so a capture cannot lose its own subject. Correct
+for a screenshot; useless for *"how much damage did the player take"*, which godmode makes zero by
+construction. Run to check the missing damage number, it reported `taken=0` for a reason with
+nothing to do with the code under test. The second attempt used a monster eight levels down, which
+missed twice and was shielded once - nothing reached HP, so zero was **correct**. A reading that is
+right for the wrong reason is indistinguishable from the bug.
 
-**Still open from the same test:** F12 does not fire while a combat line is hovered (owner
-2026-09-18) - nothing in the hover path touches key input and the hover popup is a plain
-`PanelContainer`, so rather than guess a third time the handler now logs every request and logs
-when it debounces; the client log will say which it is. Also same-level death rates (P60 Wizard 31% at its own level against
-a ~0.3% target) and Threat-quest rewards, both deliberately untouched here.
+`logmeta` is the scene that can see it: no godmode, a same-level monster, and the player's HP
+printed beside every line so `taken=0` is readable rather than ambiguous.
 
+### ▶ OPEN AFTER v0.9.803 — START HERE NEXT SESSION
+
+1. **⛑ THE CURVE IS STALE FOR ETHEREAL FIGHTS.** The companion now acts through an ethereal dodge,
+   which is a player-power change, and CLAUDE.md's standing rule is that any such change
+   invalidates `reference_monster_curve.json`. It is narrow (Ethereal monsters, 33% of attacks)
+   and was shipped without re-calibrating because the release was asked for. Run `preflight`, then
+   the chain (`speciescal` → `refcal` → `rolecal`, ~25 min) before trusting any balance number.
+2. **F12 does not fire while a combat line is hovered** (owner, 2026-09-18). Not reproduced and not
+   explained: nothing in the hover path touches key input and the hover popup is a plain
+   `PanelContainer`, not a window that can take focus. Rather than a third guess, the handler now
+   logs every request AND every debounce - the client log will say whether the key arrived.
+   *Owner reported it working again in round 4, so it may be intermittent.*
+3. **The first line of a fight renders unsummarised.** `start_combat` sends its narration as one
+   joined `message` string with no actor array, so the monster's opening strike arrives untagged
+   and prints as raw prose above the summarised lines. Cosmetic, one line per fight.
+4. **Threat quest rewards** - owner: they *"don't seem to scale and is low rewards"*. Deliberately
+   untouched through the whole log arc; flat `THREAT_RELIEF_REWARDS` table.
+5. **Same-level death rates** - P60 Wizard measured 31% death at its own level against a ~0.3%
+   target. Flagged repeatedly, never actioned.
 
 ### ⛑ "COMPLETE THE BACKLOG TODAY AND TOMORROW" — what that can and cannot mean
 
