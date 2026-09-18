@@ -773,8 +773,44 @@ printed beside every line so `taken=0` is readable rather than ambiguous.
    applied it to a flat one - freezing the payout at 4,000 XP for both a level-28 and a level-37
    post. That passed every check written at the time, because none of them compared it to the
    board. `tools/probe/threat_quest_rewards.gd` now does, and asserts the band.
-5. **Same-level death rates** - P60 Wizard measured 31% death at its own level against a ~0.3%
-   target. Flagged repeatedly, never actioned.
+5. **Balance work is BATCHED. See the queue below.** Owner, 2026-09-18: *"We should hold on the
+   balance items until we have a batch of things that need looked at so we don't have to run it a
+   bunch of times, taking a lot of time."*
+
+### ⚑ THE BALANCE BATCH — add here, run the chain ONCE
+
+**Do not run the calibration chain for a single item.** It is ~25 minutes, it is one-pass-each by
+design (see CLAUDE.md: iterating means two layers control the same quantity), and every player-side
+change between one run and the next makes the previous run stale anyway. So player-power changes
+and balance questions accumulate HERE, and the chain runs once over the batch.
+
+**The rule for adding:** anything that moves player power, monster power, or a reward that is sized
+against either. Write what changed and what it should be measured against - a line saying only
+"check balance" is not usable a week later.
+
+**Before running anything**, `preflight` (2 min) - it asserts what the chain assumes and cannot
+check itself. Then `speciescal` → `refcal` → `rolecal`, one pass each, in that order.
+
+Currently queued:
+
+- [ ] **Same-level death rates.** P60 Wizard measured **31% death at its own level** against a
+      ~0.3% target, by two agreeing read-only audits (2026-09-13). The chain steers by WIN rate and
+      is structurally blind to deaths, so this cannot be fixed by running it - it needs a
+      per-class look first. **The largest item in the queue and the reason the queue exists.**
+- [ ] **`assassinate_pct` reaches the dice** (v0.9.790). Silver Tongue +15% and one unique now work
+      as written - a small per-class gain for the Trickster line. Glance at it on the next `refcal`.
+- [ ] **The companion acts through an ethereal dodge** (v0.9.803). Owner waived re-calibration for
+      it as too narrow to matter (Ethereal monsters, 33% of attacks). Listed so that if the batch
+      runs anyway it is measured rather than forgotten - not as a debt on its own.
+- [ ] **Threat bounty rewards were re-anchored** (v0.9.803). Not player power, but a reward sized
+      against the board: now 0.83-1.14x the median dungeon quest where it was 0.06-0.64x. If the
+      quest curve moves, re-measure with `tools/probe/threat_quest_rewards.gd`.
+- [ ] **Realm-wide valor economy pass.** Owner: *"valor costs for everything likely need rebalanced
+      across the realm. Some things aren't even actively balanced or used as far as blacksmiths,
+      healing, repairs, etc."* `QUEST_VALOR_PER_LEVEL := 3.5` is an INTERIM anchor calibrated
+      against sinks he has just said are wrong - it is not the answer, and the comment on the
+      constant says so.
+- [ ] **Forcefield's 3-6x nerf still wants a live feel check** (from the 2026-09-02 balance day).
 
 ### ⛑ "COMPLETE THE BACKLOG TODAY AND TOMORROW" — what that can and cannot mean
 
