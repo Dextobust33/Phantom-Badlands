@@ -805,12 +805,29 @@ Currently queued:
 - [ ] **Threat bounty rewards were re-anchored** (v0.9.803). Not player power, but a reward sized
       against the board: now 0.83-1.14x the median dungeon quest where it was 0.06-0.64x. If the
       quest curve moves, re-measure with `tools/probe/threat_quest_rewards.gd`.
-- [ ] **Realm-wide valor economy pass.** Owner: *"valor costs for everything likely need rebalanced
-      across the realm. Some things aren't even actively balanced or used as far as blacksmiths,
-      healing, repairs, etc."* `QUEST_VALOR_PER_LEVEL := 3.5` is an INTERIM anchor calibrated
-      against sinks he has just said are wrong - it is not the answer, and the comment on the
-      constant says so.
+- [ ] **Realm-wide valor economy pass** — **written up in full at "THE VALOR ECONOMY, REALM-WIDE"**
+      further down this file; that is the source of truth and step 1 is already part-done. Listed
+      here only so the batch is complete. It is NOT a chain item - the chain sizes combat, and this
+      sizes prices - but it shares the batch's reason for existing: `QUEST_VALOR_PER_LEVEL := 3.5`
+      is an interim anchor calibrated against sinks the owner has already said are wrong, so any
+      valor number tuned before it lands is tuned against a moving target.
 - [ ] **Forcefield's 3-6x nerf still wants a live feel check** (from the 2026-09-02 balance day).
+- [ ] **Sage 1.3%, Barbarian 1.2%, Ranger 1.9% death per encounter** against 0.1-0.7% for the rest.
+      Real but not broken, and all three clear the endgame bar. **Per-class levers only** - a global
+      buff is cancelled by the next refit and cannot close a per-class gap. (Moved here from
+      "Phase 2 - balance follow-through", 2026-09-18.)
+- [ ] **The high-level win targets predate retreat.** 60% was chosen when a "loss" meant a death;
+      it now mostly means a retreat. Revisit alongside the Unburied, since extra lives change what
+      survival means. This is a question about the TARGET, so settle it before a chain run rather
+      than after. (Moved here, 2026-09-18.)
+- [ ] **Feel check the rest change.** `REST_HEAL_MIN/MAX` replaced EIGHT sites, so meditate and
+      companion regen scaled along with rest and mages got it twice. Owner: Meditate is the
+      deliberate lever if mages come back too strong - check that BEFORE touching mage design.
+      (Moved here, 2026-09-18.)
+- [ ] **Watch the five live characters at L3-L12.** `bash tools/check_player_progress.sh`. They sit
+      in the range everything from 2026-09-07 targets and are better evidence than more simulation.
+      Not a chain input - **read this BEFORE the batch runs**, because it can say the sim is wrong.
+      (Moved here, 2026-09-18.)
 
 ### ⛑ "COMPLETE THE BACKLOG TODAY AND TOMORROW" — what that can and cannot mean
 
@@ -2238,8 +2255,8 @@ chain after it), party half two (independent movement + join-in-progress), contr
       the end of the chain reads the same field, or he would ring one place and lead to another —
       the same three-owners split fixed for the outbound leg the same day. Driven on the live
       server in `tools/probe/tutorial_walkthrough.gd`, including the legacy fallback.
-- [ ] **`assassinate_pct` now reaches the dice** (v0.9.790): Silver Tongue +15% and one unique work as
-      written. A small per-class power gain - glance at it on the next `refcal`.
+- [→] **`assassinate_pct` now reaches the dice** (v0.9.790) — tracked in **THE BALANCE BATCH**
+      (de-duplicated 2026-09-18; it was listed in two places under the same name).
 
 ### ⚑ THE STARTER KIT WAS NAMED LIKE ENDGAME LOOT — FIXED 2026-09-17
 
@@ -3576,10 +3593,9 @@ the CHECK instead of quietly making the help page lie.
       Working. 3b Working. 3c Seems to wrap, it's on two lines."* This was the only part a
       screenshot could not settle, because it needs a real mouse.
 
-- [ ] **Watch the five live characters at L3-L12.** They sit in exactly the range everything shipped
-      on 2026-09-07 targets, and they are now better evidence than more simulation.
-      `bash tools/check_player_progress.sh` — at L25+ re-validate `make_char` against real saves;
-      at L50+ the high-level balance work can finally be checked against real data.
+- [→] **Watch the five live characters at L3-L12** — moved to **THE BALANCE BATCH** (2026-09-18).
+      Still worth saying here: at L25+ re-validate `make_char` against real saves; at L50+ the
+      high-level balance work can finally be checked against real data.
 - [x] **Deck repair CONFIRMED WORKING on live data — 2026-09-08.** It runs on character load, so
       it has fired on the two characters that have logged in since it shipped and not on the rest:
       * `Dexto` (Ranger L6, repair=1): exactly the 5-card Ranger starter.
@@ -3591,18 +3607,16 @@ the CHECK instead of quietly making the help page lie.
         a 7-card deck looks like one at a glance.
       * The seven that have not logged in still read `deck_repair_version = -` with 7-13 card
         decks (`Caps2` 12, `CapsUndeadBarb` 13). They will repair on next login. Correct by design.
-- [ ] **Feel check the rest change.** `REST_HEAL_MIN/MAX` replaced EIGHT sites, so meditate and
-      companion regen scaled along with rest and mages got it twice. Owner: Meditate is the
-      deliberate lever if mages come back too strong — check that BEFORE touching mage design.
+- [→] **Feel check the rest change** — moved to **THE BALANCE BATCH** (2026-09-18).
 
 ## Phase 2 — balance follow-through (cheap audits, no chain)
 
-- [ ] **Sage 1.3%, Barbarian 1.2%, Ranger 1.9%** death per encounter against 0.1-0.7% for the rest.
-      Real but not broken, and all three clear the endgame bar. Per-class levers only.
-- [ ] **The win targets at high level predate retreat.** 60% was chosen when a "loss" meant a death;
-      it now mostly means a retreat. Revisit alongside the Unburied, since extra lives change what
-      survival means. `refcal` REPORTS death rate now but cannot steer by it — at a ~0.3% target
-      there is under one expected death per sample, so there is no signal to correct against.
+- [→] **Sage / Barbarian / Ranger death per encounter** — moved to **THE BALANCE BATCH**
+      (2026-09-18).
+- [→] **The high-level win targets predate retreat** — moved to **THE BALANCE BATCH** (2026-09-18).
+      Kept here because it explains the instrument: `refcal` REPORTS death rate but cannot steer by
+      it — at a ~0.3% target there is under one expected death per sample, so there is no signal to
+      correct against.
 - [x] **Magic Bolt damage vs investment — RESOLVED 2026-09-07** (`magecost` audit, n=40 through the
       real cast path). It is exactly the design asked for: **highest single-cast damage at every
       level** (452 / 1,743 / 6,368 at L10 / L50 / L200) and the **least mana-efficient card from L50
