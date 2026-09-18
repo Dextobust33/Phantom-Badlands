@@ -23,22 +23,50 @@ func _init():
 
 	print("
 === WIRED vs MERELY DEFINED ===")
-	# An honest list of what combat code actually consumes today. Anything in the pool but NOT
-	# here would be offered to the player and do nothing - the exact defect this redesign exists
-	# to remove - so the gap must be visible rather than assumed away.
-	var wired := ["power","efficiency","rider","duration",
-		"executioner","opener","leeching","momentum_feed","refund",
-		"overdraw","reckless","brittle","greedy","wild_swing","all_in","slow_burn",
-		"hair_trigger","gamblers_cut","sacrificial",
-		"concentrated","costly_vigil","fragile_ward","slow_cast","reckless_guard",
-		"swift","warding","unsettling",
-		"keen","preload","shared","bloodprice","provoking","unstable_hex"]
-	var pending: Array = []
+	# ⛑ THE LIST IS DERIVED, BECAUSE THE HAND-TYPED ONE LIED. This block used to carry a
+	# literal array of "wired" ids maintained by hand, and it had gone stale: it reported 23
+	# upgrades "NOT YET WIRED" while several of them were plainly consumed - `bulwark` is read at
+	# combat_manager.gd:7785, and the Executioner family at :8084. A stale list reads as a real
+	# finding, which is worse than no list at all: it sends someone to wire something twice.
+	#
+	# An upgrade is consumed by its QUOTED ID in combat code (`"executioner" in picks`,
+	# `card_upgrade_count(ability, "keen")`), so the honest derivation is to search the code that
+	# could consume one for the id, excluding the table that DEFINES them - a definition is not a
+	# use, and counting it would mark every upgrade wired forever.
+	#
+	# ⛑ AND THE TWO CLAIMS ARE KEPT APART. "The code mentions this id" is not "this upgrade
+	# measurably does something" - the damage section above is what PROVES the ten it covers. This
+	# section can only find the ones nothing reads at all, which is a floor, not a verdict.
+	var consumers: Array[String] = [
+		"res://shared/combat_manager.gd", "res://shared/character.gd", "res://server/server.gd",
+		"res://shared/card_gear.gd",
+	]
+	var code := ""
+	for f in consumers:
+		code += FileAccess.get_file_as_string(f)
+	var referenced: Array = []
+	var inert: Array = []
 	for u in CU.UPGRADES:
-		if not (String(u["id"]) in wired):
-			pending.append(String(u["id"]))
-	print("  pool %d   wired %d   NOT YET WIRED %d" % [CU.UPGRADES.size(), wired.size(), pending.size()])
-	print("  pending: %s" % ", ".join(pending))
+		var uid := String(u["id"])
+		if code.find("\"%s\"" % uid) >= 0:
+			referenced.append(uid)
+		else:
+			inert.append(uid)
+	print("  pool %d   read by combat code %d   READ BY NOTHING %d" % [
+		CU.UPGRADES.size(), referenced.size(), inert.size()])
+	if inert.is_empty():
+		print("  every upgrade in the pool is read somewhere. (Read != proven; see the damage")
+		print("  table above, and upgrade_new_wired.gd / upgrade_triggers.gd, for what is PROVEN.)")
+	else:
+		# These are offered to a player and do nothing - the exact defect this redesign exists to
+		# remove - so it is a FAILURE, not a note.
+		print("  *** OFFERED BUT READ BY NOTHING: %s" % ", ".join(inert))
+	print("")
+	if not inert.is_empty():
+		print("[PROBE] FAIL %d upgrade(s) are in the pool and read by no combat code" % inert.size())
+		quit(1)
+		return
+	print("[PROBE] PASS every offered upgrade is read by combat code")
 	quit()
 
 func _mean(cm, CharacterScript, md, picks: Array, n: int, hurt_monster: bool) -> float:

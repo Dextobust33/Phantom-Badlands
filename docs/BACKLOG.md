@@ -6009,13 +6009,23 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       26 rows, 0 drift; removing the fix makes 8 rows drift.
       Residual, minor: Magic Bolt at L60 reads 0.83x (card ~17% high), inside tolerance and
       identical on master.
-- [ ] **Two stale instruments.** (1) DONE 2026-09-15 - replaced by `card_face_truth.gd` and deleted. `card_vs_server.gd` reproduced the client's pre-server
-      fallback formulas "verbatim", so it prints "LIES" for a path the combat card no longer uses;
-      retire it or point it at `_estimate_ability_card_effect`'s server branch. (2)
-      `card_upgrade_effects.gd` reports 23 upgrades "not yet wired" from a HAND-TYPED list.
-      Several of those (the Reveals, Bulwark, Executioner-family triggers) are wired and proven by
-      `upgrade_new_wired.gd` / `upgrade_triggers.gd`. Derive the list from what actually fires,
-      or delete the section — a stale list reads as a real finding.
+- [x] **Two stale instruments — BOTH CLOSED.** (1) DONE 2026-09-15: `card_vs_server.gd` replaced
+      by `card_face_truth.gd` and deleted.
+      (2) **DONE 2026-09-18.** `card_upgrade_effects.gd` reported **23 upgrades "NOT YET WIRED"**
+      off a hand-typed array that had gone stale - and the number was not merely out of date, it
+      was **entirely false**: measured against the code, all **56 of 56** upgrades in the pool are
+      read by combat code. `bulwark` is consumed at `combat_manager.gd:7785` and the
+      Executioner family at `:8084`, neither of which appeared in the hand list.
+      The list is now DERIVED: an upgrade is consumed by its quoted id, so the section searches the
+      four files that could consume one and excludes the table that DEFINES them (a definition is
+      not a use, and counting it would mark everything wired forever).
+      **It also FAILS now instead of printing a note** - an upgrade offered to a player that does
+      nothing is the exact defect the redesign exists to remove, so it is not a remark.
+      **Proven to fire** by injecting an inert upgrade into the pool: `pool 57 / read 56 / READ BY
+      NOTHING 1`, named and failed. Restored and green.
+      ⛑ The two claims are deliberately kept apart in the output: *"the code reads this id"* is
+      not *"this upgrade measurably does something"*. The damage table above it proves ten of them;
+      this section can only find the ones nothing reads at all, which is a floor, not a verdict.
 - [x] **Knight +15% damage and Mentee +50% XP — WIRED 2026-09-18.** Both were promised in the
       title UI, the help page and `titles.gd`, and all three getters had **no callers** - a player
       knighted by the High King got a blue prefix and nothing else.
