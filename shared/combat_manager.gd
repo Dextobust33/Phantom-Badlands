@@ -3035,6 +3035,23 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var ethereal_dodge = ABILITY_ETHEREAL in abilities and not is_vanished
 	if ethereal_dodge and randi() % 100 < 33:
 		messages.append("[color=#FF00FF]Your attack passes through the ethereal %s![/color]" % monster.name)
+		# ⛑ THE COMPANION STILL FIGHTS. This branch returns before the companion acts, so a
+		# monster the PLAYER could not touch also silently cost the companion its turn - with
+		# nothing in the log to say why. Owner 2026-09-18, on a Harpy (Ethereal): *"Companion has
+		# its own line but in the fight with the harpy he didn't get an action round 1."*
+		#
+		# Owner's call on the general question: the companion acts when the PLAYER simply misses
+		# or is dodged, and still loses its turn to states that incapacitate the player himself
+		# (webbed, lulled, charmed, madness) - those read as "you are not fighting this round",
+		# and this one reads as "your blow did not land", which is a different thing. An ordinary
+		# miss already falls through to the companion; only this dodge returned early, which is
+		# why it was the one case that looked broken.
+		#
+		# The monster's turn is deliberately NOT added here: that would change how much damage a
+		# player takes, not just how much the companion deals, and it is not what was asked for.
+		var _eth_ca: int = messages.size()
+		_process_companion_attack(combat, messages)
+		_indent_new_messages(messages, _eth_ca, "   ")
 		combat.player_can_act = false
 		return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 

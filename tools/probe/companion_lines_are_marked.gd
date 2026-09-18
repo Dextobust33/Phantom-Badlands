@@ -62,9 +62,16 @@ func _init() -> void:
 	print("\n===== BOTH CALLERS GO THROUGH IT =====")
 	# Untyped-argument form, so this counts CALLS only: the definition spells its parameters
 	# `(combat: Dictionary, messages: Array)` and the wrapper's own call goes to `..._body`.
+	#
+	# ⛑ >= 2, NOT == 2. This was pinned at exactly two and went red the moment a THIRD caller
+	# was added on purpose - the ethereal-dodge branch, so a companion no longer loses its turn
+	# to a dodge the player could not have avoided. Counting how many things USE the function is
+	# not the invariant; the invariant is that the function marks its own lines, which is what
+	# makes a new caller safe to add. `companion_trail.gd` carries the same correction for the
+	# same reason, which is how this one should have been written to begin with.
 	var callers := src.count("_process_companion_attack(combat, ")
-	ck(callers == 2,
-		"exactly two callers - the attack path and the cast path (found %d)" % callers)
+	ck(callers >= 2,
+		"the attack path, the cast path and any later caller go through it (found %d)" % callers)
 	ck(src.find("_process_companion_attack(combat, result.messages)") >= 0,
 		"the CAST path calls the wrapper (this is the site that used to forget)")
 	ck(src.find("_process_companion_attack(combat, messages)\n") >= 0,
