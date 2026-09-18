@@ -5444,6 +5444,26 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       the set the owner has just said is wrong. Re-deriving them is part of this item, not a
       separate one.
 
+      ☑ **STEP 1 STARTED 2026-09-17 (source enumeration only — no runtime yet).**
+      **45 `add_valor` sites against 26 `spend_valor` sites**, which supports the owner's instinct
+      — but the raw counts are the WRONG UNIT and should not be quoted as a finding: a market
+      sale TRANSFERS valor between two players and a refund REVERSES a spend, and neither mints
+      anything. The classification into mint / transfer / refund is the actual step 1 and is not
+      done.
+
+      ⛑ **TWO SINKS ARE HIDING INSIDE THE FAUCET.** `add_valor(account_id, -price)` (12446) and
+      `add_valor(account_id, -GUARD_HIRE_VALOR_COST)` (29720) spend by adding a negative. That
+      matters beyond bookkeeping: `spend_valor` returns false when you cannot afford it and
+      `add_valor` has no such check, so these two can take an account NEGATIVE. Worth confirming
+      before the pricing pass, because a price that can overdraft is not a price.
+
+      ☑ **AND IT FOUND A LIVE BUG — FIXED.** `add_valor(peer_id, hoard_valor)` passed the int
+      peer id where `account_id: String` was expected, so the **Ancient Dragon Lair's gold-hoard
+      tile paid nobody** while cheerfully printing *"+7 Valor"* to the player. Both sibling tiles
+      (SCATTERED_LOOT, TRINKET_PILE) did it correctly; this was the odd one out and the biggest of
+      the three payouts. Found by a static scan for valor calls whose first argument is not
+      account-shaped — it flagged exactly two sites and cleared the other.
+
       What the pass has to cover, in order:
       1. **Enumerate the sinks and measure which are ever used.** Blacksmith repair, healer,
          recharge, home stones, bounties, Sanctuary upgrades, clan vault, duel stakes. The owner's

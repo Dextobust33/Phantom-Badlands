@@ -31143,7 +31143,16 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# 5-10 Valor (consumed). T6 valor payout — bigger than goblin/kobold tier.
 	elif tile == DungeonDatabaseScript.TileType.GOLD_HOARD:
 		var hoard_valor = randi_range(5, 10)
-		persistence.add_valor(peer_id, hoard_valor)
+		# ⛑ `peer_id`, NOT an account id - the dragon hoard paid NOBODY. `add_valor` takes
+		# `account_id: String` and this passed the int peer id, while the very next line sent
+		# the player "+7 Valor". Both sibling tiles two screens up (SCATTERED_LOOT,
+		# TRINKET_PILE) do `peers[peer_id].account_id` correctly; this was the odd one out,
+		# and it is the BIGGEST of the three payouts (5-10 vs 1-5 and 2-4) in the Ancient
+		# Dragon Lair. Found 2026-09-17 while enumerating valor faucets for the economy pass
+		# - a static scan for valor calls whose first argument is not account-shaped, which
+		# flagged exactly two sites and cleared the other.
+		var account_id_hoard = peers[peer_id].account_id
+		persistence.add_valor(account_id_hoard, hoard_valor)
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]You snatch a handful of dragon-hoard coins ([color=#FFAA00]+%d Valor[/color]).[/color]" % hoard_valor})
 	# Audit #5 Slice 18 theme tag — Golem Foundry MOLTEN_SLAG +1 step cost.
