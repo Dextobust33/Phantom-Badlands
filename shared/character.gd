@@ -760,18 +760,38 @@ func apply_specialist_service(service_id: String, camp_steps: int = 25) -> Strin
 				return "[color=#888888]Nothing there needs mending.[/color]"
 			return "[color=#00FF00]You work the wear out of %d piece(s) of gear.[/color]" % mended
 		"field_remedy":
+			# MIRRORS THE POST HEALER WHOLE. Owner 2026-09-18: Field Remedy and Recharge "seem
+			# rather identical" - and they were worse than that. The post healer's single service
+			# (server.gd, the block that prints "Recharge costs %d valor") cures poison, cures
+			# blindness, restores HP AND refills all three pools. I had split ONE post service in
+			# half and handed a half to each of two trades, so neither mirrored anything whole and
+			# the alchemist's half silently dropped blindness.
+			#
+			# Healing is on-identity for the potion-maker, so the alchemist takes the whole thing.
 			var before: int = current_hp
-			heal(get_total_max_hp())
-			var cured: bool = poison_active
-			poison_active = false
-			poison_turns_remaining = 0
+			var cured: Array = []
+			if poison_active:
+				cure_poison()
+				cured.append("poison")
+			if blind_active:
+				cure_blind()
+				cured.append("blindness")
+			var was_short: bool = (current_hp < get_total_max_hp()
+				or current_mana < get_total_max_mana()
+				or current_stamina < get_total_max_stamina()
+				or current_energy < get_total_max_energy())
+			restore_all_resources()
 			var gained: int = current_hp - before
-			if gained <= 0 and not cured:
+			if cured.is_empty() and not was_short:
 				return "[color=#888888]They are already whole.[/color]"
-			if gained <= 0:
-				return "[color=#00FF00]You draw the poison out of them.[/color]"
-			return "[color=#00FF00]You close their wounds (+%d HP)%s.[/color]" % [
-				gained, " and draw out the poison" if cured else ""]
+			var parts: Array = []
+			if gained > 0:
+				parts.append("+%d HP" % gained)
+			if was_short:
+				parts.append("reserves full")
+			for c in cured:
+				parts.append("%s cured" % c)
+			return "[color=#00FF00]You set them right again (%s).[/color]" % ", ".join(parts)
 		"recharge":
 			var filled: bool = false
 			if current_mana < get_total_max_mana():

@@ -7729,6 +7729,56 @@ something was dropped, and it sat unnoticed for eleven days.
       `tools/probe/specialist_services.gd` (4 of 5 proven by executing them against a character in
       a known-bad state; both halves proven to fire by injecting the fault).
 
+      **⚑ OWNER 2026-09-18, on review: *"alchemist and enchanter service seem rather identical."***
+      Correct, and the cause was worse than similarity. The post healer's SINGLE service (the block
+      printing `"Recharge costs %d valor"`) cures poison, cures blindness, restores HP **and**
+      refills all three pools. Field Remedy and Recharge were **one post service cut in half**, one
+      half given to each trade — so neither mirrored anything whole, and the alchemist's half
+      silently dropped blindness.
+      **Done:** Field Remedy now mirrors the healer completely and belongs to the **alchemist**
+      (healing is on-identity for a potion-maker). Probe extended to blind + drain the subject, so
+      it can tell a complete mirror from the half that shipped; proven by re-injecting that half.
+      **Open:** the enchanter now needs a service of its own — see the reroll loop below. Its
+      Recharge is redundant until then.
+
+      **⚑ THREE `specialist_only` RECIPES ARE DEAD WEIGHT — measured 2026-09-18, owner's challenge.**
+      Owner asked whether transmute/essence and disenchant are worth anything. They are not:
+      * **`_craft_disenchant`** (enchanter) — *returns no runes*. Destroys your **lowest-level**
+        item (it picks, not you) for `max(1, int(3 * recovery_pct))` ore — **1 ore at Standard** —
+        plus a chance of one enchant material. Ordinary salvage returns **~50% of the item's full
+        crafting materials** including per-affix enchant mats, on an item you choose. Strictly
+        worse than a free universal action.
+      * **`_craft_render`** (alchemist, parts→essence) — `SALVAGE_ENCHANT_TIERS` already hands out
+        magic_dust → arcane_crystal → soul_shard → void_essence → primordial_spark straight from
+        salvage. `void_essence` is a 1–2 count ingredient in a handful of top-tier recipes.
+      * **`_craft_transmute`** (alchemist, 5x T(N) → 2x T(N+1)) — same problem, competing with a
+        free universal source.
+      Cull or re-point them in the crafter identity pass. **And note `reforge_weapon`/`reforge_armor`
+      are RECIPES, not the town blacksmith** — upgrading already lives in crafting, which is where
+      the owner wants it. The town NPC's `pending_blacksmith_upgrades` is the separate thing still
+      to remove.
+
+      **⚑ NEXT — AFFIX REROLL LOOP (owner's idea, 2026-09-18).** *"making some type of loop that
+      players can participate in to roll off a stat they don't like into something they do like
+      (kind of like Diablo 3). It should be possible to do in town but easier to do through
+      crafting focused individuals maybe?"*
+      This is the **enchanter's identity** and it replaces Recharge. The town/specialist split is
+      the same mirror structure as the other four services, and the town route is what satisfies
+      the no-gating rule without needing a paired item:
+
+      | | town | committed enchanter |
+      |---|---|---|
+      | where | a post station | anywhere |
+      | cost | valor + materials | free, 180s cooldown |
+      | target | yourself | yourself **or an adjacent ally** |
+
+      Plumbing that already exists: `_craft_reforge` rerolls attack/defense ±10%;
+      `_normalize_stat_key` + `SALVAGE_AFFIX_SKIP_KEYS` already enumerate an item's affixes
+      cleanly; dropped items keep stats in `affixes`, crafted in `base_stats` (do NOT assume one).
+      **Design question to settle first:** D3 rerolls one affix into a *different stat* (pick from
+      2 offers, repeatable at rising cost) — that is the version that answers "roll off a stat I
+      don't like". Rerolling the same stat's *value* is just `_craft_reforge` again.
+
       ⛑ **Two traps found while building it, both worth keeping:**
       * **Chart a Course nearly retired a Sanctuary upgrade.** The first version pointed at the
         nearest *unvisited post* — which is exactly the **Sanctuary Compass**, a permanent Valor

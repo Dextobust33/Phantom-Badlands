@@ -109,8 +109,16 @@ func _init() -> void:
 	ch2.current_hp = maxi(1, int(ch2.get_total_max_hp() / 4))
 	ch2.poison_active = true
 	ch2.poison_turns_remaining = 5
+	# Blinded and drained too, because the post healer fixes all of it and a probe that only
+	# poisons cannot tell a complete mirror from the half that shipped first.
+	ch2.blind_active = true
+	ch2.current_mana = 0
 	var hp_before: int = ch2.current_hp
 	var msg_remedy := ch2.apply_specialist_service("field_remedy")
+	if ch2.blind_active:
+		_fail("field_remedy left blindness uncured -- the post healer cures it")
+	if ch2.current_mana < ch2.get_total_max_mana():
+		_fail("field_remedy did not refill mana -- the post healer does")
 	if ch2.current_hp <= hp_before:
 		_fail("field_remedy did not raise HP (%d -> %d)" % [hp_before, ch2.current_hp])
 	elif ch2.poison_active or ch2.poison_turns_remaining > 0:
