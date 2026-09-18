@@ -7584,12 +7584,20 @@ something was dropped, and it sat unnoticed for eleven days.
         better fit than +20%: both outcomes are things a player can see in their inventory, where
         `1.25x on a flat restore` is invisible. It also pairs with the **cheaper material cost**
         specialisation the owner picked.
-      * **The combat item list must say what an item GIVES, computed.** Owner: *"the item info in
-        combat needs improved so players can see what they do at a glance, Also shouldn't require
-        them trying to do math, should just tell how much it will give them back."* So the list
-        shows the ACTUAL number for this character (`restores 340 HP`), never a percentage the
-        player has to apply to their own max. This is the same fault as the old stat descriptions:
-        a number the player must compute is a number they do not have.
+      * **✅ THE COMBAT ITEM LIST SAYS WHAT AN ITEM GIVES — DONE 2026-09-18.** Owner: *"the item
+        info in combat needs improved so players can see what they do at a glance, Also shouldn't
+        require them trying to do math, should just tell how much it will give them back."*
+        Each row now reads `Greater Health Potion  x3   — +600 HP`, computed for THAT character.
+        ⛑ **The number comes from `DropTables.consumable_heal_amount`, the same static the server
+        calls in `handle_use_item`** - so what is shown is what is granted. Re-deriving the formula
+        client-side would have been easy and wrong: a potion carries a FLAT part AND a percentage
+        part together (tier 4 is `healing: 100` plus `heal_pct: 25`), which is exactly the sum a
+        re-derivation drops half of. Measured: the same potion restores 150 HP to a 200 HP
+        character and 600 to a 2000 HP one.
+        A companion-targeted heal names its target, because `+340 HP` on a revive would be actively
+        misleading mid-fight. Probe: `tools/probe/combat_item_gain.gd`.
+        This is the same fault as the old stat descriptions: a number the player must compute is a
+        number they do not have.
 
       **⚑ SPECIALISATION SHOULD BUY A SERVICE, NOT JUST A NUMBER — owner 2026-09-18.**
       *"We could possibly make it where if players choose to make a crafting profession their focus

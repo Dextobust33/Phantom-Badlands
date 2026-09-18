@@ -16775,6 +16775,10 @@ func _display_combat_usable_items_page():
 			"color": _get_rarity_color(str(item.get("rarity", "common"))),
 			"qty": int(item.get("quantity", 1)),
 			"tooltip": tooltip_desc,
+			# ⚑ WHAT IT GIVES *YOU*, WORKED OUT. Owner 2026-09-18: *"the item info in combat
+			# needs improved so players can see what they do at a glance. Also shouldn't require
+			# them trying to do math, should just tell how much it will give them back."*
+			"gain": _combat_item_gain_line(item),
 		})
 
 	# v0.9.428 — drop the .visible guard. At combat START there's a one-frame
@@ -30522,6 +30526,45 @@ func _get_item_type_description(item_type: String) -> String:
 		return "Treasure - Valuable gem"
 	else:
 		return item_type.replace("_", " ").capitalize()
+
+func _combat_item_gain_line(item: Dictionary) -> String:
+	"""What this item will actually restore for THIS character, as a number.
+
+	⛑ THE PLAYER SHOULD NOT BE DOING THE ARITHMETIC. A healing potion is authored as a tier with
+	a flat part AND a percentage part (`healing: 100` plus `heal_pct: 25`), so the description
+	said "restores 25% of max HP" and the player had to multiply that by their own maximum, in
+	combat, from a list that shows only names. Owner: *"shouldn't require them trying to do math,
+	should just tell how much it will give them back."*
+
+	⛑ IT CALLS THE SERVER'S OWN FUNCTION. `DropTables.consumable_heal_amount` is static and is
+	the same call `handle_use_item` makes, so the number shown is the number granted - not a
+	client-side re-derivation that can drift from it. Reproducing the formula here is precisely
+	how this codebase has produced confidently wrong numbers before.
+
+	Returns "" for anything whose gain is not a simple restore; those keep their hover text."""
+	var effect = item.get("effect", null)
+	if not (effect is Dictionary):
+		return ""
+	var tier: int = int(item.get("tier", 0))
+	if effect.has("heal"):
+		var target_is_companion: bool = String(effect.get("target", "")) == "companion"
+		var pool: int = int(character_data.get("max_hp", 0))
+		if target_is_companion:
+			pool = int(character_data.get("companion_max_hp", pool))
+		if pool <= 0:
+			return ""
+		var amt: int = DropTables.consumable_heal_amount(item, effect, pool, tier)
+		if amt <= 0:
+			return ""
+		# Say whose HP, or a companion potion reads as a self-heal in the heat of a fight.
+		return "+%d HP to your companion" % amt if target_is_companion else "+%d HP" % amt
+	if effect.has("resource"):
+		var rpool: int = int(character_data.get("max_resource", 0))
+		if rpool <= 0:
+			return ""
+		var ramt: int = DropTables.consumable_resource_amount(item, effect, rpool, tier)
+		return "+%d %s" % [ramt, String(character_data.get("resource_name", "resource"))] if ramt > 0 else ""
+	return ""
 
 func _get_item_effect_description(item_type: String, level: int, rarity: String) -> String:
 	"""Get a description of what the item does (matches character.gd bonuses)"""

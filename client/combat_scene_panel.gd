@@ -5823,7 +5823,16 @@ func show_item_picker(title: String, items_on_page: Array, page: int, total_page
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.text = "[%d]  %s%s" % [slot, name, qty_text]
+		# ⚑ THE GAIN IS ON THE ROW, NOT ONLY IN THE TOOLTIP. Owner 2026-09-18: *"the item info
+		# in combat needs improved so players can see what they do at a glance."* This list shows
+		# NAMES, so choosing under pressure meant hovering each one to remember what it did - and
+		# 19 of the 35 craftable consumables cannot be told apart by name at all.
+		#
+		# The caller computes the number for THIS character, so the row says "+340 HP" rather than
+		# "restores 25% of max HP" and the player does no arithmetic mid-fight.
+		var gain := str(entry.get("gain", ""))
+		var gain_text := ("   — %s" % gain) if gain != "" else ""
+		btn.text = "[%d]  %s%s%s" % [slot, name, qty_text, gain_text]
 		# v0.9.429 — hover tooltip with the same effect description the
 		# regular inventory shows on inspect. Caller passes "tooltip" in the
 		# entry dict.
