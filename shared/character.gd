@@ -1763,6 +1763,21 @@ static func _get_rarity_multiplier(rarity: String) -> float:
 		"artifact": return 2.5
 		_: return 1.0
 
+## The inverse of `_get_effective_item_level`: what raw level yields this effective level?
+##
+## ⛑ IT EXISTS SO A REWARD CAN BE STATED IN THE UNIT THAT MATTERS. Granting "+1 item level" means
+## something completely different at level 20 and level 300 - the damping curve is logarithmic, so
+## +9 raw levels is +9 effective at L20 and +0.4 at L300. Measured through the real aggregator, a
+## nine-upgrade wish was worth +44% at L20 and **+0%** at L300: a reward that silently stopped
+## being one. Owner 2026-09-18: *"The balance should be in how often you can actually get a wish,
+## not in making it useless."*
+static func raw_level_for_effective(effective: float) -> int:
+	if effective <= 50.0:
+		return maxi(1, int(round(effective)))
+	# Invert 50 + 15 * log2(L - 49)  ->  L = 49 + 2^((E - 50) / 15)
+	return int(round(49.0 + pow(2.0, (effective - 50.0) / 15.0)))
+
+
 static func _get_effective_item_level(item_level: int) -> float:
 	"""Apply diminishing returns for items above level 50.
 	   Items 1-50: full linear scaling. Items 51+: 50 + 15 * log2(level - 49).

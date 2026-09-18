@@ -8003,10 +8003,50 @@ func _apply_wish_upgrades(character: Character, upgrade_count: int) -> String:
 		levels_gained
 	]
 
+## One upgrade raises an item's EFFECTIVE level by this fraction, and no item may ever gain more
+## than WISH_MAX_GAIN_FRACTION of the effective level it started with.
+##
+## ⛑ PROPORTIONAL, BECAUSE A FLAT GRANT IS NOT THE SAME REWARD TWICE. Granting a fixed number of
+## effective levels is worth +44% on a level-20 item and +5% on a level-300 one - the same reward
+## on paper, a fraction of it in practice, and it fades exactly for the players who fight the
+## monsters that grant wishes. Proportional means a nine-upgrade wish is worth ~+19% at any level.
+##
+## Both are TUNING dials: they set how big the reward is. The safety property is that the second
+## one exists at all, so a repeatable reward cannot run away - the lesson of the three uncapped
+## paths this sweep removed.
+const WISH_EFFECTIVE_STEP := 0.03        # +3% effective level per upgrade
+const WISH_MAX_GAIN_FRACTION := 0.50     # an item tops out at 1.5x its natural effective level
+
+
 func _upgrade_single_item(item: Dictionary) -> Dictionary:
 	"""Apply a single upgrade to an item"""
-	var current_level = item.get("level", 1)
-	var new_level = current_level + 1
+	# ⚑ ONE UPGRADE = ONE EFFECTIVE LEVEL, not one raw level. Owner 2026-09-18: *"Ensure you
+	# aren't destroying our loot rewards. The wish isn't free, you have to kill a monster that can
+	# grant it. The balance should be in how often you can actually get a wish, not in making it
+	# useless."*
+	#
+	# ⛑ GRANTING RAW LEVELS MADE THE REWARD EVAPORATE WITH PROGRESSION. `_get_effective_item_level`
+	# is logarithmic above 50, so +9 raw levels is +9 effective at L20 and +0.4 at L300. Measured
+	# through the real aggregator, a nine-upgrade wish was worth **+44% at L20 and +0% at L300** -
+	# a headline reward that quietly became nothing for exactly the players who fight the monsters
+	# that grant it.
+	#
+	# Stating the grant in EFFECTIVE levels makes a wish worth winning at any level, and leaves the
+	# pacing where the owner wants it: how often a `wish_granter` appears, not how little it gives.
+	var current_level = int(item.get("level", 1))
+	var cur_eff: float = Character._get_effective_item_level(current_level)
+	# The item's NATURAL effective level, recorded once, so the ceiling is measured against what
+	# the item was before any wish touched it rather than against its already-boosted self.
+	if not item.has("wish_base_effective"):
+		item["wish_base_effective"] = cur_eff
+	var base_eff: float = float(item["wish_base_effective"])
+	var ceiling: float = base_eff * (1.0 + WISH_MAX_GAIN_FRACTION)
+	# ⛑ CAPPED PER ITEM, because a wish is repeatable (10% per wish_granter kill) and anything
+	# repeatable that adds to the same item needs a ceiling.
+	if cur_eff >= ceiling:
+		return item
+	var target_eff: float = minf(ceiling, cur_eff * (1.0 + WISH_EFFECTIVE_STEP))
+	var new_level: int = maxi(current_level + 1, Character.raw_level_for_effective(target_eff))
 	item["level"] = new_level
 
 	# ⛑ THE LEVEL BUMP ABOVE IS THE WHOLE UPGRADE, AND IT USED NOT TO BE.

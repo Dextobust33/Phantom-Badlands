@@ -7956,6 +7956,39 @@ something was dropped, and it sat unnoticed for eleven days.
       this item", one damped and one not, was the whole fault; the raw writes are gone and the
       damped route is the only one.
 
+      **⚑ AND THE OWNER PUSHED BACK, CORRECTLY — 2026-09-18.** *"So what does the wish do now?
+      Ensure you aren't destroying our loot rewards. The wish isn't free, you have to kill a monster
+      that can grant it. The balance should be in how often you can actually get a wish, not in
+      making it useless."*
+
+      Measured through the real aggregator (`tools/probe/wish_upgrade_worth.gd`, which equips the
+      item and diffs what the player gets):
+
+      * **Nothing was destroyed.** 4 of 6 item kinds are byte-identical before and after. **Dropped
+        gear lost nothing at all**, confirming those writes were dead for it. Only crafted armour
+        (−19%) and crafted boots (−7%) changed — the two that had been compounding undamped.
+      * **But the reward was already broken at high level, and not by me.** A nine-upgrade wish was
+        worth **+44% at item level 20 and +0% at level 300**, because `+1 raw level` barely moves
+        `effective_level` once the log damping bites. A headline reward that quietly became nothing
+        for exactly the players who fight the monsters that grant it.
+
+      **Fixed by stating the grant in the unit that matters.** One upgrade now raises **effective**
+      level by 3% (`Character.raw_level_for_effective` inverts the damping curve), capped at **+50%
+      of the item's natural effective level**, recorded before any wish touched it:
+
+      | item level | was worth | now worth (×9) |
+      |---|---|---|
+      | 5 | +175% | +58% |
+      | 20 | +44% | +44% |
+      | 50 | +98% | +60% |
+      | 100 | +3% | **+30%** |
+      | 300 | +0% | **+30%** |
+
+      `WISH_EFFECTIVE_STEP` and `WISH_MAX_GAIN_FRACTION` are **tuning dials** — they set how big
+      the reward is, and the owner should move them freely. The *safety* property is only that the
+      cap exists, so a repeatable reward cannot run away. Pacing stays where the owner put it:
+      how often a `wish_granter` shows up, not how little it gives.
+
       ⛑ **AND THE PROBE CAUGHT A WRONG NUMBER THAT HAD ALREADY SPREAD.** Printing
       `_get_effective_item_level`'s real output beside its docstring showed the docstring was
       **50 too low in every worked example** — it computed `15 * log2(51) = 85` and dropped the
