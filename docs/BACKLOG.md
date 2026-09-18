@@ -541,7 +541,37 @@ Asked because the arc had run out of defects and into design. All four answered.
       `gold_hoarder` is deliberately left out: its constant marks it legacy with no effect since
       gold was removed, and a chip promising something the game no longer does is worse than none.
 
-- [ ] **THE ABILITY CARD YOU PLAY SHOULD LOOK LIKE IT DID SOMETHING.** Owner 2026-09-14:
+- [x] **DONE 2026-09-17 — both halves.** The card lifts and flares when played, and a ghost of
+      it flies to the exact log row its effect was written into. Measured landing: **wanted
+      y=279, achieved y=279**, from y=1468.
+
+      ⛑ **HOOKED AT THE COMMIT POINT, NOT THE CLICK.** A card is playable by click OR by its
+      action-bar hotkey, and the hotkey is what most people use. `send_combat_command` is where
+      both routes meet.
+
+      ⛑ **ARMED BY THE PLAY, FIRED BY THE LINE.** The result arrives through the paced combat
+      queue hundreds of ms later, so the row to land on does not exist at play time. The item
+      warned about exactly this (*"an animation that outruns or lags the line it belongs to will
+      read as a bug"*), so playing ARMS and the first player-classified line FIRES.
+
+      ⛑ **THREE FACTS A READ GETS WRONG, all measured first:** the visible log is
+      `_battle_log_band`, not `_log_label` (which is allocated, never shown, and measures 0x0 -
+      aiming at it would fly every card to the screen corner); `get_paragraph_offset()` returns
+      clean 20px steps so an index really is a row; and lines carry no actor tag at the call site
+      (`append_log_actor` has **no callers**), so "the player's line" is `_classify_overlay_actor`'s
+      judgement.
+
+      **Degrades as the item required:** one ghost at a time, a single Label rather than a rebuilt
+      card face, freed on arrival, duration scaled by the player's combat-speed control, and the
+      landing point clamped into the visible strip so a scrolled-away row cannot drag it off-panel.
+      ⚑ There is **no "effects off" preference** in the game - the item assumes one exists. I
+      nearly gated on an invented `combat_fx_enabled`; it failed to parse, which caught it.
+
+      Probes: `tools/probe/card_flourish.gd`, `tools/probe/card_flight.gd`. Both sample MID-flight
+      — at the end the card is back at rest and the ghost is freed by design, so an end-state
+      check passes just as happily when nothing ever happened.
+
+      Was: **THE ABILITY CARD YOU PLAY SHOULD LOOK LIKE IT DID SOMETHING.** Owner 2026-09-14:
       *"I want to add in a little more visuals to the ability card that a player select in combat.
       It would be nice for it to have a cool animation showing it is being used and then possibly
       an animation that shoots over to the combat log and lands exactly where its effects are

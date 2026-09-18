@@ -13462,6 +13462,11 @@ func send_combat_command(command: String, target: String = ""):
 		# the game to honour - the item assumes one exists; it does not, and inventing a
 		# flag nobody can set would be worse than using the knob that is really there.
 			combat_scene_panel.flourish_card(base_cmd, combat_speed)
+			# ...and ARM the flight. It does not launch here: the card's result arrives through
+			# the paced combat queue a few hundred ms later, so the log row to land on does not
+			# exist yet. The panel fires it when the player's line actually appears.
+			if combat_scene_panel.has_method("arm_card_flight"):
+				combat_scene_panel.arm_card_flight(base_cmd, combat_speed)
 
 	# #76 — lock in for this party round: flip to waiting, block re-submit, and post a
 	# PERSISTENT locked-in line to the combat panel log (game_output gets wiped by the

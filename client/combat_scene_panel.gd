@@ -4464,6 +4464,138 @@ const CARD_FLOURISH_SCALE := 1.10
 var _card_flourish_tweens: Dictionary = {}
 
 
+## ⚑ THE CARD'S EFFECT FLIES TO THE LINE IT WROTE.
+##
+## Owner 2026-09-14: *"an animation that shoots over to the combat log and lands exactly where its
+## effects are populated in the log... right now a number appears in a scrolling list and nothing
+## connects it to the button you pressed."*
+##
+## ⛑ ARMED BY THE PLAY, FIRED BY THE LINE. A card's result arrives through the paced combat
+## queue, not when you click, so the row to land on does not exist at play time. `_flight_armed`
+## holds the card between the two.
+const CARD_FLIGHT_SEC := 0.55
+const CARD_FLIGHT_FADE := 0.22
+
+var _flight_armed: String = ""
+var _flight_from: Rect2 = Rect2()
+var _flight_ghost: Control = null
+var _flight_tween: Tween = null
+## The player's combat-speed setting, captured when the card is played so the flight matches the
+## pace of the log it is chasing.
+var _flight_speed: float = 1.0
+
+
+func arm_card_flight(card_name: String, speed: float = 1.0) -> void:
+	"""Remember that this card was played, and WHERE it sat when it was.
+
+	The hand re-deals between rounds, so the cell the card lived in may be gone or showing something
+	else by the time the result lands. The rect is snapshotted now rather than looked up later."""
+	_flight_armed = ""
+	_flight_speed = maxf(speed, 0.25)
+	# ⛑ NO VISIBILITY CHECK HERE - ARMING IS ONLY REMEMBERING. The guard belongs at
+	# FIRE time, where a ghost would actually be added to a hidden panel; refusing to
+	# remember is pointless, and it made the feature untestable because the client hides
+	# this panel every frame while no fight is running.
+	if card_name == "":
+		return
+	var base := Character.card_base(card_name)
+	for cell in _hand_cells:
+		if cell == null or not is_instance_valid(cell) or not cell.visible:
+			continue
+		if Character.card_base(str(cell.get_meta("card_name", ""))) != base:
+			continue
+		_flight_armed = base
+		_flight_from = Rect2(cell.global_position, cell.size)
+		return
+
+
+func _fire_card_flight(paragraph_index: int, speed: float = 1.0) -> void:
+	"""Send a ghost of the armed card to the log row that just received its effect."""
+	var card := _flight_armed
+	_flight_armed = ""
+	if card == "" or not visible:
+		return
+	if _battle_log_band == null or not is_instance_valid(_battle_log_band):
+		return
+	if _flight_from.size.x <= 0.0:
+		return
+
+	# ⛑ THE VISIBLE LOG IS THE BAND. `_log_label` is allocated but never added to the on-screen
+	# tree - it measures 0x0 - so aiming at it would fly every card to the top-left corner.
+	var band := _battle_log_band
+	var idx: int = clampi(paragraph_index, 0, maxi(0, band.get_paragraph_count() - 1))
+	var row_y: float = band.get_paragraph_offset(idx)
+	var target := Vector2(band.global_position.x + 24.0, band.global_position.y + row_y)
+	# The band scrolls; a row above the fold would drag the ghost off the panel, so the landing
+	# point is clamped into the visible strip rather than followed out of it.
+	if _battle_log_scroll != null and is_instance_valid(_battle_log_scroll):
+		target.y -= float(_battle_log_scroll.scroll_vertical)
+		target.y = clampf(target.y, band.global_position.y,
+			band.global_position.y + _battle_log_scroll.size.y)
+
+	_kill_card_flight()
+	var ghost := _build_flight_ghost(card)
+	if ghost == null:
+		return
+	add_child(ghost)
+	ghost.global_position = _flight_from.position
+	_flight_ghost = ghost
+
+	var dur: float = maxf(CARD_FLIGHT_SEC / maxf(speed, 0.25), 0.2)
+	var tw := create_tween()
+	_flight_tween = tw
+	# Same idiom as `_play_hand_cycle` and the flourish: ONE parallel block sequenced by delays.
+	# `chain()` between two `set_parallel(true)` blocks advances the clock and applies nothing.
+	tw.set_parallel(true)
+	tw.tween_property(ghost, "global_position", target, dur).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(ghost, "scale", Vector2(0.45, 0.45), dur).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(ghost, "modulate:a", 0.0, CARD_FLIGHT_FADE).set_delay(maxf(dur - CARD_FLIGHT_FADE, 0.0))
+	# ⛑ A DELAYED CALLBACK, NOT `chain()`. I reached for `tw.chain().tween_callback(...)`
+	# here out of habit an hour after documenting that `chain()` between parallel blocks
+	# advances the clock and applies nothing. Cleanup that silently never runs would leak
+	# a ghost node onto the panel every single cast.
+	tw.tween_callback(_kill_card_flight).set_delay(dur)
+
+
+func _build_flight_ghost(card_name: String) -> Control:
+	"""A small chip carrying the card's name - not a copy of the card.
+
+	⛑ DELIBERATELY LIGHT. The item requires this to degrade: *"a round resolving several cards
+	at once must not end up with a screen full of flying cards."* One ghost exists at a time, it is
+	a single Label rather than a rebuilt card face, and it is destroyed on arrival."""
+	var lbl := Label.new()
+	lbl.text = _display_name_for_card(card_name)
+	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.92, 0.65))
+	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	lbl.add_theme_constant_override("outline_size", 5)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.z_index = 100
+	lbl.pivot_offset = Vector2(40, 10)
+	return lbl
+
+
+func _display_name_for_card(card_name: String) -> String:
+	"""The card's shown name, falling back to the id prettified - never an empty chip."""
+	for cell in _hand_cells:
+		if cell == null or not is_instance_valid(cell):
+			continue
+		if str(cell.get_meta("card_name", "")) == card_name:
+			var nm := str(cell.get_meta("display_name", ""))
+			if nm != "":
+				return nm
+	return card_name.replace("_", " ").capitalize()
+
+
+func _kill_card_flight() -> void:
+	if _flight_tween != null and is_instance_valid(_flight_tween):
+		_flight_tween.kill()
+	_flight_tween = null
+	if _flight_ghost != null and is_instance_valid(_flight_ghost):
+		_flight_ghost.queue_free()
+	_flight_ghost = null
+
+
 func flourish_card(card_name: String, speed: float = 1.0) -> void:
 	"""Play the "this card was just used" flourish on whichever cell holds it.
 
@@ -5778,6 +5910,12 @@ func append_log(bbcode_line: String) -> void:
 		_log_lines = _log_lines.slice(_log_lines.size() - LOG_LINE_LIMIT)
 	if is_inside_tree():
 		_refresh_log()
+	# ⚑ THE ARMED CARD FLIES TO **THIS** LINE, if this is the player's. Fired here
+	# rather than at play time because the result arrives through the paced queue
+	# hundreds of ms later - launching on the click would land on a row that does not
+	# exist yet, which the backlog item warns reads as a bug rather than a flourish.
+	if _flight_armed != "" and _classify_overlay_actor(bbcode_line) == "player":
+		_fire_card_flight(_log_lines.size() - 1, _flight_speed)
 	# v0.9.415 — during action_phase, also route to the per-actor overlay log
 	# (classified from the line itself if no actor hint was passed).
 	if _action_phase_active:
