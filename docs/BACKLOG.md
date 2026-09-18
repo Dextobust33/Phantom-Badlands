@@ -697,6 +697,52 @@ companion out. The rest of the batch is still not urgent; this one is. **Owner's
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
 nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
+## ⚑ THE CRAFTING RECIPE LIST CAN BE ASKED A QUESTION — shipped 2026-09-18
+
+Owner: *"The UI for crafting will likely need redesigned as well once we are done. We want it to be
+organized in a way that makes it easy to understand what peoples options are."*
+
+**Measured before redesigning** (`tools/probe/crafting_ui_shape.gd`), because "the crafting UI is
+bad" invites fixing whatever the last person noticed:
+
+| skill | recipes | pages @5 | specialist-only |
+|---|---|---|---|
+| blacksmithing | 68 | **14** | 22 |
+| enchanting | 58 | 12 | 25 |
+| construction | 52 | 11 | 19 |
+| scribing | 48 | 10 | 31 |
+| alchemy | 28 | 6 | 12 |
+
+**And a level-1 blacksmith has exactly ONE recipe at their skill** — so they page past 67 rows they
+cannot touch to find it. At skill 25 it is still 48 unreachable rows, 9.6 pages of noise. There was
+**no filter, no sort and no category**: the only navigation was Prev/Next through everything.
+
+⛑ **So the problem was never that rows were ugly — the list had no way to ask a question.** Four
+now exist, as four named buttons (not one cycling button, which makes you press three times to find
+out what the options are):
+
+| filter | question |
+|---|---|
+| **Can Make** *(default)* | what can I act on right now — materials in hand, or commissionable |
+| **At My Skill** | what can I attempt, materials aside |
+| **Wanted** | what is another player paying for |
+| **All** | everything, including what is coming |
+
+The header shows **all four counts at once**, so the player sees where their options are without
+visiting each filter, and an empty result **says why and points at the filter that has rows**.
+
+**Measured result — blacksmithing, a skill-25 player: 68 rows → 20, 14 pages → 4.**
+
+⛑ **A SIXTH VACUOUS CHECK, and the most instructive of them.** The first probe passed cleanly while
+the filter was reverted to return every recipe — because section 4 projected the improvement from
+**recipe data** and section 5 only checked the **buttons existed**. Neither touched the rule. The
+predicate now lives in `CraftingDatabase.recipe_matches_filter()` — shared, so the client calls it
+and the probe runs it over a realistic payload and counts what comes back. Reverting the rule now
+fails.
+
+**Still open in the UI arc:** the recipe DETAIL view (materials, odds, what the thing is actually
+for) has not been touched; crafting station sprites; inventory bloat.
+
 ## ⚑ EVERY CAPABILITY NEEDS A DOOR — swept 2026-09-18, now a standing probe
 
 Owner, after catching that the player-commission half had no UI at all: *"You might want to do a

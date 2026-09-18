@@ -176,6 +176,30 @@ static func extract_output_quantity(source_mat: String, target_mat: String, qual
 	return maxi(1, int(floor(in_value * EXTRACT_RETURN * quality_mult / out_value)))
 
 
+## Does this recipe answer the question the player is asking of the list?
+##
+## ⚑ Owner 2026-09-18: *"We want it to be organized in a way that makes it easy to understand what
+## peoples options are."* Measured first: Blacksmithing is **68 recipes = 14 pages** at five a page
+## with no filter at all, and a level-1 blacksmith has **one** recipe at their skill.
+##
+## ⛑ IT LIVES HERE SO A PROBE CAN RUN IT. The first version was a client method, and client.gd
+## cannot be instantiated headlessly - so the probe checked that the buttons EXISTED and passed
+## cleanly while the filter was reverted to return every recipe unchanged. That was the sixth
+## check in one session to assert nothing. Now the probe feeds this the real recipe payload and
+## counts what comes back.
+static func recipe_matches_filter(recipe: Dictionary, filter_id: String) -> bool:
+	match filter_id:
+		"ready":
+			# Something you can act on RIGHT NOW. A commissionable recipe counts: you cannot make
+			# it, but you can pay to have it made, which is still an action.
+			return bool(recipe.get("can_craft", false)) or bool(recipe.get("can_commission", false))
+		"skill":
+			return not bool(recipe.get("locked", false))
+		"wanted":
+			return int(recipe.get("wanted_count", 0)) > 0
+	return true
+
+
 const MAX_ENCHANTMENT_TYPES = 3
 
 # Per-stat enchantment cap per item (max total bonus from enchanting)

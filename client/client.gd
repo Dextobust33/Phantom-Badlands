@@ -1489,6 +1489,23 @@ var crafting_boost_tier: String = "none"
 var crafting_boost_memory: Dictionary = {}  # recipe_id -> tier (mirrors panel memory)
 const CRAFT_BOOST_TIERS = ["none", "refined", "master"]
 var crafting_page: int = 0  # Page for recipe list
+
+## ⚑ WHICH QUESTION THE RECIPE LIST IS ANSWERING — owner 2026-09-18: *"We want it to be organized
+## in a way that makes it easy to understand what peoples options are."*
+##
+## ⛑ MEASURED FIRST (`tools/probe/crafting_ui_shape.gd`). Blacksmithing is **68 recipes = 14 pages**
+## at five a page, with no filter, no sort and no category - and a **level-1** blacksmith has
+## exactly **ONE** recipe at their skill, so they page past 67 rows they cannot touch to find it.
+## At skill 25 it is still 48 unreachable rows, 9.6 pages of noise.
+##
+## The list was never too UGLY; it had no way to ask a question. These are the questions.
+const CRAFT_FILTERS := ["ready", "skill", "wanted", "all"]
+const CRAFT_FILTER_LABELS := {
+	"ready": "Can Make", "skill": "At My Skill", "wanted": "Wanted", "all": "All",
+}
+var crafting_filter: String = "ready"
+## Every recipe for this skill, unfiltered — `crafting_recipes` holds the filtered view.
+var crafting_recipes_all: Array = []
 var awaiting_craft_result: bool = false  # Waiting for player to acknowledge craft result
 var last_crafted_recipe_id: String = ""  # Recipe ID of last craft for "craft another"
 var can_craft_another: bool = false  # Whether player has materials for another craft
@@ -13310,11 +13327,18 @@ func update_action_bar():
 				{"label": "Back", "action_type": "local", "action_data": "crafting_skill_cancel", "enabled": true},
 				{"label": "< Prev", "action_type": "local", "action_data": "crafting_prev_page", "enabled": has_prev},
 				{"label": "Next >", "action_type": "local", "action_data": "crafting_next_page", "enabled": has_next},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				# ⛑ FOUR NAMED BUTTONS, NOT ONE CYCLING ONE. A single "Filter ▸" that rotates makes
+				# the player press it three times to find out what the options even are; four
+				# labels say what the list can answer without touching anything.
+				{"label": ("▸Can Make" if crafting_filter == "ready" else "Can Make"),
+					"action_type": "local", "action_data": "craft_filter_ready", "enabled": true},
+				{"label": ("▸At Skill" if crafting_filter == "skill" else "At Skill"),
+					"action_type": "local", "action_data": "craft_filter_skill", "enabled": true},
 				{"label": "1-5 Select", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": ("▸Wanted" if crafting_filter == "wanted" else "Wanted"),
+					"action_type": "local", "action_data": "craft_filter_wanted", "enabled": true},
+				{"label": ("▸All" if crafting_filter == "all" else "All"),
+					"action_type": "local", "action_data": "craft_filter_all", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
@@ -17896,6 +17920,11 @@ func execute_local_action(action: String):
 				update_action_bar()
 		"inventory_cancel":
 			cancel_inventory_action()
+		"craft_filter_ready", "craft_filter_skill", "craft_filter_wanted", "craft_filter_all":
+			crafting_filter = action.replace("craft_filter_", "")
+			_apply_craft_filter()
+			display_craft_recipe_list()
+			update_action_bar()
 		"craft_post_job":
 			_start_commission_prompt()
 		"rework_start":
@@ -48719,7 +48748,8 @@ func handle_craft_list(message: Dictionary):
 	crafting_skill_level = message.get("skill_level", 1)
 	crafting_post_bonus = message.get("post_bonus", 0)
 	crafting_job_bonus = message.get("job_bonus", {})
-	crafting_recipes = message.get("recipes", [])
+	crafting_recipes_all = message.get("recipes", [])
+	_apply_craft_filter()
 	crafting_materials = message.get("materials", {})
 	# v0.9.635 — Track pouch-only materials separately so @-wildcard group
 	# counts match the server's can_craft check. Server intentionally excludes
@@ -48748,6 +48778,44 @@ func handle_craft_list(message: Dictionary):
 	display_craft_recipe_list()
 	update_action_bar()
 
+func _craft_filter_counts() -> Dictionary:
+	"""How many recipes answer each question. Shown in the header so the player can SEE where
+	their options are without visiting every filter to find out."""
+	var c := {"ready": 0, "skill": 0, "wanted": 0, "all": crafting_recipes_all.size()}
+	for r in crafting_recipes_all:
+		if not (r is Dictionary):
+			continue
+		if bool(r.get("can_craft", false)):
+			c["ready"] += 1
+		if not bool(r.get("locked", false)):
+			c["skill"] += 1
+		if int(r.get("wanted_count", 0)) > 0:
+			c["wanted"] += 1
+	return c
+
+
+func _apply_craft_filter() -> void:
+	"""Narrow the full recipe list to the question the player is asking.
+
+	⛑ CLIENT-SIDE ON PURPOSE. Every field this needs - `can_craft`, `locked`, `specialist_gated`,
+	`wanted_count` - is already in the payload the server sends, so filtering here costs no round
+	trip and no protocol change. Filtering server-side would have meant re-requesting the list on
+	every filter press, which is how a snappy list becomes a laggy one.
+	"""
+	var out: Array = []
+	for r in crafting_recipes_all:
+		if not (r is Dictionary):
+			continue
+		# The predicate lives in CraftingDatabase so the probe measures the same rule the player
+		# gets - see `recipe_matches_filter`.
+		if preload("res://shared/crafting_database.gd").recipe_matches_filter(r, crafting_filter):
+			out.append(r)
+	# ⛑ NEVER SHOW AN EMPTY LIST WITHOUT SAYING WHY. A filter that silently returns nothing reads
+	# as a broken screen; the header explains it and the other counts point at where to go.
+	crafting_recipes = out
+	crafting_page = 0
+
+
 func display_craft_recipe_list():
 	"""Display the list of available recipes"""
 	# Push state into the visual crafting panel
@@ -48775,8 +48843,28 @@ func display_craft_recipe_list():
 		display_game("[color=#FFD700]Specialist Bonus: +%d%% quality[/color]" % crafting_job_bonus.quality_bonus)
 	display_game("")
 
+	# ⛑ THE HEADER NAMES THE QUESTION AND SHOWS WHERE THE OTHER ANSWERS ARE. A filtered list that
+	# does not say it is filtered is worse than no filter at all - the player concludes the content
+	# is missing rather than hidden.
+	var _fc: Dictionary = _craft_filter_counts()
+	var _bits: Array = []
+	for f in CRAFT_FILTERS:
+		var lbl := String(CRAFT_FILTER_LABELS.get(f, f))
+		var n := int(_fc.get(f, 0))
+		if f == crafting_filter:
+			_bits.append("[color=#FFD700]▸ %s %d[/color]" % [lbl, n])
+		else:
+			_bits.append("[color=#808080]%s %d[/color]" % [lbl, n])
+	display_game("  ".join(_bits))
+	display_game("")
+
 	if crafting_recipes.is_empty():
-		display_game("[color=#808080]No recipes available for this skill.[/color]")
+		# Say why it is empty and where to go, rather than showing a dead screen.
+		display_game("[color=#FFAA00]Nothing here under [b]%s[/b].[/color]" % String(CRAFT_FILTER_LABELS.get(crafting_filter, crafting_filter)))
+		if int(_fc.get("skill", 0)) > int(_fc.get("ready", 0)):
+			display_game("[color=#808080]%d recipe(s) are at your skill but missing materials — try [b]At My Skill[/b].[/color]" % int(_fc.get("skill", 0)))
+		elif int(_fc.get("all", 0)) > 0:
+			display_game("[color=#808080]%d recipe(s) exist for this trade — try [b]All[/b] to see what is coming.[/color]" % int(_fc.get("all", 0)))
 		display_game("")
 		display_game("[%s] Back" % get_action_key_name(0))
 		return
