@@ -163,10 +163,19 @@ const QUEST_DEPTH_CLAMP := Vector2(0.7, 1.6)
 ## `_create_player_dungeon_instance`, which takes `grade_tier` from `base_tier` and the rank from
 ## the post's distance - the same two inputs available at board time. It is a promise this code
 ## can keep. Do not copy this to a world dungeon, where the land decides.
-static func dungeon_difficulty_line(dungeon_info: Dictionary, rank: int, floors: int) -> String:
+static func dungeon_difficulty_line(dungeon_info: Dictionary, tier: int, rank: int, floors: int) -> String:
 	if dungeon_info.is_empty():
 		return ""
-	var tier: int = int(dungeon_info.get("base_tier", 1))
+	# ⛑ THE TIER IS PASSED IN TOO, AND THIS LINE IS WHY. It used to read
+	# `dungeon_info.get("base_tier")` - the TYPE's design weight - while the caller had
+	# already resolved the INSTANCE's grade from the land and was passing only the rank.
+	# So the board advertised the type's tier with the land's rank: a chimera that
+	# matched neither. Owner 2026-09-17: *"Board showed H2, where it points me shows G2.
+	# Inside shows G2 as well."* The instance was right; this line was wrong.
+	#
+	# CLAUDE.md records this exact defect SIX times - *"A dungeon TYPE has no grade -
+	# base_tier is NOT tier"* - and it was reintroduced here, in the function written to
+	# prevent it, by a comment that was careful about the rank and silent about the tier.
 	# ⛑ THE RANK IS PASSED IN, NOT ROLLED HERE. `get_sub_tier_for_distance` carries a
 	# +/-1 (sometimes +/-2) random variance, so calling it a second time would advertise a
 	# different dungeon from the one the server builds - "Advertised H1, delivered E1" all
@@ -2886,7 +2895,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			(QUEST_VALOR_BASE + float(_fight_level) * QUEST_VALOR_PER_LEVEL + float(index) * 2.0)
 				* tier_mult * distance_bonus_mult,
 			QUEST_VALOR_CLAMP.x, QUEST_VALOR_CLAMP.y)))
-		var _diff: String = dungeon_difficulty_line(dungeon_info, _d_rank, _task_floors)
+		var _diff: String = dungeon_difficulty_line(dungeon_info, _d_tier, _d_rank, _task_floors)
 		if _diff != "":
 			quest_desc += "\n\n" + _diff
 

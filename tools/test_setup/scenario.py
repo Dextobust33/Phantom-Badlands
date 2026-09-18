@@ -311,6 +311,13 @@ def feel_check(c):
     # because the fight is the point.
     c["max_hp"] = max(int(c.get("max_hp", 100)), 900)
     c["current_hp"] = c["max_hp"]
+    # ⛑ NO ACTIVE QUESTS, SO A FRESH ONE MUST BE TAKEN. The board advertises a grade and the
+    # instance is built from it - but an ALREADY-ACCEPTED quest carries a dungeon that was built
+    # by whatever code was running when it was accepted. Re-entering that one tells you nothing
+    # about the fix and looks exactly like a failure. Clearing these forces the whole chain
+    # (advertise -> accept -> build -> enter) to run under the code being tested.
+    c["active_quests"] = []
+    c["daily_quest_cooldowns"] = {}
     return []
 
 
