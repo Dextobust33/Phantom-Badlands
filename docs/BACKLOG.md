@@ -7048,17 +7048,34 @@ something was dropped, and it sat unnoticed for eleven days.
       The name is exact against the setting bible: a phantom is a dead thing the ground refuses to
       keep down, and these are the ones it keeps sending back - which is what extra lives ARE.
 
-- [ ] **NINE CLASSES, THREE CARD POOLS — the identity gap is structural. Owner 2026-09-05.**
-      *"We will want each class in each archetype to have their own identity. All three warrior,
-      mage, and trickster identities should feel different enough that you know you're playing
-      them."* Card access is keyed to `get_class_path()` - the ARCHETYPE - so all three warriors
-      draw the same nine cards, all three mages the same nine, all three tricksters the same nine.
-      **PARTLY ADDRESSED:** the engine work of 2026-09-07 gave each of the nine classes its own
-      engine SHAPE, which is real differentiation. The CARD POOL is still archetype-wide.
-      ⛑ **This is the same fault as the Paths revamp** the owner raised on 2026-09-18, one layer
-      down - an archetype-wide system cannot express what separates a Sage from a Sorcerer. Do them
-      together or decide deliberately not to.
-      Its case study, also archived: *"the three tricksters are nearly one class"*.
+- [~] **NINE CLASSES, THREE CARD POOLS — RE-VERIFIED 2026-09-18, and the archived version is
+      HALF STALE.** Owner, on the restoration: *"Each class now has its own starter deck and
+      playstyle so that may be stale info."* Correct, and checked rather than assumed by re-running
+      the archive's own two tests against current code:
+
+      | layer | keyed to | state |
+      |---|---|---|
+      | starter deck | **class** — `CURATED_STARTER_DECKS_BY_CLASS` holds all **9 of 9**, each with its own written reasoning | ✅ differentiated |
+      | engine shape | **class** — one shape each since 2026-09-07 | ✅ differentiated |
+      | learnable pool | **archetype** — `get_all_available_abilities()` still does `match get_class_path()` and appends one of three fixed lists | ⚠ converges |
+
+      The archive also cited `grep -c 'class_type ==' shared/character.gd` returning **0**; it
+      returns **2** today. So the headline claim - *"the nine classes are three classes with three
+      stat-curve variants each"* - is **no longer true** and should not be quoted.
+
+      **What actually survives is narrower and arrives LATER:** a Sage and a Sorcerer start with
+      different decks and run different engines, and then both can learn the same nine mage cards.
+      Identity is strongest at creation and erodes as a player rebuilds their deck toward whatever
+      is best. Two things soften even that, and neither existed when the archive was written: the
+      **53 dungeon cards** (one exclusive per dungeon type) and **companion cards**, both
+      cross-class pools a player can differentiate with.
+
+      **⛑ So this is a DESIGN QUESTION, not a defect, and it needs the owner:** should the
+      learnable pools diverge per class, or are per-class starters + per-class engines + the
+      dungeon/companion pools enough identity? Measuring whether players actually converge in
+      practice is possible but premature - decide the intent first.
+      Related: the **Paths revamp** (owner 2026-09-18) is the same question one layer down. If the
+      answer here is "archetype is fine", it is probably fine there too.
 
 - [ ] **MAGIC BOLT — damage vs investment is opaque and punishing** (owner 2026-09-06). Present in
       this file already; listed here so the archive audit is complete rather than partial.
