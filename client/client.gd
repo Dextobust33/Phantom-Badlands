@@ -197,6 +197,18 @@ func _get_monster_art():
 
 # Trader art helper - for wandering NPCs (blacksmith, healer)
 var _trader_art_script = null
+func _post_npc_art_seed(role: String) -> int:
+	"""A stable art seed for a post's resident NPC — the POST plus the ROLE.
+
+	Keyed on both so the same smith greets you every visit AND the healer beside him is a
+	different person. Falls back to coordinates away from a named post, which still beats
+	re-rolling a new face on every screen."""
+	var post_name := String(character_data.get("current_post_name", ""))
+	if post_name == "":
+		post_name = "%d,%d" % [int(character_data.get("x", 0)), int(character_data.get("y", 0))]
+	return hash(post_name + "|" + role)
+
+
 func _get_trader_art():
 	if _trader_art_script == null:
 		_trader_art_script = load("res://client/trader_art.gd")
@@ -47502,9 +47514,15 @@ func handle_blacksmith_encounter(message: Dictionary):
 
 	_page_clear()
 
-	# Display random trader ASCII art (persist for upgrade screens)
-	if blacksmith_trader_art == "":
-		blacksmith_trader_art = _get_trader_art().get_random_trader_art()
+	# ⚑ ONE FACE PER POST — owner 2026-09-18: *"the Blacksmith and healer... shouldn't rotate
+	# through ASCII art each time you talk to them. They should pick one for that post and stick
+	# with it (pick one for blacksmith and a different one for healer)."*
+	#
+	# ⛑ THE PERSISTENT VARIANT ALREADY EXISTED AND THESE WERE THE LAST CALLERS OF THE RANDOM ONE.
+	# Wandering merchants have used `get_trader_art_for_id` for ages - so a merchant you meet once
+	# kept his face, and the smith you visit every day did not. Seeded on the POST plus the ROLE,
+	# so he is the same man each visit and the healer beside him is somebody else.
+	blacksmith_trader_art = _get_trader_art().get_trader_art_for_id(_post_npc_art_seed("blacksmith"))
 	display_game(blacksmith_trader_art)
 	display_game("")
 
@@ -47651,8 +47669,9 @@ func handle_healer_encounter(message: Dictionary):
 
 	_page_clear()
 
-	# Display random trader ASCII art
-	var trader_art = _get_trader_art().get_random_trader_art()
+	# Same post, a DIFFERENT person - see the note on the blacksmith. The RESCUE NPC below
+	# deliberately keeps the random art: that one IS a different stranger every time.
+	var trader_art = _get_trader_art().get_trader_art_for_id(_post_npc_art_seed("healer"))
 	display_game(trader_art)
 	display_game("")
 

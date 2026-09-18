@@ -685,7 +685,19 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 		"workbench",
 		"quest_board",
 		"blacksmith",
-		"inn",
+		# ⚑ NO INN — owner 2026-09-18: *"I don't think we need an INN (doesn't serve much purpose
+		# anymore does it?) as well as a healer in posts."*
+		#
+		# ⛑ MEASURED BEFORE CUTTING, and it is not a judgement call: `_handle_inn_interact` was
+		# one line - `handle_trading_post_recharge(peer_id)` - which is the SAME function the
+		# HEALER calls. Two tiles in every post, doing one job, with the player left to guess
+		# whether they differed.
+		#
+		# ⛑ NO MIGRATION NEEDED, and I wrote one before checking. A saved post keeps only GEOMETRY
+		# - bounds, main_room, wings - and its station tiles are derived from THIS list every time
+		# it is read. So the cut reaches all 120 live posts immediately. The migration I had
+		# written walked a `tiles` dictionary that does not exist on a post, which would have been
+		# dead code that looked like it was doing something.
 		"healer",
 		"market",
 		"cartographer",

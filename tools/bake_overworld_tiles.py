@@ -95,7 +95,9 @@ CUTS = {
     # The market gets the whole stall now, and the inn gets a BED, which is what a place you rest
     # at should look like.
     'tile:market':        ('craft_stations', 9, 0, (2, 2)),
-    'tile:inn':           ('cozy_home', 9, 0, (2, 2)),
+    # ⚑ THE INN IS CUT - owner 2026-09-18. Its whole handler was one line calling
+    # `handle_trading_post_recharge`, the SAME function the healer calls, so every post carried
+    # two tiles doing one job. Removed from the station layout in npc_post_database.
     'tile:brazier':       ('craft_stations', 2, 6, (1, 2)),
     'tile:banner':        ('craft_stations', 5, 6, (2, 2)),
     'tile:writing_desk':  ('craft_stations', 7, 6, (2, 2)),
@@ -111,7 +113,10 @@ CUTS = {
     # (lintel, stone ring, bucket); the fountain is a separate water feature.
     'tile:fountain':    ('green_village', 2, 2),
     'tile:signpost':    ('green_village', 5, 5),
-    'tile:quest_board': ('green_village', 4, 5),
+    # ⚑ A BOARD, NOT A SIGNPOST - owner 2026-09-18: *"Quest Board is a sign post, not a great
+    # fit."* `interiors` (3,15) is a 3x3 wooden board COVERED IN PINNED NOTICES, which is what a
+    # quest board is. The old pick was a single 32px cell of a roadside sign.
+    'tile:quest_board': ('interiors', 3, 15, (3, 3)),
     'tile:lamp_post':   ('green_village', 4, 0),
     'tile:torch':       ('green_village', 2, 6),
     'tile:crate':       ('green_village', 2, 0),
@@ -121,8 +126,13 @@ CUTS = {
     # cells of one sheet, so at 26px you could walk into the wrong station. The HEALER's yellow
     # cross reads correctly and is left alone; the smith gets a furnace, which is what a smith
     # works at. Measured: 13.0 -> 50.2 apart, and 33.4 from the nearest other station.
-    'tile:blacksmith':  ('craft_stations', 1, 6, (2, 2)),
-    'tile:healer':      ('green_village', 8, 13),
+    # Now a PERSON (see NPC_TILES). Owner: *"Blacksmith is a big stove, since this is an NPC it
+    # would probably be better as an NPC sprite."* The ANVIL below is the station you craft at.
+    # ⛑ (2,23), NOT (2,24). One column off split the grey anvil down the middle and glued the
+    # left edge of the brown one to it - the EXACT fault every sprite in this pass is here to fix.
+    # Picked by rendering the candidate spans side by side and looking, not by reading the sheet.
+    'tile:anvil':       ('interiors', 2, 23, (2, 2)),
+    # Now a PERSON (see NPC_TILES). Owner: *"Healer should be an NPC."*
     'tile:hedge':       ('green_village', 5, 8),
 
     # --- the rest of the post decor, from the interiors pack ------------------------------
@@ -141,7 +151,8 @@ CUTS = {
 
     # --- the last of them: post structures, monuments and plots ---------------------------
     'tile:companion_stable': ('farmlands_v3', 16, 7, (3, 3)),
-    'tile:cartographer':     ('interiors', 4, 17),
+    # Now a PERSON (see NPC_TILES) - the old pick was a fragment. Owner: *"Dungeon atlas is a
+    # broken piece of another sprite."*
     'tile:tower':            ('sun_city', 16, 0, (3, 1)),
     'tile:guard':            ('sun_city', 20, 9),
     # The cross on a post reads as a scarecrow frame, which is what one is. The farm pack has no
@@ -150,7 +161,12 @@ CUTS = {
     # ⚑ 4.4 FROM THE QUEST BOARD. `(4,6)` and `quest_board`'s `(4,5)` are neighbouring cells of
     # one sheet, so the two were all but identical at the 26px the map draws - and they sit side
     # by side inside every post. A framed sign with a blue emblem measures 51 apart instead.
-    'tile:post_marker':      ('green_village', 5, 14),
+    # ⚑ A BANNER, NOT A SWORD FRAGMENT - owner 2026-09-18: *"Sword center at 0,0 looks odd."*
+    # This is the tile at the CENTRE of all 120 posts, so it is among the most-seen art in the
+    # game, and it was a single 32px cell of crossed blades with the tips cut off at the edge.
+    # sun_city (23,16) is a complete 3x3 hanging banner - a landmark that says "somebody claims
+    # this ground", which is what a post centre is.
+    'tile:post_marker':      ('sun_city', 23, 16, (3, 3)),
     'tile:garden_plot':      ('sun_city', 13, 17, (2, 2)),
     'tile:tent':             ('farmlands_v3', 14, 2, (2, 2)),
     'tile:cage':             ('farmlands_v3', 21, 15),
@@ -258,6 +274,43 @@ TREE_SPAN = (3, 2)      # rows, cols of 32px cells
 # use rather than drawn as a piece of furniture. A new player's first instruction is "walk to the
 # Warden", and that only works if he looks like someone you could walk to.
 WARDEN_SRC = 'client/sprites/overworld_pad32/m1_1/down_stand.png'
+
+# ⚑ THE POST'S PEOPLE ARE PEOPLE — owner 2026-09-18: *"Blacksmith is a big stove, since this is an
+# NPC it would probably be better as an NPC sprite... Healer should be an NPC."*
+#
+# ⛑ THE PRECEDENT WAS ALREADY HERE AND UNUSED. `bake_warden` says it outright: *"He is a PERSON, so
+# his tile is a person - taken from the same overworld sprite set the players use rather than drawn
+# as a piece of furniture."* The Warden got that treatment; the Blacksmith, the Healer and the
+# Cartographer were left as furniture and a fragment, so you walked up to a stove to talk to a
+# smith. Same mechanism, three more people.
+#
+# Each is a DIFFERENT character, because they stand in the same post and a player has to tell them
+# apart at 26px.
+NPC_TILES = {
+    'blacksmith':   '5_4',    # heavy build, reads as someone who swings a hammer
+    'healer':       'm3_4',   # white with red accents - the one that reads as a healer
+    'cartographer': 'm2_7',   # coat and hat, reads as someone who has been somewhere
+}
+
+
+def bake_person(src_path, dest):
+    """Fit one overworld character sprite into a 32px tile, standing on its floor.
+
+    Shared by the Warden and by every post NPC - one routine, so they cannot end up scaled or
+    anchored differently and read as two art styles standing side by side."""
+    from PIL import Image as _I
+    src = _I.open(src_path).convert('RGBA')
+    bb = src.getbbox()
+    if bb is None:
+        raise SystemExit('source sprite is EMPTY: %s' % src_path)
+    fig = src.crop(bb)
+    w0, h0 = fig.size
+    scale = min(TILE / float(w0), TILE / float(h0))
+    nw, nh = max(1, int(w0 * scale)), max(1, int(h0 * scale))
+    fig = fig.resize((nw, nh), _I.NEAREST)
+    out = _I.new('RGBA', (TILE, TILE), (0, 0, 0, 0))
+    out.paste(fig, ((TILE - nw) // 2, TILE - nh), fig)
+    out.save(dest)
 
 
 def bake_warden(dest):
@@ -656,6 +709,19 @@ def main():
     bake_warden(os.path.join(OUT, 'tile', 'warden.png'))
     baked_tiles.add('warden')
     cut += 1
+    for npc_name, char_dir in sorted(NPC_TILES.items()):
+        src = 'client/sprites/overworld_pad32/%s/down_stand.png' % char_dir
+        if not os.path.exists(src):
+            raise SystemExit('NPC source missing for %s: %s' % (npc_name, src))
+        bake_person(src, os.path.join(OUT, 'tile', npc_name + '.png'))
+        baked_tiles.add(npc_name)
+        # ⛑ A PERSON HAS NO MULTI-CELL VERSION, so drop any stale span left by the furniture it
+        # replaces - otherwise the renderer would look for a 2x2 image that no longer exists.
+        big_manifest.pop(npc_name, None)
+        big_png = os.path.join(OUT, 'big', npc_name + '.png')
+        if os.path.exists(big_png):
+            os.remove(big_png)
+        cut += 1
     print('cut %d tiles from real art' % cut)
     with open(os.path.join(OUT, 'big', 'big_tiles.json'), 'w', encoding='utf-8') as f:
         json.dump(big_manifest, f, indent='	', sort_keys=True)
