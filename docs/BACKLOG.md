@@ -7091,6 +7091,43 @@ down, and these are the ones it keeps sending back — which is what extra lives
       The 17 material-making recipes and the 138 recipes gated above skill 25 are where the
       *"grindy"* complaint actually lives.
 
+      **☑ STEP 3 DONE 2026-09-18 — THE IDENTITY PASS, and four of the five already exist.**
+      Owner chose *"decide per crafter after the identity pass"* for the cull, so the identities
+      come first. Measured from the recipe table rather than invented:
+
+      | crafter | recipes | what it makes today | identity |
+      |---|---|---|---|
+      | Blacksmithing | 68 | armor 49, **weapon 9**, upgrade 7, reforge 2, self_repair 1 | **gear** — clear |
+      | Enchanting | 56 | rune 46, material 6, upgrade 3, disenchant 1 | **runes + improving gear** — clear |
+      | Construction | 52 | structure 49, material 3 | **structures** — clear |
+      | Alchemy | 38 | consumable 35, transmute 2, extract 1 | **consumables** — clear |
+      | Scribing | 44 | scroll 18, tome 7, enhancement 5, material 8, escape 3, map 2, bestiary 1 | **none — seven output types, no majority** |
+
+      **So the identity work is one crafter, not five.** Scribing is the scattered one and the only
+      place *"what is this crafter FOR"* has no answer already sitting in the data.
+      **And blacksmithing has a hole:** 49 armour recipes against **9 weapons**, and
+      `crafting_worth.gd` measures weapons at **0.37x** a drop - the thinnest category is also the
+      weakest one, inside the largest crafter.
+
+      **☑ STEP 4 DONE — CONSUMABLES, measured after the owner named them.** Owner: *"there are too
+      many of them and with names that make people not sure what they even give (especially in
+      combat, you have to hover to try and remember what each of them give in the combat item
+      list)."* `tools/probe/consumable_clarity.gd`, over 35 consumable recipes:
+      * **19 of 35 cannot be told apart by name alone** - `Potion of Fortitude`, `Elixir of Power`,
+        `Potion of Insight`, `Prismatic Elixir`, `Elixir of the Void`, `Elixir of the Abyss`,
+        `Primordial Tonic`... The combat item list shows NAMES, which is exactly where it hurts.
+      * **13 are the four resource ladders** (health x4, mana / stamina / energy x3 each) and those
+        are fine: the name carries both the effect and the grade.
+      * So it is **13 clear + 19 opaque + 3 other**. The COUNT is not really the problem; the
+        naming is - which matters, because cutting to fix a naming fault would remove content that
+        works.
+
+      **☑ AND WHAT QUALITY IS WORTH.** Owner: *"a lot of items that could get quality that didn't
+      benefit enough to justify even having it."* Measured: Poor 0.50x, Standard 1.00x, Fine 1.25x,
+      Masterwork 1.50x - the whole spread a player can influence is **+50%**, and **Fine to
+      Masterwork is +20%**. On a 50 HP potion that is +25 HP and +10 HP. Felt on gear; invisible on
+      a flat-restore consumable, which is the complaint in numbers.
+
       **⚑ TWO MORE DIRECTIONS, owner 2026-09-18:**
       * *"The UI for crafting will likely need redesigned as well once we are done. We want it to
         be organized in a way that makes it easy to understand what peoples options are."* — after
