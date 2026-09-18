@@ -6107,9 +6107,20 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       to mean the most RECENT death under that name. It used to mean "whichever matched first", and
       `entries` is sorted by LEVEL - so a name that had died twice returned whichever ranked higher.
       Probe: `tools/probe/death_log_link.gd`, which walks the route rather than the parts.
-      **Still open: the REPLAY.** The entry says *"ideally a replay"* - this ships the log, not a
-      re-animation of the fight. Worth deciding whether the replay is wanted before building it;
-      the data to drive one is already stored.
+      **✅ AND THE REPLAY — DONE 2026-09-18.** Click the link and the fight plays back **at the
+      pace it happened**, one line at a time, with pause / restart / skip-to-end and a progress
+      bar, headed by who died, at what level, to what, and over how many rounds. Speed comes from
+      the viewer's own combat-speed setting rather than a second preference to discover.
+      **⛑ It paces the log; it does NOT re-animate the fight, and that is a decision rather than a
+      shortcut.** A stored `combat_log` is plain BBCode STRINGS - no actor tag, no damage number,
+      no HP per line (checked against a real 190-line record on live). Moving health bars and
+      acting sprites could only be reconstructed by reading numbers back out of the prose, which is
+      exactly the mistake that put co-op damage numbers on the wrong combatant. The line ORDER is
+      the fight and the order is stored exactly, so pacing needs none of it.
+      Probe `tools/probe/death_replay.gd` DRIVES the playback rather than reading the source - a
+      replay that renders nothing and one that works look identical from outside - and covers the
+      shared-panel trap: a ticking replay must stop when someone opens an ordinary log in the same
+      panel, or it appends into it from underneath.
 - [x] **Combat layout at 1080p — CONFIRMED FINE, CLOSED 2026-09-09.** Owner: *"needs confirmed
       before we work it. May not be an issue anymore."* Captured the real client at 1920x1080 and
       looked: the combat log, monster art, player/companion panel, card row and action bar all sit

@@ -699,6 +699,7 @@ var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly aft
 # v0.9.611 — index of the flock fight currently shown in the legacy text
 # view. -1 means "current fight" (panel's live log); 0..N-1 indexes into
 # combat_scene_panel.get_flock_history(). ← / → cycles through fights.
+var _pending_death_replay: String = ""  # a chat link asked for a replay; the next leaderboard_death reply is its
 var _legacy_view_fight_index: int = -1
 var _last_displayed_round: int = 0  # round number we last drew a divider for; reset on each combat_start
 # v0.9.664 — round divider is now queued BEFORE the first message of each round
@@ -9619,6 +9620,37 @@ func _on_leaderboard_entry_clicked(meta):
 	var char_name = parts[0]
 	var died_at = int(parts[1])
 	send_to_server({"type": "get_leaderboard_death", "character_name": char_name, "died_at": died_at})
+
+func _show_death_replay(message: Dictionary) -> void:
+	"""Play a dead character's last fight back in the fight-log panel.
+
+	⚑ Backlog asked for *"a clickable link to the combat log - ideally a replay"*. This is the
+	replay: the fight arrives at the pace it happened rather than as 190 lines at once.
+
+	⛑ IT PACES THE LOG; IT DOES NOT RE-ANIMATE THE FIGHT. A stored `combat_log` is plain BBCode
+	strings - no actor, no damage number, no HP per line - so moving health bars and acting
+	sprites could only be reconstructed by reading numbers back out of the prose. That is the
+	mistake that put co-op damage numbers on the wrong combatant, and it is not worth repeating
+	for a nicety. The line ORDER is the fight, and the order is stored exactly."""
+	_pending_death_replay = ""
+	if fight_log_panel == null or not is_instance_valid(fight_log_panel):
+		return
+	var dd: Dictionary = message.get("death_data", {}) if message.get("death_data", null) is Dictionary else {}
+	var who: String = String(dd.get("character_name", message.get("character_name", "Someone")))
+	if dd.is_empty():
+		display_chat("[color=#888888]No record of %s's last fight survives.[/color]" % who)
+		return
+	var lines: Array = dd.get("combat_log", []) if dd.get("combat_log", null) is Array else []
+	# The header states what was at stake, from STORED FIELDS rather than anything parsed: who,
+	# what level, what killed them, and how long they lasted.
+	var head: String = "%s  (Lv %d %s)  —  slain by %s" % [
+		who, int(dd.get("level", 0)), String(dd.get("class_type", "")),
+		String(dd.get("cause_of_death", "something"))]
+	var rounds: int = int(dd.get("rounds_fought", 0))
+	if rounds > 0:
+		head += "  —  %d rounds" % rounds
+	fight_log_panel.play_replay(head, lines, combat_speed_effective())
+	update_action_bar()
 
 func display_leaderboard_death_screen(message: Dictionary):
 	"""Display a death screen from leaderboard data (viewing another player's death)."""
@@ -26905,7 +26937,12 @@ func handle_server_message(message: Dictionary):
 			update_trophy_leaderboard_display(message.get("entries", []), message.get("top_collectors", []))
 
 		"leaderboard_death":
-			display_leaderboard_death_screen(message)
+			# A chat link asked to WATCH the fight; the leaderboard row asks to READ the death.
+			# Same reply, two doors - branch on which one was used, not on the payload.
+			if _pending_death_replay != "":
+				_show_death_replay(message)
+			else:
+				display_leaderboard_death_screen(message)
 
 		"leaderboard_top5":
 			# v0.9.739 — held while ANY co-op round is still playing out, not just our own
@@ -41797,6 +41834,11 @@ func _on_game_output_meta_clicked(meta) -> void:
 	if meta_str.begins_with("deathlog:"):
 		var _dead_name: String = meta_str.substr(9)
 		if _dead_name != "":
+			# ⛑ WHICH DOOR THIS CAME THROUGH. The same `leaderboard_death` reply serves the
+			# leaderboard row, which paints a full death screen into `game_output`. A chat link
+			# wants the FIGHT, replayed - so the request is marked, and the handler branches on
+			# the mark rather than on anything it can guess from the payload.
+			_pending_death_replay = _dead_name
 			send_to_server({"type": "get_leaderboard_death", "character_name": _dead_name})
 			display_chat("[color=#888888]Fetching %s's last fight...[/color]" % _dead_name)
 		return
