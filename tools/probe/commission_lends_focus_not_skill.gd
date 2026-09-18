@@ -111,7 +111,54 @@ func _init() -> void:
 		_ok("the fee is charged before the craft runs")
 
 	print("")
-	print("===== 5. THE ROUTE IS COMPLETE =====")
+	print("===== 5. THE PLAYER HALF: A COMMISSION IS A BUY ORDER FOR WORK =====")
+	# ⛑ IT REUSES THE ORDER SYSTEM RATHER THAN ADDING A SECOND ONE. Buy orders already escrow
+	# Valor, survive a restart, pay an offline seller and deliver to an offline buyer - every hard
+	# part of a commission board, already built and already exercised in production.
+	var player_half := {
+		"commission is an order type": srv.find("\"monster_part\", \"commission\"]") >= 0,
+		"it names a recipe": srv.find("order[\"recipe_id\"] = commission_recipe_id") >= 0,
+		"only gated recipes qualify": srv.find("post a normal buy order instead") >= 0,
+		"filled with YOUR OWN craft": srv.find("a commission is filled with your own work") >= 0,
+		"the crafter is credited": srv.find("inv_item[\"crafted_by\"] = character.name") >= 0,
+	}
+	for k in player_half.keys():
+		if bool(player_half[k]):
+			_ok(String(k))
+		else:
+			_fail("%s -- MISSING" % k)
+
+	# ⛑ THE TWO FAILURE MODES THAT WOULD ACTUALLY HURT A PLAYER.
+	#
+	# 1. MATCHED BY NAME instead of recipe. A Masterwork craft is named "Masterwork <recipe>" and a
+	#    Standard one is bare "<recipe>", so name-matching would reject exactly the good ones - and
+	#    accept a same-named DROP that no crafter ever made.
+	if srv.find("String(inv_item.get(\"recipe_id\", \"\")) == want_recipe") < 0:
+		_fail("commission fulfilment does not match on recipe_id")
+	else:
+		_ok("matched on recipe_id, so quality prefixes cannot break it")
+	if srv.find("\"recipe_id\": source_recipe_id,") < 0:
+		_fail("crafted items no longer record which recipe made them")
+	else:
+		_ok("crafted items record their recipe")
+	# 2. DELIVERED AS A NAMEPLATE. Every other order type is name-only, so the delivery path
+	#    REBUILDS the item from {type, name, id}. Doing that to a crafted weapon hands the buyer
+	#    an item with no stats, no quality, no affixes and no maker.
+	if srv.find("item_copy = _commission_delivery_items.pop_front()") < 0:
+		_fail("online delivery rebuilds the item - a commissioned piece would arrive with no stats")
+	else:
+		_ok("online delivery hands over the real item")
+	if srv.find("_pending[\"items\"] = _commission_delivery_items.duplicate(true)") < 0:
+		_fail("an OFFLINE buyer would receive a nameplate instead of the item")
+	else:
+		_ok("the offline queue carries the whole item too")
+	if srv.find("character.inventory.append((full_items[fit] as Dictionary).duplicate(true))") < 0:
+		_fail("the delivery drain ignores the stored item and rebuilds it")
+	else:
+		_ok("and the drain honours it on next login")
+
+	print("")
+	print("===== 6. THE ROUTE IS COMPLETE =====")
 	var checks := {
 		"server accepts the flag": srv.find("message.get(\"commission\", false)") >= 0,
 		"server requires a post": srv.find("Commissioning needs a %s at a trading post") >= 0,

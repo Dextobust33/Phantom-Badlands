@@ -8090,9 +8090,31 @@ something was dropped, and it sat unnoticed for eleven days.
       handler would have been a second copy of item production, XP, quality and party sharing —
       which is how two paths drift until they disagree in front of a player.
 
-      **Still open:** the PLAYER half of the commission — posting a job another player fulfils, at
-      *their* quality, paying them instead of a sink. That is the social version and the reason the
-      owner picked this option over the two simpler ones.
+      **✅ AND THE PLAYER HALF, same day.** A commission is now a **buy order for work**:
+      `item_type = "commission"` carrying a `recipe_id`, refused for anything a plain buy order
+      could already cover. The **crafter supplies the materials** and is paid for them, which is how
+      a commission works in the world and means nothing needs escrowing but Valor.
+
+      ⛑ **IT REUSES THE BUY-ORDER SYSTEM RATHER THAN ADDING A SECOND ONE.** Orders already escrow
+      Valor, survive a restart, pay an offline seller and deliver to an offline buyer — every hard
+      part of a commission board, already built and exercised in production. (Found by checking
+      before building, per the standing rule; `market_data` even had an unused `orders` key that
+      turned out to be a live system.)
+
+      ⛑ **Two failure modes that would have hurt a player, both caught in the build:**
+      * **Name-matching.** A Masterwork craft is named *"Masterwork &lt;recipe&gt;"* while a Standard
+        one is bare *"&lt;recipe&gt;"* — so matching an order by name would have rejected exactly the
+        good ones, and accepted a same-named **drop** no crafter ever made. Crafted items now record
+        `recipe_id` and fulfilment matches on that.
+      * **Delivering a nameplate.** Every other order type is name-only, so the delivery path
+        **rebuilds** the item from `{type, name, id}`. Doing that to a crafted weapon hands the
+        buyer something with no stats, no quality, no affixes and no maker. Commissions now carry
+        the real dict through both the online path and the offline queue, and the drain honours it.
+      Proven by injecting the rebuild and watching it fail.
+
+      The crafter's name is stamped into `crafted_by` on hand-over. **Noted for the UI pass:**
+      `crafted_by` is written in four places and **read by none** — crafters currently get no
+      visible credit anywhere.
       Probe: `tools/probe/commission_lends_focus_not_skill.gd`.
 
       **✅ SHIPPED 2026-09-18 — and there were TWO gates, the quiet one worse than the famous one.**

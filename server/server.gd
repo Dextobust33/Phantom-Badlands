@@ -19754,7 +19754,22 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 # Equipment / eggs deliberately excluded — they're stat-varied or unique,
 # which makes order matching ambiguous.
 
-const ORDER_SUPPORTED_TYPES = ["material", "consumable", "rune", "monster_part"]
+## ⚑ "commission" IS AN ORDER FOR WORK, NOT FOR STOCK — owner 2026-09-18, who chose the commission
+## route over removing the specialist gate: *"commission another player (or a post NPC as a
+## fallback)"*.
+##
+## ⛑ IT REUSES THE BUY-ORDER SYSTEM RATHER THAN ADDING A SECOND ONE. Orders already escrow Valor,
+## survive restarts, pay an offline seller and deliver to an offline buyer - every hard part of a
+## commission board, already built and already exercised. A parallel system would have been a
+## second escrow and a second delivery path to keep in step.
+##
+## The CRAFTER supplies the materials and is paid for them, which is how a commission works in the
+## world and means nothing has to be escrowed but Valor.
+## Items handed over by a commission fulfilment, picked up by the delivery step below.
+var _commission_delivery_items: Array = []
+
+
+const ORDER_SUPPORTED_TYPES = ["material", "consumable", "rune", "monster_part", "commission"]
 const ORDER_MAX_QUANTITY = 999
 const ORDER_MIN_PER_UNIT = 1
 const ORDER_MAX_PER_UNIT = 1000000  # 1M Valor per unit is a sane hard cap
@@ -19863,6 +19878,23 @@ func handle_market_order_create(peer_id: int, message: Dictionary):
 	if not (item_type in ORDER_SUPPORTED_TYPES):
 		send_to_peer(peer_id, {"type": "market_error", "message": "That item category can't be buy-ordered."})
 		return
+
+	# ⛑ A COMMISSION IS FOR WORK YOU CANNOT DO. If you could craft it yourself, an ordinary buy
+	# order is the right tool - so this refuses rather than quietly becoming a worse one.
+	var commission_recipe_id := String(message.get("recipe_id", ""))
+	if item_type == "commission":
+		var comm_recipe: Dictionary = CraftingDatabaseScript.get_recipe(commission_recipe_id)
+		if comm_recipe.is_empty():
+			send_to_peer(peer_id, {"type": "market_error", "message": "Unknown recipe."})
+			return
+		if not bool(comm_recipe.get("specialist_only", false)):
+			send_to_peer(peer_id, {"type": "market_error",
+				"message": "Anyone with the skill can make that - post a normal buy order instead."})
+			return
+		item_name = String(comm_recipe.get("name", commission_recipe_id))
+		if quantity != 1:
+			# Crafted gear is instanced - each one rolls its own quality, so a stack is meaningless.
+			quantity = 1
 	if item_name.is_empty():
 		send_to_peer(peer_id, {"type": "market_error", "message": "Item name is required."})
 		return
@@ -19909,6 +19941,9 @@ func handle_market_order_create(peer_id: int, message: Dictionary):
 		"quantity_filled": 0,
 		"listed_at": int(Time.get_unix_time_from_system()),
 	}
+	if item_type == "commission":
+		order["recipe_id"] = commission_recipe_id
+		order["supply_category"] = "commission"
 	var order_id = persistence.add_market_order(post_id, order)
 
 	send_to_peer(peer_id, {
@@ -19968,7 +20003,19 @@ func handle_market_order_fulfill(peer_id: int, message: Dictionary):
 
 	# Check seller has enough of the item
 	var seller_has = 0
-	if item_type == "material":
+	if item_type == "commission":
+		# ⛑ MATCHED ON `recipe_id`, NEVER ON NAME. A Masterwork craft is named "Masterwork <recipe>"
+		# and a Standard one is bare "<recipe>", so name-matching would silently reject exactly the
+		# good ones - and accept a same-named drop that no crafter made.
+		var want_recipe := String(order.get("recipe_id", ""))
+		for inv_item in character.inventory:
+			if bool(inv_item.get("crafted", false)) and String(inv_item.get("recipe_id", "")) == want_recipe:
+				seller_has += 1
+		if seller_has < fulfill_qty:
+			send_to_peer(peer_id, {"type": "market_error",
+				"message": "You need to craft a %s first - a commission is filled with your own work." % item_name})
+			return
+	elif item_type == "material":
 		seller_has = int(character.crafting_materials.get(item_name, 0))
 	else:
 		# Inventory-resident types: count matching items by name
@@ -19981,7 +20028,22 @@ func handle_market_order_fulfill(peer_id: int, message: Dictionary):
 		return
 
 	# Remove items from seller
-	if item_type == "material":
+	if item_type == "commission":
+		var want_recipe2 := String(order.get("recipe_id", ""))
+		var to_remove: int = fulfill_qty
+		var j: int = character.inventory.size() - 1
+		while j >= 0 and to_remove > 0:
+			var inv_item = character.inventory[j]
+			if bool(inv_item.get("crafted", false)) and String(inv_item.get("recipe_id", "")) == want_recipe2:
+				# The crafter's NAME travels with the work. `crafted_by` already existed and was
+				# already written on a normal craft; a commissioned piece is the one place it
+				# really matters, because the person holding it did not make it.
+				inv_item["crafted_by"] = character.name
+				_commission_delivery_items.append(inv_item.duplicate(true))
+				character.inventory.remove_at(j)
+				to_remove -= 1
+			j -= 1
+	elif item_type == "material":
 		character.crafting_materials[item_name] = seller_has - fulfill_qty
 		if character.crafting_materials[item_name] <= 0:
 			character.crafting_materials.erase(item_name)
@@ -20048,11 +20110,16 @@ func handle_market_order_fulfill(peer_id: int, message: Dictionary):
 			# Inventory-resident types — fill what we can, queue the rest.
 			for _i in range(fulfill_qty):
 				if buyer_char.inventory.size() < Character.MAX_INVENTORY_SIZE:
-					var item_copy = {
-						"type": item_type,
-						"name": item_name,
-						"id": randi(),
-					}
+					# ⛑ A COMMISSION DELIVERS THE ACTUAL PIECE. Every other order type is
+					# name-only - a material or a consumable is fully described by its name - so
+					# this path REBUILDS the item from {type, name, id}. Doing that to a crafted
+					# weapon would hand the buyer a nameplate with no stats, no quality, no
+					# affixes and no maker. The real dict travels instead.
+					var item_copy: Dictionary
+					if item_type == "commission" and not _commission_delivery_items.is_empty():
+						item_copy = _commission_delivery_items.pop_front()
+					else:
+						item_copy = {"type": item_type, "name": item_name, "id": randi()}
 					buyer_char.inventory.append(item_copy)
 				else:
 					queued_qty += 1
@@ -20070,14 +20137,20 @@ func handle_market_order_fulfill(peer_id: int, message: Dictionary):
 		queued_qty = fulfill_qty
 
 	if queued_qty > 0:
-		persistence.append_account_pending_delivery(buyer_account_id, {
+		var _pending := {
 			"item_type": item_type,
 			"item_name": item_name,
 			"quantity": queued_qty,
 			"order_id": order_id,
 			"fulfilled_by": String(characters[peer_id].name),
 			"timestamp": int(Time.get_unix_time_from_system()),
-		})
+		}
+		# The queue is normally name-only for the same reason as above; a commissioned piece
+		# carries its whole self so an offline buyer gets the item, not a label.
+		if item_type == "commission" and not _commission_delivery_items.is_empty():
+			_pending["items"] = _commission_delivery_items.duplicate(true)
+		persistence.append_account_pending_delivery(buyer_account_id, _pending)
+	_commission_delivery_items.clear()
 
 func handle_market_order_cancel(peer_id: int, message: Dictionary):
 	"""Cancel a buy order. Refunds the unfilled portion to the buyer."""
@@ -20156,9 +20229,13 @@ func _drain_pending_market_deliveries(peer_id: int) -> void:
 			character.crafting_materials[item_name] += qty
 			delivered_summary[item_name] = int(delivered_summary.get(item_name, 0)) + qty
 		else:
+			var full_items: Array = d.get("items", []) if d.get("items", null) is Array else []
 			var fit = 0
 			while fit < qty and character.inventory.size() < Character.MAX_INVENTORY_SIZE:
-				character.inventory.append({"type": item_type, "name": item_name, "id": randi()})
+				if fit < full_items.size() and full_items[fit] is Dictionary:
+					character.inventory.append((full_items[fit] as Dictionary).duplicate(true))
+				else:
+					character.inventory.append({"type": item_type, "name": item_name, "id": randi()})
 				fit += 1
 			if fit > 0:
 				delivered_summary[item_name] = int(delivered_summary.get(item_name, 0)) + fit
@@ -26979,7 +27056,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	# Create the item based on output type
 	match recipe.output_type:
 			"weapon", "armor":
-				crafted_item = _create_crafted_equipment(recipe, quality)
+				crafted_item = _create_crafted_equipment(recipe, quality, recipe_id)
 				if crafted_item.is_empty():
 					# Refund materials on creation failure (no refund on tempered)
 					if not is_tempered:
@@ -27847,7 +27924,7 @@ func _craft_structure(recipe: Dictionary, quality: int) -> Dictionary:
 		item["description"] = String(recipe.get("description", "Places a fixed structure layout in one shot."))
 	return item
 
-func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
+func _create_crafted_equipment(recipe: Dictionary, quality: int, source_recipe_id: String = "") -> Dictionary:
 	"""Create a crafted equipment item"""
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	# ⛑ SIZED BY THE SHARED FUNCTION, NOT HERE. `tools/probe/crafting_worth.gd` measures the
@@ -27875,6 +27952,10 @@ func _create_crafted_equipment(recipe: Dictionary, quality: int) -> Dictionary:
 		"rarity": _quality_to_rarity(quality),
 		"crafted": true,
 		"quality": quality,
+		# ⛑ WHICH RECIPE MADE THIS. The name alone cannot answer it - a Masterwork craft is named
+		# "Masterwork <recipe>" while a Standard one is just "<recipe>", so name-matching an order
+		# would silently reject exactly the good ones. Commission orders match on this.
+		"recipe_id": source_recipe_id,
 		"crafted_by": ""
 	}
 
@@ -28142,7 +28223,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 
 	match recipe.output_type:
 			"weapon", "armor":
-				crafted_item = _create_crafted_equipment(recipe, quality)
+				crafted_item = _create_crafted_equipment(recipe, quality, recipe_id)
 				if crafted_item.is_empty():
 					if not is_tempered:
 						for mat_id in recipe.materials:
