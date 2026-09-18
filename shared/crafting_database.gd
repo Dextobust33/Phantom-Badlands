@@ -946,7 +946,7 @@ const RECIPES = {
 		"craft_time": 3.0
 	},
 	"potion_of_fortitude": {
-		"name": "Potion of Fortitude",
+		"name": "Defense Draught",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 25,
 		"difficulty": 30,
@@ -978,17 +978,6 @@ const RECIPES = {
 		"output_slot": "",
 		"effect": {"type": "restore_energy", "amount": 30},
 		"craft_time": 1.5
-	},
-	"potion_of_vigor": {
-		"name": "Potion of Vigor",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 10,
-		"difficulty": 12,
-		"materials": {"healing_herb": 3, "vigor_root": 2},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "heal", "amount": 100},
-		"craft_time": 2.0
 	},
 	"energy_potion": {
 		"name": "Energy Potion",
@@ -1861,7 +1850,7 @@ const RECIPES = {
 		"craft_time": 3.0
 	},
 	"elixir_of_power": {
-		"name": "Elixir of Power",
+		"name": "Attack & Defense Elixir",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 40,
 		"difficulty": 50,
@@ -1873,7 +1862,7 @@ const RECIPES = {
 		"craft_time": 5.0
 	},
 	"potion_of_insight": {
-		"name": "Potion of Insight",
+		"name": "Lesser Experience Elixir",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 50,
 		"difficulty": 60,
@@ -1898,68 +1887,20 @@ const RECIPES = {
 	},
 	# Bane Potions (specialist-only, rare materials)
 	"dragon_bane_potion": {
-		"name": "Dragon Bane Potion",
+		"name": "Banebrew",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 60,
 		"difficulty": 70,
 		"materials": {"dragon_blood": 3, "phoenix_petal": 2, "void_essence": 1},
 		"output_type": "consumable",
 		"output_slot": "",
-		"effect": {"type": "bane", "monster_type": "dragon", "bonus_pct": 50, "duration_battles": 3},
-		"specialist_only": true,
-		"craft_time": 6.0
-	},
-	"undead_bane_potion": {
-		"name": "Undead Bane Potion",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 60,
-		"difficulty": 70,
-		"materials": {"soul_shard": 3, "healing_herb": 5, "magic_dust": 3},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "bane", "monster_type": "undead", "bonus_pct": 50, "duration_battles": 3},
-		"specialist_only": true,
-		"craft_time": 6.0
-	},
-	"beast_bane_potion": {
-		"name": "Beast Bane Potion",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 60,
-		"difficulty": 70,
-		"materials": {"thick_leather": 3, "wyvern_leather": 2, "bloodroot": 3},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "bane", "monster_type": "beast", "bonus_pct": 50, "duration_battles": 3},
-		"specialist_only": true,
-		"craft_time": 6.0
-	},
-	"demon_bane_potion": {
-		"name": "Demon Bane Potion",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 65,
-		"difficulty": 75,
-		"materials": {"void_essence": 2, "phoenix_petal": 3, "primordial_spark": 1},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "bane", "monster_type": "demon", "bonus_pct": 50, "duration_battles": 3},
-		"specialist_only": true,
-		"craft_time": 7.0
-	},
-	"elemental_bane_potion": {
-		"name": "Elemental Bane Potion",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 60,
-		"difficulty": 70,
-		"materials": {"arcane_crystal": 3, "mana_blossom": 5, "void_essence": 1},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "bane", "monster_type": "elemental", "bonus_pct": 50, "duration_battles": 3},
+		"effect": {"type": "bane", "monster_type": "any", "bonus_pct": 30, "duration_battles": 3},
 		"specialist_only": true,
 		"craft_time": 6.0
 	},
 	# Elixir of Rejuvenation (50% max HP heal)
 	"elixir_of_rejuvenation": {
-		"name": "Elixir of Rejuvenation",
+		"name": "Restorative Elixir",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 70,
 		"difficulty": 80,
@@ -1971,54 +1912,8 @@ const RECIPES = {
 		"craft_time": 7.0
 	},
 	# New alchemy recipes — unused materials integration
-	"potion_of_resilience": {
-		"name": "Potion of Resilience",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 25,
-		"difficulty": 30,
-		"materials": {"cave_mushroom": 3, "bark": 2, "healing_herb": 2},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "buff", "stat": "defense", "amount": 10, "duration": 10},
-		"craft_time": 3.0
-	},
-	"heartwood_salve": {
-		"name": "Heartwood Salve",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 35,
-		"difficulty": 40,
-		"materials": {"heartwood_seed": 2, "spirit_blossom": 2, "healing_herb": 3},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "heal", "amount": 300},
-		"specialist_only": true,
-		"craft_time": 4.0
-	},
-	"deep_sea_tonic": {
-		"name": "Deep Sea Tonic",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 45,
-		"difficulty": 50,
-		"materials": {"deep_sea_fish": 3, "abyssal_crab": 2, "arcane_crystal": 1},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "heal", "amount": 600},
-		"craft_time": 4.0
-	},
-	"prismatic_elixir": {
-		"name": "Prismatic Elixir",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 55,
-		"difficulty": 65,
-		"materials": {"prismatic_fish": 3, "celestial_petal": 2, "void_essence": 1},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "buff", "stat": "attack_defense", "bonus_pct": 20, "duration_battles": 8},
-		"specialist_only": true,
-		"craft_time": 6.0
-	},
 	"elixir_of_the_ancients": {
-		"name": "Elixir of the Ancients",
+		"name": "Greater Experience Elixir",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 75,
 		"difficulty": 85,
@@ -2029,20 +1924,8 @@ const RECIPES = {
 		"specialist_only": true,
 		"craft_time": 8.0
 	},
-	"voidpetal_elixir": {
-		"name": "Voidpetal Elixir",
-		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 70,
-		"difficulty": 80,
-		"materials": {"voidpetal": 4, "void_blossom": 2, "essence_of_life": 1},
-		"output_type": "consumable",
-		"output_slot": "",
-		"effect": {"type": "heal_pct", "amount": 40},
-		"specialist_only": true,
-		"craft_time": 7.0
-	},
 	"primordial_tonic": {
-		"name": "Primordial Tonic",
+		"name": "Greater Restorative Elixir",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 80,
 		"difficulty": 90,
@@ -3514,7 +3397,7 @@ const RECIPES = {
 
 	# Alchemist: Endgame elixirs using dungeon crystals
 	"elixir_of_the_void": {
-		"name": "Elixir of the Void",
+		"name": "All-Stat Elixir",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 28,
 		"difficulty": 45,
@@ -3525,7 +3408,7 @@ const RECIPES = {
 		"craft_time": 5.0
 	},
 	"elixir_of_the_abyss": {
-		"name": "Elixir of the Abyss",
+		"name": "Attack Elixir",
 		"skill": CraftingSkill.ALCHEMY,
 		"skill_required": 32,
 		"difficulty": 55,

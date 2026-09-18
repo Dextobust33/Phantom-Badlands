@@ -10954,6 +10954,14 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 
 	# === MONSTER BANE POTIONS ===
 	# Check for monster_bane_<type> buffs that give +damage% vs specific monster types
+	# ⚑ "any" IS THE ADAPTIVE ONE. Five Bane potions - dragon, undead, beast, demon,
+	# elemental - were one mechanic wearing five names, all +50% for 3 battles at skill 60-65,
+	# and a player had to guess which kind of trouble they were walking into before they met
+	# it. They are now a single **Banebrew** that works on whatever you are actually fighting,
+	# at +30% rather than +50% because it never turns out to be the wrong one.
+	#
+	# The five specific keys stay readable here: an existing potion in a live inventory still
+	# grants `monster_bane_dragon`, and it must keep working.
 	var bane_types = ["dragon", "undead", "beast", "demon", "elemental"]
 	for bane_type in bane_types:
 		var bane_buff_key = "monster_bane_" + bane_type
@@ -10963,6 +10971,11 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 			if drop_tables and drop_tables.get_monster_type(monster.name) == bane_type:
 				total = int(total * (1.0 + bane_bonus / 100.0))
 				passive_messages.append("[color=#FF4500]%s Bane: +%d%% damage![/color]" % [bane_type.capitalize(), bane_bonus])
+	# The adaptive brew: no type to match, so it applies to whatever is in front of you.
+	var bane_any = character.get_buff_value("monster_bane_any")
+	if bane_any > 0:
+		total = int(total * (1.0 + bane_any / 100.0))
+		passive_messages.append("[color=#FF4500]Banebrew: +%d%% damage![/color]" % bane_any)
 
 	# === BOSS-SLAYER TONIC ===
 	# Dungeon-exclusive consumable. +damage% against boss-tagged monsters only.

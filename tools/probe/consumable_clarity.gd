@@ -19,9 +19,14 @@ extends SceneTree
 const CD := preload("res://shared/crafting_database.gd")
 
 # Words that tell a player what the thing DOES, rather than what it is made of or how grand it is.
+# ⛑ THE LIST WENT STALE THE MOMENT THE POTIONS WERE RENAMED, and it flagged three names that are
+# perfectly clear: "Attack Elixir" (no "attack" entry), "Restorative Elixir" ("restore" does not
+# match "restorative") and "All-Stat Elixir". A word list is a heuristic, and a heuristic that has
+# not been updated alongside the content reports the CONTENT as broken - which is how an instrument
+# sends someone to fix something that is already right.
 const EFFECT_WORDS := ["health", "healing", "heal", "mana", "stamina", "energy", "cure", "antidote",
-	"strength", "defense", "speed", "regen", "restore", "revive", "escape", "invis", "shield",
-	"resist", "poison", "fire", "frost", "luck", "xp", "experience"]
+	"strength", "defense", "speed", "regen", "restor", "revive", "escape", "invis", "shield",
+	"resist", "poison", "fire", "frost", "luck", "xp", "experience", "attack", "stat", "bane"]
 # Words that say only "this one is better", which is the shape the owner is describing.
 const GRADE_WORDS := ["minor", "lesser", "greater", "major", "superior", "supreme", "grand",
 	"master", "elixir", "draught", "tonic", "philter", "flask", "vial", "potion"]

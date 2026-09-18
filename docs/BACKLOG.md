@@ -7575,8 +7575,31 @@ something was dropped, and it sat unnoticed for eleven days.
       worth making.
 
       **⚑ DECISIONS TAKEN 2026-09-18, and they are the plan for the consumable half:**
-      * **Potions: cut most of the 19 opaque ones, rename the survivors.** Not a pure rename - the
-        owner's second reason is bloat, not just clarity (see the inventory item below).
+      * **✅ POTIONS — CUT AND RENAMED, DONE 2026-09-18. 35 recipes → 25, and 25 of 25 now name
+        their effect** (was 16 of 35).
+        ⛑ **The 19 "opaque" ones were mostly DUPLICATES, not just badly named** - reading what
+        they actually did changed the job from a rename into a cull:
+        * **6 flat/percentage heals** duplicating the existing Health Potion ladder. Cut 4; kept
+          Restorative (50%) and Greater Restorative (70%) as the percentage ladder, which is a
+          genuinely different thing from a flat heal at high HP.
+        * **5 Bane potions** - dragon / undead / beast / demon / elemental - were **one mechanic
+          wearing five names**, all +50% for 3 battles at skill 60-65, and the player had to guess
+          which kind of trouble they were walking into *before meeting it*. Collapsed to one
+          adaptive **Banebrew** at +30%, because it is never the wrong one. The five specific buff
+          keys are still read in `calculate_damage`, so a potion already sitting in a live
+          inventory keeps working.
+        * **Potion of Resilience** (defense +10) was strictly dominated by Fortitude (+15, same
+          stat, same duration, same skill). Cut.
+        * **Prismatic Elixir** cost skill 55 for a SMALLER bonus than Elixir of Power at skill 40 -
+          the ladder ran backwards. Cut.
+        Survivors renamed to state their effect: **Defense Draught**, **Attack Elixir**,
+        **Attack & Defense Elixir**, **All-Stat Elixir**, **Lesser / Greater Experience Elixir**,
+        **Restorative / Greater Restorative Elixir**, **Banebrew**.
+        ⛑ And the clarity probe's own word list had gone stale the moment the names changed - it
+        flagged "Attack Elixir", "Restorative Elixir" and "All-Stat Elixir" as unclear because it
+        had no entry for "attack", and "restore" does not match "restorative". A heuristic not
+        updated alongside the content reports the CONTENT as broken. Fixed; one name (*"Battle
+        Elixir"*) was genuinely vague and became "Attack & Defense Elixir".
       * **Quality on a consumable is NOT a multiplier.** Owner: *"crafting quality for consumables
         would come in the form of making the next item in the tier from a great craft or getting
         bonus items (example: you made an extremely potent healing potion, you dilute it into 2)."*
