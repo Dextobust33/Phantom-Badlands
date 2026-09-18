@@ -39504,6 +39504,21 @@ func _tier_rank_help() -> String:
 	])
 
 
+func _craft_skill_figure(skill: int, which: String) -> int:
+	"""A real crafting figure for the help text, read off the real roll.
+
+	⚑ Owner 2026-09-18 asked for a guide to the gather-craft loop. The entry filed for it carried
+	one condition and I broke it in the first draft: *"any figure typed into help text is a second
+	copy waiting to go stale."* I typed "5% to 95%" and "about two thirds" as prose. Three of the
+	constants behind this arc moved on the day it was written.
+
+	Difficulty 35 is a middling recipe, which is what the sentence claims to describe."""
+	var d: Dictionary = preload("res://shared/crafting_database.gd").roll_quality_detailed(skill, 35)
+	if which == "masterwork":
+		return int(d.get("distribution", {}).get("masterwork", 0))
+	return int(d.get("success_chance", 0))
+
+
 func show_help():
 	# Clear output before showing help
 	_page_clear(true)   # wide: too big for the column
@@ -40159,9 +40174,88 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 			"content": "[color=#00FFFF]Companions[/color]\n\nA companion fights beside you, earns a share of the XP, and grows stronger as you play. Only one is active at a time - activate, swap and inspect it from [color=#00FFFF]More → Companions[/color].\n\n[color=#FFD700]Eggs:[/color] companions hatch from eggs as you walk. [color=#87CEEB]Dungeons are the main source[/color] - the boss guarantees an egg of the dungeon's type, and more turn up as floor loot. Overworld kills very rarely drop one.\n[color=#FFD700]Its card:[/color] every companion lends you a combat card. Cast it enough and it becomes a permanent card in your collection.\n[color=#FFD700]Tier & rank:[/color] a label like [color=#FFCC00]E5[/color] - a later letter is stronger, and a higher number is stronger within a letter. See the Tier & Rank page.\n[color=#FFD700]Keeping them:[/color] register a companion to your Sanctuary and it survives your character's death. At a [color=#FF80FF]Companion Stable[/color] you can deposit, withdraw and fuse companions.\n\n[color=#AAAAAA]Soul Gems[/color] are a separate, rare find from tier 7+ monsters: Wolf Spirit, Phoenix Ember, Shadow Wisp, Dragon Essence, Titan's Soul, Void Fragment, Celestial Spark. They are collected automatically and activated from the same Companions screen."
 		},
 		{
-			"title": "CRAFTING & GATHERING",
-			"keywords": ["craft", "crafting", "gather", "gathering", "salvage", "essence", "fish", "fishing", "mine", "mining", "log", "logging", "chop", "ore", "wood", "material", "materials", "fail", "wrong", "key", "button"],
-			"content": "[color=#FFD700]Crafting & Gathering[/color]\n\n[color=#AA66FF]Salvage[/color] - Destroy inventory items for crafting materials\n• Returns tier-appropriate materials (ore from weapons, leather from armor, etc.)\n• Higher rarity items yield more materials\n• Access via Inventory → Salvage → select item\n\n[color=#00FFFF]Gathering[/color] - stand on a resource and press R:\n• [color=#00FFFF]Fishing[/color] at water, [color=#8B4513]Mining[/color] at stone and ore, [color=#228B22]Logging[/color] at trees and brush, [color=#9ACD32]Foraging[/color] at herbs, flowers and mushrooms\n• You get a grid of face-down cards and a number of [b]scratches[/b]: reveal a card to keep what is under it\n• Scratches start at 2 and grow with that job\'s skill, one more per 25 levels\n• Deep-water fishing is different: 3 choices a round, pick right to keep the chain going, a wrong pick ends it\n• Tier rises with distance from the origin, and so does what you can find\n• [color=#808080]Tools[/color] (Rod, Pickaxe, Axe, Sickle) are optional but strong: a tool turns some cards face-up before you start\n\n[color=#808080]View Materials:[/color] Inventory → Materials\n[color=#808080]Skills:[/color] each gathering job levels up as you use it"
+			"title": "GATHERING",
+			"keywords": ["gather", "gathering", "fish", "fishing", "mine", "mining", "log", "logging",
+				"chop", "forage", "ore", "wood", "herb", "material", "materials", "salvage", "job", "jobs"],
+			"content": "[color=#FFD700]Gathering[/color]
+
+Stand on a resource and press [color=#FFD700]R[/color]:
+• [color=#00FFFF]Fishing[/color] at water   • [color=#8B4513]Mining[/color] at stone and ore
+• [color=#228B22]Logging[/color] at trees   • [color=#9ACD32]Foraging[/color] at herbs and mushrooms
+• [color=#FF8866]Soldier[/color] harvests monster parts when you kill things
+
+[color=#AA66FF]Salvage[/color] — break inventory items into materials (Inventory → Salvage).
+Returns roughly half of what the item would cost to craft, so salvaging what you
+will not wear is the fastest way to stock a bench.
+
+[color=#00FF00]Levelling a gathering job pays off whether or not you commit to it:[/color]
+• hint accuracy in the gathering minigame rises with the level
+• more scratch-off slots and a bigger budget
+• longer chains, deeper catches, better monster-part drops
+
+[color=#FFD700]Committing[/color] to one job gives [color=#FFD700]+%d%%[/color] XP in it and costs you nothing
+anywhere else — every other job keeps levelling normally.
+
+[color=#FF8866]Tools[/color] — a rod, pickaxe or axe. Each use wears one point of durability and a tool
+that runs out is [color=#FF6666]destroyed[/color]; a spare of the same kind is equipped automatically if
+you carry one. Nothing repairs a tool, so carry a second before you go far.
+Better tools raise your yield and make the minigame easier." % int(CharacterScript.COMMITTED_JOB_XP_BONUS * 100.0),
+		},
+		{
+			"title": "CRAFTING",
+			"keywords": ["craft", "crafting", "recipe", "recipes", "bench", "quality", "masterwork",
+				"temper", "boost", "commission", "specialist", "commit", "blacksmith", "alchemy",
+				"enchanting", "scribing", "construction"],
+			"content": "[color=#FFD700]Crafting[/color]
+
+At a trading post, open a bench and pick a trade. The recipe list answers four
+questions — the buttons above it:
+• [color=#00FF00]Can Make[/color] — you have the materials, or it can be commissioned
+• [color=#FFFFFF]At My Skill[/color] — everything your skill allows
+• [color=#C8A24A]Wanted[/color] — a recipe another player is paying for right now
+• [color=#808080]All[/color] — including what is still ahead of you
+
+[color=#87CEEB]The detail pane says what the item IS[/color] — its stats, and how they compare
+to the piece you are wearing — before it says how to make it.
+
+[color=#FFD700]Skill is what matters.[/color] On a middling recipe, going from skill 1 to 60 moves
+your success from %d%% to %d%%, and your Masterwork share from %s%% to %s%%.
+Quality multiplies the item: Poor x0.5, Standard x1.0, Fine x1.25, Masterwork x1.5.
+
+[color=#C8A24A]Specialist recipes[/color] carry a ★. They belong to one trade, and you reach them by
+[color=#FFD700]committing[/color] to it — which also pays +%d%% XP in that trade and unlocks its field
+service. Nothing is locked away for good: if you have the SKILL but not the
+focus, you can [color=#C8A24A]Commission[/color] the work from a post NPC (always Standard quality),
+or [color=#C8A24A]Post Job[/color] and let another player make it at THEIR quality — usually better,
+and they get paid instead of the shop." % [
+				_craft_skill_figure(1, "success"), _craft_skill_figure(60, "success"),
+				str(_craft_skill_figure(1, "masterwork")), str(_craft_skill_figure(60, "masterwork")),
+				int(CharacterScript.COMMITTED_JOB_XP_BONUS * 100.0)],
+		},
+		{
+			"title": "IMPROVING YOUR GEAR",
+			"keywords": ["rune", "runes", "enchant", "enchanting", "affix", "affixes", "reroll",
+				"rework", "reforge", "disenchant", "upgrade", "improve", "stat"],
+			"content": "[color=#FFD700]Making a piece better[/color]
+
+[color=#A335EE]Runes[/color] add an affix to gear. Enchanters craft them; apply one from your pack.
+An item holds a limited number of enchantment types, so pick what it is FOR.
+
+[color=#C8A24A]Rework[/color] (Inventory → Rework) trades a stat you do not want for a different one.
+[color=#FF9999]It is a trade, not an upgrade:[/color] the new value is rolled fresh and can come out
+LOWER, and it stands. It cannot reach stats above your item's rarity, and each
+item takes [color=#FFD700]%d[/color] reworks and no more. The cost rises each time and the count
+left is shown before you commit.
+At a post it costs Valor and materials; a committed [color=#A335EE]Enchanter[/color] can do it
+anywhere, for fewer materials and no Valor.
+
+[color=#C8A24A]Reforge[/color] (a Blacksmith recipe) rerolls a weapon or armour's own numbers inside a
+fixed band around what it started at — repeat it as often as you like, it will
+not drift upward or down.
+
+[color=#C8A24A]Disenchant[/color] (an Enchanter recipe) unmakes an item and gives back [color=#A335EE]the runes that
+went into it[/color], plus the materials salvage would have given. Gear enchanted before
+this existed kept no record and returns materials only." % DropTables.MAX_AFFIX_REROLLS,
 		},
 		{
 			"title": "GUARDS & TOWERS",

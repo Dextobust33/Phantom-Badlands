@@ -789,7 +789,7 @@ persistent variant already existed and these were the last two callers of the ra
 wandering merchant kept his face while the smith you visit daily did not. Seeded on post + role.
 The **rescue NPC keeps random art on purpose** — that one *is* a different stranger each time.
 
-## ⚑ TEACH THE GATHER → CRAFT LOOP — owner direction 2026-09-18, NOT STARTED
+## ⚑ TEACH THE GATHER → CRAFT LOOP — REFERENCE HALF SHIPPED 2026-09-18
 
 *"There should be a tutorial or help guide that introduces or walks players through how to
 efficiently make their equipment and how to further improve it, gain the affixes it wants, reroll,
@@ -815,6 +815,31 @@ Checked against the concepts a player actually needs:
 
 **14 of 15 core concepts are unmentioned**, and most of them either shipped today or were reworked
 today.
+
+**✅ THE HELP HALF IS DONE.** One thin topic (**1,242 chars**, covering salvage and "press R")
+became three — **GATHERING**, **CRAFTING**, **IMPROVING YOUR GEAR** — at **5,132 chars**, and all
+15 concepts the audit listed as missing are now covered.
+
+⛑ **EVERY FIGURE IS GENERATED, and the first draft broke that rule immediately.** The entry above
+warned that *"any figure typed into help text is a second copy waiting to go stale"* — and I then
+typed *"about 5% to 95%"* and *"about two thirds"* as prose. `_craft_skill_figure()` now reads them
+off `roll_quality_detailed` at display time, and the rework cap and the commit bonus come from
+`MAX_AFFIX_REROLLS` and `COMMITTED_JOB_XP_BONUS`. The probe fails if a literal comes back.
+
+⛑ **AND THE REWRITE DROPPED SOMETHING THE OLD TEXT HAD.** Tools were the ONE thing the thin topic
+covered, and my three new topics lost them — the probe caught it. They are back, with the part that
+actually matters: a tool that runs out of durability is **destroyed**, a spare auto-equips, and
+**nothing repairs one**.
+
+The guide is honest about the two counter-intuitive rules, as the entry required: a **Rework can
+come out worse and it stands**, and a **commission is always Standard quality** so a real crafter
+beats it.
+
+Probe: `tools/probe/crafting_help_covers_the_loop.gd`.
+
+**Still open: the WALKTHROUGH half** — one-shot `tutorial_hint_panel` hints fired the first time a
+player stands at a bench, sees a rune, or meets a `Wanted` job. The reference half is what a player
+goes looking for; the hints are what reaches a player who does not know to look.
 
 **⛑ USE THE TWO SURFACES THAT ALREADY EXIST — do not build a third.**
 * `show_help()` topics (~30 of them, keyword-searchable) — the reference half. Extend
