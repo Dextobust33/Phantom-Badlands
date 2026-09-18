@@ -6983,6 +6983,43 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 - [ ] **Real sinks for excess eggs and companions**: shops, breeders, trainers, fusers, companion
       tasks. Much is already scaffolded (fusion, breeder NPCs, egg market, kennel).
+- [ ] **⚑ THE WORLD CONSUMES MATERIAL SURPLUS AND MAKES GEAR OF IT — owner direction 2026-09-18.**
+      *"If the materials build up on the market to the point where we have a large surplus they
+      could then be consumed to make gear appropriate to that area that is then market listed and
+      transported around like the merchants already do. That would help with the living world arc
+      as well."*
+
+      **⛑ THIS CLOSES A LOOP RATHER THAN ADDING A SOURCE, which is why it is worth more than any
+      of the three problems it touches.** Players gather → list the surplus → the world consumes it
+      → gear appropriate to THAT AREA appears on the market → couriers carry it around. Every step
+      already exists except the conversion.
+
+      What it answers, in three arcs at once:
+      * **Crafting fault 1** - *"materials have no destination"*. A surplus that nobody wants is
+        precisely the pile the player is staring at, and this gives it somewhere to go **without
+        requiring the player to do anything**.
+      * **Merchant stock** - the honest fix for empty couriers. Their goods come from PLAYER
+        material, not from a generator, which is the owner's *"most of the economy should come
+        from the players"* satisfied rather than worked around.
+      * **Living world** - the world visibly produces, not just spawns. Supply appears where the
+        material came from, so a region's output tells you what is gathered there.
+
+      **Design questions, none settled:**
+      * What counts as *surplus*? A per-material threshold on total market quantity, presumably
+        per REGION rather than globally, or the gear would not be area-appropriate.
+      * How fast does it convert, and does it drain enough to actually relieve the pile?
+      * Who is the seller, and where does the valor go? If the conversion pays nobody, it is a
+        pure sink; if it pays the listers, it is a price floor for materials, which is a much
+        bigger economic lever and needs thinking about.
+      * Does it compete with PLAYER crafters? It should undercut nobody - the whole point of the
+        crafting arc is making player crafting worth doing. **Likely answer: it converts only the
+        surplus ABOVE a threshold**, so it is a relief valve, never the main supply.
+
+      **Sequencing:** wants the **valor economy pass** first (it mints or moves valor), and it
+      pairs with **living world**. The interim consumables floor shipped for road merchants on
+      2026-09-18 is deliberately small and does NOT sell gear, so it does not conflict with this -
+      but if this lands, revisit whether the floor is still needed at all.
+
 - [ ] **⚑ POST SERVICES ARE THIN — owner direction 2026-09-18. Three parts.**
 
       1. **The healer has no reason to offer anything but the cheap option.** *"The healer options
@@ -7008,11 +7045,21 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
          A slow merchant is one you meet rarely; an empty one makes the rare meeting worthless.
          Fixing only the speed would give players more frequent encounters with nothing to buy.
 
-         **✅ BOTH FIXED 2026-09-18.** Road merchants now generate their own stock from the same
-         `get_or_generate_merchant_inventory` the post merchants use, keyed `road_<id>` so it is
-         stable while the player stands there. Carried player listings still come FIRST - they are
-         the reason to stop a courier - with the generated stock as a floor beneath them, and the
-         "nothing to sell" branch now requires BOTH to be empty. `MERCHANT_SPEED` 0.025 → **0.25**.
+         **✅ BOTH FIXED 2026-09-18 — and the stock half was CORRECTED after the owner read it.**
+         My first version called the post shop generator with `character.level`, which returns
+         **4-12 items scaled to the buyer** - a full market stall on every courier, stocked to
+         whatever the player happened to need. Owner: *"We don't want players to just be able to
+         buy all of their gear upgrades from a wandering merchant for cheap and trivialize the
+         drops and crafting work."* It would have done exactly that.
+         Now three constraints, one per clause of that note: **consumables only** (equipment on a
+         courier comes solely from carried player listings, so the gear economy stays
+         player-driven), **the AREA's level not the player's** (`get_post_anchored_level`, the same
+         function the land grade reads), and **at most 3 items at the road markup**. A belt-and-
+         braces `_is_equipment_item` guard refuses gear whatever the generator returns, because
+         "a courier sells no gear" is an economy decision and belongs where it is stated rather
+         than trusted to a specialty string two thousand lines away.
+         Carried player listings still come FIRST - they are the reason to stop a courier - with
+         the small consumable stock beneath, and "nothing to sell" now requires BOTH to be empty. `MERCHANT_SPEED` 0.025 → **0.25**.
          ⛑ **The speed was sized against `MERCHANT_REST_TIME`, not measured**, because the road
          graph needs world generation and `compute_merchant_circuits` returns nothing headless. A
          200-tile leg is now **13 minutes against a 5-minute rest (2.7x)** where it was over two

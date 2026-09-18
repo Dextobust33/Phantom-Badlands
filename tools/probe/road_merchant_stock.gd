@@ -31,10 +31,21 @@ func _init() -> void:
 	var srv := FileAccess.get_file_as_string("res://server/server.gd")
 
 	print("===== A ROAD MERCHANT HAS ITS OWN STOCK =====")
-	ck(srv.find('var own_stock: Array = get_or_generate_merchant_inventory(') >= 0,
-		"the encounter generates the merchant's own wares")
-	ck(srv.find('"road_" + merchant_id') >= 0,
-		"...keyed per merchant, so its stock is stable while you stand there")
+	ck(srv.find('"road_" + merchant_id, _road_area_lvl, hash(merchant_id), "potions")') >= 0,
+		"a courier stocks CONSUMABLES, at the AREA level, keyed per merchant")
+	# ⛑ THE THREE CONSTRAINTS ARE THE POINT, and the first version of this fix had none of
+	# them: it called the post shop generator with `character.level`, which returns 4-12 items
+	# scaled to the buyer - a gear vending machine on every courier. Owner: *"We don't want
+	# players to just be able to buy all of their gear upgrades from a wandering merchant for
+	# cheap and trivialize the drops and crafting work."*
+	ck(srv.find("character.level, hash(merchant_id)") < 0,
+		"...and NOT the player's level - deep country carries deep stock")
+	ck(srv.find("func _is_equipment_item(") >= 0 and srv.find("if _is_equipment_item(_it):") >= 0,
+		"equipment is refused from a courier's OWN stock, whatever the generator returns")
+	ck(srv.find("ROAD_MERCHANT_MAX_OWN_ITEMS") >= 0,
+		"...and the carry is capped - a courier is not a market stall")
+	ck(srv.find('_road_it["shop_price"] = int(round(float(_road_it.get("shop_price", 1)) * ROAD_MERCHANT_MARKUP))') >= 0,
+		"...at the road markup, so convenience is paid for")
 	# The empty branch must now require BOTH to be empty, or the floor never shows.
 	ck(srv.find("if carried_items.size() == 0 and own_stock.is_empty():") >= 0,
 		'"nothing to sell" needs BOTH empty now - it was the normal case before')

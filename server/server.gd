@@ -14746,21 +14746,40 @@ func trigger_merchant_encounter(peer_id: int):
 	var greeting = "[color=#FFD700]A %s approaches on the road![/color]\n" % merchant.name
 	greeting += "[color=#808080]\"I'm on my way to %s.\"[/color]\n\n" % dest_name
 
-	# ⚑ A ROAD MERCHANT CARRIES ITS OWN WARES TOO, NOT ONLY OTHER PLAYERS' LISTINGS.
+	# ⚑ A COURIER CARRIES SUPPLIES, NOT UPGRADES. Owner 2026-09-18, on the first version of
+	# this: *"Be careful giving the merchants stock like post merchants... Ideally most of the
+	# economy should come from the players. I'm okay with the merchants also having some items
+	# on them they carry around to sell as long as they are appropriate to the area and carry
+	# appropriate costs. We don't want players to just be able to buy all of their gear upgrades
+	# from a wandering merchant for cheap and trivialize the drops and crafting work."*
 	#
-	# Owner 2026-09-18: *"merchants... seem to pretty much never have anything for sale when you
-	# see them out and around."* They did not, and it was BY CONSTRUCTION rather than bad luck:
-	# this shop was built entirely from `merchant_inventory` - market listings other players had
-	# posted, which the courier is moving between posts. With a small or quiet player base that
-	# is empty almost always, so the "nothing to sell" branch below was the NORMAL case rather
-	# than the edge, and meeting a merchant was pointless almost always.
+	# ⛑ MY FIRST VERSION DID EXACTLY THAT. It called the POST shop generator with
+	# `character.level`, which returns FOUR TO TWELVE items scaled to the player - a full market
+	# stall on every courier, stocked to whatever the buyer happens to need. That is a gear
+	# vending machine, and it would have undercut drops and the whole crafting arc at once.
 	#
-	# The carried listings stay, and stay the interesting half - they are real player goods at a
-	# convenience markup. This puts a FLOOR underneath them from the same generator the post
-	# merchants already use, seeded on the merchant so its stock does not shuffle while you are
-	# standing there looking at it.
-	var own_stock: Array = get_or_generate_merchant_inventory(
-		"road_" + merchant_id, character.level, hash(merchant_id), String(merchant.get("specialty", "")))
+	# Three constraints instead, each answering one clause of the owner's note:
+	#   * **CONSUMABLES ONLY** ("not gear upgrades") - equipment on a courier comes solely from
+	#     carried player LISTINGS, so the gear economy stays player-driven and drop-driven.
+	#   * **THE AREA'S LEVEL, NOT THE PLAYER'S** ("appropriate to the area") - the same
+	#     `get_post_anchored_level` the land grade reads, so deep country carries deep stock and
+	#     a courier near spawn does not hand a veteran anything useful.
+	#   * **A FEW ITEMS, AT A MARKUP** ("appropriate costs") - a courier is not a shop.
+	var _road_area_lvl: int = maxi(1, int(world_system.get_post_anchored_level(character.x, character.y)))
+	var own_stock: Array = []
+	for _it in get_or_generate_merchant_inventory(
+		"road_" + merchant_id, _road_area_lvl, hash(merchant_id), "potions"):
+		if own_stock.size() >= ROAD_MERCHANT_MAX_OWN_ITEMS:
+			break
+		if not (_it is Dictionary):
+			continue
+		# Belt and braces: the specialty should already exclude equipment, but a courier must
+		# never sell a wearable whatever the generator decides to do next.
+		if _is_equipment_item(_it):
+			continue
+		var _road_it: Dictionary = _it.duplicate(true)
+		_road_it["shop_price"] = int(round(float(_road_it.get("shop_price", 1)) * ROAD_MERCHANT_MARKUP))
+		own_stock.append(_road_it)
 	if carried_items.size() == 0 and own_stock.is_empty():
 		greeting += "[color=#AAAAAA]The merchant has nothing to sell right now.[/color]\n"
 		greeting += "[Space] Leave"
@@ -14801,7 +14820,24 @@ func trigger_merchant_encounter(peer_id: int):
 		"road_merchant": true
 	})
 
+## How many of its OWN items a courier may carry. A courier is not a market stall - the post
+## shops carry 4-12. Kept deliberately small so meeting one is a convenience, never a supply run.
+const ROAD_MERCHANT_MAX_OWN_ITEMS := 3
+
 const ROAD_MERCHANT_MARKUP := 1.2  # Couriered goods cost a convenience premium on the road
+
+func _is_equipment_item(it: Dictionary) -> bool:
+	"""Is this shop entry a wearable? Road merchants must never sell one from their OWN stock.
+
+	⛑ A SECOND LOCK ON A DOOR THE SPECIALTY ALREADY CLOSES. Asking the generator for "potions"
+	should return no equipment, but that is a promise made by a function 2,000 lines away that
+	nobody would think to re-check when adding an item type. The rule "a courier sells no gear" is
+	the owner's economy decision, so it is enforced where it is stated rather than assumed."""
+	var t := String(it.get("type", "")).to_lower()
+	if t in ["weapon", "armor", "helm", "boots", "shield", "ring", "amulet"]:
+		return true
+	# Generated gear carries a slot; consumables do not.
+	return String(it.get("slot", "")) != "" or it.has("affixes")
 
 func _flatten_carried_to_shop_items(carried_items: Array) -> Array:
 	"""Turn courier-carried market LISTINGS into flat shop items the client can
