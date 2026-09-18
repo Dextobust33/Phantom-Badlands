@@ -3317,6 +3317,27 @@ func _ready():
 		ui_scale_manager.register("status_hud", tool_status_overlay,
 			func(_scale: float): _on_window_resized(), "Status Panel")
 
+	# ⚑ THE FOUR BIG PANELS, through ONE walker rather than four hand-written appliers.
+	# Measured first: between them they set 86 font sizes with `add_theme_font_size_override`
+	# and NOT ONE inline `[font_size=]` BBCode tag - which is the only case a walker cannot
+	# reach. So `UIScaleManager.scale_fonts_under` covers all 86 without editing any.
+	#
+	# ⛑ NOT the whole-panel `scale` trick the combat player card uses. These four roots
+	# are PRESET_FULL_RECT - they already fill the screen - so scaling one up pushes its own
+	# content off the edges. What a player wants from these is bigger TEXT, not a bigger box.
+	for _spec in [
+		["inventory_panel", inventory_panel, "Inventory"],
+		["market_panel", market_panel, "Market"],
+		["crafting_panel", crafting_panel, "Crafting"],
+		["sanctuary_panel", sanctuary_panel, "Sanctuary"],
+	]:
+		var _panel: Control = _spec[1]
+		if ui_scale_manager == null or _panel == null or not is_instance_valid(_panel):
+			continue
+		ui_scale_manager.register(String(_spec[0]), _panel,
+			func(s: float): UIScaleManager.scale_fonts_under(_panel, s),
+			String(_spec[2]))
+
 	combat_loot_panel = CombatLootPanelScript.new()
 	game_output_container.add_child(combat_loot_panel)
 	combat_loot_panel.slot_clicked.connect(_on_combat_loot_slot_clicked)

@@ -205,3 +205,53 @@ func _load_config() -> void:
 			"appliers": [],
 			"ctrls": [],
 		}
+
+
+## ⚑ THE FONT KEYS A CONTROL CAN CARRY. A RichTextLabel sizes five of them independently;
+## everything else has one. Missing the four extras leaves bold and mono text at their authored
+## size while the body grows, which reads as a rendering fault rather than a scale setting.
+const FONT_SIZE_KEYS_RICH := ["normal_font_size", "bold_font_size", "italics_font_size",
+	"bold_italics_font_size", "mono_font_size"]
+const FONT_SIZE_KEYS_PLAIN := ["font_size"]
+## Below this, text stops being text. The status panel already sits one point off its floor at
+## 1.0x, so the clamp is not theoretical.
+const FONT_MIN_PX := 8
+
+
+static func scale_fonts_under(root: Control, scale: float) -> int:
+	"""Re-apply every authored font size under `root`, multiplied by `scale`. Returns the count.
+
+	⛑ IT ONLY TOUCHES CONTROLS THAT AUTHORED A SIZE. A label inheriting the theme is left alone,
+	because capturing its inherited size as a base would silently pin it - it would stop following
+	the theme forever after the first time anybody nudged this panel.
+
+	⛑ AND THE BASE IS CACHED ON THE NODE. These panels rebuild their rows (the market does it on
+	every refresh), so a dictionary keyed by Control would accumulate dead entries while each new row
+	scaled from an already-scaled value and ran away within a few refreshes. A meta travels with the
+	node and dies with it."""
+	if root == null or not is_instance_valid(root):
+		return 0
+	var touched := 0
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var node = stack.pop_back()
+		if node is Control:
+			var ctrl: Control = node
+			var keys: Array = FONT_SIZE_KEYS_RICH if ctrl is RichTextLabel else FONT_SIZE_KEYS_PLAIN
+			for k in keys:
+				var meta_key: String = "_uiscale_base_" + str(k)
+				if not ctrl.has_meta(meta_key):
+					# Nothing authored here, and nothing captured before: leave it to the theme.
+					if not ctrl.has_theme_font_size_override(k):
+						continue
+					# ⛑ `get_theme_font_size_override()` DOES NOT EXIST in Godot 4 - I invented it, and
+					# the error repeated once per Control until the run hung. `has_..._override` is real;
+					# reading the value is plain `get_theme_font_size`, which returns the override when
+					# one is set - and we only reach here BECAUSE one is set.
+					ctrl.set_meta(meta_key, ctrl.get_theme_font_size(k))
+				var base: int = int(ctrl.get_meta(meta_key))
+				ctrl.add_theme_font_size_override(k, maxi(FONT_MIN_PX, int(round(float(base) * scale))))
+				touched += 1
+		for child in node.get_children():
+			stack.append(child)
+	return touched

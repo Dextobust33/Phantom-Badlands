@@ -5835,7 +5835,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Now level x6, a multiplier so the margin survives future player-power changes.
       Found while looking: the status chip read **"Exposed 995T"** — see below.
 
-- [ ] **Extend UI-scale registration** — **HALF DONE 2026-09-17: action bar and status panel.**
+- [x] **DONE 2026-09-17 — Extend UI-scale registration.** Action bar, status panel, and the four big panels.
       Both are now click-to-resize (`ui_scale_manager.register`), which was the same three lines
       `world_map` has used since v0.9.647: register the control, have the applier call
       `_on_window_resized()`, and read the per-element scale INSIDE the font maths.
@@ -5860,10 +5860,34 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       1.0x**, one point off its floor of 9. So its slider's useful direction is UP, which is the
       owner's own 2026-09-15 decision (*"The status panel text can be smaller by default"*)
       meeting a readability floor — not a fault. The probe pins that, so a drift back upward shows.
-      **Still to do: inventory, market, crafting, sanctuary.** Not the same three lines: those are
-      text inside `game_output` or whole panels rather than one control with one font, so each
-      needs an applier of its own. Worth doing WITH the UI audit, which may move or merge these
-      surfaces anyway.
+      ☑ **AND THE OTHER FOUR ARE DONE 2026-09-17 — with ONE walker, not four appliers.** The
+      note above guessed each would need a bespoke applier. Measured instead: all four set their
+      fonts with `add_theme_font_size_override` and **not one uses an inline `[font_size=]` BBCode
+      tag**, which is the only case a walker cannot reach. So `UIScaleManager.scale_fonts_under`
+      covers every one of them without a single hand-edit.
+
+      ⛑ **NOT the whole-panel `scale` trick the combat player card uses.** That precedent sits
+      three functions away and is wrong here: all four roots are `PRESET_FULL_RECT`, so they
+      already fill the screen and scaling one up pushes its own content off the edges. What a
+      player wants from these is bigger TEXT, not a bigger box.
+
+      ⛑ **THE BASE SIZE IS CACHED ON THE NODE, NOT IN A TABLE.** The market rebuilds its rows
+      on every refresh, so a dictionary keyed by Control would accumulate dead entries while each
+      new row scaled from an already-scaled value and ran away within a few refreshes. A meta
+      travels with the node and dies with it.
+
+      ⛑ **AND THE SOURCE COUNT UNDERSTATED THE WORK BY 77%.** Grepping the four files found
+      **86** overrides; at runtime the walker touches **152** (67 / 42 / 26 / 17), because panels
+      build repeated rows. Counting source lines is not counting the thing.
+
+      ⛑ **`get_theme_font_size_override()` DOES NOT EXIST in Godot 4** — I invented it. The
+      error repeated once per Control until the probe run hung with no verdict, which is the
+      documented "a probe that fails to parse never exits" shape wearing a different hat.
+      `has_theme_font_size_override` is real; reading the value is plain `get_theme_font_size`.
+
+      Probe: `tools/probe/panel_font_scale.gd` — 25 checks. It asserts the three failures that
+      are invisible in source: scaling nothing, RUNNING AWAY on re-apply, and a by-reference loop
+      capture pointing all four appliers at the last panel.
 
 - [x] **DONE 2026-09-17 — dungeon grade now follows the LAND, on every path.** The second
       example arrived: owner accepted a Star Hollow quest that routed him into an **E2 (Lv 34-49)
