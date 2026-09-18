@@ -7863,11 +7863,46 @@ something was dropped, and it sat unnoticed for eleven days.
         re-injecting the exact shipped inversion (6 of 8 directions failed; E/W unaffected).
 
 
-      **⚑ THE TOWN BLACKSMITH REPAIRS; IT NO LONGER UPGRADES — owner 2026-09-18.** *"The Blacksmith
-      in town should repair gear but no longer do any upgrading as that should be done through the
-      crafting now."* Upgrading belongs to the crafting system, which is where the materials and
-      the skill live. Check what the NPC currently offers before cutting - the upgrade path may be
-      the only route to something.
+      **✅ THE TOWN BLACKSMITH REPAIRS; IT NO LONGER UPGRADES — SHIPPED 2026-09-18.** Owner: *"The
+      Blacksmith in town should repair gear but no longer do any upgrading as that should be done
+      through the crafting now."*
+
+      ⛑ **This was not a cleanup — it was the game's ONE UNCAPPED POWER SOURCE, and it was live.**
+      The backlog line said *"check what the NPC currently offers before cutting"*, and that check
+      is what found it. `confirm_upgrade` did:
+
+      ```gdscript
+      equipped_item["affixes"][affix_key] = old_value + selected_affix.upgrade_amount
+      ```
+
+      with **no ceiling anywhere on the path**. `ENCHANTMENT_STAT_CAPS` exists but is only
+      consulted by the ENCHANTING code (`server.gd:26563`); this wrote to `affixes` instead, so
+      the cap never applied. The only brake was a quadratic cost.
+
+      **Measured**, level-60 item, `attack_bonus` starting at 40:
+
+      | upgrades | value | valor for that step |
+      |---|---|---|
+      | 1 | 55 | 1,750 |
+      | 5 | 115 | 3,850 |
+      | 10 | 190 | 6,475 |
+      | 20 | **340** | 11,725 |
+
+      A fresh level-60 drop rolls **45–69**. So one item could be pushed to ~5–7× what the
+      generator produces, and **nothing stopped step twenty-one**. This is exactly what the owner
+      ruled out while the reroll loop was being designed — *"we don't want a player to just be able
+      to keep buffing their same item for free infinitely"* — except it was already shipped.
+
+      Removed whole: the write, both cost helpers, the upgradeable-item scan, the select-affix
+      message, and the client's Enhance button. **Signposted, not silently dropped** — the
+      blacksmith screen says where enhancing went, and an old client asking to upgrade gets an
+      answer rather than a dead button. The replacement is `Inventory → Rework`, which **trades**
+      one stat for another instead of adding to it and is capped at 5 per item.
+
+      Probe: `tools/probe/no_uncapped_stat_growth.gd` — guards the **rule**, not the instance. It
+      fails on any `affixes[key] = old + amount` write anywhere in the server, so the next one
+      written by someone who never heard of the blacksmith is caught too. Proven by injecting that
+      shape into an unrelated function.
 
       **⚑ TWO MORE DIRECTIONS, owner 2026-09-18:**
       * *"The UI for crafting will likely need redesigned as well once we are done. We want it to

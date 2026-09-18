@@ -10166,23 +10166,9 @@ func _handle_blacksmith_station(peer_id: int, character):
 				})
 				total_repair_cost += valor_cost
 
-	# Check for items with upgradeable affixes
-	var upgradeable_items = []
-	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
-		var item = character.equipped.get(slot_name)
-		if item and item.has("affixes"):
-			var affixes = item.get("affixes", {})
-			var stat_affixes = []
-			for key in affixes.keys():
-				if key not in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
-					stat_affixes.append(key)
-			if stat_affixes.size() > 0:
-				upgradeable_items.append({
-					"slot": slot_name,
-					"name": item.get("name", slot_name.capitalize()),
-					"level": item.get("level", 1),
-					"affixes": affixes
-				})
+	# ⛑ NO UPGRADE SCAN. The town blacksmith repairs only (owner 2026-09-18), and the path it
+	# fed was the game's one UNCAPPED stat source - see the note on the `choice == "upgrade"`
+	# branch. Leaving the scan in would keep advertising a service that now refuses.
 
 	# Store encounter data (costs are already in valor)
 	var repair_all_cost = int(total_repair_cost * 0.9) if total_repair_cost > 0 else 0
@@ -10190,7 +10176,6 @@ func _handle_blacksmith_station(peer_id: int, character):
 		"items": damaged_items,
 		"total_cost": total_repair_cost,
 		"repair_all_cost": repair_all_cost,
-		"upgradeable_items": upgradeable_items
 	}
 
 	# Build message
@@ -10201,15 +10186,15 @@ func _handle_blacksmith_station(peer_id: int, character):
 		msg += "'I can fix up that gear for you, traveler.'"
 	else:
 		msg += "[color=#808080]Your gear is in good shape.[/color]"
-	if upgradeable_items.size() > 0:
-		msg += "\n[color=#FFD700]'I can also enhance your equipment... for a price.'[/color]"
+	msg += "
+[color=#808080]'Enhancing? Enchanter's work. I just keep steel whole.'[/color]"
 
 	send_to_peer(peer_id, {
 		"type": "blacksmith_encounter",
 		"message": msg,
 		"items": damaged_items,
 		"repair_all_cost": repair_all_cost,
-		"can_upgrade": upgradeable_items.size() > 0,
+		"can_upgrade": false,
 		"player_valor": persistence.get_valor(bs_account_id),
 		"player_materials": character.crafting_materials.duplicate(),
 		"under_threat": threatened,
@@ -10315,148 +10300,25 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 		return
 
 	# === UPGRADE FLOW ===
-	if choice == "upgrade":
-		# Show items available for upgrade
-		var upgradeable = encounter.get("upgradeable_items", [])
-		if upgradeable.size() == 0:
-			send_to_peer(peer_id, {"type": "error", "message": "No upgradeable items!"})
-			return
-
-		send_to_peer(peer_id, {
-			"type": "blacksmith_upgrade_select_item",
-			"message": "[color=#FFD700]'Which piece needs enhancing?'[/color]",
-			"items": upgradeable,
-			"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
-			"player_materials": character.crafting_materials.duplicate()
-		})
-		return
-
-	if choice == "select_upgrade_item":
-		var slot = message.get("slot", "")
-		var upgradeable = encounter.get("upgradeable_items", [])
-		var selected_item = null
-
-		for item in upgradeable:
-			if item.slot == slot:
-				selected_item = item
-				break
-
-		if not selected_item:
-			send_to_peer(peer_id, {"type": "error", "message": "Invalid item slot."})
-			return
-
-		# Get the actual item from equipped
-		var equipped_item = character.equipped.get(slot)
-		if not equipped_item:
-			send_to_peer(peer_id, {"type": "error", "message": "Item not equipped."})
-			return
-
-		# Build list of upgradeable affixes with costs
-		var affix_options = []
-		var item_level = equipped_item.get("level", 1)
-		var affixes = equipped_item.get("affixes", {})
-
-		for affix_key in affixes.keys():
-			if affix_key in ["prefix_name", "suffix_name", "roll_quality", "proc_type", "proc_value", "proc_chance", "proc_name"]:
-				continue
-
-			var current_value = affixes[affix_key]
-			var upgrade_amount = _calculate_affix_upgrade_amount(affix_key, item_level)
-			var costs = _calculate_affix_upgrade_cost(affix_key, current_value, item_level)
-
-			affix_options.append({
-				"affix_key": affix_key,
-				"affix_name": _get_affix_display_name(affix_key),
-				"current_value": current_value,
-				"upgrade_amount": upgrade_amount,
-				"valor_cost": costs.valor,
-				"material_costs": costs.get("materials", {})
-			})
-
-		# Store pending upgrade state
-		pending_blacksmith_upgrades[peer_id] = {
-			"slot": slot,
-			"item_name": selected_item.name,
-			"affixes": affix_options
-		}
-
-		var upgrade_account_id = peers[peer_id].account_id
-		send_to_peer(peer_id, {
-			"type": "blacksmith_upgrade_select_affix",
-			"message": "[color=#FFD700]'Which enchantment shall I strengthen on your %s?'[/color]" % selected_item.name,
-			"item_name": selected_item.name,
-			"affixes": affix_options,
-			"player_valor": persistence.get_valor(upgrade_account_id),
-			"player_materials": character.crafting_materials.duplicate()
-		})
-		return
-
-	if choice == "confirm_upgrade":
-		if not pending_blacksmith_upgrades.has(peer_id):
-			send_to_peer(peer_id, {"type": "error", "message": "No upgrade pending."})
-			return
-
-		var upgrade_state = pending_blacksmith_upgrades[peer_id]
-		var affix_key = message.get("affix_key", "")
-		var slot = upgrade_state.slot
-
-		# Find the affix in the options
-		var selected_affix = null
-		for affix in upgrade_state.affixes:
-			if affix.affix_key == affix_key:
-				selected_affix = affix
-				break
-
-		if not selected_affix:
-			send_to_peer(peer_id, {"type": "error", "message": "Invalid affix selected."})
-			return
-
-		# Check costs
-		var valor_cost = selected_affix.get("valor_cost", 50)
-		var mat_costs = selected_affix.get("material_costs", {})
-		var account_id = peers[peer_id].account_id
-
-		if not persistence.spend_valor(account_id, valor_cost):
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
-			return
-		if not character.has_crafting_materials(mat_costs):
-			persistence.add_valor(account_id, valor_cost)  # Refund valor
-			send_to_peer(peer_id, {"type": "error", "message": "Not enough materials for this upgrade!"})
-			return
-
-		# Apply upgrade — spend materials
-		for mat_id in mat_costs:
-			character.remove_crafting_material(mat_id, mat_costs[mat_id])
-
-		var equipped_item = character.equipped.get(slot)
-		if equipped_item and equipped_item.has("affixes"):
-			var old_value = equipped_item["affixes"].get(affix_key, 0)
-			equipped_item["affixes"][affix_key] = old_value + selected_affix.upgrade_amount
-
-		pending_blacksmith_upgrades.erase(peer_id)
-		pending_blacksmith_encounters.erase(peer_id)
-
-		# Build material cost string
-		var mat_parts = []
-		for mat_id in mat_costs:
-			var mat_name = mat_id.replace("_", " ").capitalize()
-			mat_parts.append("%d %s" % [mat_costs[mat_id], mat_name])
-		var cost_str = "%d valor" % valor_cost
-		if not mat_parts.is_empty():
-			cost_str += ", " + ", ".join(mat_parts)
-		send_to_peer(peer_id, {
-			"type": "text",
-			"message": "[color=#FFD700]The Blacksmith enhances your %s![/color]\n[color=#00FF00]%s: %d → %d[/color]\n[color=#808080](Cost: %s)[/color]" % [
-				upgrade_state.item_name,
-				selected_affix.affix_name,
-				selected_affix.current_value,
-				selected_affix.current_value + selected_affix.upgrade_amount,
-				cost_str
-			]
-		})
+	# ⚑ THE TOWN BLACKSMITH REPAIRS; IT NO LONGER UPGRADES — owner 2026-09-18: *"The Blacksmith in
+	# town should repair gear but no longer do any upgrading as that should be done through the
+	# crafting now."*
+	#
+	# ⛑ AND IT WAS THE GAME'S ONE UNCAPPED POWER SOURCE. `confirm_upgrade` did
+	# `affixes[key] = old_value + upgrade_amount` with NO ceiling anywhere on the path -
+	# `ENCHANTMENT_STAT_CAPS` is only consulted by the ENCHANTING code, and this wrote to
+	# `affixes` instead. The only brake was a quadratic cost. Measured on a level-60 item:
+	# attack_bonus 40 -> 340 in twenty steps, against a fresh drop of that level rolling 45-69,
+	# and nothing stopping step twenty-one.
+	#
+	# That is exactly what the owner ruled out while the reroll loop was being built: *"we don't
+	# want a player to just be able to keep buffing their same item for free infinitely."* The
+	# replacement is `handle_affix_reroll`, which TRADES one stat for another rather than adding
+	# to it, and is capped at MAX_AFFIX_REROLLS per item.
+	if choice in ["upgrade", "select_upgrade_item", "confirm_upgrade"]:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#C8A24A]'Enhancing? That's enchanter's work now — I just keep steel whole.'[/color]
+[color=#808080]Strengthening gear moved to crafting. To change a stat, use [b]Inventory → Rework[/b].[/color]"})
 		send_to_peer(peer_id, {"type": "blacksmith_done"})
-		save_character(peer_id)
-		send_character_update(peer_id)
 		return
 
 	if choice == "cancel_upgrade":
@@ -10467,46 +10329,11 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			"message": "[color=#DAA520]'Changed your mind? Anything else?'[/color]",
 			"items": encounter.get("items", []),
 			"repair_all_cost": encounter.get("repair_all_cost", 0),
-			"can_upgrade": encounter.get("upgradeable_items", []).size() > 0,
+			"can_upgrade": false,
 			"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
 			"player_materials": character.crafting_materials.duplicate()
 		})
 		return
-
-func _calculate_affix_upgrade_amount(affix_key: String, item_level: int) -> int:
-	"""Calculate how much an affix increases when upgraded."""
-	# Base upgrade amounts by affix type
-	var base_amounts = {
-		"str_bonus": 5, "con_bonus": 5, "dex_bonus": 5, "int_bonus": 5, "wis_bonus": 5, "wits_bonus": 5,
-		"attack_bonus": 10, "defense_bonus": 10, "speed_bonus": 5,
-		"hp_bonus": 50, "mana_bonus": 25, "stamina_bonus": 15, "energy_bonus": 15
-	}
-	var base = base_amounts.get(affix_key, 5)
-	# Scale with item level: +5 per 50 levels
-	var level_bonus = int(item_level / 50) * 5
-	return base + level_bonus
-
-func _calculate_affix_upgrade_cost(affix_key: String, current_value: int, item_level: int) -> Dictionary:
-	"""Calculate the cost to upgrade an affix. Costs: Valor + tier-appropriate materials."""
-	var level_mult = 1.0 + (item_level / 10.0)
-	var value_mult = 1.0 + (current_value / 10.0)
-
-	var valor_base = 50
-
-	# Determine tier-appropriate materials based on item level
-	var tier = clampi(int(item_level / 15), 0, 8)
-	var ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
-	var enchant_tiers = ["magic_dust", "magic_dust", "arcane_crystal", "arcane_crystal", "soul_shard", "soul_shard", "void_essence", "void_essence", "primordial_spark"]
-	var ore_id = ore_tiers[mini(tier, ore_tiers.size() - 1)]
-	var enchant_id = enchant_tiers[mini(tier, enchant_tiers.size() - 1)]
-
-	var ore_qty = maxi(1, int(2 * level_mult * value_mult))
-	var enchant_qty = maxi(1, int(1 * level_mult * value_mult))
-
-	return {
-		"valor": int(valor_base * level_mult * value_mult),
-		"materials": {ore_id: ore_qty, enchant_id: enchant_qty}
-	}
 
 func _get_affix_display_name(affix_key: String) -> String:
 	"""Get a human-readable name for an affix key."""

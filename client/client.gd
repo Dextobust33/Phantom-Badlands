@@ -11611,7 +11611,11 @@ func update_action_bar():
 			current_actions = [
 				{"label": "Decline", "action_type": "local", "action_data": "blacksmith_decline", "enabled": true},
 				{"label": "All(%dg)" % blacksmith_repair_all_cost if blacksmith_repair_all_cost > 0 else "All", "action_type": "local", "action_data": "blacksmith_repair_all", "enabled": blacksmith_items.size() > 0},
-				{"label": "Enhance", "action_type": "local", "action_data": "blacksmith_upgrade", "enabled": blacksmith_can_upgrade},
+				# ⛑ The Enhance button is gone, not disabled. The town blacksmith no longer
+				# upgrades (owner 2026-09-18) and the path it fed was the game's one UNCAPPED
+				# stat source. Strengthening gear lives in crafting; changing a stat is
+				# Inventory -> Rework, which trades instead of adding and is capped per item.
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "1-9=Item", "action_type": "none", "action_data": "", "enabled": false},
@@ -47276,11 +47280,11 @@ func handle_blacksmith_encounter(message: Dictionary):
 		var all_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < blacksmith_repair_all_cost else ""
 		display_game("[%s] Repair All - %d Valor (10%% discount!)%s" % [get_action_key_name(1), blacksmith_repair_all_cost, all_afford])
 
-	# Show upgrade option if available
-	if blacksmith_can_upgrade:
-		display_game("")
-		display_game("[color=#FFD700]=== Enhancement ===[/color]")
-		display_game("[%s] [color=#FFD700]Enhance Equipment[/color] - Upgrade item affixes" % get_action_key_name(2))
+	# A capability that moved should SAY where it moved to. Removing the line entirely would
+	# leave returning players hunting for a button that used to be right here.
+	display_game("")
+	display_game("[color=#808080]The Blacksmith no longer enhances gear — that is crafting work now.[/color]")
+	display_game("[color=#808080]To change a stat you don't want, use [b]Inventory → Rework[/b].[/color]")
 
 	display_game("")
 	display_game("[%s] Decline" % get_action_key_name(0))
