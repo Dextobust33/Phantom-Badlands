@@ -14107,40 +14107,16 @@ func handle_auto_salvage_settings(peer_id: int, message: Dictionary):
 
 func _should_auto_salvage_item(peer_id: int, item: Dictionary) -> bool:
 	"""Check if a newly obtained item should be immediately auto-salvaged.
-	Returns true if the item matches auto-salvage criteria."""
+
+	⛑ THE RULE ITSELF LIVES ON `Character` so the settings screen can PREVIEW it. This is a
+	destructive action; a preview computed from a second copy of the rule would, the day it
+	drifted, tell a player their gear was safe while the server ate it."""
 	if not characters.has(peer_id):
 		return false
 	var character = characters[peer_id]
-	if not character.auto_salvage_enabled or character.auto_salvage_max_rarity <= 0:
-		return false
-	# Don't auto-salvage consumables, locked items, title items, tools, or runes
-	if item.get("is_consumable", false) or _is_consumable_type(item.get("type", "")):
-		return false
-	if item.get("locked", false) or item.get("is_title_item", false):
-		return false
-	var itype = item.get("type", "")
-	if itype == "tool" or itype == "rune" or itype == "structure" or itype == "treasure_chest":
-		return false
-
-	var rarity = item.get("rarity", "common")
-	var rarity_order = ["common", "uncommon", "rare", "epic", "legendary"]
-	var max_idx = character.auto_salvage_max_rarity
-	var allowed_rarities = rarity_order.slice(0, max_idx)
-
-	# Item must be in the salvageable rarity range
-	if rarity not in allowed_rarities:
-		return false
-
-	# Check affix filter — selected affixes are KEPT (protected from salvage)
-	if character.auto_salvage_affixes.size() > 0:
-		var affixes = item.get("affixes", {})
-		var prefix = affixes.get("prefix_name", "")
-		var suffix = affixes.get("suffix_name", "")
-		for affix_name in character.auto_salvage_affixes:
-			if (prefix != "" and prefix == affix_name) or (suffix != "" and suffix == affix_name):
-				return false  # Has a kept affix — don't salvage
-
-	return true
+	return Character.would_auto_salvage(item, character.auto_salvage_enabled,
+		character.auto_salvage_max_rarity, character.auto_salvage_affixes,
+		_is_consumable_type(String(item.get("type", ""))))
 
 func _try_auto_salvage(peer_id: int) -> bool:
 	"""Try to auto-salvage an item to make room. Returns true if space was made.
@@ -14155,8 +14131,12 @@ func _try_auto_salvage(peer_id: int) -> bool:
 	if not has_rarity_filter and not has_affix_filter:
 		return false
 
-	var rarity_order = ["common", "uncommon", "rare"]
-	var max_idx = character.auto_salvage_max_rarity  # 1=common, 2=uncommon, 3=rare
+	# ⛑ THE MAKE-ROOM CEILING IS DELIBERATE AND NAMED. This used to be a bare three-entry array
+	# next to a five-entry one on the pickup path - the same setting meaning two different things
+	# depending on which code reached it. Destroying gear you already own to make space deserves a
+	# harder floor than declining to pick something up, so the cap stays; it is just stated now.
+	var rarity_order = ["common", "uncommon", "rare", "epic", "legendary"]
+	var max_idx = mini(character.auto_salvage_max_rarity, Character.AUTO_SALVAGE_MAKE_ROOM_CEILING)
 	var allowed_rarities = rarity_order.slice(0, max_idx) if has_rarity_filter else []
 
 	# Find lowest rarity non-equipped, non-locked item to salvage

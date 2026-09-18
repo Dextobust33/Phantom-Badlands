@@ -697,6 +697,55 @@ companion out. The rest of the batch is still not urgent; this one is. **Owner's
 image, post_marker 4.4 from quest_board, blacksmith 13.0 from healer and the same JOB, pylon drew
 nothing), marsh + aerie dungeon markers. All art; none of it urgent.
 
+## ⚑ INVENTORY BLOAT — MEASURED ON LIVE, AND THE POUCH IS NOT NEEDED YET (2026-09-18)
+
+Owner: *"Items and tools can buildup and takeover your backpack slots. We may want to have a
+separate item pouch or unlimited items... for inventory bloat we need to make autosalvage easy to
+understand and setup."*
+
+⛑ **THE LIVE POPULATION SAYS THE POUCH WOULD SOLVE A PROBLEM NOBODY HAS.** 18 characters on the
+real server: **median 2 of 40 slots used.** The fullest is a level-48 at **28/40**, the next at
+24/40. Crafting materials have always lived in their own unbounded dict, so they were never the
+pressure. A pouch is a change to the item model, the UI and every delivery path — for a cap nobody
+is within 12 slots of.
+
+**But the fullest character shows WHICH items accumulate**, and it is not gear:
+`ring_arcane:4, tool:2, scroll_target_farm:2, scroll_monster_select:2` — utility. And the crafting
+arc adds four Scribe items, returned runes and commissioned deliveries, so the pressure rises.
+
+**→ Filed with a trigger, not cancelled: build the pouch when a real character passes ~32/40.**
+Re-measure with `bash tools/check_player_progress.sh`; the probe prints the threshold.
+
+**✅ THE OTHER HALF SHIPPED — auto-salvage now shows what it would DO.** The screen stated the rules
+clearly and never the consequence: a player could read *"Items up to Rare will be auto-salvaged"*
+and have no idea whether that meant two items or twenty. It now reads:
+
+```
+Right now this would salvage 3 of your 11 items:  Rusty Blade, Cloth Cap, Worn Ring
+(Auto-salvage only runs on NEW drops — these are shown so you can see what the rule catches.)
+```
+
+⛑ **The preview runs through `Character.would_auto_salvage`, the SAME function the server destroys
+items with.** A preview computed from a client-side copy of a destructive rule is the one duplicate
+that can tell a player their gear is safe while the server eats it.
+
+⛑ **AND EXTRACTING IT FOUND A LIVE DIVERGENCE.** There are two auto-salvage paths asking different
+questions, and they had different rarity ceilings:
+
+| path | question | ceiling |
+|---|---|---|
+| `_should_auto_salvage_item` | salvage this **incoming** drop? | up to **legendary** |
+| `_try_auto_salvage` | destroy an item I **already own** for room? | capped at **rare** |
+
+So a player who set *Legendary* had epics auto-salvaged on pickup but never sacrificed for space —
+the same setting meaning two things depending on which code you reached. The stricter floor for
+destroying owned gear is **right**, so it is kept and is now
+`Character.AUTO_SALVAGE_MAKE_ROOM_CEILING` with the reason written down, instead of a truncated
+three-entry array sitting next to a five-entry one.
+
+Probe: `tools/probe/inventory_pressure_and_autosalvage.gd` — nine behaviour cases run against the
+real rule, proven by injecting "locked items are no longer protected".
+
 ## ⚑ TEACH THE GATHER → CRAFT LOOP — owner direction 2026-09-18, NOT STARTED
 
 *"There should be a tutorial or help guide that introduces or walks players through how to

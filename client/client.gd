@@ -22261,6 +22261,35 @@ func open_salvage_menu():
 		display_game("[color=#808080]Items with these affixes are protected from auto-salvage.[/color]")
 	else:
 		display_game("[color=#808080]No affix filter set. Use Affix button to protect specific affixes.[/color]")
+
+	# ⚑ WHAT IT WOULD ACTUALLY DO — owner 2026-09-18: *"we need to make autosalvage easy to
+	# understand and setup."* The rules above were clear enough; what was missing was the
+	# CONSEQUENCE. A player could read "Items up to Rare will be auto-salvaged" and still have no
+	# idea whether that meant two of their items or twenty.
+	#
+	# ⛑ RUN THROUGH `Character.would_auto_salvage`, the SAME function the server destroys items
+	# with. A preview computed from a client-side copy of a destructive rule is the one kind of
+	# duplicate that can tell a player their gear is safe while the server eats it.
+	var _inv: Array = character_data.get("inventory", [])
+	var _doomed: Array = []
+	for _it in _inv:
+		if not (_it is Dictionary):
+			continue
+		var _t := String(_it.get("type", ""))
+		var _is_cons := bool(_it.get("is_consumable", false)) or _t.begins_with("scroll") or _t.ends_with("_potion")
+		if CharacterScript.would_auto_salvage(_it, true, auto_rarity, auto_affixes, _is_cons):
+			_doomed.append(String(_it.get("name", "item")))
+	display_game("")
+	if auto_rarity <= 0:
+		display_game("[color=#808080]Auto-salvage is OFF — nothing you carry is at risk.[/color]")
+	elif _doomed.is_empty():
+		display_game("[color=#00FF00]Right now this would salvage NOTHING you are carrying.[/color]")
+	else:
+		var _shown: Array = _doomed.slice(0, 3)
+		var _more := "" if _doomed.size() <= 3 else " and %d more" % (_doomed.size() - 3)
+		display_game("[color=#FFAA00]Right now this would salvage %d of your %d items:[/color] [color=#FF9999]%s%s[/color]" % [
+			_doomed.size(), _inv.size(), ", ".join(_shown), _more])
+		display_game("[color=#808080](Auto-salvage only runs on NEW drops — these are shown so you can see what the rule catches.)[/color]")
 	display_game("")
 	update_action_bar()
 

@@ -224,6 +224,53 @@ func clear_combat_temp_pool_bonuses() -> void:
 	"amulet": null
 }
 const MAX_INVENTORY_SIZE = 40
+
+
+## Would auto-salvage destroy this item, under these settings?
+##
+## ⚑ Owner 2026-09-18: *"for inventory bloat we need to make autosalvage easy to understand and
+## setup."* The screen explained the RULES clearly enough and never showed the CONSEQUENCE - there
+## was no way to tell what your settings would actually do to the items you are carrying.
+##
+## ⛑ IT LIVES HERE SO THE PREVIEW AND THE BEHAVIOUR CANNOT DISAGREE. A preview computed from a
+## client-side copy of this rule is a second implementation of a destructive action, and the day it
+## drifts it tells a player their gear is safe while the server eats it. Six times this session a
+## second copy of a rule was found already wrong.
+## ⚑ THE "MAKE ROOM" PATH NEVER DESTROYS ABOVE THIS, whatever the player set.
+##
+## ⛑ FOUND 2026-09-18 AS AN UNDOCUMENTED DIVERGENCE, not designed. `_try_auto_salvage` carried its
+## own `rarity_order = ["common", "uncommon", "rare"]` while the pickup path used the full five, so
+## a player who chose "Legendary" had epics auto-salvaged on pickup but never sacrificed for space.
+## The behaviour is defensible - the two paths answer different questions, and destroying gear you
+## already OWN to make room deserves a harder floor than declining to pick something up - so it is
+## kept, and now it is a stated rule with a reason instead of a truncated array.
+const AUTO_SALVAGE_MAKE_ROOM_CEILING := 3   # rare
+
+
+static func would_auto_salvage(item: Dictionary, enabled: bool, max_rarity: int,
+		kept_affixes: Array, is_consumable_type: bool) -> bool:
+	if not enabled or max_rarity <= 0:
+		return false
+	if bool(item.get("is_consumable", false)) or is_consumable_type:
+		return false
+	if bool(item.get("locked", false)) or bool(item.get("is_title_item", false)):
+		return false
+	var itype := String(item.get("type", ""))
+	if itype in ["tool", "rune", "structure", "treasure_chest"]:
+		return false
+	var rarity_order := ["common", "uncommon", "rare", "epic", "legendary"]
+	if not (String(item.get("rarity", "common")) in rarity_order.slice(0, max_rarity)):
+		return false
+	# Selected affixes are KEPT - an item carrying one is protected.
+	if kept_affixes.size() > 0:
+		var affixes = item.get("affixes", {})
+		if affixes is Dictionary:
+			var prefix := String(affixes.get("prefix_name", ""))
+			var suffix := String(affixes.get("suffix_name", ""))
+			for a in kept_affixes:
+				if (prefix != "" and prefix == String(a)) or (suffix != "" and suffix == String(a)):
+					return false
+	return true
 const MAX_STACK_SIZE = 99
 
 # Thematic Equipment Display - each class sees equipment with themed names
