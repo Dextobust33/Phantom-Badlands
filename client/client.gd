@@ -700,6 +700,30 @@ var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly aft
 # view. -1 means "current fight" (panel's live log); 0..N-1 indexes into
 # combat_scene_panel.get_flock_history(). ← / → cycles through fights.
 var _pending_death_replay: String = ""  # a chat link asked for a replay; the next leaderboard_death reply is its
+## ⚑ THE SCENE REPLAY. Owner 2026-09-18: *"it should play out like the fight does. Ideally
+## it's a windowed replay of the fight from the dead players perspective."*
+##
+## Runs the real combat panel - their battler, their companion, the monster it died to, both
+## health bars - stepping through the recorded beats at the viewer's own combat speed.
+var _dreplay_lines: Array = []
+var _dreplay_beats: Array = []
+var _dreplay_i: int = 0
+var _dreplay_accum: float = 0.0
+var _dreplay_active: bool = false   # beats are still playing
+## ⛑ A SEPARATE HELD STATE, AND THE REASON IS A BUG THIS ALMOST SHIPPED WITH. When the last
+## beat plays the replay stops ticking, but it is still ON SCREEN saying "press Space to
+## close". If the only flag were `_dreplay_active`, that Space would find nothing listening and
+## fall through to Rest - starting a REAL fight underneath somebody else's death, with the
+## panel pinned visible over it. The replay owns the screen until it is dismissed, not until
+## it stops moving.
+var _dreplay_holding: bool = false  # finished, still on screen, still owns the input
+var _dreplay_php: int = 0
+var _dreplay_pmax: int = 1
+var _dreplay_mmax: int = 1
+var _dreplay_who: String = ""
+## Seconds per beat at speed 1.0. The live game paces a combat message at roughly this, so a
+## replay runs at the rate the fight actually read at rather than a rate invented for it.
+const DREPLAY_BEAT_SEC := 0.34
 var _legacy_view_fight_index: int = -1
 var _last_displayed_round: int = 0  # round number we last drew a divider for; reset on each combat_start
 # v0.9.664 — round divider is now queued BEFORE the first message of each round
@@ -4621,6 +4645,17 @@ func _process(delta):
 	if game_output and game_output.visible == _hide_text:
 		game_output.visible = not _hide_text
 
+	# The scene replay steps here: it is a paced playback like combat itself, so it belongs on
+	# the same clock rather than on a Timer that would drift away from the speed setting.
+	# ⛑ A REAL FIGHT ALWAYS WINS. Space and Escape are consumed by the replay but movement
+	# keys are not, so a player can walk into an encounter while watching one - and the
+	# replay pins the panel visible, which would leave their own fight playing underneath
+	# somebody else's death with both writing to the same log.
+	if (_dreplay_active or _dreplay_holding) and in_combat:
+		_end_scene_replay(false)
+	elif _dreplay_active:
+		_tick_death_replay(delta)
+
 	connection.poll()
 	var status = connection.get_status()
 
@@ -5933,6 +5968,15 @@ func _process(delta):
 func _input(event):
 	# v0.9.663 — F12 (dev) screenshot. Works in ANY state, including combat, where
 	# the top-bar ⛶ button click can be eaten by combat/menu input handling.
+	# ⚑ THE REPLAY OWNS THE SCREEN WHILE IT RUNS, so Space and Escape close it and nothing
+	# else sees them. Without this, Space would fall through to Rest and start a real fight
+	# underneath somebody else's death.
+	if (_dreplay_active or _dreplay_holding) and event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_SPACE or event.keycode == KEY_ESCAPE:
+			set_meta("hotkey_0_pressed", true)
+			_end_scene_replay(false)
+			get_viewport().set_input_as_handled()
+			return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F12:
 		_on_screenshot_button_pressed()
 		get_viewport().set_input_as_handled()
@@ -9649,7 +9693,130 @@ func _show_death_replay(message: Dictionary) -> void:
 	var rounds: int = int(dd.get("rounds_fought", 0))
 	if rounds > 0:
 		head += "  —  %d rounds" % rounds
+	# ⛑ THE SCENE REPLAY WHEN THE RECORD CAN DRIVE ONE, PACED TEXT WHEN IT CANNOT. A death
+	# stored before 2026-09-18 has `combat_log` and no `combat_replay`, so there is nothing to
+	# move the bars with - and inventing it from the prose is the thing this whole feature
+	# refuses to do. An old death still replays, as text, at the pace it happened.
+	var beats: Array = dd.get("combat_replay", []) if dd.get("combat_replay", null) is Array else []
+	if beats.size() == lines.size() and not lines.is_empty() and not in_combat and not _blocking_overlay_open():
+		_start_scene_replay(dd, lines, beats, head)
+		return
+	if not beats.is_empty() and in_combat:
+		display_chat("[color=#888888]Watching a replay during your own fight would take the screen - showing the log instead.[/color]")
 	fight_log_panel.play_replay(head, lines, combat_speed_effective())
+	update_action_bar()
+
+func _start_scene_replay(dd: Dictionary, lines: Array, beats: Array, head: String) -> void:
+	"""Stand the dead player's fight back up in the real combat panel and play it.
+
+	⚑ *"A windowed replay of the fight from the dead players perspective."* Their battler, their
+	gear, their companion, the monster that killed them, and both health bars moving on the beats
+	the fight actually had.
+
+	⛑ EVERY NUMBER HERE WAS RECORDED, NOT DERIVED. The bars move from `combat_replay`, which the
+	server wrote at the moment each action resolved; the portraits come from the stored snapshot.
+	Nothing is read back out of the log text - see `_record_replay_beats` for why that matters."""
+	if combat_scene_panel == null or not is_instance_valid(combat_scene_panel):
+		return
+	_dreplay_lines = lines
+	_dreplay_beats = beats
+	_dreplay_i = 0
+	_dreplay_accum = 0.0
+	_dreplay_active = true
+	_dreplay_holding = false
+	_dreplay_who = String(dd.get("character_name", "they"))
+	_dreplay_pmax = maxi(1, int(dd.get("player_max_hp", 1)))
+	# They START the fight at full-ish HP and END at zero; the recorded beats walk between.
+	_dreplay_php = maxi(0, int(dd.get("player_hp_at_start", _dreplay_pmax)))
+	_dreplay_mmax = maxi(1, int(dd.get("monster_max_hp", 1)))
+	var comp = dd.get("active_companion", {})
+	combat_scene_panel.populate({
+		"player_name": String(dd.get("character_name", "")),
+		"player_class": String(dd.get("class_type", "")),
+		"player_race": String(dd.get("race", "")),
+		"player_equipped": dd.get("equipped", {}) if dd.get("equipped", null) is Dictionary else {},
+		"player_hp": _dreplay_php,
+		"player_max_hp": _dreplay_pmax,
+		"companion_data": comp if comp is Dictionary else {},
+		"monster_name": String(dd.get("monster_base_name", String(dd.get("cause_of_death", "the enemy")))),
+		"monster_level": int(dd.get("level", 1)),
+		"monster_hp": _dreplay_mmax,
+		"monster_max_hp": _dreplay_mmax,
+		"monster_hp_known": true,
+	})
+	if combat_scene_panel.has_method("clear_log"):
+		combat_scene_panel.clear_log()
+	if combat_scene_panel.has_method("append_log"):
+		combat_scene_panel.append_log("[color=#5C4D33]──── REPLAY ─ %s ────[/color]" % head)
+	# The panel hides itself whenever no fight is running, so it has to be pinned for the replay.
+	_combat_scene_force_visible = true
+	update_action_bar()
+
+
+func _tick_death_replay(delta: float) -> void:
+	"""One step of the scene replay. Called from `_process`."""
+	if not _dreplay_active:
+		return
+	_dreplay_accum += delta * maxf(0.1, combat_speed_effective())
+	# while, not if: at high speed more than one beat is due in a frame, and dropping the extras
+	# would make a fast replay SHORTER rather than faster.
+	while _dreplay_accum >= DREPLAY_BEAT_SEC and _dreplay_i < _dreplay_lines.size():
+		_dreplay_accum -= DREPLAY_BEAT_SEC
+		_step_death_replay()
+	if _dreplay_i >= _dreplay_lines.size():
+		_end_scene_replay(true)
+
+
+func _step_death_replay() -> void:
+	var line := String(_dreplay_lines[_dreplay_i])
+	var beat: Dictionary = _dreplay_beats[_dreplay_i] if _dreplay_beats[_dreplay_i] is Dictionary else {}
+	_dreplay_i += 1
+	# `t` is damage TAKEN on this beat, measured server-side as an HP delta when it happened.
+	_dreplay_php = maxi(0, _dreplay_php - int(beat.get("t", 0)))
+	var m_hp: int = clampi(int(beat.get("m", _dreplay_mmax)), 0, _dreplay_mmax)
+	if combat_scene_panel != null and is_instance_valid(combat_scene_panel):
+		if line.strip_edges() != "" and combat_scene_panel.has_method("append_log"):
+			combat_scene_panel.append_log(line)
+		combat_scene_panel.populate({
+			"player_hp": _dreplay_php, "player_max_hp": _dreplay_pmax,
+			"monster_hp": m_hp, "monster_max_hp": _dreplay_mmax, "monster_hp_known": true,
+		})
+
+
+func _end_scene_replay(finished: bool) -> void:
+	"""Take the replay down and give the screen back."""
+	if not _dreplay_active:
+		return
+	_dreplay_active = false
+	# Finished replays KEEP the screen (and the input) until dismissed; only a dismiss
+	# releases it. See `_dreplay_holding`.
+	_dreplay_holding = finished
+	_dreplay_lines = []
+	_dreplay_beats = []
+	if finished and combat_scene_panel != null and is_instance_valid(combat_scene_panel):
+		if combat_scene_panel.has_method("append_log"):
+			combat_scene_panel.append_log("[color=#FF6B6B]──── %s fell here ────[/color]" % _dreplay_who)
+			combat_scene_panel.append_log("[color=#808080]Press %s to close the replay.[/color]" % get_action_key_name(0))
+	if not finished:
+		_dreplay_holding = false
+		_combat_scene_force_visible = false
+		if combat_scene_panel != null and is_instance_valid(combat_scene_panel):
+			if combat_scene_panel.has_method("clear_log"):
+				combat_scene_panel.clear_log()
+		# Repaint whatever the player was looking at, the same way the victory card does when
+		# it hands the screen back. There is no single "redraw the current view" helper, so
+		# this mirrors that tail rather than inventing a fifth copy of the branch.
+		_page_clear()
+		if at_trading_post:
+			quest_view_mode = false
+			_display_trading_post_ui()
+		elif dungeon_mode:
+			display_dungeon_floor()
+		else:
+			if at_dungeon_entrance and not dungeon_entrance_info.is_empty():
+				_display_dungeon_entrance_info()
+			if at_corpse and not corpse_info.is_empty():
+				_display_corpse_info()
 	update_action_bar()
 
 func display_leaderboard_death_screen(message: Dictionary):

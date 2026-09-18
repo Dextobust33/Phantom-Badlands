@@ -6111,12 +6111,28 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       pace it happened**, one line at a time, with pause / restart / skip-to-end and a progress
       bar, headed by who died, at what level, to what, and over how many rounds. Speed comes from
       the viewer's own combat-speed setting rather than a second preference to discover.
-      **⛑ It paces the log; it does NOT re-animate the fight, and that is a decision rather than a
-      shortcut.** A stored `combat_log` is plain BBCode STRINGS - no actor tag, no damage number,
-      no HP per line (checked against a real 190-line record on live). Moving health bars and
-      acting sprites could only be reconstructed by reading numbers back out of the prose, which is
-      exactly the mistake that put co-op damage numbers on the wrong combatant. The line ORDER is
-      the fight and the order is stored exactly, so pacing needs none of it.
+      **✅ AND IT PLAYS OUT AS THE FIGHT — 2026-09-18, second pass.** Owner: *"it should play out
+      like the fight does. Ideally it's a windowed replay of the fight from the dead players
+      perspective."* It runs in the **real combat panel** now: their battler, their gear, their
+      companion, the monster that killed them, and BOTH health bars moving on the beats the fight
+      actually had, at the viewer's own combat speed.
+      **⛑ THE BLOCKER WAS THE STORED DATA, NOT THE IDEA — so the data changed.** `combat_log` is
+      flat BBCode strings (checked against a real 190-line record on live), and everything a replay
+      needs to drive bars exists only at the instant an action resolves. Rather than read numbers
+      back out of the prose - the mistake that put co-op damage numbers on the wrong combatant -
+      the server now RECORDS them: `combat_replay`, parallel to `combat_log`, one beat per line
+      carrying actor / dealt / taken / monster HP / player HP. The metadata was already computed
+      and already sent to the live client; this keeps a copy. Recorded at BOTH log-append sites,
+      so an item-use turn does not leave a hole mid-replay.
+      **Deaths recorded before this have no track and fall back to paced text.** They are not
+      re-animatable and no amount of guessing makes them so.
+      **Two traps caught while building, both about owning the screen:** a FINISHED replay still
+      holds the input (otherwise its own "press Space to close" falls through to Rest and starts a
+      real fight underneath somebody else's death, with the panel pinned over it); and a fight
+      starting mid-replay ends the replay rather than sharing the log with it.
+      Probes: `death_scene_replay.gd` asserts the recorded track reproduces the HP CURVE down to
+      zero - a track that exists but never kills anyone would render a death in which nobody dies,
+      with every field present and correct - and `death_replay.gd` still covers the text fallback.
       Probe `tools/probe/death_replay.gd` DRIVES the playback rather than reading the source - a
       replay that renders nothing and one that works look identical from outside - and covers the
       shared-panel trap: a ticking replay must stop when someone opens an ordinary log in the same

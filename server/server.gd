@@ -6678,9 +6678,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			"variant_offer": rcp.get("variant_offer", {}),
 		})
 
-	# Accumulate messages in combat log for death screen
+	# Accumulate messages in combat log for death screen, and the NUMBERS behind each line
+	# so the death can be replayed as a fight rather than read as text.
 	if combat_mgr.active_combats.has(peer_id):
 		combat_mgr.active_combats[peer_id].combat_log.append_array(result.messages)
+		_record_replay_beats(peer_id, result)
 
 	# If Analyze revealed enemy HP, send that to update the health bar
 	if result.has("revealed_enemy_hp"):
@@ -7826,9 +7828,11 @@ func handle_combat_use_item(peer_id: int, message: Dictionary):
 	# it needs the same actor/damage tagging every other action gets, not a bare loop.
 	send_combat_result_messages(peer_id, result)
 
-	# Accumulate messages in combat log for death screen
+	# Accumulate messages in combat log for death screen, and the NUMBERS behind each line
+	# so the death can be replayed as a fight rather than read as text.
 	if combat_mgr.active_combats.has(peer_id):
 		combat_mgr.active_combats[peer_id].combat_log.append_array(result.messages)
+		_record_replay_beats(peer_id, result)
 
 	# Check if combat ended (player died)
 	if result.has("combat_ended") and result.combat_ended:
@@ -8281,6 +8285,10 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		"collected_companions": character.get_collected_companions(),
 		"incubating_eggs": character.incubating_eggs.duplicate(true),
 		"combat_log": combat_data.get("combat_log", []),
+		# The numbers behind each line, so the death REPLAYS rather than reads. Parallel to
+		# `combat_log` and the same length; absent from records written before 2026-09-18,
+		# which the client detects and falls back to paced text for.
+		"combat_replay": combat_data.get("combat_replay", []),
 		"rounds_fought": combat_data.get("rounds", 0),
 		"monster_base_name": combat_data.get("monster_base_name", ""),
 		"monster_max_hp": combat_data.get("monster_max_hp", 0),
@@ -21352,6 +21360,53 @@ func _push_first_strike_to_log(peer_id: int, result: Dictionary) -> void:
 	for line in lines:
 		if String(line).strip_edges() != "":
 			send_combat_message(peer_id, String(line), "monster")
+
+func _record_replay_beats(peer_id: int, result: Dictionary) -> void:
+	"""Record, beside each stored log line, the NUMBERS that line represented.
+
+	⚑ SO A DEATH CAN BE REPLAYED AS A FIGHT RATHER THAN READ AS TEXT. Owner 2026-09-18:
+	*"it should play out like the fight does. Ideally it's a windowed replay of the fight from
+	the dead players perspective."*
+
+	⛑ THIS HAS TO BE RECORDED RATHER THAN DERIVED. `combat_log` has always been a flat list of
+	BBCode strings, and everything a replay needs in order to drive health bars and portraits -
+	who acted, what they dealt, what it cost, where both bars stood - exists only at the moment
+	the action resolves. Reconstructing it afterwards means reading numbers back out of the
+	prose, which is the mistake that put co-op damage numbers on the wrong combatant: "The Goblin
+	hits Warden Hollis for 43" has no "you" in it, and the text parser credited the monster. The
+	metadata is already computed and already sent to the live client; this keeps a copy.
+
+	Keys are one character because this is persisted for EVERY death and a long fight runs ~200
+	beats: a - actor, d - damage dealt, t - damage taken, m - monster HP, p - player HP. Parallel
+	to `combat_log`, same length and order, so index i describes line i.
+
+	Records written before this shipped simply lack the track, and the client falls back to paced
+	text for them. An old death is not re-animatable and no amount of guessing makes it so."""
+	if not combat_mgr.active_combats.has(peer_id):
+		return
+	var combat: Dictionary = combat_mgr.active_combats[peer_id]
+	if not (combat.get("combat_replay", null) is Array):
+		combat["combat_replay"] = []
+	var msgs: Array = result.get("messages", []) if result.get("messages", null) is Array else []
+	var actors: Array = result.get("message_actors", []) if result.get("message_actors", null) is Array else []
+	var dmg: Array = result.get("message_damage", []) if result.get("message_damage", null) is Array else []
+	var taken: Array = result.get("message_taken", []) if result.get("message_taken", null) is Array else []
+	var mhp: Array = result.get("message_monster_hp", []) if result.get("message_monster_hp", null) is Array else []
+	var ch = characters.get(peer_id, null)
+	var p_hp: int = int(ch.current_hp) if ch != null else 0
+	var m_now: int = int(combat.get("monster", {}).get("current_hp", 0))
+	for i in range(msgs.size()):
+		# Per-line monster HP when the action reported one, else where it stands now. Player HP
+		# is only known at the END of an action, so every beat of one action carries the same
+		# value and the client walks it down by `t` - which is exact, because `t` is itself
+		# measured as an HP delta rather than parsed out of a sentence.
+		combat["combat_replay"].append({
+			"a": String(actors[i]) if i < actors.size() else "",
+			"d": int(dmg[i]) if i < dmg.size() else 0,
+			"t": int(taken[i]) if i < taken.size() else 0,
+			"m": int(mhp[i]) if i < mhp.size() and int(mhp[i]) >= 0 else m_now,
+			"p": p_hp,
+		})
 
 func send_combat_result_messages(peer_id: int, result: Dictionary) -> void:
 	"""Fan a combat result's messages out to the player, each carrying WHO produced it and the
