@@ -7091,6 +7091,24 @@ down, and these are the ones it keeps sending back — which is what extra lives
       The 17 material-making recipes and the 138 recipes gated above skill 25 are where the
       *"grindy"* complaint actually lives.
 
+      **⚑ TWO MORE DIRECTIONS, owner 2026-09-18:**
+      * *"The UI for crafting will likely need redesigned as well once we are done. We want it to
+        be organized in a way that makes it easy to understand what peoples options are."* — after
+        the content, not before: the UI's job is to present a set of options, and that set is what
+        this arc is changing.
+      * *"We may want to do away with locking people at level 5 of gathering/crafting jobs. Maybe
+        let players specialize in a job to get additional xp in it and make leveling it give a
+        benefit when doing it rather than gate anything."*
+        **What that lock is today, measured:** `JOB_TRIAL_CAP = 5` in `character.gd`. A GATHERING
+        job (mining / logging / foraging / soldier / fishing) stops earning XP at level 5 unless
+        the player COMMITS, and committing binds them to that one job permanently
+        (`can_gain_job_xp`). SPECIALTY jobs (blacksmith / builder / alchemist / scribe / enchanter)
+        level freely; it is `specialist_only` recipes that gate on commitment instead.
+        So the ask is: keep specialisation as a **carrot** (bonus XP in the chosen job) rather than
+        a **fence**, and let job level buy capability rather than permission. Note that levelling
+        already buys some capability - gathering scratch-offs are `2 + 1 per 25 skill, max 8` - so
+        the benefit half exists and it is the gate half that is the complaint.
+
       Four faults named, and they are separate problems:
       1. **Materials have no destination.** Gathering produces a pile the player cannot spend on
          anything they want. (Pairs with the egg/companion sinks — same disease, different
