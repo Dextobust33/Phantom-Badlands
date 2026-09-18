@@ -680,6 +680,119 @@ const JOB_TRIAL_CAP = 5
 const GATHERING_JOBS = ["mining", "logging", "foraging", "soldier", "fishing"]
 const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchanter"]
 
+## ⚑ WHAT A COMMITTED SPECIALIST CAN DO FOR THEMSELVES AND FOR OTHER PLAYERS.
+##
+## Owner 2026-09-18: *"if players choose to make a crafting profession their focus they get a
+## quality of life improvement for themselves and other players... We still need a place players
+## can repair their equipment in posts so it's technically not gating content just providing
+## convenience."* And then: *"we should try to have a similar type of specialisation service for
+## each of the crafting focuses."*
+##
+## ⛑ EVERY SERVICE MIRRORS SOMETHING A POST ALREADY DOES, which is the whole safety argument: a
+## service the post also provides can never gate content, only save a journey. The post charges
+## VALOR and requires travel; the specialist is free and portable but rate-limited, and - the part
+## posts cannot do - can perform it on SOMEBODY ELSE.
+##
+## ⛑ AND THAT IS WHY THIS IS THE STRONGEST SPECIALISATION REWARD OF THE FOUR CONSIDERED. Bonus
+## XP, cheaper materials and better quality are all private numbers. A SERVICE is social: it gives
+## a specialist a reason to be wanted by other players, which is the first crafting hook in the
+## design that reaches outward.
+const SPECIALIST_SERVICES := {
+	"blacksmith": {
+		"id": "field_repair", "name": "Field Repair",
+		"desc": "Mend all worn gear, here, for yourself or another player.",
+		"mirrors": "the post blacksmith's repair",
+	},
+	"alchemist": {
+		"id": "field_remedy", "name": "Field Remedy",
+		"desc": "Close wounds and draw out poison, without a shrine.",
+		"mirrors": "the post healer",
+	},
+	"enchanter": {
+		"id": "recharge", "name": "Recharge",
+		"desc": "Refill a caster's mana, a warrior's stamina, a trickster's energy.",
+		"mirrors": "resting, without the time",
+	},
+	"scribe": {
+		"id": "chart_course", "name": "Chart a Course",
+		"desc": "Point someone at the nearest post they have not yet found.",
+		"mirrors": "the post cartographer's Locate",
+	},
+	"builder": {
+		"id": "make_camp", "name": "Make Camp",
+		"desc": "Raise a camp on this tile so the ground is safe to rest on.",
+		"mirrors": "a Traveler's Inn, briefly and anywhere",
+	},
+}
+
+## Seconds between uses of a specialist service.
+##
+## ⛑ A COOLDOWN RATHER THAN A PRICE, and the difference matters. Charging valor would make the
+## specialist a cheaper POST, which is a competitor; a cooldown makes them a person you are glad
+## to travel with. It also stops the obvious abuse - a blacksmith repairing a queue of strangers
+## all day - without making the service feel metered to the friend standing in front of them.
+const SPECIALIST_SERVICE_COOLDOWN_SEC := 180
+
+
+func apply_specialist_service(service_id: String, camp_steps: int = 25) -> String:
+	# Perform a specialist field service ON THIS CHARACTER. Returns the message to show, or ""
+	# if the service did nothing at all.
+	#
+	# EACH ONE MIRRORS A POST SERVICE AND DOES NO MORE THAN IT. A specialist who healed BETTER
+	# than the shrine would make the shrine pointless, and a player without a specialist friend
+	# would be playing a worse game - which is the line the owner drew: convenience, not content.
+	#
+	# It lives here, beside SPECIALIST_SERVICES, so that a probe can call it. See the note in
+	# server.gd::_perform_specialist_service.
+	match service_id:
+		"field_repair":
+			# Exactly what the post blacksmith's repair_all does: wear back to zero. The post
+			# charges Valor and stands still; this is free, portable, and on a cooldown.
+			var mended: int = 0
+			for slot in equipped.keys():
+				var it = equipped[slot]
+				# wear is stored as a FLOAT. int() on 0.4 is 0, so an int() test would report
+				# "nothing needs mending" on gear the player can plainly see is worn.
+				if it is Dictionary and float(it.get("wear", 0.0)) > 0.0:
+					it["wear"] = 0
+					mended += 1
+			if mended == 0:
+				return "[color=#888888]Nothing there needs mending.[/color]"
+			return "[color=#00FF00]You work the wear out of %d piece(s) of gear.[/color]" % mended
+		"field_remedy":
+			var before: int = current_hp
+			heal(get_total_max_hp())
+			var cured: bool = poison_active
+			poison_active = false
+			poison_turns_remaining = 0
+			var gained: int = current_hp - before
+			if gained <= 0 and not cured:
+				return "[color=#888888]They are already whole.[/color]"
+			if gained <= 0:
+				return "[color=#00FF00]You draw the poison out of them.[/color]"
+			return "[color=#00FF00]You close their wounds (+%d HP)%s.[/color]" % [
+				gained, " and draw out the poison" if cured else ""]
+		"recharge":
+			var filled: bool = false
+			if current_mana < get_total_max_mana():
+				current_mana = get_total_max_mana()
+				filled = true
+			if current_stamina < get_total_max_stamina():
+				current_stamina = get_total_max_stamina()
+				filled = true
+			if current_energy < get_total_max_energy():
+				current_energy = get_total_max_energy()
+				filled = true
+			if not filled:
+				return "[color=#888888]They have nothing left to fill.[/color]"
+			return "[color=#00FFFF]You draw the weariness out of them. Their reserves are full.[/color]"
+		"make_camp":
+			# The camp REUSES safe passage rather than inventing a second way to quiet a tile.
+			# Two systems answering one question is how they drift apart.
+			safe_passage_steps = maxi(safe_passage_steps, camp_steps)
+			return "[color=#C8A24A]You raise a camp. The next %d steps will pass unnoticed.[/color]" % camp_steps
+	return ""
+
 # ===== HARVEST MASTERY =====
 @export var harvest_mastery: Dictionary = {}  # {monster_type: successful_harvests_count}
 

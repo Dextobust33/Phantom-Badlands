@@ -2424,6 +2424,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_dungeon_atlas_request(peer_id)
 		"dungeon_locate":
 			handle_dungeon_locate(peer_id, message)
+		"specialist_service":
+			handle_specialist_service(peer_id, message)
 		"house_upgrade":
 			handle_house_upgrade(peer_id, message)
 		"house_discard_item":
@@ -15976,15 +15978,8 @@ func handle_house_request(peer_id: int):
 	_maybe_send_sanctuary_hint(peer_id)
 
 func _compass_direction(fx: int, fy: int, tx: int, ty: int) -> String:
-	var dx := tx - fx
-	var dy := ty - fy
-	var ns := ""
-	var ew := ""
-	if dy < -abs(dx) / 3: ns = "north"
-	elif dy > abs(dx) / 3: ns = "south"
-	if dx > abs(dy) / 3: ew = "east"
-	elif dx < -abs(dy) / 3: ew = "west"
-	var dir := ns + ew
+	# Bare direction word for prose ("to the north"). "here" when the two points coincide.
+	var dir := WorldSystem.compass_octant(tx - fx, ty - fy)
 	return dir if dir != "" else "here"
 
 const CARTOGRAPHER_LOCATE_VALOR_COST := 15  # Cost to have a post Cartographer mark a dungeon. Free at Cartography rank 8 (standing sense).
@@ -33332,22 +33327,8 @@ func _get_direction_text(from_x: int, from_y: int, to_x: int, to_y: int) -> Stri
 	var dx = to_x - from_x
 	var dy = to_y - from_y
 	var distance = int(sqrt(dx * dx + dy * dy))
-
-	# Determine direction based on angle
-	var direction = ""
-	if abs(dy) < abs(dx) / 3:
-		# Mostly horizontal
-		direction = "east" if dx > 0 else "west"
-	elif abs(dx) < abs(dy) / 3:
-		# Mostly vertical
-		direction = "north" if dy > 0 else "south"
-	else:
-		# Diagonal
-		var ns = "north" if dy > 0 else "south"
-		var ew = "east" if dx > 0 else "west"
-		direction = ns + ew
-
-	return "%d tiles %s" % [distance, direction]
+	# This one was the CORRECT of the three. It delegates now so it stays that way.
+	return "%d tiles %s" % [distance, WorldSystem.compass_octant(dx, dy)]
 
 # Audit #13 Slice 3 — Sanctuary Compass.
 const _COMPASS_DIR_GLYPHS := {
@@ -33359,17 +33340,22 @@ func _compass_direction_label(dx: int, dy: int) -> String:
 	"""Returns a compact 1-2 letter compass label (N/S/E/W/NE/NW/SE/SW) for the
 	vector from origin to (dx, dy). Used by the unvisited-post compass HUD.
 	Positive dy = south (map convention); positive dx = east."""
-	if dx == 0 and dy == 0:
+	# DERIVED from the words rather than re-deriving the axis. The comment that used to sit here
+	# claimed these were "the same thresholds as _get_direction_text so the compass agrees with
+	# prose direction text" while returning the exact opposite letter for every north and south.
+	var word := WorldSystem.compass_octant(dx, dy)
+	if word == "":
 		return ""
-	# Mostly-horizontal vs mostly-vertical vs diagonal — same thresholds as
-	# _get_direction_text so the compass agrees with prose direction text.
-	if abs(dy) < abs(dx) / 3:
-		return "E" if dx > 0 else "W"
-	if abs(dx) < abs(dy) / 3:
-		return "S" if dy > 0 else "N"
-	var ns := "S" if dy > 0 else "N"
-	var ew := "E" if dx > 0 else "W"
-	return ns + ew
+	var out := ""
+	if word.begins_with("north"):
+		out += "N"
+	elif word.begins_with("south"):
+		out += "S"
+	if word.ends_with("east"):
+		out += "E"
+	elif word.ends_with("west"):
+		out += "W"
+	return out
 
 func _compute_compass_payload(peer_id: int) -> Dictionary:
 	"""Build the Audit #13 Slice 3 Sanctuary Compass payload for a peer.
@@ -47795,3 +47781,153 @@ func _boss_egg_rank(dungeon_rank: int) -> int:
 	if r < 9:
 		return r
 	return 9 if randf() < BOSS_EGG_RANK9_CHANCE else 8
+
+
+
+## When each peer last used their specialist service. Server-side, because a client that forgot its
+## own cooldown must not be able to spam the world with free repairs.
+var _specialist_service_at: Dictionary = {}
+
+
+func handle_specialist_service(peer_id: int, message: Dictionary) -> void:
+	# A committed specialist plies their trade, on themselves or on a player standing beside them.
+	#
+	# Owner 2026-09-18: a crafting focus should be "a quality of life improvement for themselves
+	# and other players", and then "we should try to have a similar type of specialisation service
+	# for each of the crafting focuses."
+	#
+	# ONE HANDLER FOR ALL FIVE, because the SHAPE is identical - check commitment, check cooldown,
+	# find the target, do the one thing that trade does. Five near-identical handlers is how one of
+	# them ends up with a different rule that nobody notices for months.
+	#
+	# NOTHING HERE IS GATED. Every service mirrors something a post already does, so a player with
+	# no specialist friend loses a walk and never an ability. That was the condition the owner set:
+	# it is convenience, not content.
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not character.specialty_job_committed:
+		send_to_peer(peer_id, {"type": "text",
+			"message": "[color=#FF6666]You have not committed to a trade yet.[/color]"})
+		return
+	var job: String = String(character.specialty_job)
+	var svc: Dictionary = Character.SPECIALIST_SERVICES.get(job, {})
+	if svc.is_empty():
+		send_to_peer(peer_id, {"type": "text",
+			"message": "[color=#FF6666]Your trade has no field service.[/color]"})
+		return
+
+	var now: int = int(Time.get_unix_time_from_system())
+	var last: int = int(_specialist_service_at.get(peer_id, 0))
+	var wait: int = Character.SPECIALIST_SERVICE_COOLDOWN_SEC - (now - last)
+	if wait > 0:
+		send_to_peer(peer_id, {"type": "text",
+			"message": "[color=#888888]You need another %d seconds before you can do that again.[/color]" % wait})
+		return
+
+	var target_name: String = String(message.get("target", ""))
+	var t_pid: int = peer_id
+	if target_name != "" and target_name != character.name:
+		t_pid = -1
+		for other in characters.keys():
+			if String(characters[other].name).to_lower() == target_name.to_lower():
+				t_pid = other
+				break
+		if t_pid == -1:
+			send_to_peer(peer_id, {"type": "text",
+				"message": "[color=#FF6666]%s is not online.[/color]" % target_name})
+			return
+		# PRESENCE IS REQUIRED, and it is what keeps this a social act rather than a utility.
+		# A specialist who could repair anyone anywhere is a menu; one you have to stand beside
+		# is a reason to travel together.
+		var tc = characters[t_pid]
+		if absi(tc.x - character.x) > 1 or absi(tc.y - character.y) > 1:
+			send_to_peer(peer_id, {"type": "text",
+				"message": "[color=#FF6666]%s is not close enough. Stand beside them.[/color]" % tc.name})
+			return
+
+	var target = characters[t_pid]
+	var did: String = _perform_specialist_service(String(svc.get("id", "")), character, target)
+	if did == "":
+		return
+	_specialist_service_at[peer_id] = now
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#C8A24A]%s[/color]\n%s" % [
+		String(svc.get("name", "Service")), did]})
+	if t_pid != peer_id:
+		send_to_peer(t_pid, {"type": "text", "message": "[color=#9ACD32]%s does you a kindness.[/color]\n%s" % [
+			character.name, did]})
+		save_character(t_pid)
+		send_character_update(t_pid)
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+
+func _perform_specialist_service(service_id: String, _actor, target) -> String:
+	# Do the one thing this trade does. Returns the message to show, or "" if it did nothing.
+	#
+	# FOUR OF THE FIVE LIVE ON `Character`, not here. They are pure functions of one character and
+	# nothing else, and while they sat in server.gd no probe could execute them - server.gd is a
+	# Node with a heavy _ready that the headless probes all read as TEXT rather than instantiate.
+	# That is precisely how a service ships "wired" and inert. `chart_course` stays because it
+	# genuinely needs live world state (active_dungeons).
+	if service_id == "chart_course":
+		return _chart_course_for(target)
+	return target.apply_specialist_service(service_id, SPECIALIST_CAMP_STEPS)
+
+
+## Shorter than the Scroll of Safe Passage (40) so a scribe is still worth finding. A builder can
+## repeat it on a cooldown; a scroll is one-shot and tradeable.
+const SPECIALIST_CAMP_STEPS := 25
+
+
+func _chart_course_for(target) -> String:
+	# Point someone at the nearest active dungeon of a type THEY have already discovered.
+	#
+	# MIRRORS `handle_dungeon_locate`, which is the per-use thing a post Cartographer SELLS: the
+	# post wants 15 Valor and a walk, the scribe is free and portable and on a cooldown. Same
+	# shape as the other four services.
+	#
+	# IT DELIBERATELY DOES NOT FIND THE NEAREST UNVISITED POST. That is the Sanctuary Compass, a
+	# PERMANENT upgrade bought with Valor whose tier 3 is exactly "name + direction + distance" -
+	# handing that out free every three minutes would not mirror a service, it would retire one.
+	#
+	# AND THE PRECISION IS THE TARGET'S OWN `cartography_locate_precision()`, not the scribe's.
+	# Cartography rank is earned by discovering and clearing dungeons; if a scribe could read their
+	# own rank onto someone else, the ladder would be skippable by standing next to a friend.
+	var best_name: String = ""
+	var best_dist: int = 0x7FFFFFFF
+	var bx: int = 0
+	var by: int = 0
+	for dt in target.dungeon_atlas.keys():
+		var entry = target.dungeon_atlas[dt]
+		if not (entry is Dictionary):
+			continue
+		if int(entry.get("state", 0)) < Character.DUNGEON_STATE_DISCOVERED:
+			continue
+		# world_only: a personal instance has no map presence, so it is not an answer to
+		# "where should I go" - the same reason handle_dungeon_locate passes true here.
+		var iid: String = find_dungeon_instance(String(dt), int(target.x), int(target.y), 0, "", true)
+		if iid == "":
+			continue
+		var inst: Dictionary = active_dungeons.get(iid, {})
+		var ix: int = int(inst.get("world_x", 0))
+		var iy: int = int(inst.get("world_y", 0))
+		var d: int = absi(ix - int(target.x)) + absi(iy - int(target.y))
+		if d < best_dist:
+			best_dist = d
+			bx = ix
+			by = iy
+			best_name = String(DungeonDatabaseScript.get_dungeon(String(dt)).get("name", dt))
+	if best_name == "":
+		return "[color=#888888]Nothing they have discovered is stirring in the realm right now.[/color]"
+	var compass: String = _compass_direction(int(target.x), int(target.y), bx, by)
+	var precision: int = int(target.cartography_locate_precision())
+	var body: String = ""
+	if precision <= 0:
+		body = "somewhere to the [b]%s[/b]" % compass
+	elif precision == 1:
+		var coarse: int = int(round(float(best_dist) / 10.0)) * 10
+		body = "to the [b]%s[/b], roughly %d tiles away" % [compass, maxi(10, coarse)]
+	else:
+		body = "to the [b]%s[/b], %d tiles away - near (%d, %d)" % [compass, best_dist, bx, by]
+	return "[color=#5AC8FF]You chart them a course. Nearest %s: %s.[/color]" % [best_name, body]

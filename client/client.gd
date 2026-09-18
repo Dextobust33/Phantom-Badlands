@@ -12583,6 +12583,24 @@ func update_action_bar():
 					var clv = int(cskills.get(jtc.get(jname, ""), 1))
 					if jlv >= 5 or clv >= 5:
 						commit_buttons.append({"label": "Commit " + jname.capitalize(), "action_type": "local", "action_data": "job_commit_" + jname, "enabled": true})
+			elif job_page == 1 and specialty_committed_ab:
+				# A committed specialist gets their FIELD SERVICE here, on the page that already
+				# explains what committing bought them. The label is read off
+				# Character.SPECIALIST_SERVICES rather than copied - a second table of these five
+				# names is how a renamed service keeps announcing its old name on one surface.
+				var _sj = String(character_data.get("specialty_job", ""))
+				var _svc = CharacterScript.SPECIALIST_SERVICES.get(_sj, {})
+				if not _svc.is_empty():
+					commit_buttons.append({"label": String(_svc.get("name", "Service")),
+						"action_type": "local", "action_data": "specialist_service", "enabled": true})
+					# A SEPARATE BUTTON rather than inferring the target. Serving yourself and
+					# serving a neighbour are both ordinary things to want, and a single button
+					# that silently picks whichever is adjacent spends the cooldown on the wrong
+					# one - which, at three minutes, the player cannot take back.
+					if _adjacent_player_name() != "":
+						commit_buttons.append({"label": "... for Ally",
+							"action_type": "local", "action_data": "specialist_service_ally",
+							"enabled": true})
 			# Pad to fill slots
 			while commit_buttons.size() < 5:
 				commit_buttons.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
@@ -13645,6 +13663,24 @@ func update_action_bar():
 			else:
 				cost_label.text = ""
 				cost_label.visible = false
+
+func _adjacent_player_name() -> String:
+	# The name of a player standing in one of the eight tiles around you, or "".
+	#
+	# EXTRACTED FROM THE PvP ATTACK PATH, which open-coded exactly this and was the only copy.
+	# Adjacency is the gate on every player-to-player action in the game, and two hand-written
+	# versions of "beside me" is how one of them ends up with <= 1 and the other with < 2.
+	var my_x: int = int(character_data.get("x", 0))
+	var my_y: int = int(character_data.get("y", 0))
+	for npe in _cached_nearby_players:
+		if not (npe is Dictionary):
+			continue
+		var dx_p: int = abs(int(npe.get("x", 0)) - my_x)
+		var dy_p: int = abs(int(npe.get("y", 0)) - my_y)
+		if dx_p <= 1 and dy_p <= 1 and (dx_p + dy_p) > 0:
+			return String(npe.get("name", ""))
+	return ""
+
 
 func _on_action_button_pressed(index: int):
 	# Release button focus so Space key works correctly
@@ -17328,6 +17364,14 @@ func execute_local_action(action: String):
 				job_page += 1
 				display_job_overview()
 				update_action_bar()
+		"specialist_service":
+			send_to_server({"type": "specialist_service"})
+		"specialist_service_ally":
+			var _ally := _adjacent_player_name()
+			if _ally == "":
+				display_game("[color=#FFA500]Nobody is standing close enough.[/color]")
+			else:
+				send_to_server({"type": "specialist_service", "target": _ally})
 		"job_commit_cancel":
 			pending_job_action = ""
 			job_commit_target = ""
@@ -18265,19 +18309,7 @@ func execute_local_action(action: String):
 			# Audit #14 PvP Slice C V1 (v0.9.553) — attack the first adjacent
 			# player in the apex zone. Server validates apex + adjacency + state.
 			if hud_in_pvp_zone:
-				var my_x: int = character_data.get("x", 0)
-				var my_y: int = character_data.get("y", 0)
-				var target_name: String = ""
-				for npe in _cached_nearby_players:
-					if not (npe is Dictionary):
-						continue
-					var nx: int = int(npe.get("x", 0))
-					var ny: int = int(npe.get("y", 0))
-					var dx_p: int = abs(nx - my_x)
-					var dy_p: int = abs(ny - my_y)
-					if dx_p <= 1 and dy_p <= 1 and (dx_p + dy_p) > 0:
-						target_name = String(npe.get("name", ""))
-						break
+				var target_name: String = _adjacent_player_name()
 				if target_name != "":
 					send_to_server({"type": "attack_player", "target": target_name})
 				else:

@@ -7710,6 +7710,61 @@ something was dropped, and it sat unnoticed for eleven days.
       provides can never gate content.**
       Pairs with the **cheaper material cost** and **better quality** perks already chosen.
 
+      **✅ SHIPPED 2026-09-18 — one field service per crafting focus.** Owner: *"we should try to
+      have a similar type of specialisation service for each of the crafting focuses."*
+      `Character.SPECIALIST_SERVICES` (5 entries) + `apply_specialist_service()`; one generic
+      `handle_specialist_service` on the server, because the shape is identical for all five and
+      five near-identical handlers is how one of them ends up with a rule nobody notices.
+
+      | focus | service | mirrors | what the post has that this does not |
+      |---|---|---|---|
+      | blacksmith | Field Repair | post blacksmith `repair_all` | costs Valor, needs a post |
+      | alchemist | Field Remedy | the post healer | costs Valor, needs a post |
+      | enchanter | Recharge | resting | costs game time |
+      | builder | Make Camp | Scroll of Safe Passage | 40 steps vs 25, one-shot, tradeable |
+      | scribe | Chart a Course | Cartographer `Locate` | 15 Valor, needs a post |
+
+      Free, portable, **180s cooldown**, and can act on a player standing **adjacent** — the part
+      no post can do, and what makes it social rather than a menu. Probe:
+      `tools/probe/specialist_services.gd` (4 of 5 proven by executing them against a character in
+      a known-bad state; both halves proven to fire by injecting the fault).
+
+      ⛑ **Two traps found while building it, both worth keeping:**
+      * **Chart a Course nearly retired a Sanctuary upgrade.** The first version pointed at the
+        nearest *unvisited post* — which is exactly the **Sanctuary Compass**, a permanent Valor
+        upgrade whose tier 3 is "name + direction + distance". Handing that out free every three
+        minutes is not mirroring a service, it is deleting one. It now mirrors the Cartographer's
+        per-use `Locate` instead, and reads the **target's own** `cartography_locate_precision()`
+        so the rank ladder cannot be skipped by standing next to a friend.
+      * **✅ THE COMPASS POINTED THE WRONG WAY, AND HAD FOR A LONG TIME — found and fixed here.**
+        Three functions in `server.gd` answered "which way is that" and **two had north and south
+        backwards**. Ground truth is `world_system.gd:92` — `8: Vector2i(0, 1),  # north`, i.e.
+        **+y is north** — confirmed independently by `get_direction_offset` and by the map
+        renderer (`for dy in range(radius, -radius - 1, -1)`, so row 0 is the northernmost).
+
+        | function | axis | blast radius |
+        |---|---|---|
+        | `_get_direction_text` | +y = north ✅ | 11 call sites, was correct |
+        | `_compass_direction` | +y = south ❌ | 8 sites — **including the Cartographer's 15-Valor `Locate`**, which named north when the dungeon was south |
+        | `_compass_direction_label` | +y = south ❌ | the **Sanctuary Compass** HUD glyph — a permanent Valor upgrade drawing ↑ for south |
+
+        So two *paid* services have been sending players the wrong way on the N/S axis. East and
+        west were always right, which is likely why it survived: the compass was correct half the
+        time and wrong half the time, and "it pointed me wrong" reads as player error.
+
+        **The comment is most of why nobody caught it.** `_compass_direction_label` carried
+        *"same thresholds as `_get_direction_text` so the compass agrees with prose direction
+        text"* directly above code returning the opposite letter for every north and south.
+        Anyone verifying by reading agreed with it.
+
+        Fixed structurally rather than per-site: one `WorldSystem.compass_octant(dx, dy)`, placed
+        beside the direction table that defines the axis, and all three surfaces delegate to it.
+        Probe `tools/probe/compass_axis_invariant.gd` checks the compass against
+        `get_direction_offset` — the table the game actually **moves the player with** — rather
+        than against a comment, and asserts no surface re-derives its own north. Proven to fire by
+        re-injecting the exact shipped inversion (6 of 8 directions failed; E/W unaffected).
+
+
       **⚑ THE TOWN BLACKSMITH REPAIRS; IT NO LONGER UPGRADES — owner 2026-09-18.** *"The Blacksmith
       in town should repair gear but no longer do any upgrading as that should be done through the
       crafting now."* Upgrading belongs to the crafting system, which is where the materials and

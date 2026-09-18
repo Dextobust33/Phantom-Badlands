@@ -2468,6 +2468,36 @@ func get_direction_name(direction: int) -> String:
 		9: return "northeast"
 	return "unknown"
 
+static func compass_octant(dx: int, dy: int) -> String:
+	"""The ONE answer to "which way is that". Returns north/south/east/west/northeast/... or "".
+
+	⚑ **+y is NORTH**, and this function lives here because that fact lives here: the
+	`DIRECTION_OFFSETS` table above is the authority (`8: Vector2i(0, 1),  # north`), and
+	`compass_axis_invariant.gd` checks this function against it rather than against a comment.
+
+	⛑ IT IS STATIC AND SHARED BECAUSE THREE COPIES EXISTED AND TWO WERE BACKWARDS. Found
+	2026-09-18 while building the Scribe's Chart a Course, in server.gd:
+	  * `_get_direction_text`      +y = north   CORRECT
+	  * `_compass_direction`       +y = south   INVERTED — and it is what the Cartographer's
+	                                            15-Valor Locate printed, so a paid service named
+	                                            north when the dungeon was south
+	  * `_compass_direction_label` +y = south   INVERTED — the Sanctuary Compass HUD glyph, a
+	                                            permanent Valor upgrade, pointed up for south
+	`_compass_direction_label`'s own comment claimed it agreed with `_get_direction_text` while
+	returning the opposite letter for every north and south, and that comment is most of why it
+	went unchecked. All three now delegate here."""
+	if dx == 0 and dy == 0:
+		return ""
+	# Mostly-horizontal / mostly-vertical / diagonal. The integer division is deliberate and is
+	# what these thresholds have always done.
+	if absi(dy) < absi(dx) / 3:
+		return "east" if dx > 0 else "west"
+	if absi(dx) < absi(dy) / 3:
+		return "north" if dy > 0 else "south"
+	var ns: String = "north" if dy > 0 else "south"
+	var ew: String = "east" if dx > 0 else "west"
+	return ns + ew
+
 # ===== LINE OF SIGHT (BRESENHAM) =====
 
 func _is_tile_visible_cached(player_x: int, player_y: int, target_x: int, target_y: int, blocks_los_cache: Dictionary) -> bool:
