@@ -3332,6 +3332,32 @@ const RECIPES = {
 		"tier_max": 4,
 		"craft_time": 3.0
 	},
+	# ⚑ THE SCRIBE MAKES THE WORLD SURVIVABLE. Owner-agreed identity 2026-09-18: every Scribing
+	# item reduces a RISK or a COST rather than adding power, which keeps the crafter out of the
+	# weapon/armour balance question and means it can never become mandatory.
+	"scroll_of_safe_passage": {
+		"name": "Safe Passage Scroll",
+		"skill": CraftingSkill.SCRIBING,
+		"skill_required": 12,
+		"difficulty": 24,
+		"materials": {"parchment": 2, "ink": 1, "silverleaf": 2},
+		"output_type": "consumable",
+		# 40 steps. Sized against the measured road effect - roads already cut encounters from 67.2
+		# per 200 steps to 6.7 - so this is the portable version of a road for the ground between
+		# them, not a longer or safer one.
+		"effect": {"type": "safe_passage", "safe_passage": 40},
+		"craft_time": 3.0
+	},
+	"scroll_of_long_passage": {
+		"name": "Greater Safe Passage Scroll",
+		"skill": CraftingSkill.SCRIBING,
+		"skill_required": 34,
+		"difficulty": 45,
+		"materials": {"fine_parchment": 2, "arcane_ink": 1, "silverleaf": 4},
+		"output_type": "consumable",
+		"effect": {"type": "safe_passage", "safe_passage": 120},
+		"craft_time": 4.0
+	},
 	"scroll_of_greater_escape": {
 		"name": "Scroll of Escape",
 		"skill": CraftingSkill.SCRIBING,

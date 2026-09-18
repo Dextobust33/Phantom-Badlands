@@ -7543,7 +7543,7 @@ something was dropped, and it sat unnoticed for eleven days.
 
       | item | what it does | status |
       |---|---|---|
-      | **Safe Passage Scroll** | no encounters for N steps | ✅ approved |
+      | **Safe Passage Scroll** | no encounters for N steps | ✅ **BUILT 2026-09-18** |
       | **Remains Ledger** | your corpse's exact location and contents | ✅ approved |
       | **Waypoint Seal** | mark a spot, return to it once | ✅ approved |
       | **Bestiary Page** | permanently reveal one species, account-wide | ✅ approved |
@@ -7558,6 +7558,23 @@ something was dropped, and it sat unnoticed for eleven days.
       modifiers, floors, ground, food and exit; and **Cartography rank + Locate** already handles
       finding a dungeon remotely, with its own progression and Valor cost. A scroll would have sold
       players something the game gives free, and charged them a slot and a craft for it.
+
+      **✅ SAFE PASSAGE SCROLL — BUILT 2026-09-18.** Two recipes, a real ladder: 40 steps at skill
+      12 and 120 at skill 34. **Sized against the measured road effect** rather than invented -
+      roads already cut encounters from 67.2 per 200 steps to 6.7, so this is the portable version
+      of a road for the ground between them, deliberately not longer or safer than one.
+      ⛑ `safe_passage_steps` is a COUNTER, not a flag, which is the whole difference from
+      `cloak_active`: cloak is a state you sit in, this is a budget spent by walking - which is
+      what makes it a consumable worth carrying rather than a mode.
+      ⛑ **A step is spent whether or not an encounter was due.** Decrementing only on a roll that
+      WOULD have fired makes the scroll last wildly different lengths depending on terrain, and
+      *"40 steps"* has to mean 40 steps or a player cannot plan with it.
+      ⛑ **It ADDS rather than replaces**, so reading a second scroll early never throws away the
+      remainder of the first - otherwise players learn to hoard them instead of using them.
+      ⛑ It persists across logout, unlike cloak: it was paid for with materials.
+      **Bonus:** its materials include `silverleaf`, which was one of the 16 EDIBLE-ONLY materials
+      with no recipe use. The Scribe's items are a natural home for the orphans.
+      Probe: `tools/probe/safe_passage.gd`.
 
       **Waypoint Seal pairs with post-to-post road travel** (also approved 2026-09-18): roads
       connect posts, the Seal connects the places that are not posts.

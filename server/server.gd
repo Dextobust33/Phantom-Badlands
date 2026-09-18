@@ -6061,6 +6061,19 @@ func handle_move(peer_id: int, message: Dictionary):
 	# for over-leveled tiles. Threat-corridor tiles bypass scaling so dungeon
 	# spillover monsters still pull the player into danger regardless of
 	# level gap.
+	# ⚑ SAFE PASSAGE: a scribed scroll buys N quiet steps, and each step spends one.
+	#
+	# ⛑ SPENT WHETHER OR NOT AN ENCOUNTER WAS DUE, on purpose. Decrementing only when a roll
+	# WOULD have fired would make the scroll last wildly different lengths depending on where
+	# you walked - quiet ground would cost nothing - and a player could not plan with it. "Forty
+	# steps" has to mean forty steps.
+	elif character.safe_passage_steps > 0:
+		character.safe_passage_steps -= 1
+		if character.safe_passage_steps == 0:
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#C8A24A]The last of your safe passage runs out. The wilderness notices you again.[/color]"
+			})
 	elif not character.cloak_active:
 		var _threat_zone: Dictionary = _get_threat_zone_dungeon_at(new_pos.x, new_pos.y)
 		var _in_threat: bool = not _threat_zone.is_empty()
@@ -12053,6 +12066,23 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		})
 		# Don't update character yet - wait for selection
 		return
+	elif effect.has("safe_passage"):
+		# ⚑ SAFE PASSAGE SCROLL — N steps during which the wilderness leaves you alone.
+		#
+		# Scribe identity: reduces a COST rather than adding power. Roads already cut encounters
+		# tenfold (6.7 per 200 steps against 67.2 beside them); this is the portable version for
+		# the ground between them.
+		#
+		# ⛑ IT ADDS RATHER THAN REPLACES. Reading a second scroll while one is running should not
+		# throw the remainder away - a player who mistimes it would simply lose what they paid for,
+		# and would learn to hoard them instead of using them.
+		var _sp_steps: int = maxi(1, int(effect.get("safe_passage", 40)))
+		character.safe_passage_steps += _sp_steps
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#C8A24A]You read the %s. The ground goes quiet for %d steps.[/color]
+[color=#808080]Safe passage: %d steps remaining.[/color]" % [item_name, _sp_steps, character.safe_passage_steps]
+		})
 	elif effect.has("time_stop"):
 		# Time Stop Scroll - Skip monster's next turn (lasts 1 battle)
 		var battles = effect.get("battles", 1)

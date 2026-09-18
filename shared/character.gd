@@ -478,6 +478,16 @@ const OFF_AFFINITY_MULT_BY_RANK: Array = [0.75, 0.81, 0.87, 0.94, 1.0]
 
 # Cloak System - universal stealth ability
 @export var cloak_active: bool = false
+## ⚑ SAFE PASSAGE — steps remaining during which the wilderness leaves you alone.
+##
+## A scribed scroll. The Scribe's identity is *the crafter who makes the world survivable*:
+## every item it makes reduces a RISK or a COST rather than adding power, which keeps it out of
+## the weapon/armour balance question entirely and means it can never become mandatory.
+##
+## ⛑ A COUNTER RATHER THAN A FLAG, which is the whole difference from `cloak_active` above.
+## Cloak is on until something turns it off, so it is a STATE you sit in; this is a budget spent
+## by walking, which is what makes it a consumable worth carrying rather than a mode.
+@export var safe_passage_steps: int = 0
 const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed regen)
 
 # Title System - prestigious titles with special abilities
@@ -2201,6 +2211,7 @@ func to_dict() -> Dictionary:
 		"path_milestones": path_milestones.duplicate(),
 		"swap_attack_with_ability": swap_attack_with_ability,
 		"cloak_active": cloak_active,
+		"safe_passage_steps": safe_passage_steps,
 		"title": title,
 		"title_data": title_data,
 		"knight_status": knight_status,
@@ -2515,6 +2526,9 @@ func from_dict(data: Dictionary):
 
 	# Cloak system - always starts off when loading (no free permanent cloak)
 	cloak_active = false
+	# Safe Passage DOES persist: it was paid for with materials and is spent by walking, so
+	# logging out must not consume it. That is the opposite of cloak, which is free to re-enter.
+	safe_passage_steps = int(data.get("safe_passage_steps", 0))
 
 	# Title system
 	title = data.get("title", "")
