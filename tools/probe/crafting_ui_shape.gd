@@ -197,6 +197,33 @@ func _init() -> void:
 
 
 
+	print("")
+	print("===== 8. A ROW YOU CAN CLICK MUST OPEN =====")
+	# ⚡ TWO HALVES OF ONE CHANGE, ONE OF THEM DONE. v0.9.806 made a Locked row clickable in the
+	# panel; `_on_craft_panel_recipe_selected` still returned early on `locked`, so the click was
+	# thrown away before anything was drawn. Owner 2026-09-18, with a screenshot of four clicked
+	# Locked rows and a pane reading "Select a recipe on the left": *"I attempted to click on
+	# Locked recipes but don't see any additional options or info on them."*
+	var panel_src := FileAccess.get_file_as_string("res://client/crafting_panel.gd")
+	var open_checks := {
+		"the client does not refuse a locked selection":
+			cli2.find("if recipe.get(\"locked\", false) or (recipe.get(\"specialist_gated\", false)") < 0,
+		"the panel draws the detail from its own data": panel_src.find("	_refresh_detail()
+	# And only ONE row") >= 0,
+		"only one row looks selected": panel_src.find("(b as Button).button_pressed = (i == index)") >= 0,
+		"a locked row still has a reason to be open":
+			panel_src.find("_post_job_button.visible = is_locked or is_specialist_gated") >= 0,
+		"and the craft button says what is missing":
+			panel_src.find("_craft_button.text = \"Locked - %s Lv%d needed\"") >= 0,
+	}
+	for k in open_checks.keys():
+		if bool(open_checks[k]):
+			print("  ok    %s" % k)
+		else:
+			fails.append(String(k))
+			print("  FAIL  %s -- MISSING" % k)
+
+	print("")
 	if not fails.is_empty():
 		print("[PROBE] FAIL %d part(s) of the recipe filter are missing:" % fails.size())
 		for f in fails:

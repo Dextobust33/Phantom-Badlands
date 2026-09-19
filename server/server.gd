@@ -26572,8 +26572,16 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		# ⛑ A SPECIALIST-GATED RECIPE IS NOW COMMISSIONABLE, not simply refused - provided you meet
 		# its skill yourself. A commission lends a FOCUS, never a SKILL, which is what keeps
 		# levelling a trade you did not commit to worth doing.
-		var can_commission: bool = specialist_gated and not is_locked and _has_materials_in_dict(
-			recipe.materials, effective_mats, character.crafting_materials)
+		# ⚡ MATERIALS ARE NOT PART OF WHETHER IT CAN BE COMMISSIONED. Owner 2026-09-18, on the
+		# third time of asking: *"I don't even know how I'm supposed to order a commission."*
+		#
+		# ⛑ THE OPTION USED TO DISAPPEAR WHEN YOU WERE SHORT OF A MATERIAL. That is
+		# indistinguishable from "this recipe cannot be commissioned at all", and it is not how the
+		# CRAFT path behaves - a craftable recipe you cannot afford still shows, with the button
+		# reading "Missing Materials". Hiding a capability is how a player concludes it does not
+		# exist. The server already refuses a short craft cleanly ("You don't have the required
+		# materials!"), so there was nothing to protect.
+		var can_commission: bool = specialist_gated and not is_locked
 		var can_craft = not is_locked and not specialist_gated and _has_materials_in_dict(recipe.materials, effective_mats, character.crafting_materials)
 		# Audit #4 Slice 3.7 (v0.9.546) — the recipe preview must match the
 		# formula the actual craft uses. Auto-skip path uses score=3 (35 base

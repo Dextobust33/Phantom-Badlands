@@ -34868,7 +34868,17 @@ func display_changelog():
 	# v0.9.809 - the rest of "some of the other card numbers aren't matching either".
 	# v0.9.810 - Rest comes back after the boss dies.
 	# v0.9.811 - the crafting arc closes: the gather->craft loop teaches itself as you meet it.
-	display_game("[color=#00FF00]v0.9.811[/color] [color=#808080](Current)[/color]")
+	# v0.9.812 - clicking a Locked recipe actually opens it, and the two ways to get one made say
+	# which is which.
+	display_game("[color=#00FF00]v0.9.812[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: clicking a Locked recipe did nothing.[/color] The row highlighted and the pane kept saying [i]Select a recipe on the left[/i]. Making the row clickable and letting the click through were two halves of one change and only one was done — the click was thrown away before anything was drawn. A locked recipe opens now: you can read what it needs, what it makes, and hand it to another player. Only [b]Craft[/b] stays disabled.")
+	display_game("  [color=#FF4444]★ FIXED: the two buttons were below the fold.[/color] The detail pane did not scroll, so on a recipe with a long materials list [b]Craft[/b] and [b]Post Job for a Player[/b] were pushed off the bottom with no scrollbar and nothing saying anything was there. The text scrolls now; the buttons are pinned under it.")
+	display_game("  [color=#FF4444]★ FIXED: Post Job asked its question where you could not see it.[/color] It printed [i]\"How much Valor will you pay?\"[/i] to the screen the crafting panel was covering and focused the chat box, so the button appeared to do nothing. It is a row on the panel now: [color=#C8A24A]Pay: [140] [Post] [Cancel][/color], pre-filled with what the post NPC would charge.")
+	display_game("  [color=#1EFF00]◆ Commissioning no longer hides itself when you are short a material.[/color] The option used to vanish, which reads as [i]this cannot be commissioned at all[/i]. It stays visible and the button says [b]COMMISSION - missing materials[/b], the same way Craft already did.")
+	display_game("  [color=#1EFF00]◆ The help now gives the steps, not the concept.[/color] [b]Help → Crafting[/b] walks both routes click by click: hiring a post NPC for ★ specialist work you have the skill for, and posting a job to a real player for [b]anything[/b] you cannot make at any level.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.811[/color]")
 	display_game("  [color=#FF8000]★ THE GATHER → CRAFT LOOP TEACHES ITSELF NOW.[/color] The written guide shipped a few versions back; this is the other half — a short one-time note at the moment you first meet each step, and never again. First [b]salvage[/b] (gear you outgrow IS the materials, and a locked item is never destroyed). First [b]rune[/b] (an affix in your pocket — and disenchanting gives them back, so an experiment is not a loss). First [b]Rework[/b] quote (it rolls fresh, it can come out [b]lower[/b], and it stands). First [b]◆ wanted[/b] row (somebody has already escrowed the Valor, and your quality is yours to keep). Turn them all off in Settings if you would rather not be taught.")
 	display_game("  [color=#FF4444]★ FIXED: one of those notes had never once been shown.[/color] The Rework warning — the single most surprising rule in crafting — was written, saved a \"you have seen this\" flag, and was [b]never called from anywhere[/b]. Every teaching note is now checked for having a moment that fires it.")
 	display_game("  [color=#FF4444]★ FIXED: the combat log called cards by the wrong name again.[/color] [b]Assassinate[/b] appeared as [i]Perfect Heist[/i] — which is not a phrase anywhere in the game, it is the internal id with the underscore taken out. Three surfaces did that. A card is now named by the class holding it everywhere, and a check fails on any line that prettifies an id instead of asking.")
@@ -40568,10 +40578,27 @@ Quality multiplies the item: Poor x0.5, Standard x1.0, Fine x1.25, Masterwork x1
 
 [color=#C8A24A]Specialist recipes[/color] carry a ★. They belong to one trade, and you reach them by
 [color=#FFD700]committing[/color] to it — which also pays +%d%% XP in that trade and unlocks its field
-service. Nothing is locked away for good: if you have the SKILL but not the
-focus, you can [color=#C8A24A]Commission[/color] the work from a post NPC (always Standard quality),
-or [color=#C8A24A]Post Job[/color] and let another player make it at THEIR quality — usually better,
-and they get paid instead of the shop." % [
+service.
+
+[color=#FFD700]Nothing is locked away for good.[/color] Two ways to get what you cannot make:
+
+[color=#C8A24A]1. Have a post NPC make it[/color]  — when you have the SKILL but not the focus.
+   • Stand at the bench, at a trading post.
+   • The row reads [color=#C8A24A]Iron Sword   commission 140v[/color] in gold. Click it.
+   • The big button now says [color=#C8A24A]COMMISSION  140 Valor[/color]. Press it.
+   • You supply the materials. Quality is always [color=#FFFFFF]Standard[/color] — it is a floor,
+     never the best you can get.
+
+[color=#C8A24A]2. Post the job for a player[/color]  — works on [color=#FFD700]anything[/color] you cannot make,
+   including a grey [color=#808080]Locked[/color] recipe far above your skill.
+   • Click the recipe. A locked one opens too — you just cannot press Craft.
+   • Under the Craft button: [color=#C8A24A]Post Job for a Player[/color].
+   • Type what you will pay and press [color=#C8A24A]Post[/color]. The Valor leaves your account
+     and is held until somebody fills it.
+   • Any crafter who can make it sees [color=#C8A24A]◆ 1 wanted, up to 140v[/color] on their
+     bench. When they make it, it is delivered to you wherever you are.
+   • They craft at THEIR quality — usually better than the NPC — and they get paid
+     instead of the shop." % [
 				_craft_skill_figure(1, "success"), _craft_skill_figure(60, "success"),
 				str(_craft_skill_figure(1, "masterwork")), str(_craft_skill_figure(60, "masterwork")),
 				int(CharacterScript.COMMITTED_JOB_XP_BONUS * 100.0)],
@@ -46212,6 +46239,21 @@ func _toggle_map_legend():
 const MENTOR_LEVEL_REQUIRED := 20
 
 
+func post_commission_order(recipe_id: String, recipe_name: String, valor: int) -> void:
+	"""Send a player-facing job for `recipe_id` at `valor`. Called by the crafting panel's inline
+	price row, which asks the question ON the panel instead of behind it."""
+	if recipe_id == "" or valor <= 0:
+		return
+	send_to_server({
+		"type": "market_order_create",
+		"item_type": "commission",
+		"recipe_id": recipe_id,
+		"item_name": recipe_name,
+		"quantity": 1,
+		"per_unit_valor": valor,
+	})
+
+
 func _start_commission_prompt() -> void:
 	"""Offer the selected recipe to other players as a paid job.
 
@@ -49862,10 +49904,16 @@ func _on_craft_panel_close() -> void:
 func _on_craft_panel_recipe_selected(index: int) -> void:
 	if index < 0 or index >= crafting_recipes.size():
 		return
-	var recipe = crafting_recipes[index]
-	# A commissionable recipe opens like any other; the Commission button does the rest.
-	if recipe.get("locked", false) or (recipe.get("specialist_gated", false) and not recipe.get("can_commission", false)):
-		return
+	# ⚡ EVERY RECIPE OPENS. Owner 2026-09-18, with a screenshot of four clicked Locked rows and
+	# an empty detail pane: *"I attempted to click on Locked recipes but don't see any additional
+	# options or info on them."*
+	#
+	# ⛑ THE BUTTON WAS OPENED ONTO A WALL. v0.9.806 made a locked ROW clickable in the panel and
+	# left this early return in place, so the click was thrown away here - before
+	# `crafting_selected_recipe` was set and before anything was drawn. Two halves of one change,
+	# one of them done. The whole point of clicking a locked recipe is to see what it needs and to
+	# ASK A PLAYER for it, neither of which requires being able to craft it. The Craft button stays
+	# disabled; the pane no longer does.
 	crafting_selected_recipe = index
 	craft_quantity = 1
 	display_craft_recipe_details()

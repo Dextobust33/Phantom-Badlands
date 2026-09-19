@@ -83,6 +83,10 @@ var _qty_plus: Button
 var _qty_max: Button
 var _craft_button: Button
 var _post_job_button: Button
+var _detail_scroll: ScrollContainer
+var _commission_row: HBoxContainer
+var _commission_amount: LineEdit
+var _commission_hint: Label
 var _detail_empty: Label
 var _status_label: RichTextLabel
 
@@ -233,13 +237,34 @@ func _build_layout() -> void:
 	_detail_title.add_theme_font_size_override("font_size", 20)
 	_detail_root.add_child(_detail_title)
 
+	# ⚡ THE BUTTONS HAVE TO STAY ON SCREEN. Owner 2026-09-18, on the third time of asking about
+	# commissions: *"How do I even get to it?"*
+	#
+	# ⛑ THEY COULD NOT. `_detail_root` was a plain VBox and both text blocks below are
+	# `fit_content`, so a recipe with a long materials list simply pushed [b]Craft[/b] and
+	# [b]Post Job for a Player[/b] off the bottom of the pane - there was no scrollbar and nothing
+	# to say anything was down there. Exactly the fault the tutorial hint panel had the same day:
+	# a container that grows to its content inside a box that does not.
+	#
+	# The text scrolls; the buttons are pinned under it.
+	_detail_scroll = ScrollContainer.new()
+	_detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_detail_root.add_child(_detail_scroll)
+
+	var detail_text_col := VBoxContainer.new()
+	detail_text_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail_text_col.add_theme_constant_override("separation", 6)
+	_detail_scroll.add_child(detail_text_col)
+
 	_detail_meta = RichTextLabel.new()
 	_detail_meta.bbcode_enabled = true
 	_detail_meta.fit_content = true
 	_detail_meta.scroll_active = false
 	_detail_meta.add_theme_font_size_override("normal_font_size", 15)
 	_detail_meta.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail_root.add_child(_detail_meta)
+	detail_text_col.add_child(_detail_meta)
 
 	_detail_materials = RichTextLabel.new()
 	_detail_materials.bbcode_enabled = true
@@ -247,7 +272,7 @@ func _build_layout() -> void:
 	_detail_materials.scroll_active = false
 	_detail_materials.add_theme_font_size_override("normal_font_size", 16)
 	_detail_materials.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail_root.add_child(_detail_materials)
+	detail_text_col.add_child(_detail_materials)
 
 	# Audit #4 Slice 2 — Boost selector row.
 	# Live preview: clicking a tier redraws odds + material costs immediately.
@@ -325,6 +350,45 @@ func _build_layout() -> void:
 	_post_job_button.pressed.connect(_on_post_job_pressed)
 	_post_job_button.visible = false
 	_detail_root.add_child(_post_job_button)
+
+	# ⚡ AND THE PRICE IS ASKED HERE, NOT IN THE CHAT BOX. Pressing Post Job used to print
+	# "How much Valor will you pay? Type an amount" with `display_game` and focus the chat field -
+	# and this panel is COVERING the surface that text goes to. So the button appeared to do
+	# nothing: the question was behind the panel and the only cue was a placeholder in a text box
+	# at the bottom of the screen. Owner's standing rule, from the start of this arc: *"the answers
+	# should be UI based where possible."*
+	_commission_row = HBoxContainer.new()
+	_commission_row.add_theme_constant_override("separation", 6)
+	_commission_row.visible = false
+	_detail_root.add_child(_commission_row)
+
+	var _c_lbl := Label.new()
+	_c_lbl.text = "Pay:"
+	_c_lbl.add_theme_color_override("font_color", Color(0.78, 0.64, 0.29))
+	_c_lbl.add_theme_font_size_override("font_size", 15)
+	_commission_row.add_child(_c_lbl)
+
+	_commission_amount = LineEdit.new()
+	_commission_amount.placeholder_text = "Valor"
+	_commission_amount.custom_minimum_size = Vector2(110, 30)
+	_commission_amount.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_commission_amount.text_submitted.connect(func(_t): _on_commission_confirm())
+	_commission_row.add_child(_commission_amount)
+
+	var _c_ok := _make_action_btn("Post", _on_commission_confirm)
+	_c_ok.add_theme_font_size_override("font_size", 14)
+	_commission_row.add_child(_c_ok)
+
+	var _c_no := _make_action_btn("Cancel", _on_commission_cancel)
+	_c_no.add_theme_font_size_override("font_size", 14)
+	_commission_row.add_child(_c_no)
+
+	_commission_hint = Label.new()
+	_commission_hint.text = ""
+	_commission_hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.58))
+	_commission_hint.add_theme_font_size_override("font_size", 12)
+	_commission_hint.visible = false
+	_detail_root.add_child(_commission_hint)
 
 	_detail_empty = Label.new()
 	_detail_empty.text = "Select a recipe on the left."
@@ -412,10 +476,42 @@ func set_upcoming_unlocks(unlocks: Array) -> void:
 # Called by client.gd whenever the recipe list / materials change (server craft_list response,
 # materials update, character_update, etc.).
 func _on_post_job_pressed() -> void:
+	"""Open the inline price row. The order is sent by `_on_commission_confirm`."""
 	if client_ref == null or _selected_index < 0 or _selected_index >= _recipes.size():
 		return
-	client_ref.crafting_selected_recipe = _selected_index
-	client_ref._start_commission_prompt()
+	var recipe = _recipes[_selected_index]
+	_commission_row.visible = true
+	_commission_hint.visible = true
+	# A starting figure the player can just accept: what the post NPC would charge. A real crafter
+	# is better than the NPC (which is always Standard), so this is a floor, not a recommendation.
+	var fee := int(recipe.get("commission_fee", 0))
+	_commission_amount.text = str(fee) if fee > 0 else ""
+	_commission_hint.text = ("A crafter who takes this supplies the materials and their own quality."
+		+ ("  The post NPC would charge %d." % fee if fee > 0 else ""))
+	_post_job_button.visible = false
+	_commission_amount.grab_focus()
+	_commission_amount.select_all()
+
+
+func _on_commission_cancel() -> void:
+	_commission_row.visible = false
+	_commission_hint.visible = false
+	_refresh_detail()
+
+
+func _on_commission_confirm() -> void:
+	if client_ref == null or _selected_index < 0 or _selected_index >= _recipes.size():
+		return
+	var amount := int(_commission_amount.text.strip_edges()) if _commission_amount.text.strip_edges().is_valid_int() else 0
+	if amount <= 0:
+		_commission_hint.text = "Enter an amount of Valor."
+		_commission_hint.add_theme_color_override("font_color", Color(1.0, 0.45, 0.45))
+		return
+	var recipe = _recipes[_selected_index]
+	client_ref.post_commission_order(String(recipe.get("id", "")), String(recipe.get("name", "item")), amount)
+	_commission_row.visible = false
+	_commission_hint.visible = false
+	_refresh_detail()
 
 
 func _on_filter_pressed(filter_id: String) -> void:
@@ -795,8 +891,14 @@ func _refresh_detail() -> void:
 		# end on 43% of the list; a player with the skill can pay a post NPC to do the work, or
 		# post the job for a real crafter.
 		if recipe.get("can_commission", false):
-			_craft_button.text = "COMMISSION  %d Valor" % int(recipe.get("commission_fee", 0))
-			_craft_button.disabled = false
+			# Same shape as the craft path: the option stays VISIBLE and the button says why it
+			# cannot be pressed, instead of the whole route vanishing because a material is short.
+			if not _can_afford_with_boost(materials, boost_mat_mult, 1):
+				_craft_button.text = "COMMISSION - missing materials"
+				_craft_button.disabled = true
+			else:
+				_craft_button.text = "COMMISSION  %d Valor" % int(recipe.get("commission_fee", 0))
+				_craft_button.disabled = false
 		else:
 			_craft_button.text = "Specialist Job Required (Lv%d)" % skill_req
 			_craft_button.disabled = true
@@ -870,6 +972,14 @@ func _show_detail_empty(empty: bool) -> void:
 	if _boost_row:
 		_boost_row.visible = not empty and _boost_row.visible
 	_craft_button.visible = not empty
+	# The second route's button and its price row belong to a SELECTION too - left visible with
+	# nothing selected, Post Job would post the last recipe you looked at.
+	if _post_job_button:
+		_post_job_button.visible = _post_job_button.visible and not empty
+	if _commission_row:
+		_commission_row.visible = _commission_row.visible and not empty
+	if _commission_hint:
+		_commission_hint.visible = _commission_hint.visible and not empty
 
 
 func _resolve_owned(mat_id: String) -> int:
@@ -901,7 +1011,23 @@ func _on_skill_chip_pressed(skill_id: String) -> void:
 
 
 func _on_recipe_pressed(index: int) -> void:
+	# A price row left open from the last recipe would post the wrong job.
+	if _commission_row:
+		_commission_row.visible = false
+	if _commission_hint:
+		_commission_hint.visible = false
 	_selected_index = index
+	# ⛑ THE PANEL ANSWERS ITS OWN CLICK. It used to only emit and wait for the client to draw the
+	# detail - so anything the client declined to select left the pane reading "Select a recipe on
+	# the left", which is exactly what the owner photographed. The panel already holds the row it
+	# was clicked on; nothing has to come back for it to show it.
+	_refresh_detail()
+	# And only ONE row can look selected. These are toggle buttons, so without this every row a
+	# player clicked stayed dark - four of them in the screenshot.
+	for i in range(_recipe_buttons.size()):
+		var b = _recipe_buttons[i]
+		if b is Button:
+			(b as Button).button_pressed = (i == index)
 	# Emit the index into the list the CLIENT holds, not the filtered one shown here.
 	var src: int = int(_src_index[index]) if index >= 0 and index < _src_index.size() else index
 	emit_signal("recipe_selected", src)
