@@ -11434,6 +11434,42 @@ func get_combat_summary(peer_id: int) -> Dictionary:
 		"player_hp_at_start": combat.get("player_hp_at_start", 0),
 	}
 
+func get_party_combat_summary(combat: Dictionary, pid: int) -> Dictionary:
+	"""The same summary `get_combat_summary` returns, for ONE MEMBER of a party fight.
+
+	⚡ EVERY PARTY DEATH WAS RECORDED WITH NOTHING IN IT. `handle_permadeath` takes an optional
+	`combat_data` and both party callers passed nothing, so the death record fell back to its
+	defaults - `rounds_fought` 0, `player_hp_at_start` 0, damage dealt and taken 0. Measured on
+	the live log 2026-09-19: **7 of 50 deaths**, and the balance audit rendered every one of them
+	as `rounds 0.0 started 0%`, which reads as a player one-shot at their own level. Three of the
+	fourteen rows in its "AT PARITY - these are the curve's, not the player's" section were these
+	phantom records. That section is the cleanest evidence there is that the early curve is too
+	hard, and a fifth of it was a logging gap pointing the same way.
+
+	Nothing was missing from the game - `member_states[pid]` has carried `player_hp_at_start` and
+	both damage totals since party combat was written. It was simply never handed over.
+
+	⛑ THE KEYS MUST MATCH `get_combat_summary` EXACTLY. One consumer reads both, so a party
+	death that spelled a key differently would be indistinguishable from one that recorded
+	nothing - the bug this fixes, wearing a different hat."""
+	var st: Dictionary = combat.get("member_states", {}).get(pid, {})
+	var mon: Dictionary = combat.get("monster", {})
+	return {
+		"rounds": int(combat.get("round", 0)),
+		"combat_log": combat.get("combat_log", []).duplicate(),
+		"monster_name": String(mon.get("name", "")),
+		"monster_base_name": String(mon.get("base_name", mon.get("name", ""))),
+		"monster_level": int(mon.get("level", 0)),
+		"monster_max_hp": int(mon.get("max_hp", 0)),
+		# PER MEMBER, not the party's total - "how much of its own bar this character had left
+		# when the fight started" is the whole question the death log exists to answer, and a
+		# party-wide sum would answer a different one.
+		"total_damage_dealt": int(st.get("total_damage_dealt", 0)),
+		"total_damage_taken": int(st.get("total_damage_taken", 0)),
+		"player_hp_at_start": int(st.get("player_hp_at_start", 0)),
+	}
+
+
 func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 	"""End combat and clean up.
 
@@ -13794,6 +13830,10 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 	var result: Dictionary
 	if kind == "ability":
 		result = process_ability_command(pid, _abil, String(action.get("arg", "")))
+	elif kind == "brace":
+		# Resolved on the member's VIEW, exactly as an attack is, so the damage_reduction buff
+		# lands on this member's own character and `_party_sync_view_back` carries it home.
+		result = process_brace(view)
 	else:
 		result = process_attack(view)
 	if _redirect_pid != -1 and result.get("success", true):
@@ -13819,10 +13859,21 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		# surface most likely to show somebody else's card.
 		act_label = "uses " + display_name_for(combat.characters.get(pid, null),
 			String(action.get("ability", "")))
+	elif kind == "brace":
+		# ⚡ THE ARCHETYPE'S OWN WORD. Owner 2026-09-19, reporting from a party fight: *"attempted
+		# to use Slip. The combat log instead says Brace."* A warrior Braces, a mage Wards, a
+		# trickster Slips, and this is the PARTY log - the surface most likely to be showing
+		# somebody else's action, so it is the one where a wrong name is most visible.
+		act_label = "%ss" % brace_name_for(combat.characters.get(pid, null)).to_lower()
 	else:
 		act_label = "attacks"
 	# Header names the actor for everyone else; the actor themself reads it in 2nd person.
-	var self_label: String = "attack" if kind != "ability" else act_label.replace("uses ", "use ")
+	var self_label: String = act_label.replace("uses ", "use ")
+	if kind != "ability" and kind != "brace":
+		self_label = "attack"
+	elif kind == "brace":
+		# "You slip" / "You ward" / "You brace" - the verb, not the third-person form.
+		self_label = brace_name_for(combat.characters.get(pid, null)).to_lower()
 	var header := _party_entry(pid,
 		"[color=#8FE3FF]▶ You %s[/color]" % self_label,
 		"[color=#8FE3FF]▶ %s %s[/color]" % [pname, act_label])

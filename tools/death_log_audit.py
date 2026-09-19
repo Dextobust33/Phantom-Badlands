@@ -28,6 +28,17 @@ import subprocess
 import sys
 import collections
 
+# The same guard `tools/backlog_audit.py` carries, and for a reason this script states in its own
+# docstring: it prints player-authored names and monster variants, and Windows consoles default to
+# cp1252. It decoded the SSH pipe as UTF-8 from the start but never fixed its own stdout, so any
+# non-ASCII character reaching a print - a player name, or the warning marker added 2026-09-19 -
+# killed the run mid-report. An audit that dies on its first interesting finding is worse than one
+# that never runs, because it looks like a crash rather than a result.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 SSH_KEY = "/c/Users/Dexto/Desktop/PhantomBadlandsSSH/ssh-key-2026-04-21.key"
 SERVER = "ubuntu@5.78.217.135"
 PATH = "/home/ubuntu/.local/share/godot/app_userdata/PhantomBadlands/data/leaderboard.json"
@@ -47,6 +58,29 @@ def band(lvl):
     if lvl <= 99:
         return "50-99"
     return "100+"
+
+
+def no_detail(e):
+    """Was this death's FIGHT actually recorded, or is the record empty?
+
+    (2026-09-19) Every field in a death record defaults to 0, so a death written with no
+    combat data at all is byte-identical to a character who entered at 0 HP, fought zero
+    rounds and dealt nothing. Both PARTY death paths passed no combat data, so 7 of 50 live
+    deaths were blanks - and this audit printed them in section 3 as `rounds 0.0 started 0%`,
+    under the heading "these are the curve's, not the player's". A fifth of the strongest
+    evidence that the early game is too hard was a missing function argument.
+
+    The server now stamps `has_combat_detail`. Records written before that lack the flag, so
+    the legacy tell is the one that produced the bug: EVERY field zero at once. A real fight
+    cannot have zero rounds and zero HP-at-start and zero damage in both directions.
+    """
+    dd = e.get("death_data", {})
+    if "has_combat_detail" in dd:
+        return not dd.get("has_combat_detail")
+    return (int(dd.get("rounds_fought", 0) or 0) == 0
+            and float(dd.get("player_hp_at_start", 0) or 0) == 0
+            and float(dd.get("total_damage_dealt", 0) or 0) == 0
+            and float(dd.get("total_damage_taken", 0) or 0) == 0)
 
 
 BANDS = ["1-9", "10-24", "25-49", "50-99", "100+"]
@@ -105,6 +139,10 @@ def main():
                 ml = None
         if ml is not None:
             gaps.append((lvl, ml, ml - lvl, cause.split(" (Lvl")[0], e))
+    # Blanks are still DEATHS - they are counted everywhere a death is counted - but they are
+    # not EVIDENCE about the curve, because nothing about the fight was recorded.
+    blanks = [g for g in gaps if no_detail(g[4])]
+    gaps = [g for g in gaps if not no_detail(g[4])]
     at_parity = [g for g in gaps if g[2] <= 2]
     modest = [g for g in gaps if 2 < g[2] <= 10]
     far = [g for g in gaps if g[2] > 10]
@@ -112,6 +150,13 @@ def main():
     print("    at or below the player's level (gap <= 2) ... %d" % len(at_parity))
     print("    modestly above (3-10) ..................... %d" % len(modest))
     print("    far above (11+) ........................... %d" % len(far))
+    print("")
+    if blanks:
+        print("")
+        print("  ⚠ %d of these have NO fight recorded and are EXCLUDED from the list below."
+              % len(blanks))
+        print("    They are real deaths, but nothing about the fight was written, so they say")
+        print("    nothing about the curve. Left in, each reads as a one-shot at parity.")
     print("")
     print("  AT PARITY - these are the curve's, not the player's:")
     for lvl, ml, gap, name, e in sorted(at_parity, key=lambda g: g[0])[:14]:

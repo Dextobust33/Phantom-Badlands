@@ -8370,6 +8370,20 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		"player_hp": character.current_hp,
 		"player_max_hp": character.get_total_max_hp(),
 		"player_hp_at_start": combat_data.get("player_hp_at_start", 0),
+		# ⚑ DID ANYONE ACTUALLY RECORD THIS FIGHT?
+		#
+		# Every field above defaults to 0, so a caller that passes no `combat_data` writes a
+		# record that is INDISTINGUISHABLE from a character who entered combat at 0 HP, fought
+		# zero rounds and dealt nothing. That is not a hypothetical: both party callers did
+		# exactly that, and the balance audit read the result as a one-shot at parity - the
+		# strongest possible evidence that the early curve is too hard, manufactured entirely by
+		# a missing argument.
+		#
+		# A zero and an absence must not look alike. This flag is what separates them, so the
+		# next path that forgets shows up as "no detail recorded" instead of as balance evidence.
+		# Records written before 2026-09-19 lack it; the audit treats absence plus all-zeros as
+		# unknown rather than as a fight.
+		"has_combat_detail": not combat_data.is_empty(),
 	}
 
 	# Add to leaderboard with full death snapshot
@@ -45035,7 +45049,25 @@ func _party_collect_fallen(leader_id: int) -> Array:
 		st["permadeath_done"] = true
 		combat_mgr.party_combat_membership.erase(pid)
 		if characters.has(pid):
-			fallen.append({"pid": pid, "name": characters[pid].name, "killer": monster_name})
+			# ⚑ THE FIGHT SUMMARY IS TAKEN **HERE**, NOT WHERE THE DEATH IS RECORDED.
+			#
+			# Both party callers used to pass no `combat_data` at all, so every party death was
+			# written with rounds 0, hp-at-start 0 and both damage totals 0 - which the balance
+			# audit renders as a player one-shot at their own level (7 of 50 live deaths,
+			# measured 2026-09-19).
+			#
+			# ⛑ AND THE OBVIOUS FIX WOULD HAVE FAILED SILENTLY. `_party_kill_fallen` runs
+			# AFTER the round is sent, and a wipe tears down `active_party_combats` before then -
+			# which is why collect and kill are split in the first place (see that function's
+			# note). Worse, the line directly above erases this member's `party_combat_membership`,
+			# so even a membership lookup there finds nothing. Asking for the summary at kill
+			# time would return {} and re-create the exact bug while looking fixed.
+			fallen.append({
+				"pid": pid,
+				"name": characters[pid].name,
+				"killer": monster_name,
+				"summary": combat_mgr.get_party_combat_summary(combat, pid),
+			})
 	return fallen
 
 
@@ -45048,7 +45080,8 @@ func _party_kill_fallen(fallen: Array) -> void:
 		var pid: int = int(entry.get("pid", -1))
 		if not characters.has(pid):
 			continue
-		handle_permadeath(pid, String(entry.get("killer", "a monster")))
+		handle_permadeath(pid, String(entry.get("killer", "a monster")),
+			entry.get("summary", {}))
 		# Guardian / High King saves leave the character ALIVE — only drop them from the
 		# party when they actually died.
 		if not characters.has(pid):
@@ -46777,6 +46810,27 @@ func _handle_party_combat_command(peer_id: int, command: String, target: String 
 		action = {"kind": "attack"}
 	elif cmd in ["flee", "f", "run"]:
 		action = {"kind": "flee"}
+	elif cmd in CombatManager.BRACE_COMMANDS:
+		# ⚡ LIVE BUG, owner 2026-09-19, in a party at the starter dungeon boss: *"attempted to use
+		# Slip... shows I'm locked in but can still change my picks but whenever I try it just says
+		# waiting for party."*
+		#
+		# Brace/Ward/Slip shipped in v0.9.817 wired into SOLO combat (`process_ability_command`
+		# matches `BRACE_COMMANDS`) and into the action bar. This dispatcher keeps its OWN
+		# allow-list of what counts as a combat command, and nobody updated it — so in a party
+		# `slip` matched none of the branches, fell to the `else`, printed "Unknown combat
+		# command" and **returned without submitting**. The player was never locked in at all;
+		# the client had already drawn them as locked, so every retry did nothing and the round
+		# could never complete. A defensive action that silently costs you the fight is worse
+		# than not having one.
+		#
+		# ⛑ Its own `kind`, not `{kind: "ability", ability: "brace"}`. Routing it as an ability
+		# works mechanically — `process_ability_command` would map it — but the party log header
+		# names an ability with `display_name_for`, which for a non-card id prettifies the raw
+		# string and would announce "Brace" to a Ninja. That is the second half of what was
+		# reported, and it is the same raw-id fallback that made Assassinate read as "Perfect
+		# Heist" in this very function.
+		action = {"kind": "brace"}
 	elif cmd in ["outsmart", "o"]:
 		# 2026-09-05 — Outsmart RETIRED. Measured: removing it cost 0-10pp of win rate while
 		# removing Assassinate cost 25-39pp, so the Trickster's supposed signature contributed

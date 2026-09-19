@@ -1052,6 +1052,40 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ TWO PARTY FAULTS FOUND FROM LIVE (2026-09-19)
+
+**1. BRACE / WARD / SLIP DID NOTHING IN A PARTY, AND HUNG THE ROUND.** Owner, live, at the starter
+dungeon boss: *"attempted to use Slip. The combat log instead says Brace and shows I'm locked in
+but can still change my picks but whenever I try it just says waiting for party."*
+
+`_handle_party_combat_command` keeps its **own allow-list** of what counts as a combat command.
+Brace shipped in v0.9.817 wired into solo combat and the action bar; that list was never updated,
+so `slip` matched nothing, fell to the `else`, printed "Unknown combat command" and **returned
+without submitting**. The player was never locked in at all - the client had already drawn them as
+locked, so every retry did nothing and the round could never complete. A defensive action that
+silently costs you the fight is worse than not having one.
+The second half of the report was the log naming: routing it as an ability would have announced
+"Brace" to a Ninja, via the same raw-id fallback that once made Assassinate read as "Perfect
+Heist" **in that same function**. It has its own `kind` and asks `brace_name_for`.
+Probe: `every_combat_action_works_in_a_party.gd`, proven to fire.
+
+**2. EVERY PARTY DEATH WAS RECORDED EMPTY - and it was feeding the balance work.** Measured on the
+live log: **7 of 50 deaths** carried `rounds 0`, `hp_at_start 0`, zero damage both ways. Not 0 HP
+fights: `handle_permadeath` takes the fight as an OPTIONAL argument and both party paths passed
+nothing. `death_log_audit.py` printed each one under **"AT PARITY - these are the curve's, not the
+player's"** - three of that section's fourteen rows. The strongest evidence available that the
+early curve is too hard, and a fifth of it was a missing function argument.
+Fixed at the cause (the summary is taken in `_party_collect_fallen`, where the combat still
+exists - taking it at kill time returns nothing, because a wipe tears the combat down first) and
+structurally (`has_combat_detail`, so a blank can never again look like a one-shot). The audit now
+excludes blanks from the curve evidence and says so.
+Probe: `a_party_death_records_its_fight.gd`, proven to fire.
+
+⚡ **THE PARITY LIST READS DIFFERENTLY NOW.** With the blanks out, several early deaths show the
+player walking in at **32%, 42%, 60% HP** - that is attrition, not encounter power, and it is a
+different fix entirely. Do not re-open the early curve on the old reading.
+
+
 ### ⚑ WHERE THINGS STAND — end of 2026-09-19
 
 **v0.9.821 is LIVE, client and server, hash-verified. NOTHING is built-but-unreleased.**
