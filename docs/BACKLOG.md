@@ -1129,7 +1129,7 @@ Outsmart, so no card shifts a key. Probe: `every_class_can_answer.gd`.
       **A telegraphed burst reads ACTIVE defence only** (`_mitigate_burst`), not armour or CON:
       you cannot out-gear a boss's signature blow, but you can answer it on the turn it is coming.
       Probe: `a_telegraph_is_answerable.gd`.
-- [ ] **THE REMAINING 24 cyclical bursts still land the moment the counter hits.** The probe's
+- [ ] **THE REMAINING 24 cyclical bursts still land the moment the counter hits.** (The five that DO telegraph were carried through the 2026-09-19 chain run.) The probe's
       section 4 lists them by name every run, so this is a visible queue rather than a silent gap:
       `void_step`, `iron_discipline`, `soul_siphon`, `contagion_aura`, `lullaby`, `wind_shear`,
       `sonic_echo`, `hatchling_swarm`, `infernal_curse`, `triple_threat`, `three_heads`,
@@ -1150,7 +1150,7 @@ Outsmart, so no card shifts a key. Probe: `every_class_can_answer.gd`.
       **Do the two that already claim to telegraph plus the heaviest hitters first**, behind a
       probe that fails on any burst landing without a wind-up, then convert the rest.
 
-- [ ] **BALANCE BATCH: Brace is a player-power change in EVERY fight**, not just boss fights
+- [x] **BALANCE BATCH: Brace — CARRIED THROUGH THE 2026-09-19 CHAIN RUN.** A player-power change in EVERY fight, not just boss fights
       (owner: *"I'm also fine with r being available outside of boss battles"*). A universal 40%
       mitigation option changes win rates across the board, so `reference_monster_curve.json` is
       stale for it. Do NOT run the chain for this alone - it joins whatever the live death data
@@ -1541,7 +1541,25 @@ share and gear relevance — that is the panel the tool needs, and it exists.
 **Sequencing:** after the retreat-model fix below, because a tool that tunes against a broken
 instrument is worse than no tool.
 
-### ⚑ THE BALANCE BATCH — add here, run the chain ONCE
+### ⚡ THE DEATH-RATE BASELINE IS A PRE-CHANGE NUMBER — do not read it as a clean before/after
+
+Owner 2026-09-19: *"It will take a couple of weeks before we have useful data from players."*
+
+That retires the plan of freezing combat work to protect the measurement - two weeks is far too
+long a freeze, and it was costing more than the measurement is worth. The batch below gets run.
+
+⛑ **BUT THE COMPARISON IS NOW CONFOUNDED, AND THAT HAS TO BE WRITTEN DOWN.** The
+**1.81% deaths per encounter** measured on 2026-09-19 (50 deaths / 2766 encounters, from
+`monsters_killed` across living and dead characters) is a **v0.9.816-and-earlier** number. Running
+the chain over this batch means the next two weeks of play measure a DIFFERENT game. So:
+
+* comparing the two in a fortnight measures **the curve refit AND the batch together**
+* it is still worth doing - the direction tells us plenty - but nobody should report it as
+  "the v0.9.816 curve delivered X"
+* re-measure with `python tools/death_log_audit.py`; the baseline to quote alongside is 1.81%,
+  **labelled as pre-batch**
+
+### ⛑ THE BALANCE BATCH — add here, run the chain ONCE
 
 **Do not run the calibration chain for a single item.** It is ~25 minutes, it is one-pass-each by
 design (see CLAUDE.md: iterating means two layers control the same quantity), and every player-side
@@ -1609,7 +1627,26 @@ Currently queued:
       or a combat consumable**, so this changes WHEN a service is available and not how strong
       anyone is - listed so a future refit sees it, not as a debt on its own.
 
-- [ ] **`species_power` SATURATES - its x2.50 clamp is narrower than the real spread.** 68 of 136
+- [x] **`species_power` SATURATION — CAUSE FOUND AND FIXED, CHAIN RE-RUN 2026-09-19.** It was never
+      the clamp. `speciescal`'s own sampler (`_species_win_at`) modelled a DIFFERENT PLAYER from the
+      mix it compared against: three classes chosen for strength, never retreating, judged against
+      nine classes that flee. Measured on identical monsters: **+24pp at L5, +12pp at L10, +18pp at
+      L50**. Every species therefore measured "too easy" and was strengthened, and the ceiling did
+      the rest. Both samplers now share a player model; residual gap **4pp**.
+      **The re-run proves it:**
+
+          before          after
+          136 corrections 134
+          68 at ceiling   13   (50% -> 9%)
+          0 weakenings     5
+
+      A calibrator that only ever pushes one way is not measuring a difference. It now corrects in
+      both directions, which is what the fix predicted and the reason not to widen the clamp.
+      **L5 also fixed itself** - 79% against a 90% target became 85%, so the one anchor outside
+      tolerance last night was this bias, not a wrong target.
+      ⚡ **The fix sat inert in the repo for two releases** (v0.9.817, v0.9.818) because it was
+      committed without re-running the chain that writes `species_power`. Owner caught it.
+- [x] **(superseded) `species_power` SATURATES - its x2.50 clamp is narrower than the real spread.** 68 of 136
       cells sit on the ceiling (2026-09-19), across three separate runs and on three different base
       curves - INCLUDING after the `_inject_curve` two-worlds bug was fixed, which was the obvious
       suspect - so it is structural rather than an artifact. The cause is visible in the
