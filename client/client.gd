@@ -3239,38 +3239,31 @@ func _ready():
 			_tool_spares_suffix_off = false
 			print("[UIMEASURE] tools_panel with_spares=%d without=%d wrapped=%s" % [
 				int(_with), int(_without), str(_with > _without + 1.0)])
-		# ⚑ THE VICTORY-SCREEN FLASH. Owner 2026-09-19: *"when completing combat and
-		# transitioning from the Victory screen back to the map there is a flash of when the
-		# windows have to realign or be redrawn... Ideally the player would close the victory
-		# screen and already see their map and overlays sized correctly."*
-		#
-		# A one-frame layout transient is exactly the thing reasoning gets wrong, and this file
-		# already records three instruments that were wrong about this same column. So the
-		# question is asked directly: does hiding `game_output` and showing the combat panel
-		# change what the MAP is given, and how many frames does it take to settle coming back?
-		if map_display != null and game_output != null:
-			var _f0 := Vector2(map_display.size)
-			var _fs0: int = map_display.get_theme_font_size("normal_font_size")
-			print("[UIMEASURE] transition map_before=%dx%d font=%d" % [int(_f0.x), int(_f0.y), _fs0])
-			# Into "combat": the panel takes the centre, game_output stands down.
-			game_output.visible = false
-			await get_tree().process_frame
-			await get_tree().process_frame
-			print("[UIMEASURE] transition map_in_combat=%dx%d font=%d" % [
-				int(map_display.size.x), int(map_display.size.y),
-				map_display.get_theme_font_size("normal_font_size")])
-			# ...and back out, the way acknowledge_continue does it.
-			game_output.visible = true
-			var _settle := -1
-			for _fi in range(6):
+		# ⚑ IS THE MAP LAYOUT READABLE THE FRAME ITS PANEL APPEARS?
+		if map_panel != null and map_display != null:
+			# THE VICTORY-SCREEN FLASH RESTS ON THIS. `_sync_map_sprites_overlay`
+			# awaits a frame before reading paragraph offsets because (v0.9.391, an older Godot)
+			# they read 0 until layout settled. The sprite overlay is a CHILD of map_display,
+			# which sits inside map_panel - and map_panel is HIDDEN during combat, so the
+			# overlay cannot be positioned until the map is revealed. That makes "position the
+			# sprites before revealing" impossible, and leaves exactly one lever: can the offsets
+			# be read in the SAME frame the panel is shown, on Godot 4.7?
+			if map_panel != null:
+				map_panel.visible = false
 				await get_tree().process_frame
-				if int(map_display.size.y) == int(_f0.y) and _settle < 0:
-					_settle = _fi
-				print("[UIMEASURE] transition frame%d map=%dx%d font=%d" % [
-					_fi, int(map_display.size.x), int(map_display.size.y),
-					map_display.get_theme_font_size("normal_font_size")])
-			print("[UIMEASURE] transition settled_after_frames=%d (map column changes=%s)" % [
-				_settle, str(int(_f0.y) != int(map_display.size.y) or _settle > 0)])
+				map_panel.visible = true
+				map_display.clear()
+				map_display.append_text("AAA
+BBB
+CCC
+DDD")
+				var _p_now: float = map_display.get_paragraph_offset(2)
+				var _h_now: float = map_display.get_content_height()
+				await get_tree().process_frame
+				var _p_next: float = map_display.get_paragraph_offset(2)
+				print("[UIMEASURE] offsets same_frame=%s next_frame=%s content_h_same_frame=%s" % [
+					str(_p_now), str(_p_next), str(_h_now)])
+				print("[UIMEASURE] offsets_readable_immediately=%s" % str(_p_now == _p_next and _p_now != 0))
 		get_tree().quit()
 		return
 	# 2026-09-05 — enforce vsync HERE rather than in project.godot.
@@ -35087,7 +35080,12 @@ func display_changelog():
 	#            hid or dropped text, and a release gate so there is no fourth.
 	# v0.9.825 - party play changes shape: everyone walks their own path and whoever meets a
 	#            monster pulls the nearby party in. Plus: a Shrieker's cry reaches the log.
-	display_game("[color=#00FF00]v0.9.825[/color] [color=#808080](Current)[/color]")
+	# v0.9.826 - the flash between the victory screen and the map: an engine wait from 2021 that
+	#            stopped being necessary.
+	display_game("[color=#00FF00]v0.9.826[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: the flicker when the victory screen hands you back the map.[/color] Closing a fight left one frame where the map was drawn but the [b]sprites on it were not yet placed[/b] — your own marker and any other players popped into position a moment after everything else, which read as the windows realigning. The map panel is hidden during a fight, and a hidden panel cannot measure itself, so the overlay had always waited a frame before positioning anything. [b]That wait was written for an older engine[/b] and is no longer needed: the layout is now readable the instant the panel returns, so the sprites are placed in the same frame as the map. The wait is kept as a fallback for any case where the layout genuinely is not ready, and a check fails the build if the engine ever goes back to the old behaviour.")
+	display_game("")
+	display_game("[color=#808080]v0.9.825[/color]")
 	display_game("  [color=#FF8000]★ PARTIES NO LONGER WALK IN A LINE — AND COMBAT IS WHAT BRINGS YOU TOGETHER.[/color] Until now a party was one moving object: the leader walked and everyone else was dragged along behind, unable to move, hunt, rest or gather on their own. [b]That is gone.[/b] Every member walks their own path and acts for themselves. What holds the party together is the fight — when [b]any[/b] member runs into a monster, nearby party members are pulled into that battle with them, and it no longer has to be the leader who finds it. Members too far away are [b]told so by name[/b] rather than quietly left out. [color=#FFAA00]Dungeons keep their formation for now — a corridor is a different problem from a country.[/color]")
 	display_game("  [color=#1EFF00]◆ Coming next in this arc:[/color] seeing on the map that a teammate is fighting, and [b]running into them to join a battle already underway[/b] — which is what makes being out of range a short walk rather than a shut door.")
 	display_game("  [color=#FF4444]★ FIXED: a Shrieker's cry never reached the combat log.[/color] When a Shrieker tears the veil and drags something far above its station into your fight, that moment was being written and then thrown away — all you saw was [i]a monster answers the call[/i], with no word of what happened or why. The cry, and the warning about what it dragged in, are in the log now. A cowardly monster that runs away also says so.")
@@ -47913,6 +47911,22 @@ func _apply_companion_trail(label: RichTextLabel, companion_data: Dictionary, sp
 	label.visible = true
 
 
+## Has `map_display` finished laying out, so paragraph offsets can be trusted?
+##
+## The tell is the one the v0.9.391 note describes: an unsettled RichTextLabel reports zero for
+## every paragraph offset and zero content height, while a settled one with more than one line
+## cannot have a zero offset for its second paragraph.
+func _map_layout_is_settled() -> bool:
+	if map_display == null or not is_instance_valid(map_display):
+		return false
+	if map_display.get_content_height() <= 0.0:
+		return false
+	# One paragraph is trivially "settled" - there is nothing below line zero to be wrong about.
+	if map_display.get_paragraph_count() <= 1:
+		return true
+	return map_display.get_paragraph_offset(1) > 0.0
+
+
 func _sync_map_sprites_overlay() -> void:
 	"""Position the local-player sprite + a sprite for each visible remote
 	player over the world map cells. Hides everything when not actively
@@ -47944,9 +47958,32 @@ func _sync_map_sprites_overlay() -> void:
 		_hide_map_tooltip()
 		return
 
-	# v0.9.391 — wait for layout. RichTextLabel doesn't settle paragraph
-	# offsets until the next process frame after content changes.
-	await get_tree().process_frame
+	# v0.9.391 — wait for layout. RichTextLabel doesn't settle paragraph offsets until the next
+	# process frame after content changes.
+	#
+	# ⚑ CONDITIONAL SINCE 2026-09-19, AND THAT IS THE VICTORY-SCREEN FLASH. Owner: *"when
+	# completing combat and transitioning from the Victory screen back to the map there is a
+	# flash of when the windows have to realign... Ideally the player would close the victory
+	# screen and already see their map and overlays sized correctly."*
+	#
+	# This await was the whole of it. The overlay is a CHILD of `map_display`, which lives inside
+	# `map_panel` - and `_process` hides that panel while the combat scene is up (v0.9.663, so
+	# combat fills the full width). So the map is revealed and the sprites are placed A FRAME
+	# LATER, which is the pop the owner is describing. It also rules out the obvious fix: the
+	# sprites cannot be positioned BEFORE the reveal, because a hidden control does not lay out.
+	#
+	# ⚡ MEASURED ON GODOT 4.7, NOT ASSUMED: after showing the panel and appending text,
+	# `get_paragraph_offset(2)` reads 44.0 in the SAME call and 44.0 on the next frame. The
+	# engine behaviour this note was written for has changed. `--uimeasure` prints
+	# `offsets_readable_immediately` so the claim is re-checked on every release gate run rather
+	# than trusted forever.
+	#
+	# ⛑ CONDITIONAL RATHER THAN DELETED. If a future engine (or a path where the label has just
+	# entered the tree) really has not laid out, the offsets come back 0 and the frame is spent
+	# exactly as before. The fast path removes the flash; the slow path keeps the correctness the
+	# original note was protecting - a marker in the wrong cell at high zoom.
+	if not _map_layout_is_settled():
+		await get_tree().process_frame
 	# Re-validate after the await — game state may have changed (e.g.,
 	# combat started while we were waiting).
 	if not (game_state == GameState.PLAYING and has_character

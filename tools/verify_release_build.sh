@@ -205,6 +205,12 @@ if grep -q '\[UIMEASURE\]' "$UIOUT"; then
     # 21-row grid would fit - so the header and the log are only just compatible with it, and
     # this is what notices when they stop being.
     check "dungeon_panel_fits"  "true" "$(grep -m1 'live_fit=' "$UIOUT" | sed 's/.*live_fit=//' | tr -d ' ')"
+    # The victory-screen flash fix rests on ONE engine behaviour: that a RichTextLabel's
+    # paragraph offsets are readable in the same frame its panel is shown. That was NOT true when
+    # the v0.9.391 note was written, and it is true on Godot 4.7 - measured, not assumed. The
+    # sprite-overlay await is conditional on it, so if a future engine goes back to deferring
+    # layout this check fails and says why, instead of the flash quietly returning.
+    check "map_layout_immediate" "true" "$(grep -m1 'offsets_readable_immediately=' "$UIOUT" | sed 's/.*offsets_readable_immediately=//' | tr -d ' ')"
     # The Tools block gained a spare count ("Pickaxe T2 14/20 (2 spares)") in a 240px box, which
     # is about thirty characters - genuinely close. A wrapped tool line makes that block taller
     # and every row it gains comes out of the MAP, which is the complaint this whole section
