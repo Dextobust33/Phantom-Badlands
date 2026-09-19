@@ -432,10 +432,28 @@ Use `run_in_background: true` and 600000ms timeout. Read output file to see cons
 "D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 --windowed client/client.tscn &
 ```
 
-**Validate GDScript:**
+**Validate GDScript - use the wrapper, never `--check-only` by hand:**
 ```bash
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --headless --path "C:\Users\Dexto\Documents\phantasia-revival" --check-only --script "res://shared/character.gd" 2>&1
+bash tools/gdcheck.sh client/client.gd shared/character.gd   # exits 1 on a parse error
 ```
+
+⚑ **`--check-only` PRINTS the parse error and exits 0.** On 2026-09-19 a broken `client.gd`
+was committed by exactly this command shape:
+
+```bash
+godot --headless --check-only --script ... 2>&1 | tail -3 && git commit ...
+```
+
+The parser said `Parse Error` in plain text, the exit status said success, and piping into `tail`
+replaces the status anyway - so `&&` committed a file that would not load. This is the same rule
+as *"exit code 0 is not a pass: look for the probe's own PASS line"*, applied to the parser.
+`tools/gdcheck.sh` computes its verdict from the parser's own words and makes it its exit status,
+so a pipe cannot discard it. Proven by re-injecting the exact fault.
+
+(`release.sh`'s mandatory recompile step greps for `SCRIPT ERROR` and stops, so this was never
+going to reach players - but only after a full export. And a script that fails to parse never
+EXITS when run as a `--script` probe, because the SceneTree that would call `quit()` never
+loaded; that is how this repo collected two CPU-eating zombie Godots in one session.)
 
 ## Key Files
 
