@@ -7679,8 +7679,25 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
           ⚡ **A parallel THEME system was written and reverted first** — `dungeon_themes.md`
           predates `DUNGEON_MODIFIERS` by three weeks and reads as though nothing exists. See the
           doc's new "the mechanical half already exists" section.
-        * **A slice 3 — the boss egg / companion inherits the dungeon's look.** Next; the look
-          function already exists and is pure, so this is reading it at the reward site.
+        * **A slice 3 — the boss egg / companion inherits the dungeon's look. DONE 2026-09-19.**
+          Passed through `get_egg_for_monster`'s existing `pre_rolled_variant` hook, so the
+          companion that hatches inherits it too. **No `rarity` key on purpose** - that field
+          scales HATCH TIME, and inventing one would turn a cosmetic feature into a change in how
+          long eggs take. Probe: `the_egg_matches_its_dungeon.gd`.
+        * **QUEST BOARDS OFFER THEM. DONE 2026-09-19** (owner: *"we want to ensure Quests can be
+          offered for these dungeons... so players can choose to take them on the Quest boards."*)
+          Quest dungeons already rolled modifiers; the board never said so. A quest is described
+          BEFORE its dungeon exists - offered, possibly regenerated from its id, instance created
+          on accept - so the roll is now SEEDED on the quest id and all three moments agree.
+          Note `Array.shuffle()` uses the GLOBAL RNG and would have defeated the seed; the seeded
+          roller walks the pool itself. Probe: `the_board_does_not_lie.gd`.
+        * **✅ THE CHAIN IS PROVEN JOINED, not just link by link.** Owner set the bar: *"It doesn't
+          need to read as ominous it just needs to show as it was advertised and work as
+          intended."* `advertised_is_what_you_get.gd` walks ONE quest id through the REAL server
+          path - board promise → instance → `_stamp_dungeon_look` → a spawned monster - and
+          asserts 25 monsters share one look, no stat moved, and a plain dungeon is untouched.
+          Worth having because three correct links wired to different sources is exactly the
+          `refcal` two-worlds bug found the same day.
         * **A slice 4 — show the modifier BEFORE entry** (its `blurb` and `color` on the tile).
           Only one passing reference to modifiers exists in the client, so the "telegraphed" half
           of "opt-in, telegraphed content" is the thinnest part of the feature.
