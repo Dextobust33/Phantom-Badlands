@@ -16942,8 +16942,16 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			var shield_val = int(_ff_hp * 0.25 * _ff_ratio * fraction)
 			return {"text": "Shield %d" % shield_val, "color": "#7AA8FF"}
 		"haste":
-			var spd = int((20.0 + float(int_stat) / 5.0) * fraction)
-			return {"text": "+%d%% spd" % spd, "color": "#7AA8FF"}
+			# ⚡ IT SAID "spd" AND QUOTED THE WRONG FORMULA. Owner 2026-09-18: *"Some of the other
+			# card numbers aren't matching either."* This is the other one: the cast grants
+			# `40 + INT/4` percent SPELL DAMAGE plus a 25% double-cast (combat_manager, "haste"),
+			# and the card face advertised `20 + INT/5` percent of "spd" - a speed stat this
+			# ability has not touched since it became Arcane Surge. Half the number, and the wrong
+			# thing. The hover description already had it right, which is exactly the shape the
+			# owner reported for Frost Nova and Forcefield.
+			var _h_dmg = maxi(1, int((40.0 + float(int_stat) / 4.0) * fraction))
+			var _h_dc = maxi(1, int(25.0 * fraction))
+			return {"text": "+%d%% dmg, %d%% x2" % [_h_dmg, _h_dc], "color": "#7AA8FF"}
 		"paralyze":
 			var chance = clampi(int((50 + int_stat / 2) * fraction), 10, 85)
 			return {"text": "%d%% stun" % chance, "color": "#7AA8FF"}
@@ -23755,6 +23763,54 @@ func _card_damage_multiplier(ability_name: String) -> float:
 	if CU != null and picks is Array:
 		upg_mult = CU.estimate_damage_mult(picks as Array)
 	return rm * tier_mult * upg_mult
+
+func _read_meter_note(server_note: String) -> String:
+	"""The Trickster meter's tag, with the SAME spend the card face is quoting.
+
+	⚡ Owner 2026-09-18: *"the card face of assassinate still shows different than what it shows
+	under the read gauge. Gauge says Assassinate ~50/5% and card face says ~49 4% kill. Conflicting
+	information leads to confusion."*
+
+	⛑ NEITHER NUMBER WAS WRONG; THEY ANSWERED DIFFERENT QUESTIONS. Assassinate is a VARIABLE-COST
+	card (`perfect_heist`: ceiling 34, 44% of the pool, floor ratio 0.3), and the card face quotes
+	what THIS cast will actually commit - the rule the owner asked for on Magic Bolt: *"If the
+	player doesn't have enough resource for a full cast... it should show how much it will do if
+	they actually use it with their current resource."* The server's meter note is built without a
+	client to ask, so it quotes a FULL spend. At 98% of a pool that is 50 and 5 against 49 and 4.
+
+	⛑ AND THE WORDING STAYS SERVER-SIDE. `_read_note` lives in combat_manager on purpose - only
+	the Ninja's finisher is a roll, the Grifter cashes and the Ranger discharges, and a client copy
+	of that is what drifted last time. So this re-formats the NUMBERS against the planned spend and
+	takes the NAME from the note it was given, rather than deciding anything about the card."""
+	if server_note == "":
+		return ""
+	var frac := 1.0
+	var ps = _get_ability_planned_spend("perfect_heist")
+	if ps is Dictionary:
+		frac = clampf(float(ps.get("fraction", 1.0)), 0.0, 1.0)
+	if is_equal_approx(frac, 1.0):
+		return server_note
+	# "<Name> ~<dmg> / <pct>%" for the roll, "<Name> ~<dmg>" for the guaranteed pair. The name is
+	# everything before the first "~", exactly as the server wrote it.
+	var tilde := server_note.find("~")
+	if tilde < 0:
+		return server_note
+	var name := server_note.substr(0, tilde)
+	var dmg := maxi(1, int(float(_combat_finisher_damage) * frac))
+	if _combat_finisher_kind == "guaranteed" or server_note.find("/") < 0:
+		return "%s~%s" % [name, _short_meter_num(dmg)]
+	var pct := maxi(1, int(float(_combat_assassinate_chance) * frac))
+	return "%s~%s / %d%%" % [name, _short_meter_num(dmg), pct]
+
+
+func _short_meter_num(v: int) -> String:
+	"""Mirrors combat_manager._short_num so the re-formatted tag reads identically."""
+	if v >= 1000000:
+		return "%.1fM" % (float(v) / 1000000.0)
+	if v >= 1000:
+		return "%.1fk" % (float(v) / 1000.0)
+	return str(v)
+
 
 func _ability_card_estimate(ability_name: String) -> Dictionary:
 	"""v0.9.694 — the SINGLE source of truth for a card's damage/heal estimate:
@@ -34793,7 +34849,13 @@ func display_changelog():
 	# v0.9.807 - the menu-placement sweep: every screen that waits for an answer now claims the
 	# canvas, and a long tutorial hint can no longer push its own button off the screen.
 	# v0.9.808 - the fourth label in this codebase to render links nothing was listening for.
-	display_game("[color=#00FF00]v0.9.808[/color] [color=#808080](Current)[/color]")
+	# v0.9.809 - the rest of "some of the other card numbers aren't matching either".
+	display_game("[color=#00FF00]v0.9.809[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: Arcane Surge advertised half of what it gives, for the wrong stat.[/color] The card face said [b]+20 + INT/5 %% \"spd\"[/b] - a speed stat this ability stopped granting when it became Arcane Surge. The cast grants [b]+40 + INT/4 %% spell damage[/b] and a [b]25%% double-cast[/b], which is what the hover description had said all along. The face quotes both now.")
+	display_game("  [color=#FF4444]★ FIXED: the Read gauge and the Assassinate card disagreed.[/color] Gauge said [i]~50 / 5%%[/i], card said [i]~49 · 4%% kill[/i]. Neither was wrong - they were answering different questions. Assassinate is a [b]variable-cost[/b] card, so the card face quotes what [b]this[/b] cast will actually commit, and the meter is built server-side with no way to ask what you are about to spend, so it quoted a full one. The meter follows your planned spend now, and the wording still comes from the server so the Grifter and Ranger keep being told their finisher is guaranteed rather than a roll.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.808[/color]")
 	display_game("  [color=#FF4444]★ FIXED: underlined text in the side column did nothing.[/color] The death screen's hoverable entries were underlined and dead - and so was every other [b]page[/b] shown in the right-hand column, because they all draw into one pinned label that was built without the hover and click signals connected. A link underlines itself whether or not anything is listening, so this looks identical to a working one until you put the mouse on it. That is the [b]fourth[/b] time in this codebase: the party combat log's damage numbers, the dungeon key's tiles, click-to-inspect on the map, and now this. All three column labels are wired, and a check now lists every label built for rich text and whether anything listens to it.")
 	display_game("")
 
@@ -43086,7 +43148,7 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	elif is_trickster and combat_scene_panel.has_method("update_read"):
 		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)),
 			int(state.get("assassinate_chance", 0)), true, String(state.get("read_label", "Read")),
-			String(state.get("read_note", "")))
+			_read_meter_note(String(state.get("read_note", ""))))
 	elif is_mage and combat_scene_panel.has_method("update_focus"):
 		combat_scene_panel.update_focus(int(state.get("focus", 0)), int(state.get("focus_max", 5)), true,
 			String(state.get("focus_label", "Focus")), String(state.get("focus_note", "")))
