@@ -1673,7 +1673,9 @@ Currently queued:
 - [x] **The companion acts through an ethereal dodge** (v0.9.803). Carried through the v0.9.816 chain. Owner waived re-calibration for
       it as too narrow to matter (Ethereal monsters, 33% of attacks). Listed so that if the batch
       runs anyway it is measured rather than forgotten - not as a debt on its own.
-- [ ] **Threat bounty rewards were re-anchored** (v0.9.803). Not player power, but a reward sized
+- [→] **Threat bounty rewards were re-anchored** (v0.9.803) — **A WATCH NOTE, not work.** Nothing
+      is unbuilt here; it asks that the band be re-measured if the quest curve moves, and names the
+      probe to do it with. Marked so it stops counting as a task. Not player power, but a reward sized
       against the board: now 0.83-1.14x the median dungeon quest where it was 0.06-0.64x. If the
       quest curve moves, re-measure with `tools/probe/threat_quest_rewards.gd`.
 - [→] **Realm-wide valor economy pass — DUPLICATE.** The live entry is "THE VALOR ECONOMY,
@@ -2939,7 +2941,8 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    - [ ] **STILL OPEN: the DUNGEON side panel** (*"their area on the right for where the dungeon
      text goes is pretty cramped"*). Same column, different mode; needs a live dungeon session to
      measure, since an empty client gives that panel the whole column.
-   - [ ] **Needs an eyeball**, not a number: whether 16px Tools / the resulting map size actually
+   - [→] **Needs an eyeball — AWAITING THE OWNER.** Nothing is blocked on code; it is a look-and-say,
+      and the item says so. Original:  not a number: whether 16px Tools / the resulting map size actually
      look right to the owner at 1080p.
    Original report: *"We need to take a look at the initial UI Scale.
    1080p players ASCII map has to be scrolled to even see the middle of their map. The Tool panel and
@@ -6516,7 +6519,11 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       says it cannot make — whether two surfaces with different verbs are the same thing to a
       PLAYER, and whether a button's MODE is ever entered. Those need the game run.
 
-- [ ] **THE VALOR ECONOMY, REALM-WIDE — owner direction 2026-09-17.** Asked to pick a target
+- [ ] **THE VALOR ECONOMY, REALM-WIDE — owner direction 2026-09-17.**
+      <!-- audited: 2026-09-19 --> Verified still open: only STEP 1 (source enumeration) is
+      ticked, and `QUEST_VALOR_PER_LEVEL := 3.5` is still the interim anchor the item exists to
+      replace. The DONE-words that flag it belong to step 1 and to a live bug it found on the
+      way. Original:** Asked to pick a target
       for quest valor, the owner answered: *"I'm okay with this but honestly valor costs for
       everything likely need rebalanced across the realm. Some things aren't even actively
       balanced or used as far as blacksmiths, healing, repairs, etc."*
@@ -7208,7 +7215,8 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
         produce confident nonsense. It also under-reports bleed/poison DoT, lifesteal healing and
         plunder/tribute rewards, which it does not measure.
 
-- [ ] **PATHS NEED A REVAMP — CLASS-SPECIFIC AND LESS CONDITIONAL. Owner direction 2026-09-18:**
+- [ ] **PATHS NEED A REVAMP — CLASS-SPECIFIC AND LESS CONDITIONAL. Owner direction 2026-09-18:** <!-- audited: 2026-09-19 --> Verified still open: `shared/path_database.gd` holds exactly three trees, keyed `"warrior"`,
+      `"mage"`, `"trickster"` — per-ARCHETYPE, which is precisely what this asks to change.
       *"Path's need revamped and should be class specific and less conditional."*
 
       Two distinct complaints, and they pull in the same direction:
@@ -7744,7 +7752,10 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       client. (The Dungeon Atlas was once tracked as three separate tasks in three places — that
       is the mistake this cross-reference exists to avoid.)
 
-- [ ] **Dungeon revamp — the design IS captured**, in `docs/design/dungeon_revamp.md` (139 lines)
+- [ ] **Dungeon revamp — the design IS captured** <!-- audited: 2026-09-19 --> Verified 2026-09-19: **workstream A is now COMPLETE** (theme roll/look, themed egg, and the
+      pre-entry warning, which turned out to be already built). E shipped. D has its first five
+      telegraphs. What remains is B (waits on the card POWER half), F (waits on the party system)
+      and the questing replacement. Original: , in `docs/design/dungeon_revamp.md` (139 lines)
       plus `docs/design/dungeon_themes.md`. This line used to say "details not yet captured",
       which was stale and undersold how much has already shipped: instancing + no re-farm,
       bigger dungeons, wandering-monster pressure replacing the step budget, branching paths,
@@ -7907,6 +7918,9 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 - [ ] **Real sinks for excess eggs and companions**: shops, breeders, trainers, fusers, companion
       tasks. Much is already scaffolded (fusion, breeder NPCs, egg market, kennel).
 - [ ] **⚑ THE WORLD CONSUMES MATERIAL SURPLUS AND MAKES GEAR OF IT — owner direction 2026-09-18.**
+      <!-- audited: 2026-09-19 --> Verified still open: no market-surplus conversion exists
+      anywhere in server/ or shared/ (the `surplus` hits are the unrelated `transmute` sink).
+      Its own text trips a DONE-word scan by saying the surrounding steps already exist.
       *"If the materials build up on the market to the point where we have a large surplus they
       could then be consumed to make gear appropriate to that area that is then market listed and
       transported around like the merchants already do. That would help with the living world arc
@@ -8056,7 +8070,8 @@ down, and these are the ones it keeps sending back — which is what extra lives
 
 ## Phase 8 — later / unscheduled
 
-- [ ] **Prize Shuffle** loot-minigame redesign (combat done; gathering and crafting remain).
+- [ ] **Prize Shuffle** loot-minigame redesign (combat done; gathering and crafting remain). <!-- audited: 2026-09-19 --> Verified still open: the combat half IS built (`combat_loot_panel.gd` has the preview, shuffle
+      and hunt phases); gathering and crafting still use the plain scratch-off.
 ## ⚑ RESTORED FROM THE ARCHIVE 2026-09-18 — four items that were dropped, not finished
 
 Owner, after the player-phantoms design turned up archived rather than listed: *"were there other
@@ -8070,7 +8085,9 @@ high-level win-target item says *"revisit alongside the Unburied"* - while the i
 nowhere in the file. A reference to something that is not here is the cheapest possible signal that
 something was dropped, and it sat unnoticed for eleven days.
 
-- [ ] **AN UPGRADED CARD SHOULD LOOK UPGRADED — owner 2026-09-04. PARTLY DONE (audited 2026-09-19;
+- [ ] **AN UPGRADED CARD SHOULD LOOK UPGRADED — owner 2026-09-04. PARTLY DONE.** <!-- audited: 2026-09-19 --> Two of three sub-items are now done (the hover preview, and the damage estimate which was fixed
+      2026-09-19 once its real cause — card gear, not milestone picks — was found). What remains is
+      **the card itself looking different** in the deck screen and combat hand. Original note: (audited 2026-09-19;
       this line said "still not started", which was wrong).**
       *"Upgrading a card and then the card looking exactly the same and the description being
       exactly the same sucks."* Listing upgrades in the description shipped; that is the floor.
@@ -9197,7 +9214,9 @@ something was dropped, and it sat unnoticed for eleven days.
       each output against what a dungeon of the same level DROPS. Fault 3 is a claim about
       relative value and cannot be judged without both numbers. Same rule as the equipment
       reference: walk the acquisition paths, do not enumerate the pools.
-- [ ] **SANCTUARY UPGRADES ARE PRICED OUT OF REACH, AND THE LADDER IS DULL. Owner direction
+- [ ] **SANCTUARY UPGRADES ARE PRICED OUT OF REACH, AND THE LADDER IS DULL.** <!-- audited: 2026-09-19 --> Verified still open: `HOUSE_UPGRADES` in persistence_manager.gd still carries the original
+      ladder untouched - house_size 5000/15000/50000, companion_slots up to 80000. Nothing has been
+      repriced and no branching upgrades exist. Owner direction
       2026-09-18:** *"Sanctuary upgrades via baddie points need revamped. Don't like the current
       sanctuary balance (starting egg slots, companion kennel spots, kennel spots, etc.) most of
       the choices take too many baddie points, players are playing lots of characters and still
@@ -9283,7 +9302,8 @@ something was dropped, and it sat unnoticed for eleven days.
       interior behind a world doorway, or true claimed land. Prior art exists either way — player
       posts already claim real tiles (`add_player_tile` / `get_player_tiles` / enclosure checks),
       so the sparse-tile storage pattern is proven.
-- [ ] **PLAYER PHANTOMS — the outward loop.** The whole design already existed and this list had
+- [ ] **PLAYER PHANTOMS — the outward loop.** <!-- audited: 2026-09-19 --> Verified still open: nothing in server/ or shared/ implements it (the `phantom` hits are the
+      setting bible's wording and the Ninja's Phantom Strike card). The whole design already existed and this list had
       lost it. Owner 2026-09-17, asked for the scope: *"Player phantoms(aka dungeons) are buildable
       inside of a player owned trading post... players can purchase a semi-randomized buildable
       player post from the build menu and place it on a valid placement spot. It will cost a
@@ -9372,7 +9392,9 @@ something was dropped, and it sat unnoticed for eleven days.
       **Do not confuse this with the OTHER thing called player phantoms** — dead characters
       persisting as things in the world, raised under the roguelike-progression item. They share
       vocabulary deliberately; only this one is specified.
-- [ ] **Minigame variety.** Item 17 in `docs/archive/BACKLOG_journal_to_2026-09-07.md`, and it
+- [→] **Minigame variety — SAME WORK AS THE PRIZE SHUFFLE LINE, from a different angle.** Its own
+      text says so ("fold them when either is started"), so it is not a second task. Kept as a
+      pointer. Item 17 in `docs/archive/BACKLOG_journal_to_2026-09-07.md`, and it
       is concrete: **port the Chain / Mystery / Trap mechanics from combat loot to gathering and
       crafting** (the combat slice shipped as v0.9.644-645), plus **trap chests, a Mimic chest
       variant, and the 2 remaining dungeon-exclusive consumables**. It is the same list as the
