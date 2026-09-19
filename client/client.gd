@@ -2917,28 +2917,52 @@ func _ready():
 				_im.decompress()
 			_im.convert(Image.FORMAT_RGBA8)
 			_art_n += 1
-			if _im.get_width() != int(_want[0]) or _im.get_height() != int(_want[1]):
-				_art_bad.append("%s is %dx%d, baked %dx%d" % [
-					_k, _im.get_width(), _im.get_height(), int(_want[0]), int(_want[1])])
+			var _w := _im.get_width()
+			var _h := _im.get_height()
+			if _w != int(_want[0]) or _h != int(_want[1]):
+				_art_bad.append("%s is %dx%d, baked %dx%d" % [_k, _w, _h, int(_want[0]), int(_want[1])])
 				continue
-			var _tr := 0
-			var _tg := 0
-			var _tb := 0
-			var _ta := 0
-			for _y in range(_im.get_height()):
-				for _x in range(_im.get_width()):
+			# The SILHOUETTE, cell by cell, exactly as `_signature` in the baker computes it.
+			var _cells: Array = []
+			for _gy in range(4):
+				for _gx in range(4):
+					var _x0: int = _w * _gx / 4
+					var _x1: int = maxi(_x0 + 1, _w * (_gx + 1) / 4)
+					var _y0: int = _h * _gy / 4
+					var _y1: int = maxi(_y0 + 1, _h * (_gy + 1) / 4)
+					var _tot := 0
+					var _cn := 0
+					for _y in range(_y0, _y1):
+						for _x in range(_x0, _x1):
+							_tot += int(_im.get_pixel(_x, _y).a * 255.0)
+							_cn += 1
+					_cells.append(_tot / maxi(1, _cn))
+			var _pr := 0
+			var _pg := 0
+			var _pb := 0
+			for _y in range(_h):
+				for _x in range(_w):
 					var _c := _im.get_pixel(_x, _y)
-					_tr += int(_c.r * 255.0)
-					_tg += int(_c.g * 255.0)
-					_tb += int(_c.b * 255.0)
-					_ta += int(_c.a * 255.0)
-			var _px := maxi(1, _im.get_width() * _im.get_height())
-			var _got := [_tr / _px, _tg / _px, _tb / _px, _ta / _px]
-			for _i in range(4):
-				if absi(int(_got[_i]) - int(_want[_i + 2])) > _ArtFingerprint.TOLERANCE:
-					_art_bad.append("%s is a DIFFERENT PICTURE (rgba %s, baked %s)" % [
-						_k, str(_got), str([_want[2], _want[3], _want[4], _want[5]])])
+					var _a := int(_c.a * 255.0)
+					_pr += int(_c.r * 255.0) * _a / 255
+					_pg += int(_c.g * 255.0) * _a / 255
+					_pb += int(_c.b * 255.0) * _a / 255
+			var _npx: int = maxi(1, _w * _h)
+			var _bad := ""
+			for _i in range(16):
+				if absi(int(_cells[_i]) - int(_want[5 + _i])) > _ArtFingerprint.ALPHA_TOLERANCE:
+					_bad = "a DIFFERENT SHAPE (alpha cell %d is %d, baked %d)" % [
+						_i, int(_cells[_i]), int(_want[5 + _i])]
 					break
+			if _bad == "":
+				var _got := [_pr / _npx, _pg / _npx, _pb / _npx]
+				for _i in range(3):
+					if absi(int(_got[_i]) - int(_want[2 + _i])) > _ArtFingerprint.COLOR_TOLERANCE:
+						_bad = "a DIFFERENT COLOUR (rgb %s, baked %s)" % [
+							str(_got), str([_want[2], _want[3], _want[4]])]
+						break
+			if _bad != "":
+				_art_bad.append("%s is %s" % [_k, _bad])
 		print("[BUILDVERIFY] overworld_art_checked=", _art_n)
 		print("[BUILDVERIFY] overworld_art_stale=", _art_bad.size())
 		for _b in _art_bad:
