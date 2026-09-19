@@ -27865,6 +27865,23 @@ func handle_server_message(message: Dictionary):
 			at_corpse = false
 			corpse_info = {}
 			pending_corpse_loot = {}
+			# ⚡ LIVE, owner 2026-09-19: *"I just looted a corpse on the live server but I don't
+			# see what I got from it in the right column anywhere."*
+			#
+			# The page was drawn and then erased before it could be read. `handle_loot_corpse`
+			# sends this message and IMMEDIATELY follows it with `send_character_update`,
+			# `save_character` and `send_location_update` - and those arrive microseconds later
+			# and redraw. `_page_clear()` decides WHEN a page starts, never whether anything is
+			# allowed to paint over it.
+			#
+			# This is the Player-Visible Output Rule verbatim, and the one thing that actually
+			# protects a page is `pending_continue`: the map heal, the location pass and the
+			# event redraws all stand down for it. Looting is the single moment in the remains
+			# feature where the whole point is reading what you got - three items and a gem count
+			# that exist nowhere else afterwards, since the corpse is despawned in the same call.
+			display_game("")
+			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+			pending_continue = true
 			update_action_bar()
 
 		"player_list":
@@ -30263,6 +30280,13 @@ func handle_server_message(message: Dictionary):
 		"inn_rest_result":
 			_page_clear()
 			display_game(message.get("message", "Rested at the inn."))
+			# Same fault as `corpse_looted`, found by the sweep that followed it rather than by
+			# anyone reporting it: resting HEALS, so the server sends a character update in the
+			# same call, and that redraw lands on top of the result. How much you recovered is
+			# the only thing the screen had to say.
+			display_game("")
+			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+			pending_continue = true
 			update_action_bar()
 
 		"storage_contents":
@@ -34990,7 +35014,12 @@ func display_changelog():
 	#            one breaks rather than after.
 	# v0.9.822 - Brace/Ward/Slip did nothing in a party and hung the round; and every party
 	#            death had been recorded with no fight in it.
-	display_game("[color=#00FF00]v0.9.822[/color] [color=#808080](Current)[/color]")
+	# v0.9.823 - what you looted off a corpse was erased before you could read it, and the same
+	#            fault found in the inn.
+	display_game("[color=#00FF00]v0.9.823[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: what you looted off a corpse vanished before you could read it.[/color] Reported live. The list of what you took was drawn and then wiped a fraction of a second later by the server's own follow-up updates — and the corpse is removed in the same breath, so that list existed nowhere else. It now waits for you to press [b]Continue[/b]. The same fault was found at the [b]Inn[/b] by the sweep that followed, where how much health you recovered was the only thing the screen had to say.")
+	display_game("")
+	display_game("[color=#808080]v0.9.822[/color]")
 	display_game("  [color=#FF4444]★ FIXED: Brace / Ward / Slip did nothing in a party — and froze the round.[/color] Reported from a live party at a dungeon boss. Pressing your defensive action showed you as locked in, but the server had rejected it as an unknown command and [b]never recorded your choice at all[/b] — so the round could never finish and the party sat waiting. Picking again did nothing, because there was nothing to change. The action existed everywhere except the one list the party fight checks. It works now, and the log calls it by [b]your[/b] class's name for it rather than announcing \"Brace\" to a Ninja.")
 	display_game("  [color=#FF8000]★ A DEATH IN A PARTY NOW RECORDS THE FIGHT THAT KILLED YOU.[/color] Every party death was being written with [b]no fight in it[/b] — no rounds, no damage, no health you started with. Your death screen and the leaderboard entry had nothing to show, and the balance data read those blanks as players being killed before they could act, which is the strongest possible signal that the early game is too harsh. It was a blank record, not a brutal fight. [b]7 of the last 50 deaths[/b] were affected — all of them in parties.")
 	display_game("")

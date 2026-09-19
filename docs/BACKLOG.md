@@ -1052,6 +1052,31 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ LOOT YOU COULD NOT READ - AND A DETECTOR FOR THE WHOLE CLASS (2026-09-19)
+
+Owner, live: *"I just looted a corpse on the live server but I don't see what I got from it in the
+right column anywhere."*
+
+`handle_loot_corpse` sends `corpse_looted` and then immediately calls `send_character_update`,
+`save_character` and `send_location_update`. Those arrive microseconds later and redraw over the
+page. The handler cleared the canvas and drew, but never set **`pending_continue`** - which is the
+only flag the redraw paths actually stand down for. And the corpse is despawned in the same call,
+so that list of items existed nowhere else afterwards.
+
+⚡ **CLAUDE.md HAS CARRIED THIS RULE ALL ALONG**, with a mandatory checklist, and the screen
+shipped without it anyway. *"A check nobody runs is not a check."* So there is one now:
+`tools/unreadable_result_audit.py`, which works from the CAUSE on the server rather than from the
+client - it finds every message type sent from a function that ALSO triggers a redraw, then reports
+any whose client handler draws a page and never protects it. Proven to fire by reverting the fix.
+
+It immediately found a **second, unreported instance**: `inn_rest_result`. Resting heals, so the
+server sends a character update in the same call, and how much you recovered was the only thing
+that screen had to say. Both fixed.
+
+⛑ **It is ADVISORY and says so.** A transient page (a toast, a status line) is allowed to be
+replaced, and the audit cannot tell that from a result somebody needed - so it never edits
+anything, and a reviewed entry goes in its `ACCEPTED` table with a reason.
+
 ### ✅ TWO PARTY FAULTS FOUND FROM LIVE (2026-09-19)
 
 **1. BRACE / WARD / SLIP DID NOTHING IN A PARTY, AND HUNG THE ROUND.** Owner, live, at the starter
