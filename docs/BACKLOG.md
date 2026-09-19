@@ -1072,12 +1072,12 @@ counts, and upgraded cards that look upgraded.
    in every fight; the chain is ~25 minutes and one-pass-each, so per-item runs pay full price
    repeatedly, and stacking changes now destroys attribution the first time the loop can close.
 
-**Two look-and-says are waiting on the owner's eyes, and neither blocks anything:**
-the dungeon side panel (measured, fits, but "cramped" is genuinely two-way — see the item), and
-whether a merchant should be a wagon or a driver.
+**Nothing is waiting on the owner.** Both look-and-says were answered 2026-09-19: the dungeon
+side panel is *"fine now"* (closed, with the release-gate guard kept because it fits by exactly
+zero lines), and the merchant sprite stays a **wagon**.
 
-**Before proposing anything, run `python tools/backlog_audit.py`.** As of this session: 24 open,
-0 strong staleness flags, no duplicates.
+**Before proposing anything, run `python tools/backlog_audit.py`.** As of the end of this session:
+**21 open, 0 strong staleness flags, no duplicates.**
 
 
 ### ✅ v0.9.816 — THE CHAIN WAS MEASURING A GAME NOBODY PLAYS (2026-09-19, LIVE)
@@ -1131,7 +1131,7 @@ not verification when they share state; verify against the artifact*), and **L3/
 `DIFFICULTY_RAMP`** so the band holding 83% of players has its own knob (values exactly neutral —
 verified no target moved).
 
-### ⚠ MERCHANTS ARE FIXED BUT NOT DEPLOYED (2026-09-19)
+### ✅ MERCHANTS ARE FIXED AND LIVE (2026-09-19)
 
 Owner: *"I didn't see any last time I was on the live server."* They were working the whole time —
 the live log is full of them hauling stock — and **invisible while doing it**.
@@ -1142,12 +1142,10 @@ met one **0% of the time**, at any road length; walking a road, 5-18%.
 Now parked on the first road tile **outside** the post (the post centre is where the station art
 sits). Probe `merchant_is_findable.gd`, proven to fire.
 
-**This is server-side map generation and has NOT been pushed — it needs a server deploy to reach
-live.** Nothing else is waiting on it.
+**DEPLOYED with the v0.9.820 server swap** (hash-verified `d06e1e7beab6549c`). This was
+server-side map generation, so it needed the deploy rather than a client release to reach anyone.
 
-**Still open on merchants, owner's call:** the sprite is a trade **wagon**, not a person. Owner
-asked for "NPC sprites instead of symbols" — it was never a `$` (that is only the ASCII fallback),
-but whether a wagon or a driver is wanted is a visual judgement. Sprite sent 2026-09-19.
+**ANSWERED 2026-09-19 - the wagon stays.** Owner, shown the sprite: *"Merchant can be a wagon."* The original ask was "NPC sprites instead of symbols", and it was never a `$` (that is only the ASCII fallback); the only open part was whether a trade wagon or a driver was wanted, and it is the wagon. Nothing further on merchants.
 
 ### ⚑ BRACE — the defensive floor, and what it unblocks (2026-09-19)
 
@@ -2998,35 +2996,29 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    at 1920x1280; reading the font after `_ready` caught a transient; and `--resolution` changes
    nothing because the project stretches `canvas_items` from a 1920x1080 base, so layout is ALWAYS
    in 1080p virtual units.
-   - [→] **THE DUNGEON SIDE PANEL IS NOW MEASURED — and the numbers say it FITS, barely.**
-     (*"their area on the right for where the dungeon text goes is pretty cramped"*). It no
-     longer "needs a live dungeon session": `--uimeasure` builds the real panel through the real
-     builder (`_dungeon_side_panel_text`) with a full log of realistic **wrapping** entries, and
-     reports the fit across the box heights a session actually produces.
-     MEASURED 2026-09-19 at 1920x1080, font 21:
+   - [x] **THE DUNGEON SIDE PANEL IS CLOSED 2026-09-19.** Owner, after seeing the measurement:
+     *"The dungeon panel should be fine now."* It is, and the numbers say why - the original
+     report predates two changes that took the pressure off it: the dungeon KEY moved out from
+     under it to below the map (2026-09-16), and the overworld minimap stopped drawing underground
+     (2026-09-09), which had been occupying the bottom third of the column.
+     MEASURED at 1920x1080, font 21, through the real builder with a full log of realistic
+     **wrapping** entries:
 
          header + rule                       132px (fixed)
-         a realistic log entry                44px  <- TWO rows, because entries name an item
-                                                      with its affixes and wrap
+         a realistic log entry                44px  <- TWO rows; entries name an item with its
+                                                      affixes and wrap
          full 10-line log                    572px
          at a 400px box   6 of 10 lines      at 500px   8 of 10
          at a 610px box  10 of 10 lines      <- the live dungeon height (measured 2026-09-10)
 
-     ⚡ **`DUNGEON_LOG_MAX` is 10 and exactly 10 fit. There is no margin at all** — the cap and
+     ⚡ **It fits by exactly zero lines.** `DUNGEON_LOG_MAX` is 10 and exactly 10 fit; the cap and
      the panel height coincide by luck, not by design. The panel needs ~25 rows while its font is
      capped so a **21-row MAP GRID** fits, and underground that grid is not in this label at all
-     (the floor is drawn on the canvas). So the font is chosen by a constraint from the other
-     mode, and `_dungeon_panel_trim_to_fit` deleting the oldest log lines is what papers over it.
-     Release gate check `dungeon_panel_fits`, proven to fire (`DUNGEON_LOG_MAX` 10→16 →
-     `live_fit=false`, "10 of 16"), so the margin cannot be spent silently.
+     (the floor is drawn on the canvas), so the font is chosen by a constraint from the other
+     mode. That is why the guard stays even though the item is closed: release gate check
+     `dungeon_panel_fits`, proven to fire (`DUNGEON_LOG_MAX` 10→16 gives `live_fit=false`,
+     "10 of 16"). Anything added to that header spends a margin there is none of.
 
-     **WHAT IS LEFT IS A LOOK-AND-SAY, AND IT IS GENUINELY TWO-WAY** — which is why it is not
-     being guessed at. "Cramped" could mean *the text is too small* (the fix is to stop applying
-     the map-grid font cap underground, which makes the text bigger and fits FEWER log lines) or
-     *there is too little room* (the fix is the opposite). The measurement cannot choose; the
-     owner looking at it can. Note also that the original report predates two changes that
-     already took pressure off this panel: the dungeon KEY moved out from under it to below the
-     map (2026-09-16) and the overworld minimap stopped drawing underground (2026-09-09).
    - [→] **Needs an eyeball — AWAITING THE OWNER.** Nothing is blocked on code; it is a look-and-say,
       and the item says so. Original:  not a number: whether 16px Tools / the resulting map size actually
      look right to the owner at 1080p.
