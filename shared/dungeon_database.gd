@@ -3496,3 +3496,58 @@ static func roll_escape_scroll_drop(dungeon_tier: int) -> Dictionary:
 	if randi() % 100 >= 20:
 		return {}
 	return make_escape_scroll(dungeon_tier)
+
+## ============================================================================
+## THE LOOK OF A MODIFIED DUNGEON — workstream A slice 2 (2026-09-19)
+## ============================================================================
+## ⛑ DERIVED FROM THE MODIFIERS THE DUNGEON ALREADY ROLLED. NOT A SECOND SYSTEM.
+##
+## `DUNGEON_MODIFIERS` above is the mechanical theme and has been since 2026-09-13. What was
+## missing is the half the owner actually asked for first: *"every monster in a dungeon shares a
+## trait (a variant, and/or a color/pattern)"*. Today a monster's tint is rolled PER MONSTER at
+## random (`monster_database.COSMETIC_CHANCE`), so a Bloodgorged dungeon is mechanically distinct
+## and visually indistinguishable from any other - you feel it in the fight and never see it in
+## the room.
+##
+## ⚡ A THEME SYSTEM WITH ITS OWN ROLL WAS WRITTEN AND REVERTED ON 2026-09-19 before it reached
+## a commit. `dungeon_themes.md` predates the modifiers by three weeks and reads as though nothing
+## exists, which is exactly how the Dungeon Atlas ended up tracked three times. The look is
+## therefore a PURE FUNCTION of the modifier list - it cannot drift from the mechanics, because
+## there is nothing to keep in step.
+##
+## Colour comes from the modifier itself. The PATTERN encodes how loaded the dungeon is, which
+## costs no new data and makes "how bad is this place" legible at a glance rather than a number
+## to read.
+static func dungeon_look_for(mods: Array) -> Dictionary:
+	if mods == null or mods.is_empty():
+		return {}
+	var first: Dictionary = DUNGEON_MODIFIERS.get(String(mods[0]), {})
+	if first.is_empty():
+		return {}
+	var look := {
+		"color": String(first.get("color", "")),
+		"color2": "",
+		"pattern": "solid",
+		"name": String(first.get("name", "")),
+	}
+	if mods.size() > 1:
+		var second: Dictionary = DUNGEON_MODIFIERS.get(String(mods[1]), {})
+		if not second.is_empty():
+			look["color2"] = String(second.get("color", ""))
+			look["pattern"] = "gradient_down"
+			look["name"] = "%s %s" % [look["name"], String(second.get("name", ""))]
+	if mods.size() > 2:
+		# Three modifiers is rank 9 and the worst the game builds. It should not look like two.
+		look["pattern"] = "striped"
+		var third: Dictionary = DUNGEON_MODIFIERS.get(String(mods[2]), {})
+		if not third.is_empty():
+			look["name"] = "%s %s" % [look["name"], String(third.get("name", ""))]
+	return look
+
+
+## "Goblin Caves — Bloodgorged Teeming", or the plain name when nothing rolled.
+static func modified_dungeon_name(base_name: String, mods: Array) -> String:
+	var look: Dictionary = dungeon_look_for(mods)
+	if look.is_empty() or String(look.get("name", "")) == "":
+		return base_name
+	return "%s — %s" % [base_name, String(look["name"])]

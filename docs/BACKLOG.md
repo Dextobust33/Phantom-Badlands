@@ -7667,7 +7667,24 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
           blocks it.
         * **E presentation** (zoom, sprites, void instead of wall tiles, wider room spacing)
           — **DONE, shipped v0.9.760-767.** See the ticked entry above.
-        * **A 2-4** (theme roll/stamp/display, themed egg, Catalyst consumable) — ⚠ **BLOCKED, and
+        * **A slice 2 — A MODIFIED DUNGEON NOW LOOKS LIKE ONE. DONE 2026-09-19.** Every monster in
+          a dungeon that rolled modifiers shares one colour and pattern, DERIVED from those
+          modifiers so it cannot drift from the mechanics. One modifier reads solid, two a
+          gradient, three (rank 9, the worst built) striped — so how loaded a place is is legible
+          without counting. Purely cosmetic: the probe asserts the stamp writes `appearance_*`
+          only, because the modifier stats are already applied through `modifier_effects()` and
+          doubling a difficulty modifier under permadeath surfaces in a death log, not in testing.
+          Proven to fire by injecting a `max_hp` write. Probe:
+          `a_modified_dungeon_looks_it.gd`.
+          ⚡ **A parallel THEME system was written and reverted first** — `dungeon_themes.md`
+          predates `DUNGEON_MODIFIERS` by three weeks and reads as though nothing exists. See the
+          doc's new "the mechanical half already exists" section.
+        * **A slice 3 — the boss egg / companion inherits the dungeon's look.** Next; the look
+          function already exists and is pure, so this is reading it at the reward site.
+        * **A slice 4 — show the modifier BEFORE entry** (its `blurb` and `color` on the tile).
+          Only one passing reference to modifiers exists in the client, so the "telegraphed" half
+          of "opt-in, telegraphed content" is the thinnest part of the feature.
+        * **(historical) A 2-4** — ⚠ **was BLOCKED, and
           this line said "nothing blocks it" until 2026-09-19, which was wrong.**
           `docs/design/dungeon_themes.md` carries an explicit owner gate from 2026-08-25:
           *"there are more things we need to discuss regarding dungeons before you go off building

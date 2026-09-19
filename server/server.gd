@@ -38408,6 +38408,30 @@ func _dungeon_floor_species(instance_id: String, native: String, grade_tier: int
 	return pick
 
 
+## Stamp the dungeon's shared LOOK onto one freshly rolled monster.
+##
+## ⛑ OVERRIDES the per-monster cosmetic roll rather than adding to it. A themed dungeon where
+## each monster still carried its own random tint would look like no theme at all, which is the
+## state the game has been in: `monster_database` rolls a tint per monster and its own comment
+## says *"Future dungeon themes will stamp ONE variant dungeon-wide"*. This is that stamp.
+##
+## ⛑ COSMETIC ONLY. The modifiers' STATS are already applied elsewhere, through
+## `modifier_effects()`, which every consumer asks. Touching stats here would apply them twice -
+## and doubling a difficulty modifier in a permadeath game is not a bug you find in testing, it is
+## one you find in a death log.
+func _stamp_dungeon_look(instance_id: String, roll: Dictionary) -> void:
+	var inst: Dictionary = active_dungeons.get(instance_id, {})
+	if inst.is_empty():
+		return
+	var look: Dictionary = DungeonDatabaseScript.dungeon_look_for(inst.get("modifiers", []))
+	if look.is_empty():
+		return
+	roll["appearance_color"] = String(look.get("color", ""))
+	roll["appearance_color2"] = String(look.get("color2", ""))
+	roll["appearance_pattern"] = String(look.get("pattern", "solid"))
+	roll["appearance_variant"] = String(look.get("name", ""))
+
+
 func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_type: String, dungeon_level: int, rooms: Array, grid: Array, is_boss_floor: bool):
 	"""Spawn monster entities on a single dungeon floor"""
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
@@ -38496,6 +38520,7 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 		# Storing the identity rather than the whole monster keeps the saved dungeon small and
 		# keeps the STATS derived at fight time, where level scaling belongs.
 		var _roll: Dictionary = monster_db.generate_monster_by_name(_species, monster_level)
+		_stamp_dungeon_look(instance_id, _roll)
 		var monster_entity = {
 			"id": next_dungeon_monster_id,
 			"x": pos.x, "y": pos.y,
