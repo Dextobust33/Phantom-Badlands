@@ -11892,13 +11892,14 @@ func update_action_bar():
 		# Wandering healer encounter - Heal options
 		var _hq = healer_costs.get("quick", 0)
 		var _hf = healer_costs.get("full", 0)
+		var _hcl = healer_costs.get("cleanse", 0)
 		var _hc = healer_costs.get("cure_all", 0)
 		current_actions = [
 			{"label": "Decline", "action_type": "local", "action_data": "healer_decline", "enabled": true},
 			{"label": "Quick(%dg)" % _hq if _hq > 0 else "Quick", "action_type": "local", "action_data": "healer_quick", "enabled": true},
 			{"label": "Full(%dg)" % _hf if _hf > 0 else "Full", "action_type": "local", "action_data": "healer_full", "enabled": true},
-			{"label": "Cure(%dg)" % _hc if _hc > 0 else "Cure", "action_type": "local", "action_data": "healer_cure_all", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Ailments(%dg)" % _hcl if _hcl > 0 else "Ailments", "action_type": "local", "action_data": "healer_cleanse", "enabled": true},
+			{"label": "Cure All(%dg)" % _hc if _hc > 0 else "Cure All", "action_type": "local", "action_data": "healer_cure_all", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -19063,6 +19064,8 @@ func execute_local_action(action: String):
 			send_healer_choice("quick")
 		"healer_full":
 			send_healer_choice("full")
+		"healer_cleanse":
+			send_healer_choice("cleanse")
 		"healer_cure_all":
 			send_healer_choice("cure_all")
 		# Guard post actions
@@ -48219,6 +48222,7 @@ func handle_healer_encounter(message: Dictionary):
 	healer_costs = {
 		"quick": message.get("quick_heal_cost", 0),
 		"full": message.get("full_heal_cost", 0),
+		"cleanse": message.get("cleanse_cost", 0),
 		"cure_all": message.get("cure_all_cost", 0)
 	}
 	var has_debuffs = message.get("has_debuffs", false)
@@ -48284,10 +48288,26 @@ func handle_healer_encounter(message: Dictionary):
 	var full_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < healer_costs.full else ""
 	display_game("[%s] Full Heal (100%% HP) - %d Valor%s%s" % [get_action_key_name(2), healer_costs.full, full_afford, comp_suffix])
 
+	# Cure Ailments (debuffs only, no healing) - for a player who is hale but poisoned.
+	# Its own line since 2026-09-19: the cleanse used to be sold ONLY bundled with a full heal,
+	# so curing a poison at full health cost a whole extra Full Heal on top of healing you did
+	# not need.
+	var cl_cost = int(healer_costs.get("cleanse", 0))
+	var cl_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < cl_cost else ""
+	var cl_note = " [color=#808080](no active ailments)[/color]" if not has_debuffs else ""
+	display_game("[%s] Cure Ailments (no healing) - %d Valor%s%s" % [get_action_key_name(3), cl_cost, cl_afford, cl_note])
+
 	# Cure All (100% HP + remove debuffs)
 	var cure_afford = " [color=#FF0000](Not enough Valor)[/color]" if player_gold < healer_costs.cure_all else ""
-	var debuff_note = " [color=#808080](no active debuffs)[/color]" if not has_debuffs else ""
-	display_game("[%s] Full + Cure All - %d Valor%s%s%s" % [get_action_key_name(3), healer_costs.cure_all, cure_afford, debuff_note, comp_suffix])
+	var debuff_note = " [color=#808080](no active ailments)[/color]" if not has_debuffs else ""
+	display_game("[%s] Full + Cure All - %d Valor%s%s%s" % [get_action_key_name(4), healer_costs.cure_all, cure_afford, debuff_note, comp_suffix])
+	display_game("")
+	# The menu is only a decision if the player can SEE that the big option is the better buy.
+	if int(healer_costs.get("quick", 0)) > 0 and int(healer_costs.get("full", 0)) > 0:
+		var four_quick: int = 4 * int(healer_costs.quick)
+		var saving: int = four_quick - int(healer_costs.full)
+		if saving > 0:
+			display_game("[color=#808080]Full Heal is %d Valor cheaper than four Quick Heals.[/color]" % saving)
 
 	display_game("")
 	display_game("[%s] Decline" % get_action_key_name(0))

@@ -17,8 +17,13 @@ const CharacterScript := preload("res://shared/character.gd")
 ## The live formulas, read off `check_healer_encounter` in server.gd. Named here so a change there
 ## and no change here shows up as a disagreement rather than as a quietly stale audit.
 const QUICK_PER_LEVEL := 2.2     # level * 22 / 10
-const FULL_PER_LEVEL := 9.0      # level * 90 / 10
-const CURE_PER_LEVEL := 18.0     # level * 180 / 10
+const FULL_PER_LEVEL := 6.6      # level * 66 / 10
+const CLEANSE_PER_LEVEL := 3.3   # level * 33 / 10
+const CURE_PER_LEVEL := 9.0      # level * 90 / 10
+
+## How much cheaper per point of healing the bulk option must be before the menu is a decision.
+## 1.0 would only mean "not strictly dominated", which a rounding error could satisfy.
+const MIN_BULK_DISCOUNT := 1.10
 const QUICK_PCT := 25
 const FULL_PCT := 100
 const CURE_PCT := 100
@@ -42,9 +47,16 @@ func _init() -> void:
 	var srv := FileAccess.get_file_as_string("res://server/server.gd")
 	var live := {
 		"quick": srv.find("var quick_heal_cost = max(1, level * 22 / 10)") >= 0,
-		"full": srv.find("var full_heal_cost = max(1, level * 90 / 10)") >= 0,
-		"cure": srv.find("var cure_all_cost = max(1, level * 180 / 10)") >= 0,
+		"full": srv.find("var full_heal_cost = max(1, level * 66 / 10)") >= 0,
+		"cleanse": srv.find("var cleanse_cost = max(1, level * 33 / 10)") >= 0,
+		"cure": srv.find("var cure_all_cost = max(1, level * 90 / 10)") >= 0,
 		"quick pays 25%": srv.find("heal_percent = 25") >= 0,
+		"a cleanse can be bought ALONE": srv.find("\"cleanse\":") >= 0,
+		"the cure names its debuffs": srv.find("for _d in PERSISTENT_DEBUFFS:") >= 0,
+		# ⛑ THE CALL, NOT THE WORDS. Matching the bare string found the COMMENT that records the
+		# old code and reported the fix missing - a source-reading check cannot tell a call from a
+		# note about a call, so it looks for the receiver too.
+		"nothing blanket-clears persistent_buffs": srv.find("character.persistent_buffs.clear()") < 0,
 	}
 	print("")
 	print("===== 0. THE NUMBERS BELOW ARE THE ONES THE SERVER USES =====")
@@ -84,11 +96,41 @@ func _init() -> void:
 	print("")
 	print("  Full Heal costs %.2fx what the SAME healing costs bought as Quick Heals," % ratio)
 	print("  at EVERY level - both are linear in level and pay in percent, so the ratio is a")
-	print("  constant. There is no level at which Full Heal is the better buy.")
+	print("  constant - so whichever way it points, it points that way EVERYWHERE. Below 1.00x the")
+	print("  bulk option is the better buy at every level; above it, at none.")
 	if ratio > 1.0:
 		_fail("Full Heal is strictly dominated by repeating Quick Heal (%.2fx)" % ratio)
 	else:
 		_ok("Full Heal is worth its price")
+
+	# ⛑ THE GATE. Buying the whole bar must be CHEAPER PER POINT than topping up four times,
+	# by a margin big enough to be a reason rather than a rounding artifact.
+	var four_quick: float = QUICK_PER_LEVEL * 4.0
+	var bulk: float = four_quick / FULL_PER_LEVEL
+	print("")
+	print("  Full Heal costs %.2f per level; the same healing as four Quick Heals costs %.2f."
+		% [FULL_PER_LEVEL, four_quick])
+	print("  Buying the bar whole is %.2fx cheaper (gate: %.2fx)." % [bulk, MIN_BULK_DISCOUNT])
+	if bulk < MIN_BULK_DISCOUNT:
+		_fail("Full Heal saves only %.2fx over repeating Quick Heal - not a reason to buy it" % bulk)
+	else:
+		_ok("Full Heal is a real saving over repeating Quick Heal (%.2fx)" % bulk)
+
+	# ⛑ AND THE CLEANSE MUST BE BUYABLE WITHOUT HEALING YOU DO NOT NEED. Bundling it was the
+	# other half of the fault: a poisoned player at full health had to buy a Full Heal to be cured.
+	print("")
+	print("  Cure Ailments alone: %.1f per level. Full + Cure All bundled: %.1f, against %.1f"
+		% [CLEANSE_PER_LEVEL, CURE_PER_LEVEL, FULL_PER_LEVEL + CLEANSE_PER_LEVEL])
+	if CLEANSE_PER_LEVEL >= FULL_PER_LEVEL:
+		_fail("curing ailments costs as much as a full heal - the cleanse is still bundled in effect")
+	else:
+		_ok("ailments can be cured for %.2fx a Full Heal, without buying healing"
+			% (CLEANSE_PER_LEVEL / FULL_PER_LEVEL))
+	if CURE_PER_LEVEL > FULL_PER_LEVEL + CLEANSE_PER_LEVEL:
+		_fail("the bundle costs MORE than buying the two parts separately")
+	else:
+		_ok("the bundle is no worse than buying both parts (%.1f vs %.1f)"
+			% [CURE_PER_LEVEL, FULL_PER_LEVEL + CLEANSE_PER_LEVEL])
 
 	var cure_ratio: float = CURE_PER_LEVEL / FULL_PER_LEVEL
 	print("")
@@ -103,10 +145,12 @@ func _init() -> void:
 	# the companion the rest of the way for the same total.
 	print("  The companion is healed by the SAME `heal_percent`, at no extra cost, on every option.")
 	print("  So Quick Heal x4 restores the player AND the companion in full for %.2fx less" % ratio)
-	print("  than one Full Heal. The expensive options buy nothing the cheap one cannot repeat.")
+	print("  than one Full Heal. Healing is the same product at every tier - the only thing that can")
+	print("  make the big option worth buying is PRICE PER POINT, which is what section 2 gates.")
 	print("")
 	print("  \u26d1 THE ONLY THING QUICK HEAL CANNOT DO is clear debuffs - that is Cure All's real")
-	print("     product, and it is sold bundled with healing the player does not need to buy.")
+	print("     product - and since 2026-09-19 it has its own line, so a hale but poisoned player")
+	print("     no longer has to buy a full heal to be cured.")
 
 	_finish()
 

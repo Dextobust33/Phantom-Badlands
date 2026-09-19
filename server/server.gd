@@ -10406,13 +10406,37 @@ func _get_affix_display_name(affix_key: String) -> String:
 	}
 	return names.get(affix_key, affix_key.capitalize())
 
+## Every DEBUFF that lives in `character.persistent_buffs`. Everything else in that array is a
+## benefit the player bought, so a cure must NAME what it removes rather than emptying it.
+const PERSISTENT_DEBUFFS := ["weakness"]
+
+
 func _handle_healer_station(peer_id: int, character):
 	"""Handle bump into healer station tile — open heal menu."""
 	# Calculate heal costs in valor (gold / 10)
 	var level = character.level
+	# ⛑ EACH TIER MUST BE CHEAPER PER POINT THAN THE ONE BELOW, or there is no decision here.
+	#
+	# ⚡ Owner 2026-09-18: *"there's no real reason to do anything other than a quick heal for
+	# reviving companions."* Measured, and exactly right: Full Heal used to cost **1.02x what the
+	# same healing costs bought as Quick Heals, at EVERY level**. Both are linear in level and pay
+	# in percent, so the ratio was a constant - there was no level at which the expensive option
+	# was the better buy, and the companion is healed by the same percent on every option anyway.
+	# `tools/probe/healer_options_are_a_choice.gd` measured it and now asserts the fix.
+	#
+	# Priced as a VOLUME DISCOUNT, which is the shape that makes the menu a decision: topping up a
+	# scratch is cheap per point, buying the whole bar is cheaper per point still.
+	#   quick  25% @ 2.2/level = 0.088 valor per 1% of the bar   (the reference, unchanged)
+	#   full  100% @ 6.6/level = 0.066 per 1%  - 25% off buying it as four quicks (8.8)
+	#
+	# ⛑ AND THE CLEANSE IS SOLD SEPARATELY NOW. Curing ailments was only available bundled with
+	# a full heal you might not need, at 2x the full-heal price - so the debuff clear alone was
+	# priced at a whole extra Full Heal. It is its own line at 3.3/level, and the bundle is 9.0
+	# rather than the 9.9 the two cost apart, so buying both together still saves.
 	var quick_heal_cost = max(1, level * 22 / 10)
-	var full_heal_cost = max(1, level * 90 / 10)
-	var cure_all_cost = max(1, level * 180 / 10)
+	var full_heal_cost = max(1, level * 66 / 10)
+	var cleanse_cost = max(1, level * 33 / 10)
+	var cure_all_cost = max(1, level * 90 / 10)
 
 	# Audit #11 Slice 8 — services cost more at threatened posts.
 	# Audit #11 Slice 13 (v0.9.548) — severe threat picks the harsher mult.
@@ -10423,6 +10447,7 @@ func _handle_healer_station(peer_id: int, character):
 	if threatened:
 		quick_heal_cost = int(ceil(quick_heal_cost * threat_service_mult))
 		full_heal_cost = int(ceil(full_heal_cost * threat_service_mult))
+		cleanse_cost = int(ceil(cleanse_cost * threat_service_mult))
 		cure_all_cost = int(ceil(cure_all_cost * threat_service_mult))
 
 	var has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
@@ -10431,6 +10456,7 @@ func _handle_healer_station(peer_id: int, character):
 	pending_healer_encounters[peer_id] = {
 		"quick_heal_cost": quick_heal_cost,
 		"full_heal_cost": full_heal_cost,
+		"cleanse_cost": cleanse_cost,
 		"cure_all_cost": cure_all_cost,
 		"has_debuffs": has_debuffs
 	}
@@ -10463,6 +10489,7 @@ func _handle_healer_station(peer_id: int, character):
 		"post_key": post_art_key(peer_id),
 		"quick_heal_cost": quick_heal_cost,
 		"full_heal_cost": full_heal_cost,
+		"cleanse_cost": cleanse_cost,
 		"cure_all_cost": cure_all_cost,
 		"has_debuffs": has_debuffs,
 		"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
@@ -10513,6 +10540,11 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 		"full":
 			cost = encounter.full_heal_cost
 			heal_percent = 100
+		"cleanse":
+			# Ailments only, no healing - for a player who is hale but poisoned.
+			cost = encounter.get("cleanse_cost", encounter.cure_all_cost)
+			heal_percent = 0
+			cure_debuffs = true
 		"cure_all":
 			cost = encounter.cure_all_cost
 			heal_percent = 100
@@ -10545,7 +10577,18 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 				msg += "\n[color=#00FFFF]Your %s recovers %d HP.[/color]" % [comp_name, comp_heal]
 
 	if cure_debuffs:
-		character.persistent_buffs.clear()
+		# ⚡ THIS USED TO BE `persistent_buffs.clear()`, WHICH DESTROYED WHAT THE PLAYER PAID FOR.
+		# That array is not a debuff list - it is where every multi-battle effect lives, and almost
+		# all of them are BENEFITS bought with consumables: `boss_damage` (Boss Slayer Tonic),
+		# `reclaimer_lantern`, `rare_drop` (Cursed Coin), `resurrect`, `time_stop`. Exactly ONE
+		# debuff goes in there, `weakness`, from a monster ability.
+		#
+		# So the most expensive thing on the healer's menu silently deleted your tonics along with
+		# the poison, and charged double for the privilege. Named explicitly rather than filtered
+		# by a guessed prefix: the failure mode of getting this wrong is destroying player
+		# property, so a list somebody has to extend beats a rule nobody can see.
+		for _d in PERSISTENT_DEBUFFS:
+			character.remove_buff(String(_d))
 		character.cure_poison()
 		character.cure_blind()
 		msg += "\n[color=#00FFFF]All ailments have been purged![/color]"
