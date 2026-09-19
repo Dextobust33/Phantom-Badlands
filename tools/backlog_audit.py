@@ -92,8 +92,19 @@ def main():
     text = open(BACKLOG, encoding="utf-8").read()
     items = open_items(text)
 
-    strong, weak = [], []
+    # ⛑ AN ITEM CAN RECORD THAT IT WAS CHECKED. Without this the same legitimate partials get
+    # re-flagged every run - "half one shipped, half two has not" trips the DONE-word test forever -
+    # and a list that cries wolf on the same eight lines is one nobody reads by the third week.
+    # `<!-- audited: 2026-09-19 -->` in an item's body means a human verified it against the code
+    # on that date and it is genuinely still open. It suppresses the suspicion, NOT the item.
+    AUDITED = re.compile(r"<!--\s*audited:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*-->")
+
+    strong, weak, vouched = [], [], []
     for it in items:
+        m = AUDITED.search(it["body"])
+        if m:
+            vouched.append((it, m.group(1)))
+            continue
         reasons = []
         if DONE_WORDS.search(it["body"]):
             reasons.append(("STRONG", "its own text says the work is done"))
@@ -137,6 +148,13 @@ def main():
     # Same for dungeon slice 4. A checker that is silent about what it cannot check is worse than
     # one that admits it, because silence reads as "still open" - so the unverifiable items are
     # listed. These are the ones a human MUST check in the code before proposing them.
+    if vouched:
+        print("")
+        print("===== CHECKED BY HAND AND STILL GENUINELY OPEN =====")
+        print("  %d item(s) carry an `audited:` marker, so their DONE-words are not re-flagged." % len(vouched))
+        for it, when in vouched:
+            print("      %-12s BACKLOG.md:%-6d %s" % (when, it["line"], it["title"]))
+
     print("")
     print("===== ITEMS THIS AUDIT CANNOT VERIFY - CHECK THESE BY HAND =====")
     unauditable = []

@@ -321,6 +321,9 @@ Asked because the arc had run out of defects and into design. All four answered.
       completion/teleport path around the co-op unique roll. Live checks owed.
 
 - [ ] **⚑ PARTY PLAY FOLLOWS THE DRAGON QUEST IX MODEL — owner direction 2026-09-18.**
+      <!-- audited: 2026-09-19 --> Verified still open: this is the MODEL, and the mechanics under
+      it are the separate "HALF TWO" item below. Neither is built; the shipped part it mentions is
+      half one (dungeon party combat).
       *"For party play we should probably go in the style of Dragon Quest IX: Sentinels of the
       starry skies... when a party member nearby enters combat it will pull nearby party members
       into the combat as well (we will have to figure out the best way to handle this as players
@@ -365,7 +368,9 @@ Asked because the arc had run out of defects and into design. All four answered.
       A **Muster Sigil** (a scribed item letting a member join you from anywhere) is parked against
       this arc rather than the crafting one; decide it when the movement half works.
 
-- [ ] **PARTY PLAY — HALF TWO (the mechanics underneath the model above): independent movement + join-in-progress combat.** (Half one, dungeon
+- [ ] **PARTY PLAY — HALF TWO (the mechanics underneath the model above): independent movement + join-in-progress combat.**
+      <!-- audited: 2026-09-19 --> Verified still open: independent movement and join-in-progress
+      are NOT built. Half one (dungeon party combat) is live, which is what trips a DONE-word scan. (Half one, dungeon
       party combat, is built and live; the onboarding guide it blocked has shipped.) Original title:
       PARTY PLAY IN DUNGEONS + JOIN-IN-PROGRESS COMBAT.
       This is what *"party play isn't working properly"* (2026-08-26, never reproduced) actually
@@ -1691,7 +1696,10 @@ Currently queued:
       endgame titles only, so the effect on the aggregate should be small - but the Knight damage
       bonus lands in `calculate_damage` beside the gear multiplier, which is a path the chain does
       measure. Glance at it on the next `refcal`.
-- [ ] **Are any of the 53 dungeon cards worth a deck slot?** The COVERAGE half shipped - all 53
+- [→] **Are any of the 53 dungeon cards worth a deck slot? — DUPLICATE.** Same question as
+      "Dungeon card pass — the POWER half" in Phase 4, which is the live entry. Kept only so the
+      balance batch reads complete; do not work from this line. (Found 2026-09-19: the two open
+      differently so a title match missed them.) The COVERAGE half shipped - all 53
       exist, themed and sized - but the owner's actual bar was *"cards that classes may want to
       swap into their decks"*, and nothing has measured whether one clears it. The question is:
       for each class, does substituting a dungeon card for its weakest deck slot raise the win rate
@@ -5209,7 +5217,12 @@ scope, because they are all tiles in the same grid.**
       production path may differ. Confirm against the real server before committing to Phase 1's
       payoff figure — the DIRECTION is not in doubt, the magnitude is worth re-checking.
 
-- [ ] **PHASE 2 SCOPE — what "sprite the overworld" has to cover** (2026-09-11, after the
+- [x] **PHASE 2 SCOPE — what "sprite the overworld" has to cover. SATISFIED (audited 2026-09-19).**
+      Checked on disk rather than assumed: **all fourteen gatherables the item names have sprites**
+      - tree, stone, ore_vein, dense_brush, herb, flower, mushroom, bush, reed, cactus, ice_bloom,
+      swamp_lily, mountain_herb, brambleberry. Wilderness tiles, roads, water and structures
+      shipped with the overworld art pass (113 images, gated on a pixel fingerprint so they cannot
+      silently go stale). Original scope (2026-09-11, after the
       Sanctuary shipped and posts turned out to be overworld tiles):
       * **Wilderness tiles** - terrain, roads, water, structures. The GROUND varies by biome
         (plains, forest, mountain, swamp, snow, desert); most props do not.
@@ -6121,7 +6134,10 @@ and this project already does it.
           sheets for any future tuning, so the numbers can be re-judged on screen rather than
           argued about.
 
-- [ ] **CRT / scanlines — possible, but I would not do it first.** A `ColorRect` overlay with a
+- [→] **CRT / scanlines — A PROPOSAL AWAITING A YES/NO, not accepted work.** Nothing exists and
+      nothing is blocked; the line is my own suggestion and says so ("I would not do it first").
+      Marked distinctly so the list stops counting my ideas as the owner's backlog. Original:
+      **possible, but I would not do it first.** A `ColorRect` overlay with a
       scanline shader is straightforward and the pattern above shows how. Two honest reservations:
       the game is TEXT-HEAVY, and scanlines over a combat log or a side panel cost legibility for
       atmosphere; and at a 64px tile on a 1080p screen the effect is subtle enough that it may not
@@ -6575,7 +6591,10 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Probe: `tools/probe/controller_bindings.gd` injects a real pad event rather than re-reading
       what the code wrote, and records the engine default that motivated the work. Proven to fire.
 
-- [ ] **⛑ CONTROLLER: NOT ONE KEY HAS BEEN PRESSED ON A REAL PAD.** `Input.get_connected_joypads()`
+- [→] **⛑ CONTROLLER — AWAITING A PAD IN A HAND, not code.** The wiring exists and is verified
+      (`InputEventJoypadButton`, `PAD_ACCEPT`, `PAD_FOCUS_BAR` are all live in client.gd); what
+      cannot be verified without hardware is the FEEL. Marked as owner-action so it stops reading
+      as unstarted work. Original note: **NOT ONE KEY HAS BEEN PRESSED ON A REAL PAD.** `Input.get_connected_joypads()`
       was **empty** for every measurement above. Everything is verified by injected events and by
       reading the InputMap, which proves the WIRING and says nothing about the FEEL: whether the
       move cooldown suits a held stick, whether the deadzone is right, whether Back-to-focus-the-bar
@@ -7255,7 +7274,11 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       gambit-run turn still animate at full speed or fast-forward.
 
 - [ ] **Dungeon card pass — re-scoped 2026-09-17: the COVERAGE half is done, the POWER half is
-      not.** Owner: *"dungeon reward cards likely need reworked and added to add interesting new
+      not.**
+      <!-- audited: 2026-09-19 --> Verified still open: all 53 cards exist and are themed (the
+      coverage half), and nothing has measured whether substituting one for a class's weakest deck
+      slot raises or lowers its win rate. That is the POWER half and it is untouched. This is also
+      the LIVE entry for the duplicate in the balance batch. Owner: *"dungeon reward cards likely need reworked and added to add interesting new
       cards that classes may want to swap into their decks."*
       **Done:** *"added"*. All 53 dungeon types have an exclusive card, each themed to its own
       boss and sized to its own tier, each with a face — see the 53-card entry in the dungeon arc.
@@ -8133,8 +8156,10 @@ something was dropped, and it sat unnoticed for eleven days.
       rebuilt their decks, and it risks dissolving the archetype as a readable idea. Recommending
       1 → 3 → 2 in that order, with 2 deferred to a batch.
 
-- [ ] **MAGIC BOLT — damage vs investment is opaque and punishing** (owner 2026-09-06). Present in
-      this file already; listed here so the archive audit is complete rather than partial.
+- [x] **MAGIC BOLT — DUPLICATE of an item already RESOLVED 2026-09-07** (see the ticked
+      "Magic Bolt damage vs investment" entry earlier in this file, closed by the `magecost`
+      audit at n=40). This copy was added so an archive sweep would read complete, and then
+      outlived the original - the Dungeon Atlas pattern exactly. Audited 2026-09-19.
 
 - [ ] **⚑ CRAFTING STATION SPRITES NEED INDIVIDUAL REVIEW — owner direction 2026-09-18.**
       *"All of the crafting stations sprites likely need to be reviewed individually. I think many
