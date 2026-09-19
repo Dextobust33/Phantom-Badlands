@@ -399,7 +399,13 @@ Asked because the arc had run out of defects and into design. All four answered.
       way to handle a party member joining the combat etc)."* It was filed as a bug for a year;
       it is two pieces of design. Re-filed as such.
 
-      **Half one - dungeon party COMBAT is missing. (Corrected 2026-09-13 - see below; the
+      **✅ HALF ONE IS COMPLETE - dungeon party COMBAT SHIPPED. (Re-verified 2026-09-19.)**
+      The text below said dungeon combat was missing and it is now STALE: `_try_start_dungeon_coop`
+      and `_start_guided_dungeon_combat` both call `start_party_combat_simul`, and the
+      *"legacy shared party combat disabled"* comment it quotes no longer exists anywhere in
+      `server/server.gd`. Confirmed from live the same day - the owner hit a party-combat bug at
+      the starter dungeon boss, which is a code path that cannot run unless dungeon co-op exists.
+      Kept for the history and for the note on how it was got wrong. **(Corrected 2026-09-13 - the
       first version of this item said dungeons had no party support at all, and that was wrong.)**
         * Entry WORKS. `handle_dungeon_enter` has an `if _is_party_leader(peer_id)` branch that
           validates every member, enters the leader, then places each follower on an adjacent
