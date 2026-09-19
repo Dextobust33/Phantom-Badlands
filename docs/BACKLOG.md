@@ -974,6 +974,21 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ REST AFTER THE BOSS — v0.9.810 (2026-09-18)
+
+Owner: *"After killing the boss of a dungeon it looks like you can't rest anymore as the option
+isn't on the bar anymore."*
+
+**The branch's own comment said `Items + Rest still available` and the array under it offered Items
+and eight blanks.** A comment describing an intention nobody implemented reads as documentation and
+tests as nothing. It is also the worst state to lose Rest in: it sits between the boss fight and the
+walk to the final chest, and in-dungeon recovery is half the overworld rate.
+
+`tools/probe/dungeon_bar_never_strands_you.gd` walks every action-bar state guarded by
+`dungeon_mode`, exempting by NAME the four that are modals rather than places you stand
+(trap acknowledgement, pending continue, the food picker inside Rest, the resource prompt), and
+fails if any remaining state omits Rest or Items. Proven to fire by removing the button again.
+
 ### ✅ THE REST OF THE CARD NUMBERS — v0.9.809 (2026-09-18)
 
 Owner named Frost Nova and Forcefield and added *"some of the other card numbers aren't matching

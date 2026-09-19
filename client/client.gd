@@ -12103,11 +12103,21 @@ func update_action_bar():
 	elif dungeon_mode and awaiting_final_chest and not in_combat and not pending_continue and not flock_pending and not inventory_mode and not wish_selection_mode:
 		# Boss is dead, final chest tile is on the map waiting to be claimed.
 		# "Leave Now" exits the dungeon without the chest reward; otherwise
-		# walk onto the * tile to open it. Items + Rest still available.
+		# walk onto the * tile to open it.
+		#
+		# ⚡ REST BELONGS HERE, AND THIS COMMENT ALREADY SAID SO. Owner 2026-09-18: *"After
+		# killing the boss of a dungeon it looks like you can't rest anymore as the option isn't on
+		# the bar anymore."* The line above used to end "Items + Rest still available" and the
+		# array under it offered Items and eight blanks - a comment describing an intention nobody
+		# implemented, which reads as documentation and tests as nothing.
+		#
+		# It is also the moment a player most wants it: the boss fight is the hardest thing in the
+		# dungeon, and this state sits between that fight and the walk to the chest.
+		var fc_is_mage = character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"]
 		current_actions = [
 			{"label": "Leave Now", "action_type": "local", "action_data": "dungeon_skip_final_chest", "enabled": true},
 			{"label": "Items", "action_type": "local", "action_data": "inventory", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Meditate" if fc_is_mage else "Rest", "action_type": "local", "action_data": "dungeon_rest", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -34850,7 +34860,12 @@ func display_changelog():
 	# canvas, and a long tutorial hint can no longer push its own button off the screen.
 	# v0.9.808 - the fourth label in this codebase to render links nothing was listening for.
 	# v0.9.809 - the rest of "some of the other card numbers aren't matching either".
-	display_game("[color=#00FF00]v0.9.809[/color] [color=#808080](Current)[/color]")
+	# v0.9.810 - Rest comes back after the boss dies.
+	display_game("[color=#00FF00]v0.9.810[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: you could not Rest after killing a dungeon boss.[/color] Once the boss is down and the final chest is waiting, the action bar offered [b]Leave Now[/b] and [b]Items[/b] and nothing else - so the moment you most want to recover, between the hardest fight in the dungeon and the walk to the chest, was the one moment you could not. The branch's own comment had said [i]\"Items + Rest still available\"[/i] for as long as it has existed; nobody had implemented it. Rest is on that bar now, and a check walks every action-bar state you can stand in underground and fails if any of them leaves you without Rest or your items.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.809[/color]")
 	display_game("  [color=#FF4444]★ FIXED: Arcane Surge advertised half of what it gives, for the wrong stat.[/color] The card face said [b]+20 + INT/5 %% \"spd\"[/b] - a speed stat this ability stopped granting when it became Arcane Surge. The cast grants [b]+40 + INT/4 %% spell damage[/b] and a [b]25%% double-cast[/b], which is what the hover description had said all along. The face quotes both now.")
 	display_game("  [color=#FF4444]★ FIXED: the Read gauge and the Assassinate card disagreed.[/color] Gauge said [i]~50 / 5%%[/i], card said [i]~49 · 4%% kill[/i]. Neither was wrong - they were answering different questions. Assassinate is a [b]variable-cost[/b] card, so the card face quotes what [b]this[/b] cast will actually commit, and the meter is built server-side with no way to ask what you are about to spend, so it quoted a full one. The meter follows your planned spend now, and the wording still comes from the server so the Grifter and Ranger keep being told their finisher is guaranteed rather than a roll.")
 	display_game("")
