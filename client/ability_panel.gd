@@ -820,6 +820,20 @@ func _make_deck_pile_tile(ability: Dictionary, count: int, is_loaner: bool = fal
 		badge = "  (loan)"
 	elif count > 1:
 		badge = "  ×%d" % count
+	# ⚑ AND PER COPY, which is the only place two copies of one card can be told apart at all.
+	# Copies level independently by design ("duplicates must level independently so they can be
+	# re-rolled and sold"), so a deck holding a three-times-upgraded Cleave and a fresh one was
+	# showing the player two identical rows.
+	var _copy_key := _copy_command(ab_name, copy)
+	var _clook: Dictionary = CardUpgrades.card_upgrade_look(
+		CardUpgrades.card_upgrade_count(client_ref.character_data if client_ref else {}, _copy_key))
+	var _csig := String(_clook.get("sigil", ""))
+	if _csig != "":
+		sb.set_border_width_all(maxi(1, int(_clook.get("border_width", 2)) - 1))
+		badge += "  " + _csig
+		lbl.add_theme_color_override("font_color", Color(String(_clook.get("sigil_color", "#F0E6D2"))))
+		tile.tooltip_text = "%s — %d upgrade(s) on this copy" % [String(_clook.get("name", "")),
+			CardUpgrades.card_upgrade_count(client_ref.character_data if client_ref else {}, _copy_key)]
 	lbl.text = "%s%s%s" % [prefix, disp, badge]
 	tile.add_child(lbl)
 	if not is_loaner:
@@ -891,6 +905,20 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 		else:
 			sb.border_color = Color(category_color_hex)
 			sb.set_border_width_all(1)
+		# ⚑ AN UPGRADED CARD LOOKS UPGRADED HERE TOO, and through the SAME table the combat
+		# hand reads (`CardUpgrades.card_upgrade_look`). A card that looks invested-in while you
+		# are building your deck and plain the moment it reaches your hand is the drift this
+		# codebase keeps finding - the action bar's own name table, the combat log styling cards
+		# by literal word, the buff panel's third copy.
+		#
+		# The grid draws one tile per CARD while copies level independently, so it answers with
+		# the BEST copy: "how far has this card been taken."
+		var _ulook: Dictionary = CardUpgrades.card_upgrade_look(
+			CardUpgrades.card_upgrade_count_best(client_ref.character_data if client_ref else {}, ab_name))
+		if int(_ulook.get("tier", 0)) > 0:
+			# maxi, not assignment - a multi-copy card has already earned its 2px and an upgraded
+			# single copy must not read as LESS emphasised than a plain pair.
+			sb.set_border_width_all(maxi(int(sb.border_width_top), int(_ulook.get("border_width", 2)) - 1))
 	sb.set_corner_radius_all(4)
 	sb.content_margin_left = 6
 	sb.content_margin_top = 4
@@ -916,6 +944,22 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 			glyph_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			glyph_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			card.add_child(glyph_lbl)
+	# ⚑ ...and the sigil itself, top-right under the category glyph. Empty on an un-upgraded
+	# card, so it is a badge rather than furniture every card wears.
+	if is_unlocked:
+		var _ul: Dictionary = CardUpgrades.card_upgrade_look(
+			CardUpgrades.card_upgrade_count_best(client_ref.character_data if client_ref else {}, ab_name))
+		if String(_ul.get("sigil", "")) != "":
+			var sig_lbl := Label.new()
+			sig_lbl.text = String(_ul.get("sigil", ""))
+			sig_lbl.add_theme_font_size_override("font_size", 12)
+			sig_lbl.add_theme_color_override("font_color", Color(String(_ul.get("sigil_color", "#C8A24A"))))
+			sig_lbl.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+			sig_lbl.position = Vector2(-46, 4)
+			sig_lbl.size = Vector2(24, 16)
+			sig_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			sig_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			card.add_child(sig_lbl)
 	# v0.9.322 — taller cards fit a 2-line description below the meta row.
 	card.custom_minimum_size = Vector2(260, 110)
 	card.mouse_filter = Control.MOUSE_FILTER_STOP

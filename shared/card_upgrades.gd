@@ -452,6 +452,79 @@ static func rarity_rank(rarity: String) -> int:
 	return i if i >= 0 else 0
 
 
+## ⚑ WHAT AN UPGRADED CARD LOOKS LIKE. ONE TABLE, EVERY SURFACE.
+##
+## Owner 2026-09-04: *"Upgrading a card and then the card looking exactly the same and the
+## description being exactly the same sucks."* Listing the upgrades in the description was the
+## floor and it shipped; this is the part that was still open - the CARD looking like a different
+## card in the deck screen and in the combat hand, rather than the same art with a line appended.
+##
+## ⚡ IT IS A FUNCTION, NOT A COLOUR WRITTEN INTO TWO PANELS, because the deck screen and the
+## combat hand are exactly the pair this codebase keeps finding drifted: the action bar kept its
+## own card-name table, the combat log styled cards by literal word, and the buff panel had a
+## third copy. A card that looks upgraded in your deck and plain in your hand is the same bug
+## wearing a new hat.
+##
+## ⛑ WHAT IT MAY AND MAY NOT USE. The hand cell's border COLOUR is already carrying two
+## meanings - the ability category, and whether you can afford the card - so this deliberately
+## does not touch it. It varies the things that are free: how THICK the frame is, a gilded
+## sigil in the banner, and how strongly the art is lit. Overloading the colour would have made
+## an unaffordable card and an un-upgraded one read the same, which is a worse bug than the one
+## being fixed.
+##
+## `n` is how many upgrades this COPY carries (`ability_milestone_picks[card_name].size()`),
+## and copies level independently, so two Cleaves in one hand can and should look different.
+static func card_upgrade_look(n: int) -> Dictionary:
+	if n <= 0:
+		return {"tier": 0, "border_width": 2, "sigil": "", "sigil_color": "#8C7656",
+			"art_energy": 0.0, "name": ""}
+	# Three steps, not one per upgrade. A card can carry six, and six distinguishable frame
+	# weights is not something anyone reads at a glance mid-fight - it is just noise that costs
+	# pixels. The question the player is actually asking across the hand is "which of these have
+	# I invested in, and how much", and three answers cover it.
+	var tier: int = 1 if n <= 1 else (2 if n <= 3 else 3)
+	return {
+		0: {},
+		1: {"tier": 1, "border_width": 3, "sigil": "✦", "sigil_color": "#C8A24A",
+			"art_energy": 0.25, "name": "Honed"},
+		2: {"tier": 2, "border_width": 4, "sigil": "✦✦", "sigil_color": "#E0C060",
+			"art_energy": 0.5, "name": "Tempered"},
+		3: {"tier": 3, "border_width": 5, "sigil": "✦✦✦", "sigil_color": "#FFE9A0",
+			"art_energy": 0.8, "name": "Ascendant"},
+	}[tier]
+
+
+## The BEST-upgraded copy of a card. The deck grid draws one tile per CARD while copies level
+## independently (`cleave` and `cleave#2` carry their own picks), so the tile has to answer "how
+## far has this card been taken" rather than "how far has one copy". A third place working that
+## out from the picks dictionary is how the surfaces drift, so it lives here with the other two.
+static func card_upgrade_count_best(character_data: Dictionary, ab_name: String) -> int:
+	var mp = character_data.get("ability_milestone_picks", {})
+	if not (mp is Dictionary):
+		return 0
+	var best := 0
+	for k in mp.keys():
+		var key := String(k)
+		# The FIRST copy is stored under the bare id; the rest are `id#n`. Matching on the prefix
+		# alone would let `cleave` pick up `cleaver`, which is the kind of thing that only shows
+		# up once somebody adds the second card.
+		if key != ab_name and not key.begins_with(ab_name + "#"):
+			continue
+		if mp[k] is Array:
+			best = maxi(best, (mp[k] as Array).size())
+	return best
+
+
+## How many upgrades a copy carries, read from the character payload both surfaces already hold.
+## Here rather than in either panel for the same reason as above.
+static func card_upgrade_count(character_data: Dictionary, card_name: String) -> int:
+	var mp = character_data.get("ability_milestone_picks", {})
+	if not (mp is Dictionary):
+		return 0
+	var picks = mp.get(card_name, null)
+	return picks.size() if picks is Array else 0
+
+
 static func rarity_by_id(id: String) -> String:
 	return rarity_of(upgrade_by_id(id))
 const REVEALS_ALLOWED := 3

@@ -8143,10 +8143,9 @@ high-level win-target item says *"revisit alongside the Unburied"* - while the i
 nowhere in the file. A reference to something that is not here is the cheapest possible signal that
 something was dropped, and it sat unnoticed for eleven days.
 
-- [ ] **AN UPGRADED CARD SHOULD LOOK UPGRADED — owner 2026-09-04. PARTLY DONE.** <!-- audited: 2026-09-19 --> Two of three sub-items are now done (the hover preview, and the damage estimate which was fixed
-      2026-09-19 once its real cause — card gear, not milestone picks — was found). What remains is
-      **the card itself looking different** in the deck screen and combat hand. Original note: (audited 2026-09-19;
-      this line said "still not started", which was wrong).**
+- [x] **AN UPGRADED CARD SHOULD LOOK UPGRADED — owner 2026-09-04. COMPLETE 2026-09-19.** All
+      three sub-items are done: the hover preview, the damage estimate (fixed once its real cause
+      — card gear, not milestone picks — was found), and now **the card itself**.
       *"Upgrading a card and then the card looking exactly the same and the description being
       exactly the same sucks."* Listing upgrades in the description shipped; that is the floor.
       - [x] **Preview on the pick screen. DONE** — `_ms_preview_panel` in client.gd, *"hover: the
@@ -8155,8 +8154,26 @@ something was dropped, and it sat unnoticed for eleven days.
             *"if I'm upgrading Analyze and I hover over a Mending upgrade it should show my Analyze
             card with the Mending effect"* - and hovering that preview shows what it would then do,
             all before committing.
-      - [ ] **The card itself changes.** An upgraded Analyze is visibly a different card in the <!-- audited: 2026-09-19 --> Verified still open: nothing in combat_scene_panel.gd or ability_panel.gd varies a card's art or frame by upgrade.
-            deck screen AND the combat hand, not the same art with a line appended.
+      - [x] **DONE 2026-09-19 — THE CARD ITSELF CHANGES.** An upgraded card carries a **heavier
+            frame**, a gilded **✦ / ✦✦ / ✦✦✦ sigil** on its banner, and **lit art**, in the combat
+            hand and the deck screen. Three steps, not one per upgrade: a card can carry six and
+            six distinguishable frame weights is noise, not information. Named on hover —
+            **Honed / Tempered / Ascendant**.
+            ⚑ **ONE TABLE** (`CardUpgrades.card_upgrade_look`), because the deck screen and the
+            combat hand are precisely the pair this codebase keeps finding drifted (the action
+            bar's own name table, the combat log styling by literal word, the buff panel's third
+            copy). A card that looks invested-in while you build your deck and plain the moment
+            it reaches your hand is the same bug wearing a new hat.
+            ⛑ **It does NOT touch the border colour**, which already carries the ability category
+            AND whether you can afford the card. A third meaning there would have made an
+            unaffordable card and an un-upgraded one read alike — worse than the bug being fixed.
+            ⛑ **Per COPY** in the hand and in the deck's copy rows, since duplicates level
+            independently: a three-times-upgraded Cleave and a fresh one were two identical rows.
+            Probes: `an_upgraded_card_looks_upgraded.gd` (wiring, both surfaces, proven to fire
+            twice) **and `the_upgrade_sigil_reaches_pixels.gd`**, which lays a real card out in a
+            real window — because a source-reading probe cannot tell whether a badge is visible,
+            and a figure block in an unreachable branch shipped TWICE here before anyone noticed.
+            Measured: sigil 32x19 on the banner, inside the card's clip rect, name still 84px.
       - [x] **The estimate must follow. DONE 2026-09-19 — and the stated cause was WRONG.** This
             line said the fault was that it "counts only `power` picks". It is not: the server's
             `get_tier_effect_mult` counts only power picks too, so that half always agreed.

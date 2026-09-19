@@ -4009,6 +4009,18 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	key_label.add_theme_constant_override("outline_size", 3)
 	key_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	brow.add_child(key_label)
+	# ⚑ THE UPGRADE SIGIL. Sits at the END of the banner row so it reads on the same line as
+	# the card's name without competing with the hotkey on the left, and it is EMPTY on a card
+	# with no upgrades - a badge every card wears is not a badge. Filled by `_refresh_hand` from
+	# `CardUpgrades.card_upgrade_look`, which the deck screen reads too.
+	var sigil_label := Label.new()
+	sigil_label.name = "Sigil"
+	sigil_label.text = ""
+	sigil_label.add_theme_font_size_override("font_size", 13)
+	sigil_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	sigil_label.add_theme_constant_override("outline_size", 3)
+	sigil_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	var name_label := Label.new()
 	name_label.name = "Name"
 	name_label.text = "—"
@@ -4018,8 +4030,10 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	name_label.add_theme_constant_override("outline_size", 3)
 	name_label.clip_text = true
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# added after Name, which expands - so the sigil is pinned to the banner's right edge.
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	brow.add_child(name_label)
+	brow.add_child(sigil_label)
 	vbox.add_child(banner)
 
 	# v0.9.675 — class-colour accent line under the banner (recoloured in refresh).
@@ -5421,6 +5435,34 @@ func _refresh_hand() -> void:
 			# something to track and never costs height before then.
 			upg_lbl.get_parent().visible = strip != ""
 		_set_cell_dim(cell, false, castable)
+		# ⚑ AN UPGRADED CARD LOOKS UPGRADED. Owner 2026-09-04: *"Upgrading a card and then the
+		# card looking exactly the same and the description being exactly the same sucks."*
+		#
+		# AFTER `_set_cell_dim`, deliberately - that function rewrites the border every refresh to
+		# carry category and affordability, so anything applied before it is silently thrown away.
+		# It is also why this varies the frame's WIDTH and not its COLOUR: the colour already has
+		# two jobs, and a third would make an unaffordable card and an un-upgraded one read alike.
+		#
+		# Keyed on `card_name`, the COPY - two Cleaves in one hand carry their own upgrades and
+		# are meant to look different from each other.
+		var _look: Dictionary = CardUpgrades.card_upgrade_look(
+			CardUpgrades.card_upgrade_count(client_ref.character_data if client_ref else {}, card_name))
+		var _csb := cell.get_theme_stylebox("panel") as StyleBoxFlat
+		if _csb:
+			_csb.set_border_width_all(int(_look.get("border_width", 2)))
+		var sigil_lbl: Label = cell.find_child("Sigil", true, false)
+		if sigil_lbl:
+			sigil_lbl.text = String(_look.get("sigil", ""))
+			sigil_lbl.add_theme_color_override("font_color", Color(String(_look.get("sigil_color", "#8C7656"))))
+			sigil_lbl.tooltip_text = ("%s — %d upgrade(s)" % [String(_look.get("name", "")),
+				CardUpgrades.card_upgrade_count(client_ref.character_data if client_ref else {}, card_name)]) if String(_look.get("name", "")) != "" else ""
+		# The ART carries it too, so the card reads as different even at a glance across the hand
+		# rather than only when you look at its frame. Lit, not recoloured: the category glyph's
+		# own colour is what tells you what KIND of card it is.
+		var _energy: float = float(_look.get("art_energy", 0.0))
+		if glyph_lbl:
+			glyph_lbl.add_theme_color_override("font_color",
+				Color(1, 1, 1, 0.92).lerp(Color(String(_look.get("sigil_color", "#FFFFFF"))), _energy))
 		# v0.9.715 — class payoff cards get a meter-scaled glow: Devastate
 		# (Momentum, hard-locked at 0) and Meteor (Focus, soft-dim at 0).
 		_apply_finisher_visual(cell, _card, castable)
@@ -5478,6 +5520,11 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 	# any running pulse; _apply_finisher_visual re-adds them if this card is a
 	# finisher. Keeps stale halos off cards that changed slots.
 	sb.shadow_size = 0
+	# ⚑ AND THE UPGRADE FRAME, for the same reason the glow above is reset here: the hand
+	# REUSES these five cells, so a thick frame left by an Ascendant card would be inherited by
+	# whatever is dealt into that slot next, and by the slot when it empties. `_refresh_hand`
+	# re-applies the real width straight after this call.
+	sb.set_border_width_all(2)
 	# NOTE: get_meta(name, null) is NOT a safe read — Godot treats a null default as "no
 	# default given" and pushes an error, which spammed the log on every hand refresh
 	# (54 errors in one fight) and buried real ones. Check has_meta first.
