@@ -1309,6 +1309,47 @@ printed beside every line so `taken=0` is readable rather than ambiguous.
    balance items until we have a batch of things that need looked at so we don't have to run it a
    bunch of times, taking a lot of time."*
 
+### ⚑ A DESKTOP BALANCE TOOL — owner direction 2026-09-18. FILED, not started.
+
+*"We may want to build an external tool that I can run from my PC to tune monster difficulty, item
+effectiveness, etc. A tool that lets me make big balance changes and fine-tune combat, rewards,
+loot drops, card multipliers etc, in other words an exhaustive tool that's easy to use and can make
+changes to the live server as needed. Those changes would need to be able to be saved and
+templatable as well."*
+
+**⛑ MEASURED BEFORE PROPOSING ANYTHING, because the answer decides the whole shape:**
+
+| where the knobs live | count |
+|---|---|
+| already data in `server/balance_config.json` | **90** |
+| `const` in GDScript — needs an export + redeploy | **101** |
+
+Broken down: `combat_manager.gd` 48, `character.gd` 25, `monster_database.gd` 15,
+`drop_tables.gd` 11, `card_gear.gd` 2. And `set_balance_config()` is called **once at startup** —
+there is no reload path, so even the 90 that ARE data cannot change without a restart today.
+
+**So slightly more than half of what the owner wants to tune cannot be tuned at all right now.**
+A UI built over today's surface would be a UI over 47% of the game.
+
+**Three pieces, in this order. The first is not the UI:**
+
+1. **Migrate the knobs into data.** Each `const` moves to `balance_config.json` with the current
+   constant as its default, read through the config with the constant as fallback. Mechanical,
+   and nothing else works without it. Do it in batches by file so each batch is reviewable.
+2. **Hot reload + apply.** The server re-reads the config on a signal (the same sentinel shape
+   `pending_shutdown.txt` already uses) so a change lands without disconnecting anyone.
+3. **The desktop tool.** Grouped controls over the merged schema, named profiles saved as JSON
+   templates, diff-against-live, push, revert.
+
+**⛑ AND A FOURTH THAT THIS SESSION ARGUES FOR HARD: the tool must show LIVE OUTCOMES beside each
+knob.** Tuning against the simulator is what produced a curve reporting **0.0% death at levels 1-5**
+while the live server recorded **40 deaths in that band in two weeks**. `tools/death_log_audit.py`
+already computes deaths per band, per class normalised by population, rounds-to-death, monster-trait
+share and gear relevance — that is the panel the tool needs, and it exists.
+
+**Sequencing:** after the retreat-model fix below, because a tool that tunes against a broken
+instrument is worse than no tool.
+
 ### ⚑ THE BALANCE BATCH — add here, run the chain ONCE
 
 **Do not run the calibration chain for a single item.** It is ~25 minutes, it is one-pass-each by
@@ -1324,6 +1365,31 @@ against either. Write what changed and what it should be measured against - a li
 check itself. Then `speciescal` → `refcal` → `rolecal`, one pass each, in that order.
 
 Currently queued:
+
+- [x] **THE REFERENCE PLAYER WAS STRONGER THAN ANY REAL ONE** (2026-09-18) - *fixed, and it
+      invalidates every balance number measured before it.* Owner asked *"are we sure the sim is
+      using the actual starting decks each class is using?"* The decks were right; the BODY was not.
+      Two independent over-models, both measured against the live server:
+        1. `_roll_slot_rarity` sampled the DROP table once per slot, modelling a player who had
+           already found a suitable item for all seven. Live L1-4 characters wear **87% common**;
+           the model produced 57%.
+        2. `average` handed every reference player 1-2 pieces of **class kit** - gear that drops
+           only from Hoarder monsters (Minotaur / Wraith / Mimic). Live L1-9 gear is item level
+           1.2-2.9 with no class kit in it at all. Now gated to L15+.
+      Net: the L1 reference player fell from **189 to ~150 maxHP** and `hp_bonus` per kit from
+      **48.0 to 24.6** against a live mean of 22.6. `preflight` now reads **63-68% win at L10**
+      where `speciescal` had been measuring **100%** - which is why `species_power` had ratcheted
+      43% of its cells onto the x2.50 ceiling.
+      **Also retracted:** *"40 of 50 deaths are at L1-9, so low levels are over-tuned."* 83% of
+      LIVING characters are at L1-9 too - deaths are proportional to population and carry no
+      signal about difficulty. Counting one side of a ratio, the same error as the 3.8x below.
+      Probes: `gear_model_matches_live.gd`, `reference_player_is_a_real_player.gd`,
+      `sim_plays_the_real_deck.gd`. Fitted to the DYING population (5.2 slots) rather than the
+      living one (0.8 slots) because that is the population actually in combat; named in the
+      source so the choice is visible.
+      **RETRACTED in the same pass:** the earlier claim that plain monsters spawn at *3.8x the
+      reference curve*. Running the generator gives **1.4x**. The 3.8x came from dividing live
+      death records by a level-only curve, ignoring species variance and over-levelled encounters.
 
 - [ ] **One specialist recipe per trade dropped to skill 2-3** (2026-09-18, owner: *"yes drop some
       early recipes to lower skill"*). Measured first: of 109 specialist recipes only **2** sat at

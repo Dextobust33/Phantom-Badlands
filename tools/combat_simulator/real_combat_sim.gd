@@ -46,6 +46,26 @@ const WARRIOR_DMG_PRIORITY := ["devastate", "cleave", "shield_bash", "power_stri
 const ENCOUNTERS_TO_L20: float = 250.0
 
 const RUN_FIGHT_FLEE_AT: float = 0.30
+
+## ⚡ HOW OFTEN A REAL PLAYER EVEN TRIES TO RUN. Owner 2026-09-18: *"Players only flee if they
+## know they are in over their head, most don't know that and die when they thought they still had
+## a chance. Sounds like the tools need adjusted to match this so we can find some actual balance
+## again."*
+##
+## ⛑ MEASURED OFF THE LIVE DEATH LOG, not chosen: of the 44 deaths recorded on the server in the
+## fortnight to 2026-09-18, **ONE** combat log mentions fleeing. Forty-three do not.
+## `tools/death_log_audit.py` re-derives this; run it before trusting the number.
+##
+## ⛑ AND THIS IS WHY THE CHAIN REPORTED 0.0% DEATH AT LEVELS 1-5 while the live server recorded
+## FORTY deaths in that band over the same fortnight. The simulated player attempted `process_flee`
+## EVERY TURN below 30% HP and eventually got out, so a fight that kills a real player was scored
+## as an escape. CLAUDE.md already says a non-win is usually a retreat since retreat was added -
+## what it could not say is how far that had drifted from what players do.
+##
+## Changing this does NOT move what the chain steers by: a fight the simulated player used to flee
+## is now a fight it loses, and both are "not a win". What it changes is that the DEATH column
+## becomes true - the only number that decides anything under permadeath.
+const PLAYER_ATTEMPTS_FLEE: float = 1.0 / 44.0
 # The REAL rest-ambush chance, read from the server rather than copied.
 #
 # 2026-09-07 — this loop hardcoded 15 while the game has used 5 since 2026-09-05, when it was
@@ -3577,7 +3597,33 @@ func run_species_calibrate():
 	# were extrapolated from levels either side. And coverage: only 29 species were being
 	# calibrated, because low-tier species stop spawning well before L50 and the highest tiers
 	# only appear far above L1000 — neither end was ever measured.
-	var levels := [10, 50, 100, 250, 1000, 5000]
+	# ⚡ LOW LEVELS ADDED 2026-09-18, and they are where every real death happens. The bands
+	# started at 10, so the layer that owns "how much species differ from each other" had NEVER
+	# measured levels 1-9 - while the live server's death log shows **40 of 50 deaths in that
+	# band** in a fortnight. A species multiplier that is only ever fitted at L10 and above is
+	# applied at L1 anyway.
+	#
+	# ⛑ AND 43% OF ITS CELLS SIT ON THE x2.50 CEILING - saturation, not convergence.
+	#
+	# ⚡ RETRACTED 2026-09-18, and left here because the retraction is the useful part. This
+	# comment used to claim plain monsters spawn at "a median 3.8x the reference curve", citing a
+	# level-2 Wolf with 1040 HP. That number came from dividing live DEATH-LOG records by a
+	# level-only curve, and it is wrong three ways: it ignored species variance (a Balrog at L2 is
+	# not a Goblin), it included over-levelled encounters, and some records predate the current
+	# balance (owner: "Likely an older balance pass"). RUNNING the generator gives **1.4x** at
+	# every level from 1 to 10 - a level-2 Goblin is 155 HP, as designed. The owner caught it by
+	# smell before it was caught by method: "Are you sure about that monster hp?"
+	#
+	# ⚡ AND THE MOTIVATION WAS ALSO RESTATED, 2026-09-18. This first read "the live log shows
+	# 40 of 50 current-era deaths at levels 1-9", offered as evidence that low levels are
+	# over-tuned. They are not: 83% of LIVING characters are also at L1-9, so deaths are
+	# proportional to population and say nothing about difficulty. Counting one side of a ratio
+	# is the same error as the 3.8x above.
+	#
+	# What genuinely motivates sampling down here is narrower and still true: a species
+	# multiplier fitted only at L10 and above was being APPLIED at L1 regardless, so the band
+	# where most play happens was corrected by extrapolation rather than by measurement.
+	var levels := [1, 3, 5, 10, 50, 100, 250, 1000, 5000]
 	var base_target := 0.60     # centre of the acceptable win-rate band
 	var base_band := 0.12       # +/- this is left alone
 	print("
@@ -4777,10 +4823,66 @@ var _curve_cache: Dictionary = {}
 # monster so a candidate can be tested in REAL fights before it is written to the curve.
 var _cal_override: Dictionary = {}
 
-func _roll_slot_rarity(tier: int) -> String:
-	# Sample one slot's rarity from the game's OWN drop table for this tier, so the sim's
-	# idea of "what a player is wearing" is the distribution the game actually produces.
-	if randf() < _gear_avg_empty_chance:
+## ⛑ A DROP DISTRIBUTION IS NOT A WEARING DISTRIBUTION, and at low level they are far apart.
+##
+## Owner 2026-09-18, mid-balance-pass: *"are we sure the sim is using the actual starting decks
+## each class is using?"* The decks were right. The BODY was not, and this is where it came from.
+##
+## `_roll_slot_rarity` samples RARITY_WEIGHTS once per slot, independently. That models a player
+## who has already found a suitable item for every slot - true at L50, false at L2, where a
+## character has seen a handful of drops in total. Measured against the live server:
+##
+##   level 1-4   REFERENCE 6.5/7 slots, 57% common, 48 hp_bonus/kit, 189 maxHP
+##               LIVE (died)  5.2/7 slots, 87% common,  8.5 hp_bonus/kit (median), 109 maxHP
+##               LIVE (alive) 0.8/7 slots, 55% common,  0.0 hp_bonus/kit (median)
+##
+## So the curve was fitted to a level-1 player carrying 1.7x the hit points of the people dying
+## to it - which is why `speciescal` measured 100% win at L1-L10 while the live death log shows
+## 40 of 50 current-era deaths in exactly that band, and why species_power then ratcheted toward
+## its x2.50 ceiling to compensate.
+##
+## ⛑ FITTED TO THE POPULATION THAT IS ACTUALLY FIGHTING. Two live samples disagree: characters
+## that DIED carry 5.2 slots, characters still ALIVE at L1-4 carry 0.8. The living low-level pool
+## is dominated by freshly made characters who have not fought yet, so the dying sample is the one
+## that describes a player in combat - which is what the curve is sized against. Named here
+## because picking the other one would move every low-level monster and nothing would say why.
+## It also settles the selection-bias worry in the reassuring direction: the dying sample is the
+## BETTER-geared of the two, so fitting to it cannot be blamed for making monsters too weak.
+##
+## Above L15 the two distributions converge and no correction is applied.
+const LOW_LEVEL_WEAR := [
+	# character level, chance a slot is EMPTY, share of worn items that are COMMON
+	[1.0, 0.26, 0.87],
+	[4.0, 0.26, 0.87],
+	[9.0, 0.01, 0.63],
+	[15.0, 0.00, 0.55],
+]
+
+
+## Empty-slot chance and common-share for a character of this level, interpolated.
+func _wear_profile_for(level: int) -> Array:
+	var L := float(maxi(1, level))
+	if L >= float(LOW_LEVEL_WEAR[LOW_LEVEL_WEAR.size() - 1][0]):
+		return []   # no correction - the drop table is the wearing table from here up
+	if L <= float(LOW_LEVEL_WEAR[0][0]):
+		return [float(LOW_LEVEL_WEAR[0][1]), float(LOW_LEVEL_WEAR[0][2])]
+	for i in range(LOW_LEVEL_WEAR.size() - 1):
+		var a: Array = LOW_LEVEL_WEAR[i]
+		var b: Array = LOW_LEVEL_WEAR[i + 1]
+		if L >= float(a[0]) and L <= float(b[0]):
+			var t: float = (L - float(a[0])) / maxf(0.001, float(b[0]) - float(a[0]))
+			return [lerp(float(a[1]), float(b[1]), t), lerp(float(a[2]), float(b[2]), t)]
+	return []
+
+
+func _roll_slot_rarity(tier: int, level: int = 0) -> String:
+	# Sample one slot's rarity from the game's OWN drop table for this tier, then bend it toward
+	# what a character of this level is MEASURED to be wearing (see LOW_LEVEL_WEAR above).
+	var wear: Array = _wear_profile_for(level) if level > 0 else []
+	var empty_chance: float = _gear_avg_empty_chance
+	if not wear.is_empty():
+		empty_chance = maxf(empty_chance, float(wear[0]))
+	if randf() < empty_chance:
 		return ""
 	var weights: Dictionary = drop_tables.RARITY_WEIGHTS.get(clampi(tier, 1, 9), {})
 	if weights.is_empty():
@@ -4789,11 +4891,24 @@ func _roll_slot_rarity(tier: int) -> String:
 	for k in weights.keys():
 		total += float(weights[k])
 	var pick := randf() * total
+	var rolled := "uncommon"
 	for k in weights.keys():
 		pick -= float(weights[k])
 		if pick <= 0.0:
-			return String(k)
-	return "uncommon"
+			rolled = String(k)
+			break
+	if wear.is_empty() or rolled == "common":
+		return rolled
+	# Convert the DROP share of commons into the measured WORN share. A player this early is
+	# wearing their first find per slot, not the best of many, so the tail is thinner than the
+	# table implies. Solved rather than guessed: p is exactly the re-roll probability that turns
+	# the table's common share into the measured one.
+	var table_common: float = float(weights.get("common", 0.0)) / maxf(0.001, total)
+	var target_common: float = float(wear[1])
+	if target_common <= table_common:
+		return rolled
+	var p: float = (target_common - table_common) / maxf(0.001, 1.0 - table_common)
+	return "common" if randf() < p else rolled
 
 # How many drops a "focused" player is modelled as sifting through per slot. 8 is roughly the
 # point where the best-of sample stops improving much for a 1-in-10 affix.
@@ -5009,7 +5124,7 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 				break
 		if base_type == "":
 			continue  # no base for this slot at/below tier → leave the slot empty (realistic)
-		var slot_rarity: String = _roll_slot_rarity(gtier) if roll_rarity else rarity
+		var slot_rarity: String = _roll_slot_rarity(gtier, level) if roll_rarity else rarity
 		if slot_rarity == "":
 			continue  # rolled an empty slot — a real player has gaps
 		var item = drop_tables._generate_item({"item_type": base_type}, glevel, slot_rarity)
@@ -5056,7 +5171,21 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 		# the reference player should be one definition that every audit inherits, not a flag each
 		# one has to remember to pass. `average_nokit` keeps the old model so pre-2026-09-04
 		# numbers stay comparable.
-		_apply_class_kit(ch, klass, glevel, 1, 1 + (randi() % 2))
+		# ⛑ ...BUT NOT BEFORE THEY COULD HAVE FARMED IT. The class kit drops from specific
+		# Hoarder monsters (Minotaur / Wraith / Mimic and friends) - CLAUDE.md is explicit that
+		# killing the right monster is the ONLY route to these bases. A level-2 character has
+		# fought none of them, yet this handed one or two pieces to every reference player at
+		# every level, bypassing the rarity roll entirely and landing a high-affix item in a kit
+		# that is otherwise 87% common.
+		#
+		# Measured on the live server 2026-09-18, characters at L1-9: mean item level 1.2 (L1-4)
+		# and 2.9 (L5-9), 87% and 63% common. There is no class kit anywhere in that data.
+		#
+		# Gated at the SAME boundary as LOW_LEVEL_WEAR rather than a second invented one: below
+		# L15 the wearing distribution and the drop distribution are different things, and that is
+		# exactly the range where a player has not yet farmed anything on purpose.
+		if level >= int(LOW_LEVEL_WEAR[LOW_LEVEL_WEAR.size() - 1][0]):
+			_apply_class_kit(ch, klass, glevel, 1, 1 + (randi() % 2))
 
 	# #5 CALIBRATION (2026-09-02) — the companion used to be INVENTED: a hand-written
 	# bonus block {attack 10, hp 5, mana 3, wisdom 2, speed 5} that exists on no real
@@ -5368,6 +5497,9 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 	var min_res: int = _class_resource(ch, klass)
 	var min_hp_pct := 100.0  # #55 monster-challenge audit — lowest HP% reached (danger telemetry)
 	var _rf_fled := false
+	# Is THIS player one of the few who reads the fight and runs? Rolled per encounter, at the
+	# rate the live death log actually shows - see PLAYER_ATTEMPTS_FLEE.
+	var _rf_flee_aware: bool = randf() < PLAYER_ATTEMPTS_FLEE
 	while turns < 400:
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
@@ -5410,7 +5542,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		#
 		# Uses the real `process_flee`, which carries the game's own penalties, so the escape is
 		# a gamble rather than a free exit — and a failed attempt still costs the turn.
-		if _rf_may_flee and not _rf_fled and float(ch.current_hp) / float(maxi(1, max_hp)) < RUN_FIGHT_FLEE_AT:
+		if _rf_may_flee and _rf_flee_aware and not _rf_fled and float(ch.current_hp) / float(maxi(1, max_hp)) < RUN_FIGHT_FLEE_AT:
 			var _fr: Dictionary = combat_mgr.process_flee(combat)
 			if bool(_fr.get("fled", false)):
 				_rf_fled = true
