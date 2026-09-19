@@ -1074,6 +1074,44 @@ live.** Nothing else is waiting on it.
 asked for "NPC sprites instead of symbols" — it was never a `$` (that is only the ASCII fallback),
 but whether a wagon or a driver is wanted is a visual judgement. Sprite sent 2026-09-19.
 
+### ⚑ BRACE — the defensive floor, and what it unblocks (2026-09-19)
+
+Owner approved after the boss-telegraph proposal was measured and found unworkable: *"If they don't
+draw the card they need that round how can they do so?"* They could not.
+
+    class                       hard answers in deck   P(one in a 3-card hand)
+    Sage                                           3                     100%
+    Fighter / Sorcerer                             2                      90%
+    Barbarian / Paladin / Wizard                   1                      60%
+    Ninja / Ranger / Grifter                       0                       0%
+
+The whole Trickster archetype holds nothing in `DEFENSIVE_REPRIEVE_ABILITIES`, and combat's
+always-available actions were Attack / Use Item / Flee. So "telegraphed but answerable" would have
+been unanswerable 40% of the time for half the roster and always for a Ninja.
+
+**SHIPPED:** an always-available combat action, named per archetype at the owner's request —
+**Brace** (warrior) / **Ward** (mage) / **Slip** (trickster). 40% damage reduction, one round,
+free, costs the turn, no defensive reprieve — deliberately below `iron_skin` (60% / 4 rounds /
+costs a card) so the cards stay worth holding. It lives in the inert slot that was held open for
+Outsmart, so no card shifts a key. Probe: `every_class_can_answer.gd`.
+
+- [ ] **NOT DONE: the boss telegraphs themselves.** 19 cyclical boss bursts fire the instant the
+      round counter hits (`combat.round % N == 0`) with the message printed AFTER the damage - a
+      receipt, not a warning. Two constants describe themselves as "telegraphed" and neither is.
+      That violates the design's own constraint #4 in `docs/design/dungeon_revamp.md`: *"a
+      telegraphed hit only lands next turn unless the player responds... NO unavoidable damage."*
+      Now unblocked, because every class finally has an answer. Shape: split each burst into a
+      wind-up round (announce, boss spends its turn) and a resolve round answerable by brace
+      (mitigate), a defensive card (mitigate harder), CC (cancel) or burst (race).
+      **Do the two that already claim to telegraph plus the heaviest hitters first**, behind a
+      probe that fails on any burst landing without a wind-up, then convert the rest.
+
+- [ ] **BALANCE BATCH: Brace is a player-power change in EVERY fight**, not just boss fights
+      (owner: *"I'm also fine with r being available outside of boss battles"*). A universal 40%
+      mitigation option changes win rates across the board, so `reference_monster_curve.json` is
+      stale for it. Do NOT run the chain for this alone - it joins whatever the live death data
+      says after a week, per the note below.
+
 ### ⚑ OPEN QUESTIONS FROM THE BALANCE PASS — ranked
 
 1. **`species_power` has NEVER weakened a species.** Every correction it makes is a strengthening:

@@ -31,7 +31,8 @@ enum CombatAction {
 	ATTACK,
 	FLEE,
 	SPECIAL,
-	ABILITY
+	ABILITY,
+	BRACE
 }
 
 # Ability lookup for parsing commands
@@ -2651,6 +2652,8 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 			action = CombatAction.FLEE
 		"special", "s":
 			action = CombatAction.SPECIAL
+		"brace", "ward", "slip", "defend", "guard", "block":
+			action = CombatAction.BRACE
 		_:
 			# Check if it's an ability command
 			# v0.9.681 — companion cards ("companion_card_<type>") are dynamic ids,
@@ -2688,6 +2691,8 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 			result = process_flee(combat)
 		CombatAction.SPECIAL:
 			result = process_special(combat)
+		CombatAction.BRACE:
+			result = process_brace(combat)
 
 	# Track damage dealt to monster this turn
 	var damage_dealt_this_turn = max(0, monster_hp_before - combat.monster.current_hp)
@@ -3893,6 +3898,27 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"dungeon_monster_id": combat.get("dungeon_monster_id", -1)
 	}
 
+## Spend the turn guarding. The floor answer, available to every class on every turn.
+##
+## Returns the same shape as `process_attack` so the monster's turn runs normally afterwards -
+## bracing is a CHOICE OF ACTION, not a skipped round. The player deals no damage; that is the
+## price, and it is what keeps a card answer worth holding.
+func process_brace(combat: Dictionary) -> Dictionary:
+	var character = combat.character
+	var messages: Array = []
+	var nm := brace_name_for(character)
+	# One round: it must still be up when the monster swings, and gone by the next choice, so a
+	# player cannot brace once and coast. `add_buff` ticks at end of round, hence 1.
+	character.add_buff("damage_reduction", BRACE_DAMAGE_REDUCTION, 1)
+	messages.append("[color=#7FD7FF][b]%s![/b][/color] [color=#66B0FF]You set yourself — %d%% less damage this round.[/color]"
+		% [nm.to_upper(), BRACE_DAMAGE_REDUCTION])
+	return {
+		"success": true,
+		"messages": messages,
+		"braced": true,
+	}
+
+
 func process_flee(combat: Dictionary) -> Dictionary:
 	"""Process flee attempt"""
 	var character = combat.character
@@ -4348,6 +4374,67 @@ const DEFENSIVE_REPRIEVE_ABILITIES := {
 	"forcefield": true, "fortify": true, "iron_skin": true, "cloak": true, "paralyze": true,
 }
 const DEFENSIVE_REPRIEVE_CHANCE := 40   # % chance the monster's turn is skipped
+
+# ⛑ BRACE - THE DEFENSIVE FLOOR EVERY CLASS HAS, WHATEVER IT DREW.
+#
+# ⚡ Owner 2026-09-19, on a proposal to make boss bursts answerable with cards: *"If they don't
+# draw the card they need that round how can they do so?"* Measured, and the answer was: often they
+# cannot, and three classes never could.
+#
+#     class      hard answers in deck   P(one in a 3-card hand)
+#     Sage                          3                     100%
+#     Fighter / Sorcerer            2                      90%
+#     Barbarian / Paladin / Wizard  1                      60%
+#     Ninja / Ranger / Grifter      0                       0%
+#
+# The whole Trickster archetype holds nothing in DEFENSIVE_REPRIEVE_ABILITIES; `distract` and
+# `sabotage` shrink an incoming hit but cannot stop one. And combat's always-available actions were
+# Attack / Use Item / Flee - no defend. So a telegraphed "answerable" hit would have been
+# unanswerable 40% of the time for half the roster and always for a Ninja, which is unavoidable
+# damage wearing a warning label.
+#
+# ⛑ DELIBERATELY WEAKER THAN THE CARDS, or it would dominate them the way Full Heal was
+# dominated at the healer. Brace costs the TURN, is free, lasts ONE round, and does not earn the
+# defensive reprieve (that is what spending a card buys). `iron_skin` is 60% for four rounds and
+# still strictly better.
+const BRACE_DAMAGE_REDUCTION := 40   # % of the incoming hit, this round only
+const BRACE_COMMANDS := ["brace", "ward", "slip", "defend", "guard", "block"]
+
+## One name per ARCHETYPE, owner 2026-09-19: *"it should probably have different name for
+## Warriors, mages, and tricksters."* A warrior plants and takes it, a mage raises a ward, a
+## trickster is simply not where the blow lands.
+const BRACE_NAME_BY_PATH := {
+	"warrior": "Brace",
+	"mage": "Ward",
+	"trickster": "Slip",
+}
+
+
+## What this character calls bracing. Falls back to the plain verb for any path without an entry,
+## so a new archetype cannot make the action nameless.
+static func brace_name_for(character) -> String:
+	if character == null:
+		return "Brace"
+	var path := String(character.get_class_path()) if character.has_method("get_class_path") else ""
+	return String(BRACE_NAME_BY_PATH.get(path, "Brace"))
+
+
+## The same name from a CLASS NAME alone, for the client - which is given `class` and has never
+## been sent `class_path`.
+##
+## ⚡ The first cut of the button read `character_data.class_path`, a key the server does not
+## send, so every class would have shown the warrior's word. It parses, it runs, and it is wrong
+## only in the text - exactly the "verify the function, not the ingredients" failure. The mapping
+## lives HERE, beside the names, rather than as a second table in the client.
+static func brace_name_for_class(class_type: String) -> String:
+	match class_type:
+		"Fighter", "Barbarian", "Paladin":
+			return String(BRACE_NAME_BY_PATH.get("warrior", "Brace"))
+		"Wizard", "Sorcerer", "Sage":
+			return String(BRACE_NAME_BY_PATH.get("mage", "Brace"))
+		"Grifter", "Ranger", "Ninja":
+			return String(BRACE_NAME_BY_PATH.get("trickster", "Brace"))
+	return "Brace"
 
 const DEVASTATE_WEIGHT_PER_MOMENTUM := 0.14
 

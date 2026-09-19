@@ -12519,11 +12519,11 @@ func update_action_bar():
 				first_ability,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				# 2026-09-05 — Outsmart's slot stays as an inert placeholder ON PURPOSE. The hand
-				# list from _get_combat_hand_actions is fixed to keys [R, 1, 2, 3, 4, 5], so the
-				# ability block has to begin at bar index 4 or every card shifts a key to the
-				# left. Removing Outsmart without this put the cards on R/1/2 instead of 1/2/3.
-				{"label": "—", "action_type": "none", "action_data": "", "enabled": false},
+				# 2026-09-19 — BRACE lives in what used to be Outsmart's inert placeholder. That
+				# slot was held open so the ability block still begins at bar index 4 and no card
+				# shifts a key to the left; it now holds something instead of a dash, at no cost
+				# to that invariant.
+				{"label": _brace_label(), "action_type": "combat", "action_data": "brace", "enabled": true},
 				attack_action,
 			]
 			# Add remaining abilities (skip first since it's on slot 1)
@@ -12534,11 +12534,11 @@ func update_action_bar():
 				attack_action,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				# 2026-09-05 — Outsmart's slot stays as an inert placeholder ON PURPOSE. The hand
-				# list from _get_combat_hand_actions is fixed to keys [R, 1, 2, 3, 4, 5], so the
-				# ability block has to begin at bar index 4 or every card shifts a key to the
-				# left. Removing Outsmart without this put the cards on R/1/2 instead of 1/2/3.
-				{"label": "—", "action_type": "none", "action_data": "", "enabled": false},
+				# 2026-09-19 — BRACE lives in what used to be Outsmart's inert placeholder. That
+				# slot was held open so the ability block still begins at bar index 4 and no card
+				# shifts a key to the left; it now holds something instead of a dash, at no cost
+				# to that invariant.
+				{"label": _brace_label(), "action_type": "combat", "action_data": "brace", "enabled": true},
 			]
 			# Add all ability slots
 			for i in range(min(6, ability_actions.size())):
@@ -14115,6 +14115,13 @@ const _NO_TRAVEL_COMMANDS := [
 	"defend", "guard", "block", "heal", "overload",
 	"bolt", "magic_bolt", "blast", "meteor",
 ]
+
+## What this character calls bracing. MIRRORS `CombatManager.BRACE_NAME_BY_PATH` rather than
+## keeping a second table - "one value, two places" is the shape behind most wrong-text bugs in
+## this project, so the client asks the shared script instead of holding its own copy.
+func _brace_label() -> String:
+	return String(CombatManagerScript.brace_name_for_class(String(character_data.get("class", ""))))
+
 
 func send_combat_command(command: String, target: String = ""):
 	if not connected:
