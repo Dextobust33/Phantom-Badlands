@@ -3881,13 +3881,57 @@ func _refresh_merchant_cache():
 	var total = _get_total_merchants()
 	for i in range(total):
 		var pos = _get_merchant_position(i, current_time)
-		# Skip merchants resting inside NPC posts (they're "inside" — not visible on road)
+		# ⛑ A RESTING MERCHANT PARKS OUTSIDE THE POST - it does not vanish.
+		#
+		# ⚡ THIS LINE IS WHY NOBODY HAS EVER MET ONE. Owner 2026-09-19: *"I didn't see any last
+		# time I was on the live server."* It used to `continue` here, dropping resting merchants
+		# from the cache entirely - so they did not draw, `is_merchant_at` was false and
+		# `get_merchant_at` returned nothing. A merchant was invisible AND unreachable for the
+		# whole time it sat at a post, which is exactly where players stand.
+		#
+		# Measured from the shipped constants (speed 0.25 t/s, rest 300s): a merchant spends
+		# 16-60% of its life at a post depending on road length, and the rest strung out along a
+		# road that is hundreds of tiles long. Standing at a post you saw one **0% of the time**,
+		# at any road length; walking a road it was 5-18%. The economy worked the whole time - the
+		# live log is full of merchants hauling stock - but the courier was a ghost.
+		#
+		# ⛑ PARKED ON THE ROAD, NOT ON THE POST. `_path_post_positions` is the post's CENTRE,
+		# which is where its station art sits, so putting the wagon there would paint over the
+		# building. It goes on the first road tile outside instead - visible, interactable, and
+		# it reads as a wagon pulled up at the edge of town rather than parked indoors.
 		if pos.get("is_resting", false) and pos.get("at_post", "") != "":
+			var parked: Vector2i = _merchant_park_tile(i, pos)
+			var pkey := "%d,%d" % [parked.x, parked.y]
+			if not _merchant_cache.has(pkey):
+				_merchant_cache[pkey] = []
+			_merchant_cache[pkey].append(i)
 			continue
 		var key = "%d,%d" % [pos.x, pos.y]
 		if not _merchant_cache.has(key):
 			_merchant_cache[key] = []
 		_merchant_cache[key].append(i)
+
+## Where a merchant resting at a post is DRAWN: the first road tile outside it.
+##
+## Keeps `_get_merchant_position` returning the post's own coordinates, because
+## `_check_merchant_arrivals` keys its once-per-visit stock handling off `at_post` and must not
+## be disturbed by a display concern. This is purely where the wagon is painted.
+func _merchant_park_tile(merchant_idx: int, pos: Dictionary) -> Vector2i:
+	var home := Vector2i(int(pos.get("x", 0)), int(pos.get("y", 0)))
+	var route_waypoints: Array = _merchant_route_waypoints.get(merchant_idx, [])
+	var seg_idx: int = int(pos.get("segment_idx", 0))
+	if seg_idx < 0 or seg_idx >= route_waypoints.size():
+		return home
+	var waypoints: Array = route_waypoints[seg_idx]
+	# The first waypoint that is not the post tile itself. Walking the list rather than taking
+	# index 1 blind, because a segment may start ON the post or a tile away depending on how the
+	# road was stamped, and guessing would put the wagon back on top of the building half the time.
+	for wp in waypoints:
+		var t := Vector2i(int(wp.x), int(wp.y))
+		if t != home:
+			return t
+	return home
+
 
 func update_merchants(_delta: float = 0.0):
 	"""Lightweight update - just refresh cache periodically"""
