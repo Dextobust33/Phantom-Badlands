@@ -7667,7 +7667,22 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
           blocks it.
         * **E presentation** (zoom, sprites, void instead of wall tiles, wider room spacing)
           — **DONE, shipped v0.9.760-767.** See the ticked entry above.
-        * **A 2-4** (theme roll/stamp/display, themed egg, Sigil consumable) — nothing blocks it.
+        * **A 2-4** (theme roll/stamp/display, themed egg, Catalyst consumable) — ⚠ **BLOCKED, and
+          this line said "nothing blocks it" until 2026-09-19, which was wrong.**
+          `docs/design/dungeon_themes.md` carries an explicit owner gate from 2026-08-25:
+          *"there are more things we need to discuss regarding dungeons before you go off building
+          a bunch of things. This is supposed to be a dungeon revamp so it will require planning
+          and discussion."* → **"After shipping slices 0+1, DO NOT proceed to slice 2 or beyond.
+          Open a broader dungeon-revamp planning discussion first."**
+          **Slices 0 and 1 ARE shipped** (verified 2026-09-19, not assumed):
+          `monster_database.reapply_variant` exists at :1878 with eight callers (it was a live
+          crash when the doc was written), and monsters carry `appearance_color` / `color2` /
+          `pattern` since v0.9.718. So the authorised work is done and the rest is waiting on a
+          CONVERSATION, not on code.
+          **What the discussion owes an answer to**, from the doc: structure, floors, pacing,
+          bosses, rewards, entry/warning UX, and what "revamp" means beyond themes. Also settle
+          the naming collision the doc flags - the modifier is "Catalyst", which already names
+          something in the fusion system ("Ascension Catalyst").
         * **B loot/discovery** (signature drops, Dungeon Atlas) — waits on the dungeon card pass,
           and the Atlas has grown into the realm meta-loop (Phase 6).
         * **F party in dungeons** (the declared north star, most architectural) — waits on the
