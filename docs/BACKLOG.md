@@ -362,6 +362,29 @@ Asked because the arc had run out of defects and into design. All four answered.
       ▶ **SLICE 3 — travel rules and the Muster Sigil**, once slice 2 shows how far apart people
       actually end up.
 
+      ▶ **SLICE 4 — DUNGEONS FOLLOW THE OVERWORLD. Owner direction 2026-09-19:** *"Regarding
+      dungeons we will want dungeon party combat to be like on the overworld. We will have to
+      ensure that parties can actually enter the same dungeon and see each other in them and
+      everything."*
+      ⚡ **THIS SUPERSEDES MY SCOPING CALL IN SLICE 1.** I deliberately left the dungeon
+      formation alone with the note *"a corridor is not a country"* - that was my judgement, not a
+      decision, and the owner's direction replaces it. The dungeon movement lock and
+      `_move_party_followers_dungeon` are what slice 4 removes.
+      **Verify before building - the entry half is already there:** `handle_dungeon_enter` has an
+      `if _is_party_leader(peer_id)` branch that validates every member, enters the leader and
+      places each follower on an adjacent tile in the SAME `instance.active_players`, and
+      `_try_start_dungeon_coop` already runs shared party combat underground. So "enter the same
+      dungeon" is built; the open parts are:
+        1. **independent movement inside** - drop the dungeon `_party_follower_denied` and the
+           snake, as slice 1 did above ground;
+        2. **seeing each other** - whether the dungeon floor renderer draws other party members
+           at all. Check this FIRST: it is the half the owner named and the only one that is not
+           obviously a deletion;
+        3. **the proximity pull underground** - `_try_start_dungeon_coop` is gated differently
+           from the overworld pull, so it needs the same "any member, within a radius" treatment;
+        4. **a non-leader entering** - the entry branch is gated on `_is_party_leader`, which has
+           the same shape as the overworld pull's old gate.
+
       <!-- audited: 2026-09-19 --> Verified still open: this is the MODEL, and the mechanics under
       it are the separate "HALF TWO" item below. Neither is built; the shipped part it mentions is
       half one (dungeon party combat).

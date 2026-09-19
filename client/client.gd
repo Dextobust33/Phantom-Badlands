@@ -3239,6 +3239,38 @@ func _ready():
 			_tool_spares_suffix_off = false
 			print("[UIMEASURE] tools_panel with_spares=%d without=%d wrapped=%s" % [
 				int(_with), int(_without), str(_with > _without + 1.0)])
+		# ⚑ THE VICTORY-SCREEN FLASH. Owner 2026-09-19: *"when completing combat and
+		# transitioning from the Victory screen back to the map there is a flash of when the
+		# windows have to realign or be redrawn... Ideally the player would close the victory
+		# screen and already see their map and overlays sized correctly."*
+		#
+		# A one-frame layout transient is exactly the thing reasoning gets wrong, and this file
+		# already records three instruments that were wrong about this same column. So the
+		# question is asked directly: does hiding `game_output` and showing the combat panel
+		# change what the MAP is given, and how many frames does it take to settle coming back?
+		if map_display != null and game_output != null:
+			var _f0 := Vector2(map_display.size)
+			var _fs0: int = map_display.get_theme_font_size("normal_font_size")
+			print("[UIMEASURE] transition map_before=%dx%d font=%d" % [int(_f0.x), int(_f0.y), _fs0])
+			# Into "combat": the panel takes the centre, game_output stands down.
+			game_output.visible = false
+			await get_tree().process_frame
+			await get_tree().process_frame
+			print("[UIMEASURE] transition map_in_combat=%dx%d font=%d" % [
+				int(map_display.size.x), int(map_display.size.y),
+				map_display.get_theme_font_size("normal_font_size")])
+			# ...and back out, the way acknowledge_continue does it.
+			game_output.visible = true
+			var _settle := -1
+			for _fi in range(6):
+				await get_tree().process_frame
+				if int(map_display.size.y) == int(_f0.y) and _settle < 0:
+					_settle = _fi
+				print("[UIMEASURE] transition frame%d map=%dx%d font=%d" % [
+					_fi, int(map_display.size.x), int(map_display.size.y),
+					map_display.get_theme_font_size("normal_font_size")])
+			print("[UIMEASURE] transition settled_after_frames=%d (map column changes=%s)" % [
+				_settle, str(int(_f0.y) != int(map_display.size.y) or _settle > 0)])
 		get_tree().quit()
 		return
 	# 2026-09-05 — enforce vsync HERE rather than in project.godot.
