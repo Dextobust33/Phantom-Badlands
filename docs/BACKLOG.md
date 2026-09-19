@@ -974,6 +974,34 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ THE REST OF THE CARD NUMBERS — v0.9.809 (2026-09-18)
+
+Owner named Frost Nova and Forcefield and added *"some of the other card numbers aren't matching
+either."* Sweeping the remaining faces against the casts found two more, both the same shape.
+
+- **Arcane Surge** — face said `+20 + INT/5 % "spd"`; the cast grants `40 + INT/4` percent **spell
+  damage** and a 25% double-cast. Half the number, and a stat the ability stopped granting when it
+  was renamed. The hover description was already right.
+- **Assassinate vs the Read gauge** — *"Gauge says Assassinate ~50/5% and card face says ~49 4%
+  kill."* **Neither was wrong.** Assassinate is variable-cost (ceiling 34, 44% of the pool), so the
+  face quotes what THIS cast commits — the rule the owner set on Magic Bolt — while the meter note
+  is built server-side with no client to ask and quotes a full spend. The meter re-formats its
+  numbers against the planned spend and keeps the server's wording, because only the Ninja's
+  finisher is a roll and a client copy of that distinction is what drifted last time.
+
+**The headline number is structurally safe**: `_estimate_ability_card_effect` prefers the server's
+`preview_ability_effect`, `_ability_card_estimate` parses it back for the description (and now
+understands `Shield N` as well as damage and healing), and `tools/probe/preview_drift.gd` checks
+that source against real casts.
+
+**▶ FILED, not guessed at: the SECONDARY figures have no shared source by construction.** A buff
+card's stun chance, per-round bleed, and durations are a local formula in `client.gd` sitting beside
+the real one in `combat_manager`, because `preview_ability_effect` returns ONE headline number. That
+is what let Arcane Surge drift. The fix is to widen the server preview to carry a card's secondary
+figures; a first attempt at a *diffing tool* was written and thrown away because it reported 11 of
+14 abilities and was mostly comment prose and BBCode colours — CLAUDE.md's own note on the
+adjacent-tile advisory says what that costs.
+
 ### ✅ THE FOURTH DEAD LINK — v0.9.808 (2026-09-18)
 
 Owner: *"Hovering the underlined text in death log still doesn't work."*
