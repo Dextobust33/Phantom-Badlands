@@ -7733,6 +7733,13 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
          may need looked at as well, there's no real reason to do anything other than a quick heal
          for reviving companions."* So the expensive options are dominated - measure what each
          costs and gives before redesigning, because "dominated" is a claim about the numbers.
+         ✅ **MEASURED 2026-09-18 and the owner is right: Full Heal costs 1.02x the same healing
+         bought as Quick Heals, at EVERY level.** It is not close, and it is not level-dependent -
+         the expensive option is strictly dominated by spamming the cheap one, so there is no
+         decision at the healer at all. `tools/probe/healer_options_are_a_choice.gd` FAILS on this
+         today. **The fix is not designed** - this is the only post-service part left, the
+         measurement is already done, and it does not depend on anything else. Cheapest real work
+         on the list.
       2. **Wandering blacksmiths and healers** - *"we may want to add in wandering blacksmiths and
          healers when we do the living world arc."* Filed against that arc rather than here.
       3. **Merchants move too slowly and are empty when you meet them — MEASURED 2026-09-18, and
@@ -7774,6 +7781,19 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
          right number - **it wants a live check.**
          Probe: `tools/probe/road_merchant_stock.gd`, which asserts the ratio rather than the
          constant, so a future route change that lengthens legs still reads correctly.
+
+         ⚡ **THE LIVE CHECK HAPPENED 2026-09-19, AND FOUND A THIRD FAULT THIS MISSED.** Owner:
+         *"I didn't see any last time I was on the live server."* Neither speed nor stock was the
+         binding problem - `_refresh_merchant_cache` dropped any merchant RESTING AT A POST with a
+         bare `continue`, so it did not draw, `is_merchant_at` was false and `get_merchant_at`
+         returned nothing. Standing at a post you met one **0% of the time**, at any road length;
+         walking a road, 5-18%. The economy worked throughout (the live log is full of couriers
+         hauling stock) - the courier was simply a ghost wherever players actually stand.
+         Now parked on the first road tile OUTSIDE the post, off the station art. Probe
+         `merchant_is_findable.gd`, proven to fire. **Server-side - needs a deploy to reach live.**
+         The lesson worth keeping: two fixes were measured and shipped for a complaint whose cause
+         was neither of them, because nobody checked that the thing was VISIBLE before tuning how
+         fast it moved and what it carried.
          ⛑ Still open and NOT addressed here: the POST side - see *"Merchant / market-house
          balancing"* (Sun Keep's market near-empty). This fix gives couriers a floor; it does not
          tell us whether post markets have a supply problem of their own.
