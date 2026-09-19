@@ -34792,7 +34792,12 @@ func display_changelog():
 	# mean the art was never reaching the build at all.
 	# v0.9.807 - the menu-placement sweep: every screen that waits for an answer now claims the
 	# canvas, and a long tutorial hint can no longer push its own button off the screen.
-	display_game("[color=#00FF00]v0.9.807[/color] [color=#808080](Current)[/color]")
+	# v0.9.808 - the fourth label in this codebase to render links nothing was listening for.
+	display_game("[color=#00FF00]v0.9.808[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: underlined text in the side column did nothing.[/color] The death screen's hoverable entries were underlined and dead - and so was every other [b]page[/b] shown in the right-hand column, because they all draw into one pinned label that was built without the hover and click signals connected. A link underlines itself whether or not anything is listening, so this looks identical to a working one until you put the mouse on it. That is the [b]fourth[/b] time in this codebase: the party combat log's damage numbers, the dungeon key's tiles, click-to-inspect on the map, and now this. All three column labels are wired, and a check now lists every label built for rich text and whether anything listens to it.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.807[/color]")
 	display_game("  [color=#FF4444]★ FIXED: menus that opened where you could not see them.[/color] Using a [b]Scroll of Finding[/b] printed its list of choices onto the map panel and the very next map redraw painted over it - there was nothing to click and nothing to read. The cause is that a screen has to [b]claim[/b] the canvas before printing, and which screen you came from decided whether it did. Swept the whole file rather than the one scroll: of [b]74[/b] screens that wait for an answer, [b]50[/b] already claimed it, 24 are drawn by one that does, and the rest did not. All of them do now - the merchant shop, the upgrade list, unequip, item details, the tutorial steps and both scrolls - and `tools/prompt_surface_audit.py` fails if a new one appears.")
 	display_game("  [color=#FF4444]★ FIXED: the Companions hint ran off both ends of the screen.[/color] The teaching panel was exactly as tall as its text with no ceiling, and it is centred - so a long hint lost its title off the top and its [b]Got it[/b] button off the bottom, with nothing to scroll. Every previous round of this shortened the text; the text grows again. The panel has a ceiling now and its body scrolls, so a hint of [b]any[/b] length fits, and a short one is still a small box. Checked by building it with a hint four times longer than anything the game sends.")
 	display_game("")
@@ -41058,6 +41063,13 @@ func _ensure_side_prompt_label() -> void:
 	_ow_side_prompt.scroll_active = false
 	_ow_side_prompt.selection_enabled = true
 	_ow_side_prompt.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	# The third label in this column, wired like the other two. It carries plain prompts today;
+	# the point is that the COLUMN behaves one way, so a link added to a prompt later works
+	# instead of being underlined and dead - which is the whole of the fault above.
+	_ow_side_prompt.mouse_filter = Control.MOUSE_FILTER_PASS
+	_ow_side_prompt.meta_hover_started.connect(_on_log_meta_hover)
+	_ow_side_prompt.meta_hover_ended.connect(_on_log_meta_unhover)
+	_ow_side_prompt.meta_clicked.connect(_on_map_meta_clicked)
 	_ow_side_prompt.add_theme_font_size_override("normal_font_size",
 		map_display.get_theme_font_size("normal_font_size"))
 	var f: Font = map_display.get_theme_font("normal_font")
@@ -41152,6 +41164,19 @@ func _ensure_side_place_label() -> void:
 	var f: Font = map_display.get_theme_font("normal_font")
 	if f != null:
 		_ow_side_place.add_theme_font_override("normal_font", f)
+	# ⚡ A LINK IS ONLY AS GOOD AS THE LABEL IT IS ON. Owner 2026-09-18: *"Hovering the
+	# underlined text in death log still doesn't work."*
+	#
+	# ⛑ IT NEVER COULD. This label was built without the meta signals, so every `[url=...]` it
+	# renders is underlined and dead - and this is the label every PAGE in the side column is
+	# drawn into, so it is not the death screen, it is all of them. `game_output`, `map_display`
+	# and the dungeon key each carry these three connections, and the note beside `map_display`'s
+	# says exactly this about the dungeon key's hoverable tiles. A fourth label appeared and did
+	# not get them.
+	_ow_side_place.mouse_filter = Control.MOUSE_FILTER_PASS
+	_ow_side_place.meta_hover_started.connect(_on_log_meta_hover)
+	_ow_side_place.meta_hover_ended.connect(_on_log_meta_unhover)
+	_ow_side_place.meta_clicked.connect(_on_map_meta_clicked)
 	col.add_child(_ow_side_place)
 	col.move_child(_ow_side_place, map_display.get_index())
 

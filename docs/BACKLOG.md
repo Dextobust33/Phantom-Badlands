@@ -974,6 +974,25 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ THE FOURTH DEAD LINK — v0.9.808 (2026-09-18)
+
+Owner: *"Hovering the underlined text in death log still doesn't work."*
+
+**It never could, and it was not the death log.** `_ow_side_place` is the pinned label every PAGE
+in the side column is drawn into — the death screen among them — and it was built without
+`meta_hover_started`, `meta_hover_ended` or `meta_clicked`. A `[url=...]` underlines itself whether
+or not anything listens, so an unwired label is visually identical to a working one.
+
+**That is the fourth time**, and the previous three are all recorded in `client.gd`'s own comments:
+the battle panel's damage numbers (*"the damage in the party combat log still isn't hoverable"*),
+the dungeon key's tiles (underlined and dead for a week), and `map_display.meta_clicked`, which was
+never connected so click-to-inspect died with the sprite overlay while hovering kept working.
+
+All three column labels are wired now. `tools/probe/every_link_label_is_wired.gd` asserts the six
+named surfaces and then lists every `RichTextLabel` the client builds with bbcode and whether
+anything listens to it — 14 built, 10 silent, which is the list to check the next time a player
+says an underline does nothing.
+
 ### ✅ MENU PLACEMENT SWEEP — v0.9.807 (2026-09-18)
 
 Owner, after a Scroll of Finding printed its choices where they were immediately painted over:
