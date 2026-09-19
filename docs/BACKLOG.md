@@ -9242,7 +9242,27 @@ something was dropped, and it sat unnoticed for eleven days.
       each output against what a dungeon of the same level DROPS. Fault 3 is a claim about
       relative value and cannot be judged without both numbers. Same rule as the equipment
       reference: walk the acquisition paths, do not enumerate the pools.
-- [ ] **SANCTUARY UPGRADES ARE PRICED OUT OF REACH, AND THE LADDER IS DULL.** <!-- audited: 2026-09-19 --> Verified still open: `HOUSE_UPGRADES` in persistence_manager.gd still carries the original
+- [x] **SANCTUARY UPGRADES ARE PRICED OUT OF REACH — FIXED 2026-09-19.** Owner: *"most of the
+      choices take too many baddie points... still not having enough for upgrades."* Measured on
+      live, and worse than it reads: a **median real death earned 4 points** against a cheapest rung
+      of 250 (62 deaths). Across **13 live sanctuaries, NINE had never earned a single point and
+      NOT ONE had ever reached 5,000 lifetime.** The full ladder totalled **3,127,900** points -
+      781,975 deaths to buy.
+      **The shape was wrong too:** points came almost entirely from level milestones (50 at L10,
+      150 at L25) while **40 of 50 real deaths happen at levels 1-9** and clear none of them. The
+      counterweight to permadeath paid nothing to the players feeling permadeath most.
+      **Two changes, both modelled on the 50 real deaths rather than chosen by feel:**
+      * **Earn** - a flat `BADDIE_POINTS_PER_DEATH := 50` plus doubled XP/kill rates. A level-2
+        death goes from ~0 to **50**; the median from 4 to **60**.
+      * **Costs** - all 23 tracks repriced by RULE: a first rung is 4-10 deaths, each rung is 35%
+        dearer than the last, and a track's premium is preserved but compressed (house_size costs
+        ~2x the cheapest where it used to cost 20x). Ladder **3,127,900 -> 189,820**.
+      ⚡ **Raising the earn alone was NOT enough, and I only found that by probing.** My first
+      model costed six tracks; there are twenty-three. The owner picked "raise the earn, keep the
+      costs" on that incomplete basis, and the probe failed 19 of 23 tracks straight after - which
+      is what prompted the reprice. Probe: `the_sanctuary_is_reachable.gd`.
+      **Still open, separately:** *"we need more interesting upgrades possibly branching ones."*
+      This made the existing ladder reachable; it did not make it interesting. <!-- audited: 2026-09-19 --> Verified still open: `HOUSE_UPGRADES` in persistence_manager.gd still carries the original
       ladder untouched - house_size 5000/15000/50000, companion_slots up to 80000. Nothing has been
       repriced and no branching upgrades exist. Owner direction
       2026-09-18:** *"Sanctuary upgrades via baddie points need revamped. Don't like the current

@@ -39,40 +39,56 @@ const MAX_PASSWORD_LENGTH = 128
 
 # House upgrade definitions - cost in Baddie Points per level
 const HOUSE_UPGRADES = {
-	"house_size": {"effect": 1, "max": 3, "costs": [5000, 15000, 50000]},  # Expands the house layout
-	"storage_slots": {"effect": 10, "max": 8, "costs": [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]},
-	"companion_slots": {"effect": 1, "max": 8, "costs": [2000, 5000, 10000, 15000, 25000, 40000, 60000, 80000]},
-	"egg_slots": {"effect": 1, "max": 9, "costs": [500, 1000, 2000, 4000, 7000, 12000, 20000, 35000, 60000]},
-	"flee_chance": {"effect": 2, "max": 5, "costs": [1000, 2500, 5000, 10000, 20000]},
-	"starting_valor": {"effect": 50, "max": 10, "costs": [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 6500, 8000]},
-	"xp_bonus": {"effect": 1, "max": 10, "costs": [1500, 3000, 5000, 8000, 12000, 18000, 28000, 45000, 70000, 100000]},
-	"gathering_bonus": {"effect": 5, "max": 4, "costs": [800, 2000, 5000, 12000]},
-	"kennel_capacity": {"effect": 0, "max": 9, "costs": [1000, 3000, 6000, 12000, 20000, 35000, 50000, 70000, 100000]},
+	# ⚡ REPRICED 2026-09-19 AGAINST THE LIVE SERVER. Owner: *"most of the choices take too many
+	# baddie points, players are playing lots of characters and still not having enough for
+	# upgrades."* Measured, and far worse than that reads:
+	#
+	#   a MEDIAN real death earned 4 points; the cheapest rung cost 250 (62 deaths)
+	#   13 live sanctuaries: NINE had never earned a point, NOT ONE had reached 5,000 lifetime
+	#   the full ladder totalled 3,127,900 points - 781,975 deaths to buy
+	#
+	# ⛑ RAISING THE EARN RATE WAS NOT ENOUGH, and finding that out is why this table moved. The
+	# first model covered six tracks; there are TWENTY-THREE. Even at the new ~60 points a death,
+	# unlocking one rung of each still cost 560 deaths and the top was untouchable.
+	#
+	# ⛑ PRICED BY RULE, NOT BY TASTE - a first rung is ~4-9 deaths, each rung costs 35% more
+	# than the last, and a track's PREMIUM is preserved but compressed (house_size and post_slots
+	# still cost about twice the cheapest track, where they used to cost twenty times). Ladder
+	# total 3,127,900 -> 189,820. `tools/probe/the_sanctuary_is_reachable.gd` asserts the bands.
+	"house_size": {"effect": 1, "max": 3, "costs": [510, 690, 940]},  # Expands the house layout
+	"storage_slots": {"effect": 10, "max": 8, "costs": [250, 340, 460, 630, 840, 1140, 1540, 2080]},
+	"companion_slots": {"effect": 1, "max": 8, "costs": [340, 460, 620, 840, 1130, 1530, 2060, 2790]},
+	"egg_slots": {"effect": 1, "max": 9, "costs": [250, 340, 460, 630, 840, 1140, 1540, 2080, 2810]},
+	"flee_chance": {"effect": 2, "max": 5, "costs": [280, 380, 520, 700, 940]},
+	"starting_valor": {"effect": 50, "max": 10, "costs": [240, 320, 440, 590, 800, 1080, 1450, 1960, 2650, 3570]},
+	"xp_bonus": {"effect": 1, "max": 10, "costs": [310, 420, 570, 770, 1040, 1400, 1890, 2550, 3440, 4650]},
+	"gathering_bonus": {"effect": 5, "max": 4, "costs": [270, 370, 500, 670]},
+	"kennel_capacity": {"effect": 0, "max": 9, "costs": [280, 380, 520, 700, 940, 1270, 1710, 2310, 3120]},
 	# Combat bonuses (percentages)
-	"hp_bonus": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},  # +5% max HP per level
-	"resource_max": {"effect": 5, "max": 5, "costs": [2000, 5000, 12000, 30000, 75000]},  # +5% max resource per level
-	"resource_regen": {"effect": 5, "max": 5, "costs": [3000, 8000, 20000, 50000, 120000]},  # +5% resource regen per level
+	"hp_bonus": {"effect": 5, "max": 5, "costs": [340, 460, 620, 840, 1130]},  # +5% max HP per level
+	"resource_max": {"effect": 5, "max": 5, "costs": [340, 460, 620, 840, 1130]},  # +5% max resource per level
+	"resource_regen": {"effect": 5, "max": 5, "costs": [400, 540, 730, 980, 1320]},  # +5% resource regen per level
 	# Stat bonuses (+1 per level, exponential costs)
-	"str_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-	"con_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-	"dex_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-	"int_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-	"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-	"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-	"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]},
+	"str_bonus": {"effect": 1, "max": 10, "costs": [280, 380, 520, 700, 940, 1270, 1710, 2310, 3120, 4220]},
+	"con_bonus": {"effect": 1, "max": 10, "costs": [280, 380, 520, 700, 940, 1270, 1710, 2310, 3120, 4220]},
+	"dex_bonus": {"effect": 1, "max": 10, "costs": [280, 380, 520, 700, 940, 1270, 1710, 2310, 3120, 4220]},
+	"int_bonus": {"effect": 1, "max": 10, "costs": [280, 380, 520, 700, 940, 1270, 1710, 2310, 3120, 4220]},
+	"wis_bonus": {"effect": 1, "max": 10, "costs": [280, 380, 520, 700, 940, 1270, 1710, 2310, 3120, 4220]},
+	"wits_bonus": {"effect": 1, "max": 10, "costs": [280, 380, 520, 700, 940, 1270, 1710, 2310, 3120, 4220]},
+	"post_slots": {"effect": 1, "max": 5, "costs": [510, 690, 940, 1260, 1710]},
 	# Audit #13 Slice 1 / Audit #4 Sanctuary tier — Companion Sanctum.
 	# Each level grants +1 free Home Stone (Companion) in every new
 	# character's starting inventory. Lets veteran accounts bootstrap new
 	# characters past the early-registration pain point without spending
 	# Valor on the NPC vendor (#4 Slice 1). Costs scaled to early-mid
 	# Sanctuary tier so 1-2 levels are reachable in the first few deaths.
-	"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]},
+	"companion_sanctum": {"effect": 1, "max": 5, "costs": [250, 340, 460, 630, 840]},
 	# Audit #13 Slice 2 — Bestiary. Account-level monster kill ledger.
 	# Level 1: names + kill counts; Level 2: + highest level killed; Level 3:
 	# + first-kill / last-kill timestamps. Always tracks (kills always recorded)
 	# but the UI is gated on upgrade level so unlocking reveals incrementally
 	# more info about your account's hunting history.
-	"bestiary": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]},
+	"bestiary": {"effect": 1, "max": 3, "costs": [270, 370, 500]},
 	# Audit #13 Slice 3 — Compass. Account-level exploration aid. Points the
 	# player at the nearest NPC post they have NOT yet visited (per-account
 	# ledger keyed on post name). Tiers reveal progressively more info:
@@ -80,12 +96,12 @@ const HOUSE_UPGRADES = {
 	#   L2: + distance in tiles
 	#   L3: + post name
 	# Visits are always recorded so unlocking later still uses the full history.
-	"compass": {"effect": 1, "max": 3, "costs": [1000, 4000, 15000]},
+	"compass": {"effect": 1, "max": 3, "costs": [280, 380, 520]},
 	# Audit #13 Slice 4 — Region Atlas. Account-level region ledger.
 	# Level 1: count of regions visited; Level 2: + sorted list of region names;
 	# Level 3: + completion ratio (visited / total regions in the world).
 	# Always tracks (visits always recorded) but the UI is gated on upgrade level.
-	"region_atlas": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]}
+	"region_atlas": {"effect": 1, "max": 3, "costs": [270, 370, 500]}
 }
 
 # Kennel capacity by upgrade level: 0=30, 1=50, ... 9=500
@@ -2163,18 +2179,44 @@ func get_house_bonuses(account_id: String) -> Dictionary:
 
 	return bonuses
 
+## What a character's death is worth before anything it achieved is counted.
+##
+## ⛑ THE FLAT TERM IS THE WHOLE POINT. A character that dies at level 3 achieved nothing the
+## old formula could see, and that is exactly the death the live server is full of. Paying for the
+## ATTEMPT is what makes the sanctuary a counterweight to permadeath rather than a reward for
+## already having done well.
+const BADDIE_POINTS_PER_DEATH := 50
+
+
 func calculate_baddie_points(character: Character) -> int:
 	"""Calculate baddie points earned from a character on death"""
-	var points = 0
+	# ⚡ MEASURED AGAINST THE LIVE SERVER 2026-09-19, because the old numbers were unreachable.
+	# Owner: *"most of the choices take too many baddie points, players are playing lots of
+	# characters and still not having enough for upgrades."* Understated, as it turned out:
+	#
+	#   a MEDIAN real death earned 4 points. The cheapest upgrade costs 250.
+	#   -> 62 deaths for the smallest thing on the menu, 1,250 for a house expansion.
+	#   Across 13 live sanctuaries, NINE had never earned a single point and NOT ONE had ever
+	#   reached 5,000 lifetime. The best player in the game had 3,172.
+	#
+	# ⛑ AND THE SHAPE WAS WRONG, NOT JUST THE SCALE. Points came overwhelmingly from level
+	# milestones (50 at L10, 150 at L25) while **40 of 50 real deaths happen at levels 1-9**, which
+	# clear no milestone at all. So the counterweight to permadeath paid nothing to the players
+	# feeling permadeath most. Owner's call: *"pay for the attempt, not the milestone."*
+	#
+	# Modelled on the 50 real current-era deaths, not chosen by feel: flat 50 with doubled rates
+	# gives a median of 60 and an L1-9 median of 62, which puts the first rungs at 4-8 deaths and a
+	# companion slot at 33.
+	var points = BADDIE_POINTS_PER_DEATH
 
-	# XP contribution: 1 BP per 100 XP
-	points += int(character.experience / 100)
+	# XP contribution: 1 BP per 50 XP
+	points += int(character.experience / 50)
 
 	# Monster Gem contribution: 5 BP per gem
 	points += character.crafting_materials.get("monster_gem", 0) * 5
 
-	# Kill contribution: 1 BP per 10 kills
-	points += int(character.monsters_killed / 10)
+	# Kill contribution: 1 BP per 5 kills
+	points += int(character.monsters_killed / 5)
 
 	# Quest contribution: 10 BP per completed quest
 	points += character.completed_quests.size() * 10
