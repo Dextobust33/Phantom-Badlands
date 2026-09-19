@@ -34889,7 +34889,12 @@ func display_changelog():
 	# v0.9.812 - clicking a Locked recipe actually opens it, and the two ways to get one made say
 	# which is which.
 	# v0.9.813 - the two routes are named for what they do, and a new crafter can reach one.
-	display_game("[color=#00FF00]v0.9.813[/color] [color=#808080](Current)[/color]")
+	# v0.9.814 - an egg hatching survives the step it hatched on.
+	display_game("[color=#00FF00]v0.9.814[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: a hatching companion left you a Continue button and nothing to read.[/color] The celebration printed, claimed the screen, and was erased before you could see it — by your own footstep. The right-hand column holds two different things: the [b]post you are standing in[/b], which is rewritten every step and correctly disappears when you walk away, and an [b]event[/b] like a hatch, which happened once and is waiting for you to acknowledge it. They were being treated the same, and an egg hatches [i]as you walk[/i], so the step that hatched it wiped it. Anything waiting on a [b]Continue[/b] is now left alone until you press it.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.813[/color]")
 	display_game("  [color=#FF8000]★ THE TWO WAYS TO GET SOMETHING MADE NOW SAY WHICH IS WHICH.[/color] Both were called [i]commission[/i], and they are not the same thing at all. [color=#C8A24A]Hire a Blacksmith — 140 Valor[/color] needs the [b]skill[/b] and only ever applies to ★ specialist work: it lends you a [b]focus[/b] you did not commit to, never a skill, which is what keeps levelling an uncommitted trade worth doing. [color=#C8A24A]Ask a Player to Make This[/color] needs [b]nothing[/b] — any recipe, any level, including a grey Locked one far above you. That second one is listed [b]first[/b] now, because it is the one that answers \"I am level 1 and I want a stone wall\", and a Locked row in the list even says [color=#808080]· ask a player[/color] so you can see it without clicking.")
 	display_game("  [color=#FF8000]★ A NEW CRAFTER CAN ACTUALLY USE IT NOW.[/color] Of 109 specialist recipes, only [b]two[/b] sat at skill 1-10 — so the whole hire-a-tradesman route was unreachable for roughly the first fifteen levels of a trade, which is exactly when you wonder how to get something made. Every trade now has one at skill 2-3: [b]Self Repair[/b], [b]Transmute Ore Up[/b], [b]Disenchant Item[/b], [b]Craft Fine Parchment[/b] and [b]Wooden Door[/b]. All utilities and materials — nothing that makes anyone stronger, just services that exist early enough to meet.")
 	display_game("")
