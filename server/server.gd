@@ -36992,7 +36992,7 @@ func _complete_dungeon(peer_id: int):
 		_grant_missing_starter_kit(peer_id, character)
 
 	var boss_egg_monster = rewards.get("boss_egg", "")
-	var _lead_egg := _grant_boss_egg(peer_id, character, String(boss_egg_monster), inst_sub_tier, _current_dungeon_tier(character))
+	var _lead_egg := _grant_boss_egg(peer_id, character, String(boss_egg_monster), inst_sub_tier, _current_dungeon_tier(character), instance_id)
 	var boss_egg_given: bool = bool(_lead_egg.get("given", false))
 	var boss_egg_name: String = String(_lead_egg.get("name", ""))
 	var boss_egg_lost_to_full: bool = bool(_lead_egg.get("lost", false))
@@ -37212,7 +37212,7 @@ func _complete_dungeon(peer_id: int):
 			var f_xp_result = follower.add_experience(f_rewards.xp)
 
 			# Boss egg for each member
-			var _fol_egg := _grant_boss_egg(pid, follower, String(boss_egg_monster), inst_sub_tier, _current_dungeon_tier(follower))
+			var _fol_egg := _grant_boss_egg(pid, follower, String(boss_egg_monster), inst_sub_tier, _current_dungeon_tier(follower), instance_id)
 			var f_egg_given: bool = bool(_fol_egg.get("given", false))
 			var f_egg_name: String = String(_fol_egg.get("name", ""))
 			var f_egg_lost: bool = bool(_fol_egg.get("lost", false))
@@ -48165,7 +48165,7 @@ const BOSS_EGG_RANK9_CHANCE := 0.15
 
 
 func _grant_boss_egg(pid: int, ch, boss_egg_monster: String, inst_sub_tier: int,
-		dungeon_tier: int = 0) -> Dictionary:
+		dungeon_tier: int = 0, instance_id: String = "") -> Dictionary:
 	"""The guaranteed boss egg for ONE person who cleared the dungeon. Returns {given, lost, name}.
 
 	⛑ ONE definition, because there are two callers - the leader and each follower - and they
@@ -48181,7 +48181,30 @@ func _grant_boss_egg(pid: int, ch, boss_egg_monster: String, inst_sub_tier: int,
 		return out
 	# Graded by the DUNGEON - see get_egg_for_monster. An F-grade instance leaves an F-grade egg
 	# however grand its species is.
-	var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _boss_egg_rank(inst_sub_tier), dungeon_tier)
+	# ⛑ SLICE 3 - THE DUNGEON TELEGRAPHS ITS PRIZE. Owner's original brainstorm: *"the theme
+	# carries to the egg/companion you get there, so you know what you're hunting."* A modified
+	# dungeon's monsters all share its colour (slice 2); the egg its boss leaves now wears it too,
+	# and so does the companion that hatches - `get_egg_for_monster` passes the variant straight
+	# through to the hatched creature.
+	#
+	# ⛑ NO `rarity` KEY ON PURPOSE. `get_egg_for_monster` reads `variant.rarity` to scale HATCH
+	# TIME (rarity 1 takes 2.5x as long as rarity 15). Handing it the dungeon's look with an
+	# invented rarity would turn a cosmetic feature into a change in how long eggs take, which is
+	# not what "the egg matches the dungeon" is supposed to mean, and is the kind of side effect
+	# nobody connects back to its cause weeks later. Absent, it defaults to 10 and hatch time is
+	# exactly what it was. `the_egg_matches_its_dungeon.gd` asserts that.
+	var _themed_egg_variant: Dictionary = {}
+	if instance_id != "":
+		var _look: Dictionary = DungeonDatabaseScript.dungeon_look_for(
+			active_dungeons.get(instance_id, {}).get("modifiers", []))
+		if not _look.is_empty():
+			_themed_egg_variant = {
+				"name": String(_look.get("name", "")),
+				"color": String(_look.get("color", "")),
+				"color2": String(_look.get("color2", "")),
+				"pattern": String(_look.get("pattern", "solid")),
+			}
+	var egg_data = drop_tables.get_egg_for_monster(boss_egg_monster, _themed_egg_variant, _boss_egg_rank(inst_sub_tier), dungeon_tier)
 	if egg_data.is_empty():
 		return out
 	out["name"] = String(egg_data.get("name", boss_egg_monster + " Egg"))
