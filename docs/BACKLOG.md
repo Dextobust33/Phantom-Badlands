@@ -1052,6 +1052,34 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ⚑ WHERE THINGS STAND — end of 2026-09-19
+
+**v0.9.821 is LIVE, client and server, hash-verified. NOTHING is built-but-unreleased.**
+
+Shipped today across v0.9.816-821: the monster curve re-fitted through a species comparison that
+was finally fair, Brace / Ward / Slip, the first five boss telegraphs, merchants you can meet, a
+healer menu that is a decision, dungeons that look like what they are, the keep-filter moved onto
+stats, the card face counting card gear, the sanctuary ladder repriced to be reachable, spare-tool
+counts, and upgraded cards that look upgraded.
+
+**Two things are WAITING ON TIME, not on work:**
+
+1. **Re-run `tools/death_log_audit.py` in ~2 weeks** against the 1.81% deaths-per-encounter
+   baseline. ⚡ That baseline was recorded **BEFORE** this batch, so the comparison measures the
+   curve refit AND everything else shipped today together — do not attribute a move to one of
+   them. Owner 2026-09-19: *"It will take a couple of weeks before we have useful data."*
+2. **The BALANCE BATCH stays parked** until that data lands. Brace alone is a player-power change
+   in every fight; the chain is ~25 minutes and one-pass-each, so per-item runs pay full price
+   repeatedly, and stacking changes now destroys attribution the first time the loop can close.
+
+**Two look-and-says are waiting on the owner's eyes, and neither blocks anything:**
+the dungeon side panel (measured, fits, but "cramped" is genuinely two-way — see the item), and
+whether a merchant should be a wagon or a driver.
+
+**Before proposing anything, run `python tools/backlog_audit.py`.** As of this session: 24 open,
+0 strong staleness flags, no duplicates.
+
+
 ### ✅ v0.9.816 — THE CHAIN WAS MEASURING A GAME NOBODY PLAYS (2026-09-19, LIVE)
 
 Started from one owner question — *"are we sure the sim is using the actual starting decks each
