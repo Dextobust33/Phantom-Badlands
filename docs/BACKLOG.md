@@ -1278,6 +1278,14 @@ check itself. Then `speciescal` → `refcal` → `rolecal`, one pass each, in th
 
 Currently queued:
 
+- [ ] **One specialist recipe per trade dropped to skill 2-3** (2026-09-18, owner: *"yes drop some
+      early recipes to lower skill"*). Measured first: of 109 specialist recipes only **2** sat at
+      skill 1-10, so the commission route was unreachable for the first ~15 levels of a trade.
+      Self Repair 15→3, Transmute Ore Up 15→3, Disenchant Item 15→3, Craft Fine Parchment 15→3,
+      Wooden Door 5→2, Small Enclosure Kit 8→5. **Every one is a utility or a material, never gear
+      or a combat consumable**, so this changes WHEN a service is available and not how strong
+      anyone is - listed so a future refit sees it, not as a debt on its own.
+
 - [ ] **Same-level death rates.** P60 Wizard measured **31% death at its own level** against a
       ~0.3% target, by two agreeing read-only audits (2026-09-13). The chain steers by WIN rate and
       is structurally blind to deaths, so this cannot be fixed by running it - it needs a

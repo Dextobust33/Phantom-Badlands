@@ -157,8 +157,13 @@ func _init() -> void:
 		"each filter shows its count": _panel.find("btn.text = \"%s (%d)\"") >= 0,
 		"the panel owns the filtering": _panel.find("func _apply_filter") >= 0,
 		"gated rows are CLICKABLE when commissionable": _panel.find("if recipe.get(\"can_commission\", false):") >= 0,
-		"the craft button offers the commission": _panel.find("_craft_button.text = \"COMMISSION") >= 0,
-		"a Post Job button exists in the panel": _panel.find("_post_job_button.text = \"Post Job for a Player\"") >= 0,
+		# ⚡ THE TWO ROUTES ARE NAMED FOR WHAT THEY DO (2026-09-18). Both used to say "commission",
+		# which made the skill-gated NPC route look like the general answer - the owner went looking
+		# for it four times and found a dead end. The NPC route lends a FOCUS and needs your skill;
+		# the player route needs nothing and works at any level, so it is listed first.
+		"the craft button names the tradesman": _panel.find("_craft_button.text = \"Hire a %s") >= 0,
+		"the player route says it is a player": _panel.find("_post_job_button.text = \"Ask a Player to Make This\"") >= 0,
+		"and the LIST says which route a row has": _panel.find("· ask a player") >= 0,
 		"the detail says what it MAKES": _panel.find("[color=#87CEEB]Makes:[/color]") >= 0,
 		"and compares it to what you wear": _panel.find("vs your %s:") >= 0,
 		"demand is shown on rows you can make": _panel.find("◆ %d wanted, up to %dv") >= 0,

@@ -329,6 +329,25 @@ func _build_layout() -> void:
 	_qty_max.add_theme_font_size_override("font_size", 15)
 	_qty_row.add_child(_qty_max)
 
+	# ⚡ THE PLAYER ROUTE COMES FIRST, AND SAYS WHAT IT IS. Owner 2026-09-18: *"if I have to get
+	# my skill all the way up to where I can build an item why would I even need to commission it
+	# outside of the specialty ones?"*
+	#
+	# ⛑ EXACTLY RIGHT, AND THE NAMING HID IT. The NPC route is skill-gated, so it ONLY ever
+	# serves a ★ specialist recipe - it lends you a FOCUS, never a SKILL. The PLAYER route has no
+	# skill gate at all and is the one that answers "I am level 1 and I want a Stone Wall". Calling
+	# both of them "commission" made the skill-gated one look like the general answer, which is why
+	# the owner went looking for it four times and found a dead end. So: different words, and the
+	# one that works at any level is listed first.
+	_post_job_button = Button.new()
+	_post_job_button.text = "Ask a Player to Make This"
+	_post_job_button.focus_mode = Control.FOCUS_NONE
+	_post_job_button.add_theme_font_size_override("font_size", 14)
+	_post_job_button.custom_minimum_size = Vector2(0, 34)
+	_post_job_button.pressed.connect(_on_post_job_pressed)
+	_post_job_button.visible = false
+	_detail_root.add_child(_post_job_button)
+
 	# Craft button
 	_craft_button = Button.new()
 	_craft_button.text = "Craft"
@@ -338,18 +357,6 @@ func _build_layout() -> void:
 	_craft_button.pressed.connect(_on_craft_pressed)
 	_detail_root.add_child(_craft_button)
 
-	# ⛑ THE SECOND ROUTE NEEDS ITS OWN BUTTON, IN THE PANEL. Both ways through a gated recipe are
-	# offered together or the other one is undiscoverable - and the first attempt at this put the
-	# button on the ACTION BAR, which this panel replaced.
-	_post_job_button = Button.new()
-	_post_job_button.text = "Post Job for a Player"
-	_post_job_button.focus_mode = Control.FOCUS_NONE
-	_post_job_button.add_theme_font_size_override("font_size", 13)
-	_post_job_button.custom_minimum_size = Vector2(0, 30)
-	_post_job_button.tooltip_text = "Offer this to other crafters. They supply the materials and their own quality — a good crafter beats the NPC job, which is always Standard."
-	_post_job_button.pressed.connect(_on_post_job_pressed)
-	_post_job_button.visible = false
-	_detail_root.add_child(_post_job_button)
 
 	# ⚡ AND THE PRICE IS ASKED HERE, NOT IN THE CHAT BOX. Pressing Post Job used to print
 	# "How much Valor will you pay? Type an amount" with `display_game` and focus the chat field -
@@ -693,7 +700,9 @@ func _make_recipe_button(recipe: Dictionary, index: int) -> Button:
 		# ⛑ EXACTLY. Disabling the row disabled the ONE thing a player under the skill
 		# requirement can do about it - ask somebody else to make it. The CRAFT button stays
 		# disabled, because they still cannot make it; the detail pane and Post Job do not.
-		label = "Locked  %s (Lv%d)" % [name, skill_req]
+		# The ROW says what can be done about it. A player scanning the list should not have to
+		# click every grey entry to find out that one of them has an answer.
+		label = "Locked  %s (Lv%d)   · ask a player" % [name, skill_req]
 		btn.add_theme_color_override("font_color", Color(0.45, 0.45, 0.45))
 	elif is_specialist_gated:
 		# ⛑ COMMISSIONABLE ROWS ARE NOT DISABLED. Owner 2026-09-18: *"All I see are the locked
@@ -701,7 +710,8 @@ func _make_recipe_button(recipe: Dictionary, index: int) -> Button:
 		# row was the most common thing this list showed - and there is now something to DO with
 		# every one of them: commission it from a post NPC, or post the job for another player.
 		if recipe.get("can_commission", false):
-			label = "%s   commission %dv" % [name, int(recipe.get("commission_fee", 0))]
+			label = "%s   hire a %s: %dv" % [name,
+				String(recipe.get("specialist_job", "specialist")), int(recipe.get("commission_fee", 0))]
 			btn.add_theme_color_override("font_color", Color(0.78, 0.64, 0.29))
 		else:
 			# Same reasoning as the locked row above: you cannot make it, which is precisely when
@@ -877,10 +887,10 @@ func _refresh_detail() -> void:
 		# something, and it was the one case with no button. The server applies the same rule: it
 		# refuses a commission only when you could have made the thing yourself.
 		_post_job_button.visible = is_locked or is_specialist_gated
-		_post_job_button.text = "Post Job for a Player"
-		_post_job_button.tooltip_text = ("You cannot make this yet. Offer it to other crafters -"
-			+ " they supply the materials and their own quality, and a good crafter beats the NPC"
-			+ " job, which is always Standard.")
+		_post_job_button.text = "Ask a Player to Make This"
+		_post_job_button.tooltip_text = ("Works on ANYTHING you cannot make, at any level - no skill"
+			+ " needed. You name a price, the Valor is held, and any crafter who can make it sees it"
+			+ " on their bench. They craft at THEIR quality, which beats the post NPC's Standard.")
 
 	# Craft button state
 	if is_locked:
@@ -893,11 +903,12 @@ func _refresh_detail() -> void:
 		if recipe.get("can_commission", false):
 			# Same shape as the craft path: the option stays VISIBLE and the button says why it
 			# cannot be pressed, instead of the whole route vanishing because a material is short.
+			var _who := String(recipe.get("specialist_job", "specialist")).capitalize()
 			if not _can_afford_with_boost(materials, boost_mat_mult, 1):
-				_craft_button.text = "COMMISSION - missing materials"
+				_craft_button.text = "Hire a %s - you are missing materials" % _who
 				_craft_button.disabled = true
 			else:
-				_craft_button.text = "COMMISSION  %d Valor" % int(recipe.get("commission_fee", 0))
+				_craft_button.text = "Hire a %s  -  %d Valor" % [_who, int(recipe.get("commission_fee", 0))]
 				_craft_button.disabled = false
 		else:
 			_craft_button.text = "Specialist Job Required (Lv%d)" % skill_req

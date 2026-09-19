@@ -26643,6 +26643,9 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"wanted_best": wanted_best,
 			"commission_fee": commission_fee(recipe) if specialist_gated else 0,
 			"specialist_gated": specialist_gated,
+			# WHICH TRADESMAN does this work - so the button can say "Hire a Blacksmith" instead of
+			# the word "commission", which the owner read four different ways before saying so.
+			"specialist_job": String(character.CRAFT_SKILL_TO_JOB.get(skill_name, "specialist")),
 			"description": description,
 			"bulk_craftable": is_bulk,
 			"max_craftable": max_craft

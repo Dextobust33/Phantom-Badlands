@@ -1703,7 +1703,16 @@ const RECIPES = {
 	"self_repair": {
 		"name": "Self Repair",
 		"skill": CraftingSkill.BLACKSMITHING,
-		"skill_required": 15,
+		# ⚡ REACHABLE BY A NEW CRAFTER. Owner 2026-09-18, after measuring that of 109 specialist
+		# recipes only TWO sat at skill 1-10 - so the whole commission route was unreachable for
+		# the first ~15 levels of a trade, which is exactly when a player wonders how to get
+		# something made: *"yes drop some early recipes to lower skill"*. One genuinely useful
+		# specialist recipe per trade now sits at skill 3 or below.
+		#
+		# ⛑ EVERY ONE PICKED IS A UTILITY OR A MATERIAL, never gear or a combat consumable, so
+		# this changes WHEN a service is available and not how strong anyone is - no calibration
+		# debt. Logged in the balance batch anyway so a future refit sees it.
+		"skill_required": 3,
 		"difficulty": 20,
 		"materials": {"iron_ore": 2, "coal": 1},
 		"output_type": "self_repair",
@@ -1957,7 +1966,8 @@ const RECIPES = {
 	"transmute_ore_up": {
 		"name": "Transmute Ore Up",
 		"skill": CraftingSkill.ALCHEMY,
-		"skill_required": 15,
+		# Lowered transmute_ore_up - see the note on `self_repair`.
+		"skill_required": 3,
 		"difficulty": 20,
 		"materials": {},
 		"output_type": "transmute",
@@ -2083,7 +2093,8 @@ const RECIPES = {
 	"disenchant_item": {
 		"name": "Disenchant Item",
 		"skill": CraftingSkill.ENCHANTING,
-		"skill_required": 15,
+		# Lowered disenchant_item - see the note on `self_repair`.
+		"skill_required": 3,
 		"difficulty": 20,
 		"materials": {"magic_dust": 2},
 		"output_type": "disenchant",
@@ -2448,7 +2459,8 @@ const RECIPES = {
 	"craft_fine_parchment": {
 		"name": "Craft Fine Parchment",
 		"skill": CraftingSkill.SCRIBING,
-		"skill_required": 15,
+		# Lowered craft_fine_parchment - see the note on `self_repair`.
+		"skill_required": 3,
 		"difficulty": 20,
 		"materials": {"parchment": 3, "enchanted_resin": 1},
 		"output_type": "material",
@@ -2862,7 +2874,8 @@ const RECIPES = {
 	"craft_enclosure_kit_small": {
 		"name": "Small Enclosure Kit",
 		"skill": CraftingSkill.CONSTRUCTION,
-		"skill_required": 8,
+		# Lowered craft_enclosure_kit_small - see the note on `self_repair`.
+		"skill_required": 5,
 		"difficulty": 18,
 		"materials": {"stone_block": 32, "wooden_plank": 4, "iron_ore": 2},
 		"output_type": "structure",
@@ -2876,7 +2889,8 @@ const RECIPES = {
 	"craft_door": {
 		"name": "Wooden Door",
 		"skill": CraftingSkill.CONSTRUCTION,
-		"skill_required": 5,
+		# Lowered craft_door - see the note on `self_repair`.
+		"skill_required": 2,
 		"difficulty": 12,
 		"materials": {"wooden_plank": 4, "iron_ore": 2},
 		"output_type": "structure",

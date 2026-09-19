@@ -34870,7 +34870,13 @@ func display_changelog():
 	# v0.9.811 - the crafting arc closes: the gather->craft loop teaches itself as you meet it.
 	# v0.9.812 - clicking a Locked recipe actually opens it, and the two ways to get one made say
 	# which is which.
-	display_game("[color=#00FF00]v0.9.812[/color] [color=#808080](Current)[/color]")
+	# v0.9.813 - the two routes are named for what they do, and a new crafter can reach one.
+	display_game("[color=#00FF00]v0.9.813[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE TWO WAYS TO GET SOMETHING MADE NOW SAY WHICH IS WHICH.[/color] Both were called [i]commission[/i], and they are not the same thing at all. [color=#C8A24A]Hire a Blacksmith — 140 Valor[/color] needs the [b]skill[/b] and only ever applies to ★ specialist work: it lends you a [b]focus[/b] you did not commit to, never a skill, which is what keeps levelling an uncommitted trade worth doing. [color=#C8A24A]Ask a Player to Make This[/color] needs [b]nothing[/b] — any recipe, any level, including a grey Locked one far above you. That second one is listed [b]first[/b] now, because it is the one that answers \"I am level 1 and I want a stone wall\", and a Locked row in the list even says [color=#808080]· ask a player[/color] so you can see it without clicking.")
+	display_game("  [color=#FF8000]★ A NEW CRAFTER CAN ACTUALLY USE IT NOW.[/color] Of 109 specialist recipes, only [b]two[/b] sat at skill 1-10 — so the whole hire-a-tradesman route was unreachable for roughly the first fifteen levels of a trade, which is exactly when you wonder how to get something made. Every trade now has one at skill 2-3: [b]Self Repair[/b], [b]Transmute Ore Up[/b], [b]Disenchant Item[/b], [b]Craft Fine Parchment[/b] and [b]Wooden Door[/b]. All utilities and materials — nothing that makes anyone stronger, just services that exist early enough to meet.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.812[/color]")
 	display_game("  [color=#FF4444]★ FIXED: clicking a Locked recipe did nothing.[/color] The row highlighted and the pane kept saying [i]Select a recipe on the left[/i]. Making the row clickable and letting the click through were two halves of one change and only one was done — the click was thrown away before anything was drawn. A locked recipe opens now: you can read what it needs, what it makes, and hand it to another player. Only [b]Craft[/b] stays disabled.")
 	display_game("  [color=#FF4444]★ FIXED: the two buttons were below the fold.[/color] The detail pane did not scroll, so on a recipe with a long materials list [b]Craft[/b] and [b]Post Job for a Player[/b] were pushed off the bottom with no scrollbar and nothing saying anything was there. The text scrolls now; the buttons are pinned under it.")
 	display_game("  [color=#FF4444]★ FIXED: Post Job asked its question where you could not see it.[/color] It printed [i]\"How much Valor will you pay?\"[/i] to the screen the crafting panel was covering and focused the chat box, so the button appeared to do nothing. It is a row on the panel now: [color=#C8A24A]Pay: [140] [Post] [Cancel][/color], pre-filled with what the post NPC would charge.")
@@ -40582,23 +40588,23 @@ service.
 
 [color=#FFD700]Nothing is locked away for good.[/color] Two ways to get what you cannot make:
 
-[color=#C8A24A]1. Have a post NPC make it[/color]  — when you have the SKILL but not the focus.
+[color=#C8A24A]1. Hire a tradesman[/color]  — when you have the SKILL but not the focus.
    • Stand at the bench, at a trading post.
-   • The row reads [color=#C8A24A]Iron Sword   commission 140v[/color] in gold. Click it.
-   • The big button now says [color=#C8A24A]COMMISSION  140 Valor[/color]. Press it.
+   • The row reads [color=#C8A24A]Iron Sword   hire a blacksmith: 140v[/color] in gold. Click it.
+   • The button now says [color=#C8A24A]Hire a Blacksmith  -  140 Valor[/color]. Press it.
    • You supply the materials. Quality is always [color=#FFFFFF]Standard[/color] — it is a floor,
      never the best you can get.
 
-[color=#C8A24A]2. Post the job for a player[/color]  — works on [color=#FFD700]anything[/color] you cannot make,
+[color=#C8A24A]2. Ask a player[/color]  — works on [color=#FFD700]anything[/color] you cannot make,
    including a grey [color=#808080]Locked[/color] recipe far above your skill.
-   • Click the recipe. A locked one opens too — you just cannot press Craft.
-   • Under the Craft button: [color=#C8A24A]Post Job for a Player[/color].
+   • Click the recipe. A locked one opens too — the row even says [color=#808080]· ask a player[/color].
+   • The top button reads [color=#C8A24A]Ask a Player to Make This[/color].
    • Type what you will pay and press [color=#C8A24A]Post[/color]. The Valor leaves your account
      and is held until somebody fills it.
    • Any crafter who can make it sees [color=#C8A24A]◆ 1 wanted, up to 140v[/color] on their
      bench. When they make it, it is delivered to you wherever you are.
    • They craft at THEIR quality — usually better than the NPC — and they get paid
-     instead of the shop." % [
+	 instead of the shop." % [
 				_craft_skill_figure(1, "success"), _craft_skill_figure(60, "success"),
 				str(_craft_skill_figure(1, "masterwork")), str(_craft_skill_figure(60, "masterwork")),
 				int(CharacterScript.COMMITTED_JOB_XP_BONUS * 100.0)],
