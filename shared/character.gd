@@ -272,14 +272,27 @@ static func would_auto_salvage(item: Dictionary, enabled: bool, max_rarity: int,
 	var rarity_order := ["common", "uncommon", "rare", "epic", "legendary"]
 	if not (String(item.get("rarity", "common")) in rarity_order.slice(0, max_rarity)):
 		return false
-	# Selected affixes are KEPT - an item carrying one is protected.
+	# ⚡ KEEPS STATS, NOT AFFIX NAMES - CHANGED 2026-09-19, AND THE OLD UNIT WAS THE BUG.
+	#
+	# Owner described the rule they wanted as *"lets say they only want things that give them an
+	# HP and Wit increase"*. It matched `prefix_name` / `suffix_name` instead, so "keep HP" meant
+	# naming every affix that happens to grant HP - and MEASURED, every stat in the game has more
+	# affix names than the 5-per-stat cap allows:
+	#
+	#     hp_bonus 15 names, attack_bonus 16, defense_bonus 15, mana_bonus 11, wits_bonus 6 ...
+	#
+	# So a player who configured the filter as carefully as the screen permitted still had TWO
+	# THIRDS of their HP gear fall through and get salvaged, silently, having been told they had
+	# set it up. CLAUDE.md's meta-lesson word for word: an audit - or a rule - written around the
+	# wrong UNIT is as wrong as a guess and far more convincing.
+	#
+	# Stats also make the rule cover affixes that do not exist yet, which is the whole reason a
+	# KEEP rule beats a junk list.
 	if kept_affixes.size() > 0:
 		var affixes = item.get("affixes", {})
 		if affixes is Dictionary:
-			var prefix := String(affixes.get("prefix_name", ""))
-			var suffix := String(affixes.get("suffix_name", ""))
 			for a in kept_affixes:
-				if (prefix != "" and prefix == String(a)) or (suffix != "" and suffix == String(a)):
+				if affixes.has(String(a)) and float(affixes.get(String(a), 0)) > 0.0:
 					return false
 	return true
 const MAX_STACK_SIZE = 99
@@ -868,7 +881,17 @@ func apply_specialist_service(service_id: String, camp_steps: int = 25) -> Strin
 @export var salvage_essence: int = 0  # Deprecated — kept for migration only (→ materials)
 @export var auto_salvage_enabled: bool = false
 @export var auto_salvage_max_rarity: int = 0  # 0=off, 1=common, 2=uncommon, 3=rare
-@export var auto_salvage_affixes: Array = []  # Up to 2 affix names to auto-salvage regardless of rarity
+## Stats an item may carry to be PROTECTED from auto-salvage ("hp_bonus", "wits_bonus", ...).
+##
+## ⚡ The comment here used to read "Up to 2 affix names to auto-salvage regardless of rarity",
+## which was wrong three ways: the cap is 5 per stat and not 2, these are KEPT rather than
+## salvaged, and since 2026-09-19 they are STATS rather than affix names. Left as a note because a
+## field comment that lies is worse than none - it is where the next person checks.
+@export var auto_salvage_affixes: Array = []
+## One-shot marker for the names-to-stats change. Owner chose to CLEAR existing filters rather than
+## migrate them: a translated filter would silently protect MORE than the player picked, and under
+## permadeath the safe direction for a destructive setting is off-until-reconfirmed.
+@export var auto_salvage_unit_migrated: bool = false
 
 # ===== CRAFTING SYSTEM =====
 @export var crafting_skills: Dictionary = {"blacksmithing": 1, "alchemy": 1, "enchanting": 1, "scribing": 1, "construction": 1}
@@ -2462,6 +2485,7 @@ func to_dict() -> Dictionary:
 		"auto_salvage_enabled": auto_salvage_enabled,
 		"auto_salvage_max_rarity": auto_salvage_max_rarity,
 		"auto_salvage_affixes": auto_salvage_affixes,
+		"auto_salvage_unit_migrated": auto_salvage_unit_migrated,
 		"mining_skill": mining_skill,
 		"mining_xp": mining_xp,
 		"ore_gathered": ore_gathered,
@@ -2912,6 +2936,15 @@ func from_dict(data: Dictionary):
 	auto_salvage_enabled = data.get("auto_salvage_enabled", false)
 	auto_salvage_max_rarity = data.get("auto_salvage_max_rarity", 0)
 	auto_salvage_affixes = data.get("auto_salvage_affixes", [])
+	auto_salvage_unit_migrated = data.get("auto_salvage_unit_migrated", false)
+	# ⛑ A FILTER SET IN THE OLD UNIT IS NOT MEANINGFUL IN THE NEW ONE, so it is dropped and
+	# auto-salvage is turned OFF until the player sets it up again. Nothing of theirs is destroyed
+	# in the meantime - that is the point of choosing this over a translation.
+	if not auto_salvage_unit_migrated:
+		auto_salvage_unit_migrated = true
+		if not auto_salvage_affixes.is_empty():
+			auto_salvage_affixes = []
+			auto_salvage_enabled = false
 	mining_skill = data.get("mining_skill", 1)
 	mining_xp = data.get("mining_xp", 0)
 	ore_gathered = data.get("ore_gathered", 0)

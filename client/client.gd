@@ -22599,200 +22599,85 @@ func _get_affix_category_name(stat: String) -> String:
 		_: return ""
 
 func _enter_affix_filter_mode():
-	"""Enter affix filter selection mode - grouped by stat, sorted by strength"""
-	# Group all affixes by stat type, tracking their power level
-	var stat_groups = {}  # stat -> [{name, per_level}]
-	var affix_stats = {}  # affix_name -> stat
+	"""Pick the STATS worth keeping. Anything granting one is protected from auto-salvage.
 
-	# Collect prefixes
-	for prefix_data in DropTables.PREFIX_POOL:
-		var n = prefix_data.get("name", "")
-		var stat = prefix_data.get("stat", "")
-		if n == "":
-			continue
-		if not stat_groups.has(stat):
-			stat_groups[stat] = []
-		stat_groups[stat].append({"name": n, "per_level": prefix_data.get("per_level", 0.0)})
-		affix_stats[n] = stat
+	⚡ THIS USED TO LIST AFFIX NAMES, and that was the bug rather than the presentation.
+	Owner described the rule as *"lets say they only want things that give them an HP and Wit
+	increase"* - but keeping HP meant naming every affix that grants it, and MEASURED, every stat
+	has more affix names than the 5-per-stat cap allowed: hp_bonus 15, attack_bonus 16,
+	defense_bonus 15, wits_bonus 6. So a player who filled the screen as carefully as it permitted
+	still had two thirds of their HP gear salvaged, silently, having been told it was configured.
 
-	# Collect suffixes
-	for suffix_data in DropTables.SUFFIX_POOL:
-		var n = suffix_data.get("name", "")
-		var stat = suffix_data.get("stat", "")
-		if n == "":
-			continue
-		if not stat_groups.has(stat):
-			stat_groups[stat] = []
-		stat_groups[stat].append({"name": n, "per_level": suffix_data.get("per_level", 0.0)})
-		affix_stats[n] = stat
-
-	# Sort each group by per_level (weakest to strongest)
-	for stat in stat_groups:
-		stat_groups[stat].sort_custom(func(a, b): return a.per_level < b.per_level)
-
-	# Define display order for stat categories
-	var stat_order = [
-		"attack_bonus", "defense_bonus", "hp_bonus", "speed_bonus",
-		"str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus",
-		"mana_bonus", "stamina_bonus", "energy_bonus"
-	]
-
-	# Build flat ordered list and assign strength labels
-	affix_filter_list = []
-	var affix_strength = {}  # affix_name -> strength label
-	for stat in stat_order:
-		if not stat_groups.has(stat):
-			continue
-		var entries = stat_groups[stat]
-		var group_size = entries.size()
-		for idx in range(group_size):
-			var entry = entries[idx]
-			# Assign strength label based on position in group
-			var label = "Minor"
-			if group_size <= 2:
-				label = "Minor" if idx == 0 else "Major"
-			elif group_size <= 4:
-				var labels = ["Minor", "Moderate", "Major", "Superior"]
-				label = labels[min(idx, labels.size() - 1)]
-			else:
-				var pct = float(idx) / float(group_size - 1) if group_size > 1 else 0.0
-				if pct < 0.25:
-					label = "Minor"
-				elif pct < 0.5:
-					label = "Moderate"
-				elif pct < 0.75:
-					label = "Major"
-				else:
-					label = "Superior"
-			affix_filter_list.append(entry.name)
-			affix_strength[entry.name] = label
-
-	# Add proc suffixes as special categories (Tier 6+ effects)
-	var proc_groups = {}  # proc_type -> [{name, value}]
-	for proc_data in DropTables.PROC_SUFFIX_POOL:
-		var n = proc_data.get("name", "")
-		var proc_type = proc_data.get("proc_type", "")
-		if n == "":
-			continue
-		if not proc_groups.has(proc_type):
-			proc_groups[proc_type] = []
-		proc_groups[proc_type].append({"name": n, "value": proc_data.get("value", 0)})
-		affix_stats[n] = "proc_" + proc_type
-
-	# Sort proc groups by value (weakest to strongest)
-	for ptype in proc_groups:
-		proc_groups[ptype].sort_custom(func(a, b): return a.value < b.value)
-
-	var proc_order = ["lifesteal", "shocking", "damage_reflect", "execute"]
-	for ptype in proc_order:
-		if not proc_groups.has(ptype):
-			continue
-		var entries = proc_groups[ptype]
-		var group_size = entries.size()
-		for idx in range(group_size):
-			var entry = entries[idx]
-			var label = "Minor"
-			if group_size <= 2:
-				label = "Minor" if idx == 0 else "Major"
-			elif group_size <= 4:
-				var labels = ["Minor", "Moderate", "Major", "Superior"]
-				label = labels[min(idx, labels.size() - 1)]
-			else:
-				var pct = float(idx) / float(group_size - 1) if group_size > 1 else 0.0
-				if pct < 0.25: label = "Minor"
-				elif pct < 0.5: label = "Moderate"
-				elif pct < 0.75: label = "Major"
-				else: label = "Superior"
-			affix_filter_list.append(entry.name)
-			affix_strength[entry.name] = label
-
-	set_meta("affix_stats", affix_stats)
-	set_meta("affix_strength", affix_strength)
-
-	# Load current selections from character data
+	A stat list is short enough to read in one screen, covers affixes that do not exist yet, and
+	says exactly what the player meant.
+	"""
+	var stats := {}
+	for pool in [DropTables.PREFIX_POOL, DropTables.SUFFIX_POOL]:
+		for e in pool:
+			var st := String(e.get("stat", ""))
+			if st != "":
+				stats[st] = int(stats.get(st, 0)) + 1
+	affix_filter_list = stats.keys()
+	affix_filter_list.sort()
+	set_meta("affix_counts", stats)
 	affix_filter_selected = character_data.get("auto_salvage_affixes", []).duplicate()
 	affix_filter_page = 0
-
 	pending_inventory_action = "affix_filter_select"
 	_display_affix_filter_page()
 	update_action_bar()
 
+
 func _display_affix_filter_page():
-	"""Display current page of affix filter selection with category headers"""
-	var affix_stats = get_meta("affix_stats", {})
-	var affix_strength = get_meta("affix_strength", {})
+	"""One page of stats to keep."""
+	var counts = get_meta("affix_counts", {})
 	_page_clear()
-	display_game("[color=#FFD700]===== KEEP AFFIX FILTER =====[/color]")
+	display_game("[color=#FFD700]===== WHAT TO KEEP =====[/color]")
 	display_game("")
-	display_game("[color=#FFFFFF]Select affixes to KEEP. Equipment with these affixes[/color]")
-	display_game("[color=#FFFFFF]will be protected from auto-salvage.[/color]")
+	display_game("[color=#FFFFFF]Pick the stats you care about. Any equipment granting one is[/color]")
+	display_game("[color=#FFFFFF]protected from auto-salvage - including gear added in future.[/color]")
 	display_game("")
-
 	if affix_filter_selected.size() > 0:
-		display_game("[color=#00FF00]Keeping (%d selected): %s[/color]" % [affix_filter_selected.size(), ", ".join(affix_filter_selected)])
+		var pretty: PackedStringArray = PackedStringArray()
+		for s in affix_filter_selected:
+			pretty.append(_get_affix_category_name(String(s)))
+		display_game("[color=#00FF00]Keeping anything with: %s[/color]" % ", ".join(pretty))
 	else:
-		display_game("[color=#808080]No affix filters set. All matching rarity items will be salvaged.[/color]")
+		display_game("[color=#808080]Nothing protected by stat - only rarity decides.[/color]")
 	display_game("")
 
-	var page_size = 7  # Reduced to avoid key conflicts with action bar
+	var page_size = 7
 	var start = affix_filter_page * page_size
 	var end = min(start + page_size, affix_filter_list.size())
 	var total_pages = max(1, int(ceil(float(affix_filter_list.size()) / float(page_size))))
-
 	display_game("[color=#808080]Page %d/%d[/color]" % [affix_filter_page + 1, total_pages])
 	display_game("")
-
-	# Track last stat to show category headers on change
-	var last_stat = ""
-	if start > 0:
-		last_stat = affix_stats.get(affix_filter_list[start - 1], "")
-
 	for i in range(start, end):
-		var affix_name = affix_filter_list[i]
-		var stat = affix_stats.get(affix_name, "")
-		# Show category header when stat type changes
-		if stat != last_stat:
-			var cat_name = _get_affix_category_name(stat)
-			if cat_name != "":
-				display_game("[color=#FFD700]-- %s --[/color]" % cat_name)
-			last_stat = stat
-
-		var selected = affix_name in affix_filter_selected
+		var stat := String(affix_filter_list[i])
+		var selected = stat in affix_filter_selected
 		var check = "[color=#00FF00][X][/color]" if selected else "[ ]"
-		var strength = affix_strength.get(affix_name, "")
-		var strength_color = "#808080"
-		match strength:
-			"Minor": strength_color = "#808080"
-			"Moderate": strength_color = "#FFFFFF"
-			"Major": strength_color = "#1EFF00"
-			"Superior": strength_color = "#FF8000"
-		var strength_text = " [color=%s](%s)[/color]" % [strength_color, strength]
-		display_game("[color=#FFFF00][%d][/color] %s %s%s" % [(i - start) + 1, check, affix_name, strength_text])
+		# The count is the point: it says how much this one selection is covering.
+		display_game("[color=#FFFF00][%d][/color] %s %-18s [color=#707070]covers %d affix(es)[/color]"
+			% [(i - start) + 1, check, _get_affix_category_name(stat), int(counts.get(stat, 0))])
+
 
 func _toggle_affix_filter_item(index: int):
-	"""Toggle an affix in the filter selection"""
+	"""Toggle a stat in the keep list.
+
+	⛑ NO PER-CATEGORY CAP ANY MORE. It existed to stop a player naming a hundred affixes; a
+	stat list is bounded by the number of stats that exist, and keeping the cap would have
+	reintroduced the exact fault this screen was rebuilt to fix.
+	"""
 	if index < 0 or index >= affix_filter_list.size():
 		return
-
-	var affix_name = affix_filter_list[index]
-	if affix_name in affix_filter_selected:
-		affix_filter_selected.erase(affix_name)
+	var stat := String(affix_filter_list[index])
+	if stat in affix_filter_selected:
+		affix_filter_selected.erase(stat)
 	else:
-		# Check per-category limit (5 per stat category)
-		var affix_stats_meta = get_meta("affix_stats", {})
-		var this_stat = affix_stats_meta.get(affix_name, "")
-		var count_in_category = 0
-		for selected in affix_filter_selected:
-			if affix_stats_meta.get(selected, "") == this_stat:
-				count_in_category += 1
-		if count_in_category >= 5:
-			var cat_name = _get_affix_category_name(this_stat)
-			display_game("[color=#FF4444]Maximum 5 affixes per category (%s). Remove one first.[/color]" % cat_name)
-			return
-		affix_filter_selected.append(affix_name)
-
+		affix_filter_selected.append(stat)
 	_display_affix_filter_page()
 	update_action_bar()
+
+
 
 func display_inventory():
 	# The visual InventoryPanel is the canonical surface — text-output rendering

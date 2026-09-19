@@ -14290,24 +14290,22 @@ func handle_auto_salvage_affix_settings(peer_id: int, message: Dictionary):
 	var character = characters[peer_id]
 	var affixes = message.get("affixes", [])
 
-	# Validate: max 5 affixes per stat category, must be valid affix names
-	var valid_affix_names = {}  # name -> stat
-	for prefix in drop_tables.PREFIX_POOL:
-		valid_affix_names[prefix.name] = prefix.get("stat", "")
-	for suffix in drop_tables.SUFFIX_POOL:
-		valid_affix_names[suffix.name] = suffix.get("stat", "")
-	for proc in drop_tables.PROC_SUFFIX_POOL:
-		valid_affix_names[proc.name] = "proc_" + proc.get("proc_type", "")
+	# ⚡ VALIDATES STATS NOW, NOT AFFIX NAMES. The per-stat cap of 5 is gone with them: it
+	# existed to stop a player naming a hundred affixes, and a stat list is bounded by the number
+	# of stats that exist. Keeping the cap would have reintroduced exactly the fault this change
+	# fixes - every stat has more affix names (hp_bonus 15, attack_bonus 16) than the cap allowed,
+	# so a careful player still lost two thirds of the gear they meant to keep.
+	var valid_stats := {}
+	for pool in [drop_tables.PREFIX_POOL, drop_tables.SUFFIX_POOL]:
+		for e in pool:
+			var st := String(e.get("stat", ""))
+			if st != "":
+				valid_stats[st] = true
 
 	var validated = []
-	var per_category_count = {}  # stat -> count
-	for affix in affixes:
-		if affix in valid_affix_names and affix not in validated:
-			var stat = valid_affix_names[affix]
-			var count = per_category_count.get(stat, 0)
-			if count < 5:
-				validated.append(affix)
-				per_category_count[stat] = count + 1
+	for st in affixes:
+		if valid_stats.has(String(st)) and String(st) not in validated:
+			validated.append(String(st))
 
 	character.auto_salvage_affixes = validated
 	# Auto-enable salvage if affix filter is set
@@ -14315,9 +14313,9 @@ func handle_auto_salvage_affix_settings(peer_id: int, message: Dictionary):
 		character.auto_salvage_enabled = true
 
 	if validated.is_empty():
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Affix auto-salvage filter cleared.[/color]"})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Keep filter cleared - nothing is protected by stat.[/color]"})
 	else:
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Affix auto-salvage filter set: %s[/color]" % ", ".join(validated)})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]Keeping anything with: %s[/color]" % ", ".join(validated)})
 
 	save_character(peer_id)
 	send_character_update(peer_id)

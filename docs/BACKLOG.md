@@ -8081,7 +8081,19 @@ something was dropped, and it sat unnoticed for eleven days.
          craft and then they take up an inventory slot, it's hard to tell if you have backups
          etc."* So: where tools live, whether they stack, and whether the player can SEE their
          spares at a glance.
-      3. **Auto-salvage must be understandable and configurable IN the inventory.** *"They should
+      3. **✅ DONE 2026-09-19 — THE KEEP RULE NOW KEEPS STATS, NOT AFFIX NAMES.** The owner's own
+         example was not expressible: the rule matched `prefix_name`/`suffix_name`, and MEASURED,
+         every stat has more affix names than the 5-per-stat cap allowed — **hp_bonus 15,
+         attack_bonus 16, defense_bonus 15, wits_bonus 6**. So "keep HP and Wits" meant ticking 21
+         names against a cap that covered 10, and a player who configured it as carefully as the
+         screen permitted still lost two thirds of their HP gear, **silently**. Wrong UNIT, which
+         CLAUDE.md names as "as wrong as a guess and far more convincing".
+         Now two selections cover all 21 affixes, and any added later. The cap is gone with the
+         names (a stat list is bounded by the stats that exist). Existing filters are **cleared and
+         auto-salvage turned OFF** rather than translated — owner's call, because a translated
+         filter protects more than was picked and the safe direction for a destructive setting is
+         off-until-reconfirmed. Probe: `keep_what_you_asked_to_keep.gd`.
+      3b. **(original) Auto-salvage must be understandable and configurable IN the inventory.** *"They should
          be able to understand it and set it up easily so it can autosalvage or autojunk to then be
          listed automatically next time they go to the market. For example lets say they only want
          things that give them an HP and Wit increase, if they can easily set that up then they
