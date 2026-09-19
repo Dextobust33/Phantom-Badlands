@@ -227,6 +227,26 @@ const QUEST_DEPTH_CLAMP := Vector2(0.7, 1.6)
 ## `_create_player_dungeon_instance`, which takes `grade_tier` from `base_tier` and the rank from
 ## the post's distance - the same two inputs available at board time. It is a promise this code
 ## can keep. Do not copy this to a world dungeon, where the land decides.
+## What a board entry says about a dungeon's modifiers — the risk half of the trade, in words.
+##
+## Reads `DUNGEON_MODIFIERS` for the name, colour and blurb rather than restating them, so a
+## modifier added later shows up here without anyone remembering to come back.
+static func modifier_board_line(mods: Array) -> String:
+	if mods == null or mods.is_empty():
+		return ""
+	var DungeonDB = load("res://shared/dungeon_database.gd")
+	var parts: PackedStringArray = PackedStringArray()
+	for m in mods:
+		var d: Dictionary = DungeonDB.DUNGEON_MODIFIERS.get(String(m), {})
+		if d.is_empty():
+			continue
+		parts.append("[color=%s]%s[/color] - %s" % [
+			String(d.get("color", "#FFFFFF")), String(d.get("name", m)), String(d.get("blurb", ""))])
+	if parts.is_empty():
+		return ""
+	return "[color=#FF8800]* Unusual:[/color] " + "\n  ".join(parts)
+
+
 static func dungeon_difficulty_line(dungeon_info: Dictionary, tier: int, rank: int, floors: int) -> String:
 	if dungeon_info.is_empty():
 		return ""
@@ -2978,6 +2998,19 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 		var _diff: String = dungeon_difficulty_line(dungeon_info, _d_tier, _d_rank, _task_floors)
 		if _diff != "":
 			quest_desc += "\n\n" + _diff
+		# ⛑ SAY WHAT IS IN THERE, SO TAKING IT IS A CHOICE. Owner 2026-09-19: *"we want to
+		# ensure Quests can be offered for these dungeons we are adding as well so players can
+		# choose to take them on the Quest boards."* Quest dungeons already ROLL modifiers - they
+		# go through `_register_dungeon` like any other - so the mechanic worked; what was missing
+		# is that the board never said so, and a risk you cannot see before accepting is not a choice.
+		#
+		# Seeded on the quest id so the promise is keepable: the board, a regenerated copy of the
+		# quest, and the instance created on accept all derive the same list.
+		var _DungeonDB = load("res://shared/dungeon_database.gd")
+		var _qmods: Array = _DungeonDB.roll_dungeon_modifiers_seeded(_d_rank, quest_id)
+		var _qline: String = modifier_board_line(_qmods)
+		if _qline != "":
+			quest_desc += "\n" + _qline
 
 	var _depth_mult: float = quest_depth_mult(_task_floors)
 	base_xp = int(float(base_xp) * _task_xp_mult * _depth_mult)

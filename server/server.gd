@@ -32529,7 +32529,15 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"fabled_boss_name": fabled_boss_name,  # P2 Slice 2 — non-empty → boss renamed + buffed
 		"gather_relic_name": gather_relic_name,  # P2 Slice 3 — dungeon-gather relic
 		"gather_relic_count": gather_relic_count,
-		"starter": force_starter
+		"starter": force_starter,
+		# ⛑ THE BOARD ALREADY PROMISED THESE, SO THEY ARE NOT RE-ROLLED HERE.
+		#
+		# `_register_dungeon` rolls modifiers for any instance that does not carry them. For a
+		# QUEST dungeon that would roll a second, different set from the one the board advertised
+		# when the player chose to accept it - so the entry would be honest right up until you
+		# walked in. Derived from the quest id instead, which is the one thing the board, a
+		# regenerated quest and this instance all share.
+		"modifiers": DungeonDatabaseScript.roll_dungeon_modifiers_seeded(sub_tier, quest_id),
 	})
 
 	# Generate all floor grids (BSP rooms + corridors)

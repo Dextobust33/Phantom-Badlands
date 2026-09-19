@@ -3126,6 +3126,44 @@ static func roll_dungeon_modifiers(rank: int) -> Array:
 	return out
 
 
+## The same roll, but DETERMINISTIC from a seed — so a quest can promise what it will contain.
+##
+## ⛑ A QUEST IS PRICED AND DESCRIBED TWICE: once when the board offers it, and again when it is
+## rebuilt from its id (`_regenerate_daily_quest`). The instance it will become does not exist at
+## either moment - it is created on ACCEPT - so an ordinary `randf()` roll cannot be advertised.
+## Seeding on the quest id makes the answer the same all three times, which is what lets the board
+## say "this one is Bloodgorged" and have it be true when the player walks in.
+##
+## The threat-quest reward pricing hit this exact constraint and solved it by deriving from the
+## POST instead; here the quest id is the stable thing, so it is the seed.
+static func roll_dungeon_modifiers_seeded(rank: int, seed_text: String) -> Array:
+	var slots: int = int(MODIFIER_COUNT_BY_RANK.get(clampi(rank, 1, 9), 0))
+	if slots <= 0:
+		return []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(seed_text)
+	# The pool is ordered, then walked with the seeded stream - `Array.shuffle()` uses the GLOBAL
+	# RNG and would make this non-deterministic despite the seed, which is the kind of bug that
+	# only shows up as "the board lied" once in a while.
+	var pool: Array = DUNGEON_MODIFIERS.keys()
+	pool.sort()
+	var picked: Array = []
+	var out: Array = []
+	for i in range(slots):
+		if picked.size() >= pool.size():
+			break
+		# Pick an unused index from the seeded stream.
+		var idx: int = int(rng.randi_range(0, pool.size() - 1))
+		var guard := 0
+		while idx in picked and guard < 64:
+			idx = int(rng.randi_range(0, pool.size() - 1))
+			guard += 1
+		picked.append(idx)
+		if rng.randf() < MODIFIER_SLOT_CHANCE:
+			out.append(String(pool[idx]))
+	return out
+
+
 static func modifier_effects(mods: Array) -> Dictionary:
 	"""Fold a dungeon's modifiers into ONE set of numbers.
 
