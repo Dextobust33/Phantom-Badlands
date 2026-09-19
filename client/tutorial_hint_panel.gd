@@ -17,6 +17,7 @@ signal opted_out
 
 var _root_panel: PanelContainer
 var _title_label: RichTextLabel
+var _body_scroll: ScrollContainer
 var _body_label: RichTextLabel
 var _dismiss_button: Button
 var _opt_out_button: Button
@@ -57,7 +58,51 @@ func show_hint(title: String, body: String, opt_out_text: String = "",
 	if _dismiss_button:
 		# Some hints ask the player to AGREE to something rather than merely read it - the
 		# Warden setting off is the first. "Got it" is a wrong label for a decision.
-		_dismiss_button.text = dismiss_text if dismiss_text != "" else "Got it  (Esc / Enter)"
+		_dismiss_button.text = dismiss_text if dismiss_text != "" else "Got it  (Esc / Space)"
+	# Deferred, because the body's wrapped height is not known until it has been laid out once.
+	call_deferred("_fit_to_viewport")
+
+
+## The fraction of the screen a hint may occupy before its body starts scrolling. Chosen so the
+## title, the button row and the panel's own margins all still fit at 720p, the smallest window
+## the game supports.
+const MAX_SCREEN_FRACTION := 0.62
+
+## Test hook only - see `_fit_to_viewport`. Zero means "measure the real viewport".
+var assumed_screen_height: float = 0.0
+
+
+func _fit_to_viewport() -> void:
+	"""Cap the body so the buttons stay on screen, whatever the hint says.
+
+	⛑ IT CLAIMS ITS OWN RECT FIRST, and that is not belt-and-braces. This panel sets
+	`top_level = true`, and a top_level Control has NO PARENT RECT - `PRESET_FULL_RECT` resolves
+	against nothing, so the overlay is zero-sized and its CenterContainer has nothing to centre
+	within. That is the second half of what the owner photographed: the hint was not merely too
+	tall, it was pinned to the top-left instead of centred. Same trap as the full-screen modal
+	whose dim covered nothing.
+
+	`assumed_screen_height` exists for `tools/probe/hint_panel_fits_the_screen.gd`, which has to
+	state the screen height it is testing: a headless viewport reports the project's own default
+	(1920) rather than the window the player is on, and a ceiling that only holds at 1920 is not a
+	ceiling. Zero in every normal run, so the game always measures the real viewport."""
+	if _body_scroll == null or not is_instance_valid(_body_scroll):
+		return
+	var vp: Vector2 = get_viewport_rect().size
+	if assumed_screen_height <= 0.0 and vp.x > 0.0 and vp.y > 0.0:
+		position = Vector2.ZERO
+		size = vp
+	var screen_h: float = assumed_screen_height if assumed_screen_height > 0.0 else size.y
+	if screen_h <= 0.0:
+		return
+	var wanted: float = _body_label.get_content_height() if _body_label else 0.0
+	_body_scroll.custom_minimum_size.y = clampf(wanted, 80.0, screen_h * MAX_SCREEN_FRACTION)
+
+
+func _notification(what: int) -> void:
+	# A window resize can make a hint that fitted stop fitting.
+	if what == NOTIFICATION_RESIZED and visible:
+		call_deferred("_fit_to_viewport")
 		_dismiss_button.grab_focus()
 
 
@@ -114,7 +159,26 @@ func _build_layout() -> void:
 	_title_label.custom_minimum_size = Vector2(0, 26)
 	vbox.add_child(_title_label)
 
-	# Body (wraps inside panel width).
+	# Body (wraps inside panel width), INSIDE A SCROLLER WITH A CEILING.
+	#
+	# ⚡ Owner 2026-09-18, with a screenshot: *"Companion screen is too long vertically again, I
+	# can't even see the button to click at the bottom."*
+	#
+	# ⛑ `fit_content` WITH NO CAP MEANS THE PANEL IS AS TALL AS THE TEXT. The first-companion hint
+	# is around 1,400 characters - roughly 40 wrapped lines - so the panel grew past the viewport,
+	# and because a CenterContainer centres it, it overflowed at BOTH ends: the title off the top
+	# and the "Got it" button off the bottom, with nothing to scroll and no way to dismiss but the
+	# keyboard. Any hint long enough does this, which is why it has come back: each time it was the
+	# TEXT that got shortened rather than the panel that got a ceiling.
+	#
+	# `_fit_to_viewport` sizes this scroller to the content up to a fraction of the screen, so a
+	# short hint is still a small box and a long one scrolls with its buttons still on screen.
+	_body_scroll = ScrollContainer.new()
+	_body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_body_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_body_scroll.custom_minimum_size = Vector2(476, 80)
+	vbox.add_child(_body_scroll)
+
 	_body_label = RichTextLabel.new()
 	_body_label.bbcode_enabled = true
 	# Hints can embed a 32px sprite (the Warden's portrait, so a new player knows what they are
@@ -123,8 +187,9 @@ func _build_layout() -> void:
 	_body_label.fit_content = true
 	_body_label.scroll_active = false
 	_body_label.add_theme_font_size_override("normal_font_size", 14)
-	_body_label.custom_minimum_size = Vector2(476, 80)
-	vbox.add_child(_body_label)
+	_body_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_body_label.custom_minimum_size = Vector2(476, 0)
+	_body_scroll.add_child(_body_label)
 
 	# Spacer + dismiss button row.
 	var spacer := Control.new()

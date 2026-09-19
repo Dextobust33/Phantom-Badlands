@@ -974,6 +974,43 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ MENU PLACEMENT SWEEP — v0.9.807 (2026-09-18)
+
+Owner, after a Scroll of Finding printed its choices where they were immediately painted over:
+*"We really need to do a thorough sweep to fix this across the board for all menus and items."*
+
+**Measured before fixing.** `display_game` routes text three ways — the dungeon run log, the
+overworld side column, or the canvas — and the choice depends on whether a page currently OWNS the
+canvas. `_page_clear()` is what claims it. A screen that prints without claiming is placed by
+whatever happened to close a moment earlier, which is why this depends on where you opened it from.
+
+`tools/prompt_surface_audit.py` walks every function that renders a screen the player must answer:
+
+| | |
+|---|---|
+| prompt-shaped functions | **74** |
+| already claimed a page | 50 |
+| drawn BY a page that claims (every caller clears) | 24 |
+| placed by whatever closed last | **11 → 0** |
+
+The first run said 35, because it counted sub-renderers like `_display_trade_items_tab` that are
+only ever reached from a page that clears. Following callers one level is what made the number
+worth acting on. Fixed: merchant shop, upgrade list, unequip page, item details (both the inventory
+and the shop copy), tutorial steps, the combat item text fallback, and both scrolls. The tool exits
+non-zero, so it can go in the release gate when convenient.
+
+### ✅ THE TUTORIAL HINT HAS A CEILING NOW — v0.9.807
+
+Owner: *"Companion screen is too long vertically AGAIN, I can't even see the button to click at the
+bottom."* **"Again" is the finding.** `fit_content` with no cap makes the panel exactly as tall as
+its text, and a `CenterContainer` then centres it — so a long hint overflows at BOTH ends. Every
+previous round shortened the TEXT; text grows back. The body scrolls under a ceiling now, and the
+panel claims its own rect (a `top_level` Control has no parent rect, so `PRESET_FULL_RECT` resolved
+to zero and the overlay was pinned top-left rather than centred — the second half of what was in
+the screenshot). `tools/probe/hint_panel_fits_the_screen.gd` builds it with a body four times the
+longest hint the game sends and measures where the button lands: it failed at 1327px with the button
+at y=1573 on a 720px screen, and passes at 583px with the button at 601.
+
 ### ✅ LIVE-PLAY REPORT BATCH — 2026-09-18 evening (11 reports, all fixed)
 
 The owner played the v0.9.805 build and reported eleven faults in quick succession. Each was

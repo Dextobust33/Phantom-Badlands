@@ -17172,7 +17172,9 @@ func _display_combat_usable_items_page():
 
 	# Fallback (panel not present at all — extremely rare; covers a future
 	# refactor where combat could fire without the scene panel) — old
-	# game_output path.
+	# game_output path. Claims the canvas like every other page - see
+	# `tools/prompt_surface_audit.py`.
+	_page_clear()
 	if total_pages > 1:
 		display_game("[color=#FFD700]===== USABLE ITEMS (Page %d/%d) =====[/color]" % [combat_use_page + 1, total_pages])
 	else:
@@ -20145,6 +20147,13 @@ func display_shop_inventory():
 	var equipped = character_data.get("equipped", {})
 	var player_class = character_data.get("class", "")
 
+	# ⚡ A PAGE CLAIMS THE CANVAS. Owner 2026-09-18, after the Scroll of Finding printed onto
+	# the overworld canvas and was painted over by the next map redraw: *"We really need to do a
+	# thorough sweep to fix this across the board for all menus and items."* Measured with
+	# `tools/prompt_surface_audit.py`: 80 prompt-shaped functions, 45 already started a page, 24
+	# are sub-renderers of one that does, and these were placed by whatever happened to close a
+	# moment earlier.
+	_page_clear()
 	display_game("[color=#FFD700]===== MERCHANT SHOP =====[/color]")
 	display_game("Your Valor: %d" % valor)
 	display_game("")
@@ -20449,6 +20458,9 @@ func display_shop_item_details(item: Dictionary):
 	var player_class = character_data.get("class", "")
 	var themed_name = _get_themed_item_name(item, player_class)
 
+	# Claims the canvas - see the note in `display_item_details` and
+	# `tools/prompt_surface_audit.py`.
+	_page_clear()
 	display_game("")
 	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, themed_name])
 	display_game("")
@@ -21608,6 +21620,13 @@ func display_upgrade_options():
 	"""Display equipped items that can be upgraded"""
 	var equipped = character_data.get("equipped", {})
 
+	# ⚡ A PAGE CLAIMS THE CANVAS. Owner 2026-09-18, after the Scroll of Finding printed onto
+	# the overworld canvas and was painted over by the next map redraw: *"We really need to do a
+	# thorough sweep to fix this across the board for all menus and items."* Measured with
+	# `tools/prompt_surface_audit.py`: 80 prompt-shaped functions, 45 already started a page, 24
+	# are sub-renderers of one that does, and these were placed by whatever happened to close a
+	# moment earlier.
+	_page_clear()
 	display_game("[color=#FFD700]===== UPGRADE EQUIPMENT =====[/color]")
 	display_game("Your Valor: %d" % character_data.get("valor", 0))
 	display_game("")
@@ -23230,6 +23249,13 @@ func _display_unequip_page():
 	var start_idx = unequip_page * INVENTORY_PAGE_SIZE
 	var end_idx = mini(start_idx + INVENTORY_PAGE_SIZE, slots_with_items.size())
 	var page_label = " [color=#808080](Page %d/%d)[/color]" % [unequip_page + 1, total_pages] if total_pages > 1 else ""
+	# ⚡ A PAGE CLAIMS THE CANVAS. Owner 2026-09-18, after the Scroll of Finding printed onto
+	# the overworld canvas and was painted over by the next map redraw: *"We really need to do a
+	# thorough sweep to fix this across the board for all menus and items."* Measured with
+	# `tools/prompt_surface_audit.py`: 80 prompt-shaped functions, 45 already started a page, 24
+	# are sub-renderers of one that does, and these were placed by whatever happened to close a
+	# moment earlier.
+	_page_clear()
 	display_game("[color=#FFD700]===== UNEQUIP ITEM =====[/color]%s" % page_label)
 	for i in range(start_idx, end_idx):
 		var slot = slots_with_items[i]
@@ -29397,6 +29423,9 @@ func handle_server_message(message: Dictionary):
 				for i in range(9):  # Monster select uses keys 1-9
 					if is_item_select_key_pressed(i):
 						set_meta("monsterselectkey_%d_pressed" % i, true)
+				# Same as the Scroll of Finding below: the prompt has to claim a page, or it is
+				# printed onto a canvas the map is about to repaint.
+				_page_clear()
 				display_game(message.get("message", "Choose a monster to summon:"))
 				display_monster_select_page()
 				update_action_bar()
@@ -29417,6 +29446,17 @@ func handle_server_message(message: Dictionary):
 				for i in range(5):
 					if is_item_select_key_pressed(i):
 						set_meta("targetfarmkey_%d_pressed" % i, true)
+				# ⚡ START A PAGE, OR THE PROMPT LANDS UNDER THE MAP. Owner 2026-09-18: *"Just used
+				# a Scroll of Finding, can't actually see anything to select, I think it tried to
+				# popup in the left window instead of the right column and then got overwrote."*
+				#
+				# ⛑ EXACTLY THAT. Closing the inventory hands the canvas back to the overworld map,
+				# and `display_game` only routes to the side column while the map OWNS the canvas -
+				# which for the frame after a panel closes it does not. So the prompt printed onto
+				# the canvas and the next map redraw painted over it. `_page_clear()` is what makes
+				# the placement deliberate rather than dependent on what closed a moment ago; every
+				# other page in the game opens with it and this one never did.
+				_page_clear()
 				display_game(message.get("message", "Choose a trait to hunt:"))
 				display_target_farm_options()
 				update_action_bar()
@@ -30756,6 +30796,13 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 	var display_class = owner_class if owner_class != "" else character_data.get("class", "")
 	var themed_name = _get_themed_item_name(item, display_class)
 
+	# ⚡ A PAGE CLAIMS THE CANVAS. Owner 2026-09-18, after the Scroll of Finding printed onto
+	# the overworld canvas and was painted over by the next map redraw: *"We really need to do a
+	# thorough sweep to fix this across the board for all menus and items."* Measured with
+	# `tools/prompt_surface_audit.py`: 80 prompt-shaped functions, 45 already started a page, 24
+	# are sub-renderers of one that does, and these were placed by whatever happened to close a
+	# moment earlier.
+	_page_clear()
 	display_game("")
 	display_game("[color=%s]===== %s =====[/color]" % [rarity_color, themed_name])
 	display_game("[color=#808080]%s[/color]" % source.capitalize())
@@ -34743,7 +34790,14 @@ func display_changelog():
 	# ceiling closed, and a post that no longer greets you with a stove.
 	# v0.9.806 - eleven things reported from one evening of play, and the one that turned out to
 	# mean the art was never reaching the build at all.
-	display_game("[color=#00FF00]v0.9.806[/color] [color=#808080](Current)[/color]")
+	# v0.9.807 - the menu-placement sweep: every screen that waits for an answer now claims the
+	# canvas, and a long tutorial hint can no longer push its own button off the screen.
+	display_game("[color=#00FF00]v0.9.807[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: menus that opened where you could not see them.[/color] Using a [b]Scroll of Finding[/b] printed its list of choices onto the map panel and the very next map redraw painted over it - there was nothing to click and nothing to read. The cause is that a screen has to [b]claim[/b] the canvas before printing, and which screen you came from decided whether it did. Swept the whole file rather than the one scroll: of [b]74[/b] screens that wait for an answer, [b]50[/b] already claimed it, 24 are drawn by one that does, and the rest did not. All of them do now - the merchant shop, the upgrade list, unequip, item details, the tutorial steps and both scrolls - and `tools/prompt_surface_audit.py` fails if a new one appears.")
+	display_game("  [color=#FF4444]★ FIXED: the Companions hint ran off both ends of the screen.[/color] The teaching panel was exactly as tall as its text with no ceiling, and it is centred - so a long hint lost its title off the top and its [b]Got it[/b] button off the bottom, with nothing to scroll. Every previous round of this shortened the text; the text grows again. The panel has a ceiling now and its body scrolls, so a hint of [b]any[/b] length fits, and a short one is still a small box. Checked by building it with a hint four times longer than anything the game sends.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.806[/color]")
 	display_game("  [color=#FF4444]★ FIXED: the art you were looking at was not the art we shipped.[/color] The tile at the centre of every post had been replaced twice and you were still seeing the [b]first[/b] one from a distance. The picture was correct on disk and correct in the repository - Godot only rebuilds its texture cache on an editor pass, and the release check had only ever asked whether the art [i]existed[/i], which was true of a build carrying every tile from a month ago. Every image is now fingerprinted when it is cut and checked against what is actually [b]inside the build[/b], so this cannot ship again. The post centre is a [b]town fountain[/b], and the enchanting table is a whole desk instead of the right-hand column of one.")
 	display_game("  [color=#FF4444]★ FIXED: people standing inside the furniture.[/color] Warden Hollis was standing on the quest board. Station spacing only ever promised that no two stations sit [b]directly[/b] beside each other, while the map draws a quest board [b]three cells by three[/b] - so nine different tiles could reach over a neighbour and one of them did. Placement now knows how big each picture is. Measured across all 120 posts: [b]zero[/b] overlaps, and no post lost a service.")
 	display_game("  [color=#FF4444]★ FIXED: your cards were quoting two different numbers.[/color] Frost Nova said [b]42[/b] on the card and [b]50[/b] on the hover; Forcefield did the same. Cataclysm told a Sorcerer to [b]\"Ramp Focus first\"[/b] when the Sorcerer's engine is [b]Volatility[/b]. And Chaos Bolt appeared in the combat log as [b]Magic Bolt[/b]. Every headline number on a card now comes from the same place the card face reads, and a log line falls back to [b]your class's name[/b] for the card instead of whatever was typed at the call site.")
@@ -59610,6 +59664,9 @@ func _display_tutorial_step():
 		tutorial_active = false
 		return
 	var step = TUTORIAL_STEPS[tutorial_step]
+	# Claims the canvas - see the note in `display_item_details` and
+	# `tools/prompt_surface_audit.py`.
+	_page_clear()
 	display_game("")
 	display_game("[color=#00BFFF]--- Tutorial (%d/%d) ---[/color]" % [tutorial_step + 1, TUTORIAL_STEPS.size()])
 	display_game("[color=#87CEEB]%s[/color]" % step.text)
