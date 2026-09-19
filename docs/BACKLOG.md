@@ -339,7 +339,29 @@ Asked because the arc had run out of defects and into design. All four answered.
       are proven only by their helpers: the entry-warning display (axis two) and the dungeon
       completion/teleport path around the co-op unique roll. Live checks owed.
 
-- [ ] **⚑ PARTY PLAY FOLLOWS THE DRAGON QUEST IX MODEL — owner direction 2026-09-18.**
+- [~] **⚑ PARTY PLAY FOLLOWS THE DRAGON QUEST IX MODEL — owner direction 2026-09-18.
+      SLICE 1 SHIPPED 2026-09-19 (independent movement + the proximity pull).**
+
+      ✅ **SLICE 1 — LIVE.** The four overworld follower locks (movement, hunting, resting,
+      gathering) are gone, and so is the snake that teleported each follower onto the
+      person-ahead's tile every step. The pull replaces the old leader-only co-op: **any**
+      member's encounter starts the party fight, bounded by `PARTY_PULL_RADIUS` (8, Chebyshev,
+      against a 23-tile view). Out-of-range members are named rather than silently dropped.
+      **The race resolved itself** — the server handles triggers one at a time, so the first
+      claims the party's combat and sets `in_combat` on everyone it pulls, and the second is
+      turned away by a check that already existed. No tie-breaker was built; options 2 and 3
+      below layer on top if play shows the wrong member wins.
+      Dungeons keep their formation deliberately. Probe: `the_party_fights_together.gd`.
+
+      ▶ **SLICE 2 — NEXT: the map indicator + run-in join.** This is what makes being out of
+      range a short walk rather than a shut door, and it is the half that needs real new
+      machinery (see HALF TWO below: `member_states` is built once at start, `_party_all_submitted`
+      gates on the roster as it stood then, and the monster's HP was already multiplied by the
+      party size — a late joiner must not silently double it).
+
+      ▶ **SLICE 3 — travel rules and the Muster Sigil**, once slice 2 shows how far apart people
+      actually end up.
+
       <!-- audited: 2026-09-19 --> Verified still open: this is the MODEL, and the mechanics under
       it are the separate "HALF TWO" item below. Neither is built; the shipped part it mentions is
       half one (dungeon party combat).

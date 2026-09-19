@@ -7513,6 +7513,18 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"monster_fled": true,
 					"character": characters[peer_id].to_dict(),
 					"flock_incoming": true,
+					# ⚡ THE ROUND'S OWN LINES. Owner 2026-09-19: *"if shriekers call for a
+					# friend that should show up in the combat log."* They were WRITTEN and then
+					# thrown away here. `process_monster_turn` appends the shriek - "The Shrieker's
+					# shriek tears the veil, dragging a Tier-N X into the fray!" and the warning
+					# under it - and this branch ends the combat without forwarding `messages`, so
+					# the only surviving text was the generic "A X answers the call!" below. The
+					# player was told something arrived but never what happened or why.
+					#
+					# ⛑ BOTH KEYS, per Pitfall #9: these functions return `messages` (Array)
+					# AND a joined `message` (String), and reading the wrong one is how this
+					# information goes missing in the first place.
+					"messages": result.get("messages", []),
 					"flock_message": "[color=#FF4444]A %s answers the call! Press Continue to face it.[/color]" % summon_next
 				})
 				save_character(peer_id)
@@ -7527,6 +7539,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				send_to_peer(peer_id, {
 					"type": "combat_end",
 					"monster_fled": true,
+					# The same gap on the COWARD path: a monster that runs away did so for a
+					# reason, and the line saying so was being dropped identically.
+					"messages": result.get("messages", []),
 					"character": characters[peer_id].to_dict()
 				})
 				save_character(peer_id)
@@ -22583,11 +22598,10 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	"""Handle player starting a gathering session at a node."""
 	if not characters.has(peer_id):
 		return
-	# v0.9.740 - followers do not gather on their own out in the world (user 2026-09-01):
-	# the party moves as one, and gathering also rotates leadership. Inside a post they are
-	# free to act, which _party_follower_denied allows for.
-	# Gathering is independent too. The leadership-rotation concern behind the old lock is moot
-	# once nobody is being dragged: there is no formation left to hand around mid-journey.
+	# 2026-09-19 - gathering is INDEPENDENT now, with the Dragon Quest IX party model. The old
+	# lock (v0.9.740) reasoned that "the party moves as one, and gathering also rotates
+	# leadership"; neither premise survives once nobody is dragged behind the leader, because
+	# there is no formation left to hand around mid-journey.
 	var character = characters[peer_id]
 
 	if combat_mgr.is_in_combat(peer_id):

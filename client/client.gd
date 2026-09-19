@@ -29499,6 +29499,19 @@ func handle_server_message(message: Dictionary):
 							_open_loot_bag_deferred(_loot_bag)
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
+				# ⚡ WHAT ACTUALLY HAPPENED, before the consequence of it. Owner 2026-09-19:
+				# *"if shriekers call for a friend that should show up in the combat log."* The
+				# shriek line is written by the monster's turn and the server now forwards it;
+				# without printing it here the player still only sees "A X answers the call",
+				# which says something arrived and not why. Drawn BEFORE the flock prompt so the
+				# log reads in the order it happened.
+				for _fl_msg in message.get("messages", []):
+					var _fl_text := String(_fl_msg)
+					if _fl_text.strip_edges() == "":
+						continue
+					display_game(_fl_text)
+					if combat_scene_panel:
+						combat_scene_panel.append_log(_fl_text)
 				if message.has("character"):
 					_set_character_data(message.character)
 					update_player_level()
@@ -35040,7 +35053,14 @@ func display_changelog():
 	#            fault found in the inn.
 	# v0.9.824 - the sweep the owner asked for after the corpse loot: three more surfaces that
 	#            hid or dropped text, and a release gate so there is no fourth.
-	display_game("[color=#00FF00]v0.9.824[/color] [color=#808080](Current)[/color]")
+	# v0.9.825 - party play changes shape: everyone walks their own path and whoever meets a
+	#            monster pulls the nearby party in. Plus: a Shrieker's cry reaches the log.
+	display_game("[color=#00FF00]v0.9.825[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ PARTIES NO LONGER WALK IN A LINE — AND COMBAT IS WHAT BRINGS YOU TOGETHER.[/color] Until now a party was one moving object: the leader walked and everyone else was dragged along behind, unable to move, hunt, rest or gather on their own. [b]That is gone.[/b] Every member walks their own path and acts for themselves. What holds the party together is the fight — when [b]any[/b] member runs into a monster, nearby party members are pulled into that battle with them, and it no longer has to be the leader who finds it. Members too far away are [b]told so by name[/b] rather than quietly left out. [color=#FFAA00]Dungeons keep their formation for now — a corridor is a different problem from a country.[/color]")
+	display_game("  [color=#1EFF00]◆ Coming next in this arc:[/color] seeing on the map that a teammate is fighting, and [b]running into them to join a battle already underway[/b] — which is what makes being out of range a short walk rather than a shut door.")
+	display_game("  [color=#FF4444]★ FIXED: a Shrieker's cry never reached the combat log.[/color] When a Shrieker tears the veil and drags something far above its station into your fight, that moment was being written and then thrown away — all you saw was [i]a monster answers the call[/i], with no word of what happened or why. The cry, and the warning about what it dragged in, are in the log now. A cowardly monster that runs away also says so.")
+	display_game("")
+	display_game("[color=#808080]v0.9.824[/color]")
 	display_game("  [color=#FF4444]★ THREE MORE PLACES THE GAME WAS TALKING TO YOU AND YOU COULD NOT HEAR IT.[/color] After the corpse-loot fix, a sweep went looking for the rest of the class. [b]The merchant recharge said nothing at all[/b] — not the confirmation, not what it restored, and not the [i]\"you don't have enough valor\"[/i] refusal, which made the whole service look broken. And [b]both Home Stone prompts[/b] could be wiped by a single step: the choice page vanished while you were still in the menu, leaving a blank screen that was quietly still waiting on your number keys.")
 	display_game("  [color=#FF8000]★ AND A CHECK SO THERE IS NOT A FOURTH.[/color] The rule that a result must survive long enough to be read has been written down for a long time; nothing ever verified it, which is how all four of these shipped. Every screen the server can erase is now checked automatically before a build goes out, and a new one that is not protected [b]fails the release[/b].")
 	display_game("")
