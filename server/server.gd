@@ -2845,9 +2845,14 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		persistence.save_character(account_id, character)
 
 	# === GOLD → VALOR MIGRATION ===
-	# One-time conversion of legacy character gold to account Valor (50 gold = 1 Valor)
+	# One-time conversion of legacy character gold to account Valor (GOLD_TO_VALOR : 1).
+	#
+	# ⛑ AND IT IS A MIGRATION AGAIN. Until 2026-09-18 the dungeon chest still ADDED gold, so this
+	# ran on most logins, paid a fiftieth of the chest, and printed the changeover announcement to
+	# players who had been using Valor for months. Nothing mints gold now, so this only ever fires
+	# for a save older than the changeover - which is what it was written for.
 	if character.gold > 0:
-		var converted_valor = maxi(1, character.gold / 50)
+		var converted_valor = maxi(1, character.gold / GOLD_TO_VALOR)
 		persistence.add_valor(account_id, converted_valor)
 		log_message("Gold migration: %s converted %d gold → %d Valor" % [char_name, character.gold, converted_valor])
 		character.gold = 0
@@ -9056,6 +9061,11 @@ func send_to_peer(peer_id: int, data: Dictionary):
 		var json_str = JSON.stringify(data) + "\n"
 		connection.put_data(json_str.to_utf8_buffer())
 
+## Legacy gold converts to Valor at this rate. Named because TWO places divide by it:
+## the login migration and the treasure chest that used to create the stuff.
+const GOLD_TO_VALOR := 50
+
+
 func _send_gold_migration_message(peer_id: int, converted_valor: int):
 	if not peers.has(peer_id):
 		return
@@ -11257,7 +11267,23 @@ func handle_continue_flock(peer_id: int):
 # ===== INVENTORY HANDLERS =====
 
 func _open_treasure_chest(peer_id: int, item_index: int):
-	"""Open a treasure chest for random materials and gold."""
+	"""Open a treasure chest for random materials and Valor.
+
+	⚡ IT PAID GOLD, WHICH HAS NOT EXISTED SINCE THE VALOR CHANGEOVER. Owner 2026-09-18, with a
+	screenshot: *"what showed up when I grabbed the dungeon chest"* - the whole legacy
+	`CURRENCY CHANGE: Gold → Valor` onboarding wall, on an account holding 65,400 Valor, awarding
+	it 6.
+
+	⛑ AND THAT WALL WAS THE SYMPTOM, NOT THE BUG. The login path converts any leftover
+	`character.gold` at **50 gold to 1 Valor** and announces it - written as a one-time migration
+	for saves made before the changeover. But this function kept CREATING gold, so every chest
+	quietly minted a currency the game had retired, the player got a fiftieth of its face value on
+	their next login, and they were told they had been migrated all over again. The reward was
+	paid at 2% and the message read as a bug.
+
+	The roll below is unchanged in shape; it is divided by the same 50 the migration used, so a
+	chest is worth exactly what it was worth after conversion - this fixes the currency and the
+	announcement, and deliberately does not re-tune the payout."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
@@ -11275,7 +11301,7 @@ func _open_treasure_chest(peer_id: int, item_index: int):
 
 	# Roll each chest's rewards and accumulate totals across the whole stack.
 	var reward_materials = {}
-	var total_gold = 0
+	var total_gold = 0      # rolled in the retired currency, paid as Valor at the migration rate
 	var compass_drops = []
 	var material_pool = _get_chest_material_pool(tier)
 	for _c in range(max(1, chest_qty)):
@@ -11307,7 +11333,11 @@ func _open_treasure_chest(peer_id: int, item_index: int):
 	# Grant materials + gold + any compasses
 	for mat_id in reward_materials:
 		character.add_crafting_material(mat_id, reward_materials[mat_id])
-	character.gold += total_gold
+	# GOLD_TO_VALOR is the rate the login migration has always used, so a chest pays exactly what
+	# it used to be worth once converted - and nothing anywhere mints gold any more.
+	var chest_valor: int = maxi(1, total_gold / GOLD_TO_VALOR) if total_gold > 0 else 0
+	if chest_valor > 0 and peers.has(peer_id):
+		persistence.add_valor(peers[peer_id].account_id, chest_valor)
 	for cd in compass_drops:
 		character.add_item(cd)
 
@@ -11321,7 +11351,8 @@ func _open_treasure_chest(peer_id: int, item_index: int):
 	for mat_id in reward_materials:
 		var mat_name = mat_id.replace("_", " ").capitalize()
 		msg += "  [color=#00BFFF]%s x%d[/color]\n" % [mat_name, reward_materials[mat_id]]
-	msg += "  [color=#FFD700]%d Gold[/color]" % total_gold
+	if chest_valor > 0:
+		msg += "  [color=#FFD700]%d Valor[/color]" % chest_valor
 	if compass_drops.size() > 0:
 		msg += "\n  [color=#9ACD32]+%d Dungeon Compass%s[/color] [color=#808080](use to reveal a nearby dungeon)[/color]" % [compass_drops.size(), "es" if compass_drops.size() > 1 else ""]
 

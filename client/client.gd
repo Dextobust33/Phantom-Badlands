@@ -31126,9 +31126,21 @@ func _combat_item_gain_line(item: Dictionary) -> String:
 	client-side re-derivation that can drift from it. Reproducing the formula here is precisely
 	how this codebase has produced confidently wrong numbers before.
 
+	⚡ AND IT RESOLVES THE EFFECT, IT DOES NOT READ A FIELD. Owner 2026-09-18, with a screenshot
+	of the combat Use Item list showing two bare names: *"still not seeing the amount these heal
+	like I thought we changed."*
+
+	⛑ THE LINE WAS BUILT AND NEVER REACHED THE ITEMS THEY OWN. This read `item.effect` directly
+	and returned "" when it was absent - and a CRAFTED consumable carries no stored `effect` dict,
+	because `handle_use_item` resolves one with `drop_tables.consumable_effect(item)`. So the gain
+	appeared on dropped potions and on nothing a player had made, which is most of the list. Same
+	shape as the dungeon sprites that shipped broken: the files were checked, the row count was
+	checked, and the RESOLVER was never called. Calling the same function the server calls is what
+	makes the number shown the number granted.
+
 	Returns "" for anything whose gain is not a simple restore; those keep their hover text."""
-	var effect = item.get("effect", null)
-	if not (effect is Dictionary):
+	var effect: Dictionary = DropTables.consumable_effect(item)
+	if effect.is_empty():
 		return ""
 	var tier: int = int(item.get("tier", 0))
 	if effect.has("heal"):
@@ -34737,6 +34749,8 @@ func display_changelog():
 	display_game("  [color=#FF4444]★ FIXED: your cards were quoting two different numbers.[/color] Frost Nova said [b]42[/b] on the card and [b]50[/b] on the hover; Forcefield did the same. Cataclysm told a Sorcerer to [b]\"Ramp Focus first\"[/b] when the Sorcerer's engine is [b]Volatility[/b]. And Chaos Bolt appeared in the combat log as [b]Magic Bolt[/b]. Every headline number on a card now comes from the same place the card face reads, and a log line falls back to [b]your class's name[/b] for the card instead of whatever was typed at the call site.")
 	display_game("  [color=#FF4444]★ FIXED: the threat bounty sent you to the wrong dungeon.[/color] A post's threat-relief job advertised the dungeon actually menacing it - and then, on accept, built you a [b]private copy 25-40 tiles away[/b]. Its own text promises that finishing it clears the post's Under Threat state, which clearing a private copy can never do, so the reward was [b]unreachable[/b] rather than merely mislabelled. It binds the real one now.")
 	display_game("  [color=#FF8000]★ POST A JOB FOR ANYTHING YOU CANNOT MAKE.[/color] Commissioning only ever accepted specialist recipes, so a recipe simply [b]above your skill[/b] - the commonest reason to want somebody else to make something - was refused, and its row in the list could not even be clicked. Locked rows open now, and [b]Post Job[/b] works on anything you cannot make yourself. The Commission button (a post NPC, always Standard quality) still needs the skill; asking a real crafter never did.")
+	display_game("  [color=#FF4444]★ FIXED: the dungeon chest was paying you in a currency that no longer exists.[/color] It added [b]Gold[/b], which was replaced by Valor months ago - so the reward sat on your character until your next login, was converted at [b]50 to 1[/b], and printed the whole original [i]\"Gold has been replaced by Valor\"[/i] announcement at you again. Chests pay [b]Valor[/b] directly now, worth exactly what they were worth after conversion, and nothing anywhere creates gold.")
+	display_game("  [color=#FF4444]★ FIXED: the combat item list still showed bare names.[/color] The [i]+340 HP[/i] figure added last release appeared on dropped potions and on [b]nothing you had crafted[/b] - it read a field that a crafted consumable does not carry, instead of asking the same function the server asks when it heals you. Every usable item now says what it will actually give [b]you[/b].")
 	display_game("  [color=#1EFF00]◆ Every menu closes the same way.[/color] Escape, Space or Enter - and the button says so. Eight screens took Escape only, three took Space, and nothing on screen told you which.")
 	display_game("  [color=#1EFF00]◆ The smith and the healer are the same two people every visit.[/color] Which face you got depended on [b]which side you bumped them from[/b].")
 	display_game("  [color=#1EFF00]◆ Warden Hollis walks around hotzones[/color] instead of leading a level-one character straight through the worst ground on the map. Measured: it costs [b]no extra distance[/b] on average.")
