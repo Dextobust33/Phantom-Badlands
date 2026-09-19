@@ -37704,6 +37704,20 @@ func _ow_heal_canvas() -> void:
 		return
 	if _ow_wide_page:
 		return
+	# ⚡ NEVER REPAINT OVER SOMETHING THE PLAYER HAS NOT ACKNOWLEDGED. `pending_continue` means a
+	# screen is up asking to be read - a hatch, a rank-up, an outcome - and this function's whole
+	# job is to put the map back, so it is the one path that would erase it.
+	#
+	# It was NOT covered. `_ow_canvas_eligible()` sounds like it would gate this and does not: it
+	# asks whether the map COULD own the canvas (sprites available, not in a dungeon, not in
+	# combat), never whether something is currently waiting. The length check below only saves a
+	# page that printed MORE text than the map did, so a short page - which is most acknowledgement
+	# screens - fell straight through.
+	#
+	# Found 2026-09-19 by a probe written to prove the class was already closed. It was not, and I
+	# had talked myself out of it once by reading the wrong function.
+	if pending_continue:
+		return
 	if not _ow_canvas_eligible() or _last_map_payload.is_empty():
 		return
 	# A visible panel means a menu owns the canvas; leave it alone.

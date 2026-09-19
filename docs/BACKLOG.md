@@ -2920,9 +2920,20 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      question landed on the floor rather than in a fight, and the key is there and legible:
      `⌂ You  $ Loot  > Stairs  E Start  · Floor  & Node  × Trap  Sprites = Monsters  N Void whispers`.
      The renderer was always built (`_dungeon_key_text`); only the evidence was missing.
-   - [ ] Still open here: the companion art panel in the right margin has no frame; and a TEXT page
-     on the canvas is still overwritten by the next map redraw (a visual panel is not - it sits on
-     top). Movement is blocked in most such modes, so it needs a party-member push to show.
+   - [x] **THE TEXT-PAGE OVERWRITE IS FIXED 2026-09-19 — and it was real.** `_ow_heal_canvas`
+     exists to put the map back when a page clears the canvas, which makes it the one path whose
+     whole job is to overwrite. It honoured a wide page and an open panel but **not
+     `pending_continue`** - a screen waiting to be acknowledged. `_ow_canvas_eligible()` sounds
+     like it would cover that and does not: it asks whether the map COULD own the canvas, never
+     whether something is waiting. The length check only protects a page that printed MORE text
+     than the map did, so a SHORT acknowledgement screen fell straight through.
+     Probe: `nothing_paints_over_a_waiting_page.gd`, proven to fire.
+     ⚡ **Two of my own errors are recorded in it**, because both are the recurring kind: I first
+     talked myself out of the bug by reading a NEIGHBOURING function (`_margin_widgets_shown`) and
+     believing it was the eligibility check; and the probe's first version matched the word
+     `pending_continue` anywhere in the function, so the explanatory comment made a deleted guard
+     still pass - the same comment-vs-call trap the healer probe hit hours earlier.
+   - [ ] Still open here: the companion art panel in the right margin has no frame.
    **THE OVERWORLD MAP MOVED TO THE MAIN CANVAS (2026-09-15 night, unreleased), and took the
    Coords box, the Area box, the minimap, the status panel and the travel row with it.** Owner,
    after three attempts to win rows inside the side column: *"the map needs more space"*, then
