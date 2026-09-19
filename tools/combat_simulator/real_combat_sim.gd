@@ -66,6 +66,31 @@ const RUN_FIGHT_FLEE_AT: float = 0.30
 ## is now a fight it loses, and both are "not a win". What it changes is that the DEATH column
 ## becomes true - the only number that decides anything under permadeath.
 const PLAYER_ATTEMPTS_FLEE: float = 1.0 / 44.0
+## ⚡ THE CONSTANT ABOVE IS FROM A BIASED SAMPLE - kept only as the record of how this was got
+## wrong. "1 of 44 dying players tried to flee" was read off the combat logs of characters who
+## DIED. A player who fled successfully did not die and is therefore structurally absent from that
+## sample, so it can only ever under-count fleeing. Third denominator error in one session.
+##
+## ⛑ CALIBRATED INSTEAD, against a rate that IS observable: the live server shows **50 deaths
+## across 2766 encounters = 1.81% per encounter** (deaths + monsters_killed, over both the dead and
+## the living). `fleecal` solves for the rate that reproduces it. Treat this as a proxy for ALL the
+## outs a real player has - fleeing, potions, declining the fight - not just the flee command.
+## ⛑ CALIBRATED, 2026-09-18: the rate that reproduces the live death-per-encounter figure.
+## Measured by `tools/probe/flee_rate_matches_live.gd` at L1-10, the only band with live deaths:
+##
+##     flee 0.00 -> 15.81% death      flee 0.85 ->  2.56%
+##     flee 0.55 ->  8.55% death      flee 1.00 ->  0.85%      live target: <= 1.81%
+##
+## ⚡ AND THIS RETRACTS THE "FIX" THAT PRODUCED IT. For one session this was PLAYER_ATTEMPTS_FLEE
+## (1/44 = 0.023), on the strength of "only 1 of 44 dying players tried to flee". That sample can
+## only contain players who DIED - anyone who fled successfully is absent by construction - so it
+## measured survivorship, not behaviour. The real rate is ~40x higher, the original always-flee
+## model was approximately right, and a full calibration chain was run on the wrong number before
+## anything checked it against an observable rate.
+##
+## 0.90 rather than 1.00 because the live figure is an UPPER bound: a successful flee is neither a
+## win nor a death, so it appears in no counter and the true denominator is larger than 2766.
+var _flee_rate: float = 0.90
 # The REAL rest-ambush chance, read from the server rather than copied.
 #
 # 2026-09-07 — this loop hardcoded 15 while the game has used 5 since 2026-09-05, when it was
@@ -2383,7 +2408,7 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 			# rate at every level while the live log held 50 real deaths.
 			#
 			# Measured from that log: 1 of 44 combat records mentions an attempt to flee.
-			var _flee_aware: bool = randf() < PLAYER_ATTEMPTS_FLEE
+			var _flee_aware: bool = randf() < _flee_rate
 			while turns < 400:
 				if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 					break
@@ -5512,7 +5537,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 	var _rf_fled := false
 	# Is THIS player one of the few who reads the fight and runs? Rolled per encounter, at the
 	# rate the live death log actually shows - see PLAYER_ATTEMPTS_FLEE.
-	var _rf_flee_aware: bool = randf() < PLAYER_ATTEMPTS_FLEE
+	var _rf_flee_aware: bool = randf() < _flee_rate
 	while turns < 400:
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
