@@ -61,6 +61,36 @@ the chain will produce a confident wrong curve and the only cost of finding out 
 45 minutes.** Iterate with `lowlevel` / `riskcurve` / `endgame` / `cardnames` / `statdesc`
 (2-4 minutes each), then run the chain once.
 
+### ⛑ TWO PATHS AGREEING IS NOT VERIFICATION WHEN THEY SHARE STATE
+
+2026-09-19 — `refcal` spent months **fitting and self-verifying against a game nobody plays.**
+`_load_reference_curve()` bails on `if not _reference_anchors.is_empty(): return`, and
+`_inject_curve` is what fills that array — so on the FIRST injection, pass 1 of the calibration,
+the loader was disarmed for the whole process and the two blocks it also installs
+(`species_power`, `role_multipliers`) were never read at all. It then wrote a file that carefully
+preserved them.
+
+| level | anchor hp | what actually spawns | refcal's "VERIFIED" | an independent read |
+|---|---|---|---|---|
+| L10 | 458 | 753 | 85% | 63% |
+| L250 | 42883 | 97929 | 67% | 22% |
+
+**Preflight passed before all five chain runs that shipped it**, because its measurement-path check
+runs BOTH paths inside the same process: they shared the blind spot and agreed with each other
+perfectly while both were wrong. A/B-ing two things that share state proves only that they share it.
+
+So the rule, which generalises past this one bug: **verify against the ARTIFACT, never against
+in-memory state.** A calibrator's own "verified" table is the weakest evidence in the room — it is
+the defendant testifying. The check that found this was re-reading the written file in a fresh
+process and measuring that; it is now preflight's `[4]`, is deterministic rather than sampled (so
+it cannot pass on noise), and is proven to fire by reverting the one-line fix.
+
+Its pair, and the reason this is a section rather than a line: **`species_power` has never once
+weakened a species.** Every correction it makes is a strengthening, minimum x1.05, 68 of 136 pinned
+at the x2.50 ceiling. A calibrator that only ever pushes one way is not measuring a difference. That
+is unresolved and filed in `docs/BACKLOG.md` — **do not widen the clamp to "fix" it**, because a
+wider range on a one-sided comparison amplifies the bias instead of correcting it.
+
 **A global player buff cannot fix a per-class gap.** The chain holds win rate at target, so any
 across-the-board buff is cancelled by monsters getting stronger on the next refit. Only PER-CLASS
 changes survive a refit. Measured: a global CON mitigation buff washed out entirely; a per-class

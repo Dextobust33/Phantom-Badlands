@@ -7253,6 +7253,70 @@ func run_preflight() -> void:
 		if cpt < 0.55:
 			print("    FAIL %-10s casts %.2f/turn - it is auto-attacking, fix the policy first" % [klass, cpt])
 			fail += 1
+	# 4. The world the chain MEASURES must be the world it WRITES.
+	#
+	# ⚡ THE WORST BUG OF 2026-09-19, AND PREFLIGHT PASSED BEFORE ALL FIVE RUNS THAT SHIPPED IT.
+	# `_load_reference_curve()` bails on `if not _reference_anchors.is_empty(): return`, and
+	# `_inject_curve` is what fills that array. So on the FIRST injection - pass 1 of the
+	# calibration, before anything has read the curve - the loader is disarmed for the whole
+	# process, and the two blocks it ALSO installs (`species_power`, `role_multipliers`) are never
+	# read. refcal fitted and self-verified against monsters carrying no species corrections, then
+	# wrote a file that carefully preserved them:
+	#
+	#     level   anchor hp   actually spawns   refcal's verify   an independent read
+	#     L10           458               753              85%                   63%
+	#     L250        42883             97929              67%                   22%
+	#
+	# Check [2] could not see it: BOTH its measurement paths run inside the same process, so they
+	# shared the blind spot and agreed with each other perfectly while both were wrong. That is the
+	# general lesson - **two paths agreeing is not verification when they share state.** The only
+	# thing that catches it is comparing against the ARTIFACT.
+	#
+	# ⛑ DETERMINISTIC ON PURPOSE. A win-rate comparison here would carry ~5pp of sampling noise
+	# and this fault is worth catching on run one, so the check reproduces the exact bug condition
+	# - a fresh process, then an injection - and asserts the blocks survived. Proven to fire by
+	# reverting the one-line fix in `_inject_curve`: it reports both blocks lost.
+	print("
+[4] the injected world still carries what the file holds")
+	var _cf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
+	if _cf == null:
+		print("    FAIL no reference_monster_curve.json to check against")
+		fail += 1
+	else:
+		var _cp = JSON.parse_string(_cf.get_as_text())
+		_cf.close()
+		var _doc: Dictionary = _cp if _cp is Dictionary else {}
+		var want_sp: int = (_doc.get("species_power", {}) as Dictionary).size()
+		var want_rm: int = (_doc.get("role_multipliers", {}) as Dictionary).size()
+		var anchors: Array = _doc.get("anchors", [])
+		if anchors.is_empty():
+			print("    FAIL the curve file has no anchors")
+			fail += 1
+		else:
+			# Reproduce a FRESH process, then do what refcal's first pass does.
+			monster_db.set_species_power({})
+			monster_db.set_calibrated_role_multipliers({})
+			monster_db._reference_anchors = []
+			monster_db._curve_is_calibrated = false
+			_inject_curve(anchors)
+			var got_sp: int = monster_db._species_power.size()
+			var lost: Array = []
+			if want_sp > 0 and got_sp == 0:
+				lost.append("species_power (%d species)" % want_sp)
+			if want_rm > 0 and monster_db._calibrated_role_mults.is_empty():
+				lost.append("role_multipliers (%d roles)" % want_rm)
+			if lost.is_empty():
+				print("    ok - species_power %d/%d and role_multipliers survive an injection"
+					% [got_sp, want_sp])
+			else:
+				print("    FAIL an injection DROPS %s" % ", ".join(lost))
+				print("         refcal would fit and self-verify against monsters the game never builds.")
+				fail += 1
+			# Leave the process in a clean state for anything that runs after.
+			monster_db._reference_anchors = []
+			monster_db._curve_is_calibrated = false
+			monster_db._load_reference_curve()
+
 	print("
 %s" % ("PREFLIGHT PASSED - the chain is worth running." if fail == 0
 		else "PREFLIGHT FAILED (%d) - fix these BEFORE the chain; it cannot detect them itself." % fail))
