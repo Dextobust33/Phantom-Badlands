@@ -192,9 +192,13 @@ All of this came out of the distribution work. Recorded before starting any of i
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
-## ⚑ WHERE THE LIST STANDS — recounted 2026-09-18 after v0.9.803 (the combat log arc closed)
+## ⚑ WHERE THE LIST STANDS — recounted 2026-09-19 after v0.9.816 (the balance instrument arc)
 
-Counted mechanically (`- [ ]` vs `- [x]` across this file), not estimated. **The working order is
+Counted mechanically (`- [ ]` vs `- [x]` across this file), not estimated. **2026-09-19: 52
+open, 265 done.** The balance batch is largely spent - the v0.9.816 chain carried five queued
+items through with it - and what it left behind is two OPEN QUESTIONS rather than tasks (see the
+NEXT SESSION block): why `species_power` only ever strengthens, and whether L5 actually plays as
+rough as it measures. Both want live data before code. **The working order is
 the RECOMMENDED ORDER in the NEXT SESSION block.** The breakdown below is from 2026-09-13 and is now approximate — the onboarding arc closed a large share of
 "everything else" between then and now.
 
@@ -1001,6 +1005,95 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ✅ v0.9.816 — THE CHAIN WAS MEASURING A GAME NOBODY PLAYS (2026-09-19, LIVE)
+
+Started from one owner question — *"are we sure the sim is using the actual starting decks each
+class is using?"* The decks were fine. Everything behind them was not. **Four instrument faults,
+each hiding the next**, all in the machinery that sizes every monster in the game:
+
+1. **Gear rarity sampled the DROP table once per slot** — models a player who has already found a
+   suitable item for all seven. Live L1-4 characters wear **87% common**; the model made 57%.
+   Fixed with `LOW_LEVEL_WEAR`, which converts the drop distribution into the measured *wearing*
+   distribution below L15.
+2. **`average` handed CLASS KIT to level-2 reference players** — gear that drops only from Hoarder
+   monsters (Minotaur / Wraith / Mimic). Live L1-9 gear is item level 1.2-2.9 with none of it.
+   Gated to L15+.
+3. **The curve-writing sampler fled every losing fight**, so `refcal` reported 0.0% death at every
+   level while the live log held 50 real deaths. `run_fight` had been fixed; `_fight_stats_at`,
+   the one that writes the curve, had not. One value, two places.
+4. **`refcal` verified a curve it does not write.** `_load_reference_curve()` bails on
+   `if not _reference_anchors.is_empty(): return`, and `_inject_curve` fills that array on pass 1 —
+   so `species_power` and `role_multipliers` were **never read for the whole run**. It fitted and
+   self-verified without them, then wrote a file preserving them: L10 verified at 85% and measured
+   63% everywhere else. **Long-standing** — the WRITE side was fixed when species_power was found
+   to be wiped; the READ side never was.
+5. **The monotonic clamp ran on the BASE curve**, discarding the calibrator's own corrections
+   (L5 `str` 18 -> 54, L10 27 -> 54) — the documented smoothing bug's other half. Now clamped on
+   the **effective** curve (base x mean species multiplier at that level), so a base dip that
+   compensates for a multiplier spike survives while a genuine dip is still repaired.
+
+Together these made the simulated L1-10 player win **~100%** of fights, so the chain kept
+strengthening monsters to compensate. Faults 4 and 5 were in the curve that was live until now.
+
+**Result:** every anchor within ±11pp of target (only L5 exceeds ±10, at -11), death 0.9-6.8%,
+risk FALLS with progression again. The L50-L1000 band moved from 40-47pp too hard to on-target.
+`refcal`'s verify now agrees with independent reads to 1-4pp where it had been 20-49pp adrift.
+
+**The durable gain: deaths per encounter is now an EXTERNAL target.** Every character records
+`monsters_killed` whether it lived or died, so the live server can report **50 deaths / 2766
+encounters = 1.81%** (an upper bound — a successful flee is neither). `flee_rate_matches_live.gd`
+fits the flee model to it. The chain finally answers to something outside itself.
+
+**Four claims retracted this session, all the same error — a numerator without its denominator:**
+monsters at 3.8x the curve (really **1.4x**); deaths at L1-9 meaning early game is over-tuned
+(**83% of living characters are there too**); `refcal` targeting a flat 60% (there is a ramp,
+92% -> 58%); and my own flee "fix" (1/44, from a deaths-only sample that cannot contain a
+successful flee — it made death **nine times worse** than the model it replaced).
+
+Also landed: **preflight check `[4]`** (the injected world must carry what the file holds —
+deterministic, proven to fire by reverting the fix), a **CLAUDE.md rule** (*two paths agreeing is
+not verification when they share state; verify against the artifact*), and **L3/L5 rows in
+`DIFFICULTY_RAMP`** so the band holding 83% of players has its own knob (values exactly neutral —
+verified no target moved).
+
+### ⚠ MERCHANTS ARE FIXED BUT NOT DEPLOYED (2026-09-19)
+
+Owner: *"I didn't see any last time I was on the live server."* They were working the whole time —
+the live log is full of them hauling stock — and **invisible while doing it**.
+`_refresh_merchant_cache` dropped any merchant resting at a post with a bare `continue`, so it did
+not draw, `is_merchant_at` was false and `get_merchant_at` returned nothing. Standing at a post you
+met one **0% of the time**, at any road length; walking a road, 5-18%.
+
+Now parked on the first road tile **outside** the post (the post centre is where the station art
+sits). Probe `merchant_is_findable.gd`, proven to fire.
+
+**This is server-side map generation and has NOT been pushed — it needs a server deploy to reach
+live.** Nothing else is waiting on it.
+
+**Still open on merchants, owner's call:** the sprite is a trade **wagon**, not a person. Owner
+asked for "NPC sprites instead of symbols" — it was never a `$` (that is only the ASCII fallback),
+but whether a wagon or a driver is wanted is a visual judgement. Sprite sent 2026-09-19.
+
+### ⚑ OPEN QUESTIONS FROM THE BALANCE PASS — ranked
+
+1. **`species_power` has NEVER weakened a species.** Every correction it makes is a strengthening:
+   minimum x1.05, median 2.47, 68 of 136 corrections pinned at the x2.50 ceiling, **zero below
+   1.0**. A calibrator comparing each species against its own mix should land on both sides of 1.0
+   roughly evenly. **Do NOT widen the clamp to "fix" this** — a wider range on a one-sided
+   comparison amplifies the bias. The question is why the comparison is one-sided.
+   *A ratchet hypothesis (mix carries the previous run's multipliers while each candidate is
+   measured raw) was TESTED and did not hold: clearing the multipliers barely moves the L50/L250
+   mix, because the species carrying big multipliers are high-tier and do not spawn there.*
+   `species_power` does reach real monsters — Balrog at L50 is 13,073 HP with it, 5,089 without.
+2. **L5 sits at 79% win against a 90% target** — the one anchor outside ±10pp. Two honest routes:
+   lower the target to meet reality (it is a `DIFFICULTY_RAMP` row now), or fix the fit, which is
+   (1). **Do not touch until live data says whether L5 actually plays rough.**
+3. **Let the live data close the loop before changing anything else in combat.** Every monster in
+   the game just moved. Deaths per encounter is now measurable; re-run `tools/death_log_audit.py`
+   after a week of play and compare against the 1.81% baseline. Stacking another balance change
+   now destroys attribution — this is the first time the loop can actually close.
+
+
 ### ✅ REST AFTER THE BOSS — v0.9.810 (2026-09-18)
 
 Owner: *"After killing the boss of a dungeon it looks like you can't rest anymore as the option
@@ -1410,7 +1503,7 @@ Currently queued:
       reference curve*. Running the generator gives **1.4x**. The 3.8x came from dividing live
       death records by a level-only curve, ignoring species variance and over-levelled encounters.
 
-- [ ] **One specialist recipe per trade dropped to skill 2-3** (2026-09-18, owner: *"yes drop some
+- [x] **One specialist recipe per trade dropped to skill 2-3** (2026-09-18, owner: *"yes drop some
       early recipes to lower skill"*). Measured first: of 109 specialist recipes only **2** sat at
       skill 1-10, so the commission route was unreachable for the first ~15 levels of a trade.
       Self Repair 15→3, Transmute Ore Up 15→3, Disenchant Item 15→3, Craft Fine Parchment 15→3,
@@ -1435,9 +1528,9 @@ Currently queued:
       ~0.3% target, by two agreeing read-only audits (2026-09-13). The chain steers by WIN rate and
       is structurally blind to deaths, so this cannot be fixed by running it - it needs a
       per-class look first. **The largest item in the queue and the reason the queue exists.**
-- [ ] **`assassinate_pct` reaches the dice** (v0.9.790). Silver Tongue +15% and one unique now work
+- [x] **`assassinate_pct` reaches the dice** (v0.9.790). Carried through the v0.9.816 chain. Silver Tongue +15% and one unique now work
       as written - a small per-class gain for the Trickster line. Glance at it on the next `refcal`.
-- [ ] **The companion acts through an ethereal dodge** (v0.9.803). Owner waived re-calibration for
+- [x] **The companion acts through an ethereal dodge** (v0.9.803). Carried through the v0.9.816 chain. Owner waived re-calibration for
       it as too narrow to matter (Ethereal monsters, 33% of attacks). Listed so that if the batch
       runs anyway it is measured rather than forgotten - not as a debt on its own.
 - [ ] **Threat bounty rewards were re-anchored** (v0.9.803). Not player power, but a reward sized
@@ -1450,13 +1543,13 @@ Currently queued:
       is an interim anchor calibrated against sinks the owner has already said are wrong, so any
       valor number tuned before it lands is tuned against a moving target.
 - [ ] **Forcefield's 3-6x nerf still wants a live feel check** (from the 2026-09-02 balance day).
-- [ ] **Crafted gear and enchanting were re-sized to the drop curve** (2026-09-18). The crafted +
+- [x] **Crafted gear and enchanting were re-sized to the drop curve** (2026-09-18). Carried through the v0.9.816 chain. The crafted +
       runed PAIR moved from ~0.5x a drop to **1.15x**, and the per-item enchantment ceiling now
       scales with level instead of being flat. The reference player has never carried crafted gear,
       so the chain has never seen this - and gear is one of the things it is most sensitive to.
       Re-measure with `crafted_pair_worth.gd` after any drop-table change, since the target is
       derived from the drop generator and moves with it.
-- [ ] **Knight +15% damage and Mentee +50% XP now reach the dice** (2026-09-18). Both were dead
+- [x] **Knight +15% damage and Mentee +50% XP now reach the dice** (2026-09-18). Carried through the v0.9.816 chain. Both were dead
       when the curve was last fitted, so the reference player has never carried either. Rare
       endgame titles only, so the effect on the aggregate should be small - but the Knight damage
       bonus lands in `calculate_damage` beside the gear multiplier, which is a path the chain does
@@ -1472,7 +1565,12 @@ Currently queued:
       Real but not broken, and all three clear the endgame bar. **Per-class levers only** - a global
       buff is cancelled by the next refit and cannot close a per-class gap. (Moved here from
       "Phase 2 - balance follow-through", 2026-09-18.)
-- [ ] **The high-level win targets predate retreat.** 60% was chosen when a "loss" meant a death;
+- [x] **The high-level win targets predate retreat.** **SETTLED 2026-09-19.** Owner chose "fix the
+      high end only": leave the on-ramp where it is and pull L50+ up toward target. That turned out
+      to be what `DIFFICULTY_RAMP` already encodes (92% at L1 ramping to 58% at L10000) - I had
+      wrongly described the target as a flat 60% and built an option menu on it. No new knob was
+      needed; the v0.9.816 refit does exactly this.
+- [ ] **(superseded) The high-level win targets predate retreat.** 60% was chosen when a "loss" meant a death;
       it now mostly means a retreat. Revisit alongside the Unburied, since extra lives change what
       survival means. This is a question about the TARGET, so settle it before a chain run rather
       than after. (Moved here, 2026-09-18.)
