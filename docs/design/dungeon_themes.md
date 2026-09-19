@@ -83,7 +83,78 @@ risk/reward choice and keeps baseline dungeons at today's difficulty.
 3. **Modifier item name = "Catalyst"** (e.g. "Frostbound Catalyst"). Note: reuses the
    existing "Ascension Catalyst" naming family in the fusion system.
 
-## ⚠ BROADER REVAMP DISCUSSION STILL OWED (user, 2026-08-25)
+## ✅ THE DISCUSSION HAPPENED — 2026-09-19. SLICES 2-4 ARE UNBLOCKED.
+
+The gate below is DISCHARGED. Held for a month because the doc said "do not proceed" and nothing
+re-opened it; the backlog meanwhile claimed A 2-4 had "nothing blocking it", which is how a
+blocked item looks unblocked. Recorded here rather than deleted so the next reader sees the gate
+was answered, not ignored.
+
+**What was settled, and what changed since 2026-08-25:**
+
+1. **RARE MECHANICAL ROLLS ARE ALLOWED** — reversing "baseline is cosmetic-only". The original
+   reason was *"permadeath counterplay before density rises"*, and as of **v0.9.817** that
+   counterplay exists: every class has Brace / Ward / Slip (a defensive action that needs no
+   card draw), and boss signature bursts telegraph a turn ahead. The premise the constraint
+   rested on is gone.
+   ⚑ **OWNER'S CONDITION, and it governs the whole build:** *"as long as they are low risk
+   implementations that we don't have to worry about manual testing to fix."*
+   In practice that means: **reuse mechanisms that already exist and are already balanced**
+   (the Empowered mods and variants, which already have stat/name/ability logic and already have
+   `reapply_variant` / `reapply_empowered` restamp functions), **add no new combat maths**, and
+   **make every claim probe-verifiable headless**. If a slice can only be checked by playing it,
+   it is the wrong slice.
+
+2. **THE CATALYST AND THE PARTY UPGRADE ARE ONE MECHANISM** — "apply an upgrade to this dungeon
+   before entry", used two ways. A Catalyst raises the threat tier; a party can raise it further.
+   One warning panel, one reward curve, one thing to balance and explain. This resolves the
+   overlap the doc flagged rather than shipping two systems that do the same job.
+
+3. **THE DRAW IS THEMED REWARDS FIRST (A), SIGNATURE DROPS SECOND (B).** Owner: *"A mainly, B
+   additional."* So slice 3 (theme carries to the egg/companion) is the priority for making
+   "which dungeon?" a decision; workstream B's signature drops + Atlas come after, and B stays
+   blocked on the card pass in the meantime.
+
+### ⚡ THE MECHANICAL HALF ALREADY EXISTS — DO NOT BUILD IT AGAIN (found 2026-09-19)
+
+**`DUNGEON_MODIFIERS` in `dungeon_database.gd` (owner direction 2026-09-13) is the mechanical
+theme, already shipped** — three weeks AFTER this doc was written, which is why the doc does not
+mention it and why a fresh reading of the doc leads straight into rebuilding it. One was written
+and reverted on 2026-09-19 before anyone noticed.
+
+What it already does:
+* named, coloured, blurbed modifiers — `Bloodgorged`, `Feverish`, `Ironbound`, `Teeming`,
+  `Gilded Rot`, … — each with stat multipliers AND a matching reward bump, so it reads as a trade
+* **rolled once per instance**, at the single chokepoint `_register_dungeon`
+* rank-gated: 0 slots at rank 1-2, 1 at 3-5, 2 at 6-8, 3 at rank 9; each slot a 70% chance, so
+  two rank-9 dungeons differ from each other
+* `modifier_effects()` folds them into one set of numbers that every consumer asks for
+* explicitly excluded from `speciescal`/`refcal`/`rolecal` — "a dungeon the player chose to enter
+  is not the baseline"
+* carries the same permadeath counterplay rule: nothing may reduce flee chance or block escape
+
+**So slice 2 is NOT "roll a theme". It is "make the modifiers VISIBLE."** The gap is the cosmetic
+half of the original ask — *"every monster in a dungeon shares a trait (a variant, and/or a
+color/pattern)"*. Today `monster_database.gd` rolls a cosmetic tint PER MONSTER at random
+(`COSMETIC_CHANCE`), and its own comment says *"Future dungeon themes will stamp ONE variant
+dungeon-wide"* — that stamp is what is missing. A player currently gets the mechanics of a
+Bloodgorged dungeon with no visual cue that they are in one.
+
+Revised slices:
+* **2 (revised)** — derive the dungeon's LOOK from the modifiers it already rolled, and stamp that
+  one look on every monster in it. No new mechanical system.
+* **3** — the boss egg / companion inherits that look, so the dungeon telegraphs its prize.
+* **4** — the pre-entry surface: the modifier's `blurb` and `color` shown on the tile before you
+  step in. Only one passing reference to modifiers exists in the client today, so the telegraph
+  half of "opt-in, telegraphed content" is thin.
+
+### Still to settle when the slices reach them
+* The modifier is named **Catalyst**, which collides with "Ascension Catalyst" in the fusion
+  system. Decide a distinct name before it reaches player-facing text.
+* The SOLO constraint is unchanged and absolute: an upgraded dungeon is opt-in, and the
+  un-upgraded run must always remain finishable alone.
+
+## ⚠ (DISCHARGED 2026-09-19 — see above) BROADER REVAMP DISCUSSION OWED (user, 2026-08-25)
 User: "there are more things we need to discuss regarding dungeons before you go off
 building a bunch of things. This is supposed to be a dungeon revamp so it will require
 planning and discussion." → After shipping slices 0+1, DO NOT proceed to slice 2 (theme
