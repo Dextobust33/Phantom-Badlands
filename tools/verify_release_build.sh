@@ -205,6 +205,12 @@ if grep -q '\[UIMEASURE\]' "$UIOUT"; then
     # 21-row grid would fit - so the header and the log are only just compatible with it, and
     # this is what notices when they stop being.
     check "dungeon_panel_fits"  "true" "$(grep -m1 'live_fit=' "$UIOUT" | sed 's/.*live_fit=//' | tr -d ' ')"
+    # The Tools block gained a spare count ("Pickaxe T2 14/20 (2 spares)") in a 240px box, which
+    # is about thirty characters - genuinely close. A wrapped tool line makes that block taller
+    # and every row it gains comes out of the MAP, which is the complaint this whole section
+    # exists for. Compared against the same panel with the suffix suppressed, so the control
+    # differs in exactly one thing; proven to fire by lengthening the suffix.
+    check "tools_panel_no_wrap"  "false" "$(grep -m1 'tools_panel with_spares=' "$UIOUT" | sed 's/.*wrapped=//' | tr -d ' ')"
 else
     printf '  FAIL  %-22s %s
 ' "map fit" "the build printed no [UIMEASURE] lines"

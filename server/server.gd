@@ -25804,19 +25804,14 @@ func _consume_tool_durability(peer_id: int, character, tool_subtype: String):
 func _auto_equip_tool_replacement(peer_id: int, character, tool_subtype: String, broken_name: String):
 	"""When a tool breaks, search inventory for a replacement of the same subtype and equip it.
 	Sends a prominent break notification either way so the player can react."""
-	# Find the highest-tier intact tool of this subtype in inventory
-	var best_idx = -1
-	var best_tier = -1
-	for i in range(character.inventory.size()):
-		var item = character.inventory[i]
-		if item.get("type", "") != "tool" or item.get("subtype", "") != tool_subtype:
-			continue
-		if item.get("durability", 0) <= 0:
-			continue
-		var tier = int(item.get("tier", 1))
-		if tier > best_tier:
-			best_tier = tier
-			best_idx = i
+	# ⚑ THE SAME RULE THE TOOLS PANEL COUNTS WITH. This used to be a local loop, and the panel
+	# that now shows "(2 spares)" would have needed its own copy of it - which is the "one value,
+	# two places" shape that has produced nearly every wrong-text bug in this codebase. A panel
+	# promising a backup that this function will not actually reach for is worse than a panel
+	# saying nothing. `Character.tool_spares` returns indices best-tier-first, so `[0]` is the one
+	# that gets equipped and `size()` is the number the player is shown.
+	var spares: Array = Character.tool_spares(character.inventory, tool_subtype)
+	var best_idx = int(spares[0]) if not spares.is_empty() else -1
 
 	if best_idx >= 0:
 		var replacement = character.inventory[best_idx]

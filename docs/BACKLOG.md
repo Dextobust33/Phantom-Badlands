@@ -8267,8 +8267,8 @@ something was dropped, and it sat unnoticed for eleven days.
       done twice over: the consequence preview, then the keep-rule moved from affix NAMES to
       STATS, which is what made the owner's own example expressible. Part 2 (tools) was mostly
       built already - a broken tool auto-equips your best spare. Part 1 (a pouch) is filed with a
-      MEASURED trigger that has not fired: fullest live character 28/40 against ~32. The one real
-      remainder is showing SPARE COUNTS before a tool breaks. Three
+      MEASURED trigger that has not fired: fullest live character 28/40 against ~32. **Part 2's
+      last gap — showing SPARE COUNTS before a tool breaks — closed 2026-09-19.** Three
       complaints, one disease: the player's bag fills with things they did not choose and cannot
       triage.
 
@@ -8281,9 +8281,23 @@ something was dropped, and it sat unnoticed for eleven days.
          finds the highest-tier intact tool of that subtype, equips it, and the `tool_broken`
          message names the replacement and its durability - the no-spare case included. So "go
          back and craft" is already not a trip you have to make mid-run.
-         ❌ **The one real gap is SEEING spares before one breaks.** The Tools panel shows the
-         equipped tool and its durability and says nothing about backups, which is the literal
-         complaint. One line per slot: `Pickaxe T2 14/20 (2 spares)`.
+         ✅ **DONE 2026-09-19 — THE TOOLS PANEL NOW SHOWS YOUR BACKUPS.** Each slot reads
+         `⛏ Pickaxe T2  14/20  (2 spares)`, and a tool at or below **half durability with nothing
+         behind it** says `(no spare)` in orange — the moment it is worth going to make another.
+         A fresh tool with no spare says nothing, because that is not news.
+         ⚑ **The count and the replacement are ONE rule**, `Character.tool_spares`: the server's
+         `_auto_equip_tool_replacement` was a local loop and now picks from it too. A panel
+         counting spares by its own rule is the "one value, two places" shape, and the failure
+         would have been specific and nasty — the panel promising a backup the game will not
+         reach for, so a player sets out on a gathering run believing they are covered. A
+         **broken** tool in the pack is not a spare (it is the thing being replaced).
+         Probe: `the_panel_counts_the_spare_you_get.gd`, proven to fire on both halves.
+         ⛑ **And it does not cost the map a row.** The suffix goes into a 240px box at font 13 —
+         about thirty characters, genuinely close — and a wrapped Tools line makes that block
+         taller, with every row it gains coming out of the ASCII map. MEASURED at 1080p against
+         the same panel with the suffix suppressed: 9 rows either way, 162px in a 180px box.
+         Release gate check `tools_panel_no_wrap`, proven to fire by lengthening the suffix
+         (10 rows, box 180→198).
          ⚡ I proposed BUILDING the auto-equip on 2026-09-19 and the owner said it likely already
          existed. It did. Fourth already-built thing proposed that day - the reason
          `tools/backlog_audit.py` now exists.

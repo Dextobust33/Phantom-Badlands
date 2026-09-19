@@ -4691,6 +4691,37 @@ static func card_iid(card_id: String, n: int) -> String:
 	"""(card, 1) -> 'card'; (card, 2) -> 'card#2'."""
 	return card_id if n <= 1 else "%s%s%d" % [card_id, CARD_COPY_SEP, n]
 
+## ⚑ WHAT COUNTS AS A SPARE TOOL - ONE RULE, BOTH SIDES.
+##
+## The server already replaces a broken tool from the pack (`_auto_equip_tool_replacement`), and
+## the owner's remaining complaint is that you cannot SEE the spare until the break happens:
+## *"it's hard to tell if you have backups etc."*
+##
+## So the Tools panel has to count them - and a panel counting them by its own rule is exactly the
+## "one value, two places" failure this codebase keeps finding. If the two ever disagree the panel
+## promises a backup the game will not reach for, which is worse than saying nothing at all.
+## Both callers ask this.
+##
+## Returns inventory INDICES, best first, because the server has to remove the one it takes.
+static func tool_spares(inventory: Array, subtype: String) -> Array:
+	var found: Array = []
+	for i in range(inventory.size()):
+		var item = inventory[i]
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		if String(item.get("type", "")) != "tool" or String(item.get("subtype", "")) != subtype:
+			continue
+		# A BROKEN tool in the pack is not a spare. It is the same item the player is being told
+		# they need to replace, and counting it would answer "do I have a backup" with yes.
+		if int(item.get("durability", 0)) <= 0:
+			continue
+		found.append(i)
+	# Highest tier first - the order the replacement is chosen in, so `[0]` is always the one
+	# that would actually be equipped.
+	found.sort_custom(func(a, b): return int(inventory[a].get("tier", 1)) > int(inventory[b].get("tier", 1)))
+	return found
+
+
 static func is_card_instance(iid: String) -> bool:
 	"""True for an EXTRA copy ('#n'); the first copy's bare id is not marked."""
 	return iid.find(CARD_COPY_SEP) >= 0

@@ -835,6 +835,10 @@ var _dungeon_panel_last_text: String = ""
 # on 2026-09-10 because a treasure chest posts one entry per item, and a four-item chest was
 # taking five of six slots and pushing everything else off.
 const DUNGEON_LOG_MAX := 10
+# Test-only: suppress the Tools panel's spare suffix so `--uimeasure` can compare the same panel
+# with and without it. A control that differs in exactly ONE thing - the shape this file's own
+# notes say is the difference between a measurement and a decoration.
+var _tool_spares_suffix_off: bool = false
 var _cached_nearby_players: Array = []  # Latest nearby_players list from server
 # Local player's position from the most recent location message. Cached
 # separately because character_data.x/y is only updated on flee, not on
@@ -3187,6 +3191,54 @@ func _ready():
 			# compatible, and anything added to the header spends the margin.
 			print("[UIMEASURE] dungeon_panel live_fit=%s" % str(
 				_fixed + _per * float(DUNGEON_LOG_MAX) <= 610.0))
+		# ⚑ AND DOES THE TOOLS BLOCK STILL FIT ON FOUR LINES?
+		#
+		# The spare count is appended to a line in a 240px box at font 13 - about 30 characters.
+		# "⛏ Pickaxe T2  14/20" is 19 of them and the suffix is worth another 12, so this is
+		# genuinely close, and the failure mode is the one the owner already complained about:
+		# a wrapped Tools line makes this block taller and every row it gains comes out of the
+		# map. Measured rather than counted characters, because the font is not monospaced in
+		# the way a character count assumes.
+		if tool_status_overlay != null:
+			has_character = true
+			character_data = {
+				"inventory": [
+					{"type": "tool", "subtype": "pickaxe", "tier": 2, "durability": 20, "max_durability": 20},
+					{"type": "tool", "subtype": "pickaxe", "tier": 1, "durability": 12, "max_durability": 20},
+					{"type": "tool", "subtype": "rod", "tier": 3, "durability": 0, "max_durability": 30},
+				],
+				"equipped_tools": {
+					"pickaxe": {"tier": 2, "durability": 14, "max_durability": 20},
+					"axe": {"tier": 5, "durability": 9, "max_durability": 40},
+					"sickle": {"tier": 1, "durability": 20, "max_durability": 20},
+					"rod": {"tier": 3, "durability": 30, "max_durability": 30},
+				},
+				"crafting_materials": {}, "active_quests": [], "eggs": [],
+			}
+			dungeon_mode = false
+			update_tool_status_overlay()
+			await get_tree().process_frame
+			await get_tree().process_frame
+			var _tfs: int = tool_status_overlay.get_theme_font_size("normal_font_size")
+			var _tf: Font = tool_status_overlay.get_theme_font("normal_font")
+			var _tlh: float = _tf.get_height(_tfs) if _tf != null else float(_tfs) * 1.3
+			var _th: float = tool_status_overlay.get_content_height()
+			print("[UIMEASURE] tools_panel box=%dx%d font=%d line=%.1f content=%d rows=%.1f" % [
+				int(tool_status_overlay.size.x), int(tool_status_overlay.size.y),
+				_tfs, _tlh, int(_th), _th / maxf(1.0, _tlh)])
+			# The block is Tools(1 heading + 4 slots) + Backpack + Pouch + Quests + Eggs. What
+			# matters is whether a TOOL line took two rows, so it is compared against the same
+			# panel with the suffix suppressed - a control that differs in exactly one thing,
+			# which is the note this file already carries about invisible indentation.
+			var _with: float = _th
+			_tool_spares_suffix_off = true
+			update_tool_status_overlay()
+			await get_tree().process_frame
+			await get_tree().process_frame
+			var _without: float = tool_status_overlay.get_content_height()
+			_tool_spares_suffix_off = false
+			print("[UIMEASURE] tools_panel with_spares=%d without=%d wrapped=%s" % [
+				int(_with), int(_without), str(_with > _without + 1.0)])
 		get_tree().quit()
 		return
 	# 2026-09-05 — enforce vsync HERE rather than in project.godot.
@@ -37111,6 +37163,9 @@ func update_tool_status_overlay():
 	# with ASCII letters. Pickaxe (⛏ U+26CF) and Sickle (⚒ U+2692) are BMP
 	# and render reliably; kept as-is.
 	var slot_icons = {"pickaxe": "⛏", "axe": "A", "sickle": "⚒", "rod": "R"}
+	# Read ONCE, outside the loop - `character_data.inventory` is the pack the spares live in,
+	# and the four slots would otherwise each re-fetch it.
+	var inv_for_spares: Array = character_data.get("inventory", [])
 	var tool_lines: Array[String] = []
 	for slot in slot_order:
 		var icon = slot_icons.get(slot, "*")
@@ -37129,7 +37184,24 @@ func update_tool_status_overlay():
 		var tier_str = ""
 		if t.has("tier"):
 			tier_str = " T%d" % int(t.get("tier", 1))
-		tool_lines.append("[color=%s]%s %s%s  %d/%d[/color]" % [color, icon, slot.capitalize(), tier_str, dur, max_dur])
+		# ⚑ DO YOU HAVE A BACKUP? Owner, on tools being a chore: *"it's hard to tell if you
+		# have backups etc."* A broken tool has auto-equipped your best spare for a long time -
+		# that half was already built - but nothing anywhere told you a spare EXISTED until the
+		# break happened, which is the entire complaint.
+		#
+		# Counted with `Character.tool_spares`, which is the SAME function the server's
+		# `_auto_equip_tool_replacement` now picks from. Counting them here with a local loop
+		# would have been the "one value, two places" shape, and the failure would have been a
+		# panel promising a backup the game does not reach for.
+		var _spares: int = 0 if _tool_spares_suffix_off else CharacterScript.tool_spares(inv_for_spares, slot).size()
+		var spare_str = ""
+		if _spares > 0:
+			spare_str = "  [color=#808080](%d spare%s)[/color]" % [_spares, "" if _spares == 1 else "s"]
+		elif pct <= 50:
+			# Only worth saying when it MATTERS. A fresh tool with no spare is not news; one at
+			# half durability with nothing behind it is the moment to go and make another.
+			spare_str = "  [color=#FF8000](no spare)[/color]"
+		tool_lines.append("[color=%s]%s %s%s  %d/%d[/color]%s" % [color, icon, slot.capitalize(), tier_str, dur, max_dur, spare_str])
 	if not _hide_tools:
 		sections.append("[color=#9ACD32]Tools:[/color]\n" + "\n".join(tool_lines))
 	# Hand the HEIGHT back, or removing the text buys nothing. This label carries a 110px minimum
