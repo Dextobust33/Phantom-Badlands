@@ -1990,6 +1990,9 @@ var clan_vault_panel = null
 const TutorialHintPanelScript = preload("res://client/tutorial_hint_panel.gd")
 const GuidedIntroOverlayScript = preload("res://client/guided_intro_overlay.gd")
 var tutorial_hint_panel = null
+## ⚡ ONE MODAL FOR "PICK ONE OF THESE", so a selection can never be text in a shared buffer -
+## see the header of `client/choice_panel.gd` for why three per-site fixes failed before it.
+var choice_panel = null
 # New-player modal queue: teaching popups (and the numpad controls popup) show
 # strictly ONE AT A TIME, never stacked and never over combat. See
 # [[feedback_progressive_disclosure]].
@@ -3412,6 +3415,15 @@ func _ready():
 	# marked the seen flag at send time).
 	tutorial_hint_panel = TutorialHintPanelScript.new()
 	add_child(tutorial_hint_panel)
+
+	# ⚡ THE CHOICE MODAL. Every "the game is waiting for you to pick one of N" flow goes through
+	# this instead of printing a numbered list into `game_output`, which routes three different ways
+	# depending on live state and was painted over by the map in every one of the three reports this
+	# evening. A Control drawn above the map has no routing decision to get wrong.
+	choice_panel = preload("res://client/choice_panel.gd").new()
+	add_child(choice_panel)
+	choice_panel.chosen.connect(_on_choice_panel_chosen)
+	choice_panel.cancelled.connect(_on_choice_panel_cancelled)
 	# Turning the lessons off is an ACCOUNT decision, not a per-character one: a player who
 	# already knows the game should not be taught it again every time they roll a character.
 	tutorial_hint_panel.opted_out.connect(func():
@@ -5459,7 +5471,7 @@ func _process(delta):
 				set_meta("companionkey_%d_pressed" % i, false)
 
 	# Monster selection with keybinds (from Monster Selection Scroll)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and monster_select_mode 			and not _choice_modal_open():
 		if monster_select_confirm_mode:
 			# Confirmation mode - Space=Confirm, Q=Back
 			var confirm_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
@@ -5524,7 +5536,7 @@ func _process(delta):
 					set_meta("monsterselectkey_%d_pressed" % i, false)
 
 	# Target farm selection with keybinds (from Scroll of Finding)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and target_farm_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and target_farm_mode 			and not _choice_modal_open():
 		# Handle Cancel (Space/action_0)
 		var tf_cancel_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
 		if Input.is_physical_key_pressed(tf_cancel_key):
@@ -34890,7 +34902,12 @@ func display_changelog():
 	# which is which.
 	# v0.9.813 - the two routes are named for what they do, and a new crafter can reach one.
 	# v0.9.814 - an egg hatching survives the step it hatched on.
-	display_game("[color=#00FF00]v0.9.814[/color] [color=#808080](Current)[/color]")
+	# v0.9.815 - a choice the game is waiting on is drawn above the map, not printed into a buffer.
+	display_game("[color=#00FF00]v0.9.815[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ A CHOICE THE GAME IS WAITING ON IS NOW A REAL WINDOW.[/color] Using a [b]Scroll of Finding[/b] printed its list into the same text area the map lives in — so it flashed on the left and the map painted straight over it, leaving nothing to click. Three separate fixes for that failed, because where that text lands is decided by live state: whether the map owns the screen, whether a panel is open, whether something else claimed it. Using the scroll [i]from your inventory[/i] tripped the panel case every time. It is a proper window now, drawn [b]above[/b] everything, owning the number keys while it is open — there is no state in which it can be painted over, because there is nothing painting on it. The Scroll of Summoning uses the same window, and a check fails the build if a waiting choice is ever printed as text again.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.814[/color]")
 	display_game("  [color=#FF4444]★ FIXED: a hatching companion left you a Continue button and nothing to read.[/color] The celebration printed, claimed the screen, and was erased before you could see it — by your own footstep. The right-hand column holds two different things: the [b]post you are standing in[/b], which is rewritten every step and correctly disappears when you walk away, and an [b]event[/b] like a hatch, which happened once and is waiting for you to acknowledge it. They were being treated the same, and an egg hatches [i]as you walk[/i], so the step that hatched it wiped it. Anything waiting on a [b]Continue[/b] is now left alone until you press it.")
 	display_game("")
 
@@ -56323,6 +56340,18 @@ func display_monster_select_page():
 		update_action_bar()
 		return
 
+	# Out of combat: the same modal the Scroll of Finding uses. The whole list goes in one page -
+	# the modal scrolls, so there is nothing for the old paging to do.
+	var _mopts: Array = []
+	for i4 in range(total_monsters):
+		_mopts.append(String(monster_select_list[i4]))
+	monster_select_page = 0
+	open_choice("monster_select", "[color=#FF00FF]✦ Scroll of Summoning[/color]",
+		"Choose a creature to summon for your next encounter. It appears at your level when you next hunt or move.",
+		_mopts)
+	update_action_bar()
+	return
+
 	# Fallback — legacy game_output flow.
 	_page_clear()
 	display_game("[color=#FF00FF]===== SCROLL OF SUMMONING =====[/color]")
@@ -56344,7 +56373,10 @@ func display_monster_select_page():
 	update_action_bar()
 
 func select_monster_from_scroll(index: int):
-	"""Show confirmation for selected monster"""
+	"""Show confirmation for selected monster.
+
+	`monster_select_page` is forced to 0 when the modal opens (it lists everything and scrolls), so
+	the offset below is a no-op there and still correct for the in-combat pager."""
 	var absolute_idx = monster_select_page * MONSTER_SELECT_PAGE_SIZE + index
 	if absolute_idx < 0 or absolute_idx >= monster_select_list.size():
 		return
@@ -56389,6 +56421,7 @@ func cancel_monster_select():
 		# Go back to selection list
 		monster_select_confirm_mode = false
 		monster_select_pending = ""
+		close_choice()
 		display_monster_select_page()
 		return
 
@@ -56396,11 +56429,68 @@ func cancel_monster_select():
 	monster_select_confirm_mode = false
 	monster_select_pending = ""
 	monster_select_list = []
+	close_choice()
 	if combat_scene_panel:
 		combat_scene_panel.hide_picker()
 	send_to_server({"type": "monster_select_cancel"})
 	display_game("[color=#808080]Scroll cancelled. The scroll has been returned to your inventory.[/color]")
 	update_action_bar()
+
+## Which flow the choice modal is currently serving, so one panel can serve them all. "" = closed.
+var _choice_kind: String = ""
+
+
+## ⛑ THE MODAL OWNS ITS KEYS. While `choice_panel` is up it handles 1-9 and the close keys in
+## `_unhandled_key_input`, so the `_process` pollers below must stand down or a single press fires
+## twice - the double-trigger class CLAUDE.md devotes two Common Pitfalls to.
+func _choice_modal_open() -> bool:
+	return choice_panel != null and is_instance_valid(choice_panel) and choice_panel.visible
+
+
+func open_choice(kind: String, title: String, subtitle: String, options: Array) -> void:
+	"""Put a numbered choice in front of the player, above everything.
+
+	⛑ THIS REPLACES PRINTING THE LIST. `display_game` sends text to the canvas, the side column
+	or the dungeon log depending on whether the map owns the canvas and whether a panel is open -
+	and a scroll used from the INVENTORY hits the panel clause, so its prompt went to the canvas and
+	the map repainted over it. Three separate per-site fixes failed on that before this existed."""
+	if choice_panel == null or not is_instance_valid(choice_panel):
+		return
+	_choice_kind = kind
+	choice_panel.open(title, subtitle, options)
+
+
+func close_choice() -> void:
+	_choice_kind = ""
+	if choice_panel != null and is_instance_valid(choice_panel):
+		choice_panel.close()
+
+
+func _on_choice_panel_chosen(index: int) -> void:
+	var kind := _choice_kind
+	_choice_kind = ""
+	match kind:
+		"target_farm":
+			select_target_farm_ability(index)
+		"monster_select":
+			select_monster_from_scroll(index)
+		_:
+			pass
+	update_action_bar()
+
+
+func _on_choice_panel_cancelled() -> void:
+	var kind := _choice_kind
+	_choice_kind = ""
+	match kind:
+		"target_farm":
+			cancel_target_farm()
+		"monster_select":
+			cancel_monster_select()
+		_:
+			pass
+	update_action_bar()
+
 
 func display_target_farm_options():
 	"""Display target farming ability options. Uses the in-panel picker
@@ -56417,6 +56507,25 @@ func display_target_farm_options():
 			})
 		combat_scene_panel.show_item_picker("Scroll of Finding (next %d encounters)" % target_farm_encounters, items, 0, 1)
 		return
+
+	# ⚡ OUT OF COMBAT IT IS A MODAL, NOT TEXT. Owner 2026-09-18, on the third instance of this
+	# exact symptom: *"Scroll of finding still flashes on the left side of the screen behind the map
+	# then the map takes it back over and the player can't see to select anything."*
+	#
+	# ⛑ AND `_page_clear()` DID NOT FIX IT, because the clear decides WHEN a page starts and not
+	# WHERE it lives. `_ow_text_in_column()` routes to the canvas whenever a panel is open - and
+	# this scroll is used FROM THE INVENTORY, so the inventory panel is still visible that frame.
+	# The prompt landed on the canvas and the map painted over it. A Control above the map has no
+	# routing to get wrong; see `client/choice_panel.gd`.
+	var _opts: Array = []
+	for i3 in range(target_farm_options.size()):
+		_opts.append(String(target_farm_names.get(target_farm_options[i3], target_farm_options[i3])))
+	open_choice("target_farm", "[color=#FF00FF]✦ Scroll of Finding[/color]",
+		("Choose what the next [color=#FFD700]%d[/color] foes will carry. It marks their HOARD, "
+			+ "not which monster you meet — use a Scroll of Summoning to pick that.") % target_farm_encounters,
+		_opts)
+	update_action_bar()
+	return
 
 	display_game("")
 	display_game("[color=#FF00FF]===== SCROLL OF FINDING =====[/color]")
@@ -56440,6 +56549,7 @@ func select_target_farm_ability(index: int):
 	target_farm_mode = false
 	target_farm_options = []
 	target_farm_names = {}
+	close_choice()
 	if combat_scene_panel:
 		combat_scene_panel.hide_picker()
 	send_to_server({"type": "target_farm_select", "ability": ability, "encounters": target_farm_encounters})
@@ -56451,6 +56561,7 @@ func cancel_target_farm():
 	target_farm_mode = false
 	target_farm_options = []
 	target_farm_names = {}
+	close_choice()
 	if combat_scene_panel:
 		combat_scene_panel.hide_picker()
 	send_to_server({"type": "target_farm_cancel"})

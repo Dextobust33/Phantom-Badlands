@@ -1063,6 +1063,53 @@ named surfaces and then lists every `RichTextLabel` the client builds with bbcod
 anything listens to it — 14 built, 10 silent, which is the list to check the next time a player
 says an underline does nothing.
 
+### ✅ A CHOICE IS NEVER TEXT — v0.9.815 (2026-09-18). THE REAL FIX FOR THE CLASS.
+
+Owner, on the third instance of one symptom in one evening: *"Scroll of finding still flashes on
+the left side of the screen behind the map then the map takes it back over and the player can't see
+to select anything. Why are we not fixing these properly? When we find the proper solution to this
+we need to fix it so it can never happen again."*
+
+**⛑ THREE PER-SITE FIXES FAILED, AND THE CODE ALREADY SAID THEY WOULD.** `_ow_text_in_column()`
+carries this note, written months ago: *"There are 230 such clears in this file, so guarding them
+one at a time was never going to hold."* `display_game` routes text three ways off LIVE STATE —
+does the map own the canvas, is a panel open, has a page claimed it — and
+
+```gdscript
+return _ow_canvas_eligible() and _ow_canvas_showing and not _canvas_panel_open() and not _ow_wide_page
+```
+
+**a Scroll of Finding is used FROM THE INVENTORY, so `_canvas_panel_open()` is still true that
+frame.** The prompt goes to the canvas instead of the column, and the map repaints over it. Adding
+`_page_clear()` changed nothing, because the clear decides WHEN a page starts and not WHERE it
+lives. I made that exact mistake, having read that exact note.
+
+**THE RULE IS STRUCTURAL NOW.** A flow the game is *waiting on* draws in a Control above the map:
+`client/choice_panel.gd`. A Control has no routing decision to get wrong, nothing that can repaint
+it, and no state in which it is invisible while the game waits. One modal serves every such flow,
+so there is nothing to keep in step.
+
+| | |
+|---|---|
+| routed through it | Scroll of Finding, Scroll of Summoning (out of combat; the in-combat picker already worked) |
+| owns keys | 1-9 pick, Escape / Space / Enter cancel — and the `_process` pollers **stand down** while it is up, or one press fires twice |
+| height | scrolls under a ceiling — measured, **40 options fit 73→646 on a 720px screen** |
+
+`tools/probe/a_choice_is_never_text.gd` asserts the wiring, that every waiting flow opens the modal
+AND closes it on both exits, that no poller reads the same keys underneath it, and then EXECUTES
+the panel: shows it, measures a 40-option list against a 720px screen, presses `3` and presses
+Escape.
+
+⛑ **And the probe's own first run was wrong in a way worth recording:** it reported the panel
+ignoring every key press. GDScript lambdas capture a local by VALUE, so `func(i): got_index = i`
+assigned the closure's copy and the outer variable never moved. The harness could not see the
+result it was asserting. Captured in an Array now.
+
+**▶ NEXT, and the owner has not been asked yet:** the remaining numbered-choice flows are still
+text — home stone options, companion release/selection, trade item/egg/companion pickers, unequip.
+They are not currently *broken* (they claim pages and their callers clear), but they are the same
+shape and the modal exists now. Converting them is mechanical and would retire the class outright.
+
 ### ✅ MENU PLACEMENT SWEEP — v0.9.807 (2026-09-18)
 
 Owner, after a Scroll of Finding printed its choices where they were immediately painted over:
