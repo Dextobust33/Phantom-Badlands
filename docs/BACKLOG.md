@@ -1399,6 +1399,18 @@ Currently queued:
       or a combat consumable**, so this changes WHEN a service is available and not how strong
       anyone is - listed so a future refit sees it, not as a debt on its own.
 
+- [ ] **`species_power` SATURATES - its x2.50 clamp is narrower than the real spread.** 63 of 135
+      cells sit on the ceiling (2026-09-19), across three separate runs and on three different base
+      curves, so it is structural rather than a bad starting point. The cause is visible in the
+      data: at L50 the spawn mix wins 33% while Zombie wins 96%, Harpy 91% and Gnoll 80% - the
+      average is dragged down by a few brutal species, and no single multiplier range can pull the
+      easy ones onto a mix defined by the hard ones. The sim's own comment already names it:
+      *"Jabberwock wins 16% and Demon Lord 82% on near-identical stat lines."*
+      **This is a design question, not a tuning one** - either the clamp widens (and a Giant Rat at
+      L50 becomes genuinely dangerous), or the brutal outliers get pulled down by hand, or species
+      variety at high level is accepted as wider than the band. Deliberately NOT widened quietly:
+      saturation is not convergence, and a clamp that binds on half its cells is reporting that the
+      model is the wrong shape. Owner's call.
 - [ ] **Same-level death rates.** P60 Wizard measured **31% death at its own level** against a
       ~0.3% target, by two agreeing read-only audits (2026-09-13). The chain steers by WIN rate and
       is structurally blind to deaths, so this cannot be fixed by running it - it needs a

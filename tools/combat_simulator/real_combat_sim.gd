@@ -2343,6 +2343,27 @@ func _inject_curve(table: Array) -> void:
 	Injecting the candidate curve instead means every measurement runs through
 	`generate_monster` with its species roll, so the species mix is inside the loop and the
 	numbers that get written are tuned for what spawns."""
+	# ⛑ LOAD THE FILE FIRST, OR species_power AND role_multipliers NEVER ARRIVE.
+	#
+	# `_load_reference_curve()` bails out early on `if not _reference_anchors.is_empty(): return`,
+	# and the line below is what fills that array. So on the FIRST injection - pass 1 of the
+	# calibration, before anything has read the curve - the loader is disarmed for the rest of the
+	# process, and the two blocks it also installs (`species_power`, `role_multipliers`) are never
+	# read at all.
+	#
+	# ⚡ refcal therefore fitted AND verified in a world with no species corrections, then wrote
+	# a file that carefully preserved them. Measured 2026-09-19, the two worlds:
+	#
+	#     level   anchor hp   what actually spawns   refcal's verify   everything else
+	#     L10           458                    753              85%               63%
+	#     L250        42883                  97929              67%               22%
+	#
+	# The "VERIFIED against the curve actually being written" table was verifying a curve that is
+	# not the one being written - which is why `refval` and `preflight` disagreed with it by
+	# 20-49pp, and why species_power has been saturating: it was being fitted against a base that
+	# was itself fitted without it.
+	if monster_db.has_method("_load_reference_curve"):
+		monster_db._load_reference_curve()
 	monster_db._reference_anchors = table.duplicate(true)
 	monster_db._curve_is_calibrated = true
 	# The per-tier shape cache is derived from the curve, so a stale one would silently apply
