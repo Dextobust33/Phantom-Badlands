@@ -7698,9 +7698,14 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
           asserts 25 monsters share one look, no stat moved, and a plain dungeon is untouched.
           Worth having because three correct links wired to different sources is exactly the
           `refcal` two-worlds bug found the same day.
-        * **A slice 4 — show the modifier BEFORE entry** (its `blurb` and `color` on the tile).
-          Only one passing reference to modifiers exists in the client, so the "telegraphed" half
-          of "opt-in, telegraphed content" is the thinnest part of the feature.
+        * **A slice 4 — show the modifier BEFORE entry. ALREADY BUILT** (verified 2026-09-19, not
+          assumed). The dungeon-entry warning already prints *"This place is not ordinary"* with
+          an **Unusual** row per modifier - name, colour, cost and payoff - then *"Harder, and it
+          pays for it."* It reads them off the instance the player is about to enter and is
+          explicit that it never re-rolls. Owner's bar: *"as long as it is advertised in the info
+          a player sees before entering a dungeon, that is all we need."* Met.
+          ⚑ My earlier note that "only one passing reference to modifiers exists in the client"
+          was wrong - I had grepped for the wrong word. **WORKSTREAM A IS COMPLETE.**
         * **(historical) A 2-4** — ⚠ **was BLOCKED, and
           this line said "nothing blocks it" until 2026-09-19, which was wrong.**
           `docs/design/dungeon_themes.md` carries an explicit owner gate from 2026-08-25:
