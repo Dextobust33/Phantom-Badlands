@@ -196,6 +196,15 @@ timeout 120 "$EXE" --uimeasure --resolution 1920x1080 > "$UIOUT" 2>&1
 if grep -q '\[UIMEASURE\]' "$UIOUT"; then
     check "map_fits_its_column" "true" "$(grep -m1 'fits_reserved=' "$UIOUT" | sed 's/.*fits_reserved=//' | tr -d ' ')"
     check "map_fits_across"     "true" "$(grep -m1 'fits_across=' "$UIOUT" | sed 's/.*fits_across=//' | tr -d ' ')"
+    # ...and the SAME LABEL in its other job. The live report that produced the map fix had a
+    # second half - *"their area on the right for where the dungeon text goes is pretty cramped
+    # as well, just like their map was"* - which sat unmeasured because an empty client hands
+    # this panel the whole column. The probe now builds the real panel with a full log of
+    # realistic (wrapping) entries and reports whether it fits the 610px a 1080p dungeon session
+    # gives it. Underground the label holds no map grid at all, yet its font is still sized so a
+    # 21-row grid would fit - so the header and the log are only just compatible with it, and
+    # this is what notices when they stop being.
+    check "dungeon_panel_fits"  "true" "$(grep -m1 'live_fit=' "$UIOUT" | sed 's/.*live_fit=//' | tr -d ' ')"
 else
     printf '  FAIL  %-22s %s
 ' "map fit" "the build printed no [UIMEASURE] lines"

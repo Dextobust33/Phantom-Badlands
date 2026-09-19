@@ -3090,6 +3090,103 @@ func _ready():
 			print("[UIMEASURE] sprite_px=%d (art is %dpx native)" % [
 				_overworld_crisp_px(int(floor(maxf(32.0, _avail) / float(MAP_GRID_ROWS)))),
 				OVERWORLD_SPRITE_PX])
+		# ⚑ AND THE DUNGEON SIDE PANEL - THE SAME LABEL, A DIFFERENT JOB.
+		#
+		# The live report that produced the map fix had a second half nobody has measured yet:
+		# *"their area on the right for where the dungeon text goes is pretty cramped as well,
+		# just like their map was."* It is the same `map_display`, and its font is chosen by the
+		# block above to make a 21-ROW MAP GRID fit - a constraint that does not exist
+		# underground, where the label holds a dozen lines of prose and the floor is drawn on the
+		# canvas instead. So the panel inherits a size fitted for something it is not showing.
+		#
+		# MEASURED, not reasoned about, because this file already records three instruments that
+		# were wrong about this exact column. The real builder, a full log, the real box.
+		if map_display != null:
+			_set_dungeon_side_boxes_visible(false)
+			dungeon_mode = true
+			dungeon_data = {
+				"dungeon_name": "Sunken Ossuary of the Drowned",
+				"color": "#88AAFF", "floor": 3, "total_floors": 5,
+				"encounters_cleared": 7,
+			}
+			# ⚡ THE WORST REALISTIC LINE, NOT A CONVENIENT ONE. The first version of this
+			# measurement used a 38-character line, which is under the panel's width at every
+			# font size - so every log entry occupied exactly one row and the panel looked
+			# comfortable by construction. Real entries name an item with its affixes and WRAP.
+			# A measurement that cannot produce the failure it is looking for is not a
+			# measurement; it is a decoration.
+			_dungeon_log.clear()
+			for _i in range(DUNGEON_LOG_MAX):
+				_dungeon_log.append("Found a Gravewrought Reliquary of the Drowned Tide (+14 Wits)")
+			# Drawn DIRECTLY rather than through `_dungeon_panel_refresh`, because that ends in
+			# `_dungeon_panel_trim_to_fit`, which deletes the oldest log lines until the content
+			# fits. Measuring after the trim would report a perfect fit every time - it would be
+			# measuring the workaround instead of the problem it works around.
+			map_display.clear()
+			map_display.append_text(_dungeon_side_panel_text())
+			await get_tree().process_frame
+			await get_tree().process_frame
+			var _dfs: int = map_display.get_theme_font_size("normal_font_size")
+			var _dh: float = map_display.get_content_height()
+			print("[UIMEASURE] dungeon_panel box=%dx%d font=%d" % [
+				int(map_display.size.x), int(map_display.size.y), _dfs])
+			print("[UIMEASURE] dungeon_panel content=%d log=%d/%d fits=%s fill=%.2f" % [
+				int(_dh), _dungeon_log.size(), DUNGEON_LOG_MAX,
+				str(_dh <= map_display.size.y + 1.0),
+				_dh / maxf(1.0, map_display.size.y)])
+			# How many of a full log's lines SURVIVE. This is the number the complaint is about:
+			# the trim keeps the panel tidy by throwing history away, and a panel that fits
+			# because it discarded six lines is not a panel that fits.
+			var _fdrop: int = 0
+			while _dh > map_display.size.y and _dungeon_log.size() > 1 and _fdrop < DUNGEON_LOG_MAX:
+				_fdrop += 1
+				_dungeon_log.remove_at(0)
+				map_display.clear()
+				map_display.append_text(_dungeon_side_panel_text())
+				await get_tree().process_frame
+				_dh = map_display.get_content_height()
+			print("[UIMEASURE] dungeon_panel trimmed_away=%d of %d log lines" % [_fdrop, DUNGEON_LOG_MAX])
+			# ⛑ AND AT THE HEIGHTS A REAL SESSION GIVES IT, which is the whole reason this
+			# item sat open: an empty client hands this label the WHOLE column (693px measured),
+			# where a live one is sharing it. The panel was measured at 610px on 2026-09-10 and
+			# the map's own box at ~400px on 2026-09-15, so the answer is reported across that
+			# range rather than at whichever height this particular launch happened to produce.
+			_dungeon_log.clear()
+			for _i in range(DUNGEON_LOG_MAX):
+				_dungeon_log.append("Found a Gravewrought Reliquary of the Drowned Tide (+14 Wits)")
+			map_display.clear()
+			map_display.append_text(_dungeon_side_panel_text())
+			await get_tree().process_frame
+			await get_tree().process_frame
+			var _full: float = map_display.get_content_height()
+			# The per-line cost, taken by DIFFERENCE rather than divided out of the total - the
+			# header and the rule above the log are fixed and would otherwise be smeared across
+			# every line.
+			_dungeon_log.remove_at(0)
+			map_display.clear()
+			map_display.append_text(_dungeon_side_panel_text())
+			await get_tree().process_frame
+			await get_tree().process_frame
+			var _per: float = _full - map_display.get_content_height()
+			print("[UIMEASURE] dungeon_panel full_log=%dpx per_log_line=%dpx" % [int(_full), int(_per)])
+			var _fixed: float = _full - _per * float(DUNGEON_LOG_MAX)   # header + rule, does not vary
+			for _box in [400, 500, 610, int(map_display.size.y)]:
+				var _room: int = int(floor((float(_box) - _fixed) / maxf(1.0, _per)))
+				print("[UIMEASURE] dungeon_panel at_box=%-4d log_lines_visible=%d of %d" % [
+					_box, clampi(_room, 0, DUNGEON_LOG_MAX), DUNGEON_LOG_MAX])
+			# ⚑ THE ONE THE GATE ASSERTS: 610px, which is what a 1080p dungeon session
+			# actually gives this panel (measured 2026-09-10, when the Tools block was dropped
+			# underground and the panel grew from 540). The font is valid at that height without
+			# re-deriving it - the height cap only bites below ~462px, so a 610px box leaves the
+			# font exactly where this measurement found it.
+			#
+			# It is not a formality. The panel needs a HEADER plus ten log entries at TWO ROWS
+			# EACH - realistic entries name an item with its affixes and wrap - which is about 25
+			# rows, against a font sized so a 21-ROW MAP GRID fits. Underground that grid is not
+			# even in this label; the floor is drawn on the canvas. So the two are only just
+			# compatible, and anything added to the header spends the margin.
+			print("[UIMEASURE] dungeon_panel live_fit=%s" % str(
+				_fixed + _per * float(DUNGEON_LOG_MAX) <= 610.0))
 		get_tree().quit()
 		return
 	# 2026-09-05 — enforce vsync HERE rather than in project.godot.

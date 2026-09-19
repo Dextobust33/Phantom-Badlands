@@ -2970,9 +2970,35 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    at 1920x1280; reading the font after `_ready` caught a transient; and `--resolution` changes
    nothing because the project stretches `canvas_items` from a 1920x1080 base, so layout is ALWAYS
    in 1080p virtual units.
-   - [ ] **STILL OPEN: the DUNGEON side panel** (*"their area on the right for where the dungeon
-     text goes is pretty cramped"*). Same column, different mode; needs a live dungeon session to
-     measure, since an empty client gives that panel the whole column.
+   - [→] **THE DUNGEON SIDE PANEL IS NOW MEASURED — and the numbers say it FITS, barely.**
+     (*"their area on the right for where the dungeon text goes is pretty cramped"*). It no
+     longer "needs a live dungeon session": `--uimeasure` builds the real panel through the real
+     builder (`_dungeon_side_panel_text`) with a full log of realistic **wrapping** entries, and
+     reports the fit across the box heights a session actually produces.
+     MEASURED 2026-09-19 at 1920x1080, font 21:
+
+         header + rule                       132px (fixed)
+         a realistic log entry                44px  <- TWO rows, because entries name an item
+                                                      with its affixes and wrap
+         full 10-line log                    572px
+         at a 400px box   6 of 10 lines      at 500px   8 of 10
+         at a 610px box  10 of 10 lines      <- the live dungeon height (measured 2026-09-10)
+
+     ⚡ **`DUNGEON_LOG_MAX` is 10 and exactly 10 fit. There is no margin at all** — the cap and
+     the panel height coincide by luck, not by design. The panel needs ~25 rows while its font is
+     capped so a **21-row MAP GRID** fits, and underground that grid is not in this label at all
+     (the floor is drawn on the canvas). So the font is chosen by a constraint from the other
+     mode, and `_dungeon_panel_trim_to_fit` deleting the oldest log lines is what papers over it.
+     Release gate check `dungeon_panel_fits`, proven to fire (`DUNGEON_LOG_MAX` 10→16 →
+     `live_fit=false`, "10 of 16"), so the margin cannot be spent silently.
+
+     **WHAT IS LEFT IS A LOOK-AND-SAY, AND IT IS GENUINELY TWO-WAY** — which is why it is not
+     being guessed at. "Cramped" could mean *the text is too small* (the fix is to stop applying
+     the map-grid font cap underground, which makes the text bigger and fits FEWER log lines) or
+     *there is too little room* (the fix is the opposite). The measurement cannot choose; the
+     owner looking at it can. Note also that the original report predates two changes that
+     already took pressure off this panel: the dungeon KEY moved out from under it to below the
+     map (2026-09-16) and the overworld minimap stopped drawing underground (2026-09-09).
    - [→] **Needs an eyeball — AWAITING THE OWNER.** Nothing is blocked on code; it is a look-and-say,
       and the item says so. Original:  not a number: whether 16px Tools / the resulting map size actually
      look right to the owner at 1080p.
