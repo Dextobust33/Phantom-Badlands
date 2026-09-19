@@ -1095,7 +1095,28 @@ free, costs the turn, no defensive reprieve — deliberately below `iron_skin` (
 costs a card) so the cards stay worth holding. It lives in the inert slot that was held open for
 Outsmart, so no card shifts a key. Probe: `every_class_can_answer.gd`.
 
-- [ ] **NOT DONE: the boss telegraphs themselves.** 19 cyclical boss bursts fire the instant the
+- [x] **FIRST BATCH OF BOSS TELEGRAPHS — DONE 2026-09-19.** Five converted: `aerial_dive`,
+      `labyrinth_charge`, `tremor_stomp`, `titan_earthquake` (wind-up + resolve) and
+      `vorpal_strike` (it multiplies the NORMAL attack, so it was already mitigable and only
+      lacked the warning). Each now announces on the round it used to land, resolves on the next
+      monster turn, and is answerable three ways: **brace/card mitigates** (20->11, 24->13, 15->12,
+      13->11 measured), **stun cancels outright** (0 damage, all four), **or kill it**.
+      Riders travel with the blow, so answering denies them too - Tremor's stagger and the Titan's
+      hardening stack used to land unconditionally even on a perfect read.
+      **A telegraphed burst reads ACTIVE defence only** (`_mitigate_burst`), not armour or CON:
+      you cannot out-gear a boss's signature blow, but you can answer it on the turn it is coming.
+      Probe: `a_telegraph_is_answerable.gd`.
+- [ ] **THE REMAINING 24 cyclical bursts still land the moment the counter hits.** The probe's
+      section 4 lists them by name every run, so this is a visible queue rather than a silent gap:
+      `void_step`, `iron_discipline`, `soul_siphon`, `contagion_aura`, `lullaby`, `wind_shear`,
+      `sonic_echo`, `hatchling_swarm`, `infernal_curse`, `triple_threat`, `three_heads`,
+      `soul_forge`, `dragons_hoard`, `element_cycle`, `riddle_curse`, `primordial_roar`,
+      `coil_squeeze`, `death_mark`, `madness_aura`, `temporal_rewind`, `chaotic_surge`,
+      `divine_punishment`, `decay`. Converting each is now a data change plus a call - the
+      mechanism is built and proven. **Not all of them SHOULD convert**: an aura or a persistent
+      debuff is not a burst, and telegraphing everything would make every boss the same metronome.
+      Judge each against "is this a single big moment the player could answer?"
+- [ ] **(superseded) the boss telegraphs themselves.** 19 cyclical boss bursts fire the instant the
       round counter hits (`combat.round % N == 0`) with the message printed AFTER the damage - a
       receipt, not a warning. Two constants describe themselves as "telegraphed" and neither is.
       That violates the design's own constraint #4 in `docs/design/dungeon_revamp.md`: *"a

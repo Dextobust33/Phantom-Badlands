@@ -3898,6 +3898,104 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"dungeon_monster_id": combat.get("dungeon_monster_id", -1)
 	}
 
+## ⛑ TELEGRAPHED BOSS BURSTS — which ones wind up before they land.
+##
+## ⚡ 19 cyclical boss bursts fired the INSTANT `combat.round % N == 0`, applying raw HP loss and
+## printing the message afterwards - a receipt, not a warning. Two of them
+## (`boss_aerial_dive`, `boss_vorpal_strike`) described themselves as "telegraphed" in their own
+## constants and neither was. That breaks the design's constraint #4 in
+## `docs/design/dungeon_revamp.md`: *"a telegraphed hit only lands next turn unless the player
+## responds... NO unavoidable damage."*
+##
+## A telegraphed burst now ANNOUNCES on the round it used to land, and RESOLVES on the next monster
+## turn, where the player's turn sits in between. Three answers, all of which already exist:
+##   * BRACE / WARD / SLIP or a defensive card - mitigates it (see `_mitigate_burst`)
+##   * stun the boss (shield_bash, paralyze, frost_nova) - CANCELS it outright
+##   * kill it - a corpse does not land the blow
+##
+## Converted in a first batch rather than all nineteen: the two that claimed to telegraph plus the
+## three heaviest hitters. The rest keep firing instantly until they are converted, and
+## `tools/probe/a_telegraph_is_answerable.gd` lists exactly which those are, so the remainder is a
+## visible queue rather than a silent gap.
+const TELEGRAPHED_BURSTS := {
+	"boss_aerial_dive": "The %s climbs, circling for a dive",
+	"boss_vorpal_strike": "The %s draws back for a killing blow",
+	"boss_labyrinth_charge": "The %s paws the ground, gathering for a charge",
+	"boss_titan_earthquake": "The %s raises both fists over the earth",
+	"boss_tremor_stomp": "The %s lifts one great foot",
+}
+
+
+## What a telegraphed burst does to a player who answered it.
+##
+## ⛑ PASSIVE ARMOUR DOES NOT HELP; ACTIVE DEFENCE DOES. That is the rule that makes a telegraph
+## a decision rather than a gear check - you cannot out-equip a boss's signature blow, but you can
+## answer it on the turn it is coming. So this reads the buffs a player CHOSE this round
+## (`damage_reduction` from brace/iron_skin/fortify, `defense`) and deliberately not the armour and
+## CON terms that `_process_monster_turn_inner` folds into an ordinary hit.
+##
+## Shares the same clamp as an ordinary hit so a defensive deck cannot reach immunity.
+func _mitigate_burst(character, raw: int) -> int:
+	var mult := 1.0
+	var dr: int = character.get_buff_value("damage_reduction")
+	if dr > 0:
+		mult *= (1.0 - float(dr) / 100.0)
+	var df: int = character.get_buff_value("defense")
+	if df > 0:
+		mult *= (1.0 - float(df) / 100.0)
+	mult = clampf(mult, MITIGATION_BUFF_FLOOR, 1.0)
+	return maxi(1, int(round(float(raw) * mult)))
+
+
+## Announce a burst that will land on the next monster turn. Returns true if one was queued.
+func _telegraph_burst(combat: Dictionary, ability: String, monster, messages: Array) -> bool:
+	if not TELEGRAPHED_BURSTS.has(ability):
+		return false
+	if String(combat.get("pending_burst_ability", "")) != "":
+		return false   # one wind-up at a time; a second would be unreadable
+	combat["pending_burst_ability"] = ability
+	combat["pending_burst_round"] = int(combat.get("round", 0)) + 1
+	var line := String(TELEGRAPHED_BURSTS[ability]) % monster.name
+	messages.append("[color=#FFCC00][b]⚠ %s…[/b][/color] [color=#FFAA55]It lands next round — guard, stun it, or put it down.[/color]" % line)
+	return true
+
+
+## Resolve a queued burst, if this is its round. Returns the damage dealt (0 if none or cancelled).
+func _resolve_pending_burst(combat: Dictionary, monster, character, messages: Array) -> int:
+	var ability := String(combat.get("pending_burst_ability", ""))
+	if ability == "":
+		return 0
+	if int(combat.get("round", 0)) < int(combat.get("pending_burst_round", 0)):
+		return 0
+	combat["pending_burst_ability"] = ""
+	# STUNNED = CANCELLED. The boss never gets the turn it was winding up for.
+	if int(combat.get("monster_stunned", 0)) > 0:
+		messages.append("[color=#66FF99][b]THE BLOW NEVER COMES![/b][/color] [color=#AAFFCC]The %s is reeling — its attack falls apart.[/color]" % monster.name)
+		combat["pending_burst_lull"] = false
+		combat["pending_burst_quake"] = false
+		return 0
+	var raw: int = int(combat.get("pending_burst_raw", 0))
+	if raw <= 0:
+		return 0
+	var dealt: int = _mitigate_burst(character, raw)
+	character.current_hp = maxi(1, int(character.current_hp) - dealt)
+	if bool(combat.get("pending_burst_lull", false)):
+		combat["player_lulled"] = true
+		combat["pending_burst_lull"] = false
+	if bool(combat.get("pending_burst_quake", false)):
+		combat["pending_burst_quake"] = false
+		var _qs := int(combat.get("titan_earthquake_stacks", 0))
+		if _qs < 5:
+			combat["titan_earthquake_stacks"] = _qs + 1
+			messages.append("[color=#8B4513]The %s settles into a hardened stance (Earthquake %d/5).[/color]"
+				% [monster.name, _qs + 1])
+	var softened: String = ""
+	if dealt < raw:
+		softened = " [color=#66B0FF](you took %d of %d — you were ready)[/color]" % [dealt, raw]
+	messages.append("[color=#FF8800][b]IT LANDS![/b][/color] [color=#FF4444]-%d HP[/color]%s" % [dealt, softened])
+	return dealt
+
+
 ## Spend the turn guarding. The floor answer, available to every class on every turn.
 ##
 ## Returns the same shape as `process_attack` so the monster's turn runs normally afterwards -
@@ -9025,6 +9123,24 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 	var messages = []
 	combat["_mit_notes"] = []   # nothing from a previous turn may ride this one's line
 
+	# ⛑ A QUEUED BURST RESOLVES BEFORE ANYTHING ELSE THIS TURN, and it resolves even if the
+	# boss is stunned - because being stunned is exactly what CANCELS it. Putting this after the
+	# stun gate would have made a stun silently swallow the wind-up instead of visibly breaking
+	# it, which is the difference between counterplay the player can see working and a coincidence.
+	var _burst_msgs: Array = []
+	_resolve_pending_burst(combat, monster, character, _burst_msgs)
+	for _bm in _burst_msgs:
+		messages.append(_bm)
+	if character.current_hp <= 0:
+		return {"messages": messages, "message": "
+".join(PackedStringArray(messages)),
+			"combat_ended": true, "victory": false}
+
+	# ⛑ VORPAL warns a round early. It multiplies the NORMAL attack rather than adding its own
+	# damage, so it is already mitigable - the only thing it lacked was the telling.
+	if ABILITY_BOSS_VORPAL_STRIKE in abilities and int(combat.get("round", 0)) > 0 			and (int(combat.round) + 1) % 4 == 0:
+		messages.append("[color=#FFCC00][b]⚠ The %s draws back for a killing blow…[/b][/color] [color=#FFAA55]Its next strike lands triple — guard, stun it, or put it down.[/color]" % monster.name)
+
 	# Check if monster is stunned (Shield Bash, Paralyze, or companion)
 	var stun_turns = int(combat.get("monster_stunned", 0))
 	# Empowered Juggernaut (v0.9.651): immune to stun — shrugs it off and acts
@@ -10455,9 +10571,9 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		var dive_already = int(combat.get("aerial_dive_last_round", -1))
 		if dive_already != int(combat.round):
 			combat["aerial_dive_last_round"] = int(combat.round)
-			var dive_dmg = max(1, int(character.get_total_max_hp() * 0.12))
-			character.current_hp = max(1, character.current_hp - dive_dmg)
-			messages.append("[color=#87CEEB][b]AERIAL DIVE![/b][/color] [color=#FF8800]The %s plummets from above! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, dive_dmg])
+			# TELEGRAPHED: announce now, land next monster turn, answerable in between.
+			combat["pending_burst_raw"] = max(1, int(character.get_total_max_hp() * 0.12))
+			_telegraph_burst(combat, ABILITY_BOSS_AERIAL_DIVE, monster, messages)
 
 	# Audit #5 boss signature (Slice 8) — Labyrinth Charge (Minotaur). Every
 	# 5 monster turns, charges for (round × 3%) max player HP burst damage.
@@ -10467,9 +10583,8 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		if charge_already != int(combat.round):
 			combat["labyrinth_charge_last_round"] = int(combat.round)
 			var charge_pct = float(combat.round) * 0.03
-			var charge_dmg = max(1, int(character.get_total_max_hp() * charge_pct))
-			character.current_hp = max(1, character.current_hp - charge_dmg)
-			messages.append("[color=#8B4513][b]LABYRINTH CHARGE![/b][/color] [color=#FF8800]The %s tramples you with maddened fury! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, charge_dmg])
+			combat["pending_burst_raw"] = max(1, int(character.get_total_max_hp() * charge_pct))
+			_telegraph_burst(combat, ABILITY_BOSS_LABYRINTH_CHARGE, monster, messages)
 
 	# Audit #5 boss signature (Slice 8) — Wind Shear (Harpy Matriarch).
 	# Every 3 monster turns, the boss's gust halves player damage for the
@@ -10507,10 +10622,12 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		var tremor_already = int(combat.get("tremor_stomp_last_round", -1))
 		if tremor_already != int(combat.round):
 			combat["tremor_stomp_last_round"] = int(combat.round)
-			var tremor_dmg = max(1, int(character.get_total_max_hp() * 0.10))
-			character.current_hp = max(1, character.current_hp - tremor_dmg)
-			combat["player_lulled"] = true
-			messages.append("[color=#A0522D][b]TREMOR STOMP![/b][/color] [color=#FF8800]The %s slams the ground! [color=#FF4444]-%d HP[/color] — you stagger.[/color]" % [monster.name, tremor_dmg])
+			combat["pending_burst_raw"] = max(1, int(character.get_total_max_hp() * 0.10))
+			# The STAGGER rides with the damage, so answering the telegraph avoids both. It used
+			# to be applied here unconditionally, which meant even a perfect read still lost you
+			# the next turn.
+			combat["pending_burst_lull"] = true
+			_telegraph_burst(combat, ABILITY_BOSS_TREMOR_STOMP, monster, messages)
 
 	# Audit #5 boss signature (Slice 9) — Hatchling Swarm (Broodmother Wyrmling).
 	# Every 4 monster turns, hidden hatchlings burst for 15% max HP damage.
@@ -10601,14 +10718,11 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		var quake_already = int(combat.get("titan_earthquake_last_round", -1))
 		if quake_already != int(combat.round):
 			combat["titan_earthquake_last_round"] = int(combat.round)
-			var quake_dmg = max(1, int(character.get_total_max_hp() * 0.08))
-			character.current_hp = max(1, character.current_hp - quake_dmg)
-			var quake_stacks = int(combat.get("titan_earthquake_stacks", 0))
-			if quake_stacks < 5:
-				combat["titan_earthquake_stacks"] = quake_stacks + 1
-				messages.append("[color=#8B4513][b]TITAN EARTHQUAKE![/b][/color] [color=#FF8800]The %s shakes the ground! [color=#FF4444]-%d HP[/color]. The %s gains hardened stance (Earthquake %d/5).[/color]" % [monster.name, quake_dmg, monster.name, quake_stacks + 1])
-			else:
-				messages.append("[color=#8B4513][b]TITAN EARTHQUAKE![/b][/color] [color=#FF8800]The %s shakes the ground! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, quake_dmg])
+			combat["pending_burst_raw"] = max(1, int(character.get_total_max_hp() * 0.08))
+			# The hardening stack rides with the blow, so stunning the Titan denies it the
+			# defence as well as the damage - answering the telegraph is worth a full turn.
+			combat["pending_burst_quake"] = true
+			_telegraph_burst(combat, ABILITY_BOSS_TITAN_EARTHQUAKE, monster, messages)
 
 	# Audit #5 boss signature (Slice 11) — Dragon's Hoard (Ancient Dragon).
 	# Every 5 monster turns, strip one active player buff AND gain a permanent
@@ -11216,6 +11330,10 @@ func calculate_monster_damage(monster: Dictionary, character: Character, combat:
 	# the next monster attack deals 3x damage. Check before defense reduction
 	# so the strike feels enormous even through gear. Telegraphed by the rhythm.
 	var vorpal_abilities = monster.get("abilities", [])
+	# ⛑ VORPAL IS THE ONE THAT ONLY NEEDED A WARNING. It multiplies the NORMAL attack, so it
+	# already passes through the full mitigation pipeline and brace already answers it - the
+	# comment above ("telegraphed by the rhythm") was the whole telegraph, i.e. none. The announce
+	# is emitted a round early in `_process_monster_turn_inner`; the multiplier stays here.
 	if ABILITY_BOSS_VORPAL_STRIKE in vorpal_abilities and combat.get("round", 0) > 0 and int(combat.round) % 4 == 0:
 		var vorpal_already = int(combat.get("vorpal_last_round", -1))
 		if vorpal_already != int(combat.round):
