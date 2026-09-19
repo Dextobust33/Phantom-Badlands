@@ -71,6 +71,12 @@ extends Resource
 ## is what a player goes looking for; a hint is what reaches a player who does not know to look.
 @export var seen_rework_hint: bool = false
 @export var seen_commission_hint: bool = false
+## The last three moments of the gather -> craft loop. Salvage is where gear becomes materials,
+## a rune is where an affix comes from, and a Wanted row is the first time somebody is PAYING
+## for what this player can already make. Each fires once, ever, and is persisted below.
+@export var seen_salvage_hint: bool = false
+@export var seen_rune_hint: bool = false
+@export var seen_wanted_hint: bool = false
 
 # ONBOARDING 2026-09-14 - Warden's Watch teaching beats. One panel per system, fired the first
 # time that system actually matters to this character rather than all at once at creation, and
@@ -2328,6 +2334,9 @@ func to_dict() -> Dictionary:
 		"seen_crafting_hint": seen_crafting_hint,
 		"seen_rework_hint": seen_rework_hint,
 		"seen_commission_hint": seen_commission_hint,
+		"seen_salvage_hint": seen_salvage_hint,
+		"seen_rune_hint": seen_rune_hint,
+		"seen_wanted_hint": seen_wanted_hint,
 		"seen_guide_items_hint": seen_guide_items_hint,
 		"seen_guide_equipment_hint": seen_guide_equipment_hint,
 		"seen_guide_combat_hint": seen_guide_combat_hint,
@@ -2561,6 +2570,9 @@ func from_dict(data: Dictionary):
 	seen_crafting_hint = bool(data.get("seen_crafting_hint", false))
 	seen_rework_hint = bool(data.get("seen_rework_hint", false))
 	seen_commission_hint = bool(data.get("seen_commission_hint", false))
+	seen_salvage_hint = bool(data.get("seen_salvage_hint", false))
+	seen_rune_hint = bool(data.get("seen_rune_hint", false))
+	seen_wanted_hint = bool(data.get("seen_wanted_hint", false))
 	seen_guide_items_hint = bool(data.get("seen_guide_items_hint", false))
 	seen_guide_equipment_hint = bool(data.get("seen_guide_equipment_hint", false))
 	seen_guide_combat_hint = bool(data.get("seen_guide_combat_hint", false))

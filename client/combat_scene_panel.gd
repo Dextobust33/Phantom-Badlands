@@ -4359,11 +4359,47 @@ func _wire_hover(rtl: RichTextLabel) -> void:
 	rtl.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
 
 
-func show_hover_detail(meta: String) -> void:
-	"""The same hover box the in-combat log uses, for the separate fight-log OVERLAY.
+func log_detail_text(meta: String) -> String:
+	"""The blow-by-blow a combat-log summary line stands for, or "" if it is not known here.
 
-	The detail text and the popup both live on this panel, so the overlay - which is a sibling
-	node - asks for them rather than keeping a second copy that could fall out of step."""
+	⚡ THE TEXT LIVES HERE; THE BOX MUST NOT. Owner 2026-09-18, with a screenshot taken on the
+	DEATH screen: *"guess the Fight log still isn't hoverable?"*
+
+	⛑ IT WAS HOVERABLE, AND THE BOX WAS BEING DRAWN INSIDE A HIDDEN PARENT. `show_hover_detail`
+	called `_show_formula_popup`, whose popup is a CHILD of this panel - and the fight log is a
+	window you can open any time, including from the death screen and the overworld, where this
+	panel is not visible. A Control inside an invisible parent draws nothing, so the hover fired,
+	resolved, set `visible = true` and appeared nowhere.
+	
+	The reasoning in the old docstring was right about the TEXT and wrong about the BOX: keeping a
+	second copy of the detail would drift, so the caller asks for the string and renders it in a
+	box of its own."""
+	if meta == "":
+		return ""
+	if meta.begins_with("cdet:"):
+		return String(_detail_source().get(meta, ""))
+	return meta
+
+
+## Which fight's detail map answers a hover: the live one, or an archived fight while the log is
+## showing it. Set by `set_detail_view`, which the fight-log overlay calls as the player steps
+## back and forward through a flock.
+var _detail_view_index: int = -1
+
+
+func set_detail_view(index: int) -> void:
+	_detail_view_index = index
+
+
+func _detail_source() -> Dictionary:
+	if _detail_view_index < 0 or _detail_view_index >= _flock_history.size():
+		return _log_detail
+	var d = (_flock_history[_detail_view_index] as Dictionary).get("detail", null)
+	return d if d is Dictionary else {}
+
+
+func show_hover_detail(meta: String) -> void:
+	"""In-combat path: this panel is on screen, so its own popup is the right place to draw."""
 	_show_formula_popup(meta)
 
 
@@ -6514,10 +6550,17 @@ func clear_log(archive: bool = false) -> void:
 			"overlay_player_lines": _overlay_player_log_lines.duplicate(),
 			"overlay_monster_lines": _overlay_monster_log_lines.duplicate(),
 			"overlay_companion_lines": _overlay_companion_log_lines.duplicate(),
+			# ⚡ THE BLOW-BY-BLOW TRAVELS WITH THE FIGHT. `_log_detail` is keyed `cdet:<index>`
+			# and was never cleared, so the next fight's first few actions OVERWROTE the entries an
+			# archived fight's lines still point at - hovering fight 1 showed fight 3's detail,
+			# silently and plausibly. Archived here and cleared below, so a past fight shows its
+			# own detail and a missing one shows nothing rather than something wrong.
+			"detail": _log_detail.duplicate(),
 		})
 		if _flock_history.size() > FLOCK_HISTORY_LIMIT:
 			_flock_history = _flock_history.slice(_flock_history.size() - FLOCK_HISTORY_LIMIT)
 	_log_lines.clear()
+	_log_detail.clear()
 	# v0.9.611 — also clear the overlay strips for the new fight, so the
 	# FX scene starts fresh per encounter (without this, prior fight's
 	# strips would persist and stack with the new fight's events).

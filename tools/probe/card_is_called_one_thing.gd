@@ -114,6 +114,35 @@ func _init() -> void:
 		print("    %-10s %s" % [cls, CombatManagerScript.class_engine_label(cls)])
 
 	print("")
+	print("===== 4. NOTHING NAMES A CARD FROM ITS RAW ID =====")
+	# ⚡ "Perfect Heist" IS NOT A STRING ANYWHERE IN THIS GAME. Owner 2026-09-18: *"The wording
+	# from Assassinate traveling to the combat log said Perfect Heist."* It is
+	# `"perfect_heist".replace("_", " ").capitalize()` - a raw-id fallback on a path that never
+	# asked the display table, which is the same shape as the log TITLE fallback in section 1 and
+	# was sitting three surfaces away from it.
+	#
+	# ⛑ SO THE SHAPE IS WHAT IS CHECKED, not the three sites that were found. Any line that
+	# prettifies an identifier held in a variable named for an ABILITY or a CARD is naming a card
+	# without asking who is holding it.
+	var sources := {
+		"shared/combat_manager.gd": FileAccess.get_file_as_string("res://shared/combat_manager.gd"),
+		"server/server.gd": FileAccess.get_file_as_string("res://server/server.gd"),
+	}
+	var rx2 := RegEx.new()
+	rx2.compile("([A-Za-z_]*(?:ability|card|abil)[A-Za-z_]*)[.]replace[(]\"_\", \" \"[)][.]capitalize[(][)]")
+	var raw := 0
+	for f in sources.keys():
+		for m in rx2.search_all(String(sources[f])):
+			var who := String(m.get_string(1))
+			# `card_base` and friends are id PLUMBING, not display.
+			if who.ends_with("_id") or who == "card_base":
+				continue
+			raw += 1
+			_fail("%s names a card from the raw id `%s`" % [f, who])
+	if raw == 0:
+		_ok("no server-side surface prettifies an ability id into a name")
+
+	print("")
 	if not _fails.is_empty():
 		print("[PROBE] FAIL %d naming disagreement(s):" % _fails.size())
 		for m in _fails:

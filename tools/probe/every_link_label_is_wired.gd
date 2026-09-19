@@ -65,7 +65,61 @@ func _init() -> void:
 			_fail("%s -- links are hoverable but not clickable" % k.split(".")[0])
 
 	print("")
-	print("===== 3. NO LABEL IS BUILT WITH BBCODE AND LEFT SILENT =====")
+	print("===== 3. AND THE PANELS, NOT ONLY client.gd =====")
+	# ⚡ THIS PROBE MISSED THE FIFTH ONE BECAUSE IT ONLY READ client.gd. Owner 2026-09-18, hours
+	# after the fourth was fixed: *"guess the Fight log still isn't hoverable?"* - and
+	# `fight_log_panel.gd` had its signals connected all along. The fault there was different (its
+	# hover box was a CHILD of the combat panel, which is hidden on the death screen, so a Control
+	# in an invisible parent drew nothing) but the probe could not have told me either way, because
+	# it never opened the file. A check scoped to one file is a check that will be wrong about the
+	# next file.
+	var panel_dir := DirAccess.open("res://client")
+	var panels: Array = []
+	if panel_dir != null:
+		panel_dir.list_dir_begin()
+		var f := panel_dir.get_next()
+		while f != "":
+			if f.ends_with("_panel.gd"):
+				panels.append(f)
+			f = panel_dir.get_next()
+		panel_dir.list_dir_end()
+	panels.sort()
+	var silent_panels: Array = []
+	for n in panels:
+		var src := FileAccess.get_file_as_string("res://client/%s" % n)
+		# A panel that renders `[url=` is offering links; it must listen for at least one of them.
+		if src.find("[url=") < 0 and src.find("\"[url=%s]") < 0:
+			continue
+		if src.find("meta_hover_started") >= 0 or src.find("meta_clicked") >= 0:
+			_ok("%s renders links and listens" % n)
+		else:
+			silent_panels.append(n)
+			_fail("%s renders [url= and connects no meta signal" % n)
+	if silent_panels.is_empty():
+		_ok("every panel that renders a link listens for one")
+
+	print("")
+	print("===== 4. A HOVER BOX MUST NOT LIVE IN A HIDDEN PARENT =====")
+	# ⛑ THE FIFTH FAULT, NAMED. The fight log opens from the death screen and the overworld; its
+	# detail box has to be its own child, and it asks the combat panel only for the TEXT so there is
+	# still one copy of the blow-by-blow.
+	var flp := FileAccess.get_file_as_string("res://client/fight_log_panel.gd")
+	var boxes := {
+		"the fight log owns its detail box": flp.find("func show_detail(text: String)") >= 0,
+		"...and hides it": flp.find("func hide_detail()") >= 0,
+		"the TEXT still comes from the combat panel":
+			cli.find("combat_scene_panel.log_detail_text(str(m))") >= 0,
+		"and the panel resolves per FIGHT, not globally":
+			FileAccess.get_file_as_string("res://client/combat_scene_panel.gd").find("func _detail_source()") >= 0,
+	}
+	for k in boxes.keys():
+		if bool(boxes[k]):
+			_ok(String(k))
+		else:
+			_fail("%s -- MISSING" % k)
+
+	print("")
+	print("===== 5. NO LABEL IS BUILT WITH BBCODE AND LEFT SILENT =====")
 	# A sweep for the SHAPE, so the next one is caught when it is written rather than when it is
 	# reported. Every `X = RichTextLabel.new()` whose block turns bbcode on is listed with whether
 	# its variable ever appears beside `meta_hover_started`.

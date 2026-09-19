@@ -837,9 +837,36 @@ beats it.
 
 Probe: `tools/probe/crafting_help_covers_the_loop.gd`.
 
-**Still open: the WALKTHROUGH half** — one-shot `tutorial_hint_panel` hints fired the first time a
-player stands at a bench, sees a rune, or meets a `Wanted` job. The reference half is what a player
-goes looking for; the hints are what reaches a player who does not know to look.
+**✅ THE WALKTHROUGH HALF IS DONE TOO — v0.9.811. THE CRAFTING ARC IS CLOSED.**
+
+⛑ **AND THE FIRST THING THE AUDIT FOUND WAS A HINT THAT TAUGHT NOBODY.**
+`_maybe_send_rework_hint` was written with a persisted `seen_rework_hint` flag, parsed, and had
+**no call site at all** — so the one rule in this arc that will otherwise read as a bug (*a Rework
+can come out WORSE, and it stands*) was explained to no one. A session note said it was wired. It
+was not. That is the "capability with no door" defect for the eighth time in this arc, and it is
+now a check rather than a memory.
+
+`tools/probe/every_hint_has_a_moment.gd` walks every `_maybe_send_*_hint`, counts its CALLS (not
+its mentions — the first cut matched the declaration and passed the one that was missing), and
+confirms its `seen_` flag is persisted. A hint that fires every login is worse than one that never
+does. `_maybe_send_progression_hint` is exempt **by name with the owner's quote**: it was retired
+deliberately (*"I really don't like the progression reminder popup, it's intrusive"*) in favour of
+the pulsing `Stats +N` marker.
+
+**The loop, moment by moment, all five now firing:**
+
+| step | moment | hint |
+|---|---|---|
+| 1 gather | first catch / ore / log | `_maybe_send_gather_hint` (was live) |
+| 2 craft | first bench | `_maybe_send_crafting_hint` (was live) |
+| 3 improve | first **salvage** | **new** — gear you outgrow IS the materials; lock what you keep |
+| 3 improve | first **rune** crafted | **new** — a rune is an affix in your pocket; disenchant returns them |
+| 3 improve | first **Rework** quote | **wired** — it can roll lower and it stands |
+| 4 cannot make | first commissionable or locked row | `_maybe_send_commission_hint` (wired earlier today) |
+| 5 somebody pays | first `◆ wanted` row you can fill | **new** — the Valor is escrowed; your quality is yours |
+
+The reference half is what a player goes looking for; these are what reach a player who does not
+know to look.
 
 **⛑ USE THE TWO SURFACES THAT ALREADY EXIST — do not build a third.**
 * `show_help()` topics (~30 of them, keyword-searchable) — the reference half. Extend

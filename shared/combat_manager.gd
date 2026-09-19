@@ -5131,7 +5131,7 @@ func _process_ability_command_inner(peer_id: int, ability_name: String, arg: Str
 	var hand_key := Character.card_iid(card_name, _copy_n)
 	var hand: Array = combat.get("combat_hand", [])
 	if not hand.is_empty() and hand_key not in hand:
-		var hand_msg = "[color=#FFA500]%s is not in your hand.[/color]" % card_name.replace("_", " ").capitalize()
+		var hand_msg = "[color=#FFA500]%s is not in your hand.[/color]" % display_name_for(character, card_name)
 		return {"success": false, "message": hand_msg, "messages": [hand_msg]}
 	character.set_active_card_instance(hand_key)
 
@@ -5328,7 +5328,7 @@ func _process_ability_command_inner(peer_id: int, ability_name: String, arg: Str
 			var _bleed: int = max(1, int(ability_damage_dealt * 0.15 * _rider_lvl))
 			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + _bleed
 			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 3)
-			result.messages.append("[color=#FF4444]Rider: %s opens a bleeding wound (%d/turn)![/color]" % [ability_name.replace("_", " ").capitalize(), _bleed])
+			result.messages.append("[color=#FF4444]Rider: %s opens a bleeding wound (%d/turn)![/color]" % [display_name_for(character, ability_name), _bleed])
 			if _rider_lvl >= 2:
 				var _ab: int = 6 * (_rider_lvl - 1)  # L2 -6%, L3 -12%, L4 -18%
 				combat["monster_sabotaged"] = min(50, int(combat.get("monster_sabotaged", 0)) + _ab)
@@ -13603,7 +13603,17 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 	active_combats.erase(pid)
 	var act_label: String
 	if kind == "ability":
-		act_label = "uses " + String(action.get("ability", "")).replace("_", " ").capitalize()
+		# ⚡ THE CLASS'S NAME FOR THE CARD, not the raw id prettified. Owner 2026-09-18: *"The
+		# wording from Assassinate traveling to the combat log said Perfect Heist. Another name
+		# being wrong for the class it seems."*
+		#
+		# ⛑ AND "Perfect Heist" IS NOT A STRING ANYWHERE IN THE GAME - it is
+		# `"perfect_heist".replace("_", " ").capitalize()`. That is the tell: a raw-id fallback on a
+		# path that never asked the display table. The card is Assassinate for a Ninja, Double Cross
+		# for a Grifter and Killing Shot for a Ranger, and this is the PARTY combat log, which is the
+		# surface most likely to show somebody else's card.
+		act_label = "uses " + display_name_for(combat.characters.get(pid, null),
+			String(action.get("ability", "")))
 	else:
 		act_label = "attacks"
 	# Header names the actor for everyone else; the actor themself reads it in 2nd person.

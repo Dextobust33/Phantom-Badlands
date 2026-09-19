@@ -206,6 +206,73 @@ func _build() -> void:
 	_scroll.add_child(_body)
 
 
+## ⚡ THE HOVER BOX BELONGS TO THIS PANEL. Owner 2026-09-18, from the death screen: *"guess the
+## Fight log still isn't hoverable?"* The hover WAS firing - it was routed into a popup that is a
+## child of `combat_scene_panel`, and this window opens from the death screen and the overworld
+## where that panel is not visible. A Control inside an invisible parent draws nothing.
+##
+## ⛑ THE TEXT STILL HAS ONE SOURCE. `combat_scene_panel.log_detail_text()` resolves the key; this
+## only draws it, so there is no second copy of the blow-by-blow to fall out of step.
+var _detail_box: PanelContainer = null
+var _detail_label: RichTextLabel = null
+
+
+func _ensure_detail_box() -> void:
+	if _detail_box != null and is_instance_valid(_detail_box):
+		return
+	_detail_box = PanelContainer.new()
+	_detail_box.name = "LogDetail"
+	_detail_box.top_level = true
+	_detail_box.z_index = 400
+	_detail_box.visible = false
+	_detail_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.06, 0.05, 0.98)
+	sb.border_color = Color("#C8A24A")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 7
+	sb.content_margin_bottom = 7
+	sb.shadow_color = Color(0, 0, 0, 0.6)
+	sb.shadow_size = 6
+	_detail_box.add_theme_stylebox_override("panel", sb)
+	_detail_label = RichTextLabel.new()
+	_detail_label.bbcode_enabled = true
+	_detail_label.fit_content = true
+	_detail_label.scroll_active = false
+	_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_label.custom_minimum_size = Vector2(440, 0)
+	_detail_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail_label.add_theme_font_size_override("normal_font_size", 13)
+	_detail_box.add_child(_detail_label)
+	add_child(_detail_box)
+
+
+func show_detail(text: String) -> void:
+	"""Draw the blow-by-blow beside the cursor. Empty text hides the box."""
+	if text == "":
+		hide_detail()
+		return
+	_ensure_detail_box()
+	_detail_label.text = text
+	_detail_box.visible = true
+	_detail_box.reset_size()
+	# Beside the pointer, nudged back on screen when it would run off the right or the bottom.
+	var vp: Vector2 = get_viewport_rect().size
+	var at: Vector2 = get_global_mouse_position() + Vector2(18, 18)
+	var sz: Vector2 = _detail_box.size
+	at.x = clampf(at.x, 8.0, maxf(8.0, vp.x - sz.x - 8.0))
+	at.y = clampf(at.y, 8.0, maxf(8.0, vp.y - sz.y - 8.0))
+	_detail_box.global_position = at
+
+
+func hide_detail() -> void:
+	if _detail_box != null and is_instance_valid(_detail_box):
+		_detail_box.visible = false
+
+
 func show_log(title: String, bbcode: String, can_prev: bool, can_next: bool) -> void:
 	"""Put one fight on screen. `can_prev` / `can_next` drive the flock-chain arrows."""
 	visible = true

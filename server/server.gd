@@ -12227,7 +12227,9 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 				effect_display = "-%d%% cost" % int(value)
 			_:
 				effect_display = "+%d %s" % [int(value), enhance_effect]
-		var ability_display = ability_name.replace("_", " ").capitalize()
+		# The class's name for the card - a Ninja who enhances this card is told about Assassinate,
+		# not about "Perfect heist". Same fault the party combat log had.
+		var ability_display = CombatManager.display_name_for(character, ability_name)
 		send_to_peer(peer_id, {
 			"type": "text",
 			"message": "[color=#FF00FF]You master the secrets of the %s![/color]\n[color=#00FF00][b]SKILL ENHANCED![/b] %s: %s![/color]\n[color=#00FFFF](Total %s %s: +%d%%)[/color]" % [item_name, ability_display, effect_display, ability_display, enhance_effect.replace("_", " "), int(new_total)]
@@ -13983,6 +13985,7 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		if not single_strings.is_empty():
 			single_msg += " [color=#00FF00]→ %s[/color]" % ", ".join(single_strings)
 		send_to_peer(peer_id, {"type": "text", "message": single_msg})
+		_maybe_send_salvage_hint(peer_id)
 		save_character(peer_id)
 		send_character_update(peer_id)
 		return
@@ -14063,6 +14066,7 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		"message": result_msg
 	})
 
+	_maybe_send_salvage_hint(peer_id)
 	save_character(peer_id)
 	send_character_update(peer_id)
 
@@ -14557,6 +14561,85 @@ func _maybe_send_commission_hint(peer_id: int) -> void:
 "
 		+ "You supply the materials either way."
 	))
+	save_character(peer_id)
+
+
+func _maybe_send_salvage_hint(peer_id: int) -> void:
+	"""Fired the first time a player salvages anything.
+
+	⚡ SALVAGE IS THE HINGE OF THE WHOLE LOOP and it reads like a delete button. Every piece of
+	gear a player will ever outgrow is a pile of the materials the bench wants, and until somebody
+	says so the natural reading of "Salvage" is "throw away for a bit of essence"."""
+	if _hint_deferred_for_newbie(peer_id):
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_salvage_hint:
+		return
+	character.seen_salvage_hint = true
+	_send_hint(peer_id, "[color=#AA66FF]♻ Salvage[/color]", (
+		"Gear you have outgrown is not rubbish — it is [color=#00FF00]materials[/color], and it is where"
+		+ " most of what a bench wants comes from.\n\n"
+		+ "• [color=#FFD700]Salvage Junk[/color] clears everything below your level in one press.\n"
+		+ "• [color=#FFD700]Auto-salvage[/color] (Settings) does it as drops arrive, and shows you exactly"
+		+ " what it would destroy [color=#88FF88]before[/color] you turn it on.\n\n"
+		+ "[color=#FF9999]Lock anything you want kept[/color] — a locked item is never salvaged, by you or"
+		+ " automatically."
+	), "", ["Salvage"])
+	save_character(peer_id)
+
+
+func _maybe_send_rune_hint(peer_id: int) -> void:
+	"""Fired the first time a rune reaches a player's pack.
+
+	⚡ A RUNE IS WHERE AN AFFIX COMES FROM, and nothing on the item says so. A player holding one
+	has the answer to "how do I get the stat I want" in their inventory and no reason to connect
+	the two - which is the single biggest gap the crafting help audit found."""
+	if _hint_deferred_for_newbie(peer_id):
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_rune_hint:
+		return
+	character.seen_rune_hint = true
+	_send_hint(peer_id, "[color=#A335EE]ᚱ Runes[/color]", (
+		"A rune is an [color=#FFD700]affix in your pocket[/color]. Apply it to a piece of gear and the gear"
+		+ " keeps the stat.\n\n"
+		+ "• Each rune names the [color=#88FF88]slot[/color] it fits — a weapon rune will not go on boots.\n"
+		+ "• [color=#FFD700]Disenchant[/color] an enchanted item and the runes come [color=#88FF88]back[/color],"
+		+ " so an experiment is not a loss.\n"
+		+ "• Runes are [color=#C8A24A]Scribe[/color] work. You can make them, or commission them.\n\n"
+		+ "If the stat you want is one you already have in the wrong place, [color=#FFD700]Rework[/color] trades"
+		+ " it instead."
+	))
+	save_character(peer_id)
+
+
+func _maybe_send_wanted_hint(peer_id: int) -> void:
+	"""Fired the first time the bench shows a recipe another player is PAYING for.
+
+	⚡ THE ONE MOMENT CRAFTING STOPS BEING SOLITAIRE. A `Wanted` row means a real person has
+	escrowed Valor for something this player can already make, and the row says so quietly among
+	sixty others. Said once, out loud, it is the reason to look at the Wanted filter ever again."""
+	if _hint_deferred_for_newbie(peer_id):
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_wanted_hint:
+		return
+	character.seen_wanted_hint = true
+	_send_hint(peer_id, "[color=#FFD700]◆ Somebody is paying for this[/color]", (
+		"A [color=#FFD700]◆ wanted[/color] row means another player has put up Valor for that item and"
+		+ " nobody has filled it yet.\n\n"
+		+ "• Make it and it is [color=#88FF88]delivered automatically[/color] — the Valor is already"
+		+ " escrowed, so you cannot be stiffed.\n"
+		+ "• The [color=#C8A24A]Wanted[/color] filter above the list shows only these.\n"
+		+ "• [color=#88FF88]Your quality is yours to keep[/color]: a Masterwork fills the order just as"
+		+ " well, and a post NPC can only ever make Standard — which is why players post jobs at all."
+	), "", ["Wanted"])
 	save_character(peer_id)
 
 
@@ -26584,6 +26667,13 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		if bool(_r.get("can_commission", false)) or bool(_r.get("locked", false)):
 			_maybe_send_commission_hint(peer_id)
 			break
+	# ⚡ AND THE OTHER DIRECTION: the first time somebody is PAYING for what this player can
+	# already make. A `◆ wanted` row is the one moment crafting stops being solitaire, and it
+	# appears quietly among sixty others.
+	for _w in recipe_list:
+		if int(_w.get("wanted_count", 0)) > 0 and bool(_w.get("can_craft", false)):
+			_maybe_send_wanted_hint(peer_id)
+			break
 
 	var upcoming_pool: Array = []
 	for r in recipe_list:
@@ -27662,6 +27752,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"rune":
 				# Runes are tradeable inventory items — create and add to inventory
 				crafted_item = _create_crafted_rune(recipe, quality, character.name)
+				_maybe_send_rune_hint(peer_id)
 				crafted_item["quantity"] = quantity
 				character.add_item(crafted_item)
 				var rune_qty = "%dx " % quantity if quantity > 1 else ""
@@ -28460,6 +28551,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 				result_message = "[color=%s]Created %s%s %s![/color]" % [quality_color, con_qty, quality_name, recipe.name]
 			"rune":
 				crafted_item = _create_crafted_rune(recipe, quality, character.name)
+				_maybe_send_rune_hint(peer_id)
 				crafted_item["quantity"] = quantity
 				character.add_item(crafted_item)
 				var rn_qty = "%dx " % quantity if quantity > 1 else ""
@@ -48343,6 +48435,11 @@ func handle_affix_reroll_quote(peer_id: int, message: Dictionary) -> void:
 	var item: Dictionary = character.inventory[idx]
 	var spec: bool = _is_committed_enchanter(character)
 	var cost: Dictionary = drop_tables.affix_reroll_cost(item, spec)
+	# ⚡ THE WARNING GOES FIRST. `_maybe_send_rework_hint` was written with a persisted flag and
+	# had NO CALL SITE, so the one rule in the arc that will otherwise read as a bug - a Rework can
+	# come out worse, and it stands - taught nobody. `tools/probe/every_hint_has_a_moment.gd` now
+	# fails on any hint with no moment.
+	_maybe_send_rework_hint(peer_id)
 	send_to_peer(peer_id, {
 		"type": "affix_reroll_quote",
 		"item_index": idx,

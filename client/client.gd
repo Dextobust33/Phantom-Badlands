@@ -3371,12 +3371,18 @@ func _ready():
 	fight_log_panel.closed.connect(update_action_bar)
 	fight_log_panel.step_fight.connect(_legacy_view_step)
 	fight_log_panel.meta_clicked.connect(_on_game_output_meta_clicked)
+	# ⛑ ASK THE COMBAT PANEL FOR THE TEXT, DRAW IT IN THE LOG. The detail map lives on
+	# `combat_scene_panel`, so a second copy would drift - but its popup is a CHILD of that panel,
+	# and the fight log opens from the death screen and the overworld where the panel is hidden. A
+	# Control inside an invisible parent draws nothing, which is why this looked like the hover was
+	# not wired at all.
 	fight_log_panel.meta_hovered.connect(func(m) -> void:
-		if combat_scene_panel != null and combat_scene_panel.has_method("show_hover_detail"):
-			combat_scene_panel.show_hover_detail(str(m)))
+		var _txt := ""
+		if combat_scene_panel != null and combat_scene_panel.has_method("log_detail_text"):
+			_txt = String(combat_scene_panel.log_detail_text(str(m)))
+		fight_log_panel.show_detail(_txt))
 	fight_log_panel.meta_hover_ended.connect(func() -> void:
-		if combat_scene_panel != null and combat_scene_panel.has_method("hide_hover_detail"):
-			combat_scene_panel.hide_hover_detail())
+		fight_log_panel.hide_detail())
 	pvp_combat_panel.action_submitted.connect(_on_pvp_combat_action_submitted)
 
 	# Audit #14 Slice 1 — clan create/roster panel.
@@ -34861,7 +34867,15 @@ func display_changelog():
 	# v0.9.808 - the fourth label in this codebase to render links nothing was listening for.
 	# v0.9.809 - the rest of "some of the other card numbers aren't matching either".
 	# v0.9.810 - Rest comes back after the boss dies.
-	display_game("[color=#00FF00]v0.9.810[/color] [color=#808080](Current)[/color]")
+	# v0.9.811 - the crafting arc closes: the gather->craft loop teaches itself as you meet it.
+	display_game("[color=#00FF00]v0.9.811[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE GATHER → CRAFT LOOP TEACHES ITSELF NOW.[/color] The written guide shipped a few versions back; this is the other half — a short one-time note at the moment you first meet each step, and never again. First [b]salvage[/b] (gear you outgrow IS the materials, and a locked item is never destroyed). First [b]rune[/b] (an affix in your pocket — and disenchanting gives them back, so an experiment is not a loss). First [b]Rework[/b] quote (it rolls fresh, it can come out [b]lower[/b], and it stands). First [b]◆ wanted[/b] row (somebody has already escrowed the Valor, and your quality is yours to keep). Turn them all off in Settings if you would rather not be taught.")
+	display_game("  [color=#FF4444]★ FIXED: one of those notes had never once been shown.[/color] The Rework warning — the single most surprising rule in crafting — was written, saved a \"you have seen this\" flag, and was [b]never called from anywhere[/b]. Every teaching note is now checked for having a moment that fires it.")
+	display_game("  [color=#FF4444]★ FIXED: the combat log called cards by the wrong name again.[/color] [b]Assassinate[/b] appeared as [i]Perfect Heist[/i] — which is not a phrase anywhere in the game, it is the internal id with the underscore taken out. Three surfaces did that. A card is now named by the class holding it everywhere, and a check fails on any line that prettifies an id instead of asking.")
+	display_game("  [color=#FF4444]★ FIXED: the Fight Log's hover really does work now.[/color] It was firing all along — the detail box was a child of the [b]combat[/b] panel, so opening the log from the death screen or the overworld drew it inside something invisible. The log has its own box now. And a past fight in a flock showed the [b]latest[/b] fight's blow-by-blow, because the detail was stored by line number and never cleared; each fight keeps its own.")
+	display_game("")
+
+	display_game("[color=#808080]v0.9.810[/color]")
 	display_game("  [color=#FF4444]★ FIXED: you could not Rest after killing a dungeon boss.[/color] Once the boss is down and the final chest is waiting, the action bar offered [b]Leave Now[/b] and [b]Items[/b] and nothing else - so the moment you most want to recover, between the hardest fight in the dungeon and the walk to the chest, was the one moment you could not. The branch's own comment had said [i]\"Items + Rest still available\"[/i] for as long as it has existed; nobody had implemented it. Rest is on that bar now, and a check walks every action-bar state you can stand in underground and fails if any of them leaves you without Rest or your items.")
 	display_game("")
 
@@ -43106,6 +43120,10 @@ func _render_legacy_combat_log() -> void:
 	parts.append("[color=#5C4D33]──────── Combat Log ────────[/color]")
 	for line in log_lines:
 		parts.append(line)
+	# Tell the combat panel WHICH fight's blow-by-blow a hover should resolve against, or a line
+	# from fight 1 answers with fight 3's detail.
+	if combat_scene_panel != null and combat_scene_panel.has_method("set_detail_view"):
+		combat_scene_panel.set_detail_view(_legacy_view_fight_index)
 	var title: String = "Fight Log"
 	if total > 1:
 		title = "Fight %d of %d%s" % [fight_num, total,
