@@ -27833,7 +27833,25 @@ func handle_server_message(message: Dictionary):
 			# the pass is enough: display_game sends anything printed inside it to the side column,
 			# whether or not the map happens to be on the canvas yet.
 			_ow_location_pass = _ow_canvas_eligible()
-			if _ow_location_pass:
+			# ⚡ AN EVENT PAGE IS NOT A STATION BLOCK. Owner 2026-09-18, with a screenshot of a
+			# Continue button and nothing to continue from: *"Why are we still having issues where
+			# the text is being lost? I can't see anything about the companion... It's literally
+			# killing features."*
+			#
+			# ⛑ AND THE CLEAR BELOW IS CORRECT FOR ONE KIND OF PAGE AND WRONG FOR THE OTHER. The
+			# pinned block holds TWO different things. A STATION page (the post you are standing in)
+			# is state - it should be rewritten every step and vanish when you walk away, which is
+			# what the note below describes and what it was written for. An EVENT page - an egg
+			# hatching, anything that ends "press Continue" - is not state: it happened once, the
+			# player has been ASKED to acknowledge it, and a hatch fires ON A STEP, so the very
+			# `location` message that same step produced erased it before it could be read.
+			#
+			# `pending_continue` is exactly the signal that the game is waiting on the player, so it
+			# is what decides. Nothing else about the pass changes: the log below still accumulates,
+			# and the station page still goes when you walk away from it.
+			if _ow_location_pass and pending_continue:
+				_ow_location_pass = false
+			elif _ow_location_pass:
 				# The location block is rewritten from scratch each step; the LOG below it is not. This
 				# is also what makes a station page vanish when you walk away from the station.
 				_ow_side_location.clear()

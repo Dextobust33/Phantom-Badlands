@@ -49,6 +49,49 @@ NAME_HINT = re.compile(r'^func (display_\w*(page|options|select|menu|picker|prom
 OPTION_SHAPE = re.compile(r'\[%d\]|\[1\]|\[color=#FFFF00\]\[%d\]')
 
 
+def events_with_a_continue(src_lines):
+    """Every place that asks the player to press Continue, and whether it claimed a page first.
+
+    ⚡ THE SWEEP ABOVE COVERS PROMPTS AND MISSED THIS ENTIRELY. Owner 2026-09-18, with a
+    screenshot of a Continue button and nothing above it: *"Why are we still having issues where
+    the text is being lost? I can't see anything about the companion... It's literally killing
+    features."*
+
+    A prompt waits for an ANSWER; an event waits for an ACKNOWLEDGEMENT. Same requirement - the
+    text has to be somewhere the player can read it - and the audit only looked at the first kind,
+    so an egg hatching was out of scope by construction. `pending_continue = true` marks the second.
+
+    ⛑ CLAIMING A PAGE IS NECESSARY AND WAS NOT SUFFICIENT. The hatch DID call `_page_clear()`
+    and still lost its text: a hatch fires on a step, and the `location` message that same step
+    produced wiped the pinned block. That is fixed where the pass is decided rather than here - but
+    this is the check that would have found the next one.
+    """
+    out = []
+    for i, line in enumerate(src_lines):
+        if 'pending_continue = true' not in line:
+            continue
+        # Look back for the page claim in the same handler - a generous window, because the print
+        # block between the clear and the flag can be long.
+        window = '\n'.join(src_lines[max(0, i - 80):i])
+        # ⛑ A LINE IS NOT A PAGE, and the first version of this check did not know the
+        # difference - it flagged seven combat outcomes ("You escaped from combat!", "You fled
+        # to (x, y)!") that print ONE OR TWO lines into the accumulating LOG, where they survive
+        # perfectly well. Patching those would have been seven regressions chasing a false
+        # positive, which is precisely the failure CLAUDE.md's advisory note warns about.
+        #
+        # What needs a page is a multi-line SCREEN - the hatch prints fifteen lines and a banner.
+        # So the threshold is the block's size, and it is stated rather than tuned to taste: five
+        # lines is more than any log message in this file and fewer than any page.
+        # Count only the run immediately before the flag, not the whole 80-line window.
+        tail = '\n'.join(src_lines[max(0, i - 25):i])
+        out.append({
+            'line': i + 1,
+            'clears': '_page_clear(' in window,
+            'prints': tail.count('display_game(') >= 5,
+        })
+    return out
+
+
 def main():
     src = open(SRC, encoding='utf-8').read().split('\n')
     funcs = []
@@ -122,6 +165,26 @@ def main():
             print('    %-42s %s:%-6d%s%s' % (p['name'], SRC, p['line'], tag, who))
     print('')
     print('  A prompt with a PANEL branch is only at risk on its text fallback.')
+
+    print('')
+    print('===== EVERY EVENT THAT ASKS FOR A CONTINUE =====')
+    evs = events_with_a_continue(src)
+    bad_ev = [e for e in evs if e['prints'] and not e['clears']]
+    print('  %d places set `pending_continue`; %d print a PAGE without claiming one'
+          % (len(evs), len(bad_ev)))
+    print('  (a one- or two-line outcome goes to the accumulating log and is safe - see the note)')
+    for e in bad_ev:
+        print('    %s:%d' % (SRC, e['line']))
+    print('')
+    print('  ADVISORY, NOT A GATE - and that distinction was earned. The first cut of this section')
+    print('  flagged seven combat outcomes and I nearly patched all seven; they print one or two')
+    print('  lines into the accumulating LOG, where they survive. Raising the threshold to five')
+    print('  lines left four, and those four are `for msg in messages: display_game(msg)` - combat')
+    print('  text, which is exactly what the log is for. Counting lines cannot tell a long log')
+    print('  burst from a titled page, so this half NAMES candidates and the prompt half gates.')
+    print('')
+    print('  The reliable fix for the whole class is SCROLLBACK (backlog item 10): nothing can be')
+    print('  lost if the player can scroll back to it, and no per-site rule is needed at all.')
     print('')
     return 1 if bad else 0
 

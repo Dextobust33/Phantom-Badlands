@@ -2621,15 +2621,21 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    COMBINATION table (two or three modifiers -> one authored word) consulted where the name is
    built, with the full list still readable on hover/inspect so nothing is hidden. Do it after the
    equipment audit (4), which may retire some affixes and change what needs a combined name.
-6. **First-hour polish, all small, all seen by every new player:**
-   - the Warden's handout is named like endgame loot (needs a plain-base-item path, below);
+6. **✅ FIRST-HOUR POLISH — COMPLETE.** Both remaining lines were already done and the list had
+   not been ticked, which is the exact failure the rule at the top of CLAUDE.md exists for. Found
+   2026-09-18 by opening them rather than trusting the line.
+   - ✅ the Warden's handout — **DONE 2026-09-17**, full write-up further down; `"Rusty Weapon of
+     Wisdom"` is `"Rusty Weapon"` and the kit is deterministic. Probe `starter_kit_plain.gd`;
    - ✅ DONE on master 2026-09-15: **"Floors Cleared: 2/5"** on the starter dungeon. Five places
      asked the dungeon TYPE (5) for the instance's floor count (2): HUD, floor messages, go-back,
      completion screen - and the **Floor Skip Charm**, which on the real boss floor spent the charm
      and skipped the boss to its final chest. One helper `_instance_floor_count` now. XP still
      divides by the type's count (owner: fix the text, keep the tutorial's pay). A refused charm is
      now refunded. Probe `instance_floor_count.gd`, proven red on the old code;
-   - roads 3 wide -> 2 (owner, 2026-09-14; note the encounter corridor narrows with it).
+   - ✅ roads 3 wide -> 2 — **DONE 2026-09-15.** `ROAD_STAMP_OFFSETS` stamps a 2x2 block per
+     waypoint (an even width cannot be centred on a symmetric plus), and `ROAD_HALF_WIDTH` is kept
+     only so roads laid at the old width can be narrowed. The near-encounter-free corridor narrowed
+     with it, as the entry required.
    - ✅ DONE on master 2026-09-15 - **give a Home Stone (Companion) at the end of Warden's Watch, and teach it** (owner 2026-09-15:
      *"have the player get their home stone companion at the end of the tutorial as well as let
      players know what it is for and how to use it"*). The reward is one line - chain bonuses
