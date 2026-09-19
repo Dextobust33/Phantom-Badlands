@@ -23673,7 +23673,11 @@ func _card_damage_multiplier(ability_name: String) -> float:
 	var power_picks := 0
 	if picks is Array:
 		power_picks = (picks as Array).count("power")
-	var tier_mult := 1.0 + float(tier - 1) * 0.02 + float(power_picks) * 0.12
+	# ⚡ READ THE CONSTANTS, NEVER COPY THEM. These were hardcoded 0.02 and 0.12 - correct
+	# today, and exactly the "one value, two places" shape that has caused nearly every wrong-number
+	# bug in this project. If Character retunes either, a copied literal drifts silently and the
+	# card face quietly starts lying.
+	var tier_mult := 1.0 + float(tier - 1) * Character.TIER_POWER_PER 		+ float(power_picks) * Character.MILESTONE_POWER_PER
 	# 2026-09-07 — fold in every OTHER damage upgrade the card carries. This used to count
 	# `power` alone, which meant five upgrades silently moved the real hit while the card kept
 	# printing its old number: Overdraw / Reckless / Brittle / Greedy add 25-35%, and Slow Burn
@@ -23685,7 +23689,31 @@ func _card_damage_multiplier(ability_name: String) -> float:
 	var upg_mult := 1.0
 	if CU != null and picks is Array:
 		upg_mult = CU.estimate_damage_mult(picks as Array)
-	return rm * tier_mult * upg_mult
+	# ⛑ CARD-SPECIFIC POWER, which this estimate used to omit entirely.
+	#
+	# The backlog said the fault was that it "counts only `power` picks" - it is not: the server's
+	# `get_tier_effect_mult` counts only power picks too, so that half always agreed. The real gap
+	# is `get_skill_damage_bonus` = card TOMES + card-specific GEAR (card_gear.gd), a percentage
+	# the server applies to the hit and the card face never showed. A player who farmed a chase
+	# item FOR a card saw the number it had before they equipped it - which is the worst case,
+	# because that is precisely the moment they are looking.
+	var card_power := 0.0
+	var _enh: Dictionary = character_data.get("skill_enhancements", {}).get(ability_name, {})
+	if _enh is Dictionary:
+		card_power += float(_enh.get("damage_bonus", 0.0))
+	var CG = load("res://shared/card_gear.gd")
+	if CG != null and CG.has_method("item_bonuses"):
+		for slot in character_data.get("equipped", {}).keys():
+			var it = character_data.get("equipped", {}).get(slot, null)
+			if it == null or not (it is Dictionary):
+				continue
+			# ⛑ An ARRAY of {card, kind, value}, not a dict keyed by card. The first cut of this
+			# assumed a keyed dict and would have added nothing at all, silently - the same
+			# "read the shape, do not assume it" miss that cost a run on the egg probe today.
+			for row in CG.item_bonuses(it):
+				if String(row.get("card", "")) == ability_name and String(row.get("kind", "")) == "power":
+					card_power += float(row.get("value", 0.0))
+	return rm * tier_mult * upg_mult * (1.0 + card_power / 100.0)
 
 func _read_meter_note(server_note: String) -> String:
 	"""The Trickster meter's tag, with the SAME spend the card face is quoting.

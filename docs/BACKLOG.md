@@ -8022,8 +8022,17 @@ something was dropped, and it sat unnoticed for eleven days.
             all before committing.
       - [ ] **The card itself changes.** An upgraded Analyze is visibly a different card in the
             deck screen AND the combat hand, not the same art with a line appended.
-      - [ ] The estimate must follow: `_card_damage_multiplier` counts only `power` picks, so an
-            upgraded card can still show an unupgraded number.
+      - [x] **The estimate must follow. DONE 2026-09-19 — and the stated cause was WRONG.** This
+            line said the fault was that it "counts only `power` picks". It is not: the server's
+            `get_tier_effect_mult` counts only power picks too, so that half always agreed.
+            The real gap was **`get_skill_damage_bonus`** — card TOMES plus card-specific GEAR
+            (`card_gear.gd`) — a percentage the server applies to every hit and the face never
+            showed. Measured: equipping one `card_power_ambush` item moves the server's bonus
+            0% → 25% and moved the card face not at all. Worst possible moment to under-report,
+            since it is exactly when a player has just farmed the thing.
+            Also fixed: the client hardcoded `0.02` / `0.12` where Character has `TIER_POWER_PER`
+            and `MILESTONE_POWER_PER` — correct that day, and a silent liar the day either moves.
+            Probe: `the_card_face_counts_your_gear.gd`.
       **Groundwork exists:** `card_upgrades.gd` carries `name` + `desc` per upgrade,
       `_ability_desc_bbcode` is the single description builder, and the hand cell and deck card are
       both built from one `build_deck_card` path. A preview is composition, not new plumbing.
