@@ -2371,6 +2371,19 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 			var combat = combat_mgr.active_combats[0]
 			var turns := 0
 			var fled := false
+			# ⛑ MOST PLAYERS DO NOT KNOW THEY ARE LOSING. Owner 2026-09-18: *"Players only flee
+			# if they know they are in over their head, most don't know that and die when they
+			# thought they still had a chance. Sounds like the tools need adjusted to match this
+			# so we can find some actual balance again."*
+			#
+			# ⚡ ONE VALUE, TWO PLACES - and the copy that writes the game's balance was the one
+			# left stale. `run_fight` was made flee-aware; THIS sampler, which is what `refcal`
+			# fits the monster curve to, kept retreating on every sample. The v0.9.815 curve was
+			# therefore fitted to a player who always escapes at 30% HP, and reported a 0.0% death
+			# rate at every level while the live log held 50 real deaths.
+			#
+			# Measured from that log: 1 of 44 combat records mentions an attempt to flee.
+			var _flee_aware: bool = randf() < PLAYER_ATTEMPTS_FLEE
 			while turns < 400:
 				if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 					break
@@ -2393,7 +2406,7 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 				#
 				# Same defect I found and fixed in `adjudicate` earlier the same day and missed here,
 				# in the one place where it changes the game rather than a report.
-				if not fled and float(ch.current_hp) / float(maxi(1, php0)) < RUN_FIGHT_FLEE_AT:
+				if _flee_aware and not fled and float(ch.current_hp) / float(maxi(1, php0)) < RUN_FIGHT_FLEE_AT:
 					if bool(combat_mgr.process_flee(combat).get("fled", false)):
 						fled = true
 						break
