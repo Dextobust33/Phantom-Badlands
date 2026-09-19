@@ -7973,8 +7973,14 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       is what those populate. **Overlaps the player-phantom prefab tiers** (a bought post's quest
       boards and workstations are the player-owned half of the same idea) — design the two
       together or the post will have two unrelated populations.
-- [ ] **Launcher revamp + feedback inbox** — self-updating launcher, bigger window, changelog panel,
-      and suggest-idea / report-issue buttons posting to a server inbox.
+- [x] **Launcher revamp + feedback inbox — DONE (found 2026-09-19 by hand-checking the audit's
+      blind-spot list).** The launcher self-updates: `LAUNCHER_VERSION = "2.5"` compared against
+      the manifest's `launcher_version`, which `tools/make_client_manifest.py` generates so the
+      field cannot go missing again. The feedback inbox shipped in v0.9.728 - in-game
+      "Suggest an Idea" / "Report an Issue" posting to a Discord webhook.
+      ⚡ This named no probe, symbol or completion word, so the audit could not see it - it was
+      found because the audit LISTED it as unverifiable and a human grepped. That is the blind-spot
+      half of the process working, and the fifth already-built item found on 2026-09-19.
 
 ## Phase 7 — endgame: THE UNBURIED (deliberately later)
 

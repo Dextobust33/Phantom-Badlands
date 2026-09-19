@@ -37,6 +37,24 @@ or whose named symbols are all present in the code — plus **the same item list
 the Dungeon Atlas failure this file already warns about. On its first run it flagged **22 of 51**
 open items.
 
+⛑ **IT CATCHES THREE SHAPES OF STALENESS AND IS BLIND TO A FOURTH — measured, by injecting one
+stale item of each shape:**
+
+| the item... | caught? |
+|---|---|
+| says DONE / SHIPPED in its own text | yes |
+| names a probe that already exists | yes |
+| names symbols that all exist in the code | yes (weak) |
+| **describes the work in PROSE, naming nothing** | **NO** |
+
+That last shape is the one that actually cost time: *"tools are a pain, you cannot see backups"*
+names nothing checkable, and `_auto_equip_tool_replacement` had existed for ages. So the audit now
+**prints the items it cannot verify** (20 of 47 on first run) under `ITEMS THIS AUDIT CANNOT
+VERIFY - CHECK THESE BY HAND`. A checker silent about its blind spot is worse than one that admits
+it, because silence reads as "still open". **Grep the code for the capability before proposing
+anything on that list** — doing exactly that immediately found a sixth stale item (the launcher
+revamp, self-updating since 2.5 and its feedback inbox shipped in v0.9.728).
+
 It is ADVISORY and never edits the backlog: an item may legitimately name a probe it wants written,
 and a parent line often reads "the coverage half is done, the power half is not". An audit that
 silently ticked things off would be worse than the staleness it fixes. It tells you which lines to

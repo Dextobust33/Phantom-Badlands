@@ -125,6 +125,35 @@ def main():
             for _, why in reasons:
                 print("      - %s" % why)
 
+    # ⚡ THE BLIND SPOT, NAMED. Measured 2026-09-19 by injecting one stale item of each shape:
+    #
+    #     own text says DONE        -> caught
+    #     names an existing probe   -> caught
+    #     names existing symbols    -> caught (weak)
+    #     PROSE ONLY, no evidence   -> NOT CAUGHT
+    #
+    # The last shape is exactly what cost the owner time: "tools are a pain, you cannot see
+    # backups" names nothing checkable, and `_auto_equip_tool_replacement` had existed for ages.
+    # Same for dungeon slice 4. A checker that is silent about what it cannot check is worse than
+    # one that admits it, because silence reads as "still open" - so the unverifiable items are
+    # listed. These are the ones a human MUST check in the code before proposing them.
+    print("")
+    print("===== ITEMS THIS AUDIT CANNOT VERIFY - CHECK THESE BY HAND =====")
+    unauditable = []
+    for it in items:
+        body = it["body"]
+        if DONE_WORDS.search(body):
+            continue
+        if PROBE.findall(body):
+            continue
+        if [x for x in set(SYMBOL.findall(body)) if "_" in x]:
+            continue
+        unauditable.append(it)
+    print("  %d of %d open items name NO probe, symbol or completion word." % (len(unauditable), len(items)))
+    print("  The audit is BLIND to these. Grep the code for the capability before proposing one.")
+    for it in unauditable:
+        print("      BACKLOG.md:%-6d %s" % (it["line"], it["title"]))
+
     # ⛑ DUPLICATES. CLAUDE.md: "the Dungeon Atlas was once tracked as three separate tasks in
     # three separate places." Two lines opening with the same words are the cheapest tell.
     print("")
