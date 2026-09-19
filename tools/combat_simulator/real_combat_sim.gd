@@ -1448,6 +1448,21 @@ const WIN_NORMAL_SIM := 0.60
 # rather than dice, and it only opens up where the owner wants play to matter.
 const DIFFICULTY_RAMP := [
 	{"level": 1,     "win": 0.92, "turns": 4.0},
+	# ⛑ L3 AND L5 EXIST TO MAKE THE ON-RAMP STEERABLE. The table used to jump 1 -> 10, so every
+	# target between them was interpolated and the band holding **83% of the live population**
+	# (15 of 18 characters, 2026-09-19) had no knob of its own: nudging L5 meant moving L10 too.
+	#
+	# ⚡ THESE TWO ROWS ARE DELIBERATELY NEUTRAL. Their values are exactly what the 1->10
+	# interpolation already produced (0.9111 / 4.2222 at L3, 0.9022 / 4.4444 at L5), so adding
+	# them changes NO target and needs no re-calibration. They are a control surface, not a
+	# balance change - anything else would be a silent re-tune riding in on a refactor.
+	#
+	# To make early game easier, RAISE win here; to make it bite sooner, lower it. `turns` is the
+	# other half: it sets how long a fight lasts, which is what decides whether the band is about
+	# learning the buttons or about playing well. Owner's earlier direction is why it starts high
+	# and short - a beginner should mostly win, and a low-level fight is settled on the basic kit.
+	{"level": 3,     "win": 0.911, "turns": 4.22},
+	{"level": 5,     "win": 0.902, "turns": 4.44},
 	{"level": 10,    "win": 0.88, "turns": 5.0},
 	{"level": 25,    "win": 0.80, "turns": 6.5},
 	{"level": 50,    "win": 0.72, "turns": 8.0},
