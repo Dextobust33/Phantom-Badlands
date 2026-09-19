@@ -218,6 +218,29 @@ else
 fi
 rm -f "$UIOUT"
 
+# --- can the player actually READ what the game just told them?
+#
+# Owner, live 2026-09-19: "I just looted a corpse on the live server but I don't see what I got
+# from it in the right column anywhere." The page was drawn and then wiped by the server's own
+# follow-up updates. CLAUDE.md has carried the rule and a five-step checklist for this the whole
+# time and the screen shipped anyway - "a check nobody runs is not a check".
+#
+# The sweep that followed found three more the same way: the Inn's rest result, and BOTH Home
+# Stone prompts, which were protected by neither mechanism and were wiped by a single step.
+# This is what stops the fourth.
+if command -v python >/dev/null 2>&1; then
+    if python tools/unreadable_result_audit.py > /tmp/_unread.txt 2>&1; then
+        printf '  ok    readable_results       %s
+' "$(grep -c 'server.gd::' /tmp/_unread.txt) surfaces checked, none erased"
+    else
+        printf '  FAIL  readable_results       a result page can be erased before it is read
+'
+        grep -A1 'server.gd::' /tmp/_unread.txt | head -8 | sed 's/^/        /'
+        fail=1
+    fi
+    rm -f /tmp/_unread.txt
+fi
+
 # --- is the licence-restricted art even PRESENT? It is not in git (docs/ASSET_LICENCES.md),
 # --- so a fresh clone builds a dungeon with letters where the tiles should be and nothing says
 # --- so. Cheapest possible check, and it has to run BEFORE the art lookups below, which would

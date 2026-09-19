@@ -6161,7 +6161,16 @@ func _process(delta):
 
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, storage, market, or popups).
 	# Build mode is intentionally NOT in this exclusion list — players can reposition with their configured movement keys while picking a structure or aiming a placement. WASD remains the placement direction in build_direction_mode (consumed by _input()), so the movement poll below skips W/A/S/D when those slots are also placement keys, preventing a single key press from both moving and placing.
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode and not scratch_off_mode and not _combat_loot_reveal_active() and pending_dungeon_warning.is_empty() and pending_hotzone_warning.is_empty():
+	# ⚑ A MODE THAT DRAWS A PROMPT MUST BE IN THIS LIST. This is one of only TWO things that
+	# protect a page from being erased (the other is `pending_continue`), because a step is the
+	# commonest redraw there is.
+	#
+	# `home_stone_mode` and `pending_home_stone_choice` were in NEITHER, found by the sweep after
+	# the corpse-loot report rather than by anyone hitting it: using a Home Stone drew its choice
+	# page, movement stayed enabled, and one step wiped the prompt while leaving you in the mode -
+	# a blank screen that still eats your number keys. `tools/unreadable_result_audit.py` now
+	# fails the release if a page is protected by neither mechanism.
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode and not scratch_off_mode and not _combat_loot_reveal_active() and not home_stone_mode and not pending_home_stone_choice and pending_dungeon_warning.is_empty() and pending_hotzone_warning.is_empty():
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			# Slice 6g — biome move-cooldown modifier. Swamp/Tundra slow the
@@ -27884,6 +27893,19 @@ func handle_server_message(message: Dictionary):
 			pending_continue = true
 			update_action_bar()
 
+		"merchant_message":
+			# ⚡ THE CLIENT HAD NO CASE FOR THIS AT ALL, found by the sweep after the corpse-loot
+			# report. `handle_merchant_recharge` sends three of them — "you look fully rested
+			# already", "you don't have enough valor", and the success line naming what was
+			# restored and what it cost — and every one was dropped on the floor. A player paying
+			# valor for a recharge got no confirmation, and a player who could NOT afford it got
+			# no refusal either, which reads as the button being broken.
+			#
+			# Appended rather than made into a claimed page: this arrives while you are standing
+			# at a merchant, and `at_merchant` is in the movement gate, so nothing can walk the
+			# map out from under it. A page here would also blank the merchant's own screen.
+			display_game(message.get("message", ""))
+
 		"player_list":
 			update_online_players(message.get("players", []))
 
@@ -35016,7 +35038,13 @@ func display_changelog():
 	#            death had been recorded with no fight in it.
 	# v0.9.823 - what you looted off a corpse was erased before you could read it, and the same
 	#            fault found in the inn.
-	display_game("[color=#00FF00]v0.9.823[/color] [color=#808080](Current)[/color]")
+	# v0.9.824 - the sweep the owner asked for after the corpse loot: three more surfaces that
+	#            hid or dropped text, and a release gate so there is no fourth.
+	display_game("[color=#00FF00]v0.9.824[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ THREE MORE PLACES THE GAME WAS TALKING TO YOU AND YOU COULD NOT HEAR IT.[/color] After the corpse-loot fix, a sweep went looking for the rest of the class. [b]The merchant recharge said nothing at all[/b] — not the confirmation, not what it restored, and not the [i]\"you don't have enough valor\"[/i] refusal, which made the whole service look broken. And [b]both Home Stone prompts[/b] could be wiped by a single step: the choice page vanished while you were still in the menu, leaving a blank screen that was quietly still waiting on your number keys.")
+	display_game("  [color=#FF8000]★ AND A CHECK SO THERE IS NOT A FOURTH.[/color] The rule that a result must survive long enough to be read has been written down for a long time; nothing ever verified it, which is how all four of these shipped. Every screen the server can erase is now checked automatically before a build goes out, and a new one that is not protected [b]fails the release[/b].")
+	display_game("")
+	display_game("[color=#808080]v0.9.823[/color]")
 	display_game("  [color=#FF4444]★ FIXED: what you looted off a corpse vanished before you could read it.[/color] Reported live. The list of what you took was drawn and then wiped a fraction of a second later by the server's own follow-up updates — and the corpse is removed in the same breath, so that list existed nowhere else. It now waits for you to press [b]Continue[/b]. The same fault was found at the [b]Inn[/b] by the sweep that followed, where how much health you recovered was the only thing the screen had to say.")
 	display_game("")
 	display_game("[color=#808080]v0.9.822[/color]")
