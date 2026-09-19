@@ -1116,7 +1116,7 @@ Outsmart, so no card shifts a key. Probe: `every_class_can_answer.gd`.
       mechanism is built and proven. **Not all of them SHOULD convert**: an aura or a persistent
       debuff is not a burst, and telegraphing everything would make every boss the same metronome.
       Judge each against "is this a single big moment the player could answer?"
-- [ ] **(superseded) the boss telegraphs themselves.** 19 cyclical boss bursts fire the instant the
+- [x] **(superseded — the live entry is the one above)** the boss telegraphs themselves. 19 cyclical boss bursts fire the instant the
       round counter hits (`combat.round % N == 0`) with the message printed AFTER the damage - a
       receipt, not a warning. Two constants describe themselves as "telegraphed" and neither is.
       That violates the design's own constraint #4 in `docs/design/dungeon_revamp.md`: *"a
@@ -1611,7 +1611,9 @@ Currently queued:
 - [ ] **Threat bounty rewards were re-anchored** (v0.9.803). Not player power, but a reward sized
       against the board: now 0.83-1.14x the median dungeon quest where it was 0.06-0.64x. If the
       quest curve moves, re-measure with `tools/probe/threat_quest_rewards.gd`.
-- [ ] **Realm-wide valor economy pass** — **written up in full at "THE VALOR ECONOMY, REALM-WIDE"**
+- [→] **Realm-wide valor economy pass — DUPLICATE.** The live entry is "THE VALOR ECONOMY,
+      REALM-WIDE" further down; this copy exists only so the batch reads complete. Do not work
+      from this line. ~~written up in full at "THE VALOR ECONOMY, REALM-WIDE"**
       further down this file; that is the source of truth and step 1 is already part-done. Listed
       here only so the batch is complete. It is NOT a chain item - the chain sizes combat, and this
       sizes prices - but it shares the batch's reason for existing: `QUEST_VALOR_PER_LEVEL := 3.5`
@@ -1645,7 +1647,7 @@ Currently queued:
       to be what `DIFFICULTY_RAMP` already encodes (92% at L1 ramping to 58% at L10000) - I had
       wrongly described the target as a flat 60% and built an option menu on it. No new knob was
       needed; the v0.9.816 refit does exactly this.
-- [ ] **(superseded) The high-level win targets predate retreat.** 60% was chosen when a "loss" meant a death;
+- [x] **(superseded — settled 2026-09-19, see the ticked entry above)** The high-level win targets predate retreat. 60% was chosen when a "loss" meant a death;
       it now mostly means a retreat. Revisit alongside the Unburied, since extra lives change what
       survival means. This is a question about the TARGET, so settle it before a chain run rather
       than after. (Moved here, 2026-09-18.)
@@ -7974,10 +7976,13 @@ high-level win-target item says *"revisit alongside the Unburied"* - while the i
 nowhere in the file. A reference to something that is not here is the cheapest possible signal that
 something was dropped, and it sat unnoticed for eleven days.
 
-- [ ] **AN UPGRADED CARD SHOULD LOOK UPGRADED — owner 2026-09-04, still not started.**
+- [ ] **AN UPGRADED CARD SHOULD LOOK UPGRADED — owner 2026-09-04. PARTLY DONE (audited 2026-09-19;
+      this line said "still not started", which was wrong).**
       *"Upgrading a card and then the card looking exactly the same and the description being
       exactly the same sucks."* Listing upgrades in the description shipped; that is the floor.
-      - [ ] **Preview on the pick screen.** Hovering an upgrade shows YOUR card with it applied -
+      - [x] **Preview on the pick screen. DONE** — `_ms_preview_panel` in client.gd, *"hover: the
+        card as it would read once upgraded"*. Verified in code 2026-09-19.
+      - [~] ~~Preview on the pick screen.~~ Hovering an upgrade shows YOUR card with it applied -
             *"if I'm upgrading Analyze and I hover over a Mending upgrade it should show my Analyze
             card with the Mending effect"* - and hovering that preview shows what it would then do,
             all before committing.

@@ -17,6 +17,31 @@ proposing what to work on, and **update it as work lands** — do not let it go 
   The Dungeon Atlas was once tracked as three separate tasks in three separate places.
 - If a task turns out to be bigger than its line suggests, split it there rather than in your head.
 
+### ⛑ RUN `tools/backlog_audit.py` BEFORE PROPOSING WHAT TO WORK ON
+
+2026-09-19 — the owner was offered three items that were **already built**, and said: *"You need to
+view what we've already worked on over the last few sessions/days and update the backlog since it
+still has stale information despite me asking a dozen times for it to be updated as we complete
+these things."*
+
+**A dozen asks is not a memory problem, it is a missing check** — and this file already says why
+that fails: *"A check nobody runs is not a check."* The rule to keep the backlog current has been
+here all along; nothing ever verified it. So:
+
+```bash
+python tools/backlog_audit.py --quiet
+```
+
+It flags every `- [ ]` whose own text says DONE/SHIPPED, whose named probe already exists on disk,
+or whose named symbols are all present in the code — plus **the same item listed twice**, which is
+the Dungeon Atlas failure this file already warns about. On its first run it flagged **22 of 51**
+open items.
+
+It is ADVISORY and never edits the backlog: an item may legitimately name a probe it wants written,
+and a parent line often reads "the coverage half is done, the power half is not". An audit that
+silently ticked things off would be worse than the staleness it fixes. It tells you which lines to
+RE-READ; you decide.
+
 This file exists because work was being lost and duplicated while jumping between arcs.
 
 ## ⚑ Fix the cause, not the symptom
