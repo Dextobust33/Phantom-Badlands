@@ -24988,6 +24988,7 @@ func _send_milestone_choice(upgrade_id: String) -> void:
 		return
 	send_to_server({"type": "rank_choice_response",
 		"ability": _rank_choice_pending_ability, "choice": upgrade_id})
+	_consume_local_rank_choice(_rank_choice_pending_ability)
 	_ms_phase = ""
 	_ms_offer.clear()
 	_ms_revealed.clear()
@@ -25139,12 +25140,43 @@ func _on_rank_choice_picked(action: String) -> void:
 		"ability": _rank_choice_pending_ability,
 		"choice": action
 	})
+	_consume_local_rank_choice(_rank_choice_pending_ability)
 	if _rank_choice_popup != null and is_instance_valid(_rank_choice_popup):
 		_rank_choice_popup.hide()
 	# v0.9.677 — hide the card-themed milestone overlay after a pick.
 	if _milestone_overlay != null and is_instance_valid(_milestone_overlay):
 		_milestone_overlay.visible = false
 	_rank_choice_pending_ability = ""
+
+## Drop the choice the player just answered from the CLIENT'S copy of the queue.
+##
+## ⚡ LIVE, owner 2026-09-19: *"I had the upgrade for my Assassinate show up twice and I had to
+## pick twice for it (I chose Foretold both times)."*
+##
+## `character_data.pending_rank_choices` is the server's queue, refreshed only when the next
+## `character_update` arrives. Answering a choice sent `rank_choice_response` and cleared
+## `_rank_choice_pending_ability`, but left that cached queue untouched - so the entry the player
+## had just resolved was still sitting at the head of it. Then `acknowledge_continue` fires
+## `_replay_pending_rank_choice()` on the Continue press, which presents `queue[0]` with no test
+## for whether it has been answered, and the same milestone came back.
+##
+## ⛑ OPTIMISTIC, AND THAT IS SAFE HERE. The server is authoritative and overwrites this queue on
+## its next update; the worst case of removing one entry early is that a choice the server did not
+## actually accept is not re-shown until that update lands, which is the same refresh that would
+## have corrected it anyway. The alternative - waiting for the round trip - is precisely the
+## window the player pressed Continue in.
+func _consume_local_rank_choice(ability_name: String) -> void:
+	if ability_name == "":
+		return
+	var queue = character_data.get("pending_rank_choices", null)
+	if not (queue is Array):
+		return
+	for i in range(queue.size()):
+		var entry = queue[i]
+		if entry is Dictionary and String(entry.get("ability", "")) == ability_name:
+			queue.remove_at(i)
+			return
+
 
 func _present_rank_choice(payload: Dictionary) -> void:
 	"""Show a queued rank-up the RIGHT way, whichever route it arrived by.
@@ -35082,7 +35114,11 @@ func display_changelog():
 	#            monster pulls the nearby party in. Plus: a Shrieker's cry reaches the log.
 	# v0.9.826 - the flash between the victory screen and the map: an engine wait from 2021 that
 	#            stopped being necessary.
-	display_game("[color=#00FF00]v0.9.826[/color] [color=#808080](Current)[/color]")
+	# v0.9.827 - a milestone upgrade you had already chosen could be offered a second time.
+	display_game("[color=#00FF00]v0.9.827[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: a card upgrade you had already picked could be offered again.[/color] Reported live — an Assassinate milestone appeared twice and had to be chosen twice. After a fight the game deliberately re-checks for any upgrade earned by the killing blow, because the victory screen can cover that moment and the choice would otherwise be unreachable. That re-check was reading the list of [i]owed[/i] upgrades as the client last knew it, and answering a choice did not take it off that list — so pressing [b]Continue[/b] handed you the same one back. Your pick was never lost and the second choice was harmless, but you should not have been asked twice.")
+	display_game("")
+	display_game("[color=#808080]v0.9.826[/color]")
 	display_game("  [color=#FF4444]★ FIXED: the flicker when the victory screen hands you back the map.[/color] Closing a fight left one frame where the map was drawn but the [b]sprites on it were not yet placed[/b] — your own marker and any other players popped into position a moment after everything else, which read as the windows realigning. The map panel is hidden during a fight, and a hidden panel cannot measure itself, so the overlay had always waited a frame before positioning anything. [b]That wait was written for an older engine[/b] and is no longer needed: the layout is now readable the instant the panel returns, so the sprites are placed in the same frame as the map. The wait is kept as a fallback for any case where the layout genuinely is not ready, and a check fails the build if the engine ever goes back to the old behaviour.")
 	display_game("")
 	display_game("[color=#808080]v0.9.825[/color]")
