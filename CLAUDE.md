@@ -218,6 +218,21 @@ produced nine instrument defects and two genuine game bugs. The recurring shapes
   that `load(...).new()`-ed `real_combat_sim.gd` also ran the sim's default audit suite and its
   `quit()`, so several probes returned 0 without ever printing a verdict. The sim now returns
   early unless it is the `--script` Godot was launched with.
+- **A source-reading probe matches CODE, never PROSE — and its slice must be BOUNDED.** Four
+  times in the week of 2026-09-19 a probe passed with the fix deleted, because the explanatory
+  comment above the fix contained the words the probe searched for: the healer's
+  `persistent_buffs.clear()`, the canvas heal guard's `pending_continue`, the party dispatcher's
+  `BRACE_COMMANDS`, and an `if false` check that matched the comment saying the `if false` had
+  been removed. **Match a statement** — `if pending_continue:`, `elif cmd in X:`, a regex anchored
+  to code indentation — because a comment cannot contain one.
+  Its twin, three times in the same week: **a locator that finds *a* match instead of *the*
+  match does not fail, it misreads.** A probe looking for `func handle_party_combat_command(`
+  missed the leading underscore and fell back to a line of code 40,000 lines away in an unrelated
+  function, then reported that the dispatcher rejects `attack`. A movement-gate check took the
+  FIRST `input_field.has_focus()` line and silently measured the DUNGEON gate. A pull check
+  sliced to the next `func ` and ran past the block it was testing into the one below. **Name the
+  exact target, bound the slice to the block, and fail loudly when it is not found** — never fall
+  back to something looser.
 - **Run probes ONE AT A TIME.** Each headless Godot loads the whole project; parallel batches of
   them hit the 10-minute tool cap and stalled a session on 2026-09-11.
 - **A probe whose script fails to PARSE never exits.** Headless Godot prints the parse error and

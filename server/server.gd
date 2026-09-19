@@ -5695,10 +5695,13 @@ func handle_move(peer_id: int, message: Dictionary):
 		_cur_post = world_system.chunk_manager.get_npc_post_at(character.x, character.y)
 		_dest_post = world_system.chunk_manager.get_npc_post_at(new_pos.x, new_pos.y)
 	var _leaving_post: bool = not _cur_post.is_empty() and _dest_post.is_empty()
-	# A follower may not roam the world on their own — but may always walk INTO a post to
-	# rejoin the party inside it, or anyone separated from the leader would be frozen in place.
-	if _dest_post.is_empty() and _party_follower_denied(peer_id, "movement"):
-		return
+	# ⚑ DRAGON QUEST IX MODEL (owner 2026-09-18): *"if we get that party play working party
+	# members will no longer blindly follow the leader they will instead be able to move around
+	# and act as we discussed."* Follow-the-leader is REPLACED, not supplemented - the whole point
+	# is that everyone walks their own path and COMBAT is what pulls them together. A follower who
+	# cannot move cannot be somewhere the pull has to reach.
+	# The dungeon lock stays for now: a dungeon is a corridor, not a country, and formation there
+	# is a different problem.
 	if _leaving_post and party_membership.has(peer_id):
 		if not _is_party_leader(peer_id):
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You can move freely inside the post, but only your party leader can lead the party out.[/color]"})
@@ -5865,16 +5868,24 @@ func handle_move(peer_id: int, message: Dictionary):
 			# Audit #3 v0.9.523 — first companion hatched teaches the system.
 			_maybe_send_companion_hint(peer_id, companion)
 
-	# Party snake movement: move followers in chain behind leader.
-	# v0.9.740 — skipped only when moving WITHIN a post, where everyone moves on their own.
-	# Entering a post must still pull them in: gating on the destination alone left followers
-	# stranded outside, and the follower lock then stopped them walking in after him.
-	var _moving_within_post: bool = not _cur_post.is_empty() and not _dest_post.is_empty()
-	if _is_party_leader(peer_id) and not _moving_within_post:
-		_move_party_followers(peer_id, old_x, old_y)
-		# Entering a post: make sure the tail of the snake did not stay outside.
-		if not _dest_post.is_empty():
-			_pull_stragglers_into_post(peer_id)
+	# ⛑ THE LEADER NO LONGER DRAGS ANYONE ON THE OVERWORLD - the snake is gone, not disabled.
+	#
+	# This was the line that made a party one moving object: followers were teleported in chain
+	# behind the leader on every step. Independent movement is meaningless while it runs, because
+	# a follower would be free to walk and then yanked back on the leader's next step.
+	#
+	# ⚡ REMOVED RATHER THAN SWITCHED OFF. The first cut of this wrote `if false and ...`, which
+	# is the exact shape this file already warns about two screens further down: *"An unreachable
+	# copy of live code is a trap"* - the note left where a dead `party_combat_active` branch had
+	# sat being label-for-label identical to the live one. A reader cannot tell disabled-on-purpose
+	# from disabled-by-accident, and the next person to touch party movement would have had to
+	# work out which.
+	#
+	# ⛑ AND THE TWO HELPERS ARE DELETED WITH IT, because this was their only caller - checked,
+	# not assumed. My first note here said the DUNGEON path still used them; it does not, it has
+	# its own `_move_party_followers_dungeon`, and dungeons keep their formation for now. Leaving
+	# `_move_party_followers` and `_pull_stragglers_into_post` in place would have left 67 lines
+	# of plausible, working, never-executed party-movement code for the next person to find.
 
 	# Audit #14 PvP Slice D.2 (v0.9.557) — auto-claim any PvP loot sack on
 	# the tile the player just stepped onto. Fires once per move; sack is
@@ -6172,9 +6183,7 @@ func handle_hunt(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "More enemies are approaching! Press Space to continue."})
 		return
 
-	# Party members can't hunt independently — only leader triggers encounters
-	if _party_follower_denied(peer_id, "hunting"):
-		return
+	# Any member may hunt now - their encounter pulls the party in (see trigger_encounter).
 
 	# Cancel any active trade (hunting breaks trade)
 	if active_trades.has(peer_id):
@@ -6275,9 +6284,7 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 	if not characters.has(peer_id):
 		return
 
-	# Party check: non-leader members can't rest independently
-	if not _is_party_follower and _party_follower_denied(peer_id, "resting"):
-		return
+	# Members rest on their own schedule now; they are not walking in formation.
 
 	# If party leader, rest all followers too
 	if not _is_party_follower and _is_party_leader(peer_id):
@@ -9879,11 +9886,33 @@ func trigger_encounter(peer_id: int, hunted: bool = false):
 	# party leader hits a monster and 2+ members are present & free, they all fight ONE
 	# shared monster. (Was admin-flag-gated; user asked for it to just work in a party.)
 	# Falls through to the per-member solo fanout below if fewer than 2 members are free.
-	if _is_party_leader(peer_id) and active_parties.has(peer_id):
-		var _cmembers: Array = [peer_id]           # leader first (becomes leader_id)
+	# ⚑ THE PROXIMITY PULL - the Dragon Quest IX model (owner 2026-09-18): *"when a party member
+	# nearby enters combat it will pull nearby party members into the combat as well."*
+	#
+	# TWO CHANGES FROM THE OLD SHAPE, and they are the whole feature:
+	#
+	#   1. ANY MEMBER, NOT JUST THE LEADER. The old gate was `_is_party_leader(peer_id)`, which
+	#      was correct while followers were dragged along and could not meet a monster on their
+	#      own. Now that everyone walks their own path, whoever finds the monster starts the fight.
+	#   2. WITHIN A RADIUS, NOT THE WHOLE ROSTER. The old code pulled every member wherever they
+	#      were, which was free when they were standing on the leader's heels and is teleportation
+	#      now. Out of range is not an exclusion - it is a short walk, which is what the run-in
+	#      join is for.
+	#
+	# ⛑ THE RACE THE OWNER NAMED RESOLVES ITSELF, and that is why no tie-breaker is built here.
+	# Two members can each step onto an encounter in the same tick. The first to arrive claims the
+	# party's combat and sets `in_combat` on everyone it pulls - and the server runs these one at
+	# a time, so the second trigger arrives to find its own character already in combat and is
+	# turned away by the check that already exists above. One party combat, whoever got there
+	# first, with no new state to get out of step. If play shows that is the wrong winner, a
+	# tie-break can be layered on top without unpicking this.
+	if active_parties.has(_party_leader_of(peer_id)) and _party_leader_of(peer_id) != -1:
+		var _pleader: int = _party_leader_of(peer_id)
+		var _cmembers: Array = [peer_id]           # the FINDER leads the fight, not the party
 		var _cchars: Dictionary = {peer_id: character}
+		var _cfar: Array = []
 		var _cskipped: Array = []
-		for _mpid in active_parties[peer_id].get("members", []):
+		for _mpid in active_parties[_pleader].get("members", []):
 			if _mpid == peer_id or not characters.has(_mpid):
 				continue
 			if combat_mgr.is_in_combat(_mpid) or characters[_mpid].in_combat:
@@ -9892,10 +9921,18 @@ func trigger_encounter(peer_id: int, hunted: bool = false):
 				# on either client, which looked exactly like co-op being broken.
 				_cskipped.append(characters[_mpid].name)
 				continue
+			if not _within_pull_range(character, characters[_mpid]):
+				_cfar.append(characters[_mpid].name)
+				continue
 			_cmembers.append(_mpid)
 			_cchars[_mpid] = characters[_mpid]
 		if not _cskipped.is_empty():
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s could not join the fight (already in combat).[/color]" % ", ".join(_cskipped)})
+		if not _cfar.is_empty():
+			# Said out loud, and said as a DISTANCE rather than a refusal - the whole point of the
+			# model is that they can still walk over. Telling them nothing would read as the pull
+			# being broken, which is how the old silent skip was reported.
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]%s %s too far away to be pulled in.[/color]" % [", ".join(_cfar), "is" if _cfar.size() == 1 else "are"]})
 		if _cmembers.size() >= 2:
 			var _cstart = combat_mgr.start_party_combat_simul(_cmembers, _cchars, monster)
 			if _cstart.get("success", false):
@@ -22549,8 +22586,8 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	# v0.9.740 - followers do not gather on their own out in the world (user 2026-09-01):
 	# the party moves as one, and gathering also rotates leadership. Inside a post they are
 	# free to act, which _party_follower_denied allows for.
-	if _party_follower_denied(peer_id, "gathering"):
-		return
+	# Gathering is independent too. The leadership-rotation concern behind the old lock is moot
+	# once nobody is being dragged: there is no formation left to hand around mid-journey.
 	var character = characters[peer_id]
 
 	if combat_mgr.is_in_combat(peer_id):
@@ -44189,6 +44226,37 @@ func _get_player_at(x: int, y: int, exclude_peer_id: int = -1) -> int:
 			return other_peer_id
 	return -1
 
+## How close a party member has to be to get dragged into your fight.
+##
+## ⛑ A NUMBER THE OWNER CAN MOVE. The overworld view is 23 tiles across, so 8 is roughly
+## "close enough that you could see it happen" - near enough to feel like the party is together,
+## far enough that walking a few steps apart does not silently break co-op. It is deliberately
+## NOT the whole map: the model only works if being out of range is a real state, because that is
+## what the run-in join exists to answer.
+const PARTY_PULL_RADIUS := 8
+
+
+## Chebyshev distance, because movement is 8-directional - a diagonal step covers one tile, so
+## Euclidean or Manhattan would both make the pull range a different shape than the walk that
+## closes it, and "run over and join" would take a different number of steps depending on which
+## way you were standing.
+func _within_pull_range(a, b) -> bool:
+	if a == null or b == null:
+		return false
+	return maxi(absi(int(a.x) - int(b.x)), absi(int(a.y) - int(b.y))) <= PARTY_PULL_RADIUS
+
+
+## Which party is this player in, leader or not? Returns the LEADER's peer id, or -1.
+##
+## ⚡ The pull needs this because the old code asked `active_parties.has(peer_id)`, which is only
+## ever true for the leader - correct when only the leader could meet a monster, and the reason a
+## follower's encounter used to start nothing at all.
+func _party_leader_of(peer_id: int) -> int:
+	if _is_party_leader(peer_id):
+		return peer_id
+	return int(party_membership.get(peer_id, -1))
+
+
 func _is_party_leader(peer_id: int) -> bool:
 	return active_parties.has(peer_id)
 
@@ -44666,73 +44734,6 @@ func _transfer_leadership(old_leader_id: int, new_leader_id: int):
 	_send_party_update(new_leader_id)
 
 	log_message("Party leadership transferred to %s" % new_leader_name)
-
-func _pull_stragglers_into_post(leader_peer_id: int) -> void:
-	"""After the party enters a post, put any follower still OUTSIDE it onto the leader's tile.
-
-	The snake formation moves each follower onto the person-ahead's old tile, so the tail sits
-	N tiles behind the leader — for a party of 3+ that tail is still outside the post, and a
-	follower cannot roam the world alone, so they were stranded with no way back in. Scales to
-	the max party size because it snaps EVERY member who is outside, however long the tail.
-	Party members ignore each other for collision, so stacking on the leader is legal."""
-	if not active_parties.has(leader_peer_id) or not characters.has(leader_peer_id):
-		return
-	if world_system == null or world_system.chunk_manager == null:
-		return
-	var lead = characters[leader_peer_id]
-	if world_system.chunk_manager.get_npc_post_at(lead.x, lead.y).is_empty():
-		return   # leader is not in a post; nothing to pull anyone into
-	for pid in active_parties[leader_peer_id].get("members", []):
-		if pid == leader_peer_id or not characters.has(pid):
-			continue
-		var f = characters[pid]
-		if not world_system.chunk_manager.get_npc_post_at(f.x, f.y).is_empty():
-			continue   # already inside
-		f.x = lead.x
-		f.y = lead.y
-		send_location_update(pid)
-		save_character(pid)
-
-
-func _move_party_followers(leader_peer_id: int, old_leader_x: int, old_leader_y: int):
-	"""Move party followers in snake formation behind the leader."""
-	if not active_parties.has(leader_peer_id):
-		return
-	var party = active_parties[leader_peer_id]
-	if party.members.size() <= 1:
-		return
-
-	# Build old positions BEFORE moving anyone (leader already moved)
-	var old_positions = []
-	old_positions.append(Vector2i(old_leader_x, old_leader_y))  # Leader's old position
-	for i in range(1, party.members.size()):
-		var follower = characters[party.members[i]]
-		old_positions.append(Vector2i(follower.x, follower.y))
-
-	# Each follower takes the position of the person ahead of them
-	for i in range(1, party.members.size()):
-		var follower_pid = party.members[i]
-		if not characters.has(follower_pid):
-			continue
-		var follower = characters[follower_pid]
-		# Regen for followers (same as leader gets from walking)
-		var early_game_mult = _get_early_game_regen_multiplier(follower.level)
-		var house_regen_mult = 1.0 + (follower.house_bonuses.get("resource_regen", 0) / 100.0)
-		var hp_regen_percent = 0.01 * early_game_mult * house_regen_mult
-		var regen_percent = 0.02 * early_game_mult * house_regen_mult
-		follower.current_hp = min(follower.get_total_max_hp(), follower.current_hp + max(1, int(follower.get_total_max_hp() * hp_regen_percent)))
-		if not follower.cloak_active:
-			follower.current_mana = min(follower.get_total_max_mana(), follower.current_mana + max(1, int(follower.get_total_max_mana() * regen_percent)))
-			follower.current_stamina = min(follower.get_total_max_stamina(), follower.current_stamina + max(1, int(follower.get_total_max_stamina() * regen_percent)))
-			follower.current_energy = min(follower.get_total_max_energy(), follower.current_energy + max(1, int(follower.get_total_max_energy() * regen_percent)))
-		# Move to previous person's old position
-		follower.x = old_positions[i - 1].x
-		follower.y = old_positions[i - 1].y
-		# Process egg steps for followers too
-		follower.process_egg_steps(1)
-		# Check exploration quest progress at new position
-		if world_system.is_trading_post_tile(follower.x, follower.y):
-			check_exploration_quest_progress(follower_pid, follower.x, follower.y)
 
 func _cleanup_party_combat_on_disconnect(peer_id: int):
 	"""Clean up party combat state when a player disconnects during party combat."""
