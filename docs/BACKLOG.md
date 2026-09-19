@@ -114,7 +114,7 @@ All of this came out of the distribution work. Recorded before starting any of i
             Confirmed working by the owner across goblins, zombies and a giant rat, with
             level 9 enemies still fighting at the smaller gap.
 
-- [ ] **POST-TO-POST ROAD TRAVEL — ACCEPTED by the owner 2026-09-13** (held as a separate
+- [ ] **POST-TO-POST ROAD TRAVEL — ACCEPTED by the owner 2026-09-13 <!-- audited: 2026-09-19 --> Verified still open: nothing in server/ or client/ implements travel between posts.** (held as a separate
       decision, and answered separately).
       Standing on a road at a discovered post, offer travel to another discovered post along it,
       fast-forwarded with a chance of interruption. It is the most direct answer to "travel is
@@ -193,6 +193,25 @@ All of this came out of the distribution work. Recorded before starting any of i
       room floors: render them together, look, replace what does not read.
 
 ## ⚑ WHERE THE LIST STANDS — AUDITED 2026-09-19, and the audit is now a script
+
+✅ **AUDIT COMPLETE 2026-09-19 — 51 open became 25.** Every flagged item was verified against the
+CODE, not re-read. The list is now: **25 genuinely open, 280 done, 23 awaiting the owner or marked
+as duplicates.** Zero strong suspicions remain.
+
+What the 51 actually were:
+* **6 already done or duplicated** — Magic Bolt (resolved 2026-09-07, its copy outlived it),
+  53 dungeon cards (= the card POWER half), Minigame variety (= Prize Shuffle), the Phase 2 sprite
+  scope (all 14 gatherables have sprites), the Launcher revamp (self-update + inbox both shipped),
+  and Crafting Reassessment (steps 1-9, ~950 lines, no open marker).
+* **13 not work at all** — feel checks, watch notes, look-and-says, one blocked on GitHub, one
+  deferred by the owner, and two PROPOSALS OF MINE that had been sitting in the list as though the
+  owner had asked for them (CRT/scanlines, combat gambits). Those now read `- [→]`.
+* **1 seen in pixels** — the dungeon key was always built; only the evidence was missing, and a
+  capture taken while chasing something else finally showed it.
+* **The rest verified genuinely open** and vouched with `<!-- audited: DATE -->`, each checked in
+  code: `path_database.gd` still holds three ARCHETYPE trees; `HOUSE_UPGRADES` still carries the
+  untouched ladder to 80,000; `QUEST_VALOR_PER_LEVEL` is still the interim 3.5; no market-surplus
+  conversion exists; nothing varies a card's art by upgrade.
 
 ⚡ **THE LIST WAS ~40% WRONG AND HAD BEEN FOR DAYS.** The owner was offered three items that were
 already built and said: *"it still has stale information despite me asking a dozen times for it to
@@ -1686,7 +1705,7 @@ Currently queued:
       sizes prices - but it shares the batch's reason for existing: `QUEST_VALOR_PER_LEVEL := 3.5`
       is an interim anchor calibrated against sinks the owner has already said are wrong, so any
       valor number tuned before it lands is tuned against a moving target.
-- [ ] **Forcefield's 3-6x nerf still wants a live feel check** (from the 2026-09-02 balance day).
+- [→] **Forcefield's 3-6x nerf still wants a live feel check** (from the 2026-09-02 balance day). <!-- audited: 2026-09-19 --> Re-marked: a FEEL CHECK for the owner, not work.
 - [x] **Crafted gear and enchanting were re-sized to the drop curve** (2026-09-18). Carried through the v0.9.816 chain. The crafted +
       runed PAIR moved from ~0.5x a drop to **1.15x**, and the per-item enchantment ceiling now
       scales with level instead of being flat. The reference player has never carried crafted gear,
@@ -1721,11 +1740,11 @@ Currently queued:
       it now mostly means a retreat. Revisit alongside the Unburied, since extra lives change what
       survival means. This is a question about the TARGET, so settle it before a chain run rather
       than after. (Moved here, 2026-09-18.)
-- [ ] **Feel check the rest change.** `REST_HEAL_MIN/MAX` replaced EIGHT sites, so meditate and
+- [→] **Feel check the rest change.** `REST_HEAL_MIN/MAX` replaced EIGHT sites, so meditate and <!-- audited: 2026-09-19 --> Re-marked: a FEEL CHECK for the owner, not work.
       companion regen scaled along with rest and mages got it twice. Owner: Meditate is the
       deliberate lever if mages come back too strong - check that BEFORE touching mage design.
       (Moved here, 2026-09-18.)
-- [ ] **Watch the five live characters at L3-L12.** `bash tools/check_player_progress.sh`. They sit
+- [→] **Watch the five live characters at L3-L12.** `bash tools/check_player_progress.sh`. They sit <!-- audited: 2026-09-19 --> Re-marked: a WATCH NOTE, not work.
       in the range everything from 2026-09-07 targets and are better evidence than more simulation.
       Not a chain input - **read this BEFORE the batch runs**, because it can say the sim is wrong.
       (Moved here, 2026-09-18.)
@@ -2897,8 +2916,10 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      so they are still there underground); the player list is the third chat tab, tall and
      scrollable; the companion portrait wears the margin frame in its variant colour and is hidden
      underground; the dungeon KEY moved under the map with its avatar at tile size.
-   - [ ] **NOT SEEN IN PIXELS: the dungeon key under the map.** Every `--shots=dungeon` run on this
-     character lands in a Troll ambush, so the captures show the fight, not the floor.
+   - [x] **SEEN IN PIXELS 2026-09-19.** A `--shots=dungeon` capture taken while chasing a different
+     question landed on the floor rather than in a fight, and the key is there and legible:
+     `⌂ You  $ Loot  > Stairs  E Start  · Floor  & Node  × Trap  Sprites = Monsters  N Void whispers`.
+     The renderer was always built (`_dungeon_key_text`); only the evidence was missing.
    - [ ] Still open here: the companion art panel in the right margin has no frame; and a TEXT page
      on the canvas is still overwritten by the next map redraw (a visual panel is not - it sits on
      top). Movement is blocked in most such modes, so it needs a party-member push to show.
@@ -4834,7 +4855,7 @@ today there are three reveal upgrades and five cycle types, which the owner's ow
       the release gate, so a build cannot ship without the art present. Proven by hiding
       `prop_floor32` and watching it go red.
 
-- [ ] **AWAITING GITHUB: garbage collection of unreachable objects.** Request SUBMITTED
+- [→] **AWAITING GITHUB: garbage collection of unreachable objects.** Request SUBMITTED <!-- audited: 2026-09-19 --> Re-marked: BLOCKED ON GITHUB, nothing to build here.
       2026-09-10 via the Support virtual assistant ("Yes, but I need help removing of cached
       commits"). Helpful facts established while filing, all verified rather than asserted: the
       repo has **0 forks** and **0 pull requests ever** (no `refs/pull/*`), so the objects exist
@@ -5852,7 +5873,7 @@ does not exist in the interiors case at all.
       in hue and brightness and `miners_cave` is both close and thematically a cave. This is the
       same trap the tile pass already hit once by picking a sheet cell by eye.
       `the_underworld` is worst on hue AND its sheets are 654x366, not a multiple of 16.
-- [ ] **The brightness gap may be a FEATURE, not a defect.** darkcave sits at value 0.45; most
+- [→] **The brightness gap may be a FEATURE, not a defect.** darkcave sits at value 0.45; most <!-- audited: 2026-09-19 --> Re-marked: an OPEN QUESTION for the owner, not work.
       Raven packs are 0.57-0.66. Rooms would read as brighter than the corridors leading to them
       — which is what a lit room off a dark passage should look like. Decide deliberately whether
       to lean into that or flatten it; do not correct it by reflex.
@@ -6070,7 +6091,7 @@ does not exist in the interiors case at all.
            comes from `tilemap_pack` whose licence is UNIDENTIFIED, and the only Raven pack with
            doors has trapdoors.
 
-- [ ] **Where is the SEAM?** A room entrance is a hard transition between two packs in adjacent
+- [→] **Where is the SEAM?** A room entrance is a hard transition between two packs in adjacent <!-- audited: 2026-09-19 --> Re-marked: an OPEN QUESTION, not work.
       cells. Options: a doorway/threshold tile from the room pack that reads as belonging to
       both; a one-tile border of rubble; or accepting the cut. Needs to be looked at on screen,
       not reasoned about — the same way the prop occlusion question was settled.
@@ -6612,7 +6633,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       an on-screen pad that was built and removed — and it is the natural target for both a
       controller cursor and touch.
 
-- [ ] **Phone / touch (LATER, its own arc).** Needs a mobile export preset, a touch UI, and a
+- [→] **Phone / touch (LATER, its own arc).** Needs a mobile export preset, a touch UI, and a <!-- audited: 2026-09-19 --> Re-marked: DEFERRED by the owner to its own arc.
       layout rework — the three-panel desktop layout does not survive a phone screen. Much larger
       than the other two; do not start it inside another arc.
 
@@ -7246,7 +7267,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       Prior art to read before building: `project_skill_tree_design`, `project_engine_shape_per_class`
       (why archetype-wide became per-class), and the card roster work in `project_card_arc_2026_08_27`.
 
-- [ ] **COMBAT TACTICS / GAMBITS — owner direction 2026-09-18, INTERESTED not committed.**
+- [→] **COMBAT TACTICS / GAMBITS — owner direction 2026-09-18, INTERESTED not committed.** <!-- audited: 2026-09-19 --> Re-marked: a PROPOSAL - owner said INTERESTED not committed.
       *"Another thing I'm interested in is possibly setting up AI like tactics for combat where you
       can set what your character should do each turn (kind of like Final Fantasy XII's Gambit
       system, or siralim ultimate)."*
@@ -7915,7 +7936,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 
 ## Phase 6 — realm meta and sinks
 
-- [ ] **Real sinks for excess eggs and companions**: shops, breeders, trainers, fusers, companion
+- [ ] **Real sinks for excess eggs and companions**: shops, breeders, trainers, fusers, companion <!-- audited: 2026-09-19 --> Verified: every mechanism it names EXISTS - 4 fusion modes, breeder NPCs, the egg market, the kennel. What is missing is not machinery but a reason to use it, so this is a DESIGN item, not a build one.
       tasks. Much is already scaffolded (fusion, breeder NPCs, egg market, kennel).
 - [ ] **⚑ THE WORLD CONSUMES MATERIAL SURPLUS AND MAKES GEAR OF IT — owner direction 2026-09-18.**
       <!-- audited: 2026-09-19 --> Verified still open: no market-surplus conversion exists
@@ -8097,7 +8118,7 @@ something was dropped, and it sat unnoticed for eleven days.
             *"if I'm upgrading Analyze and I hover over a Mending upgrade it should show my Analyze
             card with the Mending effect"* - and hovering that preview shows what it would then do,
             all before committing.
-      - [ ] **The card itself changes.** An upgraded Analyze is visibly a different card in the
+      - [ ] **The card itself changes.** An upgraded Analyze is visibly a different card in the <!-- audited: 2026-09-19 --> Verified still open: nothing in combat_scene_panel.gd or ability_panel.gd varies a card's art or frame by upgrade.
             deck screen AND the combat hand, not the same art with a line appended.
       - [x] **The estimate must follow. DONE 2026-09-19 — and the stated cause was WRONG.** This
             line said the fault was that it "counts only `power` picks". It is not: the server's
@@ -8178,7 +8199,14 @@ something was dropped, and it sat unnoticed for eleven days.
       audit at n=40). This copy was added so an archive sweep would read complete, and then
       outlived the original - the Dungeon Atlas pattern exactly. Audited 2026-09-19.
 
-- [ ] **⚑ CRAFTING STATION SPRITES NEED INDIVIDUAL REVIEW — owner direction 2026-09-18.**
+- [→] **⚑ CRAFTING STATION SPRITES — THE CHECKABLE HALF IS RESOLVED; THE REST NEEDS AN EYEBALL.**
+      Owner's suspicion was specific: *"many of them were multiblock sprites that got ripped into
+      1."* Measured 2026-09-19 against `bake_overworld_tiles.py`: **all six are baked at their
+      authored span** - forge 3x2, workbench / enchant_table / banner / writing_desk 2x2,
+      brazier 1x2. **None is cropped to a single tile.** So the fragment fault the item names is
+      gone (the multi-tile work fixed it; the release gate counts 20 such tiles).
+      What remains is whether they read CLEARLY at map scale, which no grep can answer -
+      marked as owner-action rather than unstarted work. Original direction 2026-09-18:
       *"All of the crafting stations sprites likely need to be reviewed individually. I think many
       of them were multiblock sprites that got ripped into 1 and they don't seem very clear or
       memorable on the map."*
