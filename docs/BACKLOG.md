@@ -1366,6 +1366,25 @@ check itself. Then `speciescal` → `refcal` → `rolecal`, one pass each, in th
 
 Currently queued:
 
+- [x] **THE CHAIN WAS MEASURING A GAME NOBODY PLAYS** (2026-09-19, shipped v0.9.816). Four
+      instrument faults, each hiding the next, all found off the owner's question *"are we sure the
+      sim is using the actual starting decks each class is using?"* (the decks were fine):
+        1. gear rarity sampled the DROP table per slot - 57% common modelled vs 87% live
+        2. `average` handed CLASS KIT (Hoarder-only drops) to level-2 reference players
+        3. the curve-writing sampler fled every losing fight, so DEATH read 0.0% everywhere
+        4. **`_inject_curve` disarmed the lazy loader**, so `species_power` and `role_multipliers`
+           were never read during a refcal run. It fitted AND self-verified without them, then
+           wrote a file preserving them - L10 verified at 85% and measured 63% everywhere else.
+           Long-standing: the WRITE side of this was fixed when species_power was found to be
+           wiped; the READ side was not.
+        5. the monotonic clamp ran on the BASE curve, discarding the calibrator's own corrections
+           (L5 str 18 -> 54, L10 27 -> 54) - the documented smoothing bug's other half. Now
+           clamped on the EFFECTIVE curve (base x mean species multiplier).
+      Result: every anchor within +-11pp of target (only L5 exceeds +-10, at -11), death 0.9-6.8%
+      against a live 1.81%, and refcal's verify now agrees with independent reads to 1-4pp.
+      **Deaths per encounter is now an external target** read off the live server (50 deaths /
+      2766 encounters) via `flee_rate_matches_live.gd` - the chain finally answers to something
+      outside itself.
 - [x] **THE REFERENCE PLAYER WAS STRONGER THAN ANY REAL ONE** (2026-09-18) - *fixed, and it
       invalidates every balance number measured before it.* Owner asked *"are we sure the sim is
       using the actual starting decks each class is using?"* The decks were right; the BODY was not.
@@ -1399,9 +1418,10 @@ Currently queued:
       or a combat consumable**, so this changes WHEN a service is available and not how strong
       anyone is - listed so a future refit sees it, not as a debt on its own.
 
-- [ ] **`species_power` SATURATES - its x2.50 clamp is narrower than the real spread.** 63 of 135
+- [ ] **`species_power` SATURATES - its x2.50 clamp is narrower than the real spread.** 68 of 136
       cells sit on the ceiling (2026-09-19), across three separate runs and on three different base
-      curves, so it is structural rather than a bad starting point. The cause is visible in the
+      curves - INCLUDING after the `_inject_curve` two-worlds bug was fixed, which was the obvious
+      suspect - so it is structural rather than an artifact. The cause is visible in the
       data: at L50 the spawn mix wins 33% while Zombie wins 96%, Harpy 91% and Gnoll 80% - the
       average is dragged down by a few brutal species, and no single multiplier range can pull the
       easy ones onto a mix defined by the hard ones. The sim's own comment already names it:

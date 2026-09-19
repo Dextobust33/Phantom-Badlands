@@ -2371,6 +2371,22 @@ func _inject_curve(table: Array) -> void:
 	if "_tier_shape_cache" in monster_db:
 		monster_db._tier_shape_cache.clear()
 
+## Mean species power multiplier actually in force at this level, measured through the real spawn
+## distribution. Used to clamp the EFFECTIVE curve rather than the base - see the monotonicity
+## block in run_reference_calibrate.
+func _mean_species_multiplier_at(level: int) -> float:
+	var tot := 0.0
+	var n := 0
+	for i in range(120):
+		var t = monster_db.select_monster_type(level)
+		var nm := String(monster_db.get_monster_base_stats(t).get("name", ""))
+		if nm == "":
+			continue
+		tot += float(monster_db._species_power_at(nm, level))
+		n += 1
+	return (tot / float(n)) if n > 0 else 1.0
+
+
 func _median3(a: float, b: float, c: float) -> float:
 	"""Middle of three. Returns `b` unchanged whenever b lies between a and c, which is every
 	point on a monotonic ramp - so this preserves curvature exactly and only acts on a local
@@ -2690,22 +2706,53 @@ func run_reference_calibrate():
 		table[i]["hp"] = int(round(exp(_median3(float(log_hp[i - 1]), float(log_hp[i]), float(log_hp[i + 1])))))
 		table[i]["str"] = int(round(exp(_median3(float(log_st[i - 1]), float(log_st[i]), float(log_st[i + 1])))))
 
-	var fixed_hp := 0
-	var fixed_str := 0
-	var repaired := 0
+	# ⛑ CLAMP WHAT A PLAYER FIGHTS, NOT THE BASE NUMBER.
+	#
+	# ⚡ THIS IS THE OTHER HALF OF THE BUG DOCUMENTED IMMEDIATELY ABOVE. That comment records
+	# eighteen correction passes across three runs that could not fix L1-L50 "because nothing they
+	# produced survived to be written", and fixes the SMOOTHING kernel (mean -> median). The
+	# monotonic clamp sitting right below it did exactly the same damage and was left alone.
+	# Measured 2026-09-19, the calibrator corrected and the clamp discarded:
+	#
+	#     level   calibrated str   written str   resulting win (target 90%)
+	#     L5                  18            54                          56%
+	#     L10                 27            54                          66%
+	#
+	# The same tell as before: the levels the clamp touched are the ones that missed.
+	#
+	# ⛑ BUT THE CLAMP IS NOT SIMPLY WRONG - it stops a noisy dip making one level trivial. The
+	# error is WHAT it is applied to. `str` here is a BASE that `species_power` then multiplies,
+	# and those multipliers vary sharply by level (68 of 136 cells sit on the x2.50 ceiling). So
+	# the base legitimately has to dip where the species mix spikes, and forcing the BASE upward
+	# makes the thing a player actually meets rise twice.
+	#
+	# What must never dip is the EFFECTIVE curve - base x the mean multiplier actually in force at
+	# that level, which is what "monsters get harder as you level" means. Monotonicity is enforced
+	# there and converted back, so a genuine dip is still repaired and a compensating one survives.
+	var eff_mult: Array = []
 	for row in table:
-		var h := int(row["hp"])
-		var st2 := int(row["str"])
-		if h < fixed_hp or st2 < fixed_str:
+		eff_mult.append(maxf(0.01, _mean_species_multiplier_at(int(row["level"]))))
+	var fixed_hp := 0.0
+	var fixed_str := 0.0
+	var repaired := 0
+	for i in range(table.size()):
+		var row: Dictionary = table[i]
+		var m: float = float(eff_mult[i])
+		var eh: float = float(row["hp"]) * m
+		var es: float = float(row["str"]) * m
+		if eh < fixed_hp or es < fixed_str:
 			repaired += 1
-		row["hp"] = maxi(h, fixed_hp)
-		row["str"] = maxi(st2, fixed_str)
-		fixed_hp = int(row["hp"])
-		fixed_str = int(row["str"])
+		eh = maxf(eh, fixed_hp)
+		es = maxf(es, fixed_str)
+		fixed_hp = eh
+		fixed_str = es
+		row["hp"] = int(round(eh / m))
+		row["str"] = int(round(es / m))
 	if repaired > 0:
 		print("
-Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;" % repaired)
-		print("clamped to the running maximum so the curve is a ramp, never a dip.")
+Monotonicity repair: %d anchor(s) would have made the EFFECTIVE curve dip as level rose;" % repaired)
+		print("clamped there rather than on the base, so a dip that compensates for a species")
+		print("multiplier spike survives while a genuine dip is still repaired.")
 
 	# Verify the FINAL table. Smoothing and the monotonic clamp both run AFTER the per-anchor
 	# loop, so anything measured in there describes numbers that no longer exist. This is the
