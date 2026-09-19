@@ -192,7 +192,30 @@ All of this came out of the distribution work. Recorded before starting any of i
       alternative of (we may want to audit those pieces individually)."* Same procedure as the
       room floors: render them together, look, replace what does not read.
 
-## ⚑ WHERE THE LIST STANDS — recounted 2026-09-19 after v0.9.816 (the balance instrument arc)
+## ⚑ WHERE THE LIST STANDS — AUDITED 2026-09-19, and the audit is now a script
+
+⚡ **THE LIST WAS ~40% WRONG AND HAD BEEN FOR DAYS.** The owner was offered three items that were
+already built and said: *"it still has stale information despite me asking a dozen times for it to
+be updated as we complete these things."* That is not a memory failure to apologise for, it is a
+missing check - and this file's own rules already say *"a check nobody runs is not a check."*
+
+**`python tools/backlog_audit.py`** now flags open items whose own text says DONE, whose named
+probe already exists, or whose named symbols are all present - and duplicates. Run it BEFORE
+choosing work. First run flagged 22 of 51.
+
+Corrected on that first pass:
+* **CRAFTING REASSESSMENT** - steps 1-9 all complete, no open marker in ~950 lines. Unticked for a
+  day, and one of the three offered to the owner as available work.
+* **POST SERVICES** - two of three parts shipped (healer, merchants).
+* **INVENTORY BLOAT** - substantially resolved; the pouch trigger is measured and has not fired.
+* **AN UPGRADED CARD SHOULD LOOK UPGRADED** - said "still not started"; the hover preview exists.
+* Two entries marked "(superseded)" were still open, and the valor pass was listed twice.
+
+The root cause, stated so it is not repeated: lines were ticked when work was DONE on them, and
+never verified when work was CHOSEN from them. The decay therefore concentrated exactly where the
+list is read.
+
+## ⚑ WHERE THE LIST STOOD — recounted 2026-09-19 after v0.9.816 (the balance instrument arc)
 
 Counted mechanically (`- [ ]` vs `- [x]` across this file), not estimated. **2026-09-19: 52
 open, 265 done.** The balance batch is largely spent - the v0.9.816 chain carried five queued
@@ -2296,7 +2319,9 @@ has been used."*
       `sed "s/.*name=//" | tr -d ' '`, so the value arrived as `true(16/16)`. The count is on its
       own line now. Caught by reading the parser rather than by a failed release.
 
-- [ ] **Judge the dungeon with a full party.** The owner has frames at the right tile size now
+- [→] **Judge the dungeon with a full party — AWAITING THE OWNER, not work.** Nothing is blocked
+      on code here; it is a look-and-say. Marked distinctly so it stops reading as a task nobody
+      has started. The owner has frames at the right tile size now
       (`shot_38675`, `shot_50715`); the call is theirs.
 
 
@@ -7858,7 +7883,10 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       2026-09-18 is deliberately small and does NOT sell gear, so it does not conflict with this -
       but if this lands, revisit whether the floor is still needed at all.
 
-- [ ] **⚑ POST SERVICES ARE THIN — owner direction 2026-09-18. Three parts.**
+- [x] **⚑ POST SERVICES — TWO OF THREE PARTS DONE (2026-09-19).** Part 1 (the healer's
+      dominated options) and part 3 (merchants: speed, stock, and the VISIBILITY fault that was
+      the real cause) are shipped and probed. Part 2 (wandering blacksmiths and healers) is filed
+      against the LIVING WORLD arc by the owner's own note and waits on nothing here. Three parts.
 
       1. **The healer has no reason to offer anything but the cheap option.** *"The healer options
          may need looked at as well, there's no real reason to do anything other than a quick heal
@@ -8076,16 +8104,30 @@ something was dropped, and it sat unnoticed for eleven days.
       that is unclear in a file browser may be fine in place, and vice versa, and this codebase has
       a standing rule that art questions are settled by looking rather than by reading paths.
 
-- [ ] **⚑ INVENTORY BLOAT — owner direction 2026-09-18, raised while scoping crafting.** Three
+- [x] **⚑ INVENTORY BLOAT — SUBSTANTIALLY RESOLVED (2026-09-19).** Part 3 (auto-salvage) is
+      done twice over: the consequence preview, then the keep-rule moved from affix NAMES to
+      STATS, which is what made the owner's own example expressible. Part 2 (tools) was mostly
+      built already - a broken tool auto-equips your best spare. Part 1 (a pouch) is filed with a
+      MEASURED trigger that has not fired: fullest live character 28/40 against ~32. The one real
+      remainder is showing SPARE COUNTS before a tool breaks. Three
       complaints, one disease: the player's bag fills with things they did not choose and cannot
       triage.
 
       1. **Consumables and tools eat backpack slots.** *"Items and tools can buildup and takeover
          your backpack slots. We may want to have a separate item pouch or unlimited items."*
-      2. **Tools specifically are a chore.** *"They are currently a pain to have to go back and
-         craft and then they take up an inventory slot, it's hard to tell if you have backups
-         etc."* So: where tools live, whether they stack, and whether the player can SEE their
-         spares at a glance.
+      2. **Tools specifically are a chore — MOSTLY ALREADY BUILT (audited 2026-09-19).** *"They are
+         currently a pain to have to go back and craft and then they take up an inventory slot,
+         it's hard to tell if you have backups etc."*
+         ✅ **A broken tool already auto-equips your best spare.** `_auto_equip_tool_replacement`
+         finds the highest-tier intact tool of that subtype, equips it, and the `tool_broken`
+         message names the replacement and its durability - the no-spare case included. So "go
+         back and craft" is already not a trip you have to make mid-run.
+         ❌ **The one real gap is SEEING spares before one breaks.** The Tools panel shows the
+         equipped tool and its durability and says nothing about backups, which is the literal
+         complaint. One line per slot: `Pickaxe T2 14/20 (2 spares)`.
+         ⚡ I proposed BUILDING the auto-equip on 2026-09-19 and the owner said it likely already
+         existed. It did. Fourth already-built thing proposed that day - the reason
+         `tools/backlog_audit.py` now exists.
       3. **✅ DONE 2026-09-19 — THE KEEP RULE NOW KEEPS STATS, NOT AFFIX NAMES.** The owner's own
          example was not expressible: the rule matched `prefix_name`/`suffix_name`, and MEASURED,
          every stat has more affix names than the 5-per-stat cap allowed — **hp_bonus 15,
@@ -8117,7 +8159,11 @@ something was dropped, and it sat unnoticed for eleven days.
       Sits next to the crafting arc because it is the same complaint from the other end: crafting
       asks *"what do I do with these materials"*, this asks *"why do I have all this at all"*.
 
-- [ ] **CRAFTING REASSESSMENT — scoped by the owner 2026-09-17, and it is most of the system.**
+- [x] **CRAFTING REASSESSMENT — DONE 2026-09-18, ticked 2026-09-19 by audit.** Steps 1 through 9
+      are all marked complete below and the item carries no open marker anywhere in its ~950 lines.
+      It stayed unticked for a day and was OFFERED TO THE OWNER as available work on 2026-09-19,
+      which is what prompted `tools/backlog_audit.py`.
+      **(original scope)** scoped by the owner 2026-09-17, and it is most of the system.
       Asked how much of crafting was in scope, the owner answered *"Most of it"*: *"Players gather
       a bunch of materials and don't really have useful things to do with them. It is all too
       difficult to understand for them currently. Ideally they should have clear options that
