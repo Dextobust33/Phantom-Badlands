@@ -1135,7 +1135,23 @@ Outsmart, so no card shifts a key. Probe: `every_class_can_answer.gd`.
 
 ### ⚑ OPEN QUESTIONS FROM THE BALANCE PASS — ranked
 
-1. **`species_power` has NEVER weakened a species.** Every correction it makes is a strengthening:
+1. **~~`species_power` has NEVER weakened a species.~~ ANSWERED AND FIXED 2026-09-19.** The cause
+   was not the clamp - it was that **speciescal's two samplers modelled different players**.
+   `_species_win_at` sampled Fighter / Wizard / Grifter (the strongest of their archetypes, which
+   `_fight_stats_at` had already been fixed away from for that reason) and **never retreated**,
+   while the mix it is compared against samples all nine and flees at 30% HP. Measured on
+   identical monsters at identical levels: **+24pp at L5, +12pp at L10, +18pp at L50**. Every
+   species was judged against a weaker yardstick than itself, so every species measured "too easy"
+   and was strengthened, and 68 of 136 corrections pinned at the ceiling.
+   The comment licensing the shorthand said the other users are "read-only and their bias only
+   colours a report" - `_species_win_at` is not read-only, it writes `species_power`. That note is
+   corrected in place.
+   Both samplers now share a player model; worst residual gap **4pp**, inside sampling noise.
+   Probe: `speciescal_compares_like_with_like.gd`.
+   **The curve on live was fitted through the biased sampler**, so `species_power` is wrong until
+   the next chain run - which should NOT happen yet (see 3). Raising the clamp would have
+   amplified the bias, which is why it was worth measuring before touching.
+2. **(retired) `species_power` one-sidedness** - Every correction it makes is a strengthening:
    minimum x1.05, median 2.47, 68 of 136 corrections pinned at the x2.50 ceiling, **zero below
    1.0**. A calibrator comparing each species against its own mix should land on both sides of 1.0
    roughly evenly. **Do NOT widen the clamp to "fix" this** — a wider range on a one-sided

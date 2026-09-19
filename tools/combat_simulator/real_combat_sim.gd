@@ -2432,8 +2432,13 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 	# three so the TOTAL sample count — which is what the mean's precision depends on — stays where
 	# it was and the run does not take three times as long.
 	#
-	# NOTE: ~20 other audits in this file still use the three-class shorthand. They are read-only
-	# and their bias only colours a report; this one is the one that changes the game.
+	# ⚡ NOTE CORRECTED 2026-09-19. It used to say "~20 other audits in this file still use the
+	# three-class shorthand. They are read-only and their bias only colours a report; this one is
+	# the one that changes the game." That was wrong about `_species_win_at`, which ALSO writes the
+	# game - it feeds `species_power` - and which was comparing its three strong classes against
+	# THIS sampler's nine. The gap was +12 to +24pp, and it is why every species correction ever
+	# made was a strengthening. Fixed there; the remaining shorthand users are genuinely read-only,
+	# but "read-only" now has to be checked rather than assumed.
 	var _ref_samples: int = maxi(9, int(round(float(samples) / 3.0)))
 	for klass_row in ALL_CLASSES:
 		var klass := String(klass_row[0])
@@ -3664,20 +3669,45 @@ func _species_win_at(nm: String, lvl: int, samples: int) -> Dictionary:
 	being nested four deep inside it. Returns n as well as the rate so the caller can tell "this
 	species never spawns here" apart from "it spawns and always wins", which are the same 0.0
 	otherwise."""
+	# ⚡ THIS SAMPLER MUST MATCH `_fight_stats_at`, BECAUSE ITS RESULT IS COMPARED AGAINST IT.
+	#
+	# Owner 2026-09-19, on why `species_power` saturates: *"Should we raise the ceiling?"* No - the
+	# ceiling was not the problem. EVERY correction speciescal made was a strengthening (minimum
+	# x1.05, median 2.47, 68 of 136 on the x2.50 clamp, none below 1.0), which is structurally
+	# impossible if each species is genuinely judged against its own mix. Two systematic biases,
+	# both pushing the same way:
+	#
+	#   1. it sampled Fighter / Wizard / Grifter - which the engine rework made the STRONGEST of
+	#      their archetypes, and which `_fight_stats_at` was fixed away from for exactly that
+	#      reason. The note above that fix says the three-class shorthand survives elsewhere
+	#      because "they are read-only and their bias only colours a report". THIS ONE IS NOT
+	#      READ-ONLY - it writes `species_power`.
+	#   2. it never retreated, while the mix it is compared against flees at 30% HP.
+	#
+	# Measured on identical monsters at identical levels, the two samplers disagreed by
+	# **+24pp at L5, +12pp at L10, +18pp at L50** - so every species was judged against a weaker
+	# yardstick than itself, measured "too easy", and was strengthened. Now the same nine classes
+	# and the same flee model, so the only thing left differing between the two numbers is the
+	# thing being measured: the species.
 	var wins := 0
 	var n := 0
-	for klass in ["Fighter", "Wizard", "Grifter"]:
-		for i in range(samples):
+	var _per: int = maxi(3, int(round(float(samples) / 3.0)))
+	for klass_row in ALL_CLASSES:
+		var klass := String(klass_row[0])
+		for i in range(_per):
 			var ch = make_char(lvl, "average", klass)
 			var monster = monster_db.generate_monster_by_name(nm, lvl, true)
 			if monster == null or monster.is_empty():
 				continue
 			monster["current_hp"] = monster.get("max_hp", 1)
 			ch.in_combat = false
+			var php0: int = ch.get_total_max_hp()
 			combat_mgr.start_combat(0, ch, monster)
 			if not combat_mgr.active_combats.has(0):
 				continue
 			var combat = combat_mgr.active_combats[0]
+			var _flee_aware: bool = randf() < _flee_rate
+			var fled := false
 			var t2 := 0
 			while t2 < 300:
 				if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
@@ -3690,6 +3720,10 @@ func _species_win_at(nm: String, lvl: int, samples: int) -> Dictionary:
 						_: _player_act(combat, ch)
 				if int(monster.get("current_hp", 0)) <= 0:
 					break
+				if _flee_aware and not fled and float(ch.current_hp) / float(maxi(1, php0)) < RUN_FIGHT_FLEE_AT:
+					if bool(combat_mgr.process_flee(combat).get("fled", false)):
+						fled = true
+						break
 				_monster_turn_if_owed(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
