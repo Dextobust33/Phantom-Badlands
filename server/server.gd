@@ -2053,6 +2053,19 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_combat_command(peer_id, message)
 		"combat_use_item":
 			handle_combat_use_item(peer_id, message)
+		"request_location":
+			# ⚑ "SEND ME THE MAP AGAIN." Owner 2026-09-19, after the first fight of a session:
+			# *"No map until I rested or moved."*
+			#
+			# The client redraws the overworld from a CACHED payload when a fight ends, and if it
+			# has never received one there is nothing to draw and no way to ask for it. Resting and
+			# moving fixed it only because both happen to make the server resend - so the recovery
+			# existed, it just could not be reached deliberately. This is that, on purpose.
+			#
+			# ⛑ Cheap and idempotent: it is the same `send_location_update` a step already does,
+			# with no state change, so a client that asks twice costs one extra packet.
+			if characters.has(peer_id):
+				send_location_update(peer_id)
 		"rank_choice_response":
 			handle_rank_choice_response(peer_id, message)
 		"cull_ability_card":

@@ -20101,7 +20101,21 @@ func _combat_playback_active() -> bool:
 ## location update from the server fills it in. That was the OTHER half of the reported symptom -
 ## resting brought the map back because resting asks the server for a fresh one.
 func _restore_overworld_map(retry: bool = true) -> void:
-	if dungeon_mode or _last_map_payload.is_empty():
+	if dungeon_mode:
+		return
+	if _last_map_payload.is_empty():
+		# ⚡ NOTHING CACHED TO DRAW - so ASK, rather than leave the player mapless.
+		#
+		# Owner, after the first fight of a session: *"No map until I rested or moved."* Later
+		# fights were fine. That is the shape of an empty cache: this function needs a payload the
+		# client has not been sent yet, and resting or moving only fixed it because both make the
+		# server resend one. The recovery existed and could not be reached on purpose.
+		#
+		# ⛑ ASKING RATHER THAN DIAGNOSING WHY IT IS EMPTY. I guessed twice at this flash from
+		# the code and was wrong both times; this path does not care which message failed to
+		# arrive, and it is the same request a footstep already makes.
+		if retry:
+			send_to_server({"type": "request_location"})
 		return
 	if not _ow_canvas_eligible():
 		if retry:
@@ -35157,7 +35171,12 @@ func display_changelog():
 	#            nothing in the client had ever listened for a resize.
 	# v0.9.830 - the no-map-after-a-fight my own 828 caused, and the map re-sizing itself a second
 	#            after it appears.
-	display_game("[color=#00FF00]v0.9.830[/color] [color=#808080](Current)[/color]")
+	# v0.9.831 - the last of it: the FIRST fight of a session had no cached map to redraw, and no
+	#            way to ask for one.
+	display_game("[color=#00FF00]v0.9.831[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: no map after the FIRST fight of a session.[/color] The last piece of this. When a fight ends the game redraws the map from the copy it already has — and on your first fight after logging in it may not have one yet, so there was nothing to draw and no way to ask. Every fight after that was fine, which is exactly why it looked so strange. [b]It can now ask the server for a fresh map[/b], which is the same thing that was already happening invisibly whenever you rested or took a step — the recovery existed, it just could not be reached on purpose.")
+	display_game("")
+	display_game("[color=#808080]v0.9.830[/color]")
 	display_game("  [color=#FF4444]★ FIXED: no map at all after a fight.[/color] Introduced two versions ago by the fix for the map jumping between columns, and reported straight away: the map was being restored [b]after[/b] the post-fight text was written, and that text had already claimed the space the map needed. It is restored first now, so the text goes beside it where it belongs. [color=#FFAA00]Resting brought the map back because resting asks the server for a fresh one — that was the workaround, not the fix.[/color]")
 	display_game("  [color=#FF8000]★ THE MAP NO LONGER RE-SIZES ITSELF A MOMENT AFTER IT APPEARS.[/color] The map is drawn to fit the space it has, and that space is [b]wider during a fight[/b] — so the map you were handed back was sized for the bigger window and quietly shrank when the next update arrived. It now re-draws itself the instant the window changes shape. The same applies [b]leaving any screen that covers the map[/b], the crafting stations included, and to resizing the game window.")
 	display_game("")

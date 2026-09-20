@@ -117,6 +117,26 @@ func _init() -> void:
 			_fail("the restore is not gated on the canvas being the right home")
 		else:
 			_ok("it still only draws when the canvas is the right home")
+		# ⚡ THE EMPTY-CACHE CASE. Reported on the FIRST fight of a session and not later ones,
+		# which is the signature of a cache that has not been filled yet. Returning quietly there
+		# leaves the player with no map at all until they happen to rest or move - both of which
+		# make the server resend one, which is why they "fixed" it.
+		if rb.find("request_location") < 0:
+			_fail("with nothing cached to draw the restore gives up silently, so a player whose "
+				+ "first fight happens before a map payload arrives has no map until they move")
+		else:
+			_ok("with nothing cached it asks the server for a fresh map")
+
+	print("")
+	print("===== 2c. THE SERVER ANSWERS THAT REQUEST =====")
+	var srv := FileAccess.get_file_as_string("res://server/server.gd")
+	# Half a feature is worse than none here: the client would ask on every mapless fight and
+	# nothing would come back, which looks exactly like the bug it was meant to fix.
+	if srv.find("\"request_location\":") < 0:
+		_fail("the server has no handler for request_location - the client asks and nothing "
+			+ "answers, which is indistinguishable from the original bug")
+	else:
+		_ok("the server answers request_location")
 
 	print("")
 	print("===== 3. TEXT STILL HAS SOMEWHERE TO GO =====")
