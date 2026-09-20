@@ -81,16 +81,42 @@ func _init() -> void:
 		# With the skip above, nothing has drawn the map since the fight began. If this redraw is
 		# missing the player is handed a stale or empty column until the server's next update -
 		# which is the bug, moved rather than fixed.
-		if body.find("update_map(_overworld_display(_last_map_payload))") < 0:
-			_fail("leaving combat no longer redraws the map from the cached payload - with the "
-				+ "skip in place that means no map until the server's next location update")
+		if body.find("_restore_overworld_map()") < 0:
+			_fail("leaving combat no longer restores the map - with the combat skip in place that "
+				+ "means no map at all until the server's next location update")
 		else:
-			_ok("leaving combat redraws the map from the cached payload")
-		if body.find("_ow_canvas_eligible()") < 0:
-			_fail("the redraw is not gated on the canvas being eligible, so it could fire in a "
-				+ "dungeon or with the art missing and put the map in the wrong home")
+			_ok("leaving combat restores the map")
+		# ⚡ ORDER, NOT JUST PRESENCE. The restore must run BEFORE the post-combat text is
+		# printed. `_ow_text_in_column()` routes pages to the column only while the map holds the
+		# canvas, so restoring afterwards leaves that text ON the canvas - which is how a live
+		# player ended up with no map at all rather than a late one. Reported with a screenshot.
+		var at_restore := body.find("_restore_overworld_map()")
+		var at_context := body.find("_display_post_combat_context()")
+		if at_context >= 0 and at_restore > at_context:
+			_fail("the map is restored AFTER the post-combat text is printed, so that text takes "
+				+ "the canvas and the map has nowhere to go - the 'no map after a fight' report")
 		else:
-			_ok("the redraw only fires when the canvas is the right home")
+			_ok("the map is restored before anything prints to the canvas")
+
+	print("")
+	print("===== 2b. THE RESTORE SURVIVES AN UNSETTLED STATE =====")
+	var r := cli.find("func _restore_overworld_map(")
+	if r < 0:
+		_fail("_restore_overworld_map does not exist")
+	else:
+		var rb := cli.substr(r, 1400)
+		# `_ow_canvas_eligible()` asks whether combat still owns the canvas, and the panel's
+		# visibility is settled by _process rather than inline - so one attempt at the instant
+		# Continue is pressed can legitimately answer "no". That is what produced a blank canvas.
+		if rb.find("call_deferred(\"_restore_overworld_map\"") < 0:
+			_fail("the restore gives up if the canvas is not eligible at that exact instant, "
+				+ "which is the state that produced a blank canvas on the first fight")
+		else:
+			_ok("the restore retries once on the next frame")
+		if rb.find("_ow_canvas_eligible()") < 0:
+			_fail("the restore is not gated on the canvas being the right home")
+		else:
+			_ok("it still only draws when the canvas is the right home")
 
 	print("")
 	print("===== 3. TEXT STILL HAS SOMEWHERE TO GO =====")

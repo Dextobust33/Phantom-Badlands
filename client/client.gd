@@ -20089,6 +20089,27 @@ func _combat_playback_active() -> bool:
 	return not combat_msg_queue.is_empty() or _party_end_playback
 
 
+## Put the overworld map back on the canvas after something else has owned it.
+##
+## ⛑ RETRIES ONCE, DEFERRED, because a single attempt at one instant is exactly what failed.
+## `_ow_canvas_eligible()` asks among other things whether combat still owns the canvas, and the
+## panel's visibility is settled by `_process` rather than inline - so at the moment Continue is
+## pressed the answer can still be "no" through no fault of the caller. One deferred retry costs
+## nothing and covers a state that has not caught up yet.
+##
+## If there is no cached payload there is nothing to draw and nothing to be done here; the next
+## location update from the server fills it in. That was the OTHER half of the reported symptom -
+## resting brought the map back because resting asks the server for a fresh one.
+func _restore_overworld_map(retry: bool = true) -> void:
+	if dungeon_mode or _last_map_payload.is_empty():
+		return
+	if not _ow_canvas_eligible():
+		if retry:
+			call_deferred("_restore_overworld_map", false)
+		return
+	update_map(_overworld_display(_last_map_payload))
+
+
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	# v0.9.740 — Continue means TWO different things depending on where the fight is, and
@@ -20155,6 +20176,21 @@ func acknowledge_continue():
 		combat_scene_panel.visible = false
 	if game_output:
 		game_output.visible = true
+	# ⚑ THE MAP GOES BACK **BEFORE ANYTHING PRINTS**, and the order is the whole point.
+	#
+	# v0.9.828 stopped drawing the map into the hidden column during a fight, which removed the
+	# column-then-box jump - but it put this redraw at the END of this function, AFTER the
+	# post-combat "where you are" block. Owner, with a screenshot: *"I fought a rat, pressed
+	# space on the victory screen and now I have no map in my gameoutput. If I rest it comes
+	# back."*
+	#
+	# ⚡ WHY THE ORDER MATTERS, AND WHY THE SYMPTOM WAS "NO MAP" RATHER THAN "LATE MAP":
+	# `_ow_text_in_column()` sends pages to the side column ONLY while the map holds the canvas.
+	# Redrawing last meant the context block printed while the canvas was still mapless, so it
+	# went TO the canvas - and then the map either did not draw or would have wiped what had just
+	# been written there. Drawing first makes the routing correct: map on the canvas, text beside
+	# it, which is the arrangement every other moment on the overworld uses.
+	_restore_overworld_map()
 	# Old auto-harvest hook removed v0.9.436 (combat scratch-off replaces it).
 
 	# If combat was queued while showing egg hatch celebration, start it now
@@ -20234,20 +20270,6 @@ func acknowledge_continue():
 	# window, so a notice printed before them is wiped — which is exactly what happened to the
 	# leadership line once the context block started clearing.
 	_flush_party_notices()
-
-	# ⚑ PUT THE MAP IN ITS FINAL HOME **NOW**, not whenever the next payload happens to arrive.
-	#
-	# With the skip above, nothing has drawn the map since combat started, so without this the
-	# player is handed back a stale column or an empty one until the server's next location
-	# update - several frames, and the jump the owner reported. One redraw from the payload that
-	# is already cached costs nothing and puts the map straight into the canvas.
-	#
-	# ⛑ IT DOES NOT WIPE THE POST-COMBAT TEXT. When the canvas holds the map, `_ow_text_in_column`
-	# routes pages to the side column instead - so the "where you are now" block printed above
-	# lands beside the map rather than under it. That is the same routing the overworld uses at
-	# every other moment; this just reaches it a few frames sooner.
-	if not dungeon_mode and not _last_map_payload.is_empty() and _ow_canvas_eligible():
-		update_map(_overworld_display(_last_map_payload))
 
 	# v0.9.398 — re-show the overworld player sprite after combat ends.
 	# Previously the sprite stayed hidden (in_combat had toggled false during
@@ -35133,7 +35155,13 @@ func display_changelog():
 	#            the column and then jumps to the box when a fight ends.
 	# v0.9.829 - the boxes around the map were positioned for the WIDER canvas a fight uses, and
 	#            nothing in the client had ever listened for a resize.
-	display_game("[color=#00FF00]v0.9.829[/color] [color=#808080](Current)[/color]")
+	# v0.9.830 - the no-map-after-a-fight my own 828 caused, and the map re-sizing itself a second
+	#            after it appears.
+	display_game("[color=#00FF00]v0.9.830[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: no map at all after a fight.[/color] Introduced two versions ago by the fix for the map jumping between columns, and reported straight away: the map was being restored [b]after[/b] the post-fight text was written, and that text had already claimed the space the map needed. It is restored first now, so the text goes beside it where it belongs. [color=#FFAA00]Resting brought the map back because resting asks the server for a fresh one — that was the workaround, not the fix.[/color]")
+	display_game("  [color=#FF8000]★ THE MAP NO LONGER RE-SIZES ITSELF A MOMENT AFTER IT APPEARS.[/color] The map is drawn to fit the space it has, and that space is [b]wider during a fight[/b] — so the map you were handed back was sized for the bigger window and quietly shrank when the next update arrived. It now re-draws itself the instant the window changes shape. The same applies [b]leaving any screen that covers the map[/b], the crafting stations included, and to resizing the game window.")
+	display_game("")
+	display_game("[color=#808080]v0.9.829[/color]")
 	display_game("  [color=#FF4444]★ FIXED: everything around the map sitting in the wrong place for a moment after a fight.[/color] The Area box, the minimap, the travel row and the frame around the map are all positioned by measuring the main window — and during a fight that window is [b]wider[/b], because the side column is hidden so combat can fill the screen. Anything placed in that moment was laid out for a window several hundred pixels wider than the one you get back, which is why the frame started in the middle of the map and the minimap sat on top of the Area box until something nudged it. They now [b]follow the window whenever it changes size[/b]. The same fault applied to resizing the game window at any time, not just leaving a fight — nothing in the client had ever listened for a resize.")
 	display_game("")
 	display_game("[color=#808080]v0.9.828[/color]")
@@ -38359,6 +38387,24 @@ func _on_canvas_resized() -> void:
 	_margin_canvas_w = canvas.size.x
 	_place_map_widgets(_ow_canvas_eligible())
 	_place_stance_bar(_ow_canvas_eligible(), _margin_widgets_shown())
+	# ⚑ AND RE-COMPOSE THE MAP ITSELF, not only the boxes around it.
+	#
+	# Owner 2026-09-19: *"the map after battle seems to take a second to zoom in... I think this
+	# happens when coming out of some other screens as well and maybe even when coming out of the
+	# crafting stations."*
+	#
+	# `_overworld_display` picks the sprite pixel size from the space available, so the map drawn
+	# against the WIDER canvas a fight uses comes out bigger than the one that belongs in the
+	# canvas the player is handed back. Nothing recomposed it, so it kept the wrong size until the
+	# next location payload happened to arrive - which is the second it takes to settle. Measured
+	# off two live screenshots of the same tile: ~655px wide immediately after a fight against
+	# ~620px once settled.
+	#
+	# ⛑ THIS IS WHY THE FIX IS A RESIZE WATCHER RATHER THAN ANOTHER LINE IN THE COMBAT EXIT.
+	# The owner's guess that it also happens leaving other screens is right by construction: any
+	# panel that covers or frees the canvas changes its width, and every one of them had the same
+	# stale geometry. One watcher covers combat, the crafting stations, and the window itself.
+	_restore_overworld_map()
 
 
 func _place_map_widgets(on_canvas: bool) -> void:
