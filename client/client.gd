@@ -35131,7 +35131,12 @@ func display_changelog():
 	# v0.9.827 - a milestone upgrade you had already chosen could be offered a second time.
 	# v0.9.828 - the map is drawn in the home it is going to stay in, so it no longer appears in
 	#            the column and then jumps to the box when a fight ends.
-	display_game("[color=#00FF00]v0.9.828[/color] [color=#808080](Current)[/color]")
+	# v0.9.829 - the boxes around the map were positioned for the WIDER canvas a fight uses, and
+	#            nothing in the client had ever listened for a resize.
+	display_game("[color=#00FF00]v0.9.829[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: everything around the map sitting in the wrong place for a moment after a fight.[/color] The Area box, the minimap, the travel row and the frame around the map are all positioned by measuring the main window — and during a fight that window is [b]wider[/b], because the side column is hidden so combat can fill the screen. Anything placed in that moment was laid out for a window several hundred pixels wider than the one you get back, which is why the frame started in the middle of the map and the minimap sat on top of the Area box until something nudged it. They now [b]follow the window whenever it changes size[/b]. The same fault applied to resizing the game window at any time, not just leaving a fight — nothing in the client had ever listened for a resize.")
+	display_game("")
+	display_game("[color=#808080]v0.9.828[/color]")
 	display_game("  [color=#FF4444]★ FIXED: the map appearing in the side column and then jumping to the main box after a fight.[/color] The map has two possible homes — the big canvas, and the side column as a text fallback — and during a fight the canvas belongs to combat, so every map update arriving behind the victory screen was being drawn into the column. The column is [b]hidden[/b] during a fight, so nobody ever saw those; they became visible for a moment when the fight ended, and then the next update moved the map to the box. It is now simply [b]not drawn[/b] while combat owns the screen, and redrawn straight into the box the instant you press Continue — one home, no move.")
 	display_game("")
 	display_game("[color=#808080]v0.9.827[/color]")
@@ -38130,6 +38135,10 @@ func _sync_margin_widgets() -> void:
 	# The chat box moves between the margin and the bottom strip on MODE changes, and a mode
 	# change is exactly what flips this value - update_map does not run underground.
 	_place_map_widgets(_ow_canvas_eligible())
+	# Armed here rather than in _ready: `game_output`'s parent is the node that resizes, and this
+	# is a path that has certainly run by the time there is anything to place. Connecting is
+	# idempotent.
+	_watch_canvas_resize()
 	# ...and the pinned WHERE YOU ARE block, which lives in the COLUMN rather than the margin.
 	# A page over the canvas leaves the column alone, so it stays; a dungeon does not - the run
 	# log owns that column, and the post block sat above it reading as if you were still there.
@@ -38307,6 +38316,49 @@ func _dungeon_dock_wanted() -> bool:
 	a menu panel, a fight, a page printed over the floor. Same test the overworld margin uses,
 	minus its `dungeon_mode` veto (which exists to keep the overworld boxes out of here)."""
 	return not in_combat and not _combat_ui_busy() and not _canvas_panel_open()
+
+
+## The canvas width the margin widgets were last laid out against, so a change can be noticed.
+var _margin_canvas_w: float = -1.0
+
+
+## ⚑ RE-PLACE THE MARGIN WIDGETS WHEN THE CANVAS CHANGES SIZE.
+##
+## Owner 2026-09-19, with a screenshot from live: the Area/Region box, the minimap, the map frame
+## and the party strip all sat too far right for a moment after a fight, the frame starting in the
+## middle of the map, before snapping into place.
+##
+## ⚡ THEY ARE PLACED AGAINST `canvas.size.x`, AND THE CANVAS IS WIDER DURING A FIGHT.
+## `_place_map_widgets` computes the margin as `(canvas.size.x - _ow_map_px_w) * 0.5` and the
+## frame's left edge the same way - and `_process` hides `map_panel` while combat is up so the
+## fight fills the full width. Everything laid out in that moment is positioned for a canvas
+## several hundred pixels wider than the one the player is handed back. It only corrected on the
+## next event that happened to re-run the placement.
+##
+## ⛑ NOTHING IN THIS FILE LISTENED FOR A RESIZE - there was not a single `resized.connect` in
+## it. The placement ran on mode changes and on map redraws, both of which can happen while the
+## canvas is the wrong size, and never simply because the box it measures against moved. That
+## also means this fixes the same fault for an ordinary WINDOW resize, which had it too.
+func _watch_canvas_resize() -> void:
+	if game_output == null or not is_instance_valid(game_output):
+		return
+	var canvas: Control = game_output.get_parent() as Control
+	if canvas == null:
+		return
+	if not canvas.resized.is_connected(_on_canvas_resized):
+		canvas.resized.connect(_on_canvas_resized)
+
+
+func _on_canvas_resized() -> void:
+	var canvas: Control = (game_output.get_parent() as Control) if game_output != null else null
+	if canvas == null:
+		return
+	# Guarded on an actual CHANGE: `resized` fires liberally, and the placement re-parents nodes.
+	if absf(canvas.size.x - _margin_canvas_w) < 1.0:
+		return
+	_margin_canvas_w = canvas.size.x
+	_place_map_widgets(_ow_canvas_eligible())
+	_place_stance_bar(_ow_canvas_eligible(), _margin_widgets_shown())
 
 
 func _place_map_widgets(on_canvas: bool) -> void:
