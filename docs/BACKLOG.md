@@ -9542,6 +9542,58 @@ something was dropped, and it sat unnoticed for eleven days.
       interior behind a world doorway, or true claimed land. Prior art exists either way — player
       posts already claim real tiles (`add_player_tile` / `get_player_tiles` / enclosure checks),
       so the sparse-tile storage pattern is proven.
+- [~] **PLAYER PHANTOMS — the outward loop. STARTED 2026-09-19, HELD BEHIND A FLAG.**
+
+      ⚑ **`PHANTOM_POSTS_ENABLED := false` in server.gd. Nothing below reaches a player until it
+      is flipped.** Owner: *"implement in a way where if we don't finish we can hold anything
+      breaking."* The flag is checked at BOTH doors - the listing and the purchase - because a
+      client can send any message it likes, so guarding only the build menu leaves the till open.
+      Probe: `a_held_feature_is_really_held.gd`, proven to fire by removing the purchase check.
+
+      ✅ **SLICE 1 BUILT (held): the Valor charter ladder.**
+
+          Waystation Charter   12,000 valor    7x7    market
+          Outpost Charter      30,000 valor    9x9    market, quest board, workbench
+          Bastion Charter      75,000 valor   11x11   market, quest board, workbench, forge, storage
+
+      Bought from the build menu as an ITEM, placed later by the existing kit path - so the
+      charter sits in the pack until the player is standing where they want it, which is the point
+      of pushing out to place one, and a bad spot costs a walk rather than the Valor.
+      Layouts are GENERATED (`shared/prefab_posts.gd`), not hand-listed: the existing crafted kit
+      spells out all sixteen tiles of its 5x5, which becomes a transcription exercise at 11x11 and
+      a wall with one tile missing is a post monsters walk into. The probe derives the expected
+      perimeter count and checks every rung.
+
+      ⚡ **PRICED AGAINST MEASURED HOLDINGS, and the gap in that is named.** Live valor across 13
+      accounts, 2026-09-19: `68294 63835 47194 24550 1396 338 163 99 29` and **four at zero**. A
+      hard split - four established accounts, everyone else under 1.5K. So Waystation is reachable
+      today by four players and Bastion by none. **What this does NOT know is the valor EARN rate**
+      (a stock, not a flow), so it says who could buy today and nothing about how long saving
+      takes. Measure that before calling the prices final.
+
+      ⛑ **NO TIER MENTIONS A PHANTOM, DELIBERATELY.** The Phantom is the whole point of these
+      posts and it does not exist yet; Valor is not refundable by any path in the game, so a
+      charter promising one is a debt that cannot be settled. Each rung is priced to be worth it
+      for the POST alone, and the Phantom joins the layouts when it works. The probe fails if any
+      tier's name, blurb or station list mentions it.
+
+      ▶ **SLICE 2 — THE PHANTOM ITSELF, and the decisions it needs first.** The nine open
+      questions in the archived design are still open; these three gate any code:
+        1. **The balance question below** (ceiling vs its own band) - settle before building.
+        2. **Account vs character ownership.** Permadeath means the founder can die. The post and
+           its investment must survive at the ACCOUNT level or the loop punishes far beyond
+           intent - but what is carried OUT of a run must still be lost on death.
+        3. **The laundering pump.** Invest cheap eggs, extract better ones, hatch, invest those
+           companions, get better gear, repeat. The exchange must be lossy and gated by depth and
+           survival risk, never by volume.
+
+      ⚠ **WHAT REMAINS TO MAKE SLICE 1 ITSELF SHIPPABLE** (i.e. to flip the flag): a build-menu
+      surface on the CLIENT to list and buy the charters. The server side is done - `list_prefab_posts`
+      and `buy_prefab_post` - and nothing on the client calls them yet. That is the next hour of
+      work, not a design question.
+
+      Original item follows.
+
 - [ ] **PLAYER PHANTOMS — the outward loop.** <!-- audited: 2026-09-19 --> Verified still open: nothing in server/ or shared/ implements it (the `phantom` hits are the
       setting bible's wording and the Ninja's Phantom Strike card). The whole design already existed and this list had
       lost it. Owner 2026-09-17, asked for the scope: *"Player phantoms(aka dungeons) are buildable
