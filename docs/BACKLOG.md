@@ -1164,31 +1164,38 @@ different fix entirely. Do not re-open the early curve on the old reading.
 
 ### ⚑ WHERE THINGS STAND — end of 2026-09-19
 
-**v0.9.821 is LIVE, client and server, hash-verified. NOTHING is built-but-unreleased.**
+**v0.9.831 is LIVE, client and server, hash-verified. NOTHING is built-but-unreleased.**
 
-Shipped today across v0.9.816-821: the monster curve re-fitted through a species comparison that
-was finally fair, Brace / Ward / Slip, the first five boss telegraphs, merchants you can meet, a
-healer menu that is a decision, dungeons that look like what they are, the keep-filter moved onto
-stats, the card face counting card gear, the sanctuary ladder repriced to be reachable, spare-tool
-counts, and upgraded cards that look upgraded.
+**PARTY PLAY SLICE 1 SHIPPED.** Everyone walks their own path; whoever meets a monster pulls the
+party in within `PARTY_PULL_RADIUS` (8). The race resolved itself - see the DQIX item. Slices 2
+(map indicator + run-in join), 3 (travel rules / Muster Sigil) and 4 (dungeons follow the
+overworld, owner direction) are named there with their prerequisites.
+
+**THE POST-COMBAT UI ARC IS CLOSED** (v0.9.826-831), from one report of "a flash". It was five
+distinct faults, and the useful record is how they were found:
+
+    826  the sprite overlay awaited a frame for a layout Godot 4.7 no longer defers
+    828  the map was drawn into the HIDDEN column during a fight, then relocated
+    829  margins/frame positioned for the WIDER combat canvas - nothing in 56k lines
+         had ever listened for a `resized` signal (so window resizes had it too)
+    830  my own 828 regression (restore ran after the text took the canvas), plus the
+         map composed at the combat width and re-sizing a second later
+    831  the FIRST fight of a session had nothing cached to redraw, and no way to ask
+
+⚡ **I GUESSED TWICE FROM THE CODE AND WAS WRONG BOTH TIMES.** Three owner screenshots produced
+three different real causes. For anything VISUAL, ask for a screenshot before theorising - the
+headless instruments cannot reach the state, and `--uimeasure` runs at the login screen with no
+combat panel at all. One measurement that could not reach its target was deleted for that reason.
 
 **Two things are WAITING ON TIME, not on work:**
 
 1. **Re-run `tools/death_log_audit.py` in ~2 weeks** against the 1.81% deaths-per-encounter
-   baseline. ⚡ That baseline was recorded **BEFORE** this batch, so the comparison measures the
-   curve refit AND everything else shipped today together — do not attribute a move to one of
-   them. Owner 2026-09-19: *"It will take a couple of weeks before we have useful data."*
-2. **The BALANCE BATCH stays parked** until that data lands. Brace alone is a player-power change
-   in every fight; the chain is ~25 minutes and one-pass-each, so per-item runs pay full price
-   repeatedly, and stacking changes now destroys attribution the first time the loop can close.
+   baseline. ⚡ That baseline predates this whole batch, so it measures everything together -
+   and it is now cleaner than it was, because party deaths used to be recorded EMPTY and the
+   audit read those blanks as one-shots at parity.
+2. **The BALANCE BATCH stays parked** until that data lands.
 
-**Nothing is waiting on the owner.** Both look-and-says were answered 2026-09-19: the dungeon
-side panel is *"fine now"* (closed, with the release-gate guard kept because it fits by exactly
-zero lines), and the merchant sprite stays a **wagon**.
-
-**Before proposing anything, run `python tools/backlog_audit.py`.** As of the end of this session:
-**21 open, 0 strong staleness flags, no duplicates.**
-
+**Before proposing anything, run `python tools/backlog_audit.py`.**
 
 ### ✅ v0.9.816 — THE CHAIN WAS MEASURING A GAME NOBODY PLAYS (2026-09-19, LIVE)
 
