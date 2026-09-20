@@ -13145,6 +13145,71 @@ func _apply_opening_stance(character) -> Dictionary:
 	return {"warrior_stance_dr": _stance_dr, "warrior_stance_def": _stance_def}
 
 
+## ⚑ JOIN A FIGHT THAT IS ALREADY RUNNING - the other half of the Dragon Quest IX model.
+##
+## Owner 2026-09-18: *"Party Players could also join mid-battle as they could visually tell on the
+## map if a player was in battle and they could run into them to enter it."* This is what makes
+## being outside the proximity pull a short walk rather than a shut door.
+##
+## ⚡ THE MONSTER'S HP IS NOT RE-SCALED, AND THAT IS DELIBERATE. `start_party_combat_simul`
+## multiplies max HP by the number of players at the start, so the naive "one more member, one
+## more multiple" would make a rescuer arrive and INSTANTLY HEAL the thing they came to help kill -
+## the fight would get longer the more friends turned up, which inverts the whole point. A late
+## joiner adds their damage to a health bar that is already where the fight left it. That makes
+## joining strictly helpful, which is exactly what running across the map to do it should buy.
+##
+## ⛑ AND THEY JOIN BETWEEN ROUNDS, NEVER MID-ROUND. `_party_all_submitted` gates the round on
+## the member list as it stands, so adding somebody while submissions are half in would either
+## stall the round waiting for a player who was not there when it started, or resolve without
+## them. `submitted_this_round` is set TRUE on arrival: they sit out the round in progress and act
+## from the next one, which is also the honest reading of having just run in.
+func join_party_combat_in_progress(leader_id: int, pid: int, character) -> Dictionary:
+	if not active_party_combats.has(leader_id):
+		return {"success": false, "message": "That fight is over"}
+	var combat: Dictionary = active_party_combats[leader_id]
+	if pid in combat.get("members", []):
+		return {"success": false, "message": "Already in this fight"}
+	if character == null or character.in_combat:
+		return {"success": false, "message": "You are already fighting"}
+	# A fight nobody is left standing in is not one to join.
+	var monster: Dictionary = combat.get("monster", {})
+	if int(monster.get("current_hp", 0)) <= 0:
+		return {"success": false, "message": "That fight is already over"}
+
+	character.in_combat = true
+	character.last_stand_used = false
+	var st: Dictionary = {
+		"total_damage_dealt": 0,
+		"total_damage_taken": 0,
+		"player_hp_at_start": character.current_hp,
+		"fled": false,
+		"dead": false,
+		"forcefield_shield": 0,
+		"momentum": 0, "focus": 0, "combo": 0,
+		# TRUE on arrival - see the note above. They are counted as having acted for the round
+		# already under way, so it can resolve without waiting on them.
+		"submitted_this_round": true,
+		"queued_action": {},
+		"hand": [], "deck": [], "discard": [],
+	}
+	# Their OWN deck and opening hand, built exactly as the starters' were - a joiner who arrived
+	# with an empty hand would be in the fight and unable to do anything in it.
+	var _dv := {"character": character}
+	_initialize_combat_deck(_dv)
+	_draw_to_hand(_dv)
+	st["deck"] = _dv.get("combat_deck", [])
+	st["discard"] = _dv.get("combat_discard", [])
+	st["hand"] = _dv.get("combat_hand", [])
+	st["view_carry"] = _apply_opening_stance(character)
+
+	combat["members"].append(pid)
+	combat["characters"][pid] = character
+	combat["member_states"][pid] = st
+	party_combat_membership[pid] = leader_id
+	_apply_party_member_companion(combat, pid)
+	return {"success": true, "leader_id": leader_id, "combat": combat}
+
+
 func start_party_combat_simul(party_members: Array, characters: Dictionary, monster: Dictionary,
 		npc_members: Array = []) -> Dictionary:
 	"""#64 Slice 1 — set up a SIMULTANEOUS party combat. Mirrors start_party_combat's

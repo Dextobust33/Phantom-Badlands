@@ -339,98 +339,48 @@ Asked because the arc had run out of defects and into design. All four answered.
       are proven only by their helpers: the entry-warning display (axis two) and the dungeon
       completion/teleport path around the co-op unique roll. Live checks owed.
 
-- [~] **⚑ PARTY PLAY FOLLOWS THE DRAGON QUEST IX MODEL — owner direction 2026-09-18.
-      SLICE 1 SHIPPED 2026-09-19 (independent movement + the proximity pull).**
+- [x] **✅ PARTY PLAY FOLLOWS THE DRAGON QUEST IX MODEL — COMPLETE 2026-09-19 (v0.9.833).**
+      Owner direction 2026-09-18, finished on the owner's ask to close the arc.
 
-      ✅ **SLICE 1 — LIVE.** The four overworld follower locks (movement, hunting, resting,
-      gathering) are gone, and so is the snake that teleported each follower onto the
-      person-ahead's tile every step. The pull replaces the old leader-only co-op: **any**
-      member's encounter starts the party fight, bounded by `PARTY_PULL_RADIUS` (8, Chebyshev,
-      against a 23-tile view). Out-of-range members are named rather than silently dropped.
-      **The race resolved itself** — the server handles triggers one at a time, so the first
-      claims the party's combat and sets `in_combat` on everyone it pulls, and the second is
-      turned away by a check that already existed. No tie-breaker was built; options 2 and 3
-      below layer on top if play shows the wrong member wins.
-      Dungeons keep their formation deliberately. Probe: `the_party_fights_together.gd`.
+      **What shipped, in two sittings:**
+      * **Independent movement.** All four follower locks gone (movement, hunting, resting,
+        gathering) and BOTH snakes deleted - overworld and dungeon. Each teleported followers onto
+        the person-ahead's tile every step, which makes independent movement meaningless.
+      * **The proximity pull.** ANY member's encounter starts the party fight, bounded by
+        `PARTY_PULL_RADIUS` (8, Chebyshev, against a 23-tile view). Out-of-range members are named
+        rather than silently dropped. Applies underground too.
+      * **The map indicator.** `in_combat` now rides the overworld player payload (the DUNGEON
+        payload always had it), a fighting party member is tinted on the map, and the hover says
+        *"fighting — walk into them to join"*. Party members only: a stranger's fight is not one
+        you can join, so marking it would point at a door that is not there.
+      * **Run-in join.** Walking into a fighting teammate joins their fight.
 
-      ▶ **SLICE 2 — NEXT: the map indicator + run-in join.** This is what makes being out of
-      range a short walk rather than a shut door, and it is the half that needs real new
-      machinery (see HALF TWO below: `member_states` is built once at start, `_party_all_submitted`
-      gates on the roster as it stood then, and the monster's HP was already multiplied by the
-      party size — a late joiner must not silently double it).
+      ⚡ **THE RACE RESOLVED ITSELF** - no tie-breaker was built. The server handles triggers one
+      at a time, so the first claims the party's combat and sets `in_combat` on everyone it pulls,
+      and the second is turned away by a check that already existed.
 
-      ▶ **SLICE 3 — travel rules and the Muster Sigil**, once slice 2 shows how far apart people
-      actually end up.
+      ⚡ **THE MONSTER'S HP IS NOT RE-SCALED ON JOIN**, and that is the trap this item named.
+      `start_party_combat_simul` multiplies max HP by party size at the start, so the naive
+      "one more member, one more multiple" would make a rescuer arrive and HEAL the thing they
+      came to help kill - the fight getting longer the more help turns up. A joiner adds damage to
+      the bar where the fight left it.
 
-      ▶ **SLICE 4 — DUNGEONS FOLLOW THE OVERWORLD. Owner direction 2026-09-19:** *"Regarding
-      dungeons we will want dungeon party combat to be like on the overworld. We will have to
-      ensure that parties can actually enter the same dungeon and see each other in them and
-      everything."*
-      ⚡ **THIS SUPERSEDES MY SCOPING CALL IN SLICE 1.** I deliberately left the dungeon
-      formation alone with the note *"a corridor is not a country"* - that was my judgement, not a
-      decision, and the owner's direction replaces it. The dungeon movement lock and
-      `_move_party_followers_dungeon` are what slice 4 removes.
-      **Verify before building - the entry half is already there:** `handle_dungeon_enter` has an
-      `if _is_party_leader(peer_id)` branch that validates every member, enters the leader and
-      places each follower on an adjacent tile in the SAME `instance.active_players`, and
-      `_try_start_dungeon_coop` already runs shared party combat underground. So "enter the same
-      dungeon" is built; the open parts are:
-        1. **independent movement inside** - drop the dungeon `_party_follower_denied` and the
-           snake, as slice 1 did above ground;
-        2. **seeing each other** - whether the dungeon floor renderer draws other party members
-           at all. Check this FIRST: it is the half the owner named and the only one that is not
-           obviously a deletion;
-        3. **the proximity pull underground** - `_try_start_dungeon_coop` is gated differently
-           from the overworld pull, so it needs the same "any member, within a radius" treatment;
-        4. **a non-leader entering** - the entry branch is gated on `_is_party_leader`, which has
-           the same shape as the overworld pull's old gate.
+      ⛑ **A JOINER ARRIVES BETWEEN ROUNDS.** `_party_all_submitted` gates the round on the member
+      list as it stands, so they are marked as having already acted for the round in progress and
+      act from the next - which is also the honest reading of having just run in. They are dealt
+      their own deck and opening hand, or they would be in the fight and unable to act in it.
 
-      <!-- audited: 2026-09-19 --> Verified still open: this is the MODEL, and the mechanics under
-      it are the separate "HALF TWO" item below. Neither is built; the shipped part it mentions is
-      half one (dungeon party combat).
-      *"For party play we should probably go in the style of Dragon Quest IX: Sentinels of the
-      starry skies... when a party member nearby enters combat it will pull nearby party members
-      into the combat as well (we will have to figure out the best way to handle this as players
-      may both be moving around at the same time and could possibly enter 2 separate combats very
-      close to the same time). Party Players could also join mid-battle as they could visually tell
-      on the map if a player was in battle and they could run into them to enter it."*
+      **Verified-before-built, and most of it already existed:** dungeon party ENTRY places a whole
+      party into one instance, `_try_start_dungeon_coop` already ran shared combat underground, and
+      the dungeon payload already drew other party members (added when the owner reported *"map
+      shows one player sprite and its companion, no party members"*). The new work was the ENTRY
+      into combat, not the fight.
 
-      **What this decides.** Half two was already "independent movement + join-in-progress"; this
-      names the MODEL, which settles the open question of how a party that walks around separately
-      ever fights together. Two mechanisms, and the second is the fallback for the first:
+      Probe: `the_party_fights_together.gd`, covering all four pieces, proven to fire on the HP
+      re-scale and the between-rounds rule.
 
-      * **PROXIMITY PULL.** A party member entering combat drags nearby members in with them.
-      * **RUN-IN JOIN.** A member who was not pulled can see on the map that a teammate is
-        fighting and walk into them to join. This is also what makes the pull radius forgiving:
-        being out of range is not an exclusion, it is a short walk.
-
-      **⛑ THE RACE THE OWNER NAMED IS THE REAL DESIGN PROBLEM, and it is not an edge case.** Two
-      members moving at once can each trigger an encounter within the same tick, so "pull nearby
-      members in" is ambiguous by construction - each fight tries to claim the other's owner.
-      Options, cheapest first:
-        1. **One combat per party, ever.** The party holds a single combat slot; whoever claims it
-           first wins and the second trigger JOINS that fight instead of starting one. Simplest,
-           and it cannot produce a split party. Cost: the second monster is either discarded or
-           added to the first fight.
-        2. **Claim with a tie-break.** Both start, and a deterministic rule (lower peer id, or the
-           earlier server-stamped tick) folds the loser's encounter into the winner's.
-        3. **Let both exist and let members choose.** Most faithful to two people genuinely far
-           apart; most work, and it needs the map to show WHICH fight is which.
-      Whichever is chosen, **the decision belongs to the server on one clock** - the bug this
-      shape produces is two clients each believing they started the fight, which is exactly the
-      class `_combat_ui_busy` was introduced to kill.
-
-      **⛑ CHECK WHAT ALREADY EXISTS FIRST.** Party combat is BUILT - shared monster debuffs,
-      per-member rewards, the flatten-log-per-recipient path, `_PARTY_SHARED_MONSTER_KEYS`. The
-      new work is the ENTRY into it, not the fight. Read the existing half-one notes below before
-      designing.
-
-      **Prerequisite:** independent movement. **Confirmed by the owner 2026-09-18:** *"if we get
-      that party play working party members will no longer blindly follow the leader they will
-      instead be able to move around and act as we discussed."* So follow-the-leader is REPLACED,
-      not supplemented - which is what makes the proximity pull and the run-in join meaningful.
-      A **Muster Sigil** (a scribed item letting a member join you from anywhere) is parked against
-      this arc rather than the crafting one; decide it when the movement half works.
+      **Not built, and deliberately:** the **Muster Sigil** (join from anywhere) was parked against
+      this arc. With the run-in join working, decide whether it is still wanted before building it.
 
 - [ ] **PARTY PLAY — HALF TWO (the mechanics underneath the model above): independent movement + join-in-progress combat.**
       <!-- audited: 2026-09-19 --> Verified still open: independent movement and join-in-progress

@@ -5736,6 +5736,36 @@ func handle_move(peer_id: int, message: Dictionary):
 					send_to_peer(_mpid2, {"type": "text", "message": "[color=#FFA500]%s is ready to leave — stand beside them.[/color]" % character.name})
 			return
 
+	# ⚑ WALK INTO A FIGHTING PARTY MEMBER TO JOIN THEIR FIGHT.
+	#
+	# Owner 2026-09-18: *"Party Players could also join mid-battle as they could visually tell on
+	# the map if a player was in battle and they could run into them to enter it."* This is the
+	# half that makes the proximity pull's radius forgiving - being out of range is a short walk,
+	# not an exclusion.
+	#
+	# ⛑ BEFORE THE COLLISION CHECK BELOW, because party members do not block each other and the
+	# step would otherwise simply happen, landing the player on top of a fight they are not in.
+	var _join_pid := _get_player_at(new_pos.x, new_pos.y, peer_id)
+	if _join_pid != -1 and characters.has(_join_pid) and not character.in_combat:
+		var _join_leader: int = combat_mgr.party_combat_membership.get(_join_pid, -1)
+		var _same_party: bool = _party_leader_of(peer_id) != -1 				and _party_leader_of(peer_id) == _party_leader_of(_join_pid)
+		if _same_party and _join_leader != -1 and combat_mgr.active_party_combats.has(_join_leader):
+			var _jres = combat_mgr.join_party_combat_in_progress(_join_leader, peer_id, character)
+			if _jres.get("success", false):
+				var _jcombat: Dictionary = _jres.get("combat", {})
+				_send_party_combat_start(_join_leader, _jcombat.get("members", []),
+					_jcombat.get("monster", {}), [])
+				for _mp in _jcombat.get("members", []):
+					if _mp != peer_id and characters.has(_mp):
+						send_to_peer(_mp, {"type": "text", "message":
+							"[color=#7CFF9B]%s runs in to join the fight![/color]" % character.name})
+				return
+			# A refusal is SAID, not swallowed: "the fight ended as you arrived" is a different
+			# thing from the game ignoring your step, and the player is about to wonder which.
+			if String(_jres.get("message", "")) != "":
+				send_to_peer(peer_id, {"type": "text", "message":
+					"[color=#FFA500]%s[/color]" % _jres.get("message", "")})
+
 	# Check for player collision (can't move onto another player's space)
 	# Party members don't block each other (handled by snake movement)
 	# v0.9.726 — EXCEPT on tiles cardinally adjacent to a station: players OVERLAP there
@@ -5898,10 +5928,13 @@ func handle_move(peer_id: int, message: Dictionary):
 	# work out which.
 	#
 	# ⛑ AND THE TWO HELPERS ARE DELETED WITH IT, because this was their only caller - checked,
-	# not assumed. My first note here said the DUNGEON path still used them; it does not, it has
-	# its own `_move_party_followers_dungeon`, and dungeons keep their formation for now. Leaving
-	# `_move_party_followers` and `_pull_stragglers_into_post` in place would have left 67 lines
-	# of plausible, working, never-executed party-movement code for the next person to find.
+	# not assumed. Leaving `_move_party_followers` and `_pull_stragglers_into_post` in place would
+	# have left 67 lines of plausible, working, never-executed party-movement code for the next
+	# person to find.
+	#
+	# The DUNGEON snake went the same way later the same day, when the owner asked for dungeons
+	# to follow the overworld model. This note used to say dungeons kept their formation; they do
+	# not any more.
 
 	# Audit #14 PvP Slice D.2 (v0.9.557) — auto-claim any PvP loot sack on
 	# the tile the player just stepped onto. Fires once per move; sack is
@@ -8973,6 +9006,16 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 				"battler_id": other_char.battler_id,
 				"companion": comp_data,
 				"in_my_party": is_party_mate,
+				# ⚑ IS THIS PLAYER FIGHTING RIGHT NOW? The Dragon Quest IX model needs it on the
+				# wire: owner 2026-09-18, *"Party Players could also join mid-battle as they could
+				# visually tell on the map if a player was in battle and they could run into them
+				# to enter it."* Being out of pull range is meant to be a short walk rather than a
+				# shut door, and a walk you cannot see the destination of is neither.
+				#
+				# ⛑ The DUNGEON payload has carried this since party members were put on the
+				# underground map; the overworld entry never had it, so the one place the pull
+				# actually happens was the one place you could not see a fight.
+				"in_combat": bool(other_char.in_combat),
 				# Audit #14 PvP Slice C V1 (v0.9.553) — x/y already present
 				# above; client uses them to detect adjacency for the PvP
 				# attack action bar surface in apex zone.
@@ -31620,9 +31663,9 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot move while in combat!"})
 		return
 
-	# Party followers can't move independently in dungeons
-	if _party_follower_denied(peer_id, "movement"):
-		return
+	# ⚑ FOLLOWERS MOVE ON THEIR OWN UNDERGROUND TOO (owner 2026-09-19). The overworld lock went
+	# with party slice 1; this is the same change for dungeons, and it supersedes my own "a
+	# corridor is not a country" scoping call, which was a judgement rather than a decision.
 
 	# Accept direction strings from client
 	var direction = message.get("direction", "")
@@ -31694,9 +31737,13 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	character.dungeon_x = new_x
 	character.dungeon_y = new_y
 
-	# Move party followers in snake formation (dungeon)
-	if _is_party_leader(peer_id):
-		_move_party_followers_dungeon(peer_id, old_x, old_y)
+	# ⛑ THE DUNGEON SNAKE IS GONE TOO - deleted with its only caller, not left dormant.
+	#
+	# It teleported each follower onto the person-ahead's tile on every step, which makes the
+	# independent movement above meaningless: a follower would be free to walk and then yanked
+	# back the next time the leader moved. Same reasoning as the overworld snake in slice 1, and
+	# the same treatment - an unreachable copy of live party-movement code is a trap for whoever
+	# touches this next.
 
 	# Dungeon revamp B — auto-collect any floor loot on the tile just stepped onto.
 	_auto_pickup_floor_items(peer_id, instance_id, character.dungeon_floor, new_x, new_y)
@@ -36166,15 +36213,21 @@ func _try_start_dungeon_coop(peer_id: int, character, monster: Dictionary, is_bo
 	Gating differs from the overworld in one way that matters: a teammate must be in THIS instance
 	on THIS floor. Party members can be a floor apart — followers only track the leader while the
 	leader is moving — and a fight on floor 3 must not conscript someone standing on floor 1."""
-	if not _is_party_leader(peer_id) or not active_parties.has(peer_id):
+	# ⚑ ANY MEMBER, NOT JUST THE LEADER - dungeons follow the overworld now. Owner 2026-09-19:
+	# *"Regarding dungeons we will want dungeon party combat to be like on the overworld."* The
+	# old `_is_party_leader` gate was correct while followers were dragged behind the leader
+	# underground and could not meet a monster alone; with independent movement below it is the
+	# same line that made a follower's encounter start nothing at all.
+	var _dleader: int = _party_leader_of(peer_id)
+	if _dleader == -1 or not active_parties.has(_dleader):
 		return false
 	if not characters.has(peer_id) or not character.in_dungeon:
 		return false
 
-	var members: Array = [peer_id]                      # leader first — becomes leader_id
+	var members: Array = [peer_id]                      # the FINDER leads the fight
 	var chars_map: Dictionary = {peer_id: character}
 	var skipped: Array = []
-	for mpid in active_parties[peer_id].get("members", []):
+	for mpid in active_parties[_dleader].get("members", []):
 		if mpid == peer_id or not characters.has(mpid):
 			continue
 		var ch = characters[mpid]
@@ -47444,59 +47497,6 @@ func _handle_party_combat_defeat(leader_id: int, messages: Array, party_members:
 				"character": characters[pid].to_dict()
 			})
 			save_character(pid)
-
-func _move_party_followers_dungeon(leader_peer_id: int, old_leader_x: int, old_leader_y: int):
-	"""Move party followers in snake formation within a dungeon."""
-	if not active_parties.has(leader_peer_id):
-		return
-	var party = active_parties[leader_peer_id]
-	var members = party.members
-
-	# Build old positions BEFORE moving anyone
-	var old_positions = []
-	for pid in members:
-		if characters.has(pid):
-			old_positions.append(Vector2i(characters[pid].dungeon_x, characters[pid].dungeon_y))
-		else:
-			old_positions.append(Vector2i(0, 0))
-
-	# Override leader's old position (we already moved the leader)
-	old_positions[0] = Vector2i(old_leader_x, old_leader_y)
-
-	# Move each follower to the previous person's old position
-	for i in range(1, members.size()):
-		var pid = members[i]
-		if not characters.has(pid) or not characters[pid].in_dungeon:
-			continue
-		var follower = characters[pid]
-
-		# Regen for follower (same rate as dungeon movement)
-		var early_game_mult = _get_early_game_regen_multiplier(follower.level)
-		var house_regen_mult = 1.0 + (follower.house_bonuses.get("resource_regen", 0) / 100.0)
-		var dungeon_hp_regen_percent = 0.005 * early_game_mult * house_regen_mult
-		var dungeon_regen_percent = 0.01 * early_game_mult * house_regen_mult
-		follower.current_hp = min(follower.get_total_max_hp(), follower.current_hp + max(1, int(follower.get_total_max_hp() * dungeon_hp_regen_percent)))
-		if not follower.cloak_active:
-			follower.current_mana = min(follower.get_total_max_mana(), follower.current_mana + max(1, int(follower.get_total_max_mana() * dungeon_regen_percent)))
-			follower.current_stamina = min(follower.get_total_max_stamina(), follower.current_stamina + max(1, int(follower.get_total_max_stamina() * dungeon_regen_percent)))
-			follower.current_energy = min(follower.get_total_max_energy(), follower.current_energy + max(1, int(follower.get_total_max_energy() * dungeon_regen_percent)))
-
-		follower.dungeon_x = old_positions[i - 1].x
-		follower.dungeon_y = old_positions[i - 1].y
-
-		# Egg steps
-		follower.process_egg_steps(1)
-
-	# ⚑ EVERYONE IS PLACED BEFORE ANYONE IS TOLD. The state send used to sit inside the loop
-	# above, so follower 1 was sent a floor on which followers 2..n had not moved yet - each
-	# member saw the ones behind them a step in the past. Harmless while nobody was DRAWN,
-	# which was true until `dungeon_state` started carrying `allies`; now it is a party whose
-	# sprites lag by one step for everyone but the leader.
-	for i in range(1, members.size()):
-		if characters.has(members[i]) and characters[members[i]].in_dungeon:
-			_send_dungeon_state(members[i])
-
-# ===== ROAD PATHS & MERCHANT EQUALIZATION =====
 
 func _player_post_has_market(post_key: String) -> bool:
 	"""Check if a player-built post has a market station tile inside it."""

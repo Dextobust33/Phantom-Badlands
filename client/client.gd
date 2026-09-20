@@ -35206,7 +35206,13 @@ func display_changelog():
 	# v0.9.831 - the last of it: the FIRST fight of a session had no cached map to redraw, and no
 	#            way to ask for one.
 	# v0.9.832 - the help pop-ups could be turned off and never back on.
-	display_game("[color=#00FF00]v0.9.832[/color] [color=#808080](Current)[/color]")
+	# v0.9.833 - the party arc finishes: see a teammate fighting on the map and run in to join,
+	#            and dungeons follow the same model as the overworld.
+	display_game("[color=#00FF00]v0.9.833[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOU CAN SEE A TEAMMATE FIGHTING — AND RUN IN TO JOIN THEM.[/color] The party arc finishes here. A party member who is in combat is now [b]marked on your map[/b], and hovering them says so; [b]walk into them and you join that fight[/b], even though it is already under way. That is what makes the pull radius forgiving — being too far to be dragged in is a short walk, not a locked door. You join [b]between rounds[/b], with your own hand dealt, and the monster does [b]not[/b] gain health when you arrive: turning up to help makes the fight shorter, which is the whole point of running.")
+	display_game("  [color=#FF8000]★ DUNGEONS NOW WORK THE SAME WAY.[/color] Underground your party no longer walks in single file behind the leader — everyone moves on their own, and whoever meets a monster pulls the nearby party into that fight, exactly as on the surface. Party members were already drawn on the dungeon map; now they can act independently between those encounters.")
+	display_game("")
+	display_game("[color=#808080]v0.9.832[/color]")
 	display_game("  [color=#FF4444]★ FIXED: you could turn the help pop-ups off, but never back on.[/color] Every teaching pop-up carries a [b]don't show these again[/b] button, and it works — for the whole account, so a player who knows the game is not taught it on every new character. But the message it left behind said [i]\"turn them back on in Settings\"[/i], and Settings had no such control. [b]It does now:[/b] [color=#C8A24A]Settings → Game → [9] Help Pop-ups[/color], showing whether they are on and letting you flip them either way. [color=#808080]This is a different setting from [5] Tutorial on New Character, which decides whether a brand-new character is offered the walkthrough — that one has always been skippable from its opening prompt.[/color]")
 	display_game("")
 	display_game("[color=#808080]v0.9.831[/color]")
@@ -47919,6 +47925,12 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 	var party_tag = ""
 	if data.get("in_my_party", false):
 		party_tag = " [color=#00FF00](party)[/color]"
+	# ⚑ AND SAY WHY THEY ARE TINTED. The map marks a party member who is fighting, but a
+	# colour alone only tells you that something is different - the hover is where it says what,
+	# and, more usefully, what you can DO about it. Only for party members, because a stranger's
+	# fight is not one you can walk into.
+	if data.get("in_combat", false) and data.get("in_my_party", false):
+		party_tag += " [color=#FF8A6B](fighting — walk into them to join)[/color]"
 	# Player name uses variant color so the tooltip matches the recolored art.
 	lines.append("[b][color=%s]%s[/color][/b]%s" % [v_color, pname, party_tag])
 	if v_name != "":
@@ -48564,11 +48576,30 @@ func _sync_map_sprites_overlay() -> void:
 			"battler_id": str(entry.get("battler_id", "")),
 			"level": int(entry.get("level", 0)),
 			"in_my_party": bool(entry.get("in_my_party", false)),
+			# ⚑ IS THIS PLAYER FIGHTING? Kept on the sprite so the hover can say so as well as
+			# the marker showing it - "run over and join" needs a destination you can identify,
+			# not just a dot that is a different colour.
+			"in_combat": bool(entry.get("in_combat", false)),
 			"appearance_variant": str(entry.get("appearance_variant", "")),
 			"appearance_color": str(entry.get("appearance_color", "")),
 			"appearance_color2": str(entry.get("appearance_color2", "")),
 			"appearance_pattern": str(entry.get("appearance_pattern", "solid")),
 		})
+		# ⚑ A PARTY MEMBER IN A FIGHT IS MARKED ON THE MAP. Owner 2026-09-18, naming the
+		# model: *"Party Players could also join mid-battle as they could visually tell on the map
+		# if a player was in battle and they could run into them to enter it."*
+		#
+		# ⛑ A TINT ON THE SPRITE, NOT A NEW WIDGET. The map already has to carry threat marks,
+		# bounty marks, corpses and sacks; another floating glyph competes with those for the same
+		# few pixels. Modulating the sprite the player is already looking at says "that one" with
+		# nothing new to learn, and it costs no space at any zoom.
+		#
+		# Only for PARTY members: a stranger's fight is not something you can join, so marking it
+		# would be pointing at a door that is not there.
+		if bool(entry.get("in_combat", false)) and bool(entry.get("in_my_party", false)):
+			slot.modulate = Color(1.0, 0.55, 0.45, 1.0)
+		else:
+			slot.modulate = Color(1, 1, 1, 1)
 		var rcomp = entry.get("companion", {})
 		_apply_companion_trail(_remote_companion_pool[slot_idx], rcomp, Vector2(px, py), rfacing, cell_w, line_h, sprite_px)
 		_remote_companion_pool[slot_idx].set_meta("companion_data", rcomp)
