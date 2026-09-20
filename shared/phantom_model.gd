@@ -41,10 +41,31 @@ static func max_depth_for(distance_from_origin: float) -> int:
 
 ## The monster level on a given floor.
 ##
-## ⛑ THIS IS NOT AN OVERWORLD LEVEL AND MUST NEVER BE READ AS ONE. The Phantom has its own band by
-## the owner's decision, so `reference_monster_curve.json` is not consulted here and is not
-## disturbed by anything this returns. Any consumer that treats the result as an overworld level —
-## XP formulas, threat, post anchoring — is reading it wrong.
+## ⚑ "ITS OWN BAND" MEANS ITS OWN CHOICE OF **LEVELS**, NOT A PARALLEL STAT CURVE — and that
+## distinction is the whole safety of this feature. Established by auditing the five surfaces that
+## read a monster's level, 2026-09-19, BEFORE any generation was written:
+##
+##   `generate_monster_by_name(name, level)` derives stats from `compute_anchored_stats(base, level)`
+##   AND xp from `_calculate_experience_reward(..., level)`. So a monster generated at level 73 IS
+##   a level-73 monster in every respect - correct stats, correct XP, correctly dangerous.
+##
+## So a Phantom is dangerous by putting HIGHER-LEVEL monsters in front of you than the country
+## outside would, not by inventing stats the curve has never seen. The consequences, all checked:
+##
+##   XP payout          correct - it really is a level-73 kill
+##   threat / hotzones  never sees it; those are functions of world POSITION
+##   post anchoring     same - `get_post_anchored_level(x, y)` is positional
+##   death-log gap      correct - the player really did die 43 levels above themselves
+##   quest "kill a N"   correct
+##
+## ⚡ SO THE DANGER IS NOT HERE. It is on the REWARD side: eggs and gear "beyond the normal
+## tier/sub-tier ceiling" are player power outside anything the curve knows, and that is what needs
+## watching. This function is safe precisely because it only ever picks a level and lets the
+## ordinary generator do the rest.
+##
+## ⛑ WHICH MAKES ONE RULE ABSOLUTE FOR GENERATION: phantom floors must spawn through
+## `generate_monster_by_name` at the level this returns. Hand-building a monster's stats to "make
+## it phantom-ish" would break every line of the table above at once.
 ##
 ## The shape is the archived design's: bridge from the local wilderness level at the top to
 ## something well beyond it at the bottom, with INVESTMENT deciding how far beyond. So a barely

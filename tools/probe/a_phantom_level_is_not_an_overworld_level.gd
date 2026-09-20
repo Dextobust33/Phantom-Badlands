@@ -102,33 +102,46 @@ func _init() -> void:
 		_ok("the first floor always equals the local level")
 
 	print("")
-	print("===== 3. THE AUDIT, ARMED FOR WHEN THIS GOES LIVE =====")
-	# ⚑ The surfaces that read a monster's level and would be WRONG for a phantom one. Listed by
-	# name so that whoever wires generation has the checklist in front of them rather than having
-	# to rediscover it.
-	var surfaces := [
-		"XP payout (a phantom level is not worth an overworld level's XP)",
-		"threat / hotzone escalation (a phantom is not a thing happening in the country)",
-		"post anchoring (get_post_anchored_level must not see phantom levels)",
-		"the death log's level-gap column (parity against WHICH level?)",
-		"quest 'kill a level N' targets",
-	]
+	print("===== 3. GENERATION GOES THROUGH THE ORDINARY GENERATOR =====")
+	# ⚑ THE AUDIT WAS DONE 2026-09-19, BEFORE ANY GENERATION EXISTED, and it changed what this
+	# section should check. The original version asserted "nothing spawns from a phantom level
+	# yet", which is a countdown rather than a guard - it would have passed until the day it
+	# mattered and then demanded a checklist nobody had done.
+	#
+	# What the audit found: `generate_monster_by_name(name, level)` derives stats AND xp from that
+	# level, so a monster generated at level 73 IS a level-73 monster - correct stats, correct XP,
+	# correctly dangerous. Threat, hotzones and post anchoring are functions of world POSITION and
+	# never see a phantom at all. So all five surfaces are correct BY CONSTRUCTION, on one
+	# condition: phantom floors spawn through the ordinary generator.
+	#
+	# ⚡ THE FAILURE THIS NOW CATCHES is the tempting one - hand-building a monster's stats to
+	# "make it phantom-ish". That single shortcut breaks XP, the death log's gap column and quest
+	# targets simultaneously, and every one of them silently.
 	var srv := FileAccess.get_file_as_string("res://server/server.gd")
-	# Live generation is the trigger: the state message quoting a level to the player is fine, a
-	# SPAWNED monster carrying one is not.
-	var generating: bool = srv.find("phantom_floor_monster") >= 0 or srv.find("_spawn_phantom_") >= 0
-	print("  phantom levels reaching generation: %s" % str(generating))
-	if generating:
-		_fail("a phantom level now reaches monster generation. Before shipping that, check every "
-			+ "surface below reads the RIGHT level:")
-		for sfc in surfaces:
-			_fail("   - %s" % sfc)
+	# The hook is INSIDE the ordinary floor spawner, not a forked one - one code path for phantom
+	# and ordinary floors, so they cannot drift apart. So the probe reads that function.
+	var pi := srv.find("func _spawn_dungeon_floor_monsters(")
+	if pi < 0:
+		_fail("_spawn_dungeon_floor_monsters is gone - re-point this probe")
 	else:
-		_ok("nothing spawns from a phantom level yet - this probe is armed for when it does")
-		print("")
-		print("  When it does, these are the surfaces to check:")
-		for sfc in surfaces:
-			print("    - %s" % sfc)
+		var pj := srv.find("
+func ", pi + 8)
+		var pbody := srv.substr(pi, (pj - pi) if pj > pi else 4000)
+		if pbody.find("generate_monster_by_name(") < 0:
+			_fail("phantom generation does not use generate_monster_by_name. Stats built by hand "
+				+ "break XP, the death-log gap column and quest targets at once, all silently")
+		else:
+			_ok("phantom floors spawn through the ordinary generator")
+		# The level must come from the model, or the floor is just an ordinary dungeon.
+		if pbody.find("floor_level(") < 0:
+			_fail("phantom generation does not ask the model for its level")
+		else:
+			_ok("the level comes from PhantomModel.floor_level")
+		# And nothing may hand-write the stats the generator is responsible for.
+		for forbidden in ["\"max_hp\"] =", "\"strength\"] =", "\"defense\"] ="]:
+			if pbody.find(forbidden) >= 0:
+				_fail("phantom generation assigns %s directly - that is the hand-built-stats "
+					% forbidden.strip_edges() + "failure this section exists to catch")
 
 	print("")
 	if not _fails.is_empty():

@@ -9654,13 +9654,42 @@ something was dropped, and it sat unnoticed for eleven days.
       escalation, post anchoring, the death log's level-gap column, and quest "kill a level N"
       targets.
 
-      ▶ **SLICE 2c — GENERATION. The last piece, and the one to do with care.** The Phantom needs
-      floors built from `species_weights` and `floor_level`, a guaranteed egg at
-      `guaranteed_egg_depth`, and gear scaled by `gear_bonus`. **That is the step the probe above
-      is waiting for**, and it must not ship before the five surfaces are checked.
-      Also still unbuilt: the CLIENT surfaces for both slices - listing/buying charters, and the
-      feed UI. The server handlers exist (`list_prefab_posts`, `buy_prefab_post`, `feed_phantom`)
-      and nothing calls them.
+      ✅ **THE FIVE-SURFACE AUDIT IS DONE — and it made the feature SAFER than the decision
+      implied.** Carried out 2026-09-19 BEFORE any generation was written, which is the whole
+      reason it changed the design instead of producing a bug list.
+
+      **The finding: "its own band" should mean its own choice of LEVELS, not a parallel stat
+      curve.** `generate_monster_by_name(name, level)` derives stats from `compute_anchored_stats`
+      AND xp from `_calculate_experience_reward`, both from that level - so a monster generated at
+      level 73 IS a level-73 monster in every respect. A Phantom is therefore dangerous by
+      fielding HIGHER-LEVEL monsters than the country outside would, not by inventing creatures
+      the curve has never seen. Consequences, all checked:
+
+          XP payout          correct - it really is a level-73 kill
+          threat / hotzones  never sees it; those are functions of world POSITION
+          post anchoring     same - get_post_anchored_level(x, y) is positional
+          death-log gap      correct - the player really did die 43 levels above themselves
+          quest "kill a N"   correct
+
+      ⚡ **SO THE RISK IS NOT ON THE MONSTER SIDE AT ALL.** It is on the REWARD side: eggs and gear
+      *"beyond the normal tier/sub-tier ceiling"* are player power outside anything the curve
+      knows. That is the thing to watch, and it is still unbuilt.
+
+      ✅ **SLICE 2c BUILT (held): generation, as an OVERRIDE inside the existing spawner.**
+      `_spawn_dungeon_floor_monsters` takes its level from `PhantomModel.floor_level` and its
+      species from `_phantom_species_pick` when the instance carries a `phantom` block. **Not a
+      forked spawner** - one code path for phantom and ordinary floors, so they cannot drift.
+      Species weighting is competitive rather than exclusive: the unfed pool keeps a fixed share of
+      every roll, so a themed phantom still surprises.
+      Probe: `a_phantom_level_is_not_an_overworld_level.gd`, re-pointed from the countdown it used
+      to be ("nothing generates yet") to the rule that actually keeps it safe - phantom floors must
+      spawn through `generate_monster_by_name`, and the spawner must never assign hp/strength/
+      defense itself. Proven to fire on that exact shortcut.
+
+      ▶ **WHAT IS LEFT.** The reward side (`egg_quality_bonus` / `gear_bonus` are written and
+      called by nothing), a way to ENTER a post's Phantom, and the client surfaces for all three
+      slices - charter list/buy, the feed UI, and the descend. Server handlers exist for the first
+      two (`list_prefab_posts`, `buy_prefab_post`, `feed_phantom`) and nothing calls them.
 
       ▶ **SLICE 2 — THE PHANTOM ITSELF. Remaining open questions** (from the archive, still open):
         * valid placement area (min distance from existing posts, terrain rules)

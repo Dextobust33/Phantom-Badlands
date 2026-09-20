@@ -38784,6 +38784,34 @@ func _award_floor_item(peer_id: int, item: Dictionary) -> bool:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]%s lies here but your inventory is full.[/color]" % String(data.get("name", "An item"))})
 			return false
 
+## The species a PHANTOM floor rolls, from what has been fed to it. "" means "not a phantom, or
+## nothing fed" - in which case the ordinary floor selection runs untouched.
+##
+## ⛑ WEIGHTED, NOT EXCLUSIVE. Every fed species competes on its share, and the ordinary pool
+## keeps a real chance of winning - the ground remembers what it was given, it does not forget
+## everything else. A phantom that spawned one creature would be a worse place to play than one
+## with a strong theme, and the fiction says the same.
+func _phantom_species_pick(instance_id: String) -> String:
+	if not PHANTOM_POSTS_ENABLED or not active_dungeons.has(instance_id):
+		return ""
+	var ph: Dictionary = active_dungeons[instance_id].get("phantom", {})
+	if ph.is_empty():
+		return ""
+	var weights: Dictionary = PhantomModelScript.species_weights(ph.get("investment", {}))
+	if weights.is_empty():
+		return ""
+	# The unfed pool gets a fixed share of the roll, so a heavily themed phantom still surprises.
+	var total: float = 2.0
+	for k in weights.keys():
+		total += float(weights[k])
+	var roll: float = randf() * total
+	for k in weights.keys():
+		roll -= float(weights[k])
+		if roll <= 0.0:
+			return String(k)
+	return ""
+
+
 func _dungeon_floor_species(instance_id: String, native: String, grade_tier: int) -> String:
 	"""Which species this particular floor monster is.
 
@@ -38791,8 +38819,14 @@ func _dungeon_floor_species(instance_id: String, native: String, grade_tier: int
 	the same grade, so a floor has some texture and the eggs it drops are not all one creature.
 	Every species that actually spawns is remembered on the instance, because the FLOOR eggs are
 	drawn from what was really down there rather than from a fixed list."""
-	var pick: String = DungeonDatabaseScript.pick_floor_species(
-		native, monster_db.tier_species_names(grade_tier))
+	# ⚑ A PHANTOM REMEMBERS WHAT IT WAS FED. *"More harpy eggs than goblin means harpies roam
+	# more, goblins remain but rarer."* The weighting is applied HERE rather than in a forked
+	# spawner, so a phantom floor and an ordinary floor go through one code path and cannot drift
+	# apart - which is the failure this codebase keeps paying for.
+	var pick: String = _phantom_species_pick(instance_id)
+	if pick == "":
+		pick = DungeonDatabaseScript.pick_floor_species(
+			native, monster_db.tier_species_names(grade_tier))
 	if active_dungeons.has(instance_id):
 		var seen: Array = active_dungeons[instance_id].get("spawned_species", [])
 		if not (pick in seen):
@@ -38869,6 +38903,25 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 	var fabled_boss_name = String(active_dungeons.get(instance_id, {}).get("fabled_boss_name", ""))
 	var level_mult = 1.0 + (floor_num * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR)
 	var monster_level = int(dungeon_level * level_mult)
+	# ⚑ A PHANTOM PICKS ITS OWN LEVELS - and picks ONLY the level, which is what makes this
+	# safe. `generate_monster_by_name` below derives stats AND xp from whatever number it is given,
+	# so a phantom monster at level 73 is a level-73 monster in every respect: correctly dangerous,
+	# correctly rewarding, correctly reported by the death log. Audited across all five surfaces
+	# that read a monster level, 2026-09-19, BEFORE this line was written.
+	#
+	# ⚡ THE RULE THAT KEEPS IT TRUE: never hand-build the stats. The temptation is to make a
+	# phantom monster "extra" by writing hp/strength/defense directly, and that one shortcut breaks
+	# XP, the death-log gap column and quest targets simultaneously and silently. A Phantom is
+	# dangerous by fielding HIGHER-LEVEL monsters than the country outside would, not by inventing
+	# creatures the curve has never seen. `a_phantom_level_is_not_an_overworld_level.gd` fails if
+	# this function ever assigns those stats itself.
+	var _ph: Dictionary = active_dungeons.get(instance_id, {}).get("phantom", {})
+	if PHANTOM_POSTS_ENABLED and not _ph.is_empty():
+		monster_level = PhantomModelScript.floor_level(
+			floor_num + 1,
+			int(_ph.get("max_depth", 1)),
+			int(_ph.get("local_level", dungeon_level)),
+			_ph.get("investment", {}))
 
 	# Find entrance and exit positions for distance checks
 	var entrance_pos = Vector2i(-1, -1)
