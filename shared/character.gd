@@ -5349,7 +5349,7 @@ func get_companion_bonus(bonus_type: String) -> float:
 	# covers all 111 variants, instead of VARIANT_STAT_MULTIPLIERS, a per-name table that had no
 	# entry for 90% of them. Rank comes from the shared table rather than a third inline copy.
 	var _dt = load("res://shared/drop_tables.gd")
-	var multiplier = _dt.companion_variant_mult(active_companion)
+	var multiplier = _dt.companion_stat_mult(active_companion)
 	# ONE ladder for companion quality: `PowerRank.power_mult(tier, rank)`. It used to be a rank
 	# table that never read tier at all, which is how an H9 came to beat a G1 on every axis.
 	var sub_tier = active_companion.get("sub_tier", 1)
@@ -5539,7 +5539,7 @@ static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int 
 	# A legendary-variant companion used to have exactly the same health bar as a common one of
 	# the same tier and level, which is most of why rare variants were not worth hunting.
 	var _dt = load("res://shared/drop_tables.gd")
-	var variant_mult: float = _dt.companion_variant_mult(companion)
+	var variant_mult: float = _dt.companion_stat_mult(companion)
 	return maxi(10, int(round(base * companion_hp_share(bonuses) * sub_mult * bonus_mult * variant_mult)))
 
 func get_companion_max_hp() -> int:
@@ -5690,6 +5690,17 @@ func _hatch_egg(egg: Dictionary) -> Dictionary:
 		# (drop_tables.create_egg / character.gd:1871 backfill) and carries
 		# the cosmetic rarity through to the live companion.
 		"border_tier": int(egg.get("border_tier", 0)),
+		# ⚑ WHERE IT CAME FROM, and what that is worth. Owner 2026-09-19: *"an e4 in a dungeon
+		# is not as strong as an e4 from a phantom."* A companion born in a player's Phantom
+		# carries a multiplier the grade ladder knows nothing about, so its letter stays honest
+		# while it is genuinely stronger than a duplicate found outside.
+		#
+		# ⛑ CARRIED ON THE EGG AND INHERITED HERE, rather than looked up later. The Phantom it
+		# came from can be demolished, re-stocked or owned by someone else by the time this
+		# companion is next loaded - the only moment the provenance is knowable for certain is the
+		# moment the egg is made, so it travels WITH the egg. Absent means an ordinary companion,
+		# which is every companion that exists today.
+		"phantom_power": float(egg.get("phantom_power", 0.0)),
 		"level": 1,
 		"xp": 0
 	}
@@ -5871,7 +5882,7 @@ func get_companion_effective_bonuses() -> Dictionary:
 	var base_bonuses = active_companion.get("bonuses", {}).duplicate()
 	# Same shared sources as get_companion_bonus above — see the note there.
 	var _dt = load("res://shared/drop_tables.gd")
-	var multiplier = _dt.companion_variant_mult(active_companion)
+	var multiplier = _dt.companion_stat_mult(active_companion)
 	# ONE ladder for companion quality: `PowerRank.power_mult(tier, rank)`. It used to be a rank
 	# table that never read tier at all, which is how an H9 came to beat a G1 on every axis.
 	var sub_tier = active_companion.get("sub_tier", 1)
@@ -5936,7 +5947,7 @@ func get_variant_stat_multiplier() -> float:
 		return 1.0
 	# 2026-09-03 — third consumer of the stale per-name table, missed in the first sweep and
 	# caught only because a verification probe printed 1.00x for every rarity. Derived source.
-	return load("res://shared/drop_tables.gd").companion_variant_mult(active_companion)
+	return load("res://shared/drop_tables.gd").companion_stat_mult(active_companion)
 
 func get_companion_monster_type() -> String:
 	"""Get the monster type of the active companion."""

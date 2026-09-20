@@ -159,6 +159,39 @@ static func egg_quality_bonus(depth: int, max_depth: int, investment: Dictionary
 	return clampf(d * d * d * investment_weight(investment) * 2.0, 0.0, 2.0)
 
 
+## ⚑ WHAT MAKES A PHANTOM-BORN COMPANION DIFFERENT. Owner 2026-09-19, rejecting all three of my
+## proposals: *"Eggs/companions that hatch out of them should have an additional multiplier or
+## something that makes them unique and stronger than a duplicate you would find out in a normal
+## dungeon, ie an e4 in a dungeon is not as strong as an e4 from a phantom."*
+##
+## ⚡ THIS IS A FOURTH AXIS, AND THE OTHER THREE WERE DEAD ENDS - measured, not guessed:
+##   * RANK is nearly flat. The whole spread from rank 1 to rank 9 inside a tier is **1.26x**, and
+##     `power_index` already does `clampi(rank, 1, RANKS)`, so ranks above 9 return IDENTICAL
+##     power. Pushing rank past the ceiling buys literally nothing.
+##   * TIER is where the power is (**8.16x** from H to S), but raising it would collide with the
+##     grade ladder and every surface that reads a letter.
+##   * RARITY alone abandons the design's "far stronger than an identical-tier egg" promise.
+## So the multiplier rides ALONGSIDE the grade rather than inside it: the letter stays honest, and
+## a phantom E4 is simply worth more than a dungeon E4.
+##
+## ⛑ BOUNDED AT 1.35x, AND THE NUMBER IS CHOSEN AGAINST THE LADDER. One full grade step is
+## **1.30x**, so 1.35 makes a phantom-born companion worth *about one grade above its letter* -
+## a prize a player can state in a sentence, and the most this can be without quietly becoming a
+## tenth grade. It is uncapped player power by construction, so the cap is the whole design.
+##
+## Returns 0.0 .. 0.35; the multiplier is 1.0 + this.
+const PHANTOM_POWER_CAP := 0.35
+
+
+static func companion_power_bonus(depth: int, max_depth: int, investment: Dictionary) -> float:
+	if max_depth <= 0:
+		return 0.0
+	var d: float = clampf(float(depth) / float(max_depth), 0.0, 1.0)
+	# Depth SQUARED times investment, the same shape as the gear axis: the prize belongs at the
+	# bottom, because depth-risk is the only brake the owner chose on the loop.
+	return clampf(d * d * investment_weight(investment) * PHANTOM_POWER_CAP * 1.3, 0.0, PHANTOM_POWER_CAP)
+
+
 ## How much better the GEAR is at this depth. Companions are the gearing axis: *"companions the
 ## player no longer wants are consumed to make the equipment found in the Phantom stronger."*
 static func gear_bonus(depth: int, max_depth: int, investment: Dictionary) -> float:

@@ -38682,6 +38682,21 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		var egg_species: String = _floor_egg_species(instance_id, boss_egg_monster)
 		var egg = drop_tables.get_egg_for_monster(egg_species, {},
 			_phantom_egg_rank(sub_tier, instance_id, floor_num), tier)
+		# ⚑ STAMP THE PROVENANCE ONTO THE EGG. Owner 2026-09-19: *"an e4 in a dungeon is not as
+		# strong as an e4 from a phantom."* The multiplier travels WITH the egg and is inherited at
+		# hatch, because the Phantom may be demolished or re-stocked long before the companion is
+		# next loaded - the only moment this is certainly knowable is right here.
+		#
+		# ⛑ Written only when it is NON-ZERO, so an ordinary dungeon egg is byte-identical to
+		# what it has always been. Every egg in every save today has no such key, and absent reads
+		# as 0.0 everywhere it is asked for.
+		if egg is Dictionary and not egg.is_empty():
+			var _php: Dictionary = active_dungeons.get(instance_id, {}).get("phantom", {})
+			if PHANTOM_POSTS_ENABLED and not _php.is_empty():
+				var _pw: float = PhantomModelScript.companion_power_bonus(
+					floor_num + 1, int(_php.get("max_depth", 1)), _php.get("investment", {}))
+				if _pw > 0.0:
+					egg["phantom_power"] = _pw
 		if egg.is_empty() and egg_species != boss_egg_monster:
 			# Not every species can be hatched. Fall back rather than drop nothing.
 			egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _floor_egg_rank(sub_tier), tier)

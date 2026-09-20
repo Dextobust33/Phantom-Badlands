@@ -9695,21 +9695,35 @@ something was dropped, and it sat unnoticed for eleven days.
           is and a safe descent is worth nothing.
         * **Gear** climbs with depth squared x companions consumed, the gearing axis from the design.
 
-      ⚠ **A DELIBERATE DEVIATION FROM THE ARCHIVED DESIGN, and it needs the owner's eye.** That
-      design asks for eggs *"enhanced beyond the normal tier/sub-tier ceiling"*. Egg rank BECOMES
-      the companion's `sub_tier`, worth up to **2x its stats and 2x the bonuses it grants**, and
-      `PowerRank.RANKS` is the hard top of that scale. Going past it would invent a companion power
-      tier nothing in the game has ever been balanced against — the exact uncapped-reward risk the
-      five-surface audit identified as this feature's one real danger.
+      ✅ **ANSWERED 2026-09-19 — PROVENANCE, NOT RANK.** Owner, rejecting all three options I put
+      up: *"Eggs/companions that hatch out of them should have an additional multiplier or
+      something that makes them unique and stronger than a duplicate you would find out in a normal
+      dungeon, ie an e4 in a dungeon is not as strong as an e4 from a phantom."*
 
-      **So "beyond the ceiling" is implemented as "RELIABLY AT it":** a deep, heavily-fed Phantom
-      stops rolling LOW ranks rather than inventing high ones. That is still a large prize — floor
-      eggs normally spread two ranks DOWN from the dungeon's own, so reliable top-rank eggs are
-      something no overworld dungeon produces at any rank.
-      **If literal beyond-ceiling eggs are wanted, it is one constant plus a decision about what a
-      `sub_tier` above `RANKS` means for companion scaling** — and that should be taken
-      deliberately, not inherited from a sentence written before the cap mattered.
-      Probe: `the_phantom_reward_stays_inside_the_ceiling.gd`, proven to fire by removing the clamp.
+      ⚡ **AND I HAD THE NUMBERS WRONG WHEN I ASKED.** I said egg rank was *"worth up to 2x its
+      stats"*. Measured:
+
+          rank 1 -> rank 9 WITHIN a tier      1.26x
+          tier H -> tier S                    8.16x
+          one full GRADE step                 1.30x
+          rank 10, 12, 15                     IDENTICAL to rank 9 - `power_index` already
+                                              does `clampi(rank, 1, RANKS)`
+
+      So the clamp I had been carefully defending was holding back **nothing**, and the decision I
+      was about to ask for was the wrong decision. Rank is a dead axis; tier collides with the
+      grade ladder and every surface that reads a letter.
+
+      **So provenance rides ALONGSIDE the grade.** `phantom_power` is stamped on the egg when it is
+      rolled (the only moment the provenance is certainly knowable - the Phantom may be demolished
+      or re-stocked before the companion is next loaded), inherited at hatch, and applied through
+      `DropTables.companion_stat_mult`. **Capped at 1.35x** = about **1.14 grade steps**, sized
+      against the ladder so it is a real prize and not a tenth grade.
+      ⛑ `companion_variant_mult` was the "use this everywhere" chokepoint until provenance became
+      a second axis; all four live sites in `character.gd` moved to the new total, because a site
+      left behind would make a companion stronger in combat and ordinary on its own card.
+      Probe: `a_phantom_born_companion_is_stronger.gd` - it walks the whole journey (egg → hatch →
+      companion → multiplier) because dropping it at ONE step leaves everything working and the
+      feature silently absent. Proven to fire by deleting the hatch line.
 
       ▶ **WHAT IS LEFT.** A way to ENTER a post's Phantom (nothing creates an instance carrying a
       `phantom` block yet), and the client surfaces for every slice — charter list/buy, the feed UI,

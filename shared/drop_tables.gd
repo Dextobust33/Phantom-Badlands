@@ -2974,6 +2974,33 @@ static func companion_variant_mult(c: Dictionary) -> float:
 	return variant_mult_for_rarity(variant_rarity_of(c))
 
 
+## ⚑ WHAT A COMPANION IS WORTH FOR HAVING BEEN BORN IN A PHANTOM. Owner 2026-09-19: *"an e4 in
+## a dungeon is not as strong as an e4 from a phantom."*
+##
+## Rides ALONGSIDE the grade rather than inside it, so the letter on the card stays honest and a
+## phantom-born companion is simply stronger than its duplicate. Carried on the egg and inherited
+## at hatch (`Character._hatch_egg`), because the Phantom it came from may be demolished or
+## re-stocked long before this companion is next loaded - the only moment the provenance is
+## certainly knowable is when the egg is made.
+##
+## ⛑ CAPPED AT 1.35x BY `PhantomModel.PHANTOM_POWER_CAP`, chosen against the ladder: one full
+## GRADE step is 1.30x, so this is worth about one grade above the letter and no more. It is
+## uncapped player power by construction, so the cap is the design rather than a detail.
+static func companion_phantom_mult(c: Dictionary) -> float:
+	return 1.0 + maxf(0.0, float(c.get("phantom_power", 0.0)))
+
+
+## ⚑ EVERY STAT MULTIPLIER A COMPANION CARRIES, in one place.
+##
+## `companion_variant_mult` says "use this everywhere" and was that chokepoint until provenance
+## became a second axis. Rather than add the new factor at each of its call sites - four in
+## `character.gd` and one here, and missing one would make a phantom companion stronger in combat
+## and ordinary on its own card - the sites move to this, and the variant function goes back to
+## meaning only what its name says.
+static func companion_stat_mult(c: Dictionary) -> float:
+	return companion_variant_mult(c) * companion_phantom_mult(c)
+
+
 func get_companion_border_mult(border_tier: int) -> float:
 	"""Stat multiplier for a given border tier. Used by combat damage formula
 	and HP-on-display computations to fold border-tier into the final value."""
@@ -3011,7 +3038,7 @@ func get_companion_attack_damage_v(companion: Dictionary, companion_tier: int, p
 	var base := get_companion_attack_damage(
 		companion_tier, player_level, companion.get("bonuses", {}),
 		companion_level, int(companion.get("sub_tier", 1)), int(companion.get("border_tier", 0)))
-	return maxi(1, int(float(base) * companion_variant_mult(companion)))
+	return maxi(1, int(float(base) * companion_stat_mult(companion)))
 
 func estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0, sub_tier: int = 1, border_tier: int = 0) -> Dictionary:
 	"""Estimate companion damage range for display purposes.
