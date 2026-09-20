@@ -9604,6 +9604,38 @@ something was dropped, and it sat unnoticed for eleven days.
          brought out alive" stays intact — which is what lets the loop pay forward onto new
          characters, the thing the design says is the point.
 
+      ✅ **SLICE 2a BUILT (held): the MODEL, in `shared/phantom_model.gd`.** Pure functions over a
+      post's investment record - no server state, no generation - so the whole thing is measurable
+      before a single tile exists. It encodes the four decisions:
+
+          max_depth_for(distance)      4 floors at the origin -> 20 at radius 2200
+          floor_level(...)             OWN band. Never consults the calibrated curve.
+          investment_weight(...)       SATURATING: 100x the investment is worth 1.49x
+          species_weights(...)         the ground remembers, never forgets (no species -> 0)
+          guaranteed_egg_depth(...)    always 70%+ down
+          egg_quality_bonus(...)       depth CUBED x investment
+          gear_bonus(...)              depth squared x companions
+
+      ⚡ **EVERY REWARD IS DEPTH-FIRST, INVESTMENT-SECOND, AND THAT IS FORCED BY DECISION 2.**
+      Because depth-risk is the ONLY pump guard, volume must buy nothing depth does not also
+      demand - so the investment term is MULTIPLIED by a steep depth term rather than added to it.
+      Measured: an absurd hoard (400 eggs, 100 companions) buys **0.002** on floor 2 and **1.905**
+      on floor 20. Farming the safe floors pays nothing.
+      Probe: `the_phantom_pump_is_shut.gd`, proven to fire by removing the depth term.
+
+      ⛑ **THE PROBE CAUGHT A REAL FLAW IN MY OWN MODEL** and it is the recurring shape: my comment
+      said *"investment stretches the CEILING, never the floor"* while the code lerped from
+      `depth / max_depth`, putting floor ONE five percent up the ramp. A stocked Phantom was
+      already harder the moment you stepped in - so the only way to learn what you were in would
+      have been to be told beforehand, when the whole design is that you find out by descending.
+      Fixed to `(depth - 1) / (max_depth - 1)`.
+
+      ▶ **SLICE 2b — WIRING IT.** The model is not called by anything yet. It needs: the investment
+      record persisted per post (account-level, decision 4), a feed-eggs/feed-companions surface,
+      and the dungeon generator asking these functions instead of the overworld curve.
+      ⚠ **And the consumer audit decision 1 implies**: a phantom monster's level is NOT an overworld
+      level, so every site reading one as the other (XP, threat, post anchoring) must be checked.
+
       ▶ **SLICE 2 — THE PHANTOM ITSELF. Remaining open questions** (from the archive, still open):
         * valid placement area (min distance from existing posts, terrain rules)
         * whether a Phantom is per-post / per-account / shared, and who else may enter
