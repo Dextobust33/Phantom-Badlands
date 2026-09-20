@@ -9686,10 +9686,35 @@ something was dropped, and it sat unnoticed for eleven days.
       spawn through `generate_monster_by_name`, and the spawner must never assign hp/strength/
       defense itself. Proven to fire on that exact shortcut.
 
-      ▶ **WHAT IS LEFT.** The reward side (`egg_quality_bonus` / `gear_bonus` are written and
-      called by nothing), a way to ENTER a post's Phantom, and the client surfaces for all three
-      slices - charter list/buy, the feed UI, and the descend. Server handlers exist for the first
-      two (`list_prefab_posts`, `buy_prefab_post`, `feed_phantom`) and nothing calls them.
+      ✅ **SLICE 2d BUILT (held): the reward side — the half the audit named as the real risk.**
+        * **The guaranteed egg** is placed by DEPTH, at `guaranteed_egg_depth` (70% down). Gated on
+          the floor number and never on investment: stocking a post cannot make a shallow egg
+          certain, because that would be the laundering pump with its only brake removed.
+        * **Egg quality** climbs with depth cubed x investment. Measured: a well-stocked Phantom
+          pays 0.004 at floor 3 and 1.333 at floor 20 — **296x**, so the bottom is where the value
+          is and a safe descent is worth nothing.
+        * **Gear** climbs with depth squared x companions consumed, the gearing axis from the design.
+
+      ⚠ **A DELIBERATE DEVIATION FROM THE ARCHIVED DESIGN, and it needs the owner's eye.** That
+      design asks for eggs *"enhanced beyond the normal tier/sub-tier ceiling"*. Egg rank BECOMES
+      the companion's `sub_tier`, worth up to **2x its stats and 2x the bonuses it grants**, and
+      `PowerRank.RANKS` is the hard top of that scale. Going past it would invent a companion power
+      tier nothing in the game has ever been balanced against — the exact uncapped-reward risk the
+      five-surface audit identified as this feature's one real danger.
+
+      **So "beyond the ceiling" is implemented as "RELIABLY AT it":** a deep, heavily-fed Phantom
+      stops rolling LOW ranks rather than inventing high ones. That is still a large prize — floor
+      eggs normally spread two ranks DOWN from the dungeon's own, so reliable top-rank eggs are
+      something no overworld dungeon produces at any rank.
+      **If literal beyond-ceiling eggs are wanted, it is one constant plus a decision about what a
+      `sub_tier` above `RANKS` means for companion scaling** — and that should be taken
+      deliberately, not inherited from a sentence written before the cap mattered.
+      Probe: `the_phantom_reward_stays_inside_the_ceiling.gd`, proven to fire by removing the clamp.
+
+      ▶ **WHAT IS LEFT.** A way to ENTER a post's Phantom (nothing creates an instance carrying a
+      `phantom` block yet), and the client surfaces for every slice — charter list/buy, the feed UI,
+      and the descend. Server handlers exist for the first two (`list_prefab_posts`,
+      `buy_prefab_post`, `feed_phantom`) and nothing calls them.
 
       ▶ **SLICE 2 — THE PHANTOM ITSELF. Remaining open questions** (from the archive, still open):
         * valid placement area (min distance from existing posts, terrain rules)

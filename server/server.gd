@@ -38433,7 +38433,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 			for gx in range(grid[gy].size()):
 				var _t := int(grid[gy][gx])
 				if _t == _tt_treasure or _t == _tt_scattered or _t == _tt_hoard:
-					var reh := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, false)
+					var reh := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, false, floor_num)
 					grid[gy][gx] = _tt_empty
 					_dbg_blanked += 1
 					if not reh.is_empty():
@@ -38453,7 +38453,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 		# (b) A few extra scattered items per floor (tier-scaled), on random empty tiles.
 		var extra: int = 1 + tier / 3 + (randi() % 2)  # ~1-4 per floor
 		for _i in range(extra):
-			var it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, false)
+			var it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, false, floor_num)
 			if not it.is_empty():
 				_place_floor_item_random(instance_id, floor_num, grid, it)
 		# (b2) One passive creature, so a long run can feed itself. See
@@ -38462,8 +38462,22 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 		if randf() < DUNGEON_CRITTER_FLOOR_CHANCE:
 			_spawn_dungeon_critter(instance_id, floor_num, grid)
 		# (c) Dungeon type-matched EGG as floor loot — ~35% chance per floor.
-		if boss_egg_monster != "" and randf() < 0.35:
-			var egg_it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, true)
+		# ⚑ IN A PHANTOM, DEEP ENOUGH DOWN, THE EGG IS CERTAIN. Owner's decision 3: a
+		# deterministic floor, so effort always pays and a dry run is a smaller reward rather than
+		# nothing. *"10x rarity plus pure RNG means a dry run reads as theft after a heavy
+		# investment."*
+		#
+		# ⛑ AND IT SITS DEEP BECAUSE DECISION 2 LEFT NOTHING ELSE GUARDING THE LOOP. Depth and
+		# survival risk are the ONLY brake the owner chose on the invest-extract-reinvest pump, so
+		# a guaranteed egg on a shallow floor would BE the pump. `guaranteed_egg_depth` is 70% down.
+		var _egg_chance: float = 0.35
+		var _ph_egg: Dictionary = active_dungeons.get(instance_id, {}).get("phantom", {})
+		if PHANTOM_POSTS_ENABLED and not _ph_egg.is_empty():
+			var _md: int = int(_ph_egg.get("max_depth", 1))
+			if floor_num + 1 >= PhantomModelScript.guaranteed_egg_depth(_md):
+				_egg_chance = 1.0
+		if boss_egg_monster != "" and randf() < _egg_chance:
+			var egg_it := _roll_floor_item(instance_id, tier, sub_tier, dungeon_level, boss_egg_monster, true, floor_num)
 			if not egg_it.is_empty():
 				_place_floor_item_random(instance_id, floor_num, grid, egg_it)
 	# (c2) ⛑ THE STARTER DUNGEON IS WHERE THE REST OF YOUR KIT IS LYING.
@@ -38621,7 +38635,41 @@ func _floor_egg_rank(dungeon_rank: int) -> int:
 	return lo + (randi() % (hi - lo + 1))
 
 
-func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool) -> Dictionary:
+## The rank of an egg found deep in a PHANTOM: the ordinary roll, pulled upward by depth and
+## investment - but never past the ceiling.
+##
+## ⚡ THIS DELIBERATELY DOES NOT DO WHAT THE ARCHIVED DESIGN SAYS, and the deviation is the
+## point. That design asks for eggs *"enhanced beyond the normal tier/sub-tier ceiling"*. Egg rank
+## BECOMES the companion's `sub_tier`, which is worth up to 2x its stats and 2x the bonuses it
+## grants, and `PowerRank.RANKS` is the hard top of that scale. Pushing past it would create a
+## companion power tier nothing in the game has ever been balanced against - which is exactly the
+## uncapped-reward risk the five-surface audit identified as the one real danger in this feature.
+##
+## ⛑ SO "BEYOND THE CEILING" IS IMPLEMENTED AS "RELIABLY AT IT". A deep, heavily-fed Phantom
+## stops rolling low ranks rather than inventing high ones: the floor of the roll climbs to meet
+## the top. Measured against the ordinary source, that is already a large prize - floor eggs
+## normally spread two ranks DOWN from the dungeon's own, so reliable top-rank eggs are a thing no
+## overworld dungeon produces at any rank.
+##
+## If the owner wants literal beyond-ceiling eggs later, it is one constant here plus a decision
+## about what sub_tier above RANKS means for companion scaling - and that decision should be taken
+## deliberately, not inherited from a sentence written before the cap mattered.
+func _phantom_egg_rank(dungeon_rank: int, instance_id: String, floor_num: int) -> int:
+	var base: int = _floor_egg_rank(dungeon_rank)
+	if not PHANTOM_POSTS_ENABLED or not active_dungeons.has(instance_id):
+		return base
+	var ph: Dictionary = active_dungeons[instance_id].get("phantom", {})
+	if ph.is_empty():
+		return base
+	var bonus: float = PhantomModelScript.egg_quality_bonus(
+		floor_num + 1, int(ph.get("max_depth", 1)), ph.get("investment", {}))
+	# The bonus is 0..2; half a rank per point, so a fully-invested bottom floor lifts the FLOOR of
+	# the roll by one rank and leaves the top where it was.
+	var lifted: int = base + int(floor(bonus))
+	return clampi(lifted, 1, PowerRankScript.RANKS)
+
+
+func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool, floor_num: int = 0) -> Dictionary:
 	"""Roll one floor-loot item. Returns {kind, char, color, item_data} or {} on a miss."""
 	if force_egg:
 		if boss_egg_monster == "":
@@ -38632,7 +38680,8 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		# the boss stay the dungeon's own; only what you find on the floor varies, and it varies
 		# with what really spawned rather than with a fixed list.
 		var egg_species: String = _floor_egg_species(instance_id, boss_egg_monster)
-		var egg = drop_tables.get_egg_for_monster(egg_species, {}, _floor_egg_rank(sub_tier), tier)
+		var egg = drop_tables.get_egg_for_monster(egg_species, {},
+			_phantom_egg_rank(sub_tier, instance_id, floor_num), tier)
 		if egg.is_empty() and egg_species != boss_egg_monster:
 			# Not every species can be hatched. Fall back rather than drop nothing.
 			egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, _floor_egg_rank(sub_tier), tier)
