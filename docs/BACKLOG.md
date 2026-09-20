@@ -9630,11 +9630,37 @@ something was dropped, and it sat unnoticed for eleven days.
       have been to be told beforehand, when the whole design is that you find out by descending.
       Fixed to `(depth - 1) / (max_depth - 1)`.
 
-      ▶ **SLICE 2b — WIRING IT.** The model is not called by anything yet. It needs: the investment
-      record persisted per post (account-level, decision 4), a feed-eggs/feed-companions surface,
-      and the dungeon generator asking these functions instead of the overworld curve.
-      ⚠ **And the consumer audit decision 1 implies**: a phantom monster's level is NOT an overworld
-      level, so every site reading one as the other (XP, threat, post anchoring) must be checked.
+      ✅ **SLICE 2b BUILT (held): the investment record and the feed surface.**
+        * **Persisted on the POST record**, which is keyed by username - and username maps
+          one-to-one with account, so decision 4 (the account owns it) is what this file already
+          stored. No migration, no second keying. `get_post_investment` normalises on the way OUT
+          so every caller sees one shape whatever an older record holds.
+        * **Written IN PLACE**, not by rebuilding the post record - a post carries a name, a
+          centre, a creation time and a clan id, and rebuilding it to add one field is how one of
+          those quietly goes missing. The clan-share function beside it carries the same note.
+        * **Fed while STANDING IN THE POST**, never from a menu anywhere in the world. The loop is
+          push out, found a place, stock it; doing it remotely removes the journey, which is the
+          part the feature exists to create.
+        * Eggs and companions are **consumed permanently**, so the confirmation names exactly what
+          went in - there is no way to check afterwards and no way to undo it.
+        * Your ACTIVE companion cannot be fed, the same guard the release path uses.
+
+      ✅ **AND THE AUDIT DECISION 1 IMPLIES IS ARMED EARLY** -
+      `a_phantom_level_is_not_an_overworld_level.gd`. A phantom level and an overworld level are
+      both an integer called `level` and mean different things; CLAUDE.md records **six
+      player-facing leaks and two reward-formula leaks** from exactly that shape (`base_tier` is
+      not `tier`). Today nothing spawns from a phantom level, so it passes trivially - it is armed
+      so the FIRST wiring into generation fails with the checklist in hand: XP payout, threat
+      escalation, post anchoring, the death log's level-gap column, and quest "kill a level N"
+      targets.
+
+      ▶ **SLICE 2c — GENERATION. The last piece, and the one to do with care.** The Phantom needs
+      floors built from `species_weights` and `floor_level`, a guaranteed egg at
+      `guaranteed_egg_depth`, and gear scaled by `gear_bonus`. **That is the step the probe above
+      is waiting for**, and it must not ship before the five surfaces are checked.
+      Also still unbuilt: the CLIENT surfaces for both slices - listing/buying charters, and the
+      feed UI. The server handlers exist (`list_prefab_posts`, `buy_prefab_post`, `feed_phantom`)
+      and nothing calls them.
 
       ▶ **SLICE 2 — THE PHANTOM ITSELF. Remaining open questions** (from the archive, still open):
         * valid placement area (min distance from existing posts, terrain rules)

@@ -2053,6 +2053,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_combat_command(peer_id, message)
 		"combat_use_item":
 			handle_combat_use_item(peer_id, message)
+		"feed_phantom":
+			handle_feed_phantom(peer_id, message)
 		"list_prefab_posts":
 			handle_list_prefab_posts(peer_id)
 		"buy_prefab_post":
@@ -29272,6 +29274,7 @@ const POST_RECLAIM_WARNING_DAYS: int = 14
 const PHANTOM_POSTS_ENABLED := false
 
 const PrefabPostsScript = preload("res://shared/prefab_posts.gd")
+const PhantomModelScript = preload("res://shared/phantom_model.gd")
 
 const KIT_LAYOUTS: Dictionary = {
 	"enclosure_kit_small": [
@@ -29343,6 +29346,122 @@ func _prefab_charters_for(peer_id: int) -> Array:
 		row["affordable"] = have >= int(t.get("valor", 0))
 		out.append(row)
 	return out
+
+
+## Which of THIS player's posts is the player standing in, if any? Returns -1 otherwise.
+##
+## ⛑ Feeding is done STANDING IN THE POST, not from a menu anywhere in the world. The loop is
+## "push out, found a place, stock it" - doing it remotely would remove the journey, which is the
+## part the whole feature exists to create.
+func _post_index_here(peer_id: int) -> int:
+	if not characters.has(peer_id):
+		return -1
+	var ch = characters[peer_id]
+	var owner_info = enclosure_tile_lookup.get(Vector2i(ch.x, ch.y), {})
+	if owner_info.is_empty():
+		return -1
+	if String(owner_info.get("owner", "")) != _get_username(peer_id):
+		return -1
+	return int(owner_info.get("enclosure_idx", -1))
+
+
+func handle_feed_phantom(peer_id: int, message: Dictionary) -> void:
+	"""Consume eggs or a companion into the Phantom of the post you are standing in.
+
+	⚡ CONSUMED PERMANENTLY, and that is the design's word. The player is not storing these
+	somewhere they can be fetched back - the ground keeps them. So the confirmation names exactly
+	what went in, because there is no way to check afterwards and no way to undo it."""
+	if not PHANTOM_POSTS_ENABLED:
+		return
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
+	var idx: int = _post_index_here(peer_id)
+	if idx < 0:
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#FFA500]Stand inside one of your own posts to stock its Phantom.[/color]"})
+		return
+	var character = characters[peer_id]
+	var username := _get_username(peer_id)
+	var kind := String(message.get("kind", ""))
+
+	if kind == "egg":
+		var egg_id := String(message.get("egg_id", ""))
+		var found := -1
+		for i in range(character.incubating_eggs.size()):
+			if String(character.incubating_eggs[i].get("egg_id", "")) == egg_id 					or String(character.incubating_eggs[i].get("id", "")) == egg_id:
+				found = i
+				break
+		if found < 0:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No such egg.[/color]"})
+			return
+		var egg: Dictionary = character.incubating_eggs[found]
+		var species := String(egg.get("monster_type", ""))
+		character.incubating_eggs.remove_at(found)
+		var inv: Dictionary = persistence.add_post_investment(username, idx, species, 1, 0)
+		save_character(peer_id)
+		send_character_update(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#C8A24A]The ground takes the %s egg.[/color] [color=#808080]It will come back up wearing that shape.[/color]"
+			% species})
+		_send_phantom_state(peer_id, idx, inv)
+		return
+
+	if kind == "companion":
+		var comp_id := String(message.get("companion_id", ""))
+		var active = character.get_active_companion()
+		# The same guard the release path uses: your active companion is not surplus.
+		if not active.is_empty() and String(active.get("id", "")) == comp_id:
+			send_to_peer(peer_id, {"type": "text", "message":
+				"[color=#FF4444]Dismiss it first - you cannot give away the one walking with you.[/color]"})
+			return
+		var cfound := -1
+		var cname := ""
+		for i in range(character.collected_companions.size()):
+			if String(character.collected_companions[i].get("id", "")) == comp_id:
+				cfound = i
+				cname = String(character.collected_companions[i].get("name", "It"))
+				break
+		if cfound < 0:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No such companion.[/color]"})
+			return
+		character.collected_companions.remove_at(cfound)
+		var inv2: Dictionary = persistence.add_post_investment(username, idx, "", 0, 1)
+		save_character(peer_id)
+		send_character_update(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#C8A24A]%s stays behind.[/color] [color=#808080]What the place keeps of them, it gives back as possessions.[/color]"
+			% cname})
+		_send_phantom_state(peer_id, idx, inv2)
+		return
+
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Nothing to give.[/color]"})
+
+
+## What this post's Phantom is now, computed through the model so the client never does the maths.
+func _send_phantom_state(peer_id: int, idx: int, investment: Dictionary) -> void:
+	if not PHANTOM_POSTS_ENABLED or not characters.has(peer_id):
+		return
+	var posts: Array = persistence.get_player_posts(_get_username(peer_id))
+	if idx < 0 or idx >= posts.size():
+		return
+	var rec = posts[idx]
+	var cx := float(rec.get("center_x", 0))
+	var cy := float(rec.get("center_y", 0))
+	var dist: float = sqrt(cx * cx + cy * cy)
+	var max_depth: int = PhantomModelScript.max_depth_for(dist)
+	send_to_peer(peer_id, {
+		"type": "phantom_state",
+		"post_index": idx,
+		"post_name": String(rec.get("name", "your post")),
+		"investment": investment,
+		"max_depth": max_depth,
+		"guaranteed_egg_depth": PhantomModelScript.guaranteed_egg_depth(max_depth),
+		# The TOP floor, which is deliberately unaffected by investment - the player learns what
+		# they are in by descending, so this is the only level worth quoting up front.
+		"first_floor_level": PhantomModelScript.floor_level(1, max_depth,
+			world_system.get_post_anchored_level(int(cx), int(cy)) if world_system != null else 1,
+			investment),
+	})
 
 
 func handle_list_prefab_posts(peer_id: int) -> void:

@@ -2330,6 +2330,64 @@ func remove_player_post(username: String, index: int):
 		posts.remove_at(index)
 	save_player_posts()
 
+## ⚑ WHAT HAS BEEN FED TO A POST'S PHANTOM. Owner's decision 4: the ACCOUNT owns the post and
+## everything invested in it, so a death does not erase weeks of stocking.
+##
+## ⛑ IT LIVES ON THE POST RECORD, which is keyed by USERNAME - and username maps one-to-one with
+## account (`get_username_for_account` / `get_account_id_by_username`), so account ownership is
+## already what this file stores. No migration and no second keying: the character who fed the
+## post is not recorded anywhere, because under decision 4 it does not matter which one did.
+##
+## Shape: {"eggs": {species: count}, "companions": int}. Absent means nothing has been fed.
+func get_post_investment(username: String, index: int) -> Dictionary:
+	var posts: Array = get_player_posts(username)
+	if index < 0 or index >= posts.size():
+		return {"eggs": {}, "companions": 0}
+	var rec = posts[index]
+	if not (rec is Dictionary):
+		return {"eggs": {}, "companions": 0}
+	var inv = rec.get("investment", null)
+	if not (inv is Dictionary):
+		return {"eggs": {}, "companions": 0}
+	# Normalised on the way OUT, so every caller gets the same shape whatever an older record
+	# happens to hold. A model that has to defend against three shapes is a model nobody trusts.
+	var eggs = inv.get("eggs", {})
+	return {
+		"eggs": eggs if eggs is Dictionary else {},
+		"companions": int(inv.get("companions", 0)),
+	}
+
+
+## Add to a post's investment. Both are CONSUMED by the caller before this is reached - this only
+## records what the ground now remembers.
+##
+## ⚡ WRITTEN IN PLACE, not by rebuilding the post record. The clan-share function below carries
+## the same note for the same reason: a post record has a name, a centre, a creation time and a
+## clan id, and rebuilding it to add one field is how one of those quietly goes missing.
+func add_post_investment(username: String, index: int, species: String, egg_count: int, companions: int) -> Dictionary:
+	if not player_posts_data.has("posts"):
+		player_posts_data["posts"] = {}
+	if not player_posts_data.posts.has(username):
+		return {"eggs": {}, "companions": 0}
+	var posts: Array = player_posts_data.posts[username]
+	if index < 0 or index >= posts.size() or not (posts[index] is Dictionary):
+		return {"eggs": {}, "companions": 0}
+	var rec: Dictionary = posts[index]
+	var inv = rec.get("investment", null)
+	if not (inv is Dictionary):
+		inv = {"eggs": {}, "companions": 0}
+	var eggs = inv.get("eggs", {})
+	if not (eggs is Dictionary):
+		eggs = {}
+	if species != "" and egg_count > 0:
+		eggs[species] = int(eggs.get(species, 0)) + egg_count
+	inv["eggs"] = eggs
+	inv["companions"] = int(inv.get("companions", 0)) + maxi(0, companions)
+	rec["investment"] = inv
+	save_player_posts()
+	return get_post_investment(username, index)
+
+
 func clear_all_player_posts():
 	"""Clear all player post data (called on map wipe)."""
 	player_posts_data = {"posts": {}}
