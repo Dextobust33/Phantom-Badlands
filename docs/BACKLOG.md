@@ -9577,15 +9577,38 @@ something was dropped, and it sat unnoticed for eleven days.
       for the POST alone, and the Phantom joins the layouts when it works. The probe fails if any
       tier's name, blurb or station list mentions it.
 
-      ▶ **SLICE 2 — THE PHANTOM ITSELF, and the decisions it needs first.** The nine open
-      questions in the archived design are still open; these three gate any code:
-        1. **The balance question below** (ceiling vs its own band) - settle before building.
-        2. **Account vs character ownership.** Permadeath means the founder can die. The post and
-           its investment must survive at the ACCOUNT level or the loop punishes far beyond
-           intent - but what is carried OUT of a run must still be lost on death.
-        3. **The laundering pump.** Invest cheap eggs, extract better ones, hatch, invest those
-           companions, get better gear, repeat. The exchange must be lossy and gated by depth and
-           survival risk, never by volume.
+      ✅ **THE FOUR GATING DECISIONS — ANSWERED BY THE OWNER 2026-09-19.** These were the open
+      questions the 2026-09-02 design listed and could not settle. They are settled now:
+
+      1. **DIFFICULTY: the Phantom gets its OWN BAND, scaled by investment.** Its floors scale
+         with what was fed to it, so reward and danger rise together and
+         `reference_monster_curve.json` is left completely alone. This is the only shape where
+         *"the farther out, the better"* can keep escalating without making every future balance
+         measurement unreadable — an uncapped reward inside the shared curve would invalidate it
+         continuously and by a different amount per player.
+         ⛑ **So a Phantom's levels are NOT the overworld's.** Anything reading a phantom monster's
+         level as an overworld level (XP formulas, threat, post anchoring) has to be checked.
+      2. **THE PUMP IS GATED BY DEPTH AND SURVIVAL RISK — and by nothing else.** Better output
+         comes only from deeper floors, and deeper is genuinely more dangerous. The owner chose
+         this ALONE, rejecting diminishing returns, a lossy exchange and a cooldown: you pay for
+         an upgrade in risk, which is the one currency that cannot be farmed safely. ⚡ That puts
+         the whole weight on depth danger being real — if deep floors are survivable by a
+         well-geared player without meaningful risk, the pump is open and nothing else is holding
+         it.
+      3. **EGGS: a GUARANTEED egg deep in, plus quality on top.** A deterministic floor — reach a
+         certain depth and an egg is certain — with quality as the variable part. Effort always
+         pays something, so a bad run is a smaller reward rather than the "reads as theft" case
+         the design warned about.
+      4. **OWNERSHIP: the ACCOUNT owns the post and everything fed into it; what you are carrying
+         OUT is still lost on death.** A death does not erase weeks of investment, but "what you
+         brought out alive" stays intact — which is what lets the loop pay forward onto new
+         characters, the thing the design says is the point.
+
+      ▶ **SLICE 2 — THE PHANTOM ITSELF. Remaining open questions** (from the archive, still open):
+        * valid placement area (min distance from existing posts, terrain rules)
+        * whether a Phantom is per-post / per-account / shared, and who else may enter
+        * reward gating: enough to gear a fresh character locally, without becoming the best farm
+          in the game for an established one
 
       ⚠ **WHAT REMAINS TO MAKE SLICE 1 ITSELF SHIPPABLE** (i.e. to flip the flag): a build-menu
       surface on the CLIENT to list and buy the charters. The server side is done - `list_prefab_posts`
