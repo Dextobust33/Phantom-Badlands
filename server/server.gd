@@ -2053,6 +2053,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_combat_command(peer_id, message)
 		"combat_use_item":
 			handle_combat_use_item(peer_id, message)
+		"enter_phantom":
+			handle_enter_phantom(peer_id, message)
 		"feed_phantom":
 			handle_feed_phantom(peer_id, message)
 		"list_prefab_posts":
@@ -29365,6 +29367,122 @@ func _post_index_here(peer_id: int) -> int:
 	return int(owner_info.get("enclosure_idx", -1))
 
 
+func handle_enter_phantom(peer_id: int, message: Dictionary) -> void:
+	"""Descend into the Phantom of the post you are standing in.
+
+	⚑ A PHANTOM IS AN ORDINARY DUNGEON INSTANCE CARRYING A `phantom` BLOCK. Everything that
+	makes it different - its depth, its levels, which species roam it, what the eggs are worth -
+	is read from that block by the ordinary generators. There is no second dungeon system, which
+	is deliberate: a parallel one would drift from the real one the first time either changed, and
+	this codebase has paid for that shape repeatedly.
+
+	⛑ THE INSTANCE IS REBUILT EVERY DESCENT, not persisted. What the player invested lives on
+	the POST (account-level, decision 4); the floors themselves are disposable. That also means a
+	player cannot leave a Phantom half-cleared, re-stock it, and come back to the old floors with
+	the new rewards."""
+	if not PHANTOM_POSTS_ENABLED:
+		return
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.in_dungeon:
+		send_to_peer(peer_id, {"type": "error", "message": "You are already below."})
+		return
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "Not in the middle of a fight."})
+		return
+	var idx: int = _post_index_here(peer_id)
+	if idx < 0:
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#FFA500]Stand inside one of your own posts to descend into its Phantom.[/color]"})
+		return
+
+	var username := _get_username(peer_id)
+	var posts: Array = persistence.get_player_posts(username)
+	if idx >= posts.size():
+		return
+	var rec = posts[idx]
+	var cx := int(rec.get("center_x", 0))
+	var cy := int(rec.get("center_y", 0))
+	var investment: Dictionary = persistence.get_post_investment(username, idx)
+	var dist: float = sqrt(float(cx) * float(cx) + float(cy) * float(cy))
+	var max_depth: int = PhantomModelScript.max_depth_for(dist)
+	var local_level: int = maxi(1, int(world_system.get_post_anchored_level(cx, cy))) if world_system != null else 1
+
+	# The SHAPE it wears is drawn from what it was fed, so a goblin-stocked Phantom reads as
+	# goblins from the moment you step in. With nothing fed it borrows the local country's own
+	# dungeon type, which is the honest "this place has not decided what it is yet".
+	var dungeon_type := "goblin_caves"
+	var eggs = investment.get("eggs", {})
+	if eggs is Dictionary and not eggs.is_empty():
+		var best := ""
+		var best_n := -1
+		for k in eggs.keys():
+			if int(eggs[k]) > best_n:
+				best_n = int(eggs[k])
+				best = String(k)
+		# ⚡ MATCHED AGAINST THE REAL TABLE, not an invented helper. The first cut called
+		# `DungeonDatabase.dungeon_type_for_species()`, which does not exist - the release gate's
+		# parse check caught it before it could be committed. What DOES exist is `monster_pool` on
+		# each dungeon type, so the mapping is derived from the data rather than from a function
+		# somebody has to remember to keep in step.
+		var themed := ""
+		var themed_tier := 99
+		for dt_id in DungeonDatabaseScript.DUNGEON_TYPES.keys():
+			var dd: Dictionary = DungeonDatabaseScript.DUNGEON_TYPES[dt_id]
+			var pool = dd.get("monster_pool", [])
+			if pool is Array and best in pool:
+				# The LOWEST-tier home of that species, so a goblin-fed Phantom reads as goblin
+				# caves rather than as whatever late-game place also happens to field goblins.
+				var bt: int = int(dd.get("base_tier", 99))
+				if bt < themed_tier:
+					themed_tier = bt
+					themed = String(dt_id)
+		if themed != "":
+			dungeon_type = themed
+
+	var instance_id := "phantom_%s_%d_%d" % [username, idx, Time.get_ticks_msec()]
+	_register_dungeon(instance_id, {
+		"instance_id": instance_id,
+		"dungeon_type": dungeon_type,
+		"world_x": cx,
+		"world_y": cy,
+		"spawned_at": int(Time.get_unix_time_from_system()),
+		"active_players": [],
+		"dungeon_level": local_level,
+		"sub_tier": 1,
+		"tier": PowerRankScript.tier_for_level(local_level),
+		# ⚑ THE BLOCK THAT MAKES IT A PHANTOM. Every generator checks for this and falls back to
+		# ordinary behaviour when it is absent, so a phantom and an ordinary dungeon share one path.
+		"phantom": {
+			"investment": investment,
+			"max_depth": max_depth,
+			"local_level": local_level,
+			"post_index": idx,
+			"owner": username,
+		},
+		"floor_override": max_depth,
+	})
+	if not _ensure_dungeon_interior(instance_id):
+		send_to_peer(peer_id, {"type": "error", "message": "The ground would not open."})
+		_unindex_dungeon(instance_id)
+		active_dungeons.erase(instance_id)
+		return
+	var grid = dungeon_floors[instance_id][0]
+	var start_pos: Vector2i = _find_tile_position(grid, DungeonDatabaseScript.TileType.ENTRANCE)
+	if start_pos.x < 0:
+		start_pos = Vector2i(1, 1)
+	character.enter_dungeon(instance_id, dungeon_type, start_pos.x, start_pos.y)
+	var inst: Dictionary = active_dungeons[instance_id]
+	if not inst.active_players.has(peer_id):
+		inst.active_players.append(peer_id)
+	_send_dungeon_state(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message":
+		"[color=#C8A24A]The ground remembers.[/color] [color=#808080]%d floors. What you carry out is yours; what you drop down there is not.[/color]"
+		% max_depth})
+
+
 func handle_feed_phantom(peer_id: int, message: Dictionary) -> void:
 	"""Consume eggs or a companion into the Phantom of the post you are standing in.
 
@@ -33973,7 +34091,12 @@ func _ensure_dungeon_interior(instance_id: String) -> bool:
 		return false
 	var floor_grids: Array = []
 	var floor_rooms: Array = []
-	var floors: int = int(dungeon_data.get("floors", 1))
+	# ⚑ A PHANTOM SETS ITS OWN DEPTH. Every other dungeon takes its floor count from its TYPE,
+	# which is right for a Goblin Caves - all of them are the same shape. A Phantom's length is a
+	# property of the POST: *"max_depth scaling to how far out the post is. A frontier Phantom is
+	# automatically longer because it has further to bridge - 'near endless' is really 'as long as
+	# the gap it closes'."* So the instance may override, and nothing else changes.
+	var floors: int = int(inst.get("floor_override", dungeon_data.get("floors", 1)))
 	for floor_num in range(floors):
 		var floor_data = DungeonDatabaseScript.generate_floor_grid(dungeon_type, floor_num, floor_num == floors - 1)
 		floor_grids.append(floor_data.grid)

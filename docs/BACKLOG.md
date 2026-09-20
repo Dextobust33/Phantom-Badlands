@@ -9725,10 +9725,35 @@ something was dropped, and it sat unnoticed for eleven days.
       companion → multiplier) because dropping it at ONE step leaves everything working and the
       feature silently absent. Proven to fire by deleting the hatch line.
 
-      ▶ **WHAT IS LEFT.** A way to ENTER a post's Phantom (nothing creates an instance carrying a
-      `phantom` block yet), and the client surfaces for every slice — charter list/buy, the feed UI,
-      and the descend. Server handlers exist for the first two (`list_prefab_posts`,
-      `buy_prefab_post`, `feed_phantom`) and nothing calls them.
+      ✅ **SLICE 2e BUILT (held): the descent, and the prize made visible.**
+        * `handle_enter_phantom` builds an ordinary dungeon instance carrying a `phantom` block.
+          **There is no second dungeon system** - every generator reads that block and falls back
+          to ordinary behaviour without it, so a Phantom and a Goblin Caves share one code path.
+        * Depth is `max_depth_for(distance)` and the floors BUILT are the same number, via a new
+          `floor_override`. If those two ever disagree the bottom floor is not the bottom of the
+          reward curve and the best rewards are unreachable - the probe asserts they match.
+        * The instance is **rebuilt every descent**, not persisted: the investment lives on the
+          post, the floors are disposable. So a player cannot clear half a Phantom, re-stock it
+          and return to old floors with new rewards.
+        * **Theming is derived from `monster_pool`**, taking the LOWEST-tier home of the
+          most-fed species - so a goblin-fed Phantom reads as goblin caves rather than as whatever
+          late-game place also fields goblins.
+        * **The provenance is now VISIBLE** - `(Phantom-born +N%)` on the companion display. An
+          unseeable prize is a wasted one: without it a player fights to the bottom of their own
+          Phantom, carries an egg out alive, and gets a companion that looks identical to any other.
+        Probe: `you_can_descend_into_your_own_phantom.gd`, proven to fire by dropping
+        `floor_override` - the failure it guards is *"it works, but it is an ordinary dungeon"*,
+        which looks completely fine from inside.
+
+      ⚡ **AND THE GATE CAUGHT ME INVENTING A FUNCTION AGAIN**: `DungeonDatabase.dungeon_type_for_species()`
+      does not exist. `tools/gdcheck.sh` refused the commit. The mapping is now derived from the
+      real `monster_pool` data instead, which cannot go stale the way a hand-kept helper would.
+
+      ▶ **WHAT IS LEFT — THE CLIENT, AND THEN THE FLAG.** Every server handler exists
+      (`list_prefab_posts`, `buy_prefab_post`, `feed_phantom`, `enter_phantom`) and **nothing calls
+      any of them**. That is the whole remaining task: a build-menu surface to list and buy
+      charters, a feed UI, and a Descend action inside a post. When those work end to end, flip
+      `PHANTOM_POSTS_ENABLED`.
 
       ▶ **SLICE 2 — THE PHANTOM ITSELF. Remaining open questions** (from the archive, still open):
         * valid placement area (min distance from existing posts, terrain rules)

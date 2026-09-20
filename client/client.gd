@@ -36772,6 +36772,23 @@ func _get_companion_sort_damage_value(companion: Dictionary) -> int:
 	var st_mult = _get_sub_tier_multiplier(sub_tier)
 	return int(base_damage * variant_mult * st_mult)
 
+## ⚑ SAY THAT THIS ONE CAME OUT OF A PHANTOM, and what that is worth.
+##
+## A companion born in a player's Phantom carries a multiplier the grade ladder knows nothing
+## about - so its letter is honest and its power is not fully described by it. Without this line
+## the prize is invisible: the player fought to the bottom of their own Phantom, carried an egg
+## out alive, and got a companion that looks identical to one from any dungeon.
+##
+## ⛑ Absent on every companion that is not phantom-born, which is every companion in every save
+## today - so this adds nothing to the existing display and cannot be mistaken for a nerf to
+## ordinary ones.
+func _phantom_born_tag(companion: Dictionary) -> String:
+	var p: float = float(companion.get("phantom_power", 0.0))
+	if p <= 0.0:
+		return ""
+	return " [color=#C8A24A](Phantom-born +%d%%)[/color]" % int(round(p * 100.0))
+
+
 func display_companions():
 	"""Display the companions list with level, XP, abilities, and variant info"""
 	# Push state into the visual companions panel; the text below stays for sub-modes.
@@ -36807,6 +36824,7 @@ func display_companions():
 		var variant_bonus_text = ""
 		if variant_mult > 1.0:
 			variant_bonus_text = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
+		variant_bonus_text += _phantom_born_tag(active_companion)
 		var rarity_info = _get_variant_rarity_info(variant)
 
 		display_game("[color=#00FFFF]Active Companion:[/color]")
@@ -39611,6 +39629,7 @@ func display_companion_inspection(companion: Dictionary):
 	var variant_bonus_text = ""
 	if variant_mult > 1.0:
 		variant_bonus_text = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
+	variant_bonus_text += _phantom_born_tag(companion)
 	var rarity_info = _get_variant_rarity_info(variant)
 
 	display_game("[color=#00FFFF]═══════ COMPANION DETAILS ═══════[/color]")
