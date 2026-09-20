@@ -3128,6 +3128,9 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]You have been returned to your dungeon.[/color]"})
 	else:
 		send_location_update(peer_id)
+		# Settings needs the ACCOUNT's teaching-pop-up state to show it, and the client is
+		# never otherwise told. Without this the row could only ever display a guess.
+		_send_tutorials_state(peer_id)
 
 		# Check if spawning at a Trading Post and trigger the encounter
 		if world_system.is_trading_post_tile(character.x, character.y):
@@ -16039,6 +16042,26 @@ func handle_set_tutorials(peer_id: int, message: Dictionary) -> void:
 	if account_id == "":
 		return
 	persistence.set_tutorials_enabled(account_id, bool(message.get("enabled", true)))
+	# ⚑ TELL THE CLIENT WHAT IT NOW IS. Owner 2026-09-19: *"players should also be able to
+	# disable the help popups for their account if they want."* Turning them OFF worked - the
+	# pop-up carries its own opt-out button. Turning them back ON was impossible: the setting
+	# lives on the ACCOUNT, the server never reported it, and Settings had no row for it. The
+	# pop-up's own farewell line said *"Turn them back on in Settings"*, which was a promise with
+	# nothing behind it.
+	_send_tutorials_state(peer_id)
+
+
+func _send_tutorials_state(peer_id: int) -> void:
+	"""What the account's teaching pop-ups are set to, so Settings can show and flip it."""
+	if not peers.has(peer_id):
+		return
+	var acct := String(peers[peer_id].get("account_id", ""))
+	if acct == "":
+		return
+	send_to_peer(peer_id, {
+		"type": "tutorials_state",
+		"enabled": persistence.tutorials_enabled(acct),
+	})
 
 
 func _send_hint(peer_id: int, title: String, body: String, opt_out: String = "",

@@ -2175,6 +2175,12 @@ var account_valor: int = 0
 var tutorial_active: bool = false
 var tutorial_step: int = 0
 var pending_tutorial_prompt: bool = false  # Awaiting player's choice to start or skip the tutorial
+## ⚑ THE ACCOUNT'S TEACHING POP-UPS, as the server last reported them. NOT the same thing as
+## `disable_tutorial`, and conflating the two is what left this unreachable: that one is a
+## CLIENT preference about whether a new character is offered the walkthrough, this is an ACCOUNT
+## setting about whether the first-touch hints appear at all. Defaults to true so a client that
+## has not been told yet shows the ordinary state rather than claiming they are off.
+var account_tutorials_enabled: bool = true
 const TUTORIAL_STEPS = [
 	{"text": "Welcome to the Phantom Badlands! This quick tutorial will show you the basics.", "wait_for": "continue"},
 	{"text": "Use the numpad or arrow keys to move around the world. Try taking a step!", "wait_for": "move"},
@@ -6902,6 +6908,8 @@ func _input(event):
 				_toggle_map_legend()
 			elif keycode == KEY_7:
 				_toggle_mentor_badge()
+			elif keycode == KEY_9:
+				_toggle_account_tutorials()
 			elif keycode == KEY_8:
 				settings_submenu = "stat_priority"
 				_page_clear()
@@ -28000,6 +28008,13 @@ func handle_server_message(message: Dictionary):
 			pending_continue = true
 			update_action_bar()
 
+		"tutorials_state":
+			# The server is the owner of this setting; the client only mirrors it for display.
+			account_tutorials_enabled = bool(message.get("enabled", true))
+			if settings_mode and settings_submenu == "game":
+				_page_clear()
+				display_game_settings()
+
 		"merchant_message":
 			# ⚡ THE CLIENT HAD NO CASE FOR THIS AT ALL, found by the sweep after the corpse-loot
 			# report. `handle_merchant_recharge` sends three of them — "you look fully rested
@@ -33126,6 +33141,16 @@ func display_game_settings():
 		display_game("[color=#808080][7] Mentor Badge: unlocks at Lv %d[/color]" % MENTOR_LEVEL_REQUIRED)
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
 	display_game("[8] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
+	# ⚑ ADDED AT THE END ON PURPOSE. Every other row is addressed by its number, so inserting
+	# this anywhere above would silently renumber the keys under the player's fingers.
+	#
+	# ⚡ AND IT IS A DIFFERENT SETTING FROM [5]. That one is `disable_tutorial`, a client-side
+	# preference about whether a NEW CHARACTER is offered the walkthrough. This is the ACCOUNT's
+	# first-touch teaching pop-ups, which could previously only be turned OFF - by the opt-out
+	# button on a pop-up - and never back on, although the line it printed on the way out said
+	# *"Turn them back on in Settings."*
+	var hints_status = "[color=#00FF00]ON[/color]" if account_tutorials_enabled else "[color=#FF6666]OFF[/color]"
+	display_game("[9] Help Pop-ups (this account): %s" % hints_status)
 	display_game("")
 	if skip_craft or skip_gather:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -33212,6 +33237,13 @@ func _toggle_autoskip_loot_reveal():
 	if settings_mode and settings_submenu == "game":
 		_page_clear()
 		display_game_settings()
+
+
+## Turn the ACCOUNT's teaching pop-ups on or off. The server owns the value; this asks, and the
+## `tutorials_state` reply is what actually updates the row - so a refusal or a dropped packet
+## shows as the setting not changing, rather than as a row that lies about the account.
+func _toggle_account_tutorials():
+	send_to_server({"type": "set_tutorials", "enabled": not account_tutorials_enabled})
 
 
 func _toggle_disable_tutorial():
@@ -35173,7 +35205,11 @@ func display_changelog():
 	#            after it appears.
 	# v0.9.831 - the last of it: the FIRST fight of a session had no cached map to redraw, and no
 	#            way to ask for one.
-	display_game("[color=#00FF00]v0.9.831[/color] [color=#808080](Current)[/color]")
+	# v0.9.832 - the help pop-ups could be turned off and never back on.
+	display_game("[color=#00FF00]v0.9.832[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: you could turn the help pop-ups off, but never back on.[/color] Every teaching pop-up carries a [b]don't show these again[/b] button, and it works — for the whole account, so a player who knows the game is not taught it on every new character. But the message it left behind said [i]\"turn them back on in Settings\"[/i], and Settings had no such control. [b]It does now:[/b] [color=#C8A24A]Settings → Game → [9] Help Pop-ups[/color], showing whether they are on and letting you flip them either way. [color=#808080]This is a different setting from [5] Tutorial on New Character, which decides whether a brand-new character is offered the walkthrough — that one has always been skippable from its opening prompt.[/color]")
+	display_game("")
+	display_game("[color=#808080]v0.9.831[/color]")
 	display_game("  [color=#FF4444]★ FIXED: no map after the FIRST fight of a session.[/color] The last piece of this. When a fight ends the game redraws the map from the copy it already has — and on your first fight after logging in it may not have one yet, so there was nothing to draw and no way to ask. Every fight after that was fine, which is exactly why it looked so strange. [b]It can now ask the server for a fresh map[/b], which is the same thing that was already happening invisibly whenever you rested or took a step — the recovery existed, it just could not be reached on purpose.")
 	display_game("")
 	display_game("[color=#808080]v0.9.830[/color]")

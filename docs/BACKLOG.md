@@ -1162,6 +1162,33 @@ player walking in at **32%, 42%, 60% HP** - that is attrition, not encounter pow
 different fix entirely. Do not re-open the early curve on the old reading.
 
 
+### ✅ THE TUTORIAL SKIP AND THE HELP POP-UPS (2026-09-19)
+
+Owner: *"The original tutorial should be skippable and players should also be able to disable the
+help popups for their account if they want."*
+
+**Both were already built - and one of them only worked in one direction.**
+
+  * the walkthrough has a **Skip** button on its opening prompt (`_skip_tutorial`) ✅
+  * the pop-ups have an **account-level** opt-out, persisted server-side ✅
+  * ⚡ **turning them back on was impossible.** The opt-out lives on the pop-up itself, the
+    setting lives on the ACCOUNT, the server never reported its value, and Settings had no row
+    for it - while the line the pop-up printed on its way out said *"Turn them back on in
+    Settings."* A promise with nothing behind it.
+
+**Fixed:** the server reports `tutorials_state` (on character select and after any change), and
+Settings > Game gained **[9] Help Pop-ups (this account)**. Added at the END deliberately: every
+other row is addressed by its number, so inserting above one would move the keys under the
+player's fingers.
+
+⛑ **TWO SETTINGS THAT SOUND ALIKE, AND MUST STAY SEPARATE** - conflating them is what hid this:
+
+    disable_tutorial    CLIENT, per install   is a NEW CHARACTER offered the walkthrough?  [5]
+    tutorials_enabled   ACCOUNT, server-side  do the first-touch teaching pop-ups appear?  [9]
+
+Probe: `the_help_popups_can_be_turned_back_on.gd`, which also asserts the other rows did not
+renumber and that the two settings are still distinct.
+
 ### ⚑ WHERE THINGS STAND — end of 2026-09-19
 
 **v0.9.831 is LIVE, client and server, hash-verified. NOTHING is built-but-unreleased.**
@@ -3076,7 +3103,10 @@ live defects because the arc adds more of exactly the surfaces those defects liv
      believing it was the eligibility check; and the probe's first version matched the word
      `pending_continue` anywhere in the function, so the explanatory comment made a deleted guard
      still pass - the same comment-vs-call trap the healer probe hit hours earlier.
-   - [ ] Still open here: the companion art panel in the right margin has no frame.
+   - [x] **STALE, CLOSED 2026-09-19 — it has one.** `update_companion_art_overlay` builds its
+     stylebox from `_margin_box_style()` and sets `border_color` to the companion's own variant
+     colour, so every companion gets the same frame in its own colour. Confirmed in a live
+     screenshot the same day. Was: *the companion art panel in the right margin has no frame.*
    **THE OVERWORLD MAP MOVED TO THE MAIN CANVAS (2026-09-15 night, unreleased), and took the
    Coords box, the Area box, the minimap, the status panel and the travel row with it.** Owner,
    after three attempts to win rows inside the side column: *"the map needs more space"*, then
