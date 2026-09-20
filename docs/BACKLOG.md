@@ -8214,7 +8214,14 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
          ⛑ Check against the known *"Merchant / market-house balancing"* item (Sun Keep's market
          near-empty, 3 shrine items) - that is the POST side of what may be one supply problem.
 
-- [ ] **Living world / rework the posts.** Designed 2026-09-04 as **step 4 of the companion
+- [ ] **Living world / rework the posts. ⛑ SEQUENCE IT AFTER PLAYER PHANTOMS** (assessment
+      2026-09-19, owner asked what I thought of the two). It is a BUNDLE rather than one feature -
+      companions around posts, NPCs, wandering travellers, recruitable party members, threats woven
+      in - and its own scope note says it is downstream ("it is what those populate") and that it
+      **overlaps the phantom prefab tiers**. Built first, it produces a post-population model that
+      the phantom prefab then has to redo. Also: "recruitable party members" would land on the
+      party code shipped 2026-09-19, which no two players have exercised yet.
+      Designed 2026-09-04 as **step 4 of the companion
       spine**, and the detail is in `docs/archive/BACKLOG_journal_to_2026-09-07.md` (item 16) —
       not undesigned, just archived. Scope: companions living around the posts, **NPCs, wandering
       travellers and recruitable party members**, and threats woven into the posts rather than
@@ -9592,6 +9599,20 @@ something was dropped, and it sat unnoticed for eleven days.
       boards, workstations. So the prefab is a **tier ladder priced in Valor**, not one item: that
       is the shape to build, and Valor's only current sinks are bounties, PvP payouts and repairs,
       so size it against those.
+
+      ⚡ **THE RISK NOBODY HAS WRITTEN DOWN, and it should be settled BEFORE any code.** This
+      design deliberately creates a power source **outside the calibrated curve**: phantom eggs are
+      buffed *"beyond the normal tier/sub-tier ceiling"* and consumed companions make the gear
+      inside stronger. CLAUDE.md's standing rule is that anything changing player power invalidates
+      `reference_monster_curve.json` - and an investment ladder with no ceiling invalidates it
+      continuously, by a different amount per player. Two honest shapes, and the choice is the
+      owner's:
+        * **A CEILING.** Investment moves you UP the existing tiers faster and further, but tops
+          out somewhere the curve already knows about. Keeps one difficulty model.
+        * **ITS OWN BAND.** A phantom's floors scale with what was fed to it, so the reward and
+          the danger rise together and the overworld curve is left alone. More work, and it is the
+          version that actually matches the fiction.
+      Deciding this late means finding it in a death log, which is the most expensive place.
 
       **Prerequisite, and it is now met.** 12b was blocked on companion power — a level-1 companion
       was statistically identical to no companion, so a hard-won 10x-rare egg would have hatched
