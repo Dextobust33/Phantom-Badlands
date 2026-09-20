@@ -84,8 +84,16 @@ static var _keepalive: Array = []
 
 static func available() -> bool:
 	"""Whether the art is present. Licence-restricted sprites are not in git, so a build without
-	them must fall back to the text map rather than draw nothing."""
-	return ResourceLoader.exists(DIR + "ground/plains.png")
+	them must fall back to the text map rather than draw nothing.
+
+	⚑ ASKS `load()`, NOT `ResourceLoader.exists()`. CLAUDE.md's own rule: *"The check is calling
+	`load()`, never `exists()`"* — because a folder carrying a `.gdignore` keeps its `.import`
+	sidecars, so `exists()` answers TRUE for art that will never reach the pck and whose `load()`
+	returns null. This function decides whether the overworld draws as sprites or as letters, so
+	the `exists()` spelling could hand the map to a renderer with no images and produce a blank
+	canvas — strictly worse than the text map it is meant to choose between.
+	Goes through `_img`, which caches, so this costs one load for the life of the process."""
+	return _img(DIR + "ground/plains.png") != null
 
 
 static func _img(path: String) -> Image:

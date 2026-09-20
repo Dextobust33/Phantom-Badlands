@@ -20235,6 +20235,20 @@ func acknowledge_continue():
 	# leadership line once the context block started clearing.
 	_flush_party_notices()
 
+	# ⚑ PUT THE MAP IN ITS FINAL HOME **NOW**, not whenever the next payload happens to arrive.
+	#
+	# With the skip above, nothing has drawn the map since combat started, so without this the
+	# player is handed back a stale column or an empty one until the server's next location
+	# update - several frames, and the jump the owner reported. One redraw from the payload that
+	# is already cached costs nothing and puts the map straight into the canvas.
+	#
+	# ⛑ IT DOES NOT WIPE THE POST-COMBAT TEXT. When the canvas holds the map, `_ow_text_in_column`
+	# routes pages to the side column instead - so the "where you are now" block printed above
+	# lands beside the map rather than under it. That is the same routing the overworld uses at
+	# every other moment; this just reaches it a few frames sooner.
+	if not dungeon_mode and not _last_map_payload.is_empty() and _ow_canvas_eligible():
+		update_map(_overworld_display(_last_map_payload))
+
 	# v0.9.398 — re-show the overworld player sprite after combat ends.
 	# Previously the sprite stayed hidden (in_combat had toggled false during
 	# combat_end, but no update_map fired) until the player next moved, which
@@ -35115,7 +35129,12 @@ func display_changelog():
 	# v0.9.826 - the flash between the victory screen and the map: an engine wait from 2021 that
 	#            stopped being necessary.
 	# v0.9.827 - a milestone upgrade you had already chosen could be offered a second time.
-	display_game("[color=#00FF00]v0.9.827[/color] [color=#808080](Current)[/color]")
+	# v0.9.828 - the map is drawn in the home it is going to stay in, so it no longer appears in
+	#            the column and then jumps to the box when a fight ends.
+	display_game("[color=#00FF00]v0.9.828[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: the map appearing in the side column and then jumping to the main box after a fight.[/color] The map has two possible homes — the big canvas, and the side column as a text fallback — and during a fight the canvas belongs to combat, so every map update arriving behind the victory screen was being drawn into the column. The column is [b]hidden[/b] during a fight, so nobody ever saw those; they became visible for a moment when the fight ended, and then the next update moved the map to the box. It is now simply [b]not drawn[/b] while combat owns the screen, and redrawn straight into the box the instant you press Continue — one home, no move.")
+	display_game("")
+	display_game("[color=#808080]v0.9.827[/color]")
 	display_game("  [color=#FF4444]★ FIXED: a card upgrade you had already picked could be offered again.[/color] Reported live — an Assassinate milestone appeared twice and had to be chosen twice. After a fight the game deliberately re-checks for any upgrade earned by the killing blow, because the victory screen can cover that moment and the choice would otherwise be unreachable. That re-check was reading the list of [i]owed[/i] upgrades as the client last knew it, and answering a choice did not take it off that list — so pressing [b]Continue[/b] handed you the same one back. Your pick was never lost and the second choice was harmless, but you should not have been asked twice.")
 	display_game("")
 	display_game("[color=#808080]v0.9.826[/color]")
@@ -47078,6 +47097,28 @@ func update_map(map_text: String):
 	# font wrapped in either [right] (current) or [center] (older builds).
 	# Split it off so the minimap can render in its own node beside the tool
 	# overlay, and the main map stays clean.
+	# ⚑ DO NOT DRAW THE MAP INTO THE COLUMN WHILE COMBAT OWNS THE CANVAS.
+	#
+	# Owner 2026-09-19: *"when combat ends... my map is drawn in the right column briefly and
+	# then moved to the left box."* And, on the architecture: *"Why do we need the original home
+	# in the side column? I believe Sanctuary, Overworld, and Dungeons all use game_output now."*
+	#
+	# Largely right, and this is the half that was pure waste. The map has two homes - the canvas
+	# and the side column - and `_ow_canvas_eligible()` is false for the whole of a Continue
+	# prompt, so every map payload arriving during a victory screen was drawn into the COLUMN.
+	# `_process` hides `map_panel` during a fight (v0.9.663, so combat fills the full width), so
+	# nobody could see it. It became visible only in the gap between the panel returning and the
+	# next payload arriving, which is the "briefly in the right column" - and then the next
+	# payload put it in the box, which is the jump.
+	#
+	# ⛑ THE COLUMN HOME IS KEPT, because it is NOT legacy: it is the ASCII fallback for when
+	# `_OverworldRoom.available()` is false, i.e. the sprite art did not load. This file's own
+	# note calls it *"the thing that has to keep working when everything else fails"*, and
+	# CLAUDE.md has a whole section on how silently art can fail here. So the test is the SPRITE
+	# ROOM being available - if it is not, the column is the real home and this skip must not
+	# fire. What is dropped is only the temporary relocation, never the fallback.
+	if _OverworldRoom.available() and not dungeon_mode and not _house_room_active() 			and (in_combat or _canvas_owned_by_combat()):
+		return
 	var main_text = map_text
 	var minimap_text = ""
 	var split_idx = map_text.find("[right][font_size=9]")
