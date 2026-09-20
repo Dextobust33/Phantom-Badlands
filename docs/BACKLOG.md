@@ -1053,64 +1053,91 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
-### ✅ LOOT YOU COULD NOT READ - AND A DETECTOR FOR THE WHOLE CLASS (2026-09-19)
+### ⚑ PICK UP HERE — written 2026-09-19 for a gap of unknown length
 
-Owner, live: *"I just looted a corpse on the live server but I don't see what I got from it in the
-right column anywhere."*
+**v0.9.833 is LIVE (client + server, hash-verified). Everything shipped is playable.**
+**Player Phantoms is BUILT ON THE SERVER AND HELD BEHIND A FLAG.** Nothing about it is visible to
+any player, and nothing breaks if it is never touched again.
 
-`handle_loot_corpse` sends `corpse_looted` and then immediately calls `send_character_update`,
-`save_character` and `send_location_update`. Those arrive microseconds later and redraw over the
-page. The handler cleared the canvas and drew, but never set **`pending_continue`** - which is the
-only flag the redraw paths actually stand down for. And the corpse is despawned in the same call,
-so that list of items existed nowhere else afterwards.
+---
 
-⚡ **CLAUDE.md HAS CARRIED THIS RULE ALL ALONG**, with a mandatory checklist, and the screen
-shipped without it anyway. *"A check nobody runs is not a check."* So there is one now:
-`tools/unreadable_result_audit.py`, which works from the CAUSE on the server rather than from the
-client - it finds every message type sent from a function that ALSO triggers a redraw, then reports
-any whose client handler draws a page and never protects it. Proven to fire by reverting the fix.
+#### 1. THE ONE THING TO DO FIRST
 
-It immediately found a **second, unreported instance**: `inn_rest_result`. Resting heals, so the
-server sends a character update in the same call, and how much you recovered was the only thing
-that screen had to say. Both fixed.
+**Player Phantoms needs its CLIENT surfaces, and that is the whole remaining task.** Every server
+handler exists and **nothing calls any of them**:
 
-⛑ **It is ADVISORY and says so.** A transient page (a toast, a status line) is allowed to be
-replaced, and the audit cannot tell that from a result somebody needed - so it never edits
-anything, and a reviewed entry goes in its `ACCEPTED` table with a reason.
+    list_prefab_posts    ->  a build-menu list of the three charters, with prices and what you hold
+    buy_prefab_post      ->  spend Valor, receive the charter as an inventory item
+    feed_phantom         ->  {kind: "egg", egg_id} or {kind: "companion", companion_id}
+    enter_phantom        ->  descend, while standing inside your own post
 
-### ✅ TWO PARTY FAULTS FOUND FROM LIVE (2026-09-19)
+Plus two messages the server SENDS that the client does not yet read:
+`prefab_posts` (the charter list) and `phantom_state` (a post's investment, depth, and where the
+certain egg falls).
 
-**1. BRACE / WARD / SLIP DID NOTHING IN A PARTY, AND HUNG THE ROUND.** Owner, live, at the starter
-dungeon boss: *"attempted to use Slip. The combat log instead says Brace and shows I'm locked in
-but can still change my picks but whenever I try it just says waiting for party."*
+**When all three surfaces work end to end, flip `PHANTOM_POSTS_ENABLED` in `server/server.gd`.**
+That single constant is the entire hold, and it is checked at every door.
 
-`_handle_party_combat_command` keeps its **own allow-list** of what counts as a combat command.
-Brace shipped in v0.9.817 wired into solo combat and the action bar; that list was never updated,
-so `slip` matched nothing, fell to the `else`, printed "Unknown combat command" and **returned
-without submitting**. The player was never locked in at all - the client had already drawn them as
-locked, so every retry did nothing and the round could never complete. A defensive action that
-silently costs you the fight is worse than not having one.
-The second half of the report was the log naming: routing it as an ability would have announced
-"Brace" to a Ninja, via the same raw-id fallback that once made Assassinate read as "Perfect
-Heist" **in that same function**. It has its own `kind` and asks `brace_name_for`.
-Probe: `every_combat_action_works_in_a_party.gd`, proven to fire.
+⚠ **THIS IS ALSO THE POINT WHERE IT STOPS BEING SAFE TO LEAVE HALF-DONE.** Today the feature is
+genuinely inert. Once buttons exist, half-finished means a player can buy a charter and not place
+it, or stock a post they cannot descend into. **Do all three surfaces in one sitting, or none.**
 
-**2. EVERY PARTY DEATH WAS RECORDED EMPTY - and it was feeding the balance work.** Measured on the
-live log: **7 of 50 deaths** carried `rounds 0`, `hp_at_start 0`, zero damage both ways. Not 0 HP
-fights: `handle_permadeath` takes the fight as an OPTIONAL argument and both party paths passed
-nothing. `death_log_audit.py` printed each one under **"AT PARITY - these are the curve's, not the
-player's"** - three of that section's fourteen rows. The strongest evidence available that the
-early curve is too hard, and a fifth of it was a missing function argument.
-Fixed at the cause (the summary is taken in `_party_collect_fallen`, where the combat still
-exists - taking it at kill time returns nothing, because a wipe tears the combat down first) and
-structurally (`has_combat_detail`, so a blank can never again look like a one-shot). The audit now
-excludes blanks from the curve evidence and says so.
-Probe: `a_party_death_records_its_fight.gd`, proven to fire.
+#### 2. WHAT IS ALREADY BUILT (server, held, each with a probe proven to fire)
 
-⚡ **THE PARITY LIST READS DIFFERENTLY NOW.** With the blanks out, several early deaths show the
-player walking in at **32%, 42%, 60% HP** - that is attrition, not encounter power, and it is a
-different fix entirely. Do not re-open the early curve on the old reading.
+    shared/prefab_posts.gd    3 Valor charters: 12k / 30k / 75k, 7x7 / 9x9 / 11x11
+                              layouts GENERATED, so a wall cannot have a hole in it
+    shared/phantom_model.gd   depth from distance, levels, species weights, reward curves
+    persistence_manager.gd    get_post_investment / add_post_investment (ACCOUNT-owned)
+    server.gd                 feed, descend, generation hooks, egg provenance
+    character.gd              a hatched companion inherits `phantom_power`
+    drop_tables.gd            companion_stat_mult = variant x provenance
+    client.gd                 "(Phantom-born +N%)" on the companion display
 
+    PROBES   a_held_feature_is_really_held
+             the_phantom_pump_is_shut
+             a_phantom_level_is_not_an_overworld_level
+             the_phantom_reward_stays_inside_the_ceiling
+             a_phantom_born_companion_is_stronger
+             you_can_descend_into_your_own_phantom
+    All seven PASS as of 2026-09-19, including `the_party_fights_together`.
+
+#### 3. THE DECISIONS ALREADY MADE — do not re-litigate these
+
+    1. DIFFICULTY   the Phantom picks its own LEVELS; the calibrated curve is untouched.
+                    A monster generated at level N IS an ordinary level-N monster, so XP,
+                    threat, post anchoring, the death log and quest targets are all correct
+                    BY CONSTRUCTION. Audited across all five surfaces before any code.
+    2. THE PUMP     gated by DEPTH AND SURVIVAL RISK and nothing else. Diminishing returns,
+                    a lossy exchange and a cooldown were all offered and rejected.
+                    ⚡ So volume must buy NOTHING depth does not also demand. Measured: an
+                    absurd hoard pays 0.002 on floor 2 and 1.905 on floor 20.
+    3. EGGS         a GUARANTEED egg at 70% depth, with quality as the variable part.
+    4. OWNERSHIP    the ACCOUNT owns the post and its investment; what you carry OUT is
+                    still lost on death.
+    5. PROVENANCE   a phantom-born companion carries a multiplier the grade ladder knows
+                    nothing about, capped at 1.35x = about ONE GRADE above its letter.
+                    ⚡ Rank was a dead axis (1.26x across a whole tier, and `power_index`
+                    already clamps above RANKS). Tier collides with the letter. This rides
+                    alongside both.
+
+#### 4. STILL OPEN IN THE PHANTOM DESIGN (from the 2026-09-02 archive)
+
+    * valid PLACEMENT area for a charter - min distance from existing posts, terrain rules
+    * whether a Phantom is per-post / per-account / shared, and who else may enter
+    * reward gating: enough to gear a fresh character locally, without becoming the best
+      farm in the game for an established one
+
+#### 5. EVERYTHING ELSE
+
+**Waiting on TIME, not work:** re-run `tools/death_log_audit.py` against the 1.81%
+deaths-per-encounter baseline. ⚡ That baseline predates the 2026-09-19 batch AND the party-death
+fix, so it measures the whole batch together and the instrument itself changed - party deaths used
+to be recorded EMPTY and the audit read those blanks as one-shots at parity. **The balance batch
+stays parked until that data lands.**
+
+**Before proposing anything: `python tools/backlog_audit.py`.**
+**Before committing any .gd: `bash tools/gdcheck.sh <files>`** - `--check-only` prints its error and
+exits 0, so a pipe silently swallows it. That wrapper caught two invented functions on 2026-09-19.
 
 ### ✅ THE TUTORIAL SKIP AND THE HELP POP-UPS (2026-09-19)
 
@@ -8214,7 +8241,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
          ⛑ Check against the known *"Merchant / market-house balancing"* item (Sun Keep's market
          near-empty, 3 shrine items) - that is the POST side of what may be one supply problem.
 
-- [ ] **Living world / rework the posts. ⛑ SEQUENCE IT AFTER PLAYER PHANTOMS** (assessment
+- [ ] **Living world / rework the posts. ⛑ SEQUENCE IT AFTER PLAYER PHANTOMS** <!-- audited: 2026-09-19 --> Genuinely open; the audit flags it only because this entry's own text says the PARTY code "shipped", which is about a different item. (assessment
       2026-09-19, owner asked what I thought of the two). It is a BUNDLE rather than one feature -
       companions around posts, NPCs, wandering travellers, recruitable party members, threats woven
       in - and its own scope note says it is downstream ("it is what those populate") and that it
