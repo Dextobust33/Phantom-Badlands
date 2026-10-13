@@ -7257,7 +7257,16 @@ func _dev_run_shots() -> void:
 					if step == "inspect":
 						execute_local_action("inventory_inspect")
 						await get_tree().create_timer(0.8).timeout
-						select_inventory_item(0)
+						# GEAR, not whatever sorts first: the first capture inspected a fishing rod,
+						# which proved nothing about the gear page the owner reported.
+						var _gear_i := 0
+						var _inv_i: Array = character_data.get("inventory", [])
+						for _k in range(_inv_i.size()):
+							if String(_inv_i[_k].get("type", "")) in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+								_gear_i = _k
+								break
+						print("[SHOTS] invpath inspecting index=%d name=%s type=%s" % [_gear_i, str(_inv_i[_gear_i].get("name", "?")), str(_inv_i[_gear_i].get("type", "?"))])
+						select_inventory_item(_gear_i)
 					else:
 						execute_local_action(step)
 					await get_tree().create_timer(2.4).timeout
@@ -7268,6 +7277,86 @@ func _dev_run_shots() -> void:
 				inventory_mode = false
 				pending_inventory_action = ""
 				update_action_bar()
+
+			"pagepath":
+				# ⚑ THE FLAG-DRIVEN PAGES, photographed after the idle map redraw has had its turn.
+				# Owner sheet 2026-10-13 items 11 (Home Stone companion page), 23 (Settings). The
+				# state line is printed beside each capture; `out_len` falling back to the map's mark
+				# means the page was painted over.
+				# A STEP FIRST, so the map is what is on the canvas - the state every real report started
+				# from. Without it the harness begins on a leftover login page (wide=true), and the
+				# first baseline photographed a state nobody plays in.
+				send_to_server({"type": "move", "direction": "east"})
+				await get_tree().create_timer(1.8).timeout
+				await _dev_shot_clear_overlays()
+				print("[SHOTS] pagepath start      canvas_showing=%s wide=%s inventory_mode=%s" % [
+					str(_ow_canvas_showing), str(_ow_wide_page), str(inventory_mode)])
+				open_settings()
+				await get_tree().create_timer(2.4).timeout
+				print("[SHOTS] pagepath settings   wide=%s out_len=%d mark=%d" % [
+					str(_ow_wide_page), game_output.get_parsed_text().length(), _ow_canvas_mark])
+				await _dev_shot_capture("pagepath_settings")
+				# ...and the thing the owner suspected: ANOTHER PLAYER MOVES NEARBY. The server answers
+				# with a `location` message to everyone in view, and that handler used to close a
+				# wide page ("walking away"). A refresh from the server is exactly that message.
+				send_to_server({"type": "request_location"})
+				await get_tree().create_timer(2.4).timeout
+				print("[SHOTS] pagepath settings+loc wide=%s out_len=%d mark=%d settings_mode=%s" % [
+					str(_ow_wide_page), game_output.get_parsed_text().length(), _ow_canvas_mark, str(settings_mode)])
+				await _dev_shot_capture("pagepath_settings_after_location")
+				close_settings()
+				await get_tree().create_timer(1.0).timeout
+				handle_server_message({"type": "home_stone_select", "stone_type": "equipment",
+					"message": "Choose gear to send home:",
+					"options": [{"label": "Nothing to send", "item": {}}]})
+				await get_tree().create_timer(2.4).timeout
+				print("[SHOTS] pagepath homestone  wide=%s out_len=%d mark=%d" % [
+					str(_ow_wide_page), game_output.get_parsed_text().length(), _ow_canvas_mark])
+				await _dev_shot_capture("pagepath_homestone")
+				send_to_server({"type": "request_location"})
+				await get_tree().create_timer(2.4).timeout
+				print("[SHOTS] pagepath homestone+loc wide=%s out_len=%d mark=%d" % [
+					str(_ow_wide_page), game_output.get_parsed_text().length(), _ow_canvas_mark])
+				await _dev_shot_capture("pagepath_homestone_after_location")
+				home_stone_mode = false
+				home_stone_options = []
+				update_action_bar()
+				await get_tree().create_timer(0.8).timeout
+
+			"wishpath":
+				# ⚑ THE WISH GRANTER, END TO END (owner sheet 2026-10-13, item 46: *"After choosing
+				# it just displays the map and nothing about what you got"*). `gm_spawnwish` is a
+				# 1-HP monster with a guaranteed wish, so this walks the real messages: the fight, the
+				# wish_choice prompt, the pick, and the wish_granted result.
+				send_to_server({"type": "gm_godmode"})
+				await get_tree().create_timer(0.6).timeout
+				send_to_server({"type": "gm_spawnwish"})
+				await get_tree().create_timer(3.0).timeout
+				# The GM granter arrives as a FLOCK, and the wish is only offered after the last one
+				# falls: attack while fighting, step the flock on while it waits.
+				for _w in range(60):
+					if wish_selection_mode:
+						break
+					if in_combat:
+						send_to_server({"type": "combat", "command": "attack"})
+					elif flock_pending:
+						continue_flock_encounter()
+					await get_tree().create_timer(1.2).timeout
+				await get_tree().create_timer(2.0).timeout
+				print("[SHOTS] wishpath prompt  mode=%s opts=%d in_combat=%s panel_vis=%s out_len=%d mark=%d" % [
+					str(wish_selection_mode), wish_options.size(), str(in_combat),
+					str(combat_scene_panel != null and combat_scene_panel.visible), game_output.get_parsed_text().length(), _ow_canvas_mark])
+				await _dev_shot_capture("wishpath_1_prompt")
+				if wish_selection_mode:
+					select_wish(0)
+					await get_tree().create_timer(2.6).timeout
+					print("[SHOTS] wishpath result  pending_continue=%s in_combat=%s panel_vis=%s canvas_showing=%s out_len=%d side_lines=%d" % [
+						str(pending_continue), str(in_combat),
+						str(combat_scene_panel != null and combat_scene_panel.visible), str(_ow_canvas_showing),
+						game_output.get_parsed_text().length(), _ow_side_lines.size()])
+					await _dev_shot_capture("wishpath_2_result")
+				else:
+					print("[SHOTS] wishpath FAIL no wish prompt arrived")
 
 			"rework":
 				# The rework flow, which the owner watched vanish off the screen. A capture after
@@ -28141,7 +28230,10 @@ func handle_server_message(message: Dictionary):
 					_ow_side_seen_at = _here
 					_ow_side_seen = _ow_side_lines.size()
 				# Walking away closes a wide page too - it was a screen you opened, not a place.
-				_ow_wide_page = false
+				# ...but NOT while a MODE holds it: a location message is also what another player's
+				# step sends you, and that is not you walking away from your own Settings screen.
+				if not _menu_mode_holds_canvas():
+					_ow_wide_page = false
 			# Who is walking with you. Read before anything draws, so the escort appears on the
 			# same frame as the move rather than one behind it.
 			_escort_kind = String(message.get("escort", ""))
@@ -29766,6 +29858,7 @@ func handle_server_message(message: Dictionary):
 
 		"wish_granted":
 			# Wish selection result
+			var wish_level_before: int = int(character_data.get("level", 1))
 			wish_selection_mode = false
 			wish_options = []
 			in_combat = false  # End combat state so action bar shows Continue
@@ -29782,6 +29875,28 @@ func handle_server_message(message: Dictionary):
 				update_currency_display()
 			pending_continue = true
 			display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+			# ⚑ THE RESULT GOES ON THE VICTORY CARD, NOT ONLY INTO THE TEXT. Owner sheet 2026-10-13,
+			# item 46: *"After choosing (I chose a gear reward) it just displays the map and nothing
+			# about what you got."* Photographed with `shots.py wishpath`: the line above is printed
+			# while the combat scene still owns the canvas, so it lands behind the scene and the map
+			# repaints over it once the scene hides - a one-line result with nowhere to be read.
+			# The card is what a normal kill uses for the same job, with the same linger and beat.
+			if combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.has_method("show_victory_card"):
+				var wish_payload := {
+					"xp_gain": 0,
+					"old_level": wish_level_before,
+					"new_level": int(character_data.get("level", wish_level_before)),
+					"did_level_up": int(character_data.get("level", wish_level_before)) > wish_level_before,
+					"loot": ["[color=#FF00FF]%s[/color]" % result_msg],
+					"gear_drops": [],
+					"continue_key": get_action_key_name(0),
+				}
+				if not combat_msg_queue.is_empty():
+					_pending_victory_card_payload = wish_payload
+				else:
+					_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 3200)
+					combat_scene_panel.visible = true
+					get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(wish_payload, _combat_generation))
 			update_action_bar()
 
 		"monster_select_prompt":
@@ -41508,8 +41623,20 @@ func _canvas_held_by_page() -> bool:
 	by the Map."* Photographed with `shots.py invpath`: the page printed and was gone within a tick.
 
 	`inventory_mode` is flipped on the keypress and shared by every inventory sub-screen, so no list
-	of their names has to be kept."""
-	return _ow_wide_page or inventory_mode
+	of their names has to be kept.
+
+	⛑ A MODE HOLDS ITS PAGE; A FLAG ON THE PAGE IS NOT ENOUGH. `_ow_wide_page` is also closed by every
+	`location` message ("walking away closes a wide page"), and the server sends one whenever anyone
+	in view moves. Measured with `shots.py pagepath`: Settings and the Home Stone page promoted to
+	wide, a location refresh dropped the flag, and the map was back on the canvas with the mode
+	still set (owner sheet items 11 and 23). Their modes are the truth about whether the player is
+	still in them, so they are asked directly."""
+	return _ow_wide_page or _menu_mode_holds_canvas()
+
+
+func _menu_mode_holds_canvas() -> bool:
+	"""Is the player inside a MODE whose page lives on the canvas until they leave it?"""
+	return inventory_mode or settings_mode or home_stone_mode
 
 
 func _ow_canvas_eligible() -> bool:

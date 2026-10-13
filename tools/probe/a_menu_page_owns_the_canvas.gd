@@ -35,10 +35,28 @@ func _init() -> void:
 	var held := _body(src, "_canvas_held_by_page")
 	if held == "":
 		_fail("_canvas_held_by_page is gone")
-	elif not _has_stmt(held, "return _ow_wide_page or inventory_mode"):
-		_fail("_canvas_held_by_page no longer answers wide-page OR inventory_mode")
+	elif not _has_stmt(held, "return _ow_wide_page or _menu_mode_holds_canvas()"):
+		_fail("_canvas_held_by_page no longer answers wide-page OR a held mode")
 	else:
-		_ok("a wide page or any inventory sub-screen holds the canvas")
+		_ok("a wide page or a held mode holds the canvas")
+
+	var modes := _body(src, "_menu_mode_holds_canvas")
+	if modes == "" or not _has_stmt(modes, "return inventory_mode or settings_mode or home_stone_mode"):
+		_fail("_menu_mode_holds_canvas no longer lists inventory/settings/home-stone - a page of that mode can be painted over")
+	else:
+		_ok("inventory, settings and home-stone modes each hold the canvas")
+
+	print("===== A LOCATION MESSAGE CANNOT CLOSE A HELD PAGE =====")
+	# Another player's step sends a `location`; it must not read as the player walking away.
+	var loc_ok := false
+	var lines := src.split("\n")
+	for i in range(lines.size() - 1):
+		if String(lines[i]).strip_edges() == "if not _menu_mode_holds_canvas():" and String(lines[i + 1]).strip_edges() == "_ow_wide_page = false":
+			loc_ok = true
+	if not loc_ok:
+		_fail("the location handler closes a wide page even while a mode holds it (owner items 11/23)")
+	else:
+		_ok("the location handler leaves a mode's page alone")
 
 	print("===== THE THREE CALLERS ASK IT =====")
 	var um := _body(src, "update_map")
@@ -64,6 +82,21 @@ func _init() -> void:
 		_fail("_ow_text_in_column no longer excludes a held page - its text goes to the column behind the map")
 	else:
 		_ok("_ow_text_in_column excludes a held page")
+
+	print("===== THE WISH RESULT HAS A SURFACE (owner item 46) =====")
+	# Bounded to its own match arm: from `"wish_granted":` to the next arm, never further.
+	var wi := src.find("
+		\"wish_granted\":")
+	var wj := src.find("
+		\"monster_select_prompt\":", wi + 10)
+	if wi < 0 or wj < 0:
+		_fail("could not bound the wish_granted arm - the probe's anchors moved")
+	else:
+		var arm := src.substr(wi, wj - wi)
+		if not _has_stmt(arm, "get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(wish_payload, _combat_generation))"):
+			_fail("wish_granted no longer puts its result on the victory card - the line is printed behind the combat scene and the map paints over it")
+		else:
+			_ok("wish_granted shows its result on the victory card")
 
 	print("")
 	if not _fails.is_empty():

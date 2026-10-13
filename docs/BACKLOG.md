@@ -1065,23 +1065,28 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       editor reopens `quick_simulation.gd` from its saved open-tabs list. Preloads repointed into
       `archive/`; a full `--headless --editor --quit` load now prints zero errors (was 5 lines,
       expanding to ~31 in the editor).
-2. - [~] **MAP DRAWS OVER A PANEL THE PLAYER IS READING** [2 Rework, 3 Inspect gear, 8 Salvage
-      screen, 11 Home Stone companion dialogue, 23 Settings options cleared, 46 Titan wish result].
-      **PARTLY DONE 2026-10-13 — items 2 and 8 fixed and photographed; 3, 11, 23, 46 NOT yet.**
-      The suspected cause (server refresh wiping `game_output`) was WRONG. Measured with the new
-      `python tools/test_setup/shots.py invpath` scene (drives the real click path): the page
-      printed correctly and was painted over within a tick by `update_map`'s ~0.4s idle-bob
-      redraw (`_tick_overworld_walk_anim`). `update_map` protected only WIDE pages
-      (`_ow_wide_page`); Rework/Salvage/Sort are short, so never went wide. Fix: one predicate,
-      `_canvas_held_by_page()` (= wide page OR `inventory_mode`), read by `update_map`,
-      `_ow_heal_canvas` and `_ow_text_in_column`. Probe `a_menu_page_owns_the_canvas.gd`
-      (fault-injected: reverting the `update_map` guard fails it); the three existing canvas
-      probes still pass. **Still to do in this group:** [3] Inspect worked in the capture for a
-      tall page, so the owner's case is probably a SHORT gear page — confirm with a capture of a
-      short item, and also the "inspect text missing things the preview lists" half (belongs to
-      group 5); [11] Home Stone companion dialogue, [23] Settings, [46] Titan wish are not
-      `inventory_mode` screens — each needs its own flag added to `_canvas_held_by_page()`
-      (`settings_mode`, the Home Stone/Titan page state) and an `invpath`-style capture.
+2. - [x] **DONE 2026-10-13 — MAP DRAWS OVER A PANEL THE PLAYER IS READING** [2 Rework, 3 Inspect
+      gear, 8 Salvage, 11 Home Stone companion page, 23 Settings, 46 Titan wish result]. Every
+      one photographed BEFORE and AFTER with the harness (`shots.py invpath | pagepath | wishpath`),
+      which drives the real click path and prints canvas-ownership state beside each capture.
+      The suspected cause (server refresh wiping `game_output`) was WRONG; there were two causes:
+      (a) `update_map`'s ~0.4s idle-bob redraw protected only WIDE pages, and Rework/Salvage/
+      Sort/Inspect/Settings/Home Stone pages are short or flag-driven, so the map was painted
+      over them within a tick; (b) every `location` message closed a wide page ("walking away"),
+      and the server sends one when ANY nearby player steps - the owner's Settings guess was
+      right. Fix: one predicate `_canvas_held_by_page()` = wide page OR `_menu_mode_holds_canvas()`
+      (inventory/settings/home_stone modes), read by `update_map`, `_ow_heal_canvas` and
+      `_ow_text_in_column`; the location handler no longer closes a page a mode holds.
+      (c) [46] the wish result was printed while the combat scene still owned the canvas, so it
+      landed behind the scene and the map repainted over it; it now rides the victory card (with
+      level-up) like a normal kill. Probe `a_menu_page_owns_the_canvas.gd`: fault-injected on
+      each guard (update_map, location handler, modes list, wish card) and fails every time;
+      the three existing canvas probes still pass.
+      **Honest gaps:** [3] a SHORT gear page now holds (photographed) but I did not take a
+      pre-fix baseline for a short gear page, so that one is "consistent with the cause", not
+      separately reproduced. Other `*_mode` screens (market/crafting use real panels; wish
+      PROMPT, monster-select, target-farm, title menu) were not photographed - add a flag to
+      `_menu_mode_holds_canvas()` if any is reported.
 3. - [ ] **[5] Apex Wyvern quest dungeon: never shown inside, "already in dungeon", relog lands in
       Crossroads.** Can strand a player — before the rest of the dungeon group.
 4. - [ ] **DUNGEONS** [1 Rescue-the-Scholar NPC not spawned / glyph text should be sprite, likely all
@@ -1093,6 +1098,9 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      **EVIDENCE FOR [3b], found 2026-10-13 in the invpath capture:** a weapon spawned with
+      `ability_rank_all +2` inspects as only "+104 Attack, +24 Strength" - the card/ability-rank
+      affix the preview lists is absent from the Inspect page. Start there (`display_item_details`).
 6. - [ ] **COMBAT MECHANICS TO VERIFY** [4 Swift Hobgoblin landed 6 hits; 9 Distract debuff not
       shown/applied; 28 "less often / once per fight" upgrades functioning?; 40 audit artifact +
       special-effect gear vs their text; 14 runes can't be applied; 34 Tome of Gambit card not in
@@ -1106,7 +1114,18 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       started while out of range — fight symbol on the map, join into next round with HP/stats
       rescaled]. Overlaps the existing PARTY PLAY HALF TWO item (BACKLOG ~385) — merge, do not
       duplicate.
-9. - [ ] **BALANCE BATCH — wait for the chain, do not fix one by one** [25 Fighter mitigation looks
+9. - [ ] **BALANCE BATCH — wait for the chain, do not fix one by one.**
+      ⚑ **THE DATA IT WAS WAITING ON IS NOW DUE (owner, 2026-10-13: "it's been a few weeks, we
+      should have better data").** The 2026-09-19 handoff said re-run `tools/death_log_audit.py`
+      "in ~2 weeks" against the 1.81% deaths-per-encounter baseline; that was due ~2026-10-03,
+      and 24 days have now passed. **Do this BEFORE touching any item below or running the
+      chain:** (1) `python tools/death_log_audit.py` (live deaths, by band/class/level gap);
+      (2) `bash tools/check_player_progress.sh` (how far the live population climbed, split by
+      era); (3) re-check the reference player against live saves
+      (memory `reference_live_reference_player`: `make_char` carried 189 maxHP vs a real ~109
+      once, and the chain cannot see that). Both scripts are READ-ONLY over SSH. Only then batch
+      the items below - [25] and [27] in particular should be judged against real deaths, not
+      the sim. [25 Fighter mitigation looks
       permanently capped (is Bulwark/Brace applying unused?) — investigate as a BUG first;
       27 uneven monster damage; 33 Chaos/Magic Bolt variance; 41 Paths maxed too fast (overlaps
       existing PATHS REVAMP item ~7420); 38 minigame reward tiers — egg of faced monster or
@@ -1255,7 +1274,7 @@ combat panel at all. One measurement that could not reach its target was deleted
 
 **Two things are WAITING ON TIME, not on work:**
 
-1. **Re-run `tools/death_log_audit.py` in ~2 weeks** against the 1.81% deaths-per-encounter
+1. **⚑ NOW DUE (2026-10-13, 24 days on): re-run `tools/death_log_audit.py`** against the 1.81% deaths-per-encounter
    baseline. ⚡ That baseline predates this whole batch, so it measures everything together -
    and it is now cleaner than it was, because party deaths used to be recorded EMPTY and the
    audit read those blanks as one-shots at parity.
