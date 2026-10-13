@@ -1162,6 +1162,45 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       vs equipped gear + market-listing popups; 29 stat-point auto-apply; 30 minigame too long late;
       50 bring gold back, 1 gem = 1k gold, blacksmith/enchanter sinks into HP/damage].
 
+11. - [ ] **NEW DIRECTION 2026-10-13 (owner, after the sheet) — VARIETY: quest boards, monsters,
+      companions, and the tank mobs.** Four linked asks, recorded together because they share
+      inputs. **Placement: DESIGN FIRST, then the BALANCE BATCH** - every one of them changes monster
+      or companion power, so per CLAUDE.md they invalidate the calibration chain and must land
+      BEFORE the one chain run, not after it.
+      (a) **QUEST BOARDS LACK VARIETY AND GIVE NO REASON TO VISIT.** Owner: *"They all send you to
+      pretty much the same couple of monster types and also don't really incentivize players to
+      come to them (unique varieties, patterns, or traits, etc.)."* Two halves: the quest
+      GENERATOR picks from too small a pool of targets (measure it first - count distinct
+      monster/dungeon types across a few hundred generated boards; do not assume), and a board
+      offers nothing you cannot get elsewhere. A board should be where you go to find a SPECIFIC
+      variety/pattern/trait you want (ties straight into (b) and (c)). Overlaps sheet items 35, 38
+      and the existing "Real sinks for excess eggs and companions" and dungeon-questing items.
+      (b) **MONSTERS WITH ROLLED STATS.** Owner: *"Perhaps monsters get randomized stats so not all
+      monsters of the same rank/tier are the same and even two of the same monsters could be
+      different due to how they roll."* Today a monster's stats derive from a level curve plus a
+      per-species multiplier (`species_power`) and a role multiplier - deterministic per
+      (species, level, role). Needs a DESIGN pass before code: how wide a roll, whether it is
+      visible (a variance the player cannot see is noise, not variety), whether it is a trait
+      ("Thick-hided", "Frenzied") so it can be named on the log (sheet item 19) and offered on a
+      board (a). Must keep the MEAN on the curve or the calibration is silently shifted.
+      (c) **COMPANIONS NEED MORE VARIETY.** Owner: *"We may need to consider a way to make companions
+      have even more variety."* Companions are the monster you kill/hatch, so (b) feeds this
+      directly: a rolled-stats monster yields a rolled-stats companion. Existing per-INSTANCE
+      work is relevant (memory `project_card_instances_chase_loop`: duplicates must level
+      independently) and the cosmetic-variety work (variants/colours/patterns). Decide whether a
+      companion's rolls are inherited from the monster it came from. Related: item 51 (same
+      companion in several slots) must be settled first or variety can be duplicated away.
+      (d) **THE TANK MOBS ARE CRAZY STRONGER THAN THE OTHER VARIETIES.** Owner: *"The tank mobs
+      being crazy stronger than the other varieties needs to be on the backlog."* **MEASURE BEFORE
+      TUNING, and suspect the instrument first** (CLAUDE.md): `species_power` has never once
+      weakened a species - every correction is a strengthening, 68 of 136 pinned at the x2.50
+      ceiling - so an outsized tank archetype is exactly what a one-sided calibrator would
+      produce. Do NOT widen the clamp (documented: it amplifies the bias). Start with the live
+      death log (`tools/death_log_audit.py`, now DUE - see item 9) broken out BY MONSTER
+      ARCHETYPE, then `-- spread` / `-- forensics` (read-only) on the tank species. Belongs to
+      the BALANCE BATCH, judged against absolute targets, not against sibling varieties
+      (memory `feedback_tune_to_targets_not_to_each_other`).
+
 ### ⚑ PICK UP HERE — written 2026-09-19 for a gap of unknown length
 
 **v0.9.833 is LIVE (client + server, hash-verified). Everything shipped is playable.**
