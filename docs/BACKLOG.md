@@ -1117,10 +1117,29 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       call-site count; re-read what the 5 are before bumping the number. Related to item 36 (the
       log shows a quest released a shared world dungeon "not erased - it is shared", which is
       correct; the abandoned-PERSONAL-dungeon cleanup is the part still to verify).
-4. - [ ] **DUNGEONS** [1 Rescue-the-Scholar NPC not spawned / glyph text should be sprite, likely all
+4. - [~] **DUNGEONS** [1 Rescue-the-Scholar NPC not spawned / glyph text should be sprite, likely all
       NPC quests; 10 random dungeons not on map; 36 abandoned-quest dungeon cleanup; 37 + 42 floor
       loot level/valor not matching dungeon (L56 loot vs L83 monsters, E8 low valor); 35 do
-      dungeons ever give a card].
+      dungeons ever give a card]. **Sub-status (update as each lands):**
+      - [x] **[1] DONE IN CODE 2026-10-13 (server + client; needs server deploy + client release).**
+        Measured, not guessed: `tools/probe/rescue_npc_is_reachable.gd` builds 54 real rescue
+        instances. TWO defects, the second hidden behind the first. (a) `_find_npc_spawn_position`
+        called `room.get("x")` on `Rect2i` rooms; a release server yields null instead of aborting,
+        no room qualified, and EVERY rescue NPC was placed at the default (1,1) - a map corner.
+        (b) Fixing (a) showed all 54 NPCs standing on the EXIT tile (the farthest room's centre is
+        where the stairs are); `handle_dungeon_move` handles EXIT before the NPC check, so stepping
+        there just descended - the NPC could never be rescued, and its sprite hid the stairs.
+        Placement now picks plain floor nearest the room centre, avoiding stairs/specials/monsters/
+        loot. **"Glyph" -> sprites:** NPCs draw from the player sprite pool, one fixed figure per
+        kind (scholar 2_7, healer 4_6, merchant 2_5, blacksmith 5_3, breeder 4_3), photographed
+        with `shots.py rescuenpcs`; the quest text and the redirect message no longer say "R glyph".
+        **It was the same for ALL the NPC rescue quests** (merchant/healer/blacksmith/scholar/
+        breeder share this one spawner), as the owner suspected. (The cyan R was also drawing as a
+        PURPLE letter - the nearest baked glyph colour - moot now.)
+      - [ ] [10] random dungeons not on the map
+      - [ ] [36] abandoned-quest dungeon cleanup
+      - [ ] [37 + 42] floor loot level/valor vs the dungeon
+      - [ ] [35] do dungeons ever give a card
 5. - [ ] **TEXT/NUMBERS THAT DISAGREE** [15 Companion card face vs log; 16 Double Cross face vs
       actual; 18 potion HP in combat list; 39 card name differs Deck vs battle (Sorcerer Wild
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)

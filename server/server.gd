@@ -21542,8 +21542,14 @@ func _spawn_rescue_npc(instance_id: String, floor_num: int, npc_type: String, qu
 	var grid = floor_grids[floor_num]
 	var rooms = dungeon_floor_rooms[instance_id][floor_num]
 
-	# Find a room position far from the entrance for the NPC
-	var pos = _find_npc_spawn_position(grid, rooms)
+	# Find a room position far from the entrance for the NPC - on a tile nothing else is using.
+	# Monsters and floor loot are already spawned by now (see `_create_player_dungeon_instance`).
+	var avoid := {}
+	for m in dungeon_monsters.get(instance_id, {}).get(floor_num, []):
+		avoid[Vector2i(int(m.x), int(m.y))] = true
+	for it in dungeon_floor_items.get(instance_id, {}).get(floor_num, []):
+		avoid[Vector2i(int(it.get("x", 0)), int(it.get("y", 0)))] = true
+	var pos = _find_npc_spawn_position(grid, rooms, avoid)
 
 	if not dungeon_npcs.has(instance_id):
 		dungeon_npcs[instance_id] = {}
@@ -21560,29 +21566,83 @@ func _spawn_rescue_npc(instance_id: String, floor_num: int, npc_type: String, qu
 		"rescued": false,
 	}
 
-func _find_npc_spawn_position(grid: Array, rooms: Array) -> Vector2i:
-	"""Find a good spawn position for a rescue NPC (preferably in a room far from entrance)."""
-	# Find entrance position
-	var entrance_pos = _find_tile_position(grid, DungeonDatabaseScript.TileType.ENTRANCE)
+func _find_npc_spawn_position(grid: Array, rooms: Array, avoid: Dictionary = {}) -> Vector2i:
+	"""Find a good spawn position for a rescue NPC: an ordinary floor tile in the room farthest from
+	the entrance, as near that room's centre as it can get.
 
-	# Try to find a room center far from entrance
-	var best_pos = Vector2i(1, 1)
-	var best_dist = 0.0
+	⚑ TWO DEFECTS LIVED HERE (owner sheet 2026-10-13, item 1: *"Rescue the Scholar Quest isn't
+	actually spawning the scholar in the Dungeon"*), and the second hid behind the first.
+	  1. Rooms are `Rect2i`; the old code called `.get()` on them, which a release server turns into
+	     null, so no room qualified and every NPC landed on the default (1, 1) - a map corner.
+	  2. Fixing that exposed the real placement rule: the centre of the FARTHEST room is exactly
+	     where the generator puts the stairs down, so all 54 NPCs in the measurement stood on EXIT.
+	     `handle_dungeon_move` handles EXIT before the NPC check, so stepping there descended a floor
+	     and the NPC could never be rescued - and the sprite hid the stairs as well.
+	The tile must be plain walkable floor and not already taken (`avoid`: monsters, floor loot).
+	Measured by tools/probe/rescue_npc_is_reachable.gd."""
+	var entrance_pos = _find_tile_position(grid, DungeonDatabaseScript.TileType.ENTRANCE)
+	var empty_tile: int = int(DungeonDatabaseScript.TileType.EMPTY)
+	var best_pos = Vector2i(-1, -1)
+	var best_dist = -1.0
 
 	for room in rooms:
-		var center_x = room.get("x", 0) + room.get("width", 2) / 2
-		var center_y = room.get("y", 0) + room.get("height", 2) / 2
-		# Ensure it's a walkable tile
-		if center_y >= 0 and center_y < grid.size() and center_x >= 0 and center_x < grid[0].size():
-			if grid[center_y][center_x] != DungeonDatabaseScript.TileType.WALL:
-				var dx = center_x - entrance_pos.x
-				var dy = center_y - entrance_pos.y
-				var dist = sqrt(float(dx * dx + dy * dy))
-				if dist > best_dist:
-					best_dist = dist
-					best_pos = Vector2i(center_x, center_y)
+		var rx: int
+		var ry: int
+		var rw: int
+		var rh: int
+		if room is Rect2i:
+			rx = room.position.x
+			ry = room.position.y
+			rw = room.size.x
+			rh = room.size.y
+		else:
+			rx = int(room.get("x", 0))
+			ry = int(room.get("y", 0))
+			rw = int(room.get("width", 2))
+			rh = int(room.get("height", 2))
+		var cx: int = rx + rw / 2
+		var cy: int = ry + rh / 2
+		# Nearest suitable tile to the centre, searching outward in rings (Chebyshev radius).
+		var spot = Vector2i(-1, -1)
+		var max_r: int = maxi(rw, rh)
+		for r in range(0, max_r + 1):
+			for dy in range(-r, r + 1):
+				for dx in range(-r, r + 1):
+					if maxi(absi(dx), absi(dy)) != r:
+						continue
+					var tx: int = cx + dx
+					var ty: int = cy + dy
+					if tx < rx or tx >= rx + rw or ty < ry or ty >= ry + rh:
+						continue
+					if ty < 0 or ty >= grid.size() or tx < 0 or tx >= grid[0].size():
+						continue
+					if int(grid[ty][tx]) != empty_tile:
+						continue
+					if avoid.has(Vector2i(tx, ty)):
+						continue
+					spot = Vector2i(tx, ty)
+					break
+				if spot.x >= 0:
+					break
+			if spot.x >= 0:
+				break
+		if spot.x < 0:
+			continue
+		var dxe = spot.x - entrance_pos.x
+		var dye = spot.y - entrance_pos.y
+		var dist = sqrt(float(dxe * dxe + dye * dye))
+		if dist > best_dist:
+			best_dist = dist
+			best_pos = spot
 
-	return best_pos
+	if best_pos.x >= 0:
+		return best_pos
+	# No room had a free ordinary tile (should not happen on a real floor): any plain floor tile.
+	for y in range(1, grid.size() - 1):
+		for x in range(1, grid[y].size() - 1):
+			if int(grid[y][x]) == empty_tile and not avoid.has(Vector2i(x, y)):
+				return Vector2i(x, y)
+	return Vector2i(1, 1)
 
 func _get_dungeon_npc_at(instance_id: String, floor_num: int, x: int, y: int) -> Dictionary:
 	"""Get rescue NPC at a specific position in a dungeon, or empty dict if none."""
@@ -31839,7 +31899,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 				npc_label = str(npc.get("npc_type", "ally")).capitalize()
 				npc_floor = int(fnum) + 1
 				break
-			rescue_redirect_msg = "[color=#FFD700]Following your rescue quest — you enter %s. The %s is on floor %d (look for [color=#4DD0FF]R[/color]).[/color]" % [name_str, npc_label, npc_floor]
+			rescue_redirect_msg = "[color=#FFD700]Following your rescue quest — you enter %s. The %s is on floor %d (look for the %s standing in one of its rooms).[/color]" % [name_str, npc_label, npc_floor, npc_label.to_lower()]
 
 	# If no personal dungeon found, create a new personal instance
 	if instance_id == "":

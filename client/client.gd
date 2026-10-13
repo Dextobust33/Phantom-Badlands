@@ -1898,6 +1898,12 @@ var _loot_agg_stack: Dictionary = {}  # base_name -> {"qty": int, "color": Strin
 var _post_loot_victory_persists: bool = false
 
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
+# Rescue NPCs draw from the same pool, one fixed figure per kind so a scholar always looks like the
+# scholar. Chosen from a contact sheet of the pool (2026-10-13): bearded sage, priestess, hatted
+# traveller, burly smith, green-hooded herder. None collides with the Warden (m1_1).
+const RESCUE_NPC_SPRITES := {
+	"scholar": "2_7", "healer": "4_6", "merchant": "2_5", "blacksmith": "5_3", "breeder": "4_3",
+}
 # The Warden draws from the PLAYER sprite pool, at player size - see _overworld_display.
 const WARDEN_SPRITE_ID := "m1_1"
 const WARDEN_FIGURE_SPRITE := "res://client/sprites/overworld_pad32/m1_1/down_stand.png"
@@ -7371,6 +7377,30 @@ func _dev_run_shots() -> void:
 				# A second press is what the owner did next; the server answers it.
 				send_to_server({"type": "dungeon_enter", "dungeon_type": "wyvern_roost", "confirmed": true})
 				await get_tree().create_timer(1.5).timeout
+
+			"rescuenpcs":
+				# ⚑ ALL FIVE RESCUE FIGURES, side by side on a real floor (owner sheet 2026-10-13, item 1:
+				# NPCs "should be sprites now"). Injected next to the player rather than hunted for on
+				# a floor of a quest dungeon, because a capture has to be able to show every type.
+				send_to_server({"type": "gm_enter_dungeon", "tier": 1})
+				await get_tree().create_timer(3.5).timeout
+				var _px: int = int(dungeon_data.get("player_x", 0))
+				var _py: int = int(dungeon_data.get("player_y", 0))
+				var _row: Array = []
+				var _types := ["scholar", "healer", "merchant", "blacksmith", "breeder"]
+				var _placed := 0
+				for _dx in range(1, 12):
+					if _placed >= _types.size():
+						break
+					var _gx: int = _px + _dx
+					if _py < dungeon_floor_grid.size() and _gx < (dungeon_floor_grid[_py] as Array).size() and int(dungeon_floor_grid[_py][_gx]) == 0:
+						_row.append({"x": _gx, "y": _py, "npc_type": _types[_placed],
+							"display_char": "R", "display_color": "#4DD0FF"})
+						_placed += 1
+				dungeon_npcs_data = _row
+				display_dungeon_floor()
+				print("[SHOTS] rescuenpcs placed=%d of %d dungeon_mode=%s" % [_placed, _types.size(), str(dungeon_mode)])
+				await _dev_shot_capture("rescue_npcs")
 
 			"rework":
 				# The rework flow, which the owner watched vanish off the screen. A capture after
@@ -55198,11 +55228,16 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					# thing on this floor that will move on its own while you are reading it.
 					line += _dungeon_ally_cell(ally_map[mkey], _prop)
 				elif npc_map.has(mkey):
-					# Render rescue NPC entity (green ? marker)
+					# A RESCUE NPC IS A PERSON, so it is drawn as one. Owner sheet 2026-10-13, item 1:
+					# *"it mentions the NPC will be a glyph in the Dungeon, this is wrong, they should
+					# be sprites now."* Same builder as a party member, so it stands on the baked floor
+					# at the right size; the letter is only the fallback for a type with no figure.
 					var npc = npc_map[mkey]
-					var nchar = npc.get("display_char", "?")
-					var ncolor = npc.get("display_color", "#00FF00")
-					line += _dungeon_glyph_cell(String(nchar), String(ncolor), "", _prop)
+					var nbid: String = String(RESCUE_NPC_SPRITES.get(String(npc.get("npc_type", "")), ""))
+					if nbid != "":
+						line += _dungeon_player_glyph(DUNGEON_TILE_FONT_SIZE, _prop, true, nbid, "down", "")
+					else:
+						line += _dungeon_glyph_cell(String(npc.get("display_char", "?")), String(npc.get("display_color", "#00FF00")), "", _prop)
 				elif monster_map.has(mkey):
 					# Render monster entity
 					var mon = monster_map[mkey]
