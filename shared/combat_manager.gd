@@ -4955,6 +4955,14 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 	if character == null:
 		return {}
 	var name := canonical_ability(ability_name)
+	# Companion / dungeon cards: a strike kind quotes the SAME number the cast deals (owner sheet
+	# 2026-10-13, item 15 - these faces said nothing numeric, so there was nothing to compare with
+	# the log). Pure-effect kinds (guard, rage, heal...) are not damage and keep their text.
+	if name.begins_with("companion_card_") or name.begins_with("dungeon_card_"):
+		var _ckind: String = String(DropTablesScript.get_card_data_by_id(name).get("kind", "strike"))
+		if COMPANION_STRIKE_POWER.has(_ckind) and combat.get("monster", null) is Dictionary:
+			return {"kind": "damage", "value": _companion_strike_mod(character, combat["monster"], name, combat, float(COMPANION_STRIKE_POWER[_ckind])), "scales": ""}
+		return {}
 	var total_attack: int = character.get_total_attack()
 	var s_str: float = float(character.get_effective_stat("strength"))
 	var s_wits: float = float(character.get_effective_stat("wits"))
@@ -5174,9 +5182,9 @@ func _caster_passive_damage_mult(character) -> float:
 	return mult
 
 func _build_ability_effect_info(combat: Dictionary) -> Dictionary:
-	"""Authoritative effect preview for every card in hand. Companion and dungeon cards are
-	omitted deliberately: they are data-driven and the client renders them from the shared card
-	table, which is a shared definition rather than a duplicated formula."""
+	"""Authoritative effect preview for every card in hand. Companion and dungeon STRIKE cards are
+	quoted through `_companion_strike_mod` (item 15); their non-damage kinds are still described by
+	the shared card table on the client."""
 	var out := {}
 	var character = combat.get("character", null)
 	if character == null:
@@ -6371,7 +6379,25 @@ const COMPANION_CARD_SUBTIER_STEP := 0.05
 const COMPANION_CARD_DAMAGE_SHARE := 0.055
 
 func _companion_strike(character, monster, ability_name: String, combat: Dictionary, power: float) -> int:
-	"""Deal a companion-card strike scaled by `power` through the shared mastery/
+	"""Deal a companion-card strike scaled by `power`, apply it to the monster, return the damage.
+	The number itself comes from `_companion_strike_mod`, which the card FACE quotes too."""
+	var dmg: int = apply_damage_variance(_companion_strike_mod(character, monster, ability_name, combat, power))
+	monster.current_hp = max(0, monster.current_hp - dmg)
+	return dmg
+
+## The `power` each companion/dungeon card KIND strikes with, as passed at the call sites in
+## `_process_companion_ability`. The card face quotes from this table; the probe
+## `companion_card_face_matches_the_cast` casts every kind and fails if the two drift.
+const COMPANION_STRIKE_POWER := {
+	"channel": 1.6, "strike": 3.2, "execute": 2.4, "reckless": 3.8, "bleed": 2.2, "poison": 2.0,
+	"weaken": 2.0, "blind": 2.0, "stun": 2.2, "charm": 2.0, "lifesteal": 2.4, "timestop": 2.0,
+	"plunder": 2.0, "tribute": 2.0,
+}
+
+func _companion_strike_mod(character, monster, ability_name: String, combat: Dictionary, power: float) -> int:
+	"""The strike's damage BEFORE variance - the middle of what the cast will deal.
+
+	(Original doc, kept:) Deal a companion-card strike scaled by `power` through the shared mastery/
 	tier damage path, apply it to the monster, and return the damage dealt.
 
 	2026-09-09 - the `power` values at the call sites were roughly DOUBLED. Owner: *"most
@@ -6437,10 +6463,7 @@ func _companion_strike(character, monster, ability_name: String, combat: Diction
 		base_dmg = int(character.get_total_attack() * power * quality * atk_profile)
 	base_dmg = apply_skill_damage_bonus(character, ability_name, base_dmg, combat)
 	# Companion damage - deliberately NOT given the player crit roll; it is the companion's hit.
-	var mod_dmg: int = apply_ability_damage_modifiers(base_dmg, character.level, monster)
-	var dmg: int = apply_damage_variance(mod_dmg)
-	monster.current_hp = max(0, monster.current_hp - dmg)
-	return dmg
+	return apply_ability_damage_modifiers(base_dmg, character.level, monster)
 
 func _companion_restore_resource(character, resource_type: String, frac: float) -> int:
 	"""Restore `frac` of the class resource's max; return the amount restored."""

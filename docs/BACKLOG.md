@@ -1213,6 +1213,16 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      - [x] **[15] DONE IN CODE 2026-10-13 (SERVER; needs a deploy) - companion/dungeon card faces.**
+        I could not reproduce a WRONG number: these cards had NO number at all (the server deliberately
+        omitted them from the card quotes and the client's third row was blank for them), so there was
+        nothing on the face to compare with the log. The owner's complaint is read as that gap. Strike-kind
+        cards (14 kinds) are now quoted through `_companion_strike_mod` - the same function the cast uses,
+        split out of `_companion_strike` - via `COMPANION_STRIKE_POWER` (kind -> power, mirroring the call
+        sites). Probe `companion_card_face_matches_the_cast.gd` casts every kind at L20 and L200: worst 4% off
+        (variance), and 61% off when a power in the table is changed. **Not done:** non-damage kinds (guard,
+        rage, heal, shield, focus) still show the shared description only; the table duplicates the call-site
+        powers (the probe is the guard - fold the call sites onto the table when next in there).
       - [~] **[49] PARTLY - Title help.** Compared every claim in the TITLES & ENDGAME help topic with
         `titles.gd` and the drop roll: levels, locations, item names and the 0.5% / 0.2% rates all MATCH, so
         I could not reproduce "inaccurate" from the data. It did omit how a title is lost (Jarl > Lv 500, High
