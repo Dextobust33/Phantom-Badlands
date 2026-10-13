@@ -27161,7 +27161,12 @@ func _get_recipe_description(recipe: Dictionary) -> String:
 			var levels = effect.get("levels", 1)
 			var target = recipe.get("target_slot", "gear")
 			var recipe_max = recipe.get("max_upgrades", CraftingDatabaseScript.MAX_UPGRADE_LEVELS)
-			return "+%d level to equipped %s (works up to +%d)" % [levels, target, recipe_max]
+			# Owner sheet 2026-10-13, item 13: *"Blacksmith Armor Upgrade, what is it doing?"* The old line
+			# said "+1 level to equipped armor (works up to +10)", which names neither what a level IS nor
+			# why "+10" is there. Reads the same numbers the crafting branch applies: quality scales the
+			# levels (Poor x0.5, Fine x1.25, Masterwork x1.5), and an item can take upgrades only while it
+			# holds fewer than `recipe_max`, with a hard cap of MAX_UPGRADE_LEVELS in total.
+			return "Raises the ITEM LEVEL of your equipped %s by %d - its stats grow with item level. Fine x1.25, Masterwork x1.5, Poor x0.5. Only works on gear with fewer than %d upgrades so far (hard cap %d in total)." % [str(target).replace(",", " or "), levels, recipe_max, CraftingDatabaseScript.MAX_UPGRADE_LEVELS]
 		"affix":
 			var affix_pool = effect.get("affix_pool", [])
 			if affix_pool.size() > 0:
