@@ -11978,6 +11978,39 @@ const MONSTER_TRAITS := {
 	"easy_prey": {"label": "Easy Prey", "color": "#88B8FF", "desc": "Worth half the usual XP.", "loot": true},
 }
 
+static func fight_log_header(shown_name: String, level: int, is_elite: bool, is_apex: bool,
+		is_rare: bool, mods: Array, abilities: Array) -> String:
+	"""The first line of a fight's battle log: WHO this is and everything that makes it dangerous.
+
+	Owner sheet 2026-10-13, item 19: *"We need to ensure monster traits are being included on the
+	Combat logs (Elite, Champion, Swift, etc.) This information is vital to identifying our
+	overpowered enemies so we can balance or make the threat transparent."* The traits were on the
+	encounter text and the nameplate, but the LOG - the thing a player scrolls and screenshots, and
+	the thing a tester reads back when a fight went wrong - began at the first blow with no record
+	of what was being fought. Built from the same tables the encounter text and Analyze read
+	(`EMPOWERED_MOD_DISPLAY`, `MONSTER_TRAITS`), so the log cannot word a trait differently."""
+	var tags: Array = []
+	if is_elite:
+		tags.append("[color=#FFD700]Elite[/color]")
+	if is_apex:
+		tags.append("[color=#FF8C00]Apex species[/color]")
+	if is_rare:
+		tags.append("[color=#C8A2FF]Rare variant[/color]")
+	for mod_id in mods:
+		var disp: Dictionary = EMPOWERED_MOD_DISPLAY.get(String(mod_id), {})
+		if disp.is_empty():
+			continue
+		var label: String = String(disp.get("label", mod_id))
+		tags.append("[url=%s][color=%s]%s[/color][/url]" % [label, disp.get("color", "#FFFFFF"), label.split(" ")[0].capitalize()])
+	var trait_tags: String = combat_trait_tags(abilities)
+	if trait_tags != "":
+		tags.append(trait_tags)
+	var line: String = "[color=#B0B0B0]◆ Facing[/color] %s [color=#B0B0B0](Lv %d)[/color]" % [shown_name, level]
+	if not tags.is_empty():
+		line += " [color=#808080]-[/color] " + ", ".join(tags)
+	return line
+
+
 static func combat_trait_tags(abilities: Array) -> String:
 	"""Hoverable chips for the traits that decide how DANGEROUS a fight is, for a surface that
 	stays on screen.

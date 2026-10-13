@@ -1213,6 +1213,15 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      - [x] **[19] DONE IN CODE 2026-10-13 (client + shared; next client release) - the battle log opens
+        with WHO you are fighting.** Traits were on the encounter text, the nameplate and Analyze, but the
+        live log began at the first blow. `CombatManager.fight_log_header` builds one line (name, level,
+        Elite / Apex species / Rare variant, each empowered modifier as a hover chip, every non-loot
+        trait) from the same tables the encounter text reads; the client appends it after the scene is
+        populated. Probe `fight_log_names_the_foe.gd` (content + exactly-one client statement; goes red with
+        the client line commented out). **Not verified by eye:** I have not looked at it rendered - the
+        header's wrap/width in the log panel wants a screenshot with item 17. **Not changed:** the death
+        record (`death_snapshot`) still stores no traits; `cause_of_death` is the only monster identity there.
       - [x] **[16] DONE IN CODE 2026-10-13 (SERVER, `combat_manager.gd`; needs a server deploy) - the
         Trickster finisher's face vs the real hit.** One card (`perfect_heist`: Grifter Double Cross, Ranger
         Killing Shot, Ninja Assassinate). `card_face_truth` could not see it: it only checks quotes of kind

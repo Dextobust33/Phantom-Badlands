@@ -44228,6 +44228,13 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 		"monster_is_elite": current_enemy_is_elite,
 		"monster_traits_bbcode": CombatManager.combat_trait_tags(current_enemy_abilities),
 	})
+	# Item 19 (owner sheet 2026-10-13): the log opens with WHO this is and what makes it dangerous.
+	combat_scene_panel.append_log(CombatManager.fight_log_header(
+		CombatManager.annotate_empowered_name(monster_name, combat_state.get("empowered_mods", [])),
+		int(monster_level), bool(current_enemy_is_elite), bool(current_enemy_is_apex_species),
+		bool(combat_state.get("is_rare_variant", false)),
+		combat_state.get("empowered_mods", []) if combat_state.get("empowered_mods", []) is Array else [],
+		current_enemy_abilities if current_enemy_abilities is Array else []))
 
 func _update_combat_scene_hp() -> void:
 	"""Refresh the HP bars on the combat scene panel from the latest data.
