@@ -21579,11 +21579,11 @@ func _find_npc_spawn_position(grid: Array, rooms: Array, avoid: Dictionary = {})
 	⚑ TWO DEFECTS LIVED HERE (owner sheet 2026-10-13, item 1: *"Rescue the Scholar Quest isn't
 	actually spawning the scholar in the Dungeon"*), and the second hid behind the first.
 	  1. Rooms are `Rect2i`; the old code called `.get()` on them, which a release server turns into
-	     null, so no room qualified and every NPC landed on the default (1, 1) - a map corner.
+		 null, so no room qualified and every NPC landed on the default (1, 1) - a map corner.
 	  2. Fixing that exposed the real placement rule: the centre of the FARTHEST room is exactly
-	     where the generator puts the stairs down, so all 54 NPCs in the measurement stood on EXIT.
-	     `handle_dungeon_move` handles EXIT before the NPC check, so stepping there descended a floor
-	     and the NPC could never be rescued - and the sprite hid the stairs as well.
+		 where the generator puts the stairs down, so all 54 NPCs in the measurement stood on EXIT.
+		 `handle_dungeon_move` handles EXIT before the NPC check, so stepping there descended a floor
+		 and the NPC could never be rescued - and the sprite hid the stairs as well.
 	The tile must be plain walkable floor and not already taken (`avoid`: monsters, floor loot).
 	Measured by tools/probe/rescue_npc_is_reachable.gd."""
 	var entrance_pos = _find_tile_position(grid, DungeonDatabaseScript.TileType.ENTRANCE)
@@ -34603,7 +34603,7 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	      after the cooldown — including reconnects on the same account —
 	      show the SAME rumor for 30 minutes. Closes the audit memo's
 	      'revisits get same rumor / matches legacy trading post behavior'
-	      gap. Different accounts at the same post get independent rumors."""
+		  gap. Different accounts at the same post get independent rumors."""
 	var px = int(post.get("x", 0))
 	var py = int(post.get("y", 0))
 	var post_key = "%d,%d" % [px, py]
