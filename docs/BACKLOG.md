@@ -1325,7 +1325,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       the tutorial; 31 Home Stones shouldn't have levels; 6 inventory not refreshing after salvage;
       20 no way to stop watching a player; 13 what does Blacksmith Armor Upgrade do; 45 why several
       summoning/finding scrolls; 26 legendary/artifact drops not announced in victory feed;
-      47 Jarl ring still equippable + no turn-in guidance at 0,0].
+      47 Jarl ring still equippable + no turn-in guidance at 0,0 (PARTLY DONE 2026-10-13, client: the list row now says "Quest item - turn in at The High Seat (0,0)" instead of an Atk bonus; probe `title_items_are_not_gear_in_the_list.gd`. Equip was already refused server-side and has no menu entry. NOT done: guidance when standing at 0,0 beyond the existing High Seat button - needs a look at the screen); 6 salvage refresh: server always sends character_update after salvage, so the stale list is a client ordering case - NEEDS A REPRO, not guessed].
 8. - [ ] **PARTY PLAY** [24 can't leave posts; leader/follow/rotation remnants; join a fight that
       started while out of range — fight symbol on the map, join into next round with HP/stats
       rescaled]. Overlaps the existing PARTY PLAY HALF TWO item (BACKLOG ~385) — merge, do not

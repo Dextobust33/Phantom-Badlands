@@ -23243,6 +23243,15 @@ func _guess_material_type(mat_id: String) -> String:
 func _get_item_bonus_summary(item: Dictionary) -> String:
 	"""Get a short summary of item bonuses"""
 	var item_type = item.get("type", "")
+	# Owner sheet 2026-10-13, item 47: *"Jarl ring still shows as an equipable item... hard to tell what
+	# to do with it."* Its type contains "ring", so it fell into the ring branch below and was listed
+	# with an Atk bonus it does not have. A title item is a turn-in, and the list row says where.
+	if item.get("is_title_item", false) or item_type in ["jarls_ring", "unforged_crown", "crown_of_north"]:
+		match item_type:
+			"unforged_crown":
+				return "[color=#FFD700]Quest item - take it to the Infernal Forge (-400,0)[/color]"
+			_:
+				return "[color=#FFD700]Quest item - turn in at The High Seat (0,0)[/color]"
 	var level = item.get("level", 1)
 	var rarity = item.get("rarity", "common")
 	var rarity_mult = _get_rarity_multiplier_for_status(rarity)
