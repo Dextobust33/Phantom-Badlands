@@ -7241,6 +7241,34 @@ func _dev_run_shots() -> void:
 				crafting_mode = false
 				await get_tree().create_timer(0.5).timeout
 
+			"invpath":
+				# ⚑ THE INVENTORY SUB-SCREENS, ENTERED THE WAY A CLICK ENTERS THEM. Owner sheet
+				# 2026-10-13: Rework, Salvage and Inspect each "just display the map". The `rework`
+				# scene below sets the mode flags directly and so never walks the real entry path.
+				# This one goes through `execute_local_action`, which is what a button press calls,
+				# and prints the canvas-ownership state beside every capture.
+				for _g in range(3):
+					send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_all",
+						"affix_value": 2, "item_level": 30, "slot": ["weapon", "armor", "helm"][_g]})
+					await get_tree().create_timer(0.35).timeout
+				await get_tree().create_timer(1.0).timeout
+				await _dev_shot_clear_overlays()
+				for step in ["inventory", "rework_start", "rework_cancel", "inventory_salvage", "salvage_cancel", "inspect"]:
+					if step == "inspect":
+						execute_local_action("inventory_inspect")
+						await get_tree().create_timer(0.8).timeout
+						select_inventory_item(0)
+					else:
+						execute_local_action(step)
+					await get_tree().create_timer(2.4).timeout
+					print("[SHOTS] invpath %-18s canvas_showing=%s panel_open=%s text_in_column=%s wide=%s out_len=%d mark=%d pending=%s" % [
+						step, str(_ow_canvas_showing), str(_canvas_panel_open()), str(_ow_text_in_column()),
+						str(_ow_wide_page), game_output.get_parsed_text().length(), _ow_canvas_mark, pending_inventory_action])
+					await _dev_shot_capture("invpath_" + step)
+				inventory_mode = false
+				pending_inventory_action = ""
+				update_action_bar()
+
 			"rework":
 				# The rework flow, which the owner watched vanish off the screen. A capture after
 				# the picker AND after a character_update is the only way to prove the text holds.
@@ -38181,6 +38209,9 @@ func _ow_heal_canvas() -> void:
 	# had talked myself out of it once by reading the wrong function.
 	if pending_continue:
 		return
+	# ...and the inventory's sub-screens hold the canvas the same way (see `_ow_text_in_column`).
+	if _canvas_held_by_page():
+		return
 	if not _ow_canvas_eligible() or _last_map_payload.is_empty():
 		return
 	# A visible panel means a menu owns the canvas; leave it alone.
@@ -41466,6 +41497,21 @@ func _canvas_owned_by_combat() -> bool:
 	return false
 
 
+func _canvas_held_by_page() -> bool:
+	"""Is a text PAGE (not the map) meant to be on the canvas until the player leaves it?
+
+	⚑ ONE QUESTION, ASKED BY THREE CALLERS. `update_map` (the ~0.4s idle-bob redraw), `_ow_heal_canvas`
+	and `_ow_text_in_column` each had their own half of it. A WIDE page set `_ow_wide_page` and was
+	protected; the inventory's sub-screens - Rework, Salvage, Sort - are short, never go wide, and
+	the idle redraw painted the map straight over them. Owner sheet 2026-10-13, items 2/3/8: *"Rework
+	... just displays the map"*, *"The Salvage Items screen pops up momentarily then gets overwrote
+	by the Map."* Photographed with `shots.py invpath`: the page printed and was gone within a tick.
+
+	`inventory_mode` is flipped on the keypress and shared by every inventory sub-screen, so no list
+	of their names has to be kept."""
+	return _ow_wide_page or inventory_mode
+
+
 func _ow_canvas_eligible() -> bool:
 	"""Should the overworld map own the main canvas right now?
 
@@ -41514,7 +41560,12 @@ func _ow_text_in_column() -> bool:
 	# list all materials (non-food). I tried pressing 4 and it does nothing"* - because the
 	# panel's own action bar owns 1-5 while it is open. Behind the panel is where that text
 	# belongs, which is where it went before the column existed.
-	return _ow_canvas_eligible() and _ow_canvas_showing and not _canvas_panel_open() and not _ow_wide_page
+	# ⚑ THE INVENTORY AND ITS SUB-SCREENS OWN THE CANVAS. Rework, Salvage, Sort and Inspect are
+	# text pages the inventory opens AFTER its panel has closed, so `_canvas_panel_open()` is false
+	# for them and they were routed to the side column - leaving the map on the canvas and the
+	# menu nowhere the player was looking (owner sheet 2026-10-13, items 2/3/8). `inventory_mode`
+	# is the one flag all of them share, set on the keypress rather than a round trip later.
+	return _ow_canvas_eligible() and _ow_canvas_showing and not _canvas_panel_open() and not _canvas_held_by_page()
 
 
 func _ow_canvas_intact() -> bool:
@@ -47318,7 +47369,7 @@ func update_map(map_text: String):
 	# A WIDE page owns the canvas until the player walks away. The idle walk animation
 	# redraws the map every ~0.4s, so without this the map would paint over Help before the
 	# player finished the first paragraph.
-	if _ow_canvas and _ow_wide_page:
+	if _ow_canvas and _canvas_held_by_page():
 		return
 	var _map_target: RichTextLabel = game_output if _ow_canvas else map_display
 	if _ow_canvas:

@@ -1065,11 +1065,23 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       editor reopens `quick_simulation.gd` from its saved open-tabs list. Preloads repointed into
       `archive/`; a full `--headless --editor --quit` load now prints zero errors (was 5 lines,
       expanding to ~31 in the editor).
-2. - [ ] **MAP DRAWS OVER A PANEL THE PLAYER IS READING** [2 Rework, 3 Inspect gear, 8 Salvage
+2. - [~] **MAP DRAWS OVER A PANEL THE PLAYER IS READING** [2 Rework, 3 Inspect gear, 8 Salvage
       screen, 11 Home Stone companion dialogue, 23 Settings options cleared, 46 Titan wish result].
-      Suspected single cause: server refresh (`character_update`/`location`/map) calls
-      `display_xxx()` and wipes `game_output` — see CLAUDE.md "Player-Visible Output Rule".
-      Fix structurally (one "panel owns the output" state), not per screen.
+      **PARTLY DONE 2026-10-13 — items 2 and 8 fixed and photographed; 3, 11, 23, 46 NOT yet.**
+      The suspected cause (server refresh wiping `game_output`) was WRONG. Measured with the new
+      `python tools/test_setup/shots.py invpath` scene (drives the real click path): the page
+      printed correctly and was painted over within a tick by `update_map`'s ~0.4s idle-bob
+      redraw (`_tick_overworld_walk_anim`). `update_map` protected only WIDE pages
+      (`_ow_wide_page`); Rework/Salvage/Sort are short, so never went wide. Fix: one predicate,
+      `_canvas_held_by_page()` (= wide page OR `inventory_mode`), read by `update_map`,
+      `_ow_heal_canvas` and `_ow_text_in_column`. Probe `a_menu_page_owns_the_canvas.gd`
+      (fault-injected: reverting the `update_map` guard fails it); the three existing canvas
+      probes still pass. **Still to do in this group:** [3] Inspect worked in the capture for a
+      tall page, so the owner's case is probably a SHORT gear page — confirm with a capture of a
+      short item, and also the "inspect text missing things the preview lists" half (belongs to
+      group 5); [11] Home Stone companion dialogue, [23] Settings, [46] Titan wish are not
+      `inventory_mode` screens — each needs its own flag added to `_canvas_held_by_page()`
+      (`settings_mode`, the Home Stone/Titan page state) and an `invpath`-style capture.
 3. - [ ] **[5] Apex Wyvern quest dungeon: never shown inside, "already in dungeon", relog lands in
       Crossroads.** Can strand a player — before the rest of the dungeon group.
 4. - [ ] **DUNGEONS** [1 Rescue-the-Scholar NPC not spawned / glyph text should be sprite, likely all
