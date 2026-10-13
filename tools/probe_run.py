@@ -222,7 +222,10 @@ def main(argv):
             for w in r["why"]:
                 print("        - " + w, flush=True)
                 lines.append("        - " + w)
-    summary = "\n%d probe(s) run, %d failed" % (len(names), len(bad))
+    # NAMES, not just a count: a gate that says "1 failed" and nothing else cannot be acted on, and the
+    # one time it did that (2026-10-13, an intermittent smoke failure) the probe could not be identified.
+    names_failed = ", ".join(b["name"] for b in bad)
+    summary = chr(10) + "%d probe(s) run, %d failed%s" % (len(names), len(bad), (": " + names_failed) if bad else "")
     print(summary)
     lines.append(summary)
     if report:
