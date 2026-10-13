@@ -1340,12 +1340,33 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       **Not retired, and cannot be from here:** a script error in a code path NO probe or capture
       exercises. The live server still cannot self-report. Coverage is the remaining lever - see the
       sweep result below.
-      **SWEEP OF ALL 340 PROBES (run once, 2026-10-13):** result recorded here when it finishes - how
-      many already print script errors while passing, and how many genuinely fail. A first pass of
-      the interim output shows real pre-existing FAILs nobody was running (e.g.
-      `card_instances`, `companion_lines_are_marked`, `companion_trail`,
-      `a_phantom_level_is_not_an_overworld_level`) and many probes whose verdict line the runner
-      does not recognise yet - to be sorted before `--all` becomes a gate.
+      **SWEEP OF ALL 340 PROBES (run once, 2026-10-13, strict runner): 227 clean, 113 NOT green.
+      Measured, NOT triaged - none of the 113 has been confirmed as a game bug.**
+      - **9 print script errors** (`dungeon_rank_uniques`, `figure_stands_on_tile`, `gear_gap`,
+        `items_in_combat`, `light_samples`, `overworld_compose_cost`, `party_flock_chain`,
+        `xp_one_sum`, `dungeon_party_combat`'s own FAIL aside). Read: they are PROBE ROT or harness
+        gaps, not game faults - a call to `generate_equipment`, which no longer exists; a bare
+        server missing `persistence`/the hotspot table (`get_visible_corpses`/`get_hotspot_at` on
+        nil); two probe scripts that no longer PARSE (`items_in_combat` stub signature,
+        `overworld_compose_cost` array literal). Cheap to fix; each is worth reading once.
+      - **29 report their own FAIL** and exit 1 - a suite nobody has been running. Could be stale
+        expectations after refactors OR real regressions; that is the open question and the reason
+        this is worth a session: `a_phantom_level_is_not_an_overworld_level`, `card_instances`,
+        `companion_lines_are_marked`, `companion_trail`, `danger_step_guard`, `depleted_looks_spent`,
+        `dungeon_index`, `dungeon_instance_match` (known stale call-site count), `dungeon_placement`,
+        `dungeon_redraw_guard`, `dungeon_variety`, `empowered_hover`, `engine_ramp`,
+        `escort_walks_around_danger`, `gatherable_clusters`, `help_topics`, `hover_reachable`,
+        `inventory_pressure_and_autosalvage`, `launcher_selfupdate`, `map_payload`,
+        `map_payload_golden`, `overworld_render`, `overworld_toggle`, `party_confirm`, `power_rank`,
+        `quest_grade_advertised`, `sanctuary_room`, `stat_claims`, `ui_glyph_coverage`.
+      - **74 print no verdict line the runner recognises** (probably fine, just a different format -
+        the runner's `PASS_RE` needs widening or those probes need a PASS line) and 1 exits non-zero
+        with no FAIL text (`ui_scale_1080p`).
+      **Consequence:** `probe_run.py --all` is NOT a usable gate yet; only `--smoke` is. Triage order
+      that costs least: (1) the 74 verdict formats (mechanical), (2) the 9 script-error probes
+      (probe rot), (3) the 29 FAILs one by one, deciding stale-vs-regression for each. Report:
+      the sweep's own output was kept in the session scratchpad, not the repo - re-run
+      `python tools/probe_run.py --all --report sweep.txt` (about 25 minutes, one probe at a time).
 
 ### ⚑ PICK UP HERE — written 2026-09-19 for a gap of unknown length
 
