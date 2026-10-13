@@ -37638,6 +37638,14 @@ func _complete_dungeon(peer_id: int):
 	if _forced:
 		_gm_force_dungeon_card.erase(peer_id)
 	var _card_reward = _roll_dungeon_card_reward(character, int(tier), dungeon_type, _forced, int(inst_sub_tier))
+	# ⚑ LOGGED, SO THE REAL RATE CAN BE READ OFF THE SERVER. Owner sheet 2026-10-13, item 35: *"Do
+	# dungeons ever actually give a card?"* They do (on completion, `min(30%, (5% + 2% x tier) x rank
+	# bonus)`), but nothing recorded a roll, so the answer from live data was "unknown". One line per
+	# completion gives granted-per-completion directly, which is the number that settles it.
+	log_message("[DUNGEON-CARD] %s completed %s (tier %d rank %d): chance %.0f%% -> %s" % [
+		character.name, dungeon_type, int(tier), int(inst_sub_tier),
+		float(_card_reward.get("chance", 0.0)) * 100.0,
+		("GRANTED " + String(_card_reward.get("ability", "?"))) if bool(_card_reward.get("granted", false)) else "no card"])
 
 	# Record completion (cooldowns removed)
 	character.record_dungeon_completion(dungeon_type)

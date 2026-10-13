@@ -1117,7 +1117,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       call-site count; re-read what the 5 are before bumping the number. Related to item 36 (the
       log shows a quest released a shared world dungeon "not erased - it is shared", which is
       correct; the abandoned-PERSONAL-dungeon cleanup is the part still to verify).
-4. - [~] **DUNGEONS** [1 Rescue-the-Scholar NPC not spawned / glyph text should be sprite, likely all
+4. - [x] **DUNGEONS - ALL SIX SUB-ITEMS ADDRESSED 2026-10-13 (see each; [10] and [37+42] have OWNER DECISIONS left)** [1 Rescue-the-Scholar NPC not spawned / glyph text should be sprite, likely all
       NPC quests; 10 random dungeons not on map; 36 abandoned-quest dungeon cleanup; 37 + 42 floor
       loot level/valor not matching dungeon (L56 loot vs L83 monsters, E8 low valor); 35 do
       dungeons ever give a card]. **Sub-status (update as each lands):**
@@ -1178,7 +1178,18 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         rebalanced across the realm"). For scale: a completion chest pays ~`(3-5) x tier x 5` =
         60-100 at tier 4, a quest task ~`3 + 3.5 x level`. **OWNER DECISION** if floor coins should
         be raised before that pass. Chests were already `max(player level, band)`, so unchanged.
-      - [ ] [35] do dungeons ever give a card
+      - [x] **[35] ANSWERED 2026-10-13, plus one line of logging (server; needs deploy).** Yes - but
+        ONLY on completion (killing the final boss), never from floor loot or chests: each completed
+        dungeon rolls `min(30%, (5% + 2% x tier) x (1 + 0.1 x (rank-1)))`, i.e. ~7% at tier 1, ~13% at
+        tier 4, 30% ceiling. It grants the dungeon's own themed exclusive card, falling back to a copy
+        of an ability you use if you already own 3. The completion screen states the odds
+        (`dungeon_card_odds_spoken`). **The honest gap:** the live log had no record of any roll, so
+        "do they ever drop" could not be answered from data. Added a `[DUNGEON-CARD]` log line per
+        completion (chance and outcome); read the live rate with
+        `journalctl -u phantom-badlands | grep DUNGEON-CARD` after the next deploy. If the owner
+        feels that is too stingy for a run that takes this long, the knob is that one formula - but
+        it belongs to the CARD CHASE design (memory `project_card_instances_chase_loop`), not a
+        one-off tweak.
 5. - [ ] **TEXT/NUMBERS THAT DISAGREE** [15 Companion card face vs log; 16 Double Cross face vs
       actual; 18 potion HP in combat list; 39 card name differs Deck vs battle (Sorcerer Wild
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
