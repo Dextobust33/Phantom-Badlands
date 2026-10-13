@@ -35517,7 +35517,20 @@ func display_changelog():
 	#            loot a level behind its floor, and more dungeons where players actually are.
 	# v0.9.835 - the danger warning and the Area readout now describe the same ground in the same
 	#            words (and the warning varies), plus three pieces of help text that were wrong or gone.
-	display_game("[color=#00FF00]v0.9.835[/color] [color=#808080](Current)[/color]")
+	# v0.9.836 - the rest of the owner's playtest sheet: card faces that matched the fight, hovers and
+	#            panels that lied or hid, and the Warden speaking with pop-ups off.
+	display_game("[color=#00FF00]v0.9.836[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: the hover text behind the Combat Log window.[/color] Hovering a line in the log you open with [b]L[/b] (or from the death screen) drew its explanation underneath the window. It now draws on top.")
+	display_game("  [color=#FF4444]◆ FIXED: salvaged items still looking like they were in your inventory.[/color] After a bulk salvage the inventory panel kept drawing the old list until you closed and reopened it.")
+	display_game("  [color=#FF4444]◆ FIXED: Home Stones no longer show a level[/color] in your inventory or on the market. They never had one that meant anything.")
+	display_game("  [color=#FF8000]★ THE DUNGEON ESCAPE BUTTON NOW ASKS FIRST.[/color] It sat among the keys you press all the time and used up the scroll. It now asks \"Leave the dungeon?\" before it does.")
+	display_game("  [color=#FF8000]◆ CARD FACES NOW MATCH THE FIGHT.[/color] Double Cross / Killing Shot / Assassinate quoted up to half of what they actually dealt (the Ninja's kill chance too), and companion and dungeon strike cards quoted nothing at all. Both now show the real number. In a Sorcerer's hands the deck screen now calls cards by the same names the fight does.")
+	display_game("  [color=#FF8000]◆ THE BATTLE LOG NOW OPENS WITH WHO YOU ARE FIGHTING[/color] - name, level, Elite / Apex / Rare, and every trait that makes it dangerous.")
+	display_game("  [color=#FF8000]◆ CRAFTING SHOWS THE XP YOU REALLY GOT[/color] (race, Sanctuary and committed-job bonuses included), and upgrade recipes now say what they do.")
+	display_game("  [color=#FF8000]◆ SMALLER:[/color] a visible Stop Watching button; legendary and artifact finds are headlined on the victory card; the Jarl's Ring reads as a quest item; the Title help explains how a title is lost; and with Help Pop-ups off the Warden still tells you where to go.")
+	display_game("")
+	display_game("[color=#808080]v0.9.835[/color]")
+
 	display_game("  [color=#FF8000]★ THE DANGER WARNING AND THE AREA READOUT NOW AGREE.[/color] Step toward ground well above your level and the game stops you once and asks. It used to call anything from [b]1.15x your level[/b] up [b]far above you[/b] while the Area readout beside it still said [b]about your level[/b] until 1.35x — the same ground, described two ways. Both now use the same words, and the readout turns red exactly where the game starts asking. The warning also [b]varies its wording[/b] now, so it is not one sentence your eye learns to skip; it still names the ground's level, yours, and how to go on anyway.")
 	display_game("  [color=#FF4444]◆ FIXED: the Initiative help text had the wrong ceiling.[/color] A monster's chance to strike first is capped at [b]75%[/b] in a solo fight (not 55%), and your [b]travel stance[/b] moves it — Travelling +18, Scouting -4, Hunting -8. A party fight uses a simpler version capped at 55%. The help now says so.")
 	display_game("  [color=#FF4444]◆ FIXED: the Gathering help page had lost its explanation of how gathering plays.[/color] Mining, logging, foraging and shallow-water fishing are a grid of face-down slots you scratch; deep-water fishing is a 3-choice chain. It is back.")
