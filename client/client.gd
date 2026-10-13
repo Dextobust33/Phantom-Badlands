@@ -19622,12 +19622,11 @@ func execute_local_action(action: String):
 			_dungeon_panel_refresh()
 			send_to_server({"type": "dungeon_gather_skip"})
 		"dungeon_escape_scroll":
-			# Find and use the first escape scroll in inventory
-			var inv_e = character_data.get("inventory", [])
-			for idx in range(inv_e.size()):
-				if inv_e[idx].get("item_type", "") == "escape_scroll":
-					send_to_server({"type": "inventory_use", "index": idx})
-					break
+			# Owner sheet 2026-10-13, item 12: *"It's too easy to accidentally press."* The button sits
+			# among the dungeon's everyday keys and the scroll is consumed, so ask first.
+			open_choice("dungeon_escape", "[color=#FFD700]Leave the dungeon?[/color]",
+				"Reading your Escape Scroll takes you out at once. The scroll is used up.",
+				["Read the scroll and leave"])
 		"dungeon_continue":
 			# Continue after combat/event in dungeon
 			pending_continue = false
@@ -57377,6 +57376,15 @@ func _choice_modal_open() -> bool:
 	return choice_panel != null and is_instance_valid(choice_panel) and choice_panel.visible
 
 
+func _use_escape_scroll() -> void:
+	"""Use the first Escape Scroll in the inventory (the dungeon button asks first)."""
+	var inv_e = character_data.get("inventory", [])
+	for idx in range(inv_e.size()):
+		if inv_e[idx].get("item_type", "") == "escape_scroll":
+			send_to_server({"type": "inventory_use", "index": idx})
+			return
+
+
 func open_choice(kind: String, title: String, subtitle: String, options: Array) -> void:
 	"""Put a numbered choice in front of the player, above everything.
 
@@ -57404,6 +57412,9 @@ func _on_choice_panel_chosen(index: int) -> void:
 			select_target_farm_ability(index)
 		"monster_select":
 			select_monster_from_scroll(index)
+		"dungeon_escape":
+			if index == 0:
+				_use_escape_scroll()
 		_:
 			pass
 	update_action_bar()
