@@ -1331,6 +1331,22 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       rescaled]. Overlaps the existing PARTY PLAY HALF TWO item (BACKLOG ~385) — merge, do not
       duplicate.
 9. - [ ] **BALANCE BATCH — wait for the chain, do not fix one by one.**
+      ▶ **LIVE-DATA CHECK RUN 2026-10-13 (steps 1-2; step 3, reference player vs live saves, NOT yet run).**
+      `death_log_audit.py`: 97 deaths recorded, **63 since the 2026-09-05 balance pass**. By level band:
+      1-9 = 43 (68%), 10-24 = 17, 25-49 = 2, 50-99 = 1. By class: **Grifter 13, Ranger 11, Ninja 10 = 34 of
+      63 (54%) are Tricksters**, then Wizard 9, Paladin 5, Sorcerer 4, Barbarian 4, Fighter 3, Sage 3, Thief
+      1. Of 49 deaths naming the monster's level, 32 were at or below the player's level (gap <= 2) - i.e.
+      the curve, not over-reaching. **Median 3 rounds; 50% died in 2 rounds or fewer; 21% took a full bar
+      in <= 2 rounds** ("I never got to play"). 24% walked in below 70% HP. Top killers: Wolf 7, Giant Rat 4,
+      Goblin 4, Skeleton 3. 7 deaths record no fight at all (excluded). `check_player_progress.sh`: current-era
+      characters reached L91 (Dexto, Sorcerer), L57 (Fighter), L22 (Paladin), then L12 and below; so
+      high-level balance now has a little real data (3 characters past L20) and the lootsim extrapolation
+      can be checked against L57-L91. **What it says, and does not:** the early game (L1-2) is where players
+      die and Tricksters die most - consistent with the existing per-class items below, NOT a reason to
+      touch anything before the chain. It is a count of deaths, not a rate: the population denominator
+      (encounters per class) is not in this output, so "Tricksters die most" may partly be "most people
+      play Tricksters" - count BOTH sides before acting (memory `feedback_count_both_sides_of_the_ratio`).
+
       ⚑ **THE DATA IT WAS WAITING ON IS NOW DUE (owner, 2026-10-13: "it's been a few weeks, we
       should have better data").** The 2026-09-19 handoff said re-run `tools/death_log_audit.py`
       "in ~2 weeks" against the 1.81% deaths-per-encounter baseline; that was due ~2026-10-03,
