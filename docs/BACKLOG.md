@@ -1152,7 +1152,17 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         **OWNER DECISION:** raise the count, or weight spawns toward where players are (the low-level
         country around posts), or add a "dungeon sense" (Atlas/compass already exist). Overlaps the
         Dungeon Atlas work and sheet item 11(a) (what boards offer).
-      - [ ] [36] abandoned-quest dungeon cleanup
+      - [x] **[36] DONE IN CODE 2026-10-13 (server; needs deploy).** Answer to the owner's question:
+        yes, abandoned/completed quest dungeons ARE erased (`_cleanup_player_dungeon` on abandon and
+        completion; a sweeper reaps personal dungeons 30 min after the owner goes offline or at 24 h;
+        a SHARED world dungeon bound by a threat quest is deliberately released, not erased). **The
+        gap was occupants:** `_erase_dungeon_instance` never asked who was inside, so abandoning a
+        quest from within its dungeon stranded the character flagged inside nothing (same stranded
+        state as [5]). Now the one erase function ejects anyone inside, with a message - which
+        covers abandon, completion and the sweeper at once
+        (`tools/probe/erasing_a_dungeon_never_strands_its_occupants.gd`, failed 3 checks before).
+        **Not verified:** whether `player_dungeon_instances` can hold entries for a quest the log
+        no longer has (e.g. a daily that rolled over) - the 24 h sweeper bounds the cost either way.
       - [ ] [37 + 42] floor loot level/valor vs the dungeon
       - [ ] [35] do dungeons ever give a card
 5. - [ ] **TEXT/NUMBERS THAT DISAGREE** [15 Companion card face vs log; 16 Double Cross face vs
@@ -1234,6 +1244,39 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       ARCHETYPE, then `-- spread` / `-- forensics` (read-only) on the tank species. Belongs to
       the BALANCE BATCH, judged against absolute targets, not against sibling varieties
       (memory `feedback_tune_to_targets_not_to_each_other`).
+
+12. - [ ] **IDEA (owner, 2026-10-13, mid-session) — KEEP THE GAME FRESH: scheduled restarts that
+      reshuffle the map, and server-wide EVENTS.** Recorded as stated; NOT scheduled, NOT designed.
+      (a) **Restart every ~3 hours with a RANDOMISED MAP** - "like a wipe but the market listings
+      don't disappear": listings are re-assigned to posts on the new map; player STRUCTURES/OUTPOSTS
+      keep their coordinates and owners; a true wipe maybe every ~3 months.
+      (b) **A good EVENT per restart, lasting until the next one** - grand buffs and variants, e.g.
+      players get double the actions of enemies, valor x3, eggs far more common, sharper weapons
+      (high attack/primary stat) and sturdier armour (high HP) more prevalent, "and some others".
+      **Things this must be designed against BEFORE any code (my read, for the owner to rule on):**
+      - *Structures vs a new map.* Structures stay at the same coordinates, but the terrain under
+        them changes: an outpost could land in water/void or inside a different biome/level band.
+        Either the map is randomised AROUND fixed structure footprints, or structures get re-seated.
+        This is the hard part and it is not obvious which the owner wants.
+      - *Everything that is keyed on the map.* Post-anchored levels, the threat/dungeon system (3,000
+        world dungeons that live <=24h anyway), quest boards naming posts, the Atlas/cartography the
+        player has discovered, home stones/sanctuary, tutorial walk to the first dungeon, "post
+        distribution" rules measured on 2026-09-13. All assume a map that persists for weeks.
+      - *Permadeath + 3-hour churn.* Players who navigate by memory lose the whole map every 3 hours;
+        the long walks the curve already imposes (L100 at radius ~900) get re-rolled each time.
+        Needs the travel/stance/post-network work to be solid first, or it will read as punishment.
+      - *Events change player power, so they touch the calibration* (CLAUDE.md: any player-side
+        change invalidates the monster curve). x2 actions / x3 valor are not a balance change if they
+        are clearly an EVENT, but the chain, the death-log audit and `refcal` must be able to tell
+        event time from normal time (tag event sessions, or the live data stops being usable for
+        balance - and live data is exactly what the BALANCE BATCH is waiting on).
+      - *Valor x3 and eggs/gear drops are economy sources* (see the valor-economy and egg-sink items):
+        a 3-hour cycle of "everything is tripled" inflates both unless sinks exist first.
+      **Sequencing:** DESIGN ONLY until the BALANCE BATCH has run once and the economy sinks (items
+      10 / 50) exist. The EVENT half (b) is separable and much cheaper than the MAP half (a): events
+      could ship alone on a daily/weekly cadence as a first slice, and a restart cadence is already
+      supported by the warned-shutdown machinery. Overlaps 11(a) (reasons to visit boards) and
+      11(b) (variants/rolled monsters could be an event's "variants").
 
 ### ⚑ PICK UP HERE — written 2026-09-19 for a gap of unknown length
 

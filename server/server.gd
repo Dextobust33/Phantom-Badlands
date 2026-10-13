@@ -33248,6 +33248,20 @@ func _erase_dungeon_instance(instance_id: String) -> void:
 	Unindexes FIRST, while the instance is still there to read its coordinates from. The ONE place that knows which dictionaries hold
 	dungeon state, because there were three lists of erases and one of them had already fallen a
 	dictionary behind (the world cull never erased `dungeon_traps`)."""
+	# ⚑ NOBODY IS LEFT STANDING IN A PLACE THAT NO LONGER EXISTS. Owner sheet 2026-10-13, item 36
+	# (*"What happens to dungeons spawned from abandoned quests?"*): they were erased, but this never
+	# asked who was inside - so abandoning a quest from within its dungeon left the character flagged
+	# inside an instance with no floors, the same stranded state as the threat-quest entry bug, and a
+	# release server does not stop at the missing key. Every erase (abandon, completion, the sweeper)
+	# comes through here, so this is the one place that retires the whole class.
+	for _pid in characters.keys():
+		var _c = characters[_pid]
+		if _c.in_dungeon and _c.current_dungeon_id == instance_id:
+			_c.exit_dungeon()
+			save_character(_pid)
+			if peers.has(_pid):   # a character with no connection has nobody to tell
+				send_to_peer(_pid, {"type": "text", "message": "[color=#FFAA00]The dungeon around you fades away - its quest is over. You find yourself back on the surface.[/color]"})
+				send_location_update(_pid)
 	_unindex_dungeon(instance_id)
 	active_dungeons.erase(instance_id)
 	dungeon_floors.erase(instance_id)
@@ -36434,8 +36448,9 @@ func _send_dungeon_state(peer_id: int):
 		log_message("[DUNGEON STATE] %s is flagged inside %s, which has no interior - returning them to the overworld" % [character.name, instance_id])
 		character.exit_dungeon()
 		save_character(peer_id)
-		send_to_peer(peer_id, {"type": "error", "message": "That dungeon is no longer there. You are back on the overworld."})
-		send_location_update(peer_id)
+		if peers.has(peer_id):
+			send_to_peer(peer_id, {"type": "error", "message": "That dungeon is no longer there. You are back on the overworld."})
+			send_location_update(peer_id)
 		return
 
 	var instance = active_dungeons[instance_id]
