@@ -2,9 +2,9 @@
 # Quick test run with minimal iterations to verify simulator works
 extends SceneTree
 
-const SimulatedCharacter = preload("res://tools/combat_simulator/simulated_character.gd")
-const GearGenerator = preload("res://tools/combat_simulator/gear_generator.gd")
-const CombatEngine = preload("res://tools/combat_simulator/combat_engine.gd")
+const SimulatedCharacter = preload("res://tools/combat_simulator/archive/simulated_character.gd")
+const GearGenerator = preload("res://tools/combat_simulator/archive/gear_generator.gd")
+const CombatEngine = preload("res://tools/combat_simulator/archive/combat_engine.gd")
 
 func _init():
 	run_tests()

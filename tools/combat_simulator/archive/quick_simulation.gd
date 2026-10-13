@@ -2,10 +2,10 @@
 # Quick simulation with reduced parameters for faster testing
 extends SceneTree
 
-const SimulatedCharacter = preload("res://tools/combat_simulator/simulated_character.gd")
-const GearGenerator = preload("res://tools/combat_simulator/gear_generator.gd")
-const CombatEngine = preload("res://tools/combat_simulator/combat_engine.gd")
-const ResultsWriter = preload("res://tools/combat_simulator/results_writer.gd")
+const SimulatedCharacter = preload("res://tools/combat_simulator/archive/simulated_character.gd")
+const GearGenerator = preload("res://tools/combat_simulator/archive/gear_generator.gd")
+const CombatEngine = preload("res://tools/combat_simulator/archive/combat_engine.gd")
+const ResultsWriter = preload("res://tools/combat_simulator/archive/results_writer.gd")
 
 # Reduced simulation configuration for quick testing
 var CLASSES = ["Fighter", "Wizard", "Grifter"]  # One from each path

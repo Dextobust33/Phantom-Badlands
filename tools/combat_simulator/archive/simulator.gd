@@ -3,10 +3,10 @@
 # Run with: godot --headless --path "project_path" --script "res://tools/combat_simulator/simulator.gd"
 extends SceneTree
 
-const SimulatedCharacter = preload("res://tools/combat_simulator/simulated_character.gd")
-const GearGenerator = preload("res://tools/combat_simulator/gear_generator.gd")
-const CombatEngine = preload("res://tools/combat_simulator/combat_engine.gd")
-const ResultsWriter = preload("res://tools/combat_simulator/results_writer.gd")
+const SimulatedCharacter = preload("res://tools/combat_simulator/archive/simulated_character.gd")
+const GearGenerator = preload("res://tools/combat_simulator/archive/gear_generator.gd")
+const CombatEngine = preload("res://tools/combat_simulator/archive/combat_engine.gd")
+const ResultsWriter = preload("res://tools/combat_simulator/archive/results_writer.gd")
 
 # Simulation configuration
 var CLASSES = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]

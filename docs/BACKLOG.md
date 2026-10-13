@@ -1053,6 +1053,56 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ⚑ OWNER PLAYTEST SHEET — 51 items, received 2026-10-13 (Google Sheet, "anyone with link")
+
+Takes priority over the Player Phantoms client block below (owner: "start there"). Items are
+grouped by SHARED CAUSE, in the order their inputs settle. Tick each here as it lands. Sheet item
+numbers are in brackets. **None of the groups below were verified against code when written** —
+the grouping is from reading the sheet; confirm the cause before fixing.
+
+1. - [x] **DONE 2026-10-13 [21] "31 parse errors in Godot".** Cause: the archived legacy simulator
+      (`tools/combat_simulator/archive/`) preloaded siblings from the pre-archive path, and the
+      editor reopens `quick_simulation.gd` from its saved open-tabs list. Preloads repointed into
+      `archive/`; a full `--headless --editor --quit` load now prints zero errors (was 5 lines,
+      expanding to ~31 in the editor).
+2. - [ ] **MAP DRAWS OVER A PANEL THE PLAYER IS READING** [2 Rework, 3 Inspect gear, 8 Salvage
+      screen, 11 Home Stone companion dialogue, 23 Settings options cleared, 46 Titan wish result].
+      Suspected single cause: server refresh (`character_update`/`location`/map) calls
+      `display_xxx()` and wipes `game_output` — see CLAUDE.md "Player-Visible Output Rule".
+      Fix structurally (one "panel owns the output" state), not per screen.
+3. - [ ] **[5] Apex Wyvern quest dungeon: never shown inside, "already in dungeon", relog lands in
+      Crossroads.** Can strand a player — before the rest of the dungeon group.
+4. - [ ] **DUNGEONS** [1 Rescue-the-Scholar NPC not spawned / glyph text should be sprite, likely all
+      NPC quests; 10 random dungeons not on map; 36 abandoned-quest dungeon cleanup; 37 + 42 floor
+      loot level/valor not matching dungeon (L56 loot vs L83 monsters, E8 low valor); 35 do
+      dungeons ever give a card].
+5. - [ ] **TEXT/NUMBERS THAT DISAGREE** [15 Companion card face vs log; 16 Double Cross face vs
+      actual; 18 potion HP in combat list; 39 card name differs Deck vs battle (Sorcerer Wild
+      Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
+      missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
+      32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+6. - [ ] **COMBAT MECHANICS TO VERIFY** [4 Swift Hobgoblin landed 6 hits; 9 Distract debuff not
+      shown/applied; 28 "less often / once per fight" upgrades functioning?; 40 audit artifact +
+      special-effect gear vs their text; 14 runes can't be applied; 34 Tome of Gambit card not in
+      deck; 51 same companion registrable in several slots].
+7. - [ ] **SMALL FIXES** [12 Escape on action bar needs confirm; 22 disabling Help Pop-ups breaks
+      the tutorial; 31 Home Stones shouldn't have levels; 6 inventory not refreshing after salvage;
+      20 no way to stop watching a player; 13 what does Blacksmith Armor Upgrade do; 45 why several
+      summoning/finding scrolls; 26 legendary/artifact drops not announced in victory feed;
+      47 Jarl ring still equippable + no turn-in guidance at 0,0].
+8. - [ ] **PARTY PLAY** [24 can't leave posts; leader/follow/rotation remnants; join a fight that
+      started while out of range — fight symbol on the map, join into next round with HP/stats
+      rescaled]. Overlaps the existing PARTY PLAY HALF TWO item (BACKLOG ~385) — merge, do not
+      duplicate.
+9. - [ ] **BALANCE BATCH — wait for the chain, do not fix one by one** [25 Fighter mitigation looks
+      permanently capped (is Bulwark/Brace applying unused?) — investigate as a BUG first;
+      27 uneven monster damage; 33 Chaos/Magic Bolt variance; 41 Paths maxed too fast (overlaps
+      existing PATHS REVAMP item ~7420); 38 minigame reward tiers — egg of faced monster or
+      same-tier, rarer than low ones; 48 Jarl powers / empty realm treasury].
+10. - [ ] **DESIGN ASKS — need owner decisions before code** [7 salvage confirm toggle + auto-salvage
+      vs equipped gear + market-listing popups; 29 stat-point auto-apply; 30 minigame too long late;
+      50 bring gold back, 1 gem = 1k gold, blacksmith/enchanter sinks into HP/damage].
+
 ### ⚑ PICK UP HERE — written 2026-09-19 for a gap of unknown length
 
 **v0.9.833 is LIVE (client + server, hash-verified). Everything shipped is playable.**
