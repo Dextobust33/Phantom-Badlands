@@ -11486,6 +11486,21 @@ func update_action_bar():
 		# return — there's no helper that applies current_actions; the loop
 		# at the bottom of update_action_bar does that. But we DO need to
 		# skip the remaining branches so they don't overwrite current_actions.
+	elif watching_player != "" and not settings_mode:
+		# Owner sheet 2026-10-13, item 20: *"No way to stop watching a player."* There was one - Escape,
+		# or typing `unwatch` - and neither is something a player can SEE. A visible button, first slot.
+		current_actions = [
+			{"label": "Stop Watching", "action_type": "local", "action_data": "stop_watching", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
 	elif settings_mode:
 		# Settings mode - actions handled by _input(), show info only
 		if rebinding_action != "":
@@ -18474,6 +18489,9 @@ func execute_local_action(action: String):
 			pending_inventory_action = ""
 			display_inventory()
 			update_action_bar()
+		"stop_watching":
+			set_meta("hotkey_0_pressed", true)   # Pitfall #7: the key that fired this must not fire the next screen
+			stop_watching()
 		"salvage_result_continue":
 			# v0.9.635 — Player dismisses the salvage result. Clear the
 			# holding state so the inventory panel can reappear, and mark
@@ -57981,7 +57999,7 @@ func handle_watch_approved(message: Dictionary):
 	watching_player = target
 	_page_clear()
 	display_game("[color=#FFD700]===== Watching %s =====[/color]" % target)
-	display_game("[color=#808080]You are now observing their game. Press [Escape] or type 'unwatch' to stop.[/color]")
+	display_game("[color=#808080]You are now observing their game. Press the Stop Watching button (or [Escape]) to stop.[/color]")
 	display_game("")
 	update_action_bar()
 
