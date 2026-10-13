@@ -22287,14 +22287,39 @@ func handle_teleport(peer_id: int, message: Dictionary):
 
 # ===== ABILITY LOADOUT HANDLERS =====
 
+func _class_named_abilities(character, abilities: Array) -> Array:
+	"""The ability list with each card named as THIS class's hands call it.
+
+	Owner sheet 2026-10-13, item 39: *"Cards are showing different names on the Deck screen than they
+	do in battle."* `Character.get_all_available_abilities` carries one display string per card id
+	(the archetype's - a Sorcerer's `blast` read "Blast"), while combat names a card through
+	`CombatManager.display_name_for` (the same card is "Wild Surge" in a Sorcerer's hand). The Deck
+	panel read the first, the battle read the second. Rewritten here, on a COPY, from the combat
+	table so the screen cannot drift from it. Only entries the per-class table actually renames are
+	touched; everything else keeps the string it had."""
+	var out: Array = []
+	for ab in abilities:
+		if not (ab is Dictionary):
+			out.append(ab)
+			continue
+		var base := String(Character.card_base(String(ab.get("name", ""))))
+		var per_class = CombatManager.ABILITY_DISPLAY_BY_CLASS.get(base, null)
+		if per_class is Dictionary and String((per_class as Dictionary).get(String(character.class_type), "")) != "":
+			var copy: Dictionary = (ab as Dictionary).duplicate()
+			copy["display"] = CombatManager.display_name_for(character, String(ab.get("name", "")))
+			out.append(copy)
+		else:
+			out.append(ab)
+	return out
+
 func handle_get_abilities(peer_id: int):
 	"""Send ability loadout data to client"""
 	if not characters.has(peer_id):
 		return
 
 	var character = characters[peer_id]
-	var all_abilities = character.get_all_available_abilities()
-	var unlocked = character.get_unlocked_abilities()
+	var all_abilities = _class_named_abilities(character, character.get_all_available_abilities())
+	var unlocked = _class_named_abilities(character, character.get_unlocked_abilities())
 
 	send_to_peer(peer_id, {
 		"type": "ability_data",

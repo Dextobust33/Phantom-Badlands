@@ -1213,6 +1213,16 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      - [x] **[39] DONE IN CODE 2026-10-13 (SERVER; needs a deploy) - Deck names vs battle names.**
+        Cause: the Deck panel renders `ability_data.*[].display`, which `Character.get_all_available_abilities`
+        fills from ONE string per card id (the archetype's - a Sorcerer's `blast` is "Blast"); battle names a
+        card through `CombatManager.display_name_for` ("Wild Surge" for a Sorcerer; the owner wrote "Wild
+        Strike"). New `server._class_named_abilities` rewrites `display` on a copy from the combat table for
+        every card the class renames, in `handle_get_abilities`. Probe `deck_names_match_battle_names.gd`: 9
+        classes, 50 class-renamed cards, deck name == battle name; red (6 of 50) with the helper disabled.
+        **Not swept:** other surfaces that name a card from client-side tables (`client.gd` ~2848 / ~16812,
+        the equip prompts) - the probe covers only what the server sends the Deck. Next time a card name is
+        reported, run `-- cardnames` and compare every surface rather than this one.
       - [x] **[19] DONE IN CODE 2026-10-13 (client + shared; next client release) - the battle log opens
         with WHO you are fighting.** Traits were on the encounter text, the nameplate and Analyze, but the
         live log began at the first blow. `CombatManager.fight_log_header` builds one line (name, level,
