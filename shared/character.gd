@@ -3225,7 +3225,10 @@ func add_experience(amount: int) -> Dictionary:
 	return {
 		"leveled_up": leveled_up,
 		"levels_gained": levels_gained,
-		"new_level": level
+		"new_level": level,
+		# What was ACTUALLY added, after race / Sanctuary / Mentee. A surface that shows the player
+		# "+N XP" must show this, not the `amount` it passed in (owner sheet 2026-10-13, item 43).
+		"xp_gained": final_amount
 	}
 
 # Audit #3 Slice 1 — stat-allocation agency.
@@ -6238,7 +6241,7 @@ func add_job_xp(job_name: String, xp: int) -> Dictionary:
 	Cannot gain XP past trial cap on uncommitted jobs.
 	Character XP taper: Lv1-20 = 1.0x, Lv20-50 = 0.5x, Lv50+ = 0.2x"""
 	if not can_gain_job_xp(job_name):
-		return {"leveled_up": false, "new_level": job_levels.get(job_name, 1), "char_xp_gained": 0}
+		return {"leveled_up": false, "new_level": job_levels.get(job_name, 1), "char_xp_gained": 0, "xp_granted": 0}
 
 	# The carrot, applied at the one place job XP enters the character.
 	xp = int(round(float(xp) * job_xp_multiplier(job_name)))
@@ -6270,7 +6273,8 @@ func add_job_xp(job_name: String, xp: int) -> Dictionary:
 		taper = 0.2
 	var char_xp_gained = int(xp * taper)
 
-	return {"leveled_up": leveled_up, "new_level": current_level, "char_xp_gained": char_xp_gained}
+	# `xp_granted` is the job XP AFTER the committed-job bonus - what the bar really moved by.
+	return {"leveled_up": leveled_up, "new_level": current_level, "char_xp_gained": char_xp_gained, "xp_granted": xp}
 
 func commit_gathering_job(job_name: String) -> bool:
 	"""Commit to a gathering job. Returns true if successful."""

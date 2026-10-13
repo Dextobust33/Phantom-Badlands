@@ -28054,14 +28054,17 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		xp_result = character.add_crafting_xp(skill_name, xp_gained)
 		craft_char_xp = xp_result.get("char_xp_gained", 0)
 		if craft_char_xp > 0:
-			character.add_experience(craft_char_xp)
+			# Report what the character really received (race / Sanctuary / Mentee), not what was offered.
+			craft_char_xp = int(character.add_experience(craft_char_xp).get("xp_gained", craft_char_xp))
 		if matching_job != "" and character.can_gain_job_xp(matching_job):
 			job_xp_gained = int(xp_gained * 0.5)
 			if job_xp_gained > 0:
 				var job_result = character.add_job_xp(matching_job, job_xp_gained)
 				# v0.9.740 — crafting shares the XP with the party but NOT the crafted item:
 				# duplicating the item would mint N items from one set of materials.
+				# (The party gets the amount OFFERED; each member's own bonus applies on their side.)
 				_party_share_job_xp(peer_id, matching_job, job_xp_gained, "crafting")
+				job_xp_gained = int(job_result.get("xp_granted", job_xp_gained))   # shown = granted, after the committed-job bonus
 				job_leveled_up = job_result.leveled_up
 				job_new_level = job_result.new_level
 
@@ -29193,11 +29196,13 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 		xp_result = character.add_crafting_xp(skill_name, xp_gained)
 		craft_char_xp = xp_result.get("char_xp_gained", 0)
 		if craft_char_xp > 0:
-			character.add_experience(craft_char_xp)
+			# Report what the character really received (race / Sanctuary / Mentee), not what was offered.
+			craft_char_xp = int(character.add_experience(craft_char_xp).get("xp_gained", craft_char_xp))
 		if matching_job != "" and character.can_gain_job_xp(matching_job):
 			job_xp_gained = int(xp_gained * 0.5)
 			if job_xp_gained > 0:
 				var job_result = character.add_job_xp(matching_job, job_xp_gained)
+				job_xp_gained = int(job_result.get("xp_granted", job_xp_gained))   # after the committed-job bonus
 				job_leveled_up = job_result.leveled_up
 				job_new_level = job_result.new_level
 

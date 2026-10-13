@@ -1213,6 +1213,13 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      - [x] **[43] DONE IN CODE 2026-10-13 (SERVER; needs a deploy) - crafting XP shown vs granted.**
+        Cause: the craft result reported the amount OFFERED; `add_experience` then multiplies (race x
+        Sanctuary x Mentee) and `add_job_xp` adds the committed-job +50%, so a committed crafter saw 20 and got
+        30. Both now return what they granted (`xp_gained`, `xp_granted`) and both craft sites in
+        `_finalize_craft` report that. Probe `shown_xp_is_granted_xp.gd`. **Not done:** gathering results
+        (`gathering_complete`, scratch-off) have the same shape and still report offered amounts; party members
+        are still offered the pre-bonus amount (deliberate - their own bonus applies). Not fault-injected.
       - [x] **[39] DONE IN CODE 2026-10-13 (SERVER; needs a deploy) - Deck names vs battle names.**
         Cause: the Deck panel renders `ability_data.*[].display`, which `Character.get_all_available_abilities`
         fills from ONE string per card id (the archetype's - a Sorcerer's `blast` is "Blast"); battle names a
