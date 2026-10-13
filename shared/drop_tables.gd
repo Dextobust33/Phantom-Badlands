@@ -5837,6 +5837,12 @@ func _get_item_name(item_type: String, rarity: String = "common") -> String:
 			"scroll_resurrect_greater": "Greater Scroll of Resurrection"
 		}
 		var base_name = scroll_names.get(item_type, "Mysterious Scroll")
+		# Owner sheet 2026-10-13, item 45: *"Why are there different scrolls of summoning/finding, they
+		# seem to do the same thing."* They did: neither effect scales with rarity (Summoning always lets
+		# you pick one monster; Finding is a fixed 5 encounters), so "Ancient" / "Arcane" promised a
+		# difference that was not there. These two keep their plain name at every rarity.
+		if item_type in ["scroll_monster_select", "scroll_target_farm"]:
+			return base_name
 		match rarity:
 			"epic": return "Ancient " + base_name
 			"legendary": return "Arcane " + base_name

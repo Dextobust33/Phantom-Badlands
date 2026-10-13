@@ -2688,7 +2688,7 @@ const RECIPES = {
 	},
 	# Special Scrolls
 	"scroll_of_monster_select": {
-		"name": "Scroll of Monster Select",
+		"name": "Scroll of Summoning",   # one scroll, one name: the loot version is called this too (owner sheet item 45)
 		"skill": CraftingSkill.SCRIBING,
 		"skill_required": 35,
 		"difficulty": 45,
@@ -2699,7 +2699,7 @@ const RECIPES = {
 		"craft_time": 5.0
 	},
 	"scroll_of_target_farm": {
-		"name": "Scroll of Target Farm",
+		"name": "Scroll of Finding",   # same effect as the loot Scroll of Finding, so the same name (item 45)
 		"skill": CraftingSkill.SCRIBING,
 		"skill_required": 50,
 		"difficulty": 62,
