@@ -1362,6 +1362,32 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       touch anything before the chain. It is a count of deaths, not a rate: the population denominator
       (encounters per class) is not in this output, so "Tricksters die most" may partly be "most people
       play Tricksters" - count BOTH sides before acting (memory `feedback_count_both_sides_of_the_ratio`).
+      ▶ **CORRECTION, SAME DAY - STEP (1) BELOW DID NOT SURVIVE ITS OWN RE-MEASURE. NOT EDITED.** The note
+      said to re-measure on the population the fit used before touching the L1-2 kit. Doing that:
+        * **The L1-2 HP gap is not a "kit too rich" finding.** Sim and live draw items from the same generator.
+          Per ITEM, the sim gives an HP affix to 16% of items (mean +27) at BOTH L1-2 and L3-5; live gives 6%
+          (6 of 99) at L1-2 and 20% (22 of 109) at L3-5, mean +25 / +31. Pooled over L1-5 live is 13.5% vs the
+          sim's 16% - consistent. L1-2 alone is 2.7 sd low (~p 0.4% unadjusted, ~2% after allowing for four
+          bands), so it may be real or luck; HP has a heavy tail (live L1-4 `hp_bonus`: mean 19.3, MEDIAN 0), so
+          the "+-6" standard error I quoted for 110 HP is too optimistic. **Retrofitting the L1-2 kit to a
+          single band of 20 deaths would be fitting a tail.** Not done.
+        * **What IS clear is a LEVEL-SCALING gap, from L6 up, in two places** (live deaths vs sim "average",
+          matched on level/class/race): **base CON** live 10.2 / 11.8 / 17.2 / 19.1 vs sim 10.1 / 11.3 / 13.0 /
+          11.7 for L1-2 / 3-5 / 6-9 / 10-24 (STR is close: 16.6 vs 14.5 at L10-24) - live players put most
+          level-up stat points into CON and the sim's player does not; and **gear `hp_bonus` per kit** live
+          8 / 38 / 80 / 188 vs sim 19 / 21 / 36 / 61. Together they are the 482-vs-255 HP gap at L10-24.
+        * **Revised step (1), for the BALANCE BATCH:** model the stat-point spend (`make_char` leaves
+          `unspent_stat_points` 0 and the points nowhere; fit a CON-heavy split from the live stats, n=60 deaths
+          + the living L57/L91 characters), and decide how gear affix magnitude should scale with level for
+          the reference player (the generator is shared, so this is probably dungeon/chest loot the drop model
+          does not give an "average" player). Both only matter from L6 up, where the deaths are few (6 of 63
+          deaths are above L9), so this is lower leverage than it first looked; the L1-5 mismatch is
+          within noise of the current fit.
+        * **So the early-game deaths (L1-2, 68% of all) are NOT explained by a too-strong reference player.**
+          Their cause is still open: next measurement is the fights themselves (monster level vs player HP
+          at the start of each death, per class), not the kit. Tricksters are 54% of deaths at base stats
+          identical to everyone's - look at the CLASS side first (decks / resource pools at L1-2), per
+          `feedback_check_the_instrument_first`: card and policy before class.
       ▶ **REFERENCE PLAYER vs LIVE DEATHS, RUN 2026-10-13 (step 3).** Sample: the 60 deaths since the
       2026-09-05 cutoff at L1-24 (the dying population, which the 2026-09-18 fit also used), compared with
       `make_char(level, "average", class, race)` for the SAME (level, class, race) of each death, 6 draws each.
