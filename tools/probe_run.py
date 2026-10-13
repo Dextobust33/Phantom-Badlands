@@ -57,6 +57,9 @@ SMOKE = [
     "lazy_dungeon_interior",
     "dungeon_grade_truth",
     "dungeon_card_reward",
+    "danger_words_agree",
+    "danger_step_guard",
+    "escort_flag_is_server_only",
 ]
 
 ERROR_RE = re.compile(r"(SCRIPT ERROR|Parse Error|Invalid call\.|Invalid access to property|Invalid get index|Invalid set index)")

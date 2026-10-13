@@ -5,6 +5,7 @@ extends Control
 ## The wire form of the overworld map (Phase 2.95 PHASE 1). One definition, shared with the
 ## server, so the client cannot draw something the server would not have drawn.
 const MapPayload = preload("res://shared/map_payload.gd")
+const _DangerWords = preload("res://shared/danger_words.gd")
 
 ## The overworld drawn as sprites rather than letters (Phase 2.95 PHASE 2).
 const _OverworldRoom = preload("res://client/overworld_room.gd")
@@ -35398,7 +35399,14 @@ func display_changelog():
 	# v0.9.834 - the owner's playtest sheet, dungeon half: threat-quest dungeons you could not
 	#            enter, rescue NPCs that never appeared, screens painted over by the map, floor
 	#            loot a level behind its floor, and more dungeons where players actually are.
-	display_game("[color=#00FF00]v0.9.834[/color] [color=#808080](Current)[/color]")
+	# v0.9.835 - the danger warning and the Area readout now describe the same ground in the same
+	#            words (and the warning varies), plus three pieces of help text that were wrong or gone.
+	display_game("[color=#00FF00]v0.9.835[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE DANGER WARNING AND THE AREA READOUT NOW AGREE.[/color] Step toward ground well above your level and the game stops you once and asks. It used to call anything from [b]1.15x your level[/b] up [b]far above you[/b] while the Area readout beside it still said [b]about your level[/b] until 1.35x — the same ground, described two ways. Both now use the same words, and the readout turns red exactly where the game starts asking. The warning also [b]varies its wording[/b] now, so it is not one sentence your eye learns to skip; it still names the ground's level, yours, and how to go on anyway.")
+	display_game("  [color=#FF4444]◆ FIXED: the Initiative help text had the wrong ceiling.[/color] A monster's chance to strike first is capped at [b]75%[/b] in a solo fight (not 55%), and your [b]travel stance[/b] moves it — Travelling +18, Scouting -4, Hunting -8. A party fight uses a simpler version capped at 55%. The help now says so.")
+	display_game("  [color=#FF4444]◆ FIXED: the Gathering help page had lost its explanation of how gathering plays.[/color] Mining, logging, foraging and shallow-water fishing are a grid of face-down slots you scratch; deep-water fishing is a 3-choice chain. It is back.")
+	display_game("")
+	display_game("[color=#808080]v0.9.834[/color]")
 	display_game("  [color=#FF4444]★ FIXED: entering a dungeon for a post-threat quest could leave you stuck.[/color] You pressed enter, nothing happened on screen, and every press after that said you were [b]already in a dungeon[/b] — until you relogged and found yourself back at the Crossroads. The dungeon a threat quest points at is built the first time someone goes in, and the entry never asked for it. It does now, and the game will no longer leave you flagged as inside a dungeon that is not there.")
 	display_game("  [color=#FF4444]★ FIXED: rescue quests never showed you who to rescue.[/color] The person you were sent to find was being placed in a corner of the map nobody could reach — and once that was fixed, on top of the stairs down, where stepping on them took you to the next floor instead. They now stand in a room you can walk to, and they are drawn as [b]people[/b], not as a letter: a scholar, a healer, a merchant, a blacksmith and a breeder each have their own figure. This was the same for every kind of rescue quest.")
 	display_game("  [color=#FF4444]★ FIXED: Rework, Salvage, Settings and the Home Stone screen being replaced by the map a moment after they opened.[/color] Inspecting gear had the same problem. A menu you open now keeps the screen until you leave it — including when another player walks past and your game gets a map update. Winning a [b]wish[/b] now shows what you received.")
@@ -44418,17 +44426,10 @@ func _show_overworld_level_hover(cell_key: String) -> void:
 	var lv: int = int(row[bx])
 	var me: int = maxi(1, int(character_data.get("level", 1)))
 	var ratio: float = float(maxi(1, lv)) / float(me)
-	var verdict := "[color=#7FD4A0]beneath you[/color]"
-	if ratio >= 0.85:
-		verdict = "[color=#FF8800]about your level[/color]"
-	if ratio >= 1.35:
-		verdict = "[color=#FF5555]above you[/color]"
-	if ratio >= 2.0:
-		verdict = "[color=#FF2A2A]far above you[/color]"
-	if ratio >= 3.0:
-		verdict = "[color=#FF2A2A][b]LETHAL[/b][/color]"
-	if ratio < 0.6:
-		verdict = "[color=#9ACD32]trivial[/color]"
+	# The verdict and its words come from the one shared vocabulary the server's step-guard warning uses
+	# (shared/danger_words.gd), so the readout and the confirmation cannot describe the same ground
+	# differently. NOTE the readout now turns red at 1.15x - where the guard starts asking - not 1.35x.
+	var verdict: String = _DangerWords.bbcode(_DangerWords.verdict(ratio))
 	var body := "%s  -  monsters about [b]Lv %d[/b], %s (you are %d)" % [
 		_area_level_tag(lv), lv, verdict, me]
 	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):

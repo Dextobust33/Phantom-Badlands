@@ -1445,15 +1445,28 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       `★ ◆` already used, but NOT visually confirmed (the button did not appear in the capture); and
       the GATHERING help topic again explains the scratch-off grid vs the deep-water 3-choice chain
       (the "CRAFTING & GATHERING" split had silently dropped it).
-      **STILL OPEN from the triage (decisions, not probe work):**
-      - *Danger-step wording.* The guard now asks at 1.15x (measured: 50-100% death at the old 2x), but
-        its message calls everything from 1.15x "far above you" while the Area readout beside it says
-        "about your level" until 1.35x. Align the words or the thresholds.
-      - *Solo vs party initiative disagree* (5-75% with stance vs 5-55% without) - intended or drift?
-      - *The client-trusted `escorted` flag* (above) - low severity, one-line fix.
-      - *`map_payload_golden` is not hermetic:* it reads the machine's saved seed and posts from
-        `user://`; re-captured today (reason recorded in its header) but only meaningful on a machine
-        whose saved world matches. Inject a fixed seed and posts before trusting it as a gate.
+      **RESOLVED 2026-10-13, shipping in v0.9.835 (owner: "release it with the server deploy"):**
+      - [x] *Danger-step wording - DONE, with the variety the owner asked for.* New
+        `shared/danger_words.gd` owns the verdict edges (0.6 / 0.85 / **1.15** / 2.0 / 3.0) AND the
+        words; the server guard builds its message from it and the client's Area readout builds its
+        verdict from it, so they cannot disagree again. `DANGER_STEP_RATIO` is defined FROM it, so
+        "where the guard asks" and "where the readout turns red" are one number. **Behaviour change:**
+        the readout now turns red at 1.15x (it was 1.35x). The warning has 4 phrasings per verdict x 4
+        openers x 3 tails (44 distinct per verdict measured); every variant names the ground's level,
+        yours, the readout's own phrase, and "to go anyway". Probe `danger_words_agree.gd`, fault-
+        injected both ways (thresholds drifting apart; wrong verdict phrase) - both fail it.
+      - [x] *Client-trusted `escorted` flag - FIXED.* The dispatcher strips `escorted` from network
+        move messages; the Warden's two internal calls still set it. Probe
+        `escort_flag_is_server_only.gd` (fails if the strip is removed). Not visible to players.
+      **STILL OPEN (owner decisions):**
+      - *Solo vs party initiative* (5-75% with stance vs 5-55% without). Owner's read: probably DRIFT,
+        not design. **Not changed in the release on purpose:** making party fights use the solo
+        formula changes how often monsters strike first in a party - a balance change, which belongs
+        in the BALANCE BATCH and must be measured, not slipped into a text-and-safety release. The help
+        text states what each path really does. When it is done, delete the party-specific note.
+      - *`map_payload_golden` is not hermetic* (no decision needed - a known limitation, not a
+        question): it reads the machine's saved seed and posts from `user://`. Re-captured today with
+        the reason in its header; inject a fixed seed and posts before trusting it as a gate.
       **Consequence:** `probe_run.py --all` is NOT a usable gate yet; only `--smoke` is. Triage order
       that costs least: (1) the 74 verdict formats (mechanical), (2) the 9 script-error probes
       (probe rot), (3) the 29 FAILs one by one, deciding stale-vs-regression for each. Report:

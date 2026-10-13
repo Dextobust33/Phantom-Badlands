@@ -71,6 +71,7 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 ## .godot cache this project has been bitten by before.
 const PowerRankScript = preload("res://shared/power_rank.gd")
 const TravelStanceScript = preload("res://shared/travel_stance.gd")
+const DangerWordsScript = preload("res://shared/danger_words.gd")
 const OnlineStatusScript = preload("res://server/online_status.gd")
 var _online_status = null
 const QuestDatabaseScript = preload("res://shared/quest_database.gd")
@@ -2044,6 +2045,11 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		"party_message":
 			handle_party_message(peer_id, message)
 		"move":
+			# ⚑ `escorted` IS SERVER-ONLY. `handle_move` skips the danger-step confirmation for a step the
+			# Warden takes himself and reads the flag out of the message, so a client that put
+			# `"escorted": true` on its own move would skip a safety prompt. The Warden's real steps
+			# (the two `handle_move(..., {"escorted": true})` calls in his walk) never come through here.
+			message.erase("escorted")
 			handle_move(peer_id, message)
 		"set_travel_stance":
 			handle_set_travel_stance(peer_id, message)
@@ -48568,7 +48574,9 @@ func _merchant_scatter_uniques(circuit_key: String, market_key: String, this_lis
 ## game did not ask until then. There is no safe band above parity: by 1.15x the median cell is
 ## already ~26% death and the worst is 72%. So the threshold sits just above parity, which is
 ## also what the owner asked for in plain words.
-const DANGER_STEP_RATIO := 1.15
+# Defined FROM the shared vocabulary so the point where the guard starts asking and the point where the
+# Area readout turns red are the same number by construction (shared/danger_words.gd).
+const DANGER_STEP_RATIO := DangerWordsScript.ABOVE
 ## How often a hunting-ground encounter is an ELITE, at the edge of the ground and at its heart.
 ## The world's base elite roll is 1% and only above level 15, which is not something a player can
 ## perceive; these are what make a hunting ground read as somewhere different rather than just
@@ -48780,17 +48788,15 @@ func _confirm_dangerous_step(peer_id: int, character, nx: int, ny: int) -> bool:
 		return true
 	_danger_step_ack[peer_id] = band
 	_danger_step_below[peer_id] = 0
-	var how := "far above you"
-	if band == 2:
-		how = "[b]three times your level[/b]"
-	elif band == 3:
-		how = "[b]four times your level or worse[/b]"
 	send_to_peer(peer_id, {
 		"type": "danger_step_warning",
 		"area_level": there,
 		"your_level": me,
 		"band": band,
-		"message": "[color=#FF2A2A][b]Wait.[/b][/color] The ground ahead runs about [b]Lv %d[/b] - %s (you are %d).\nStep again to go anyway." % [there, how, me],
+		# The words come from the SAME place the Area readout's do, chosen by the ratio and not by the
+		# guard's own band - so this can never call ground "far above you" while the readout says "about
+		# your level" (it did, between 1.15x and 1.35x), and the wording varies from one warning to the next.
+		"message": DangerWordsScript.warning(there, me),
 	})
 	return false
 

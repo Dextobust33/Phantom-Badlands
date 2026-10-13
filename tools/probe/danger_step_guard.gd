@@ -235,7 +235,11 @@ func _init() -> void:
 	print("\n===== AND IT EXPLAINS ITSELF =====")
 	var src := FileAccess.get_file_as_string("res://server/server.gd")
 	ck(src.find('"type": "danger_step_warning"') >= 0, "the refusal sends a message, not silence")
-	ck(src.find("Step again to go anyway") >= 0, "...that says how to proceed anyway")
+	# The words moved to shared/danger_words.gd (one vocabulary for the guard and the readout); every
+	# variant of the tail keeps "to go anyway", and the guard builds its message from that module.
+	var dw_src := FileAccess.get_file_as_string("res://shared/danger_words.gd")
+	ck(dw_src.find("to go anyway") >= 0 and src.find("DangerWordsScript.warning(there, me)") >= 0,
+		"...that says how to proceed anyway")
 	var csrc := FileAccess.get_file_as_string("res://client/client.gd")
 	ck(csrc.find('"danger_step_warning":') >= 0,
 		"and the CLIENT handles that type, or the refusal is a step that silently does nothing")
