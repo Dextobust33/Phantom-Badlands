@@ -1330,10 +1330,22 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       the tutorial; 31 Home Stones shouldn't have levels (DONE 2026-10-13 after the owner named the surfaces - inventory and market: `DropTables.shows_item_level`, asked at the 2 item-card and 3 market sites; probe `home_stone_shows_no_level.gd`; the old list-view text sites in client.gd were not touched. Earlier note: the item generator gives every Home Stone a `level` and nothing I found reads it for the effect, but item levels print at 5+ client sites - lines ~11221, 20659, 22147, 50606 - and the owner did not say WHICH surface; needs the screen or a decision: drop `level` at generation + suppress the Lv suffix for `home_stone_*` in one shared formatter); 6 inventory not refreshing after salvage;
       20 no way to stop watching a player (DONE 2026-10-13, client: slot 0 is a visible Stop Watching button while watching; probe `watching_has_a_stop_button.gd`, source-level, not clicked through); 13 what does Blacksmith Armor Upgrade do (DONE 2026-10-13, SERVER: the recipe text now says it raises the equipped item's LEVEL, the Poor/Fine/Masterwork multipliers, and both caps - read off the craft code; probe `upgrade_recipes_say_what_they_do.gd`); 45 why several summoning/finding scrolls (DONE 2026-10-13 per the owner's "merge into one each": there were two families with identical effects - loot "Scroll of Summoning/Finding" (with Ancient/Arcane prefixes that changed nothing) and scribed "Scroll of Monster Select/Target Farm". One name each at every rarity; probe `one_summoning_one_finding.gd`; shared change, needs a client+server release; existing saved scrolls keep their stored names until re-made); 26 legendary/artifact drops not announced in victory feed (PARTLY DONE 2026-10-13, client: the loot minigame never celebrated the ARTIFACT rarity - only rare/epic/legendary - and the victory card now opens with a coloured "LEGENDARY/ARTIFACT FOUND: name" line; probe `top_rarity_drops_are_announced.gd`, source-level, not seen on screen. NOT covered: drops that bypass the loot grid - dungeon floor pickups, quest/market/craft rewards - the owner did not say which source);
       47 Jarl ring still equippable + no turn-in guidance at 0,0 (PARTLY DONE 2026-10-13, client: the list row now says "Quest item - turn in at The High Seat (0,0)" instead of an Atk bonus; probe `title_items_are_not_gear_in_the_list.gd`. Equip was already refused server-side and has no menu entry. NOT done: guidance when standing at 0,0 beyond the existing High Seat button - needs a look at the screen); 6 salvage refresh (FIXED 2026-10-13 on the owner's hypothesis, client: the bulk-salvage result state skipped display_inventory on purpose and so never gave a still-visible inventory panel the new list - it now calls `inventory_panel.populate`; read from code, not reproduced live; probe covers the statement only); 17 (DONE 2026-10-13 - the owner named the L / death-screen log window: its hover box is top_level at z 400, which is ABSOLUTE, under the window's 4000; now 4096, the engine maximum; probe `log_hover_is_above_the_log.gd` red before, green after)].
-8. - [ ] **PARTY PLAY** [24 can't leave posts; leader/follow/rotation remnants; join a fight that
-      started while out of range — fight symbol on the map, join into next round with HP/stats
-      rescaled]. Overlaps the existing PARTY PLAY HALF TWO item (BACKLOG ~385) — merge, do not
-      duplicate.
+8. - [ ] **PARTY PLAY** - sheet item 24, MOSTLY DONE 2026-10-13 (server + client; needs a release; NOT
+      playtested). The join-a-fight half had already shipped in v0.9.833 (map marker, run-in join). What
+      was still wrong was four leftovers of the old lead/follow model, which is why players "could not
+      properly leave the posts": (1) a post-EXIT gate - only the leader could walk out, and only once
+      everyone stood beside them ("must be beside you before the party leaves the post"); (2) the
+      Lead/Follow question when a party forms; (3) leadership rotating after every fight and every
+      gather (+ the Lead: Rotate/Fixed toggle); (4) `_party_follower_locked` / `_party_follower_denied`,
+      defined and called by nothing. All removed; the inviter leads and nothing rotates. The party help
+      paragraph (which still said "the leader moves, the others follow") is rewritten from the real
+      rules. Probe `party_has_no_leader_follower_remnants.gd` (8 statement checks, all red on the old
+      code); `the_party_fights_together` and the six other party probes still pass.
+      **Still leader-gated, deliberately left:** dungeon ENTRY/EXIT (the leader takes the party in and out
+      - one instance, one door), "go back a floor" ("Your party leader controls dungeon navigation"), the
+      starter-dungeon Warden escort, and invites. If the owner meant any of those too, say which.
+      **Dead data left in place:** `rotation_order` / `rotation_idx` / `control_mode` keys on the party
+      dict and `handle_party_set_control_mode`, kept so an old client's toggle does not error.
 9. - [ ] **BALANCE BATCH — wait for the chain, do not fix one by one.**
       ▶ **LIVE-DATA CHECK RUN 2026-10-13 (steps 1-2; step 3, reference player vs live saves, NOT yet run).**
       `death_log_audit.py`: 97 deaths recorded, **63 since the 2026-09-05 balance pass**. By level band:

@@ -5716,17 +5716,6 @@ func handle_move(peer_id: int, message: Dictionary):
 					_handle_signpost_interact(peer_id, character, target_pos.x, target_pos.y)
 					return
 
-	# v0.9.740 POST FORMATION (user 2026-09-01). Inside a post everyone moves freely; the
-	# one-leads-the-rest-follow formation applies once they step OUT. So the party may only
-	# leave together: the leader cannot walk out while anyone is still wandering the post, and
-	# a follower cannot walk out on their own. Party members can stand on the same tile
-	# (_is_non_party_player_at ignores party mates), so gathering up is always possible.
-	var _cur_post: Dictionary = {}
-	var _dest_post: Dictionary = {}
-	if world_system != null and world_system.chunk_manager != null:
-		_cur_post = world_system.chunk_manager.get_npc_post_at(character.x, character.y)
-		_dest_post = world_system.chunk_manager.get_npc_post_at(new_pos.x, new_pos.y)
-	var _leaving_post: bool = not _cur_post.is_empty() and _dest_post.is_empty()
 	# ⚑ DRAGON QUEST IX MODEL (owner 2026-09-18): *"if we get that party play working party
 	# members will no longer blindly follow the leader they will instead be able to move around
 	# and act as we discussed."* Follow-the-leader is REPLACED, not supplemented - the whole point
@@ -5734,24 +5723,6 @@ func handle_move(peer_id: int, message: Dictionary):
 	# cannot move cannot be somewhere the pull has to reach.
 	# The dungeon lock stays for now: a dungeon is a corridor, not a country, and formation there
 	# is a different problem.
-	if _leaving_post and party_membership.has(peer_id):
-		if not _is_party_leader(peer_id):
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You can move freely inside the post, but only your party leader can lead the party out.[/color]"})
-			return
-		var _stragglers: Array = []
-		for _mpid in active_parties[peer_id].get("members", []):
-			if _mpid == peer_id or not characters.has(_mpid):
-				continue
-			var _mc = characters[_mpid]
-			if maxi(absi(_mc.x - character.x), absi(_mc.y - character.y)) > 1:
-				_stragglers.append(_mc.name)
-		if not _stragglers.is_empty():
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s must be beside you before the party leaves the post.[/color]" % ", ".join(_stragglers)})
-			for _mpid2 in active_parties[peer_id].get("members", []):
-				if _mpid2 != peer_id and characters.has(_mpid2):
-					send_to_peer(_mpid2, {"type": "text", "message": "[color=#FFA500]%s is ready to leave — stand beside them.[/color]" % character.name})
-			return
-
 	# ⚑ WALK INTO A FIGHTING PARTY MEMBER TO JOIN THEIR FIGHT.
 	#
 	# Owner 2026-09-18: *"Party Players could also join mid-battle as they could visually tell on
@@ -23758,12 +23729,6 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		job_xp_result = character.add_job_xp(session_job, total_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, session_job, total_xp, "gathering")
-	# v0.9.740 - a gathering session is a shared activity too, so hand leadership on.
-	# ONLY when the LEADER gathered: movement, hunting and resting are leader-gated but
-	# gathering is open to everyone, so rotating on anyone's gather moved leadership
-	# around while a non-leader mined - which is not "taking a turn at driving".
-	if _is_party_leader(peer_id):
-		_party_rotate_leader([peer_id])
 	# Compute character XP. Prefer add_job_xp's returned value (any committed
 	# job path); otherwise apply the legacy taper to total_xp (uncommitted
 	# past trial cap, where add_job_xp returns 0 char_xp_gained).
@@ -24986,12 +24951,6 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, job_type, total_job_xp, "gathering")
-	# v0.9.740 - a gathering session is a shared activity too, so hand leadership on.
-	# ONLY when the LEADER gathered: movement, hunting and resting are leader-gated but
-	# gathering is open to everyone, so rotating on anyone's gather moved leadership
-	# around while a non-leader mined - which is not "taking a turn at driving".
-	if _is_party_leader(peer_id):
-		_party_rotate_leader([peer_id])
 	var char_xp = job_result.get("char_xp_gained", 0)
 	if char_xp == 0 and total_job_xp > 0:
 		var taper = 1.0 if job_level <= 20 else (0.5 if job_level <= 50 else 0.2)
@@ -25466,12 +25425,6 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, job_type, total_job_xp, "gathering")
-	# v0.9.740 - a gathering session is a shared activity too, so hand leadership on.
-	# ONLY when the LEADER gathered: movement, hunting and resting are leader-gated but
-	# gathering is open to everyone, so rotating on anyone's gather moved leadership
-	# around while a non-leader mined - which is not "taking a turn at driving".
-	if _is_party_leader(peer_id):
-		_party_rotate_leader([peer_id])
 	var char_xp = job_result.get("char_xp_gained", 0)
 	# Always award character XP for gathering even if job XP is at trial cap.
 	# Job commitment gates job-level progression, not character progression.
@@ -45310,12 +45263,10 @@ func handle_party_invite_response(peer_id: int, message: Dictionary):
 		# Joining existing party — skip lead/follow, join as follower
 		_add_member_to_party(inviter_id, peer_id)
 	else:
-		# New party — ask inviter for Lead/Follow choice
-		send_to_peer(inviter_id, {
-			"type": "party_lead_choice",
-			"partner_name": characters[peer_id].name,
-			"partner_peer_id": peer_id
-		})
+		# New party. The one who invited leads: there is no Lead/Follow question any more, because
+		# nobody follows (everyone walks their own path since v0.9.833) and leadership no longer
+		# rotates. The leader is just whoever owns the party for invites and dungeon entry.
+		handle_party_lead_choice_response(inviter_id, {"choice": "lead", "partner_peer_id": peer_id})
 
 func handle_party_lead_choice_response(peer_id: int, message: Dictionary):
 	"""Handle the Lead/Follow choice when forming a new party."""
@@ -45582,18 +45533,12 @@ func _cleanup_party_combat_on_disconnect(peer_id: int):
 				_dentries.insert(0, combat_mgr._party_neutral(_note[0]))   # keep the notice in the per-recipient render
 			# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
 			var _fallen_dres := _party_collect_fallen(leader_id)
-			var _members_dres := _party_member_ids(leader_id)
 			if _dres.get("combat_ended", false):
 				_end_party_combat_all(leader_id, _dres.get("victory", false), _dmsgs, _dentries)
 			else:
 				_broadcast_party_update(leader_id, _dmsgs, true, _dentries)
 			# Now that the round has been sent, run their deaths.
 			_party_kill_fallen(_fallen_dres)
-			# v0.9.740 - hand leadership on ONLY when the fight is OVER. This used to run after
-			# EVERY round, so leadership changed mid-combat and the "takes point" notice landed
-			# in the middle of round 1, before any damage was shown.
-			if _dres.get("combat_ended", false):
-				_party_rotate_leader(_members_dres)
 		else:
 			_broadcast_party_update(leader_id, _note, false)
 		return
@@ -45770,73 +45715,10 @@ func _party_member_ids(leader_id: int) -> Array:
 	return combat_mgr.active_party_combats[leader_id].get("members", []).duplicate()
 
 
-func _party_rotate_leader(member_ids: Array) -> void:
-	"""v0.9.740 - DEFAULT control mode: leadership passes to the next member after every shared
-	ACTIVITY - a fight or a gathering session (user 2026-09-01).
-	Only the leader can hunt, rest and move the party, so a fixed leader left one player doing
-	all the driving while everyone else watched (user 2026-09-01).
-
-	Takes the combat's MEMBER LIST rather than the leader id: the leader may have just died, in
-	which case the party has already been re-led or disbanded and the old id resolves to nothing.
-	Runs AFTER deaths are processed so leadership is never handed to someone about to fall."""
-	var leader_id := -1
-	for pid in member_ids:
-		if party_membership.has(pid):
-			leader_id = int(party_membership[pid])
-			break
-	if leader_id == -1 or not active_parties.has(leader_id):
-		return
-	var party = active_parties[leader_id]
-	if String(party.get("control_mode", "rotate")) != "rotate":
-		return
-	var order: Array = party.get("rotation_order", [])
-	if order.size() < 2:
-		return
-	var idx: int = int(party.get("rotation_idx", 0))
-	for _i in range(order.size()):
-		idx = (idx + 1) % order.size()
-		var candidate: int = int(order[idx])
-		if candidate == leader_id:
-			continue
-		if not characters.has(candidate) or not party.members.has(candidate):
-			continue   # dead, disconnected, or left
-		party["rotation_idx"] = idx
-		var new_name: String = characters[candidate].name
-		_transfer_leadership(leader_id, candidate)
-		# The announcement rides on party_leader_changed (sent by _transfer_leadership),
-		# which every leadership change already emits - rotation, appointing, and the
-		# transfer after a death. A second notice here just said the same thing twice.
-		return
 
 
-func _party_follower_locked(peer_id: int) -> bool:
-	"""v0.9.740 — TRUE when this player is a party FOLLOWER whose actions the leader controls.
-	Out in the world the party moves as one: one leads and the rest follow, so a follower cannot
-	move, hunt, rest, gather or craft on their own. Gathering and crafting were previously open
-	to everyone, which let a follower act while someone else was driving — and, once gathering
-	rotated leadership, let them hand the lead around mid-journey.
-
-	EXCEPTION (user direction 2026-09-01): INSIDE A POST everyone acts independently — shopping,
-	crafting, quests, walking between stations. The follow formation resumes when they leave."""
-	if not party_membership.has(peer_id) or _is_party_leader(peer_id):
-		return false
-	if not characters.has(peer_id):
-		return false
-	if at_trading_post.has(peer_id):
-		return false
-	var ch = characters[peer_id]
-	if world_system != null and world_system.chunk_manager != null:
-		if not world_system.chunk_manager.get_npc_post_at(ch.x, ch.y).is_empty():
-			return false   # standing inside a post: free to act
-	return true
 
 
-func _party_follower_denied(peer_id: int, what: String) -> bool:
-	"""Same test, but tells the player why. Returns true when the action must be blocked."""
-	if not _party_follower_locked(peer_id):
-		return false
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls %s out in the world. Inside a post you can act on your own.[/color]" % what})
-	return true
 
 
 func _party_collect_fallen(leader_id: int) -> Array:
@@ -47594,18 +47476,12 @@ func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
 	var rentries: Array = rres.get("message_entries", [])
 	# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
 	var _fallen_rres := _party_collect_fallen(leader_id)
-	var _members_rres := _party_member_ids(leader_id)
 	if rres.get("combat_ended", false):
 		_end_party_combat_all(leader_id, rres.get("victory", false), rmsgs, rentries)
 	else:
 		_broadcast_party_update(leader_id, rmsgs, true, rentries)
 	# Now that the round has been sent, run their deaths.
 	_party_kill_fallen(_fallen_rres)
-	# v0.9.740 - hand leadership on ONLY when the fight is OVER. This used to run after
-	# EVERY round, so leadership changed mid-combat and the "takes point" notice landed
-	# in the middle of round 1, before any damage was shown.
-	if rres.get("combat_ended", false):
-		_party_rotate_leader(_members_rres)
 
 
 func _handle_party_combat_command(peer_id: int, command: String, target: String = ""):
@@ -47694,18 +47570,12 @@ func _handle_party_combat_command(peer_id: int, command: String, target: String 
 	var log_entries: Array = res.get("message_entries", [])
 	# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
 	var _fallen_res := _party_collect_fallen(leader_id)
-	var _members_res := _party_member_ids(leader_id)
 	if res.get("combat_ended", false):
 		_end_party_combat_all(leader_id, res.get("victory", false), msgs, log_entries)
 	else:
 		_broadcast_party_update(leader_id, msgs, true, log_entries)
 	# Now that the round has been sent, run their deaths.
 	_party_kill_fallen(_fallen_res)
-	# v0.9.740 - hand leadership on ONLY when the fight is OVER. This used to run after
-	# EVERY round, so leadership changed mid-combat and the "takes point" notice landed
-	# in the middle of round 1, before any damage was shown.
-	if res.get("combat_ended", false):
-		_party_rotate_leader(_members_res)
 
 func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	"""#64 Slice 3 — client-facing snapshot of a simultaneous party fight."""

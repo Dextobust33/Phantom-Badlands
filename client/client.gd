@@ -12185,9 +12185,7 @@ func update_action_bar():
 				party_actions.append({"label": "Appoint", "action_type": "local", "action_data": "party_appoint", "enabled": true})
 			else:
 				party_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
-			# v0.9.740 — leader-only toggle for how leadership is decided.
-			var _mode_label := "Lead: Rotate" if party_control_mode == "rotate" else "Lead: Fixed"
-			party_actions.append({"label": _mode_label, "action_type": "local", "action_data": "party_control_mode", "enabled": true})
+			# (The Lead: Rotate / Fixed toggle is gone: leadership no longer rotates - owner sheet item 24.)
 		else:
 			party_actions.append({"label": "Leave", "action_type": "local", "action_data": "party_leave", "enabled": true})
 			party_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
@@ -41010,11 +41008,11 @@ self-cast is [b][1][/b] or the [color=#FFE066]Cast on Self[/color] button. You p
 the strength, so supporting the party is worth building for.
 
 [b][color=#FFD700]══ PARTY OUT IN THE WORLD ══[/color][/b]
-A party is up to [b]five[/b] (leader plus four). Out in the world the [b]leader[/b] moves, hunts, gathers
-and crafts; the others follow. [color=#00FFFF]Leadership rotates after every fight[/color] so nobody does all the
-work — the leader can switch this with [color=#FFE066]Lead: Fixed[/color] in the Party menu.
-[color=#00FFFF]Inside a trading post everyone acts freely[/color] (shop, craft, quests, move between stations), but
-the party may only [b]leave together[/b]: gather up first, and nobody is left at the gate.
+A party is up to [b]five[/b] (leader plus four). The leader is whoever started the party: they invite
+people and take the party into a dungeon. Out in the world [b]everyone moves, hunts, gathers and crafts on
+their own[/b] - there is nobody to follow. [color=#00FFFF]A fight pulls the party together[/color]: when anyone meets
+a monster, every member within [b]8 tiles[/b] is drawn into it. A teammate who is mid-fight shows on your map; [b]walk
+into them to join[/b], and you act from the next round.
 [color=#00FFFF]Gathering rewards and job XP are copied IN FULL to every member[/color] — no splitting. Crafting
 shares its XP with the party; the crafted item stays with the crafter.
 [color=#FF6666]Death is still permanent in a party.[/color] Falling in a party fight kills your character exactly
