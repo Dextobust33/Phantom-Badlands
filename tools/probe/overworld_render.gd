@@ -127,7 +127,7 @@ func _init() -> void:
 	var src2 := FileAccess.get_file_as_string("res://client/overworld_room.gd")
 	ck(src2.find('and not figures.has("%d,%d" % [x, y])') >= 0,
 		"the overlay glyph is skipped where a figure stands")
-	ck(src2.find("(y + 1) * CELL - fi.get_height()") >= 0,
+	ck(src2.find("+ 1) * CELL - fi.get_height()") >= 0,   # since 2026-09 also `+ _bob`; the bottom anchor is the rule
 		"and a figure is anchored to the bottom of its cell, so a tall one stands on its tile")
 
 	# THE CHECK THAT WOULD HAVE CAUGHT IT. Every assertion above reads the SOURCE, and the source
@@ -281,9 +281,10 @@ func ", hov_i + 10) - hov_i)
 	var sync_i := cli3.find("func _sync_map_sprites_overlay(")
 	var sync := cli3.substr(sync_i, cli3.find("
 func ", sync_i + 10) - sync_i)
-	ck(sync.find("if overworld_sprites and _OverworldRoom.available() and not dungeon_mode:") >= 0,
+	# The `overworld_sprites` toggle was retired (20d96d51); the stand-down is keyed on the room being available.
+	ck(sync.find("if _OverworldRoom.available() and not dungeon_mode:") >= 0,
 		"the overlay stands down when the map is art")
-	var guard := sync.substr(sync.find("if overworld_sprites and _OverworldRoom"), 400)
+	var guard := sync.substr(sync.find("if _OverworldRoom.available() and not dungeon_mode:"), 400)
 	ck(guard.find("local.visible = false") >= 0 and guard.find("_remote_companion_pool") >= 0,
 		"...hiding the player, the companion letters and every remote figure")
 	ck(guard.find("return") >= 0, "...and returns before it computes a single font metric")
@@ -332,8 +333,10 @@ func ", disp2_i + 10) - disp2_i)
 	var body_start := cli.find("func _overworld_display(")
 	var body := cli.substr(body_start, cli.find("
 func ", body_start + 10) - body_start)
-	ck(body.count("return MapPayload.inflate(payload)") == 3,
-		"the client falls back to the text map on all three failures (art, payload, renderer)")
+	# One fallback, not three: the text map was retired as a MODE (20d96d51, "one renderer"), so the
+	# only thing left is the safety net for a payload the sprite room cannot draw.
+	ck(body.count("return MapPayload.inflate(payload)") >= 1,
+		"the client still falls back to the text map when the sprite room cannot draw the payload")
 	ck(cli.find("overworld_pad32/%s/%s%s.png") >= 0,
 		"and the player figure comes from the TRANSPARENT sprite set")
 

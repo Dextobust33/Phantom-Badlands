@@ -54,7 +54,10 @@ func _init() -> void:
 	ck(loot.find("Artifact 6") >= 0 and loot.find("Common (0 affixes)") < 0, "affix ladder matches AFFIX_COUNTS")
 	var eq := _topic(secs, "EQUIPMENT & GEAR")
 	ck(eq.find("Nearly Broken") >= 0 and eq.find("merchants") < 0, "condition ladder complete; repair is at a blacksmith")
-	var gath := _topic(secs, "CRAFTING & GATHERING")
+	# "CRAFTING & GATHERING" was split into two topics (af2b1c47); gathering's mechanics live in
+	# GATHERING now. The lookup returned "" and the check failed for the wrong reason, which is how it
+	# also hid that the split had dropped the scratch-off / deep-water explanation - restored.
+	var gath := _topic(secs, "GATHERING")
 	# 2026-09-11 — the first fix wrote "3 choices" here, copied from the main page. Measured in
 	# handle_gathering_start: mining/logging/foraging/shallow fishing are a SCRATCH-OFF grid; only
 	# deep-water fishing is the 3-choice chain. The check follows the dispatch, not the prose.

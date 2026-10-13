@@ -16,6 +16,15 @@ extends SceneTree
 ## lakes, drifting rivers and rare great lakes) and the level curve reshaped, so every view in the
 ## golden legitimately describes terrain that no longer exists. What this probe still guards is
 ## unchanged: that the TEXT map and the INFLATED PAYLOAD describe the same world, byte for byte.
+##
+## Re-captured 2026-10-13, with ALL 21 views differing and the first difference a terrain label
+## ("Plains" -> "Forest" at -120,60) on the same saved seed and posts: world generation and the map
+## header changed in between - two-tile roads (69c800f6), gatherable patches (6be8288d), merchants and
+## parked merchants (2ffa595e, 32981596), and "you stand on what you are actually standing on"
+## (e887a603). The baseline described a world that no longer exists. NOTE this probe reads the SAVED
+## seed and posts from user:// on whatever machine runs it, so it is only meaningful on a machine
+## whose saved world is the one it was captured against - it should be made hermetic (fixed seed and
+## injected posts) before it is trusted as a gate.
 const WorldSystemScript = preload("res://shared/world_system.gd")
 const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
 const GOLDEN := "res://tools/probe/data/map_golden.json"

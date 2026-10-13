@@ -55,9 +55,17 @@ func _init() -> void:
 		"...and the help page says HALF, not the full speed it used to claim")
 
 	# INITIATIVE: two help blocks stated two different wrong formulas.
-	ck(cm.contains("monster_initiative_chance = clampi(monster_initiative_chance, 5, 55)"),
-		"initiative clamps 5-55 in code")
-	ck(not help.contains("max 45%"), "no help block still claims a 45% initiative ceiling")
+	# SOLO fights clamp at 5-75 since the travel-stance work (7571d268: Travelling adds +18 surprise);
+	# PARTY fights use a simpler formula still capped at 55 with no stance. Both are stated in the help.
+	ck(cm.contains("monster_initiative_chance = clampi(monster_initiative_chance, 5, 75)"),
+		"solo initiative clamps 5-75 in code")
+	ck(cm.contains("5 + int(monster_speed * 0.15) - int(log(max(1, player_dex + equipment_speed)) * 3.0), 5, 55)"),
+		"party initiative clamps 5-55 in code")
+	ck(not help.contains("max 45%") and not help.contains("max 55%, ambusher") and not help.contains("Clamped 5-55%"),
+		"no help block still claims the old ceiling for a solo fight")
+	ck(help.contains("max 75%") and help.contains("Clamped 5-75%"),
+		"both help blocks state the solo 5-75% clamp")
+	ck(help.contains("Travelling +18"), "...and name the stance modifier that is the reason it can reach 75")
 	ck(cm.contains("monster_initiative_chance += 8"), "an ambusher adds 8 to initiative")
 	# Matched on the NUMBER, not one spelling: the main page wrote "Ambusher - First hit auto-crits,
 	# +15% initiative", which "ambusher +15%" never matched, so this passed while the page was wrong.

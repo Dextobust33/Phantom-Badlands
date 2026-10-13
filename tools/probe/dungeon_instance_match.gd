@@ -92,8 +92,11 @@ func _init() -> void:
 
 	print("\n--- and all three callers ask the ONE finder ---")
 	var src := FileAccess.get_file_as_string("res://server/server.gd")
-	ck(src.count("find_dungeon_instance(") == 4,
-		"1 definition + 3 call sites: the list, the Cartographer, the quest restore — got %d" % src.count("find_dungeon_instance("))
+	# A call-site count, kept as a FLOOR: 1 definition + the list, the Cartographer (two paths since
+	# 2026-09-18) and the quest restore. The rule it protects - nobody re-implements the match - is
+	# what the behavioural checks above assert; this only catches a caller going missing.
+	ck(src.count("find_dungeon_instance(") >= 5,
+		"the one finder is defined once and asked by the list, the Cartographer and the quest restore — got %d" % src.count("find_dungeon_instance("))
 	ck(not src.contains('if inst.dungeon_type == dungeon_type:'),
 		"the old type-only match is gone")
 

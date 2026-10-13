@@ -50,9 +50,14 @@ func _init() -> void:
 	srv.set_script(srv.get_script())
 
 	print("===== THE BANDS ARE THE ONES THE PLAYER ALREADY SEES =====")
-	ck(ServerScript.DANGER_STEP_RATIO == 2.0,
-		"the guard fires at 2x, where the Area readout already says 'far above you'")
-	ck(srv._danger_band(1.9) == 0, "1.9x does not ask")
+	# ⚑ THE THRESHOLD IS 1.15x, ON PURPOSE (1030a0bd, 2026-09-17). This asserted 2.0 - "where the Area
+	# readout already says 'far above you'" - and it was measured wrong: at the old 2x the player died
+	# between half and all of the time before the game asked anything, and there is no safe band above
+	# parity (by 1.15x the median cell is already ~26% death). The value is pinned here so lowering OR
+	# raising it again is a decision somebody has to make on purpose.
+	ck(ServerScript.DANGER_STEP_RATIO == 1.15,
+		"the guard fires just above parity (1.15x) - measured, not the old 2x")
+	ck(srv._danger_band(1.1) == 0, "1.1x does not ask")
 	ck(srv._danger_band(2.0) == 1, "2.0x asks")
 	ck(srv._danger_band(3.0) == 2, "3x is a louder band")
 	ck(srv._danger_band(4.0) == 3, "4x is the loudest")
@@ -87,6 +92,12 @@ func _init() -> void:
 			back_blocked += 1
 	ck(back_blocked == 0, "walking all the way home is never blocked (%d refusals)" % back_blocked)
 	# And having walked home, the guard re-arms.
+	# "Returning to safe ground" means DANGER_ACK_DECAY_STEPS steps on calmer ground, which is what the
+	# constant is documented as. The walk home above used to supply them for free; with the band now
+	# starting at 1.15x, far fewer of its steps are below the band, so the calm steps are taken
+	# explicitly - which is also the thing actually being tested.
+	for _i in range(ServerScript.DANGER_ACK_DECAY_STEPS + 2):
+		srv._confirm_dangerous_step(1, ch, 0, 0)
 	var rearmed: bool = not srv._confirm_dangerous_step(1, ch, target.x, target.y)
 	ck(rearmed, "returning to safe ground re-arms it, so the next trip asks again")
 
@@ -109,7 +120,7 @@ func _init() -> void:
 	srv._danger_step_ack.clear()
 	srv._danger_step_below.clear()
 	var safe_x: int = target.x - 1
-	while safe_x > 0 and float(ws.get_post_anchored_level(safe_x, 0)) / 20.0 >= 2.0:
+	while safe_x > 0 and float(ws.get_post_anchored_level(safe_x, 0)) / 20.0 >= ServerScript.DANGER_STEP_RATIO:
 		safe_x -= 1
 	var oscillation := 0
 	for i in range(20):
@@ -216,7 +227,9 @@ func _init() -> void:
 	var at_trade: int = hm_src.find("_cancel_trade(peer_id, \"Trade cancelled - you moved away.\")")
 	ck(at_guard > 0 and at_trade > 0 and at_guard < at_trade,
 		"the guard runs BEFORE the trade cancel, so a refused step keeps your trade")
-	ck(hm_src.find("if new_pos != Vector2i(old_x, old_y) and not _confirm_dangerous_step") >= 0,
+	# `not _escorted_step and` was added in front (66f533e6) so the Warden's own steps are not refused;
+	# a player's step is still gated, and a step that does not move you still is not.
+	ck(hm_src.find("if not _escorted_step and new_pos != Vector2i(old_x, old_y)") >= 0 and hm_src.find("and not _confirm_dangerous_step(peer_id, character, new_pos.x, new_pos.y)") >= 0,
 		"and a step that does not move you (rest, or blocked terrain) is never gated")
 
 	print("\n===== AND IT EXPLAINS ITSELF =====")

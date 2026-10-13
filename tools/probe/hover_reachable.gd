@@ -41,9 +41,20 @@ func _init() -> void:
 			if node == "":
 				continue
 			checked += 1
-			# Look for that node's mouse_filter anywhere in the file. IGNORE makes the listener
-			# dead; PASS or STOP both deliver events.
-			for j in range(lines.size()):
+			# Look for that node's mouse_filter. IGNORE makes the listener dead; PASS or STOP both
+			# deliver events.
+			#
+			# ⚑ SCOPED TO THE FUNCTION THE LISTENER IS IN. A local called `lbl` or `rtl` is reused all
+			# over these files, so searching the whole file for `lbl.mouse_filter = ...IGNORE` blamed a
+			# hover listener for an unrelated label in another function (client.gd:8618, :24947 and
+			# combat_scene_panel.gd:3840 were different nodes that merely shared a name).
+			var fstart := i
+			while fstart > 0 and not lines[fstart].begins_with("func "):
+				fstart -= 1
+			var fend := i + 1
+			while fend < lines.size() and not lines[fend].begins_with("func "):
+				fend += 1
+			for j in range(fstart, fend):
 				var ln := lines[j]
 				if ln.contains(node + ".mouse_filter") and ln.contains("MOUSE_FILTER_IGNORE"):
 					broken.append("%s:%d %s" % [f.get_file(), j + 1, node])

@@ -1430,6 +1430,30 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         hotzone, so it proves nothing - the Warden's avoidance itself was verified to work by hand:
         5 hotzone tiles on the plain route, 0 on the safe one), plus `map_payload_golden` (stale
         baseline from 2026-09-13; world generation has changed - re-capture deliberately).
+      **FIXED 2026-10-13 (after the triage): ALL 29 NOW PASS** the strict runner (27 fixed, 2 deleted as
+      retired features, `launcher_selfupdate` was never failing). What was done, and what the triage
+      got WRONG: the agents missed failing checks - `card_instances` had a second one (a probe that
+      overwrote the hand and so created a duplicate card; the game was right) and `overworld_render`
+      had four more (retired toggle, `_bob` added to the figure anchor) - so every "only one check
+      fails" claim was re-run and re-read before being trusted. **Line endings:** the working tree is
+      now LF throughout, matching `.gitattributes` (43 files converted, git sees no change);
+      `probe_run.py` REFUSES TO RUN if any tracked file is CRLF in the working tree and
+      `--fix-eol` repairs it (proven to fire). **Real game fixes, in the NEXT client release (not yet
+      shipped):** initiative help text now states the solo 5-75% clamp, the stance modifiers
+      (Travelling +18, Scouting -4, Hunting -8) and that a party fight is a simpler formula capped at
+      55%; the "Know This Foe" button uses a BMP glyph (`☰`) - same font-fallback mechanism as the
+      `★ ◆` already used, but NOT visually confirmed (the button did not appear in the capture); and
+      the GATHERING help topic again explains the scratch-off grid vs the deep-water 3-choice chain
+      (the "CRAFTING & GATHERING" split had silently dropped it).
+      **STILL OPEN from the triage (decisions, not probe work):**
+      - *Danger-step wording.* The guard now asks at 1.15x (measured: 50-100% death at the old 2x), but
+        its message calls everything from 1.15x "far above you" while the Area readout beside it says
+        "about your level" until 1.35x. Align the words or the thresholds.
+      - *Solo vs party initiative disagree* (5-75% with stance vs 5-55% without) - intended or drift?
+      - *The client-trusted `escorted` flag* (above) - low severity, one-line fix.
+      - *`map_payload_golden` is not hermetic:* it reads the machine's saved seed and posts from
+        `user://`; re-captured today (reason recorded in its header) but only meaningful on a machine
+        whose saved world matches. Inject a fixed seed and posts before trusting it as a gate.
       **Consequence:** `probe_run.py --all` is NOT a usable gate yet; only `--smoke` is. Triage order
       that costs least: (1) the 74 verdict formats (mechanical), (2) the 9 script-error probes
       (probe rot), (3) the 29 FAILs one by one, deciding stale-vs-regression for each. Report:

@@ -160,7 +160,14 @@ func _init() -> void:
 		var hits := 0
 		var where := ""
 		for f in surfaces:
-			var c: int = FileAccess.get_file_as_string(f).count(dead)
+			# CODE and player-facing strings only: a `#` / `##` comment may name the old vocabulary when it
+			# explains the history (server.gd quotes the archived design in a doc comment), and that is not
+			# a surface a player reads.
+			var c: int = 0
+			for src_line in FileAccess.get_file_as_string(f).split("\n"):
+				if String(src_line).strip_edges().begins_with("#"):
+					continue
+				c += String(src_line).count(dead)
 			if c > 0:
 				hits += c
 				where += " " + f.get_file()

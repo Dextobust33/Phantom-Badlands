@@ -61,36 +61,48 @@ func _init() -> void:
 	var longer_total := 0
 	var tried := 0
 	# Goals spread around the starter ring, at the 25-40 tiles a starter dungeon really sits at.
-	for ang in range(0, 360, 20):
-		for reach in [26, 34]:
-			var gx: int = int(round(cos(deg_to_rad(float(ang))) * float(reach)))
-			var gy: int = int(round(sin(deg_to_rad(float(ang))) * float(reach)))
-			ch.x = 0
-			ch.y = 0
-			var plain: Array = srv._escort_path_search(ch, gx, gy, false, 16, false, false)
-			if plain.is_empty():
-				continue
-			tried += 1
-			var hot_on_plain := 0
-			for t in plain:
-				if ws._is_hotspot_in_clusters(int(t.x), int(t.y), clusters):
-					hot_on_plain += 1
-			if hot_on_plain == 0:
-				continue        # this route was never in danger; nothing to prove here
-			crossed_before += 1
-			var safe: Array = srv._escort_path(ch, gx, gy, false, false)
-			if safe.is_empty():
-				no_route += 1
-				continue
-			var hot_on_safe := 0
-			for t in safe:
-				if ws._is_hotspot_in_clusters(int(t.x), int(t.y), clusters):
-					hot_on_safe += 1
-			if hot_on_safe > 0:
-				crossed_after += 1
-			else:
-				routed += 1
-				longer_total += safe.size() - plain.size()
+	# ⚑ ROUTES BUILT AROUND WHERE THE HOTZONE ACTUALLY IS. This sampled goals on a fixed 26/34-tile ring
+	# around the origin and hoped one crossed a hotzone; hunting grounds move every three hours, so
+	# whether any did was a matter of when the probe ran, and it printed "the sample proves nothing".
+	# Now each cluster gets routes that start on one side of it and end on the other, so a direct line
+	# MUST cross it - which is the case the avoidance exists for.
+	var pairs: Array = []
+	for cl in clusters:
+		var cx: int = int(cl.x)
+		var cy: int = int(cl.y)
+		var rr: int = int(ceil(float(cl.radius)))
+		for off in [-1, 0, 1]:
+			pairs.append([Vector2i(cx - rr - 8, cy + off), Vector2i(cx + rr + 8, cy + off)])
+			pairs.append([Vector2i(cx + off, cy - rr - 8), Vector2i(cx + off, cy + rr + 8)])
+	for pr in pairs:
+		var gx: int = int(pr[1].x)
+		var gy: int = int(pr[1].y)
+		ch.x = int(pr[0].x)
+		ch.y = int(pr[0].y)
+		var plain: Array = srv._escort_path_search(ch, gx, gy, false, 16, false, false)
+		if plain.is_empty():
+			continue
+		tried += 1
+		var hot_on_plain := 0
+		for t in plain:
+			if ws._is_hotspot_in_clusters(int(t.x), int(t.y), clusters):
+				hot_on_plain += 1
+		if hot_on_plain == 0:
+			continue        # this route was never in danger; nothing to prove here
+		crossed_before += 1
+		var safe: Array = srv._escort_path(ch, gx, gy, false, false)
+		if safe.is_empty():
+			no_route += 1
+			continue
+		var hot_on_safe := 0
+		for t in safe:
+			if ws._is_hotspot_in_clusters(int(t.x), int(t.y), clusters):
+				hot_on_safe += 1
+		if hot_on_safe > 0:
+			crossed_after += 1
+		else:
+			routed += 1
+			longer_total += safe.size() - plain.size()
 	print("  %d goals with a route; %d of them used to cross a hotzone" % [tried, crossed_before])
 	print("  now routed around it ....... %d" % routed)
 	print("  still crossing ............. %d  (goal or start stands inside one)" % crossed_after)

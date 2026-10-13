@@ -71,7 +71,12 @@ func _init() -> void:
 	var locked := {"name": "Locked Blade", "type": "weapon", "rarity": "common", "locked": true}
 	var a_tool := {"name": "Pickaxe", "type": "tool", "rarity": "common"}
 	var a_rune := {"name": "Rune", "type": "rune", "rarity": "common"}
+	# The keep filter matches STAT keys with a value above zero, not affix NAMES (ff50a6f7, 2026-09-19:
+	# every stat has more affix names than the per-stat cap allows, so a name filter silently let two
+	# thirds of a player's HP gear through). So the kept item carries a real stat.
 	var kept := {"name": "Mighty Blade", "type": "weapon", "rarity": "common",
+		"affixes": {"prefix_name": "Mighty", "hp_bonus": 5}}
+	var name_only := {"name": "Mighty Blade", "type": "weapon", "rarity": "common",
 		"affixes": {"prefix_name": "Mighty"}}
 	var cases := [
 		["OFF salvages nothing", not CharacterScript.would_auto_salvage(common, false, 3, [], false)],
@@ -81,7 +86,8 @@ func _init() -> void:
 		["a tool is never caught", not CharacterScript.would_auto_salvage(a_tool, true, 5, [], false)],
 		["a rune is never caught", not CharacterScript.would_auto_salvage(a_rune, true, 5, [], false)],
 		["a consumable is never caught", not CharacterScript.would_auto_salvage(common, true, 5, [], true)],
-		["a KEPT affix protects an item", not CharacterScript.would_auto_salvage(kept, true, 3, ["Mighty"], false)],
+		["a KEPT stat protects an item", not CharacterScript.would_auto_salvage(kept, true, 3, ["hp_bonus"], false)],
+		["...and a matching affix NAME alone does not (the old, wrong unit)", CharacterScript.would_auto_salvage(name_only, true, 3, ["Mighty"], false)],
 		["...and only that affix", CharacterScript.would_auto_salvage(kept, true, 3, ["Brutal"], false)],
 	]
 	for c in cases:

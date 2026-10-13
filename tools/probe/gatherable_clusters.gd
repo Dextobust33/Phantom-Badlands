@@ -113,8 +113,32 @@ func _init() -> void:
 			pure += 1
 		else:
 			mixed += 1
-	ck(pure > mixed,
-		"%d of %d large stands are a single resource" % [pure, pure + mixed])
+	print("  (flood-fill clumps merge TOUCHING stands of different resources: %d of %d are single-resource)" % [pure, pure + mixed])
+	# ⚑ WHAT "A STAND IS ONE RESOURCE" MEANS, MEASURED PROPERLY. The old check demanded most flood-fill
+	# clumps be single-resource. But a clump here is "everything touching", so two separate pure stands
+	# that meet become one "mixed" clump - and with patches and roads added, more of them meet (34 of 80
+	# pure now, against 76 of 187 when it was written, and the author already called that marginal).
+	# The property is local: next to a gather node, the neighbouring node is the SAME resource. That
+	# is counted pair by pair, which does not care how many stands happen to touch.
+	var same_pairs := 0
+	var diff_pairs := 0
+	for key in kind:
+		var kx2: int = key % SAMPLE
+		var ky2: int = key / SAMPLE
+		for d in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(1, -1)]:
+			var nx2: int = kx2 + d.x
+			var ny2: int = ky2 + d.y
+			if nx2 < 0 or ny2 < 0 or nx2 >= SAMPLE or ny2 >= SAMPLE:
+				continue
+			var nk2: int = ny2 * SAMPLE + nx2
+			if kind.has(nk2):
+				if kind[nk2] == kind[key]:
+					same_pairs += 1
+				else:
+					diff_pairs += 1
+	var same_frac: float = float(same_pairs) / maxf(1.0, float(same_pairs + diff_pairs))
+	ck(same_pairs + diff_pairs > 500 and same_frac >= 0.85,
+		"%.1f%% of touching node pairs are the same resource (%d same, %d different)" % [same_frac * 100.0, same_pairs, diff_pairs])
 
 	# The picture, because "somewhere you go" is a look as much as a number.
 	var palette := {}

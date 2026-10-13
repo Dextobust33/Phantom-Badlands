@@ -62,7 +62,16 @@ func _init() -> void:
 	ck(all_cards.count("berserk") == 0, "a benched copy is not dealt")
 
 	print("\n--- progression lands on the copy that was PLAYED ---")
+	# ⚑ A HAND IS TAKEN FROM THE DECK, NOT CONJURED. This overwrote the hand and left the real copies in
+	# the deck and discard, so the probe itself created a SECOND cleave#2 - which the redraw then drew,
+	# and "that copy left the hand" failed 8 times out of 8 for a reason that was the probe's, not the
+	# game's (the played copy IS in the discard, exactly once, where it belongs).
 	c["combat_hand"] = ["cleave#2", vf]
+	for zone in ["combat_deck", "combat_discard"]:
+		var arr: Array = c.get(zone, [])
+		arr.erase("cleave#2")
+		arr.erase(vf)
+		c[zone] = arr
 	c["player_can_act"] = true
 	c["suppress_monster_turn"] = true
 	ch.current_stamina = ch.get_total_max_stamina()
@@ -160,7 +169,10 @@ func _init() -> void:
 	ck(cli.find("var base_cmd := Character.card_base(command)") >= 0, "the client sends the copy and decides locally by the card")
 	ck(cli.find("var deck_collection = _deck_counts_by_card()") >= 0, "the deck screen is fed per-card counts")
 	var abp := FileAccess.get_file_as_string("res://client/ability_panel.gd")
-	ck(abp.find("elif _benched > 0:") >= 0 and cli.find("ability_panel.owned_counts = _owned_counts_by_card()") >= 0,
+	# The deck screen was rebuilt as ONE TILE PER COPY (212860a6, 2026-09-16): `_benched` no longer
+	# exists. A tile draws "-" when its copy is in the deck and otherwise "+", and "+" is what brings a
+	# benched copy back. The owned-counts feed is unchanged.
+	ck(abp.find("plus.pressed.connect(_on_add_pressed.bind(_key))") >= 0 and cli.find("ability_panel.owned_counts = _owned_counts_by_card()") >= 0,
 		"the deck screen's '+' can bring a benched copy back")
 	var pmgr := FileAccess.get_file_as_string("res://server/persistence_manager.gd")
 	ck(pmgr.find('var is_unique = supply_cat in ["equipment", "egg", "card"]') >= 0,

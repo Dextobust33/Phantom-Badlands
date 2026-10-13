@@ -195,9 +195,15 @@ func _init() -> void:
 	ck(cli.find("const CLIENT_CAPS := {\"map\": 1}") >= 0, "and `map` is among them")
 	var loc := cli.find("var map_payload = message.get(\"map\", null)")
 	ck(loc > 0, "the location handler reads the payload")
-	ck(loc > 0 and cli.substr(loc, 400).find("_overworld_display(map_payload)") >= 0,
+	# The slice is the handler's own block - from the payload read to the NEXT thing the handler does
+	# (the water/fishing status) - not a fixed 400 characters. The block carries a long explanatory
+	# comment now, so a fixed window ended before the code it was meant to cover.
+	var blk_end := cli.find("# Update water/fishing location status", loc)
+	ck(blk_end > loc, "the handler's block has a findable end")
+	var blk := cli.substr(loc, blk_end - loc) if blk_end > loc else ""
+	ck(loc > 0 and blk.find("_overworld_display(map_payload)") >= 0,
 		"...and hands it to the overworld renderer, which inflates or sprites it")
-	ck(loc > 0 and cli.substr(loc, 400).find("message.get(\"description\", \"\")") >= 0,
+	ck(loc > 0 and blk.find("message.get(\"description\", \"\")") >= 0,
 		"...still falling back to the old string, so an old server keeps working")
 	ck(srv.find("world_system.build_map_payload(") >= 0, "the server builds the payload once")
 	ck(srv.find("_peer_reads_map_payload(peer_id)") >= 0, "...and asks whether this peer can read it")

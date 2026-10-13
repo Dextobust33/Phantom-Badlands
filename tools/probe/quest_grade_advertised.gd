@@ -55,8 +55,12 @@ func _init() -> void:
 				"%s: stamped %s (tier=%d rank=%d) and the board says so" % [
 					String(quest.get("name", "?")).substr(0, 22), want, t, r])
 			# And the resolver's grade is what got stamped - not the type's design weight.
-			ck(t == 6 and r == 4,
-				"  ...and the stamp came from the LAND (got tier=%d rank=%d, want 6/4)" % [t, r])
+			# The land says 6/4. Since 281190e9 a dungeon's grade is "usually its land's and occasionally a
+			# little above it": `varied_grade` adds 0-3 ranks, keyed on the quest id, clamped INSIDE the
+			# letter. So the stamp must keep the land's LETTER and sit at or above its rank - and the
+			# check above (the board prints exactly what was stamped) is the real invariant.
+			ck(t == 6 and r >= 4 and r <= PR.RANKS,
+				"  ...and the stamp came from the LAND, same letter, rank at or above it (got tier=%d rank=%d, land 6/4)" % [t, r])
 
 	ck(checked > 0, "found %d dungeon quests to check" % checked)
 	print("")

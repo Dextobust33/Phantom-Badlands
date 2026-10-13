@@ -151,8 +151,11 @@ func _init() -> void:
 	# distribution by construction - and keeps doing so the next time the curve changes.
 	ck(srv.find("var reloc := _roll_location_in_world()") >= 0,
 		"...having sampled the WORLD uniformly rather than a distance ring")
-	ck(srv.find("var r: float = sqrt(randf()) * 2828.0") >= 0,
-		"...with sqrt on the radius, so the sample is uniform by AREA and not piled at the centre")
+	# This used to look for `sqrt(randf()) * 2828.0` - a disc around the world square, clamped into
+	# it, which put 36% of every dungeon on the world's EDGE. The roll samples the square directly
+	# now; its distribution is measured by world_dungeon_roll_is_uniform.gd, which is the right place.
+	ck(srv.find("randi_range(world_system.WORLD_MIN_X, world_system.WORLD_MAX_X)") >= 0,
+		"...sampled uniformly over the world SQUARE (the distribution itself is measured by world_dungeon_roll_is_uniform)")
 	ck(srv.count("_pick_weighted_dungeon_type()") >= 3,
 		"...and both spawn loops pick the TYPE by rarity")
 	ck(srv.find('"tier": grade_tier') >= 0,

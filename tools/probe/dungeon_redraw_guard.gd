@@ -18,14 +18,20 @@ func _init() -> void:
 	var c = C.new()
 	c.set("combat_scene_panel", null)          # the panel is not up in these cases
 
-	c.set("_victory_legacy_view", false)
+	# The [L] combat-log view is DERIVED from the panel now (`_fight_log_open()` reads
+	# `fight_log_panel.visible`; the `_victory_legacy_view` bool this probe used to set was removed
+	# in 8f61d178 because the bool and the view drifted apart). So the case is built the way the game
+	# builds it: a panel that is, or is not, visible.
+	var log_panel := Control.new()
+	log_panel.visible = false
+	c.set("fight_log_panel", log_panel)
 	c.set("game_state", c.GameState.PLAYING)
 	ck(not c._dungeon_redraw_blocked(), "walking around alive: the floor paints normally")
 
-	c.set("_victory_legacy_view", true)
+	log_panel.visible = true
 	ck(c._dungeon_redraw_blocked(), "the [L] combat-log view blocks the redraw")
 
-	c.set("_victory_legacy_view", false)
+	log_panel.visible = false
 	c.set("game_state", c.GameState.DEAD)
 	ck(c._dungeon_redraw_blocked(), "the death screen blocks the redraw")
 
@@ -51,6 +57,7 @@ func _init() -> void:
 		if l.strip_edges() == "display_dungeon_floor()":
 			callers += 1
 	print("      (%d call sites rely on that one guard)" % callers)
+	log_panel.free()
 	c.free()
 
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])

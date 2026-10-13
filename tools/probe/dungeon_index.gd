@@ -134,9 +134,28 @@ func _init() -> void:
 	# `D` on the map that will not go away.
 	ck(src.count("active_dungeons[instance_id] = {") == 0,
 		"no path writes active_dungeons directly - they all go through _register_dungeon")
-	ck(src.count("_register_dungeon(instance_id, {") == 5, "all five creators register (%d)" % src.count("_register_dungeon(instance_id, {"))
-	var erases := src.count("active_dungeons.erase(")
-	ck(erases == 1, "exactly one place erases a dungeon (%d), and it unindexes first" % erases)
+	# ⚑ THE RULE, NOT THE COUNT. This used to assert "exactly five creators" and "exactly one erase",
+	# and failed twice for legitimate reasons: the Player Phantom creator (2026-09-19) is a sixth
+	# `_register_dungeon`, and its rollback is a second erase. What the counts were guarding is that
+	# nothing writes a dungeon behind the index's back, so that is what is asserted: at least the five
+	# original creators register, and EVERY erase is immediately preceded by the unindex.
+	var creators := src.count("_register_dungeon(instance_id, {")
+	ck(creators >= 5, "every creator registers through _register_dungeon (%d found, at least the original 5)" % creators)
+	var erase_lines: Array = []
+	var prev_code := ""
+	var unindexed_first := true
+	for raw in src.split("
+"):
+		var t := raw.strip_edges()
+		if t == "" or t.begins_with("#"):
+			continue
+		if t.begins_with("active_dungeons.erase("):
+			erase_lines.append(t)
+			if prev_code.find("_unindex_dungeon(") < 0:
+				unindexed_first = false
+		prev_code = t
+	ck(erase_lines.size() >= 1 and unindexed_first,
+		"every one of the %d erase(s) unindexes first, so no D is left on the map" % erase_lines.size())
 	ck(_body(src, "_erase_dungeon_instance").find("_unindex_dungeon(instance_id)") >= 0,
 		"...which it does")
 	ck(src.count("_rebuild_dungeon_index()") >= 5,

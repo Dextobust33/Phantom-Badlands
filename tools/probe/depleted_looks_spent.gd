@@ -159,7 +159,10 @@ func _init() -> void:
 		var ca := String(ma[row][col])
 		ck(cb.find(ftype) >= 0, "the cell beside the player really is the %s (%s)" % [ftype, cb])
 		ck(cb != ca, "the cell's MEANING changes when it is depleted: %s -> %s" % [cb, ca])
-		ck(ca.begins_with("!depleted:") or ca.begins_with("!hotdepleted:"),
+		# A spent node reads "empty" outside a hotzone and "!hotdepleted" inside one (6e5fbc73, "Gathered
+		# nodes clear and the ground recovers" - deliberate: a spent patch becomes plain ground). The old
+		# "!depleted:<tile>" meaning no longer exists; what matters is that it differs from the full node.
+		ck(ca == "empty" or ca.begins_with("!hotdepleted"),
 			"...and says depleted (%s)" % ca)
 		# And the two meanings really do compose to different pictures, which is the join between
 		# the two halves above.

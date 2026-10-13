@@ -79,8 +79,15 @@ func _init() -> void:
 			continue
 		code_only += t + "
 "
-	ck(not code_only.contains("RANGER_AIM_DMG_PER") and not code_only.contains("BARBARIAN_RAGE_DMG_PER"),
-		"no copy of either constant exists in client CODE (comments may name them)")
+	# A COPY is a second definition. Since 662c806a the card text and the help page READ the server's
+	# constant to display it (`CombatManager.BARBARIAN_RAGE_DMG_PER`), which is the opposite of a copy -
+	# one value, one owner. So every mention in client code must be that qualified read; a bare name
+	# (a `const X := 0.16`, or a hard-coded redeclaration) is what this guards against.
+	for cname in ["RANGER_AIM_DMG_PER", "BARBARIAN_RAGE_DMG_PER"]:
+		var all_mentions: int = code_only.count(cname)
+		var qualified: int = code_only.count("CombatManager." + cname)
+		ck(all_mentions == qualified,
+			"client code only READS %s through CombatManager, never redeclares it (%d mentions, %d qualified)" % [cname, all_mentions, qualified])
 	ck(cl.contains("_combat_engine_ramp = 1.0"), "and it resets when combat ends")
 
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])

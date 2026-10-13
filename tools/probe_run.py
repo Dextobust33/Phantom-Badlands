@@ -146,7 +146,50 @@ def run_probe(name, allowed):
     return {"name": name, "ok": not why, "why": why, "secs": secs}
 
 
+def crlf_files():
+    """Tracked files whose WORKING COPY has CRLF while the repo says LF (`.gitattributes`: eol=lf).
+
+    ⚑ WHY THIS IS A GATE. 2026-10-13: the tree was a mix - 8 big sources plus 21 probes CRLF, the
+    rest LF - and a source-reading probe only matches when its own line endings agree with the file
+    it reads: a `"\n"` needle fails against a CRLF source, a raw newline stored in a CRLF probe fails
+    against an LF one. Git itself never notices (the index is LF either way), so seven probes failed
+    for a reason that no diff could show. A probe that fails for line endings is a lie about the game."""
+    out = subprocess.run(["git", "ls-files", "--eol"], cwd=ROOT, capture_output=True, text=True).stdout
+    bad = []
+    for line in out.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) >= 4 and parts[1] == "w/crlf" and parts[0] == "i/lf":
+            bad.append(line.split("\t", 1)[1])
+    return bad
+
+
+def fix_eol(files):
+    for f in files:
+        path = os.path.join(ROOT, f)
+        with open(path, "rb") as fh:
+            data = fh.read()
+        with open(path, "wb") as fh:
+            fh.write(data.replace(b"\r\n", b"\n"))
+    # The index still remembers the old file sizes; refreshing it stages nothing (content == HEAD).
+    subprocess.run(["git", "add", "-u"], cwd=ROOT, capture_output=True)
+
+
 def main(argv):
+    if "--fix-eol" in argv:
+        bad = crlf_files()
+        fix_eol(bad)
+        print("converted %d file(s) to LF" % len(bad))
+        argv = [a for a in argv if a != "--fix-eol"]
+        if not argv:
+            return 0
+    bad = crlf_files()
+    if bad:
+        print("REFUSING TO RUN: %d tracked file(s) are CRLF in the working tree but LF in the repo:" % len(bad))
+        for f in bad[:10]:
+            print("   " + f)
+        print("Source-reading probes only match when line endings agree, so every result would be")
+        print("untrustworthy. Fix with:  python tools/probe_run.py --fix-eol   (git will see no change)")
+        return 1
     report = None
     if "--report" in argv:
         i = argv.index("--report")

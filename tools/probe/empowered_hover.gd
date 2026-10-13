@@ -62,7 +62,9 @@ func _init() -> void:
 	ck(cs.contains("CombatManager.annotate_empowered_name("),
 		"the client annotates the name it sends to the combat panel")
 	var ps := FileAccess.get_file_as_string("res://client/combat_scene_panel.gd")
-	ck(ps.contains("_monster_name_label.meta_hover_started.connect"),
+	# All hover wiring goes through `_wire_hover` now (7451166a) - it connects start AND end, which a raw
+	# `meta_hover_started.connect` did not, and hover_lifetime.gd forbids the raw form.
+	ck(ps.contains("_wire_hover(_monster_name_label)"),
 		"the nameplate label listens for hover (it did not before)")
 
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])

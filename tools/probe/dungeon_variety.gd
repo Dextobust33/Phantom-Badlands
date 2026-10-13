@@ -112,7 +112,9 @@ func _init() -> void:
 	ck(csrc2.find('oname = "dungeon_%s" % fam') >= 0,
 		"the renderer reads the family from that channel")
 	var cl := FileAccess.get_file_as_string("res://client/client.gd")
-	ck(cl.find('_OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {}))') >= 0,
+	# No closing paren: the call has since gained its animation/marker arguments, and what matters
+	# here is that THIS step's dungeon dictionary is what is passed in.
+	ck(cl.find('_OverworldRoom.build(meaning, biomes, figures, payload.get("dungeons", {})') >= 0,
 		"and it is handed THIS step's dungeons, not the previous step's")
 
 	print("\n[DUNGEONVARIETY] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))

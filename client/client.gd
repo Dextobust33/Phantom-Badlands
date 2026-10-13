@@ -40761,7 +40761,7 @@ func _main_help_text() -> String:
 [color=#00FFFF]Lvl Penalty:[/color] -1.5%/lvl (max-25%) for attacks vs higher monsters. [color=#FF4444]Monster +4%/lvl exponential![/color]
 [color=#00FFFF]Hit:[/color] 75%+(DEX-spd) [30-95%] | [color=#00FFFF]Flee:[/color] 40%+DEX+spd+WIT/2-monSpd/2-lvldiff | [color=#00FFFF]Enemy:[/color] 85%+lvl-DEX/5(max30%)-spd/2 [40-95%]
 [color=#66FF66]Trickster Dodge:[/color] +WIT/50% dodge (max 15%). Combined with DEX dodge, tricksters are harder to hit!
-[color=#FF4444]Initiative:[/color] rises with the enemy's speed, falls with your DEX (min 5%, max 55%, ambusher +8)
+[color=#FF4444]Initiative:[/color] rises with the enemy's speed, falls with your DEX (min 5%, max 75%, ambusher +8; your travel stance moves it: Travelling +18, Scouting -4, Hunting -8. A party fight uses a simpler version capped at 55%)
 
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
 [color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75% dodge[/color] on enemy turn!
@@ -41168,7 +41168,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "COMBAT FORMULAS",
 			"keywords": ["combat", "attack", "damage", "defense", "hit", "miss", "dodge", "flee", "crit", "critical", "formula", "calculation", "level", "penalty", "initiative"],
-			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - HALF the enemy's speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 40% + DEX + speed, penalised by the level RATIO (~30 pts per doubling of the monster's level), floor 25%\n[color=#FF4444]Initiative:[/color] the enemy's chance to go first rises with ITS speed (5% at speed 0 up to 25% at speed 50+), falls with your DEX, and rises again when you fight above your level or tier. Clamped 5-55%, ambusher +8."
+			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - HALF the enemy's speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 40% + DEX + speed, penalised by the level RATIO (~30 pts per doubling of the monster's level), floor 25%\n[color=#FF4444]Initiative:[/color] the enemy's chance to go first rises with ITS speed (5% at speed 0 up to 25% at speed 50+), falls with your DEX, and rises again when you fight above your level or tier. Clamped 5-75%, ambusher +8, plus your travel stance (Travelling +18, Scouting -4, Hunting -8). A party fight uses a simpler version, capped at 55%."
 		},
 		{
 			"title": "ASSASSINATE",
@@ -41277,6 +41277,11 @@ Stand on a resource and press [color=#FFD700]R[/color]:
 • [color=#00FFFF]Fishing[/color] at water   • [color=#8B4513]Mining[/color] at stone and ore
 • [color=#228B22]Logging[/color] at trees   • [color=#9ACD32]Foraging[/color] at herbs and mushrooms
 • [color=#FF8866]Soldier[/color] harvests monster parts when you kill things
+
+[color=#FFD700]How it plays:[/color] mining, logging, foraging and shallow-water fishing open a grid of
+face-down slots — scratch to reveal and keep what you find; more skill means more scratches.
+[color=#4FC3F7]Deep-water fishing[/color] is a 3-choice chain instead: each correct pick chains to the next
+round, and a wrong pick ends the chain.
 
 [color=#AA66FF]Salvage[/color] — break inventory items into materials (Inventory → Salvage).
 Returns roughly half of what the item would cost to craft, so salvaging what you

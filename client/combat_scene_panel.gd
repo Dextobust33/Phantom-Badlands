@@ -592,7 +592,7 @@ func _build_layout() -> void:
 	# The bestiary panel already existed and was reachable only from the menu, out of combat -
 	# which is the wrong moment. What a monster can DO matters while it is doing it.
 	_bestiary_button = Button.new()
-	_bestiary_button.text = "📖 Know This Foe"
+	_bestiary_button.text = "☰ Know This Foe"
 	_bestiary_button.tooltip_text = "Everything you have recorded about this creature"
 	_bestiary_button.add_theme_font_size_override("font_size", 15)
 	_bestiary_button.custom_minimum_size = Vector2(168, 36)
