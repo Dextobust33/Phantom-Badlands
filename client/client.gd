@@ -21271,32 +21271,53 @@ func get_compact_stats_bbcode(item: Dictionary) -> String:
 
 
 func _format_chase_affix_tokens(affixes: Dictionary, item: Dictionary = {}) -> Array:
-	"""v0.9.608 — short BBCode tokens for chase affixes, matching the
-	'+N STAT' shape used by _format_stat_totals_bbcode. Designed to sit
-	alongside ATK/DEF/HP tokens on the inventory card. Abbreviated names
-	to fit horizontal space. Gold color (#FFD700) for the v0.9.606
-	ability-rank tokens to mark them as chase; v0.9.599 stat chase
-	affixes use their existing thematic colors."""
+	"""Short BBCode tokens for chase affixes, for the inventory card ("+7% CRIT", "-15% Blast cost").
+	Derived from `_chase_affix_rows`, the ONE table of what a chase affix is - the Inspect, shop and
+	equip-comparison pages read the same rows for their full-word lines, so they cannot list different
+	things."""
 	var tokens: Array = []
-	# v0.9.599 chase stats
+	for r in _chase_affix_rows(affixes, item):
+		tokens.append(String(r.token))
+	return tokens
+
+
+func _chase_affix_rows(affixes: Dictionary, item: Dictionary = {}) -> Array:
+	"""One row per chase effect on an item: {"token": short, "line": full words}.
+
+	⚑ ONE TABLE, TWO READERS. Owner sheet 2026-10-13, item 3: *"Inspecting gear descriptions are also
+	missing some of the things listed on the preview."* True, and measured: of 227 generated epic-and-up
+	items, 90 showed stats on the inventory card that the Inspect page did not mention at all - card
+	cost and power bonuses, crit chance and damage, extra turns, resource on hit, HP on kill. The card's
+	tokens were built here (v0.9.608) and Inspect never had a block for them, so each page was a second
+	place that had to remember every key. Now there is one list, and a probe that fails if a token
+	exists without its line.
+
+	`token` is abbreviated to fit beside ATK/DEF/HP; `line` is the sentence a player reads on Inspect."""
+	var rows: Array = []
 	if affixes.has("damage_mult"):
-		tokens.append("[color=#FFAA66]+%d%% DMG[/color]" % int(affixes["damage_mult"]))
+		var v := int(affixes["damage_mult"])
+		rows.append({"token": "[color=#FFAA66]+%d%% DMG[/color]" % v, "line": "[color=#FFAA66]+%d%% damage[/color]" % v})
 	if affixes.has("crit_chance_bonus"):
-		tokens.append("[color=#FFD700]+%d%% CRIT[/color]" % int(affixes["crit_chance_bonus"]))
+		var v := int(affixes["crit_chance_bonus"])
+		rows.append({"token": "[color=#FFD700]+%d%% CRIT[/color]" % v, "line": "[color=#FFD700]+%d%% critical chance[/color]" % v})
 	if affixes.has("crit_damage_bonus"):
-		tokens.append("[color=#FFD700]+%d%% CDMG[/color]" % int(affixes["crit_damage_bonus"]))
+		var v := int(affixes["crit_damage_bonus"])
+		rows.append({"token": "[color=#FFD700]+%d%% CDMG[/color]" % v, "line": "[color=#FFD700]+%d%% critical damage[/color]" % v})
 	if affixes.has("extra_turn_chance"):
-		tokens.append("[color=#FF99FF]+%d%% TURN[/color]" % int(affixes["extra_turn_chance"]))
+		var v := int(affixes["extra_turn_chance"])
+		rows.append({"token": "[color=#FF99FF]+%d%% TURN[/color]" % v, "line": "[color=#FF99FF]+%d%% chance to take an extra turn[/color]" % v})
 	if affixes.has("hp_on_kill"):
-		tokens.append("[color=#90EE90]+%d HP/kill[/color]" % int(affixes["hp_on_kill"]))
+		var v := int(affixes["hp_on_kill"])
+		rows.append({"token": "[color=#90EE90]+%d HP/kill[/color]" % v, "line": "[color=#90EE90]+%d HP whenever you kill something[/color]" % v})
 	if affixes.has("mana_on_hit"):
-		tokens.append("[color=#9999FF]+%d MP/hit[/color]" % int(affixes["mana_on_hit"]))
+		var v := int(affixes["mana_on_hit"])
+		rows.append({"token": "[color=#9999FF]+%d MP/hit[/color]" % v, "line": "[color=#9999FF]+%d mana on every hit[/color]" % v})
 	if affixes.has("stamina_on_hit"):
-		tokens.append("[color=#FFCC00]+%d SP/hit[/color]" % int(affixes["stamina_on_hit"]))
+		var v := int(affixes["stamina_on_hit"])
+		rows.append({"token": "[color=#FFCC00]+%d SP/hit[/color]" % v, "line": "[color=#FFCC00]+%d stamina on every hit[/color]" % v})
 	if affixes.has("energy_on_hit"):
-		tokens.append("[color=#66FF66]+%d EN/hit[/color]" % int(affixes["energy_on_hit"]))
-	# v0.9.606 specific damage abilities — abbreviated names so the
-	# +X token fits next to ATK/DEF/HP tokens without overflow.
+		var v := int(affixes["energy_on_hit"])
+		rows.append({"token": "[color=#66FF66]+%d EN/hit[/color]" % v, "line": "[color=#66FF66]+%d energy on every hit[/color]" % v})
 	const _ABILITY_SHORT := {
 		"cleave": "Clv",
 		"power_strike": "PStrk",
@@ -21321,7 +21342,8 @@ func _format_chase_affix_tokens(affixes: Dictionary, item: Dictionary = {}) -> A
 		"exploit": {"Ranger": "WkPnt"},
 		"perfect_heist": {"Ninja": "Assn", "Grifter": "DblX", "Ranger": "KShot"},
 	}
-	# Card-specific gear, compact: "+30% Cleave", "-15% Blast $", "+2r Rally".
+	# Card-specific gear, compact on the card and in full on Inspect, named as the card is named in
+	# MY hand (`_ability_display_name`), because a card ID is not its name.
 	for b2 in preload("res://shared/card_gear.gd").item_bonuses(item):
 		var _cid := String(b2.card)
 		var _short := String(_ABILITY_SHORT.get(_cid, ""))
@@ -21332,11 +21354,21 @@ func _format_chase_affix_tokens(affixes: Dictionary, item: Dictionary = {}) -> A
 			_mine = _derive_short_name(_cid)
 		if _mine != "":
 			_short = _mine
+		var _full := _ability_display_name(_cid)
+		if _full == "":
+			_full = _cid.replace("_", " ").capitalize()
+		var _val := int(round(float(b2.value)))
 		match String(b2.kind):
-			"power": tokens.append("[color=#FFD700]+%d%% %s[/color]" % [int(round(float(b2.value))), _short])
-			"cost": tokens.append("[color=#FFD700]-%d%% %s cost[/color]" % [int(round(float(b2.value))), _short])
-			"duration": tokens.append("[color=#FFD700]+%dr %s[/color]" % [int(round(float(b2.value))), _short])
-	return tokens
+			"power":
+				rows.append({"token": "[color=#FFD700]+%d%% %s[/color]" % [_val, _short],
+					"line": "[color=#FFD700]+%d%% power to %s[/color]" % [_val, _full]})
+			"cost":
+				rows.append({"token": "[color=#FFD700]-%d%% %s cost[/color]" % [_val, _short],
+					"line": "[color=#FFD700]-%d%% cost on %s[/color]" % [_val, _full]})
+			"duration":
+				rows.append({"token": "[color=#FFD700]+%dr %s[/color]" % [_val, _short],
+					"line": "[color=#FFD700]+%d rounds on %s[/color]" % [_val, _full]})
+	return rows
 
 func get_equipped_totals_bbcode(equipped: Dictionary) -> String:
 	"""Compact multi-stat BBCode string for the sum of all equipped items.
@@ -21487,6 +21519,15 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 		stats_shown = true
 	if bonuses.get("stamina_regen", 0) > 0:
 		display_game("[color=#FFCC00]+%d Stamina/round[/color] [color=#808080](Warrior)[/color]" % bonuses.stamina_regen)
+		stats_shown = true
+
+	# THE CHASE EFFECTS, in words: the same rows the inventory card abbreviates. This one builder feeds
+	# Inspect, the shop page and the equip comparison, so putting them here fixes all three at once.
+	var chase_rows: Array = _chase_affix_rows(item.get("affixes", {}), item)
+	if not chase_rows.is_empty():
+		display_game("[color=#E6CC80]Special effects:[/color]")
+		for cr in chase_rows:
+			display_game("  " + String(cr.line))
 		stats_shown = true
 
 	return stats_shown

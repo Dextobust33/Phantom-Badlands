@@ -1213,9 +1213,19 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
-      **EVIDENCE FOR [3b], found 2026-10-13 in the invpath capture:** a weapon spawned with
-      `ability_rank_all +2` inspects as only "+104 Attack, +24 Strength" - the card/ability-rank
-      affix the preview lists is absent from the Inspect page. Start there (`display_item_details`).
+      - [x] **[3b] DONE IN CODE 2026-10-13 (client; ships in the next client release) - Inspect now lists
+        everything the card preview does.** CORRECTION to my earlier note here: the "+2 all ability
+        ranks" I thought Inspect dropped was a GM-tool key (`ability_rank_all`) that nothing reads, not a
+        real affix - that evidence was wrong. The REAL fault, measured on real generated gear: **90 of
+        227 epic-and-up items** showed stats on the inventory card that Inspect never mentioned (card cost
+        and power bonuses, crit chance/damage, extra-turn chance, mana/stamina/energy on hit, HP on kill)
+        because the card's tokens (`_format_chase_affix_tokens`, v0.9.608) had no counterpart on the
+        page. Fixed with ONE table, `_chase_affix_rows` (each row = short token + full-word line); the
+        card reads the tokens, and `_display_computed_item_bonuses` - the one builder shared by the
+        Inspect page, the shop item page AND the equip comparison - prints the lines under "Special
+        effects". Card gear names the CARD as it is called in your hand (`_ability_display_name`).
+        Preview-only numbers: 90 -> 0. Probe `inspect_shows_what_the_card_shows.gd` (hand-built item with
+        all ten chase keys + 192 generated items; goes red if the block is removed).
 6. - [ ] **COMBAT MECHANICS TO VERIFY** [4 Swift Hobgoblin landed 6 hits; 9 Distract debuff not
       shown/applied; 28 "less often / once per fight" upgrades functioning?; 40 audit artifact +
       special-effect gear vs their text; 14 runes can't be applied; 34 Tome of Gambit card not in
