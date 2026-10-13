@@ -43,9 +43,27 @@ SSH_KEY = "/c/Users/Dexto/Desktop/PhantomBadlandsSSH/ssh-key-2026-04-21.key"
 SERVER = "ubuntu@5.78.217.135"
 PATH = "/home/ubuntu/.local/share/godot/app_userdata/PhantomBadlands/data/leaderboard.json"
 
-# The 2026-09-05 early-game pass. A death before it happened under different rules and is not
-# evidence about the current ones - same split `check_player_progress.sh` makes for characters.
-CUTOFF = 1788480000
+# The CURRENT ERA starts at the 2026-09-19 curve refit (shipped that evening, v0.9.816-833), so deaths
+# from 2026-09-20 on are the first that describe the game players have now.
+#
+# ⛑ IT WAS 2026-09-05, AND THAT MADE THE EARLY GAME LOOK BROKEN WHEN IT HAD BEEN FIXED. Measured
+# 2026-10-13 by dividing each death's recorded `monster_max_hp` by what the game spawns for that species
+# and level today: deaths of 09-04..09-06 faced 10-19x today's HP, 09-08..09-15 faced 2.4-6x, and from
+# 09-19 on the ratio is ~1. Of the "63 current deaths" the audit reported, 46 were from the builds before
+# the refit, and 28 of those were L1-5 - which is where the audit said the curve "bites". Since the refit
+# there have been 2 deaths at L5 or below in four weeks. A cutoff is a claim about which build you are
+# measuring; it has to move when the build does. `--since YYYY-MM-DD` overrides it (e.g. to look at the
+# old eras, or to widen the sample once a few more weeks exist).
+CUTOFF = 1789862400   # 2026-09-20 00:00 UTC
+
+
+def _cutoff_from_args():
+    import datetime
+    if "--since" in sys.argv:
+        i = sys.argv.index("--since")
+        d = datetime.datetime.strptime(sys.argv[i + 1], "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
+        return int(d.timestamp())
+    return CUTOFF
 
 
 def band(lvl):
@@ -97,13 +115,15 @@ def main():
         print(raw.stderr.decode("utf-8", "replace")[:400])
         return 1
     entries = json.loads(raw.stdout.decode("utf-8", "replace")).get("entries", [])
-    cur = [e for e in entries if int(e.get("died_at", 0)) >= CUTOFF]
+    cutoff = _cutoff_from_args()
+    cur = [e for e in entries if int(e.get("died_at", 0)) >= cutoff]
     old = len(entries) - len(cur)
 
     print("")
     print("===== LIVE DEATHS =====")
-    print("  %d recorded; %d since the 2026-09-05 balance pass, %d before it (not evidence)"
-          % (len(entries), len(cur), old))
+    import datetime
+    print("  %d recorded; %d since %s (the current build era), %d before it (older builds - not evidence)"
+          % (len(entries), len(cur), datetime.datetime.fromtimestamp(cutoff, datetime.timezone.utc).strftime("%Y-%m-%d"), old))
     if not cur:
         print("  nothing since the cutoff - no current-era evidence yet.")
         return 0

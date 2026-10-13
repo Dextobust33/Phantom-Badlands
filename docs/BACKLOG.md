@@ -1347,6 +1347,40 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       **Dead data left in place:** `rotation_order` / `rotation_idx` / `control_mode` keys on the party
       dict and `handle_party_set_control_mode`, kept so an old client's toggle does not error.
 9. - [ ] **BALANCE BATCH — wait for the chain, do not fix one by one.**
+      ▶ **EARLY-DEATH INVESTIGATION, 2026-10-13 - THE "EARLY GAME IS TOO HARD" FINDING WAS STALE DATA.
+      READ THIS BEFORE THE TWO BLOCKS BELOW IT, WHICH IT CORRECTS.**
+        * **What was wrong:** `death_log_audit.py` counted every death since 2026-09-05 as "current". Dividing each
+          death's recorded `monster_max_hp` by what the game spawns for that species and level TODAY (Wolf Lv2
+          = 94 HP): deaths on 09-04..09-06 faced **10-19x** today's HP, 09-08..09-15 faced **2.4-6x**, and from
+          09-19 on the ratio is ~1. So 46 of the "63 current deaths" - 28 of them at L1-5 - happened against
+          monsters the game no longer spawns. The "68% of deaths at L1-9", "Tricksters 54%", "median 3 rounds"
+          and "21% lost a bar in 2 rounds" figures I wrote up earlier all describe the OLD builds. **Since the
+          refit shipped (2026-09-19) there have been 2 deaths at L5 or below in four weeks.**
+        * **Fixed the instrument:** `CUTOFF` is now 2026-09-20 (with the reasoning in the file) and
+          `--since YYYY-MM-DD` overrides it. It reports "13 since 2026-09-20, 84 before it (older builds)".
+        * **The CURRENT era, n=13 (small - treat as a lead, not a fit):** by level 1-9: 3, 10-24: 7, 25-49: 2,
+          50-99: 1 - i.e. deaths are now mostly L10-24 and do NOT fall with level yet. **11 of 13 were killed by
+          a monster carrying a modifier** (Vampiric, Juggernaut, Warded, Venomous, Thorned, Broodcalling, Gilded,
+          Shield Guardian, or a Champion/Cunning-Prey elite); only a Wraith (Lv37 vs a L13 player) and an Ogre
+          were plain. 8 of 13 died within 2 rounds, 5 lost a full bar in <= 2; **none walked in hurt** (0 of 13
+          below 70% HP), so these are single-encounter kills, not attrition. 5 of 13 were at parity, 3 were
+          "far above" (11+ levels over the player, e.g. Titan Champion Lv60 vs L35, Wraith Lv37 vs L13) - the
+          danger-step guard (v0.9.835, 2026-10-13) postdates all of them.
+        * **The simulator agrees about WHERE the risk is** (`-- roles`, win%): normal 100% at L1-10, **empowered
+          66-69%, elite 64-79%, boss 74%** at L1-10 (targets 55 / 65 / 80). Empowered spawn on ~15% of Lv5+
+          monsters, so the sim already predicts that almost all non-wins come from modified monsters, and live
+          deaths say the same (11 of 13). **This is the one concrete lead:** whether a ~1-in-3 loss against ANY
+          empowered monster at L1-10 is the intended price (the BALANCE doc says most die by design but the risk
+          must FALL with progression) is a DESIGN decision, and it lines up with backlog item 11d ("tank mobs
+          crazy stronger", suspect `species_power`).
+        * **Not measured, and needed before any change:** deaths PER ENCOUNTER by modifier (the log has deaths,
+          not encounters), so "modified monsters kill 85%" cannot yet be separated from "they are 15-25% of
+          what players meet". Needs an encounter counter in the server log (e.g. one `[ENCOUNTER]` line with
+          role/mods/level gap and outcome) - cheap, and it would also give the real 1.81%-style rate that
+          `death_log_audit` cannot compute today.
+        * **The reference-player result below still stands as a statement about L6+ scaling, but its
+          motivation ("explain the early deaths") is gone:** the early deaths it was meant to explain were an
+          old-build artefact. L6+ remains a real but lower-priority fidelity gap.
       ▶ **LIVE-DATA CHECK RUN 2026-10-13 (steps 1-2; step 3, reference player vs live saves, NOT yet run).**
       `death_log_audit.py`: 97 deaths recorded, **63 since the 2026-09-05 balance pass**. By level band:
       1-9 = 43 (68%), 10-24 = 17, 25-49 = 2, 50-99 = 1. By class: **Grifter 13, Ranger 11, Ninja 10 = 34 of
