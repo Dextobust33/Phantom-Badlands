@@ -1467,6 +1467,27 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       - *`map_payload_golden` is not hermetic* (no decision needed - a known limitation, not a
         question): it reads the machine's saved seed and posts from `user://`. Re-captured today with
         the reason in its header; inject a fixed seed and posts before trusting it as a gate.
+      **RE-SWEEP AFTER v0.9.835 (2026-10-13, owner: "run the full sweep again"): 340 probes, 254 clean,
+      86 not green (was 227 / 113).** Breakdown: 10 print script errors, 1 reports its own FAIL, 74 print
+      no verdict the runner recognises, 1 exits non-zero with no FAIL text (`ui_scale_1080p`), 0 hang.
+      **The sweep found two FLAKY probes that had passed the first time - the lesson is that one green
+      run proves little for a probe with randomness in it:**
+      - `a_telegraph_is_answerable` failed ~24% of runs (6 of 25). Cause: it generated a random monster, and
+        one random modifier is Juggernaut ("immune to stun, shrugs it off and acts anyway", correct game
+        behaviour), so "a stun cancels the burst" sometimes failed. Fixed (boss pinned to no modifiers,
+        seeded per fight): 40 of 40.
+      - `dungeon_modifiers` failed ~40% (10 of 25 as a nil call on `monster_db`, a bare-server gap; once
+        that was supplied, the SAME runs failed the HP/damage checks because a rank-9 monster has a 45%
+        chance of an extra Empowered modifier before the dungeon multipliers apply - also correct game
+        behaviour). Fixed (database supplied; the "nasty" dungeon sits at rank 2, which never empowers):
+        40 of 40.
+      - **TODO: give `probe_run.py` a `--repeat N`** and run the randomised probes several times in the
+        sweep, so a flake is reported as a flake instead of as luck. Until then a single pass of a
+        probe that calls `randi()`/`randf()`/`generate_monster` is weak evidence.
+      - The sweep also REWRITES a tracked file (`docs/design/companion_variants_review.md`, a probe
+        regenerates it); I revert it by hand each time. A probe should not write into tracked docs.
+      - **Still unclassified: the 74 "no verdict" probes** - being characterised (silent vs prints
+        something in another format) at the time of writing; result goes here when known.
       **Consequence:** `probe_run.py --all` is NOT a usable gate yet; only `--smoke` is. Triage order
       that costs least: (1) the 74 verdict formats (mechanical), (2) the 9 script-error probes
       (probe rot), (3) the 29 FAILs one by one, deciding stale-vs-regression for each. Report:

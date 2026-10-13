@@ -96,8 +96,17 @@ func _init() -> void:
 	print("===== THE EFFECTS LAND ON A REAL MONSTER =====")
 	# Executed, not reasoned about: the same helper the two dungeon combat starters call.
 	var srv = ServerScript.new()
+	# A modifier that re-rolls a monster's empowered state calls `monster_db.reapply_empowered`, and a bare
+	# server has no database - which made this probe die on a nil call about 4 runs in 10, depending on
+	# which modifiers happened to roll. The real server always has one.
+	srv.monster_db = MonsterDatabase.new()
+	# ⚑ RANK 2, NOT 9, FOR THE "NASTY" DUNGEON - the modifier list is explicit, so rank decides nothing
+	# here except one thing: `_empower_for_dungeon_rank` gives a rank-9 monster a 45% chance of an extra
+	# Empowered modifier BEFORE the dungeon multipliers apply, which is correct game behaviour and made
+	# "Bloodgorged puts HP at 1400" fail about one run in three. Ranks 1-2 never empower, so this probe
+	# measures the modifier multipliers and nothing else.
 	srv.active_dungeons = {"plain": {"sub_tier": 1, "modifiers": []},
-						   "nasty": {"sub_tier": 9, "modifiers": ["bloodgorged", "feverish"]}}
+						   "nasty": {"sub_tier": 2, "modifiers": ["bloodgorged", "feverish"]}}
 	var base := {"name": "Ghoul", "max_hp": 1000, "current_hp": 1000, "strength": 100,
 				 "defense": 50, "experience_reward": 200}
 	var plain: Dictionary = base.duplicate(true)

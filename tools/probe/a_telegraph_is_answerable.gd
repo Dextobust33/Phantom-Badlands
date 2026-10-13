@@ -41,7 +41,14 @@ func _ok(m: String) -> void:
 func _boss_fight(cm, db, ability: String, period: int) -> Dictionary:
 	var ch = CharacterScript.new()
 	ch.initialize("Probe", "Barbarian", "Human")   # no innate damage_reduction to muddy the read
+	# ⚑ PINNED, NOT RANDOM. `generate_monster` rolls a random species AND random empowered modifiers,
+	# and one of those is Juggernaut - "immune to stun, shrugs it off and acts anyway" (v0.9.651), which
+	# is correct game behaviour and made check 3 ("a stun cancels it") fail about 1 run in 25 for a reason
+	# that has nothing to do with the telegraph. Seeded per fight so a failure reproduces, and the monster
+	# carries no modifiers: this probe is about the burst's wind-up, not the monster lottery.
+	seed(hash("%s|%d" % [ability, period]))
 	var mon: Dictionary = db.generate_monster(20, 20)
+	mon["empowered_mods"] = []
 	mon["abilities"] = [ability]
 	mon["max_hp"] = 999999
 	mon["current_hp"] = 999999
