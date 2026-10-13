@@ -1163,7 +1163,21 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         (`tools/probe/erasing_a_dungeon_never_strands_its_occupants.gd`, failed 3 checks before).
         **Not verified:** whether `player_dungeon_instances` can hold entries for a quest the log
         no longer has (e.g. a daily that rolled over) - the 24 h sweeper bounds the cost either way.
-      - [ ] [37 + 42] floor loot level/valor vs the dungeon
+      - [~] **[37 + 42] LEVEL DONE IN CODE 2026-10-13 (server; needs deploy); VALOR MAGNITUDE
+        DELIBERATELY NOT TOUCHED.** The owner's numbers fall out of the code exactly: floor loot was
+        rolled at the dungeon's flat base level, monsters at `base x (1 + floor x 0.07)` - and
+        56 x (1 + 7 x 0.07) = 83. Measured on 24 real deep instances
+        (`tools/probe/floor_loot_matches_the_floor.gd`): equipment a flat **L43 on every floor while
+        monsters climbed L42 -> L59 (floor 7 = 73%)**; now **102-104% on every floor**. Fixed for the
+        scattered loot AND the guaranteed gear piece via one helper `_dungeon_floor_mult`, reading
+        the same `FLOOR_DIFFICULTY_PER_FLOOR` the monsters use. Coins now scale by the same ramp
+        (~16 -> ~22 over seven floors). **NOT changed: the base coin amount (`2-6 x tier` per pickup,
+        8-24 at an E-grade dungeon).** That is what makes "very low valor on an E8" - and valor
+        magnitudes are explicitly the realm-wide VALOR ECONOMY pass's call (the quest anchor is
+        marked PROVISIONAL in `quest_database.gd`, and the owner said valor costs "likely need
+        rebalanced across the realm"). For scale: a completion chest pays ~`(3-5) x tier x 5` =
+        60-100 at tier 4, a quest task ~`3 + 3.5 x level`. **OWNER DECISION** if floor coins should
+        be raised before that pass. Chests were already `max(player level, band)`, so unchanged.
       - [ ] [35] do dungeons ever give a card
 5. - [ ] **TEXT/NUMBERS THAT DISAGREE** [15 Companion card face vs log; 16 Double Cross face vs
       actual; 18 potion HP in combat list; 39 card name differs Deck vs battle (Sorcerer Wild

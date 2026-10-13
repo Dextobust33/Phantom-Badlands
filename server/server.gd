@@ -38768,7 +38768,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 	# leave; the escape scroll above is deliberately on floor 0 for the opposite reason.
 	if floor_count > 0:
 		var _geq_floor: int = randi() % floor_count
-		var _geq = _dungeon_equipment_for(instance_id, tier, maxi(1, dungeon_level), _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
+		var _geq = _dungeon_equipment_for(instance_id, tier, maxi(1, int(dungeon_level * _dungeon_floor_mult(_geq_floor))), _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
 		if _geq is Dictionary and not _geq.is_empty():
 			_place_floor_item_random(instance_id, _geq_floor, floor_grids[_geq_floor], {
 				"kind": "equipment", "char": "◆",
@@ -38902,6 +38902,14 @@ func _phantom_egg_rank(dungeon_rank: int, instance_id: String, floor_num: int) -
 	return clampi(lifted, 1, PowerRankScript.RANKS)
 
 
+## The multiplier a FLOOR puts on the dungeon's base level, for monsters AND for what lies on the floor.
+## One definition (`FLOOR_DIFFICULTY_PER_FLOOR`), read by both, so loot cannot drift back out of step
+## with the thing guarding it. Owner sheet 2026-10-13, items 37/42: *"I'm fighting level 83 monsters on
+## the 8th floor of this dungeon but the floor loot I'm finding is level 56."* 56 x (1 + 7 x 0.07) = 83.
+func _dungeon_floor_mult(floor_num: int) -> float:
+	return 1.0 + float(maxi(0, floor_num)) * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR
+
+
 func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool, floor_num: int = 0) -> Dictionary:
 	"""Roll one floor-loot item. Returns {kind, char, color, item_data} or {} on a miss."""
 	if force_egg:
@@ -38936,7 +38944,10 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		if egg.is_empty():
 			return {}
 		return {"kind": "egg", "char": "◉", "color": "#A335EE", "item_data": egg}
-	var lvl: int = max(1, level)
+	# The level of THIS FLOOR, not of the dungeon's entrance - measured by
+	# tools/probe/floor_loot_matches_the_floor.gd: equipment was a flat L43 on every floor while the
+	# monsters climbed L42 -> L59, so floor 7's gear was 73% of the level of what guarded it.
+	var lvl: int = max(1, int(level * _dungeon_floor_mult(floor_num)))
 	# 2026-09-10 - equipment 20% -> 26%, taken out of the crafting-material share rather than
 	# added on top, so the number of items on a floor does not change.
 	#
@@ -38952,7 +38963,10 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 			return {}
 		return {"kind": "material", "char": "▪", "color": "#1EFF00", "item_data": mat}
 	elif roll < 56:  # valor coins
-		var v := randi_range(tier * 2, tier * 6)
+		# Deeper floors pay more, by the same ramp as everything else on the floor. The BASE amount
+		# (2-6 x tier) is untouched on purpose: valor magnitudes are the realm-wide economy pass's
+		# call (quest_database.gd marks its own anchor PROVISIONAL), not something to retune here.
+		var v := int(randi_range(tier * 2, tier * 6) * _dungeon_floor_mult(floor_num))
 		return {"kind": "valor", "char": "¢", "color": "#FFD700", "item_data": {"valor": v}}
 	elif roll < 82:  # equipment
 		var eq = _dungeon_equipment_for(instance_id, tier, lvl, _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))
