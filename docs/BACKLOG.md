@@ -1231,6 +1231,11 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         window / death replay) and for a shot, or reproduce via `tools/test_setup/shots.py` with a hover
         injected; check `_formula_popup` against the death-replay path first (it draws the combat panel's
         popup while a z 4000 panel is up).
+      - [x] **SMOKE-GATE FLAKE FIXED 2026-10-13 (found on the v0.9.837 release):** `world_dungeon_roll_is_uniform`
+        failed ~1 run in 10 - unseeded, and its 0.95x centre-density bound sat 1.35 sd from the mean of ~700 rolls.
+        Seeded, bound moved to 0.85x (~4 sd). The v0.9.837 release gate passed regardless. A flaky smoke probe
+        either blocks a good release or trains people to rerun until green; the same check applies to any other
+        sampled probe in `--smoke` (not audited).
       - [~] **[49] PARTLY - Title help.** Compared every claim in the TITLES & ENDGAME help topic with
         `titles.gd` and the drop roll: levels, locations, item names and the 0.5% / 0.2% rates all MATCH, so
         I could not reproduce "inaccurate" from the data. It did omit how a title is lost (Jarl > Lv 500, High

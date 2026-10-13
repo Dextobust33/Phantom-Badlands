@@ -13,6 +13,11 @@ func ck(ok: bool, msg: String) -> void:
 	print(("  PASS  " if ok else "  FAIL  ") + msg)
 
 func _init() -> void:
+	# Seeded: the centre-density check below counts ~700 rolls (sd ~26, i.e. +-3.7%), so a 0.95x bound sat
+	# 1.35 sd from the mean and failed about one run in ten on pure sampling noise - and this is a smoke-gate
+	# probe. Seed it, and put the bound ~4 sd out so the check still catches the real fault (the clamp put
+	# ~36% of rolls on the edge and starved the centre far below this).
+	seed(hash("world_dungeon_roll_is_uniform"))
 	var s = SERVER.new()
 	s.world_system = WorldSystem.new()
 	var n := 40000
@@ -38,7 +43,7 @@ func _init() -> void:
 	print("  within 800 tiles of the origin: %.2f%% (uniform over the square would be %.2f%%)" % [100.0 * within_800 / n, 100.0 * exp800])
 	ck(edge_frac < 0.01, "almost no dungeon is rolled onto the world's edge (%.1f%%)" % (edge_frac * 100.0))
 	var ratio: float = (float(within_300) / n) / exp300
-	ck(ratio > 0.95, "the centre gets the density a uniform spread gives it (%.2fx)" % ratio)
+	ck(ratio > 0.85, "the centre gets the density a uniform spread gives it (%.2fx)" % ratio)
 
 	print("\n--- with players online, a SHARE of dungeons appear near them (owner: weight toward players) ---")
 	var a := Character.new()
