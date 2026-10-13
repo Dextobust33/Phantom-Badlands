@@ -117,15 +117,14 @@ func _init() -> void:
 	# ⚡ THE FAILURE THIS NOW CATCHES is the tempting one - hand-building a monster's stats to
 	# "make it phantom-ish". That single shortcut breaks XP, the death log's gap column and quest
 	# targets simultaneously, and every one of them silently.
-	var srv := FileAccess.get_file_as_string("res://server/server.gd")
+	var srv := FileAccess.get_file_as_string("res://server/server.gd").replace("\r\n", "\n")
 	# The hook is INSIDE the ordinary floor spawner, not a forked one - one code path for phantom
 	# and ordinary floors, so they cannot drift apart. So the probe reads that function.
 	var pi := srv.find("func _spawn_dungeon_floor_monsters(")
 	if pi < 0:
 		_fail("_spawn_dungeon_floor_monsters is gone - re-point this probe")
 	else:
-		var pj := srv.find("
-func ", pi + 8)
+		var pj := srv.find("\nfunc ", pi + 8)
 		var pbody := srv.substr(pi, (pj - pi) if pj > pi else 4000)
 		if pbody.find("generate_monster_by_name(") < 0:
 			_fail("phantom generation does not use generate_monster_by_name. Stats built by hand "

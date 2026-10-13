@@ -1362,6 +1362,74 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       - **74 print no verdict line the runner recognises** (probably fine, just a different format -
         the runner's `PASS_RE` needs widening or those probes need a PASS line) and 1 exits non-zero
         with no FAIL text (`ui_scale_1080p`).
+      **TRIAGE OF THE 29 REAL FAILS (2026-10-13) - DONE. Result: ZERO regressions from the session's
+      own changes; 2 REAL player-visible issues; 1 unclear; 1 not failing; 25 are probe-side.**
+      Five parallel read-only investigations, each judging stale/regression/probe-bug with git
+      history; I re-verified the claims that carry a decision (counts, clamp values, line endings,
+      glyph, the `escorted` path) against the code myself.
+      **REAL (fix in the game, small, needs a client release):**
+      - **`stat_claims` - player-facing help text is wrong.** Solo fights clamp monster initiative
+        at 5-**75**% (`combat_manager.gd:2213`, since the 2026-09-13 stance work: Travelling adds a
+        surprise bonus) but two help texts still say "max 55%" (`client.gd` ~40764 and ~41171; the
+        second also omits the stance modifier). The PARTY-fight path (`combat_manager.gd:13029`)
+        clamps 5-55 with no stance bonus at all - so solo and party fights now disagree with each
+        other too. Decide which is intended, then make the text and the probe say it.
+      - **`ui_glyph_coverage` - `combat_scene_panel.gd:595` uses an astral glyph** (`"📖 Know This
+        Foe"`, added in fcdd7c72) against the project's own "every control label is BMP" rule. The
+        claim that it renders as a blank box on Linux is PLAUSIBLE, NOT confirmed. Swap for a BMP glyph.
+      **LOW-SEVERITY FINDING (not a probe failure):** `handle_move` reads `escorted` from the
+      INCOMING MESSAGE (`server.gd` ~5554, 5629), so a modified client can send `escorted: true` and
+      skip the danger-step confirmation. It only skips a speed bump (an honest client clears it by
+      stepping twice), but it is client-trusted input on a safety check. Fix: honour it only for the
+      server's own calls (46467, 46550), e.g. strip it from network messages in the dispatcher.
+      **UNCLEAR:** `gatherable_clusters` (a statistical check on the saved world seed: 34 of 80 large
+      stands are single-resource, needs a majority) - could be the seed, touching stands merging
+      after the roads/patches work, or a real regression in `_gather_cluster_at`; effect on play is
+      minor either way. Needs a fixed-seed re-run.
+      **NOT FAILING:** `launcher_selfupdate` passed 5/5 on re-run; most likely it ran in the window
+      when the v0.9.834 bump had changed VERSION.txt before the manifest was regenerated (guess,
+      unconfirmed).
+      **PROBE-SIDE (25) - each is a one-line-class fix, none touched yet except the first:**
+      - *Line endings (7):* `a_phantom_level_is_not_an_overworld_level` (**FIXED** - escaped `
+` and
+        normalised the read), `companion_lines_are_marked`, `companion_trail`, `sanctuary_room`,
+        `danger_step_guard` (its second check). **Cause:** the repo's rule is `* text=auto eol=lf`, but
+        THIS working tree is mixed - 8 big sources (`client.gd`, `combat_manager.gd`,
+        `dungeon_database.gd`, ...) are CRLF, the other 76 LF, and 21 probes CRLF - and a probe with a
+        `
+` needle fails against a CRLF source while a CRLF probe's raw-newline literal fails
+        against an LF one. (I flipped `server.gd` to LF myself via `git checkout` earlier today;
+        harmless to git, but it is how that probe started failing.) **Structural fix:** normalise the
+        working tree to LF (what `.gitattributes` already declares; git sees no change) and have
+        `probe_run.py` fail when a tracked `.gd` is `w/crlf`; or make every probe read sources
+        through a `
+ -> 
+` normaliser.
+      - *Counts that moved because code was added on purpose (4):* `dungeon_index` (6 creators / 2
+        erases - the Phantom creator and its rollback), `dungeon_instance_match` (5 call sites - the
+        Cartographer path), `dungeon_variety` (the `_OverworldRoom.build(...)` call gained args),
+        `overworld_render` (retired text-map mode cut the fallback returns to 1). Better to assert the
+        RULE (every erase follows `_unindex_dungeon`) than a count.
+      - *Feature or text deliberately changed (9):* `card_instances` (deck screen rebuilt to one tile
+        per copy; '+' still restores a benched copy), `empowered_hover` (hover wiring moved into
+        `_wire_hover`), `depleted_looks_spent` (a spent node now reads "empty"/"!hotdepleted" by
+        design), `help_topics` ("CRAFTING & GATHERING" split into two topics), `dungeon_redraw_guard`
+        (guard now reads `_fight_log_open()`, the probe sets a dead bool),
+        `inventory_pressure_and_autosalvage` (the keep filter matches stat keys, not affix names - on
+        purpose), `quest_grade_advertised` (grade variance `varied_grade` is deliberate; advertised ==
+        stamped still holds), `engine_ramp` (client reads `CombatManager.BARBARIAN_RAGE_DMG_PER` to
+        DISPLAY it - a read, not a copy), `dungeon_placement` (**my own rewrite of the world roll today
+        - intended**; the uniform property is covered by `world_dungeon_roll_is_uniform`).
+      - *Retired features (2):* `overworld_toggle` (the sprites toggle was removed in 20d96d51 -
+        delete the probe), `party_confirm` (the confirm state was removed deliberately in a10c3833
+        after the owner got stuck in it - delete or rewrite around "Change action"; the dead
+        `_party_confirm_*` code can go too).
+      - *Probe bugs of their own (4):* `map_payload` (400-char window now ends inside a comment
+        block), `hover_reachable` (matches same-named locals), `power_rank` (its banned-phrase scan
+        matches a `##` comment), `escort_walks_around_danger` (its sample never crosses the one
+        hotzone, so it proves nothing - the Warden's avoidance itself was verified to work by hand:
+        5 hotzone tiles on the plain route, 0 on the safe one), plus `map_payload_golden` (stale
+        baseline from 2026-09-13; world generation has changed - re-capture deliberately).
       **Consequence:** `probe_run.py --all` is NOT a usable gate yet; only `--smoke` is. Triage order
       that costs least: (1) the 74 verdict formats (mechanical), (2) the 9 script-error probes
       (probe rot), (3) the 29 FAILs one by one, deciding stale-vs-regression for each. Report:
