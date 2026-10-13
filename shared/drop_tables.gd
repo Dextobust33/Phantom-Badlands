@@ -1373,6 +1373,12 @@ static func companion_card_id_for(monster_type: String) -> String:
 static func get_companion_card_data(monster_type: String) -> Dictionary:
 	return COMPANION_CARD_DATA.get(monster_type, {})
 
+## Owner sheet 2026-10-13, item 31: *"Home stones shouldn't have levels"* - the number shows in the
+## inventory and the market. Nothing about a Home Stone scales with it, so no surface should print one.
+## ONE answer, read by every surface that prints an item level.
+static func shows_item_level(item: Dictionary) -> bool:
+	return not String(item.get("type", item.get("item_type", ""))).begins_with("home_stone")
+
 static func get_companion_card_data_by_id(card_id: String) -> Dictionary:
 	"""Reverse a 'companion_card_<slug>' id to its data. capitalize() turns
 	'giant_spider' -> 'Giant Spider', matching the COMPANION_CARD_DATA keys."""

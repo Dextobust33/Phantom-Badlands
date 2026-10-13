@@ -29075,6 +29075,13 @@ func handle_server_message(message: Dictionary):
 						# and the action bar shows a Continue button. Player
 						# explicitly dismisses to reopen inventory.
 						pending_inventory_action = "salvage_result_shown"
+						# Owner 2026-10-13, item 6: *"the inventory doesn't always update when you salvage
+						# items and they look like they are still in there."* This branch deliberately does
+						# NOT call display_inventory (it would cover the result text), but that also meant
+						# the panel - if it is still on screen - was never given the new inventory, and kept
+						# drawing the salvaged cards. Refresh its DATA; the panel stays where it is.
+						if inventory_panel != null and is_instance_valid(inventory_panel) and inventory_panel.visible:
+							inventory_panel.populate(character_data)
 						update_action_bar()
 					elif pending_inventory_action == "lock_item":
 						# Lock mode - refresh inventory to show updated lock indicators

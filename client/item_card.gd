@@ -208,7 +208,7 @@ func _render() -> void:
 		info_bb = "[color=#9ACD32]Egg[/color]"
 	elif item_data.get("is_consumable", false) or _is_consumable_type(item_type):
 		var lvl := int(item_data.get("level", 1))
-		info_bb = "[color=#9ACD32]Lv%d Consumable[/color]" % lvl
+		info_bb = ("[color=#9ACD32]Lv%d Consumable[/color]" % lvl) if preload("res://shared/drop_tables.gd").shows_item_level(item_data) else "[color=#9ACD32]Consumable[/color]"
 	else:
 		# Equipment: show delta vs currently equipped item in the same slot,
 		# or absolute multi-stat breakdown if nothing is equipped there.
@@ -238,7 +238,7 @@ func _render() -> void:
 		badge_text = "x%d" % stack_count
 	elif item_type != "tool" and not (item_data.get("is_consumable", false) or _is_consumable_type(item_type)):
 		var lvl := int(item_data.get("level", 0))
-		if lvl > 0:
+		if lvl > 0 and preload("res://shared/drop_tables.gd").shows_item_level(item_data):
 			badge_text = "Lv%d" % lvl
 	_badge_label.text = badge_text
 

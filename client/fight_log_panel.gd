@@ -223,7 +223,7 @@ func _ensure_detail_box() -> void:
 	_detail_box = PanelContainer.new()
 	_detail_box.name = "LogDetail"
 	_detail_box.top_level = true
-	_detail_box.z_index = 400
+	_detail_box.z_index = 4096   # top_level: z is ABSOLUTE and Godot caps it at 4096; it must out-rank the window (4000)
 	_detail_box.visible = false
 	_detail_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sb := StyleBoxFlat.new()

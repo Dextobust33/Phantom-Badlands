@@ -743,7 +743,7 @@ func populate_inspect(listing: Dictionary, valor: int) -> void:
 	_detail_title.text = "[color=%s][b]%s[/b][/color]" % [rarity_color, item_name]
 
 	var meta_lines: Array = []
-	if item.has("level"):
+	if item.has("level") and preload("res://shared/drop_tables.gd").shows_item_level(item):
 		meta_lines.append("[color=#87CEEB]Level:[/color] %d" % int(item.get("level", 1)))
 	if item.get("type", "") == "egg":
 		var variant = str(item.get("variant", "Normal"))
@@ -924,7 +924,7 @@ func _make_listing_row(listing: Dictionary, index: int, is_my_listing: bool) -> 
 	var rarity_color := _rarity_color(rarity)
 
 	var label_parts: Array = []
-	if item.has("level"):
+	if item.has("level") and preload("res://shared/drop_tables.gd").shows_item_level(item):
 		label_parts.append("Lv%d" % int(item.get("level", 1)))
 	if item.get("type", "") == "egg":
 		var t = int(item.get("tier", 1))
@@ -1303,7 +1303,7 @@ func _build_inventory_rows() -> void:
 		var rarity := String(item.get("rarity", "common"))
 		var color := _rarity_color_hex(rarity)
 		var level_text := ""
-		if item.has("level"):
+		if item.has("level") and preload("res://shared/drop_tables.gd").shows_item_level(item):
 			level_text = "  Lv%d" % int(item.level)
 		var qty := int(item.get("quantity", 1))
 		var qty_text := ""
