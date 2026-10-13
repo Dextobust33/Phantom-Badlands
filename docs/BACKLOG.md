@@ -1486,6 +1486,14 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         probe that calls `randi()`/`randf()`/`generate_monster` is weak evidence.
       - The sweep also REWRITES a tracked file (`docs/design/companion_variants_review.md`, a probe
         regenerates it); I revert it by hand each time. A probe should not write into tracked docs.
+      - **A THIRD flake, in the RELEASE GATE itself (2026-10-13):** one `--smoke` run reported "1 failed"
+        and ten consecutive reruns did not (150 probe-runs, plus 60 of `floor_loot` and 40 of
+        `danger_step_guard` alone). I could not name the probe from that one run, which is the weakness:
+        the runner printed only the count at that moment. Most likely suspect, and now fixed:
+        `danger_step_guard`'s wall-clock check (182 us against a 200 us limit, one batch) - now the best
+        of five batches. `lazy_dungeon_interior`'s timing is a LOWER bound and cannot fail under load.
+        **UNCONFIRMED** that this was the cause. If the gate ever blocks a release, rerun it once before
+        believing it, and read which probe failed - the runner prints it.
       - **The 74 "no verdict" probes, CHARACTERISED (all 74 re-run): none is silent, and most are not
         tests at all.** They print tables, "X initialized" lines, "measurement only - the shape is the
         finding" notes or a diagnostic number (e.g. `card_bonus_fit`, `dungeon_spread`, `kill_investment`,

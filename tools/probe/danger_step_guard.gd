@@ -247,11 +247,18 @@ func _init() -> void:
 		"...drawn between rules, so it reads as a stop rather than a line of chatter")
 
 	print("\n===== IT DOES NOT COST A STEP =====")
-	var t0 := Time.get_ticks_usec()
-	for i in range(2000):
-		srv._confirm_dangerous_step(9, walker, i, i)
-	var us := float(Time.get_ticks_usec() - t0) / 2000.0
-	print("  %.1f us per step" % us)
+	# ⚑ BEST OF FIVE BATCHES, NOT ONE. This measured a single batch against a limit only ~9% above the
+	# real cost (182 us vs 200), and it sits in the release gate - so a busy machine could fail a release
+	# for a reason that has nothing to do with the guard. A genuine slowdown shows in EVERY batch; a
+	# noisy neighbour hits some of them. The fastest batch is the cost; the slowest is just the machine.
+	var best_us := 1.0e12
+	for batch in range(5):
+		var t0 := Time.get_ticks_usec()
+		for i in range(2000):
+			srv._confirm_dangerous_step(9, walker, i, i)
+		best_us = minf(best_us, float(Time.get_ticks_usec() - t0) / 2000.0)
+	var us := best_us
+	print("  %.1f us per step (best of 5 batches)" % us)
 	ck(us < 200.0, "the guard costs %.1f us a move (< 200)" % us)
 
 	print("\n[DANGERSTEP] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
