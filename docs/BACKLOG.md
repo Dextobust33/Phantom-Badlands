@@ -1213,6 +1213,19 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      - [x] **[16] DONE IN CODE 2026-10-13 (SERVER, `combat_manager.gd`; needs a server deploy) - the
+        Trickster finisher's face vs the real hit.** One card (`perfect_heist`: Grifter Double Cross, Ranger
+        Killing Shot, Ninja Assassinate). `card_face_truth` could not see it: it only checks quotes of kind
+        "damage" and silently skips the rest. Measured on real casts, crits excluded: the face under-quoted by
+        up to ~2x for two reasons. (1) It left out the damage-bonus + live-buff pipeline every other card's
+        quote carries (`apply_skill_damage_bonus`, damage buff, analyze bonus, damage penalty). (2) It sized
+        the strike on the stacks BANKED, but every Trickster cast feeds the engine +1 BEFORE it resolves -
+        new `_finisher_stacks()` is used by the damage quote, the value quote, and the Ninja's kill chance
+        (which was quoting 2/8/14/23% against a real 5/11/17/26%). Probe
+        `finisher_quote_matches_the_cast.gd`: 3 classes x L20/L200 x engine 0/2/4/7, median dealt/quote per
+        cell within 20% (worst 8%), plus the kill chance against 220 real casts per engine level. The damage
+        half goes red with the +1 removed (worst 60% off). Not fault-injected: the kill-chance half.
+        Limit: each cell's median is over non-crit, non-execute casts only.
       - [x] **[18] DONE IN CODE 2026-10-13 (client; next client release) - the combat Use Item list's
         potion amounts.** Measured, not guessed: on a geared level-40 character the list said **+155 HP** for
         a potion that healed **+381** (2.5x off), and **every resource potion showed no amount at all**.

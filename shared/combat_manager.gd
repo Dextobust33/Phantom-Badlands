@@ -15098,6 +15098,20 @@ func _finisher_kind(character) -> String:
 	return ""
 
 
+func _finisher_stacks(combat: Dictionary) -> int:
+	"""How many stacks the finisher will have WHEN IT RESOLVES.
+
+	⚑ BANKED + THE ONE THE CAST ADDS. Every Trickster card feeds the engine before it resolves
+	(`_read_gain` in `process_ability_command`, base 1), and that includes the finisher: it spends the
+	bar, but the strike is sized on the bar AFTER its own feed. So 4 banked is a 5-stack strike. The
+	quote used the 4 - measured with crits excluded, the face under-quoted by 1.2-1.4x at 4 stacks and
+	was right at 0 (where the old floor of 1 happened to equal 0 + 1). Owner sheet 2026-10-13, item 16:
+	*"Double cross card face damage doesn't match how much it does."* The comment on `_finisher_value`
+	already said "size it on the stacks the strike will have WHEN IT RESOLVES"; only the floor was
+	implemented. Capped at COMBO_MAX like the cast."""
+	return clampi(int(combat.get("combo", 0)) + 1, 1, COMBO_MAX)
+
+
 func _finisher_damage(character, combat: Dictionary) -> int:
 	"""The damage a Trickster finisher deals, for EVERY Trickster - including the one that rolls.
 
@@ -15115,19 +15129,33 @@ func _finisher_damage(character, combat: Dictionary) -> int:
 
 	Same convention as every other card face: monster-side mitigation is deliberately NOT
 	subtracted, because no other card's face subtracts the target's armour."""
-	var n: int = maxi(1, clampi(int(combat.get("combo", 0)), 0, COMBO_MAX))
+	var n: int = _finisher_stacks(combat)
+	var raw: float = 0.0
 	match String(character.class_type):
 		"Grifter":
-			return int(_ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n)))
+			raw = _ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n))
 		"Ranger":
 			# The Aim ramp is applied TWICE in the real hit - once by the discharge and once by
 			# `apply_ability_damage_modifiers`. See the note in _finisher_value; the estimate has
 			# to match the hit, not the formula.
 			var _rs: float = _ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))
-			return int(_rs * (1.0 + float(n) * RANGER_AIM_DMG_PER))
+			raw = _rs * (1.0 + float(n) * RANGER_AIM_DMG_PER)
 		"Ninja":
-			return int(_ability_anchored_damage(character, "wits", NINJA_STRIKE_PER_READ * float(n)))
-	return 0
+			raw = _ability_anchored_damage(character, "wits", NINJA_STRIKE_PER_READ * float(n))
+		_:
+			return 0
+	# ⚑ THE SAME TWO TERMS THE CAST APPLIES, which every other card's quote already carries.
+	# Owner sheet 2026-10-13, item 16: *"Double cross card face damage doesn't match how much it does."*
+	# Measured on real casts with crits excluded: the quote was the BASE strike, while the cast then runs
+	# `apply_skill_damage_bonus` (mastery, upgrades, card-power gear) and the live damage buffs - so the
+	# face under-quoted by 1.3x at level 20 and about 2x at level 200 with a full bank (Ranger 12,742
+	# quoted, 25,810 dealt). `preview_ability_effect` does exactly this for every other damage card; the
+	# finisher is built separately (it is the one card that quotes for three different classes) and never
+	# got it. The deliberate omissions stay omitted: crits, variance, and the monster's own armour.
+	var buff_mult: float = 1.0 + float(character.get_buff_value("damage")) / 100.0
+	buff_mult *= 1.0 + float(int(combat.get("analyze_bonus", 0))) / 100.0
+	buff_mult *= 1.0 - minf(0.90, float(character.get_buff_value("damage_penalty")) / 100.0)
+	return apply_skill_damage_bonus(character, "perfect_heist", int(raw * buff_mult), combat, true)
 
 
 func _finisher_value(character, combat: Dictionary) -> int:
@@ -15138,7 +15166,7 @@ func _finisher_value(character, combat: Dictionary) -> int:
 	# _read_gain block in process_ability_command), so casting the finisher on an empty bar gives
 	# it one stack and it fires. The card was saying "build first" about a card that works, and
 	# showed no damage for a strike that deals it. Floor at 1.
-	var n: int = maxi(1, clampi(int(combat.get("combo", 0)), 0, COMBO_MAX))
+	var n: int = _finisher_stacks(combat)
 	match String(character.class_type):
 		"Grifter":
 			return _finisher_damage(character, combat)
@@ -15158,7 +15186,14 @@ func _finisher_value(character, combat: Dictionary) -> int:
 			return int(_rs * (1.0 + float(n) * RANGER_AIM_DMG_PER))
 		"Ninja":
 			var mon = combat.get("monster", null)
-			return assassinate_chance(character, mon, combat) if mon is Dictionary else 0
+			if not (mon is Dictionary):
+				return 0
+			# The chance is rolled AFTER the cast's own feed, on the stack count at resolve - the same `n`
+			# the damage quote now uses. Measured (300 casts per cell): the face said 2/8/14/23% at
+			# 0/2/4/7 banked while real kill rates were 5/11/17/22-26%, i.e. one stack higher every time.
+			var _at_resolve: Dictionary = combat.duplicate()
+			_at_resolve["combo"] = n
+			return assassinate_chance(character, mon, _at_resolve)
 	return 0
 
 
