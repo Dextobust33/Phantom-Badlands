@@ -1213,6 +1213,17 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      - [x] **[18] DONE IN CODE 2026-10-13 (client; next client release) - the combat Use Item list's
+        potion amounts.** Measured, not guessed: on a geared level-40 character the list said **+155 HP** for
+        a potion that healed **+381** (2.5x off), and **every resource potion showed no amount at all**.
+        Two causes in `_combat_item_gain_line`: it measured the percentage part against the BASE `max_hp`
+        while the server heals against `get_total_max_hp()` (gear + CON x5 + house bonus) - so the
+        docstring's promise that the number shown is the number granted was only true with nothing equipped
+        - and it read `max_resource` / `resource_name`, keys the server never sends. Now it uses
+        `total_max_hp` and the class's primary resource against its `total_max_*` pool, the same pools the
+        server's use handler reads. Probe `combat_item_list_shows_what_you_get.gd`: 9 classes x 4 levels x 4
+        potions (144 cases) with geared characters; goes red if the base-HP pool returns. **Not covered:** a
+        companion-target heal (no such potion exists in the data; the server chooses the target at use).
       - [x] **[32] + [44] DONE IN CODE 2026-10-13 (client; next client release) - items that said nothing
         about themselves.** Method: inspect EVERY item type the loot tables can produce (112, read from
         `drop_tables.gd`'s own constants so a new one is covered automatically). **Seven** had no real

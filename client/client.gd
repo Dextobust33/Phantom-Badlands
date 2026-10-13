@@ -31776,9 +31776,18 @@ func _combat_item_gain_line(item: Dictionary) -> String:
 	var tier: int = int(item.get("tier", 0))
 	if effect.has("heal"):
 		var target_is_companion: bool = String(effect.get("target", "")) == "companion"
-		var pool: int = int(character_data.get("max_hp", 0))
+		# ⚑ THE SAME POOL THE SERVER HEALS AGAINST: `total_max_hp` (base + gear + CON x5 + house bonus),
+		# never the bare `max_hp`. Owner sheet 2026-10-13, item 18: *"HP amounts that potions say in the combat
+		# use list aren't accurate."* Measured on a geared level-40 character: the list said +155 HP for a
+		# potion that healed +381 - it was measuring the percentage part against the BASE bar, and the
+		# docstring above that promised "the number shown is the number granted" was only true unequipped.
+		var total_hp: int = int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
+		var pool: int = total_hp
 		if target_is_companion:
-			pool = int(character_data.get("companion_max_hp", pool))
+			# The server's own derivation (`Character.get_companion_max_hp`), not a `companion_max_hp` key
+			# that is never sent - which silently fell back to the PLAYER's pool.
+			pool = CharacterScript.calculate_companion_max_hp(
+				character_data.get("active_companion", {}), total_hp, int(character_data.get("level", 1)))
 		if pool <= 0:
 			return ""
 		var amt: int = DropTables.consumable_heal_amount(item, effect, pool, tier)
@@ -31786,12 +31795,19 @@ func _combat_item_gain_line(item: Dictionary) -> String:
 			return ""
 		# Say whose HP, or a companion potion reads as a self-heal in the heat of a fight.
 		return "+%d HP to your companion" % amt if target_is_companion else "+%d HP" % amt
-	if effect.has("resource"):
-		var rpool: int = int(character_data.get("max_resource", 0))
+	if effect.has("resource") or effect.has("mana") or effect.has("stamina") or effect.has("energy"):
+		# The player's PRIMARY resource for their class path, against its TOTAL pool - exactly what the
+		# server's use handler grants. This block read `max_resource` and `resource_name`, keys the server
+		# never sends, so every resource potion in the combat list showed no amount at all.
+		var rname := "mana"
+		match String(character_data.get("class", "")):
+			"Fighter", "Barbarian", "Paladin": rname = "stamina"
+			"Grifter", "Ranger", "Ninja": rname = "energy"
+		var rpool: int = int(character_data.get("total_max_" + rname, character_data.get("max_" + rname, 0)))
 		if rpool <= 0:
 			return ""
 		var ramt: int = DropTables.consumable_resource_amount(item, effect, rpool, tier)
-		return "+%d %s" % [ramt, String(character_data.get("resource_name", "resource"))] if ramt > 0 else ""
+		return "+%d %s" % [ramt, rname] if ramt > 0 else ""
 	return ""
 
 func _get_item_effect_description(item_type: String, level: int, rarity: String, item: Dictionary = {}) -> String:
