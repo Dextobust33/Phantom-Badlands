@@ -1087,8 +1087,36 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       separately reproduced. Other `*_mode` screens (market/crafting use real panels; wish
       PROMPT, monster-select, target-farm, title menu) were not photographed - add a flag to
       `_menu_mode_holds_canvas()` if any is reported.
-3. - [ ] **[5] Apex Wyvern quest dungeon: never shown inside, "already in dungeon", relog lands in
-      Crossroads.** Can strand a player — before the rest of the dungeon group.
+3. - [x] **DONE IN CODE 2026-10-13 (server fix — NOT YET DEPLOYED, see below) — [5] Wyvern threat
+      quest: never shown inside, "already in a dungeon", relog lands at the Crossroads.**
+      Cause, reproduced with the real entry path (`tools/probe/threat_quest_entry_has_an_interior.gd`)
+      and matched to the live log (Sep 21 16:03: *"Bound threat-relief quest ...@wyvern_roost to
+      WORLD dungeon world_dungeon_3563"* -> *"Player Dexto entered dungeon Wyvern's Roost
+      (instance world_dungeon_3563)"* -> relog *"Dungeon world_dungeon_3563 expired ... returning
+      to overworld"*): a THREAT-RELIEF quest binds to the WORLD dungeon itself, and world dungeons
+      build their interior LAZILY (`_ensure_dungeon_interior`, 2026-09-11, justified by "entering
+      creates a personal instance, nothing reads the world one's floors"). `handle_dungeon_enter`
+      never asked for it, so it read floors that did not exist. A debug build stops at the missing
+      key; the RELEASE server carries on with null, flags the character inside, and
+      `_send_dungeon_state` silently `return`ed (no floors) - so the client was told nothing, every
+      retry answered "already in a dungeon", and the next login saw no interior and ejected you.
+      It is NOT specific to Wyvern or to APEX grade: any threat-relief quest does this (the log
+      shows the same binding for Ogre Bog and Orc Stronghold). Two theories were disproved first by
+      measurement: instance GENERATION at every grade (3/6/9) and the `dungeon_state` payload both
+      build cleanly, and a plain Wyvern entry in a real client works.
+      Fix, both layers: (1) `handle_dungeon_enter` builds the interior before anyone is put in
+      it, and refuses with a message if it cannot; (2) `_send_dungeon_state` no longer returns
+      silently - a character flagged inside a place with no interior is returned to the overworld
+      and told, so the stranded state cannot persist whatever the next cause is. Both guards are
+      fault-injected (removing either fails the probe). The `[LAZY-DUNGEON]` log line now names the
+      two legitimate callers instead of calling every one a bug.
+      **⚑ NEEDS A SERVER DEPLOY to reach players** (client unchanged by this fix). Anyone currently
+      stranded is freed by the deploy: their next dungeon action/login now ejects them cleanly.
+      **Also found, not fixed (pre-existing, fails identically on committed code):**
+      `tools/probe/dungeon_instance_match.gd` — "1 definition + 3 call sites ... got 5" is a stale
+      call-site count; re-read what the 5 are before bumping the number. Related to item 36 (the
+      log shows a quest released a shared world dungeon "not erased - it is shared", which is
+      correct; the abandoned-PERSONAL-dungeon cleanup is the part still to verify).
 4. - [ ] **DUNGEONS** [1 Rescue-the-Scholar NPC not spawned / glyph text should be sprite, likely all
       NPC quests; 10 random dungeons not on map; 36 abandoned-quest dungeon cleanup; 37 + 42 floor
       loot level/valor not matching dungeon (L56 loot vs L83 monsters, E8 low valor); 35 do

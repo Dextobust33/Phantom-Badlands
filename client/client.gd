@@ -7358,6 +7358,20 @@ func _dev_run_shots() -> void:
 				else:
 					print("[SHOTS] wishpath FAIL no wish prompt arrived")
 
+			"wyvernenter":
+				# ⚑ ENTER A WYVERN'S ROOST THE WAY A PLAYER DOES (owner sheet 2026-10-13, item 5: an
+				# APEX Wyvern dungeon "never showed me in the dungeon", then "already in a dungeon").
+				# Prints whether the CLIENT believes it is underground beside what the SERVER did.
+				send_to_server({"type": "dungeon_enter", "dungeon_type": "wyvern_roost", "confirmed": true})
+				await get_tree().create_timer(3.0).timeout
+				print("[SHOTS] wyvernenter dungeon_mode=%s has_data=%s name=%s floor=%s" % [
+					str(dungeon_mode), str(not dungeon_data.is_empty()),
+					str(dungeon_data.get("dungeon_name", "?")), str(dungeon_data.get("floor", "?"))])
+				await _dev_shot_capture("wyvernenter")
+				# A second press is what the owner did next; the server answers it.
+				send_to_server({"type": "dungeon_enter", "dungeon_type": "wyvern_roost", "confirmed": true})
+				await get_tree().create_timer(1.5).timeout
+
 			"rework":
 				# The rework flow, which the owner watched vanish off the screen. A capture after
 				# the picker AND after a character_update is the only way to prove the text holds.

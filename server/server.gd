@@ -31914,6 +31914,25 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 
 	var instance = active_dungeons[instance_id]
 
+	# ⚑ THE INTERIOR MUST EXIST BEFORE ANYONE IS PUT IN IT. Owner sheet 2026-10-13, item 5: *"It
+	# was an APEX Wyvern Dungeon, it never actually showed me in the dungeon but when attempting to
+	# do things it said I was already in the dungeon. Went to Char Select and then logged back in
+	# and it put me back in the Crossroads."*
+	#
+	# ⛑ A THREAT-RELIEF QUEST BINDS TO THE WORLD DUNGEON ITSELF (so clearing it clears the post's
+	# threat), and the loop above hands that instance straight to this function. World dungeons
+	# build their interior LAZILY - `_ensure_dungeon_interior` was written on the claim that
+	# "entering a world D creates a personal instance, so nothing ever reads the world one's
+	# floors" - and this was the one entry that does. A release server does not stop at the missing
+	# key: it carries on with null, flags the character inside, and `_send_dungeon_state` returns
+	# quietly because there are no floors. The client is told nothing, every retry answers "already
+	# in a dungeon", and the next login sees no interior and sends you to the Crossroads.
+	# Reproduced by tools/probe/threat_quest_entry_has_an_interior.gd.
+	if not _ensure_dungeon_interior(instance_id):
+		send_to_peer(peer_id, {"type": "error", "message": "That dungeon cannot be entered right now. Try again in a moment."})
+		log_message("DUNGEON-ENTER refused: %s has no interior and could not build one (%s)" % [instance_id, character.name])
+		return
+
 	# P1 Dungeon Atlas — entering a dungeon fully DISCOVERS it (adds to the player's Atlas).
 	# The grade of the instance being ENTERED. Recording the type's meant the Atlas could
 	# advertise a grade that no dungeon of that type in the world actually had.
@@ -34104,7 +34123,7 @@ func _ensure_dungeon_interior(instance_id: String) -> bool:
 	dungeon_floors[instance_id] = floor_grids
 	dungeon_floor_rooms[instance_id] = floor_rooms
 	_spawn_all_dungeon_monsters(instance_id, dungeon_type, int(inst.get("dungeon_level", 1)))
-	log_message("[LAZY-DUNGEON] built %s on demand. If this line appears for a world_dungeon_*, its interior IS read somewhere and the eager build was not dead after all - find the caller." % instance_id)
+	log_message("[LAZY-DUNGEON] built %s on demand. Expected for a world_dungeon_* only via a threat-relief quest entry (handle_dungeon_enter) or a Phantom descent - anything else reading a world interior is a caller to find." % instance_id)
 	return true
 
 
@@ -36340,7 +36359,17 @@ func _send_dungeon_state(peer_id: int):
 		return
 
 	var instance_id = character.current_dungeon_id
-	if not active_dungeons.has(instance_id) or not dungeon_floors.has(instance_id):
+	# ⛑ NEVER LEAVE SOMEONE FLAGGED INSIDE A PLACE THAT DOES NOT EXIST. This used to `return` here,
+	# silently, which is how a character ended up "in a dungeon" the client was never told about:
+	# every later dungeon action answered "already in a dungeon" and nothing could clear it short
+	# of a relog. Build the interior if it is merely lazy; if the instance is truly gone, put the
+	# character back on the overworld and SAY so, because a silent return here is a stranded player.
+	if not active_dungeons.has(instance_id) or not _ensure_dungeon_interior(instance_id):
+		log_message("[DUNGEON STATE] %s is flagged inside %s, which has no interior - returning them to the overworld" % [character.name, instance_id])
+		character.exit_dungeon()
+		save_character(peer_id)
+		send_to_peer(peer_id, {"type": "error", "message": "That dungeon is no longer there. You are back on the overworld."})
+		send_location_update(peer_id)
 		return
 
 	var instance = active_dungeons[instance_id]
