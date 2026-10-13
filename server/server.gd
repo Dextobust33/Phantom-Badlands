@@ -31590,19 +31590,19 @@ func find_dungeon_instance(dungeon_type: String, from_x: int, from_y: int,
 	  * the quest restore (~L2727) - correct: skips completed, skips owned
 	  * `handle_cartographer_locate` (~L15098) - correct: same, plus nearest
 	  * `handle_dungeon_list` (~L29196) - matched on dungeon_type ALONE and took the first hit
-	    in DICTIONARY ORDER, so the rank in the name, the recommended level band and the
-	    coordinates the player then walked to could all belong to a different dungeon: one
-	    already finished, one belonging to another player, or simply the far side of the map.
+		in DICTIONARY ORDER, so the rank in the name, the recommended level band and the
+		coordinates the player then walked to could all belong to a different dungeon: one
+		already finished, one belonging to another player, or simply the far side of the map.
 
 	The rules, in one place so a fourth caller cannot invent a fourth set:
 
 	  1. A COMPLETED run is not somewhere you can go. Re-entering one is the bug that produced
-	     the bossless dungeon and the re-farm; `completed_at` is stamped for exactly this.
+		 the bossless dungeon and the re-farm; `completed_at` is stamped for exactly this.
 	  2. Another player's PERSONAL instance is invisible - listing its rank leaks their run
 	     and its coordinates point at an entrance that is not theirs.
 	  3. Your OWN live run wins outright, whatever the distance: it is the one you are part way
 	     through and the only one holding your progress. (`world_only` suppresses this for
-	     callers that specifically want a world 'D' on the map, like the Cartographer.)
+		 callers that specifically want a world 'D' on the map, like the Cartographer.)
 	  4. Otherwise the NEAREST, because distance is what decides which one you reach.
 
 	Returns "" when there is none."""
@@ -34641,11 +34641,11 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	v0.9.443 (Slice 7): replaced session-binary 'shown once and silent forever'
 	with two layers:
 	  (a) Per-peer cooldown (NPC_GREET_COOLDOWN_MS) suppresses walking on/off
-	      the same tile from re-spamming the greeting.
+		  the same tile from re-spamming the greeting.
 	  (b) Per-account rumor cache (NPC_RUMOR_CACHE_TTL_MS) makes re-visits
-	      after the cooldown — including reconnects on the same account —
-	      show the SAME rumor for 30 minutes. Closes the audit memo's
-	      'revisits get same rumor / matches legacy trading post behavior'
+		  after the cooldown — including reconnects on the same account —
+		  show the SAME rumor for 30 minutes. Closes the audit memo's
+		  'revisits get same rumor / matches legacy trading post behavior'
 		  gap. Different accounts at the same post get independent rumors."""
 	var px = int(post.get("x", 0))
 	var py = int(post.get("y", 0))
