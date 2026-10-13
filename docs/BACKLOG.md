@@ -1223,6 +1223,14 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         (variance), and 61% off when a power in the table is changed. **Not done:** non-damage kinds (guard,
         rage, heal, shield, focus) still show the shared description only; the table duplicates the call-site
         powers (the probe is the guard - fold the call sites onto the table when next in there).
+      - [ ] **[17] NOT STARTED - needs a screenshot, deliberately.** Read the code only: the live battle
+        log (`_battle_log_band`) hovers through `_formula_popup` (z 400, parented to the window root, so
+        above the combat scene's z 100-200 layers); the [L] fight-log window (`fight_log_panel.gd`, z 4000)
+        draws its OWN `LogDetail` box (z 400 inside it = 4400) since 2026-09-18. By the code both are in
+        front, so a guess here would be the third wrong theory. Ask the owner WHICH log (live band / [L]
+        window / death replay) and for a shot, or reproduce via `tools/test_setup/shots.py` with a hover
+        injected; check `_formula_popup` against the death-replay path first (it draws the combat panel's
+        popup while a z 4000 panel is up).
       - [~] **[49] PARTLY - Title help.** Compared every claim in the TITLES & ENDGAME help topic with
         `titles.gd` and the drop roll: levels, locations, item names and the 0.5% / 0.2% rates all MATCH, so
         I could not reproduce "inaccurate" from the data. It did omit how a title is lost (Jarl > Lv 500, High
