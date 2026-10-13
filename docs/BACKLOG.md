@@ -1321,7 +1321,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       special-effect gear vs their text; 14 runes can't be applied; 34 Tome of Gambit card not in
       deck; 51 same companion registrable in several slots].
 7. - [ ] **SMALL FIXES** [(12 DONE 2026-10-13, client: the dungeon Escape button now opens a "Leave the
-      dungeon?" confirmation; probe `escape_button_asks_first.gd`); 22 disabling Help Pop-ups breaks
+      dungeon?" confirmation; probe `escape_button_asks_first.gd`); (22 DONE 2026-10-13, SERVER: `_send_hint` takes a `fallback` and says it as plain guide text when pop-ups are off; the Warden's welcome / walk-to-the-door / weapon lines carry one; probe `warden_speaks_with_popups_off.gd`, source-level only - not played through; the other ~25 teaching hints stay silent when off, by design); 22-was: disabling Help Pop-ups breaks
       the tutorial; 31 Home Stones shouldn't have levels; 6 inventory not refreshing after salvage;
       20 no way to stop watching a player; 13 what does Blacksmith Armor Upgrade do; 45 why several
       summoning/finding scrolls; 26 legendary/artifact drops not announced in victory feed;

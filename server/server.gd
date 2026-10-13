@@ -3542,7 +3542,9 @@ func handle_create_character(peer_id: int, message: Dictionary):
 			# the person, is asking them to search a map they have never read before.
 			+ "[center][img=96x96]%s[/img]
 [color=#9ACD32]Warden Hollis[/color][/center]"
-				% WARDEN_PORTRAIT))
+				% WARDEN_PORTRAIT),
+		"", [], "", "",
+		"Welcome. You are the figure in the middle of the map. Move with the numpad - 8 up, 2 down, 4 left, 6 right (arrow keys work too) - and walk into me. I am a few steps away.")
 
 	# Check if spawning at a Trading Post and trigger the encounter
 	if world_system.is_trading_post_tile(character.x, character.y):
@@ -16122,7 +16124,7 @@ func _send_tutorials_state(peer_id: int) -> void:
 
 
 func _send_hint(peer_id: int, title: String, body: String, opt_out: String = "",
-		highlight: Array = [], ack: String = "", dismiss: String = "") -> bool:
+		highlight: Array = [], ack: String = "", dismiss: String = "", fallback: String = "") -> bool:
 	"""Every teaching pop-up goes through here, so ONE check decides whether they are wanted.
 
 	Before this each hint sent itself, which means turning them off would have meant finding all
@@ -16132,6 +16134,12 @@ func _send_hint(peer_id: int, title: String, body: String, opt_out: String = "",
 		return false
 	var account_id := String(peers[peer_id].get("account_id", ""))
 	if account_id != "" and not persistence.tutorials_enabled(account_id):
+		# Owner sheet 2026-10-13, item 22: with Help Pop-ups off the player "can no longer properly do the
+		# tutorial as they can't see the dialogue from the Warden and don't know what to do". Teaching
+		# panels are optional; the Warden's DIRECTIONS are not. A caller that passes `fallback` has a line
+		# the player cannot do without, so it still arrives - as ordinary text, in his voice.
+		if fallback != "":
+			_guide_say(peer_id, fallback)
 		return false
 	# `highlight` names UI the body TALKS about. The client rings each one once the player
 	# closes the popup. Owner 2026-09-14: *"There is nothing to draw the players attention to
@@ -46162,7 +46170,8 @@ func _escort_ask_to_lead(peer_id: int, character) -> void:
 			+ "and it no longer rises evenly with distance — hover a patch of map to read it before you "
 			+ "walk into it. Inside a post nothing can touch you. Outside one, "
 			+ "[color=#FFAA00]dying is permanent[/color]."),
-		"", [], "escort_ready", "Take me there")
+		"", [], "escort_ready", "Take me there",
+		"The rest of your kit is on the floor of %s%s. I will walk you to the door - stay close, or just move and I will fall in behind. Out there the ground has a level, and dying outside a post is permanent." % [what, (" - " + where + " of here") if where != "" else ""])
 	if not sent:
 		# Tutorials switched off. Waiting for an acknowledgement that can never arrive would
 		# strand them at the post forever, so take the silence as a yes.
@@ -47170,7 +47179,8 @@ func _maybe_warden_next_step(peer_id: int, character) -> void:
 		("\"Good. That's a weapon now, not luggage.\"\n\n"
 			+ "\"Out through the arch I've marked. Kill the first thing that finds us — "
 			+ "I'm coming with you.\""),
-		"", [])
+		"", [], "", "",
+		"Good. That is a weapon now, not luggage. Out through the arch I have marked. Kill the first thing that finds us - I am coming with you.")
 	save_character(peer_id)
 
 
