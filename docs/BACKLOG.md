@@ -1213,6 +1213,22 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      - [x] **[32] + [44] DONE IN CODE 2026-10-13 (client; next client release) - items that said nothing
+        about themselves.** Method: inspect EVERY item type the loot tables can produce (112, read from
+        `drop_tables.gd`'s own constants so a new one is covered automatically). **Seven** had no real
+        description: **Hybrid Catalyst and Ascension Catalyst** ("Unknown effect" - the owner's [32]),
+        **three Bane potions** ("Unknown effect"), the **material pouch** ("Unknown effect"), and **every
+        card tome** (the generic "Tome of knowledge - permanent enhancement" - the owner's [44]). Each now
+        says what it does, read off the code that does it: the catalysts name their fusion and its rules
+        (Hybrid: two DIFFERENT monster types, both rank 5+; Ascension: three of the same type and tier ->
+        one tier higher at rank 1); bane potions read `POTION_EFFECTS` ("+50% damage against Dragon
+        monsters for your next 3 battles"); the pouch says it gives level-matched ore; a card tome says
+        "PERMANENT: -15% Berserk cost. Applies to every copy of that card you own", naming the card as it
+        is called in your hand. **Not reproduced:** "can't inspect" - the pick-an-item route works for a
+        tome; the real defect was the useless text. **A wrong turn, retracted:** I briefly believed card
+        tomes could not be USED at all (a grep for `card_tome` found no consumer); they can - the consumer
+        keys on `card_kind` (`drop_tables.gd` effect + the server's "You study the ..." message). Probe
+        `every_item_says_what_it_does.gd` (all 112 types; goes red if a description is removed).
       - [x] **[3b] DONE IN CODE 2026-10-13 (client; ships in the next client release) - Inspect now lists
         everything the card preview does.** CORRECTION to my earlier note here: the "+2 all ability
         ranks" I thought Inspect dropped was a GM-tool key (`ability_rank_all`) that nothing reads, not a

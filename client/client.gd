@@ -17541,7 +17541,7 @@ func _display_combat_usable_items_page():
 		var level_for_desc: int = int(item.get("tier", 0)) if is_cons else int(item.get("level", 1))
 		if level_for_desc <= 0:
 			level_for_desc = int(item.get("level", 1))
-		var tooltip_desc: String = _get_item_effect_description(item_type_for_desc, level_for_desc, rarity_for_desc)
+		var tooltip_desc: String = _get_item_effect_description(item_type_for_desc, level_for_desc, rarity_for_desc, item)
 		items_payload.append({
 			"name": str(item.get("name", "Unknown")),
 			"color": _get_rarity_color(str(item.get("rarity", "common"))),
@@ -20928,7 +20928,7 @@ func display_shop_item_details(item: Dictionary):
 	if is_consumable_item:
 		# Use item_type field for escape scrolls (type is "consumable" but item_type is "escape_scroll")
 		var effect_item_type = item.get("item_type", item_type) if item_type == "consumable" else item_type
-		var effect_desc = _get_item_effect_description(effect_item_type, item.get("tier", level), rarity)
+		var effect_desc = _get_item_effect_description(effect_item_type, item.get("tier", level), rarity, item)
 		display_game("[color=#E6CC80]Effect:[/color] %s" % effect_desc)
 	else:
 		var stats_shown = _display_computed_item_bonuses(item)
@@ -21050,7 +21050,7 @@ func format_item_tooltip_bbcode(item: Dictionary) -> String:
 			desc = str(item.get("description", ""))
 		if desc == "" and has_method("_get_item_effect_description"):
 			var resolved_type = item.get("item_type", item_type)
-			desc = _get_item_effect_description(resolved_type, level, rarity)
+			desc = _get_item_effect_description(resolved_type, level, rarity, item)
 		if desc != "":
 			lines.append("[color=#E6CC80]%s[/color]" % desc)
 		var qty: int = int(item.get("quantity", 1))
@@ -31604,11 +31604,11 @@ func display_item_details(item: Dictionary, source: String, owner_class: String 
 					display_game("[color=#E6CC80]Effect:[/color] +%d%% damage vs %ss for %d battle%s" % [pct, monster, dur, "s" if dur != 1 else ""])
 				_:
 					var eff_type2 = item.get("item_type", item_type) if item_type == "consumable" else item_type
-					display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(eff_type2, 1, rarity))
+					display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(eff_type2, 1, rarity, item))
 		else:
 			var tier = item.get("tier", 1) if is_consumable else level
 			var eff_type3 = item.get("item_type", item_type) if item_type == "consumable" else item_type
-			display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(eff_type3, tier, rarity))
+			display_game("[color=#E6CC80]Effect:[/color] %s" % _get_item_effect_description(eff_type3, tier, rarity, item))
 		# Show rarity bonuses for consumables (potency, uses)
 		var crb = item.get("rarity_bonuses", {})
 		if not crb.is_empty():
@@ -31794,8 +31794,34 @@ func _combat_item_gain_line(item: Dictionary) -> String:
 		return "+%d %s" % [ramt, String(character_data.get("resource_name", "resource"))] if ramt > 0 else ""
 	return ""
 
-func _get_item_effect_description(item_type: String, level: int, rarity: String) -> String:
-	"""Get a description of what the item does (matches character.gd bonuses)"""
+func _get_item_effect_description(item_type: String, level: int, rarity: String, item: Dictionary = {}) -> String:
+	"""Get a description of what the item does (matches character.gd bonuses).
+
+	`item` is optional: most descriptions depend on the TYPE alone, but a card tome's depends on WHICH card
+	and WHICH bonus it carries, which only the item itself knows."""
+	# ⚑ THE SEVEN ITEMS THAT SAID NOTHING. Owner sheet 2026-10-13, items 32 and 44: *"Hybrid Catalyst item
+	# gives unknown effect"* and *"Can't inspect some items like Tome of Fortify: +1 round"*. Found by
+	# inspecting every one of the 112 item types in the loot tables: seven had no real description - both
+	# catalysts and the three Bane potions read "Unknown effect", the material pouch likewise, and every
+	# card tome read the generic "Tome of knowledge". Each now says what it does, read off the code that
+	# does it. tools/probe/every_item_says_what_it_does.gd walks all 112 and fails on the next one.
+	if item_type == "card_tome" and not item.is_empty():
+		var _cg = preload("res://shared/card_gear.gd")
+		var _card := String(item.get("card", ""))
+		return "PERMANENT: %s. Applies to every copy of that card you own." % _cg.describe(
+			_card, String(item.get("card_kind", "")), float(item.get("card_value", 0)), _ability_display_name(_card))
+	if item_type == "hybrid_catalyst":
+		return "Spent by Hybrid Fusion at the Companion Stable: fuse two companions of DIFFERENT monster types (both rank 5 or higher) into one new companion."
+	if item_type == "ascension_catalyst":
+		return "Spent by Tier Ascension at the Companion Stable: fuse three companions of the same monster type and tier into one of that type a tier higher, at rank 1."
+	if item_type == "essence_pouch":
+		return "Open it for crafting ore matched to the pouch's level - a few pieces, more and better the higher it is."
+	if item_type.begins_with("potion_") and item_type.ends_with("_bane"):
+		var _be: Dictionary = preload("res://shared/drop_tables.gd").POTION_EFFECTS.get(item_type, {})
+		if not _be.is_empty():
+			var _b := int(_be.get("battles", 1))
+			return "+%d%% damage against %s monsters for your next %d battle%s." % [
+				int(_be.get("damage_bonus", 0)), String(_be.get("monster_bane", "monster")).capitalize(), _b, "" if _b == 1 else "s"]
 	var rarity_mult = _get_rarity_multiplier_for_status(rarity)
 	var base_bonus = int(level * rarity_mult)
 
