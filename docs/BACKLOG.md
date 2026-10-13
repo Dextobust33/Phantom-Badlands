@@ -1362,6 +1362,41 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       touch anything before the chain. It is a count of deaths, not a rate: the population denominator
       (encounters per class) is not in this output, so "Tricksters die most" may partly be "most people
       play Tricksters" - count BOTH sides before acting (memory `feedback_count_both_sides_of_the_ratio`).
+      ▶ **REFERENCE PLAYER vs LIVE DEATHS, RUN 2026-10-13 (step 3).** Sample: the 60 deaths since the
+      2026-09-05 cutoff at L1-24 (the dying population, which the 2026-09-18 fit also used), compared with
+      `make_char(level, "average", class, race)` for the SAME (level, class, race) of each death, 6 draws each.
+      Pulled read-only over SSH; the characters dir was deleted again after use.
+
+      | band | n | live maxHP (+-sem) | sim maxHP | live item lvl / sim | live slots / sim | verdict |
+      |---|---|---|---|---|---|---|
+      | L1-2 | 20 | 110 (+-6) | **140** | 1.2 / 1.0 | 5.0 / 4.5 | **sim 27% TOO TANKY (~5 sem)** |
+      | L3-5 | 18 | 157 (+-15) | 147 | 2.1 / 1.3 | 6.1 / 4.4 | agrees |
+      | L6-9 | 5 | 286 (+-78) | 190 | 4.9 / 3.3 | 7.0 / 5.7 | sim low, n too small to say |
+      | L10-24 | 17 | 482 (+-55) | **255** | 15.0 / 7.1 | 6.5 / 6.2 | **sim ~half the live HP (~4 sem), gear 2x** |
+
+      * **L1-2 cause, measured:** base stats are IDENTICAL (CON 10.1 vs 10.2, STR 10.1 vs 10.1, ...), so
+        it is the GEAR. Live L1-2 kits carry `hp_bonus` **7.7** per kit (n=20); the sim's kit carries
+        **24.6** (`gear_model_matches_live`). The 2026-09-18 fit used a live mean of 22.6 from a different
+        population; for the deaths at L1-2 specifically the sim kit is ~3x richer in HP affixes. Live gear
+        there is 93% common at item level 1.2 and mostly carries stat affixes (wis/wits/str bonus), not HP.
+      * **So the sim's L1-2 player is stronger than the real one, monsters are sized against it, and the
+        real L1-2 player faces monsters tuned for someone ~27% tougher.** That fits the death data (68% of
+        deaths at L1-9, most at L1-2, 32 of 49 at parity). It is the first quantitative reason to believe
+        the early curve is too hard for the player who actually exists, rather than just a count.
+      * **L10-24 is the opposite direction:** live dying characters carry item level ~15 (sim ~7), more
+        uncommon/rare gear, and 480 HP vs 255. They found better gear than the drop model gives an
+        "average" player (dungeon floors, chests, minigame loot - the sim models drops only). This band has
+        n=17 and is DEAD characters only, so it is biased toward people who pushed on; do not fit to it
+        blindly.
+      * **NOT ACTED ON, by the owner's own batching rule.** Both findings change the reference player, which
+        invalidates the curve and means the whole chain (speciescal -> refcal -> rolecal) must be re-run
+        once afterwards. Proposed for the BALANCE BATCH, in order: (1) make the L1-2 kit's HP affixes match
+        live (`LOW_LEVEL_WEAR` already converts rarity; it does not shrink affix VALUES); (2) decide whether
+        the L10+ reference player should carry dungeon-found gear, using the living L50+ characters (L57, L91)
+        as the unbiased check; (3) then `preflight`, then the chain ONCE. Caveats: deaths-only sample;
+        L6-9 n=5; I did not re-derive the 22.6 figure, so (1) might be partly my sample choice - re-measure
+        on the same population the fit used before editing.
+
 
       ⚑ **THE DATA IT WAS WAITING ON IS NOW DUE (owner, 2026-10-13: "it's been a few weeks, we
       should have better data").** The 2026-09-19 handoff said re-run `tools/death_log_audit.py`
