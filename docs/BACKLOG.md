@@ -1486,8 +1486,14 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         probe that calls `randi()`/`randf()`/`generate_monster` is weak evidence.
       - The sweep also REWRITES a tracked file (`docs/design/companion_variants_review.md`, a probe
         regenerates it); I revert it by hand each time. A probe should not write into tracked docs.
-      - **Still unclassified: the 74 "no verdict" probes** - being characterised (silent vs prints
-        something in another format) at the time of writing; result goes here when known.
+      - **The 74 "no verdict" probes, CHARACTERISED (all 74 re-run): none is silent, and most are not
+        tests at all.** They print tables, "X initialized" lines, "measurement only - the shape is the
+        finding" notes or a diagnostic number (e.g. `card_bonus_fit`, `dungeon_spread`, `kill_investment`,
+        `comp_hp_probe`, `divine_check`, `companion_variety`, `consumable_clarity`) - MEASUREMENT TOOLS that
+        happen to live in `tools/probe/`, with no pass/fail to find. Two print `RESULT: PASS (N failing)`,
+        a format the runner did not know - now recognised. **Decision to make:** move the measurement-only
+        scripts to `tools/measure/` (so `--all` means "the tests") or give each a real verdict; do not make
+        the runner pass them. `ui_scale_1080p` exits non-zero with no FAIL text and needs a read of its own.
       **Consequence:** `probe_run.py --all` is NOT a usable gate yet; only `--smoke` is. Triage order
       that costs least: (1) the 74 verdict formats (mechanical), (2) the 9 script-error probes
       (probe rot), (3) the 29 FAILs one by one, deciding stale-vs-regression for each. Report:

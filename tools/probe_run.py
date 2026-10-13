@@ -64,8 +64,8 @@ SMOKE = [
 
 ERROR_RE = re.compile(r"(SCRIPT ERROR|Parse Error|Invalid call\.|Invalid access to property|Invalid get index|Invalid set index)")
 # A verdict is the probe's own PASS line. FAIL anywhere on a verdict-looking line overrides it.
-PASS_RE = re.compile(r"(\]\s*PASS\b|^PASS\b|ALL PASS|all checks PASS|VERDICT)", re.M)
-FAIL_RE = re.compile(r"(\]\s*FAIL\b|^FAIL\b|FAILURES|SOME FAIL)", re.M)
+PASS_RE = re.compile(r"(\]\s*PASS\b|^PASS\b|ALL PASS|all checks PASS|VERDICT|RESULT:\s*PASS)", re.M)
+FAIL_RE = re.compile(r"(\]\s*FAIL\b|^FAIL\b|FAILURES|SOME FAIL|RESULT:\s*FAIL)", re.M)
 
 
 def load_allowlist():
