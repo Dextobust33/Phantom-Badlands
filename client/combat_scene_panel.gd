@@ -8986,6 +8986,14 @@ func show_victory_card(rewards: Dictionary) -> void:
 		header_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var noun = "ITEM" if gear_drops.size() == 1 else "ITEMS"
 		header_label.text = "[center][b][color=#FFD700]★ %d NEW %s ACQUIRED ★[/color][/b][/center]" % [gear_drops.size(), noun]
+		# Owner sheet 2026-10-13, item 26: *"legendaries or artifacts just show up in your inventory."*
+		# A top-rarity find gets its own line above the count, in its own colour, so it cannot be
+		# read as just another row.
+		for _gd in gear_drops:
+			if _gd is Dictionary and String(_gd.get("rarity", "")) in ["legendary", "artifact"]:
+				header_label.text = "[center][b][color=%s]★★ %s FOUND: %s ★★[/color][/b][/center]\n" % [
+					String(_gd.get("color", "#FF8000")), String(_gd.get("rarity", "")).to_upper(), String(_gd.get("name", "an item"))] + header_label.text
+				break
 		_victory_card_gear_vbox.add_child(header_label)
 		# One row per gear drop — large, rarity-colored, with level tag
 		for entry in gear_drops:

@@ -692,6 +692,7 @@ func _best_preview_prize() -> Dictionary:
 			continue
 		var score: int = 0
 		match String(slot.get("rarity", "")):
+			"artifact": score = 120
 			"legendary": score = 100
 			"epic": score = 80
 			"rare": score = 60
@@ -710,7 +711,7 @@ func _best_preview_prize() -> Dictionary:
 func _is_notable(slot: Dictionary) -> bool:
 	"""Prizes worth chasing — draws the eye during preview."""
 	var r: String = String(slot.get("rarity", ""))
-	if r in ["rare", "epic", "legendary"]:
+	if r in ["rare", "epic", "legendary", "artifact"]:
 		return true
 	var k: String = String(slot.get("kind", ""))
 	return k in ["filler_plus_two", "filler_mystery", "filler_chain", "egg", "egg_full"]
@@ -822,7 +823,7 @@ func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, re
 	# v0.9.703 juice — a real rare/epic/legendary or egg reveal is a "you got it!"
 	# moment: gold burst + rare-drop sound + a bigger pop on top of the base flip.
 	var rar: String = String(reveal_data.get("rarity", ""))
-	if rar in ["rare", "epic", "legendary"] or kind in ["egg", "egg_full"]:
+	if rar in ["rare", "epic", "legendary", "artifact"] or kind in ["egg", "egg_full"]:
 		emit_signal("play_sfx", "reveal_big")
 		_play_mystery_shimmer(slot_index)
 		_play_big_celebration(slot_index)
