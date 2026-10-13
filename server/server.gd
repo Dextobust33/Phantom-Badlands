@@ -34043,9 +34043,53 @@ func _roll_location_in_world() -> Vector2i:
 	Sampled in the square directly. That is what rejecting the out-of-bounds disc points would have
 	produced, without throwing a third of the rolls away - and it keeps the property the previous
 	comment was written to protect: no bias toward the centre."""
+	# ⚑ A SHARE OF DUNGEONS APPEAR WHERE PLAYERS ARE (owner 2026-10-13: "weight spawns toward where
+	# players are"). A uniform world is ~1 dungeon per 5,300 tiles, so most of the map is empty of
+	# them and a player walking the starting country rarely sees one. This puts PLAYER_SPAWN_SHARE of
+	# rolls within PLAYER_SPAWN_RADIUS of a random online player; the rest stay uniform, so the far
+	# country is still stocked and nothing is guaranteed to anyone.
+	#
+	# Why this is safe to leave running: dungeons live <=24 h, so there is no permanent clustering to
+	# unwind; the per-post cap (`MAX_DUNGEONS_NEAR_POST`) and the threat gates still apply to every
+	# candidate, so a post cannot be buried; the GRADE is still read off the land, so an easy
+	# dungeon does not appear in hard country or the reverse; and it falls back to uniform whenever
+	# nobody is online. The one thing it does NOT do is hold the world's grade mix constant - near-
+	# player rolls follow where players stand - which is the point, and is recorded in the backlog.
+	var near: Vector2i = _roll_location_near_a_player()
+	if near.x != NO_PLAYER_LOCATION and randf() < PLAYER_SPAWN_SHARE:
+		return near
 	return Vector2i(
 		randi_range(world_system.WORLD_MIN_X, world_system.WORLD_MAX_X),
 		randi_range(world_system.WORLD_MIN_Y, world_system.WORLD_MAX_Y))
+
+
+## Share of world-dungeon rolls placed near an online player, and how near. Outside the 20-tile
+## inner margin so a dungeon is not dropped on someone's feet; far enough that one standing player
+## cannot stack the cap of a single post.
+const PLAYER_SPAWN_SHARE: float = 0.4
+const PLAYER_SPAWN_RADIUS: int = 140
+const PLAYER_SPAWN_MIN_DIST: int = 20
+const NO_PLAYER_LOCATION: int = -2147483648
+
+
+func _roll_location_near_a_player() -> Vector2i:
+	"""A point 20-140 tiles from a random online player who is on the overworld, or a sentinel
+	(`NO_PLAYER_LOCATION`) when nobody qualifies. Players underground or in a fight are skipped:
+	their coordinates are dungeon coordinates, not places on the map."""
+	var anchors: Array = []
+	for pid in characters.keys():
+		var c = characters[pid]
+		if c.in_dungeon:
+			continue
+		anchors.append(Vector2i(int(c.x), int(c.y)))
+	if anchors.is_empty():
+		return Vector2i(NO_PLAYER_LOCATION, 0)
+	var a: Vector2i = anchors[randi() % anchors.size()]
+	var r: float = float(PLAYER_SPAWN_MIN_DIST) + sqrt(randf()) * float(PLAYER_SPAWN_RADIUS - PLAYER_SPAWN_MIN_DIST)
+	var ang: float = randf() * TAU
+	return Vector2i(
+		clampi(a.x + int(round(cos(ang) * r)), world_system.WORLD_MIN_X, world_system.WORLD_MAX_X),
+		clampi(a.y + int(round(sin(ang) * r)), world_system.WORLD_MIN_Y, world_system.WORLD_MAX_Y))
 
 
 func _roll_location_in_ring(d0: float, d1: float) -> Vector2i:
@@ -38974,7 +39018,12 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		# Deeper floors pay more, by the same ramp as everything else on the floor. The BASE amount
 		# (2-6 x tier) is untouched on purpose: valor magnitudes are the realm-wide economy pass's
 		# call (quest_database.gd marks its own anchor PROVISIONAL), not something to retune here.
-		var v := int(randi_range(tier * 2, tier * 6) * _dungeon_floor_mult(floor_num))
+		# ⚑ FLOOR COINS TRACK LEVEL (owner 2026-10-13: floor coins should go up sooner): each pickup
+		# pays 0.5-1.5 x the floor's level, never less than the old 2-6 x tier. That is the quest
+		# model's own slope (`QUEST_VALOR_PER_LEVEL` 3.5/level per task) - a run's ~4 coin pickups
+		# land near one quest task - so a deep dungeon no longer pays pocket change. Interim: the
+		# realm-wide valor economy pass still owns the real magnitudes.
+		var v := randi_range(maxi(tier * 2, lvl / 2), maxi(tier * 6, lvl * 3 / 2))
 		return {"kind": "valor", "char": "¢", "color": "#FFD700", "item_data": {"valor": v}}
 	elif roll < 82:  # equipment
 		var eq = _dungeon_equipment_for(instance_id, tier, lvl, _dungeon_loot_rarity_upgrade(sub_tier, float(_dungeon_mods(instance_id).get("loot_bonus", 0.0))))

@@ -1136,7 +1136,19 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         **It was the same for ALL the NPC rescue quests** (merchant/healer/blacksmith/scholar/
         breeder share this one spawner), as the owner suspected. (The cyan R was also drawing as a
         PURPLE letter - the nearest baked glyph colour - moot now.)
-      - [~] **[10] PART-FIXED 2026-10-13 (server; needs deploy) - random dungeons not on the map.**
+      - [x] **[10] DONE 2026-10-13, shipping in v0.9.834 - random dungeons not on the map. OWNER
+        DECIDED: weight spawns toward players.** Implemented (below) as `PLAYER_SPAWN_SHARE = 0.4`
+        of world-dungeon rolls placed 20-140 tiles from a random ONLINE overworld player (uniform
+        otherwise and whenever nobody is online; players underground are skipped - their
+        coordinates are dungeon coordinates). Checked for the "future issues" the owner asked about:
+        dungeons live <=24h so nothing clusters permanently; `MAX_DUNGEONS_NEAR_POST` and the threat
+        gates still apply to every candidate so a post cannot be buried; the GRADE is still read off
+        the land (an easy dungeon cannot appear in hard country). **Known consequence, accepted:**
+        the world's grade MIX now follows where players stand rather than staying fixed - which is
+        the point, but it means dungeon-grade statistics from live data after this date are not
+        comparable with before. Probe: `world_dungeon_roll_is_uniform.gd` (40.0% near players,
+        none closer than 20 tiles, underground ignored). The two knobs are the constants beside
+        `_roll_location_near_a_player`. **History of the item:**
         The renderer is fine (the capture harness shows entrances; `get_visible_dungeons` sends
         everything inside the minimap's reach). It is SCARCITY, in two parts. (a) **A real defect,
         fixed:** `_roll_location_in_world` sampled a disc of radius 2828 and CLAMPED it into the
@@ -1163,8 +1175,14 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         (`tools/probe/erasing_a_dungeon_never_strands_its_occupants.gd`, failed 3 checks before).
         **Not verified:** whether `player_dungeon_instances` can hold entries for a quest the log
         no longer has (e.g. a daily that rolled over) - the 24 h sweeper bounds the cost either way.
-      - [~] **[37 + 42] LEVEL DONE IN CODE 2026-10-13 (server; needs deploy); VALOR MAGNITUDE
-        DELIBERATELY NOT TOUCHED.** The owner's numbers fall out of the code exactly: floor loot was
+      - [x] **[37 + 42] DONE 2026-10-13, shipping in v0.9.834. OWNER DECIDED: floor coins go up
+        now.** Coins now pay `0.5-1.5 x the floor's level` per pickup (never below the old
+        `2-6 x tier`): measured on 24 real deep dungeons the average coin went from ~16-22 to
+        ~42-61, about 1.0x the monster level on that floor; anchored to the quest model's own slope
+        (3.5 valor per level per task) so a run's ~4 coin pickups land near one quest task. Still
+        interim - the realm-wide valor economy pass owns the real magnitudes. The rest of this entry
+        is the original analysis; ITS "NOT touched" valor note is superseded by this paragraph.
+        **(original) LEVEL DONE IN CODE; VALOR MAGNITUDE was deliberately not touched:** The owner's numbers fall out of the code exactly: floor loot was
         rolled at the dungeon's flat base level, monsters at `base x (1 + floor x 0.07)` - and
         56 x (1 + 7 x 0.07) = 83. Measured on 24 real deep instances
         (`tools/probe/floor_loot_matches_the_floor.gd`): equipment a flat **L43 on every floor while
@@ -1302,6 +1320,32 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       could ship alone on a daily/weekly cadence as a first slice, and a restart cadence is already
       supported by the warned-shutdown machinery. Overlaps 11(a) (reasons to visit boards) and
       11(b) (variants/rolled monsters could be an event's "variants").
+
+13. - [x] **DONE 2026-10-13 (tooling; shipping with v0.9.834) — THE SILENT-SCRIPT-ERROR CLASS.**
+      Three live bugs in one day (threat-quest entry, rescue NPC placement, a player stranded in an
+      erased dungeon) had one cause the owner asked me to retire: **the exported server is built
+      without GDScript's debug checks, so a script error does not stop anything and prints
+      nothing** - `Invalid access to property or key` just yields null and the code carries on into
+      a corrupt state. The live journal held no trace of any of them. Only a DEBUG run prints the
+      error, and nothing read it: probes could print `SCRIPT ERROR` and still say PASS with exit 0,
+      and `tools/test_setup/shots.py` sent the SERVER's output to DEVNULL. Fixed at both layers:
+      (1) **`tools/probe_run.py`** judges a probe on four things - exit status/timeout, its own PASS
+      verdict, NO `SCRIPT ERROR`/`Parse Error`/`Invalid call` lines, and an allowlist that REQUIRES a
+      written reason (`tools/probe/script_error_allowlist.txt`). A probe that prints an error aborts
+      before its `quit()` and hangs; the runner kills it 12 s after the error instead of waiting out
+      the timeout. Self-tested with a probe that prints PASS and exits 0 over a script error (fails)
+      and one with no verdict (fails). (2) **`shots.py` now keeps the server log and exits 3 on any
+      script error in either log**, whatever the screenshots look like. (3) **`release.sh` runs
+      `probe_run.py --smoke` (12 probes) before building anything**; a failure stops the release.
+      **Not retired, and cannot be from here:** a script error in a code path NO probe or capture
+      exercises. The live server still cannot self-report. Coverage is the remaining lever - see the
+      sweep result below.
+      **SWEEP OF ALL 340 PROBES (run once, 2026-10-13):** result recorded here when it finishes - how
+      many already print script errors while passing, and how many genuinely fail. A first pass of
+      the interim output shows real pre-existing FAILs nobody was running (e.g.
+      `card_instances`, `companion_lines_are_marked`, `companion_trail`,
+      `a_phantom_level_is_not_an_overworld_level`) and many probes whose verdict line the runner
+      does not recognise yet - to be sorted before `--all` becomes a gate.
 
 ### ⚑ PICK UP HERE — written 2026-09-19 for a gap of unknown length
 

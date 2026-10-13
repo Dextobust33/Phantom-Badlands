@@ -1,0 +1,4 @@
+# Known-noise script errors that a probe prints and the probe is still right to PASS.
+# FORMAT: <regex><TAB><reason>. A line with no reason is rejected: the reason is the record.
+# Do NOT add a line to make a failing run green - fix the error. This exists so a harness gap
+# (a bare server with no database) is written down instead of silently tolerated.

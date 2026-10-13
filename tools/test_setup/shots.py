@@ -31,6 +31,13 @@ DEFAULT_SCENES = ["world", "companions", "dungeon", "combat"]
 # printed was thrown away and a failed capture looked like "0 screenshots" with no reason.
 # Three separate failures in a row were debugged blind because of this one line.
 CLIENT_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "shots_client.log")
+# 2026-10-13 - THE SERVER'S OUTPUT WAS THROWN AWAY TOO. The client log was fixed on 2026-09-08 for
+# exactly this reason, and the server beside it kept going to DEVNULL - so every server-side script
+# error in every capture run was invisible. The exported server never prints them (it is built
+# without GDScript's debug checks and carries on with null), so a DEBUG run like this one is the
+# only place they can be seen at all. Three live bugs in one day were that shape.
+SERVER_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "shots_server.log")
+SCRIPT_ERROR_MARKERS = ("SCRIPT ERROR", "Parse Error", "Invalid call.", "Invalid access to property")
 SHOT_RES = "1920x1080"   # the layout is designed for 1080p; wider just spreads it thin
 # ...unless --res= says otherwise. The whole v0.9.795 dungeon arc was measured at ONE canvas
 # size, and the dungeon tile fit DEGRADES to 32px when 64 will not fit - so a window the owner
@@ -80,6 +87,24 @@ def seed_sanctuary_companions(account_id):
     with open(houses_path, "w", encoding="utf-8") as f:
         json.dump(db, f, indent="	")
     print("  sanctuary companions seeded (2 home, 1 checked out)")
+
+
+def scan_script_errors():
+    """Distinct script-error lines from the server and client logs of the run that just ended."""
+    seen = set()
+    out = []
+    for who, path in (("server", SERVER_LOG), ("client", CLIENT_LOG)):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if any(m in line for m in SCRIPT_ERROR_MARKERS):
+                        key = (who, line.strip())
+                        if key not in seen:
+                            seen.add(key)
+                            out.append(key)
+        except OSError:
+            pass
+    return out
 
 
 def main():
@@ -139,7 +164,7 @@ def main():
     # `run.py` still opens a VISIBLE server on purpose: that harness exists so the owner can
     # drive the game by hand and may want the log. This one is unattended by definition.
     subprocess.Popen([scen.GODOT, "--headless", "--path", scen.PROJECT, "server/server.tscn"],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+                     stdout=open(SERVER_LOG, "w", encoding="utf-8"), stderr=subprocess.STDOUT)
     if not runner.wait_for_server():
         print("  server never started listening")
         return 1
@@ -187,6 +212,19 @@ def main():
     print("\ncaptured %d new screenshot(s):" % len(new))
     for f in new:
         print("  claude_screenshots/%s" % f)
+
+    # A CAPTURE THAT SUCCEEDED WHILE THE GAME THREW SCRIPT ERRORS HAS NOT SUCCEEDED. Both logs are
+    # scanned and the run fails (exit 3) on any, whatever the pictures look like: a picture taken
+    # after a swallowed error shows the lenient aftermath and proves nothing about the cause.
+    found = scan_script_errors()
+    if found:
+        print("\nSCRIPT ERRORS during this run (%d distinct) - this run FAILS:" % len(found))
+        for who, line in found[:15]:
+            try:
+                print("  [%s] %s" % (who, line))
+            except UnicodeEncodeError:
+                print("  [%s] %s" % (who, line.encode("ascii", "replace").decode("ascii")))
+        return 3
     return 0 if new else 1
 
 

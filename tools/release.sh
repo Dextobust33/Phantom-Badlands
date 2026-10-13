@@ -62,6 +62,17 @@ step "Recompiling scripts (client + launcher projects)"
 "$GODOT" --headless --editor --quit --path "$PROJECT/launcher" 2>&1 | grep -i "SCRIPT ERROR" && exit 1 || true
 echo "  ok"
 
+step "Script-error gate (the exported server cannot report these itself)"
+# ⚑ THE EXPORTED SERVER IS BUILT WITHOUT GDSCRIPT'S DEBUG CHECKS. A script error there does not
+# stop anything and prints nothing: `Invalid access to property or key` just yields null and the code
+# carries on into a corrupt state. 2026-10-13: three bugs shipped that way (a threat-quest dungeon
+# entry that stranded players, rescue NPCs placed in a map corner, a player left "inside" an erased
+# dungeon) and the live journal held no trace of any of them. A DEBUG run prints the error, so this
+# runs the smoke probes in one, and `tools/probe_run.py` fails a probe that printed a script error
+# or no PASS verdict even when its exit status was 0. `set -e` stops the release here.
+python tools/probe_run.py --smoke
+echo "  ok"
+
 step "Exporting Windows client + launcher"
 "$GODOT" --headless --path "$PROJECT" --export-release "Phantom-Badlands" "builds/windows/PhantomBadlandsClient.exe" >/dev/null 2>&1
 "$GODOT" --headless --path "$PROJECT/launcher" --export-release "Windows Desktop" "../builds/windows/PhantomBadlandsLauncher.exe" >/dev/null 2>&1

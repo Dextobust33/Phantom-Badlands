@@ -50,6 +50,7 @@ func _init() -> void:
 						by_floor_mon[f].append(int(m.get("level", 0)))
 	print("  built %d deep instances" % made)
 	var worst := 9.9
+	var worst_coin := 9.9
 	var floors := by_floor_items.keys()
 	floors.sort()
 	for f in floors:
@@ -71,7 +72,12 @@ func _init() -> void:
 		print("    floor %d: monsters avg L%.0f, equipment avg L%.0f (%.0f%%), avg coin %.1f  [n=%d items]" % [f + 1, mm, mi, ratio * 100.0, coin, by_floor_items[f].size()])
 		if f >= 2:
 			worst = minf(worst, ratio)
+			if by_floor_valor.get(f, []).size() >= 3:
+				worst_coin = minf(worst_coin, coin / maxf(1.0, mm))
 	ck(worst >= 0.9, "from floor 3 down, equipment is within 10%% of the monsters it sits beside (worst %.0f%%)" % (worst * 100.0))
+	# Owner 2026-10-13: floor coins should go up. Each pickup pays 0.5-1.5 x the floor's level (mean
+	# ~1.0x), so the average coin should sit near the monster level on its floor, not at tier x 4.
+	ck(worst_coin >= 0.6, "from floor 3 down, the average coin is at least 60%% of the floor's monster level (worst %.0f%%)" % (worst_coin * 100.0))
 	s.free()
 	print("\n[FLOORLOOT] %s" % ("PASS" if fails == 0 else "FAIL - %d check(s)" % fails))
 	quit(0 if fails == 0 else 1)
