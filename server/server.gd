@@ -34016,16 +34016,22 @@ func _pick_dungeon_grade() -> Dictionary:
 
 
 func _roll_location_in_world() -> Vector2i:
-	"""A uniform point in the world disc.
+	"""A uniform point in the world SQUARE.
 
-	`sqrt(randf())` on the radius, not `randf()`: a uniform radius would pile points at the
-	centre, because a ring's area grows with its radius. That bias is exactly the one that made
-	the old distribution hard to reason about, so it is not worth reintroducing here."""
-	var r: float = sqrt(randf()) * 2828.0
-	var a: float = randf() * TAU
+	⚑ THIS SAMPLED A DISC AND CLAMPED IT. The old body drew a point in a disc of radius 2828 - the
+	circle AROUND the +/-2000 world square - and clamped each coordinate into the square. A third of
+	the disc lies outside the square, so 36.2% of every dungeon ever rolled was dragged onto the
+	world's EDGE (measured by tools/probe/world_dungeon_roll_is_uniform.gd), the centre got 0.65x
+	the density a uniform spread gives it, and the caller's "reject if out of bounds" check could
+	never fire because the clamp had already made every point legal. Owner sheet 2026-10-13, item
+	10: *"I'm not seeing any random dungeons on the map."*
+
+	Sampled in the square directly. That is what rejecting the out-of-bounds disc points would have
+	produced, without throwing a third of the rolls away - and it keeps the property the previous
+	comment was written to protect: no bias toward the centre."""
 	return Vector2i(
-		clampi(int(round(cos(a) * r)), world_system.WORLD_MIN_X, world_system.WORLD_MAX_X),
-		clampi(int(round(sin(a) * r)), world_system.WORLD_MIN_Y, world_system.WORLD_MAX_Y))
+		randi_range(world_system.WORLD_MIN_X, world_system.WORLD_MAX_X),
+		randi_range(world_system.WORLD_MIN_Y, world_system.WORLD_MAX_Y))
 
 
 func _roll_location_in_ring(d0: float, d1: float) -> Vector2i:

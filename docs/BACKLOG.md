@@ -1136,7 +1136,22 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         **It was the same for ALL the NPC rescue quests** (merchant/healer/blacksmith/scholar/
         breeder share this one spawner), as the owner suspected. (The cyan R was also drawing as a
         PURPLE letter - the nearest baked glyph colour - moot now.)
-      - [ ] [10] random dungeons not on the map
+      - [~] **[10] PART-FIXED 2026-10-13 (server; needs deploy) - random dungeons not on the map.**
+        The renderer is fine (the capture harness shows entrances; `get_visible_dungeons` sends
+        everything inside the minimap's reach). It is SCARCITY, in two parts. (a) **A real defect,
+        fixed:** `_roll_location_in_world` sampled a disc of radius 2828 and CLAMPED it into the
+        +/-2000 square, so **36.2% of every world dungeon was dragged onto the world's edge** and the
+        centre got 0.65x a uniform spread (the caller's "reject out of bounds" check could never fire).
+        Now sampled in the square: 0.1% on the edge, centre 1.02x uniform
+        (`tools/probe/world_dungeon_roll_is_uniform.gd`). Live dungeons live <=24h, so the world
+        re-mixes itself within a day of the deploy. (b) **The design density, NOT changed:**
+        `MIN_WORLD_DUNGEONS = 3000` over a 16M-tile world is one per ~5,300 tiles - about 10% of
+        squares have one inside the main map's 23x23 view and ~70% inside the minimap's reach - and
+        low-grade dungeons can only exist near posts (capped at `MAX_DUNGEONS_NEAR_POST = 6` within
+        40 tiles). Those figures are ARITHMETIC FROM THE CONSTANTS, not measured in a live world.
+        **OWNER DECISION:** raise the count, or weight spawns toward where players are (the low-level
+        country around posts), or add a "dungeon sense" (Atlas/compass already exist). Overlaps the
+        Dungeon Atlas work and sheet item 11(a) (what boards offer).
       - [ ] [36] abandoned-quest dungeon cleanup
       - [ ] [37 + 42] floor loot level/valor vs the dungeon
       - [ ] [35] do dungeons ever give a card
