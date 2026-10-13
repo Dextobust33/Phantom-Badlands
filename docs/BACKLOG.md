@@ -1213,6 +1213,12 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
       32 Hybrid Catalyst "unknown effect"; 43 crafting XP shown vs granted].
+      - [~] **[49] PARTLY - Title help.** Compared every claim in the TITLES & ENDGAME help topic with
+        `titles.gd` and the drop roll: levels, locations, item names and the 0.5% / 0.2% rates all MATCH, so
+        I could not reproduce "inaccurate" from the data. It did omit how a title is lost (Jarl > Lv 500, High
+        King > Lv 1000, abuse-point thresholds 8 / 15, High King replaces Jarl, tax immunity); a KEEPING IT
+        paragraph now says so (client). **Still needs the owner's example of the line that looked wrong.**
+        Note: the `roll_title_item_drop` docstring says Jarl's Ring from Lv100+, the code and help say Lv50+.
       - [x] **[43] DONE IN CODE 2026-10-13 (SERVER; needs a deploy) - crafting XP shown vs granted.**
         Cause: the craft result reported the amount OFFERED; `add_experience` then multiplies (race x
         Sanctuary x Mentee) and `add_job_xp` adds the committed-job +50%, so a committed crafter saw 20 and got
