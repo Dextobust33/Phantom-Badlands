@@ -1236,12 +1236,17 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         Seeded, bound moved to 0.85x (~4 sd). The v0.9.837 release gate passed regardless. A flaky smoke probe
         either blocks a good release or trains people to rerun until green; the same check applies to any other
         sampled probe in `--smoke` (not audited).
-      - [~] **[49] PARTLY - Title help.** Compared every claim in the TITLES & ENDGAME help topic with
-        `titles.gd` and the drop roll: levels, locations, item names and the 0.5% / 0.2% rates all MATCH, so
-        I could not reproduce "inaccurate" from the data. It did omit how a title is lost (Jarl > Lv 500, High
-        King > Lv 1000, abuse-point thresholds 8 / 15, High King replaces Jarl, tax immunity); a KEEPING IT
-        paragraph now says so (client). **Still needs the owner's example of the line that looked wrong.**
-        Note: the `roll_title_item_drop` docstring says Jarl's Ring from Lv100+, the code and help say Lv50+.
+      - [x] **[49] DONE IN CODE 2026-10-13 (client + server; needs a release) - Title menu / help audited claim by
+        claim against `titles.gd` and the claim/forge handlers.** Found and fixed: (1) **the Title menu never
+        showed a Valor cost** - it read `gold_cost` keys that the tables dropped when title abilities moved to
+        valor (the help page had been fixed for the same drift on 2026-09-11, this menu was missed), so players
+        learned prices by being refused; (2) the menu offered a claim **within one tile** of the seat while the
+        claim requires exactly (0,0); (3) the help did not say a High King **usurps** the sitting one, that a
+        Jarl needs no High King on the throne, or that the forge is `Fire Mt` THEN `Forge`. One helper,
+        `_title_ability_cost_parts`, now feeds both the menu and the help line. Probe
+        `title_menu_tells_the_truth.gd` (15 abilities audited). Verified correct and left alone: levels 50-500 /
+        200-1000, ring 0.5% from Lv50+, crown 0.2% from Lv200+, abuse thresholds 8 / 15, Elder auto-grant at 1000.
+        Still unverified by the owner: whether this was the line they meant.
       - [x] **[43] DONE IN CODE 2026-10-13 (SERVER; needs a deploy) - crafting XP shown vs granted.**
         Cause: the craft result reported the amount OFFERED; `add_experience` then multiplies (race x
         Sanctuary x Mentee) and `add_job_xp` adds the committed-job +50%, so a committed crafter saw 20 and got
@@ -1347,6 +1352,9 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       **Dead data left in place:** `rotation_order` / `rotation_idx` / `control_mode` keys on the party
       dict and `handle_party_set_control_mode`, kept so an old client's toggle does not error.
 9. - [ ] **BALANCE BATCH — wait for the chain, do not fix one by one.**
+      ▶ **OWNER DIRECTION 2026-10-13: empowered-monster difficulty "may need reduced slightly"** - goes in this BALANCE BATCH
+      (the sim agrees empowered is the main source of non-wins: ~66-69% win at L1-10 vs a 55% target), to be set when the
+      batch runs; wait for the [ENCOUNTER] data first so the size of the change is measured, not guessed.
       ▶ **EARLY-DEATH INVESTIGATION, 2026-10-13 - THE "EARLY GAME IS TOO HARD" FINDING WAS STALE DATA.
       READ THIS BEFORE THE TWO BLOCKS BELOW IT, WHICH IT CORRECTS.**
         * **What was wrong:** `death_log_audit.py` counted every death since 2026-09-05 as "current". Dividing each

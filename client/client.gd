@@ -40670,24 +40670,32 @@ func _help_passive_block(classes: Array) -> String:
 			String(p.get("name", "?")), String(p.get("description", ""))])
 	return "\n".join(lines)
 
+func _title_ability_cost_parts(a: Dictionary) -> Array:
+	"""The price of one title ability as short parts, READ from shared/titles.gd's own keys:
+	`valor_cost_percent` / `valor_cost`, `gem_cost`, `cooldown`. Used by the Title menu AND the help page."""
+	var parts: Array = []
+	if a.has("valor_cost_percent"):
+		parts.append("%d%% of your valor" % int(a["valor_cost_percent"]))
+	elif int(a.get("valor_cost", 0)) > 0:
+		parts.append("%s valor" % format_number(int(a["valor_cost"])))
+	if int(a.get("gem_cost", 0)) > 0:
+		parts.append("%d gems" % int(a["gem_cost"]))
+	if int(a.get("cooldown", 0)) > 0:
+		var secs := int(a["cooldown"])
+		parts.append(("%dh cooldown" % int(secs / 3600)) if secs >= 3600 else ("%dmin cooldown" % int(secs / 60)))
+	return parts
+
+
 func _title_costs_line(abilities: Dictionary) -> String:
 	"""One help line of title ability costs, READ from shared/titles.gd.
 
-	2026-09-11 — two help topics typed these costs out by hand and both were about 100x too high
+	2026-09-11 - two help topics typed these costs out by hand and both were about 100x too high
 	and in 'g': written when title abilities cost gold, never updated when they moved to valor.
 	Generated so a retune in titles.gd reaches the help page on its own."""
 	var parts: Array[String] = []
 	for k in abilities:
 		var a: Dictionary = abilities[k]
-		var cost := ""
-		if a.has("valor_cost_percent"):
-			cost = "%d%% of your valor" % int(a["valor_cost_percent"])
-		elif int(a.get("valor_cost", 0)) > 0:
-			cost = "%s valor" % format_number(int(a["valor_cost"]))
-		if int(a.get("gem_cost", 0)) > 0:
-			cost += " + %d gems" % int(a["gem_cost"])
-		if int(a.get("cooldown", 0)) > 0:
-			cost += ("" if cost == "" else ", ") + "%dh cooldown" % int(int(a["cooldown"]) / 3600)
+		var cost := ", ".join(_title_ability_cost_parts(a))
 		parts.append(("%s %s" % [String(a.get("name", k)), cost]) if cost != "" else String(a.get("name", k)))
 	return ", ".join(parts)
 
@@ -41373,7 +41381,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "TITLES & ENDGAME",
 			"keywords": ["title", "titles", "jarl", "king", "high", "elder", "eternal", "flame", "ring", "crown", "endgame", "chase", "fire", "mountain", "obtain", "get", "claim", "pilgrimage", "crucible", "donate", "knight", "mentor", "guardian", "bless"],
-			"content": "[color=#FFD700]HOW TO OBTAIN TITLES[/color]\n\n[color=#C0C0C0]Jarl[/color] [color=#808080](Level 50-500, ONE per realm)[/color]\n1. Hunt monsters Lv50+ for [color=#C0C0C0]Jarl's Ring[/color] (0.5%% drop)\n2. Go to The High Seat at (0,0) - use [color=#FFD700]High Seat[/color] action bar button\n3. Claim title | Abilities: %s\n\n[color=#FFD700]High King[/color] [color=#808080](Level 200-1000, ONE per realm)[/color]\n1. Hunt monsters Lv200+ for [color=#A335EE]Unforged Crown[/color] (0.2%% drop)\n2. Forge at Fire Mountain (-400,0) - use the [color=#FFD700]Fire Mt[/color] button\n3. Claim at (0,0) | Abilities: %s\n\n[color=#FF8080]KEEPING IT[/color]\nA Jarl who passes Lv 500 and a High King who passes Lv 1000 lose the title. Both are exempt from tax collectors, and both lose it if they pile up abuse points (Jarl 8, High King 15). Claiming High King replaces Jarl.\n\n[color=#9400D3]Elder[/color] [color=#808080](Level 1000+, auto-granted)[/color]\nAbilities: %s\n\n[color=#00FFFF]Eternal[/color] [color=#808080](Elder only, max 3, 3 lives)[/color]\nComplete the Eternal Pilgrimage. Abilities: %s" % [_title_costs_line(Titles.JARL_ABILITIES), _title_costs_line(Titles.HIGH_KING_ABILITIES), _title_costs_line(Titles.ELDER_ABILITIES), _title_costs_line(Titles.ETERNAL_ABILITIES)]
+			"content": "[color=#FFD700]HOW TO OBTAIN TITLES[/color]\n\n[color=#C0C0C0]Jarl[/color] [color=#808080](Level 50-500, ONE per realm)[/color]\n1. Hunt monsters Lv50+ for [color=#C0C0C0]Jarl's Ring[/color] (0.5%% drop)\n2. Go to The High Seat at (0,0) - use [color=#FFD700]High Seat[/color] action bar button\n3. Claim title (only while no High King rules) | Abilities: %s\n\n[color=#FFD700]High King[/color] [color=#808080](Level 200-1000, ONE per realm)[/color]\n1. Hunt monsters Lv200+ for [color=#A335EE]Unforged Crown[/color] (0.2%% drop)\n2. Take it to Fire Mountain (-400,0): press [color=#FFD700]Fire Mt[/color], then [color=#FFD700]Forge[/color], to turn it into the Crown of the North\n3. Claim at exactly (0,0) - this [b]usurps[/b] the sitting High King and replaces any Jarl | Abilities: %s\n\n[color=#FF8080]KEEPING IT[/color]\nA Jarl who passes Lv 500 and a High King who passes Lv 1000 lose the title. Both are exempt from tax collectors, and both lose it if they pile up abuse points (Jarl 8, High King 15). Claiming High King replaces Jarl.\n\n[color=#9400D3]Elder[/color] [color=#808080](Level 1000+, auto-granted)[/color]\nAbilities: %s\n\n[color=#00FFFF]Eternal[/color] [color=#808080](Elder only, max 3, 3 lives)[/color]\nComplete the Eternal Pilgrimage. Abilities: %s" % [_title_costs_line(Titles.JARL_ABILITIES), _title_costs_line(Titles.HIGH_KING_ABILITIES), _title_costs_line(Titles.ELDER_ABILITIES), _title_costs_line(Titles.ETERNAL_ABILITIES)]
 		},
 		{
 			"title": "ETERNAL PILGRIMAGE",
@@ -58551,31 +58559,12 @@ func display_title_menu():
 		var idx = 1
 		for ability_id in abilities.keys():
 			var ability = abilities[ability_id]
-			var cost_parts = []
-
-			# Build cost string from new format
-			if ability.get("gold_cost", 0) > 0:
-				cost_parts.append(_format_gold(ability.gold_cost))
-			if ability.get("gold_cost_percent", 0) > 0:
-				cost_parts.append("%d%% Valor" % ability.gold_cost_percent)
-			if ability.get("gem_cost", 0) > 0:
-				cost_parts.append("%d Monster Gems" % ability.gem_cost)
-			if ability.get("cooldown", 0) > 0:
-				var hours = ability.cooldown / 3600
-				if hours >= 1:
-					cost_parts.append("%dhr CD" % hours)
-				else:
-					cost_parts.append("%dmin CD" % (ability.cooldown / 60))
-
-			# Legacy cost format fallback
-			if cost_parts.is_empty() and ability.get("cost", 0) > 0:
-				var resource = ability.get("resource", "mana")
-				if resource == "mana_percent":
-					cost_parts.append("%d%% Mana" % ability.cost)
-				elif resource == "gems":
-					cost_parts.append("%d Monster Gems" % ability.cost)
-				elif resource != "none":
-					cost_parts.append("%d %s" % [ability.cost, resource.capitalize()])
+			# Owner sheet 2026-10-13, item 49: *"Title help menu doesn't seem accurate."* This block read
+			# `gold_cost` / `gold_cost_percent`, keys the tables stopped using when title abilities moved from
+			# gold to VALOR (the help page was fixed for the same drift on 2026-09-11 and this menu was not),
+			# so every Valor cost was missing here and the player learned the price by being refused. One
+			# helper now builds the parts for BOTH this menu and the help page.
+			var cost_parts: Array = _title_ability_cost_parts(ability)
 
 			var cost_text = " (" + ", ".join(cost_parts) + ")" if not cost_parts.is_empty() else ""
 			display_game("  [%s] %s%s - %s" % [get_action_key_name(idx), ability.get("name", ability_id), cost_text, ability.get("description", "")])

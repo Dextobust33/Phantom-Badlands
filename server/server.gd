@@ -41465,7 +41465,9 @@ func handle_get_title_menu(peer_id: int):
 	# Get available claimable titles
 	var claimable = []
 	var title_hints = []  # Hints about what's needed to claim titles
-	if abs(character.x) <= 1 and abs(character.y) <= 1:
+	# EXACTLY (0,0), because that is what handle_claim_title requires. This said "within 1 tile", so a player
+	# standing beside the seat was offered a title the claim then refused ("You must be at The High Seat").
+	if character.x == 0 and character.y == 0:
 		# At The High Seat - check for claimable titles
 		var has_jarls_ring = _has_title_item(character, "jarls_ring")
 		var has_crown = _has_title_item(character, "crown_of_north")
