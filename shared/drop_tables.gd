@@ -171,7 +171,9 @@ func get_salvage_value(item: Dictionary) -> Dictionary:
 		var ore = SALVAGE_ORE_TIERS[mini(tier_index, SALVAGE_ORE_TIERS.size() - 1)]
 		result_materials[ore] = 1
 
-	return {"materials": result_materials}
+	# Salvaging also pays GOLD now (owner 2026-10-14) - the server credits it where it credits the
+	# materials, from this same call, so the two cannot disagree.
+	return {"materials": result_materials, "gold": preload("res://shared/gold_economy.gd").salvage_gold(item)}
 
 func get_salvage_preview(item: Dictionary) -> Dictionary:
 	"""Get expected salvage returns for preview display."""

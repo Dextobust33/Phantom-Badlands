@@ -66,6 +66,7 @@ static func tile_path(name: String, frame: int = 0) -> String:
 ## `EggSprites`, so the artwork tells you which variant is lying on the floor.
 const LOOT_SPRITE := {
 	"valor": "valor",
+	"gold": "valor",   # a coin pile; gold's own art can follow - the amber glyph already tells it apart
 	"escape_scroll": "escape_scroll",
 	"material": "material",
 	"quest_relic": "quest_relic",

@@ -7294,6 +7294,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						# Check if this item should be immediately auto-salvaged on obtain
 						if _should_auto_salvage_item(peer_id, item):
 							var salvage_result = drop_tables.get_salvage_value(item)
+							_award_gold(peer_id, int(salvage_result.get("gold", 0)), "salvage", true)
 							var sal_mats = salvage_result.get("materials", {})
 							for _mat_id in sal_mats:
 								characters[peer_id].add_crafting_material(_mat_id, sal_mats[_mat_id])
@@ -7324,6 +7325,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					else:
 						# Inventory full — auto-salvage the drop into materials instead of losing it
 						var overflow_salvage = drop_tables.get_salvage_value(item)
+						_award_gold(peer_id, int(overflow_salvage.get("gold", 0)), "salvage", true)
 						var overflow_mats = overflow_salvage.get("materials", {})
 						if not overflow_mats.is_empty():
 							for _of_mat_id in overflow_mats:
@@ -10160,6 +10162,7 @@ func trigger_loot_find(peer_id: int, character: Character, area_level: int):
 		if character.can_add_item():
 			if _should_auto_salvage_item(peer_id, item):
 				var salvage_result = drop_tables.get_salvage_value(item)
+				_award_gold(peer_id, int(salvage_result.get("gold", 0)), "salvage", true)
 				auto_salvage_mats = salvage_result.get("materials", {})
 				for mat_id in auto_salvage_mats:
 					character.add_crafting_material(mat_id, auto_salvage_mats[mat_id])
@@ -14178,6 +14181,7 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % deny_reason})
 			return
 		var single_result = drop_tables.get_salvage_value(target_item)
+		var single_gold: int = int(single_result.get("gold", 0))
 		var single_mats: Dictionary = single_result.get("materials", {})
 		var salvaged_name = String(target_item.get("name", "item"))
 		character.remove_item(target_index)
@@ -14188,6 +14192,9 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		var single_msg = "[color=#AA66FF]Salvaged %s![/color]" % salvaged_name
 		if not single_strings.is_empty():
 			single_msg += " [color=#00FF00]→ %s[/color]" % ", ".join(single_strings)
+		if single_gold > 0:
+			single_msg += " [color=#FFB347]+%s gold[/color]" % _fmt_int(single_gold)
+			_award_gold(peer_id, single_gold, "salvage", true)
 		send_to_peer(peer_id, {"type": "text", "message": single_msg})
 		_maybe_send_salvage_hint(peer_id)
 		save_character(peer_id)
@@ -14198,6 +14205,7 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 	var items_to_remove = []
 	var total_essence = 0
 	var materials_gained: Dictionary = {}  # {material_id: quantity}
+	var bulk_gold: int = 0
 
 	# Identify items to salvage based on mode
 	for i in range(inventory.size()):
@@ -14231,6 +14239,7 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		if should_salvage:
 			# Calculate salvage materials using drop_tables
 			var salvage_result = drop_tables.get_salvage_value(item)
+			bulk_gold += int(salvage_result.get("gold", 0))
 			var sal_mats = salvage_result.get("materials", {})
 			for mat_id in sal_mats:
 				if not materials_gained.has(mat_id):
@@ -14264,6 +14273,10 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 	var result_msg = "[color=#AA66FF]Salvaged %d items![/color]" % salvaged_count
 	if not mat_strings.is_empty():
 		result_msg += "\n[color=#00FF00]Materials: %s[/color]" % ", ".join(mat_strings)
+	if bulk_gold > 0:
+		result_msg += "
+[color=#FFB347]Gold: +%s[/color]" % _fmt_int(bulk_gold)
+		_award_gold(peer_id, bulk_gold, "salvage", true)
 
 	send_to_peer(peer_id, {
 		"type": "text",
@@ -14437,6 +14450,7 @@ func _try_auto_salvage(peer_id: int) -> bool:
 	# Salvage the item → materials
 	var item = character.inventory[best_idx]
 	var salvage_result = drop_tables.get_salvage_value(item)
+	_award_gold(peer_id, int(salvage_result.get("gold", 0)), "salvage", true)
 	var sal_mats = salvage_result.get("materials", {})
 	character.remove_item(best_idx)
 	for _mid in sal_mats:
@@ -21209,6 +21223,8 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 
 		if valor_reward > 0 and peers.has(peer_id):
 			persistence.add_valor(peers[peer_id].account_id, valor_reward)
+		# Quests pay GOLD too (the per-character currency), sized to the quest's level.
+		_award_gold(peer_id, GoldEconomyScript.quest_gold(maxi(1, old_level)), "quest")
 
 		# Check for newly unlocked abilities
 		var unlocked_abilities = []
@@ -24366,6 +24382,7 @@ func _award_real_combat_loot(peer_id: int, item: Dictionary) -> Dictionary:
 	if character.can_add_item() or _try_auto_salvage(peer_id):
 		if _should_auto_salvage_item(peer_id, item):
 			var sal_result = drop_tables.get_salvage_value(item)
+			_award_gold(peer_id, int(sal_result.get("gold", 0)), "salvage", true)
 			var sal_mats = sal_result.get("materials", {})
 			for k in sal_mats:
 				character.add_crafting_material(k, sal_mats[k])
@@ -24393,6 +24410,7 @@ func _award_real_combat_loot(peer_id: int, item: Dictionary) -> Dictionary:
 		}
 	# Inventory full — auto-salvage same as before.
 	var overflow_sal = drop_tables.get_salvage_value(item)
+	_award_gold(peer_id, int(overflow_sal.get("gold", 0)), "salvage", true)
 	var overflow_mats = overflow_sal.get("materials", {})
 	if not overflow_mats.is_empty():
 		for k in overflow_mats:
@@ -37679,6 +37697,8 @@ func _complete_dungeon(peer_id: int):
 
 	# Calculate rewards (rank scales XP)
 	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier, _current_dungeon_tier(character))
+	# Clearing a dungeon pays GOLD (per-character), graded by the INSTANCE's tier - never the type's.
+	_award_gold(peer_id, GoldEconomyScript.dungeon_clear_gold(_current_dungeon_tier(character), character.dungeon_floor + 1), "dungeon clear")
 
 	# Hard mode bonus: +75% XP, +50% materials
 	var is_hard_completion = false
@@ -39100,7 +39120,10 @@ func _roll_floor_item(instance_id: String, tier: int, sub_tier: int, level: int,
 		if mat.is_empty():
 			return {}
 		return {"kind": "material", "char": "▪", "color": "#1EFF00", "item_data": mat}
-	elif roll < 56:  # valor coins
+	elif roll >= 48 and roll < 56:  # GOLD pile (taken out of the valor share: 22 -> 14 valor + 8 gold)
+		var g: int = GoldEconomyScript.floor_gold(lvl)
+		return {"kind": "gold", "char": "g", "color": "#FFB347", "item_data": {"gold": g, "name": "%s Gold" % _fmt_int(g)}}
+	elif roll < 48:  # valor coins
 		# Deeper floors pay more, by the same ramp as everything else on the floor. The BASE amount
 		# (2-6 x tier) is untouched on purpose: valor magnitudes are the realm-wide economy pass's
 		# call (quest_database.gd marks its own anchor PROVISIONAL), not something to retune here.
@@ -39189,6 +39212,9 @@ func _award_floor_item(peer_id: int, item: Dictionary) -> bool:
 	var kind := String(item.get("kind", ""))
 	var data: Dictionary = item.get("item_data", {})
 	match kind:
+		"gold":
+			_award_gold(peer_id, int(data.get("gold", 0)), "floor")
+			return true
 		"valor":
 			if peers.has(peer_id):
 				persistence.add_valor(peers[peer_id].account_id, int(data.get("valor", 0)))
@@ -48114,6 +48140,7 @@ func _party_award_drop(pid: int, item: Dictionary, player_level: int) -> Diction
 	else:
 		# Inventory full — salvage into materials rather than lose the drop.
 		var overflow_salvage = drop_tables.get_salvage_value(item)
+		ch.add_gold(int(overflow_salvage.get("gold", 0)))
 		var overflow_mats = overflow_salvage.get("materials", {})
 		if not overflow_mats.is_empty():
 			var of_parts = []

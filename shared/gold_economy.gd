@@ -46,6 +46,11 @@ static func floor_gold(loot_level: int) -> int:
 	return maxi(1, int(round(8.0 + 3.0 * float(maxi(1, loot_level)))))
 
 
+## Gold a salvaged item pays (in addition to its materials): a share of its listed value.
+static func salvage_gold(item: Dictionary) -> int:
+	return maxi(1, int(floor(float(int(item.get("value", 10))) * SELL_VALUE_FRACTION)))
+
+
 ## The portion of a purse / gem stack a corpse holds.
 static func corpse_gold(purse: int) -> int:
 	return int(floor(float(maxi(0, purse)) * CORPSE_GOLD_FRACTION))
