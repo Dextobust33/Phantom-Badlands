@@ -1,5 +1,6 @@
 extends Control
 class_name CombatLootPanel
+const AutoskipPaceScript = preload("res://client/autoskip_pace.gd")
 
 # Audit user-request 2026-05-14 — combat scratch-off slice. Replaces the loot
 # summary on the victory card with an interactive 16-slot reveal grid. Server
@@ -365,7 +366,8 @@ func _start_autoskip() -> void:
 	if _autoskip_timer != null:
 		return
 	_autoskip_timer = Timer.new()
-	_autoskip_timer.wait_time = AUTOSKIP_INTERVAL
+	# Paced to the BUDGET: a 45-reveal late haul used to take 16s of clicking at a fixed 0.35s.
+	_autoskip_timer.wait_time = AutoskipPaceScript.interval(AUTOSKIP_INTERVAL, _reveal_budget - _reveals_used)
 	_autoskip_timer.one_shot = false
 	_autoskip_timer.timeout.connect(_on_autoskip_tick)
 	add_child(_autoskip_timer)

@@ -1974,6 +1974,7 @@ var show_numpad_popup: bool = true
 # Audit #3 Slice 1 (UI remediation) — visual stat allocation panel.
 # Replaces chat-command-only /stats + /spendstat from v0.9.335.
 const StatsPanelScript = preload("res://client/stats_panel.gd")
+const AutoskipPaceScript = preload("res://client/autoskip_pace.gd")
 var stats_panel = null
 
 # Audit #12 UI remediation — visual post status panel + Feed All button.
@@ -5633,7 +5634,12 @@ func _process(delta):
 					send_to_server({"type": "scratch_off_reveal", "slot_index": pick, "miss": true})
 				else:
 					_send_scratch_off_reveal(pick)
-				scratch_off_auto_next_at = now + SCRATCH_OFF_AUTO_INTERVAL
+				# Paced to how many picks are left (see AutoskipPace): a late ticket with many scratches
+				# no longer takes minutes to skip.
+				var _picks_left: int = hidden_indices.size()
+				if scratch_off_panel != null and "_scratches_remaining" in scratch_off_panel:
+					_picks_left = mini(_picks_left, int(scratch_off_panel._scratches_remaining))
+				scratch_off_auto_next_at = now + AutoskipPaceScript.interval(SCRATCH_OFF_AUTO_INTERVAL, _picks_left)
 
 	# v0.9.361 — pending panel close (lets player see the final ticket state).
 	if scratch_off_close_at > 0.0:
