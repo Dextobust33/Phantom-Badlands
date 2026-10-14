@@ -3287,6 +3287,8 @@ func can_add_item() -> bool:
 
 func add_item(item: Dictionary) -> bool:
 	"""Add an item to inventory. Consumables stack automatically. Returns true if successful."""
+	if item.get("tome_unaimed", false):
+		_aim_tome(item)
 	# Check if it's a stackable consumable
 	if item.get("is_consumable", false):
 		return _add_stackable_consumable(item)
@@ -3295,6 +3297,28 @@ func add_item(item: Dictionary) -> bool:
 		return false
 	inventory.append(item)
 	return true
+
+## Ability tomes are rolled from a pool spanning all three paths, but a deck only deals its own
+## path's cards, so ~2/3 of tomes were dead to whoever found them (playtest sheet item 34).
+## Owner 2026-10-14: "mostly finder's path" - so 80% of fresh tomes are re-aimed here, at the first
+## moment anyone owns one, and 20% stay as rolled (a trade item for another class). Runs BEFORE the
+## stacking check, so the aimed name is what stacks.
+const TOME_ON_PATH_CHANCE := 0.8
+func _aim_tome(item: Dictionary) -> void:
+	item.erase("tome_unaimed")
+	if randf() >= TOME_ON_PATH_CHANCE:
+		return
+	var _dt = preload("res://shared/drop_tables.gd")
+	var playable: Array = []
+	for e in get_all_available_abilities():
+		var nm := String(e.get("name", ""))
+		if nm in _dt.ABILITY_TOME_POOL:
+			playable.append(nm)
+	if playable.is_empty():
+		return
+	var pick: String = playable[randi() % playable.size()]
+	item["gift_ability"] = pick
+	item["name"] = "Tome of %s" % _dt.get_ability_tome_display(pick)
 
 func _add_stackable_consumable(item: Dictionary) -> bool:
 	"""Add a consumable item, stacking with existing items of same name+type+tier+rarity"""

@@ -1753,6 +1753,10 @@ func _generate_ability_tome(item_level: int) -> Dictionary:
 		"type": "ability_tome",
 		"item_type": "ability_tome",
 		"gift_ability": ability_name,
+		# Rolled with no idea who will pick it up. `Character.add_item` aims it at the finder's
+		# path on first pickup and clears this; a tome that came from the market or a trade has
+		# no mark and is left exactly as it is.
+		"tome_unaimed": true,
 		"rarity": "uncommon",
 		"level": tier,
 		"tier": tier,

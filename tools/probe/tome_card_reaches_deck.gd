@@ -43,6 +43,46 @@ func _init() -> void:
 		ck(missing.is_empty(), "%s: every card the server would accept is dealt (missing %s); %d pool cards refused" % [cls, str(missing), refused])
 		sim.combat_mgr.active_combats.erase(0)
 	ck(refused_total > 0, "the guard has something to refuse (%d)" % refused_total)
+	# (d) Drops are aimed at the finder's path on pickup (owner 2026-10-14: "mostly finder's path").
+	var gen = dt.new()
+	for cls in ["Ranger", "Fighter", "Wizard"]:
+		var ch2 = sim.make_char(30, "average", cls, "Human")
+		var usable2 := {}
+		for e in ch2.get_all_available_abilities():
+			usable2[String(e.get("name", ""))] = true
+		var on := 0
+		var n := 1500
+		for i in n:
+			var t: Dictionary = gen._generate_ability_tome(30)
+			ch2.inventory.clear()
+			ch2.add_item(t)
+			if usable2.has(String(ch2.inventory[0].get("gift_ability", ""))):
+				on += 1
+			if t.has("tome_unaimed"):
+				ck(false, "the unaimed mark is cleared on pickup")
+				break
+		var frac := float(on) / n
+		ck(frac > 0.78 and frac < 0.95, "%s: %.0f%% of fresh tomes are usable by the finder (want ~80-90%%)" % [cls, frac * 100.0])
+	var market: Dictionary = gen._generate_ability_tome(30)
+	market.erase("tome_unaimed")
+	market["gift_ability"] = "gambit"
+	var fighter = sim.make_char(30, "average", "Fighter", "Human")
+	var same := true
+	for i in 200:
+		fighter.inventory.clear()
+		fighter.add_item(market.duplicate())
+		if String(fighter.inventory[0].get("gift_ability", "")) != "gambit":
+			same = false
+	ck(same, "a tome with no unaimed mark (market/trade) is never re-aimed")
+	var tome_name_ok := true
+	for i in 200:
+		var t2: Dictionary = gen._generate_ability_tome(30)
+		fighter.inventory.clear()
+		fighter.add_item(t2)
+		var it: Dictionary = fighter.inventory[0]
+		if String(it.get("name", "")) != "Tome of %s" % dt.get_ability_tome_display(String(it.get("gift_ability", ""))):
+			tome_name_ok = false
+	ck(tome_name_ok, "the name always matches the card inside")
 	var src := FileAccess.get_file_as_string("res://server/server.gd")
 	var i := src.find("func _use_ability_tome(")
 	var j := src.find("\nfunc ", i + 10)
