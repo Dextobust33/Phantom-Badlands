@@ -35519,7 +35519,12 @@ func display_changelog():
 	#            panels that lied or hid, and the Warden speaking with pop-ups off.
 	# v0.9.837 - one Scroll of Summoning and one Scroll of Finding.
 	# v0.9.838 - party play without the old lead/follow leftovers.
-	display_game("[color=#00FF00]v0.9.838[/color] [color=#808080](Current)[/color]")
+	# v0.9.839 - the Title menu and its help told the truth.
+	display_game("[color=#00FF00]v0.9.839[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444]★ FIXED: the Title menu never showed what its abilities cost in Valor.[/color] It was reading prices from an old gold field, so you only found out by being refused. Every Valor price, gem price and cooldown now shows, and the Help page reads the same numbers.")
+	display_game("  [color=#FF4444]◆ FIXED: the Title menu offered a title to anyone standing next to The High Seat.[/color] You must be on the seat itself (0,0). The Help page also now says that a new High King usurps the sitting one, that a Jarl needs no High King on the throne, and that the forge is Fire Mt then Forge.")
+	display_game("")
+	display_game("[color=#808080]v0.9.838[/color]")
 	display_game("  [color=#FF8000]★ PARTIES NO LONGER HAVE A LEADER YOU FOLLOW.[/color] Anyone in a party can now walk out of a trading post on their own - before, only the leader could, and only once everyone stood beside them. The Lead / Follow question when a party forms is gone (whoever invited leads), leadership no longer rotates after every fight, and the Lead: Rotate / Fixed button is removed. The Party help page now describes how it really works: everyone moves on their own, a fight pulls in members within 8 tiles, and you can walk into a teammate who is fighting to join.")
 	display_game("")
 	display_game("[color=#808080]v0.9.837[/color]")
