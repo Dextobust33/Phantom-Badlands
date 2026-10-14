@@ -14319,7 +14319,7 @@ func _should_auto_salvage_item(peer_id: int, item: Dictionary) -> bool:
 	var character = characters[peer_id]
 	return Character.would_auto_salvage(item, character.auto_salvage_enabled,
 		character.auto_salvage_max_rarity, character.auto_salvage_affixes,
-		_is_consumable_type(String(item.get("type", ""))))
+		_is_consumable_type(String(item.get("type", ""))), character.equipped)
 
 func _try_auto_salvage(peer_id: int) -> bool:
 	"""Try to auto-salvage an item to make room. Returns true if space was made.
@@ -14360,6 +14360,9 @@ func _try_auto_salvage(peer_id: int) -> bool:
 		if itype == "tool" or itype == "rune" or itype == "structure":
 			continue
 
+		# Make-room must not eat an upgrade either - the same rule the pickup path asks.
+		if Character.is_probable_upgrade(item, character.equipped):
+			continue
 		var rarity = item.get("rarity", "common")
 		var rarity_match = rarity in allowed_rarities
 

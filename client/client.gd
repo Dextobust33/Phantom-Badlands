@@ -657,6 +657,9 @@ var disable_tutorial: bool = false  # Skip tutorial on new character creation
 # panel auto-clicks random unrevealed cells once opened. Persisted with the
 # rest of the keybind/settings file.
 var autoskip_loot_reveal: bool = false
+## Ask 'Break down X?' before salvaging ONE item. ON by default (owner 2026-10-14); the bulk salvages
+## (all / consumables) always ask - they are the ones that cannot be walked back.
+var confirm_single_salvage: bool = true
 
 # Settings mode
 var settings_mode: bool = false
@@ -6912,6 +6915,8 @@ func _input(event):
 				_toggle_mentor_badge()
 			elif keycode == KEY_9:
 				_toggle_account_tutorials()
+			elif keycode == KEY_0:
+				_toggle_confirm_single_salvage()
 			elif keycode == KEY_8:
 				settings_submenu = "stat_priority"
 				_page_clear()
@@ -11580,7 +11585,7 @@ func update_action_bar():
 			if settings_submenu == "game":
 				current_actions = [
 					{"label": "Back", "action_type": "local", "action_data": "settings_game_back", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Salvage Ask", "action_type": "local", "action_data": "settings_toggle_salvage_confirm", "enabled": true},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -18573,6 +18578,8 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"rune_apply_slot_0", "rune_apply_slot_1", "rune_apply_slot_2", "rune_apply_slot_3", "rune_apply_slot_4":
 			_apply_rune_to_slot_choice(int(action.trim_prefix("rune_apply_slot_")))
+		"settings_toggle_salvage_confirm":
+			_toggle_confirm_single_salvage()
 		"rune_apply_cancel":
 			rune_apply_mode = false
 			rune_apply_index = -1
@@ -22717,6 +22724,9 @@ func _panel_salvage_item(index: int, item: Dictionary) -> void:
 			inventory_panel.set_status("[color=#FF6666]Locked items can't be salvaged — right-click → Unlock first.[/color]")
 		return
 	_panel_salvage_index = index
+	if not confirm_single_salvage:
+		_on_panel_salvage_item_confirmed()
+		return
 	var dialog: ConfirmationDialog = get_node_or_null("/root/ClientScene/SalvageSingleConfirm")
 	if dialog == null:
 		dialog = ConfirmationDialog.new()
@@ -23030,7 +23040,7 @@ func open_salvage_menu():
 			continue
 		var _t := String(_it.get("type", ""))
 		var _is_cons := bool(_it.get("is_consumable", false)) or _t.begins_with("scroll") or _t.ends_with("_potion")
-		if CharacterScript.would_auto_salvage(_it, true, auto_rarity, auto_affixes, _is_cons):
+		if CharacterScript.would_auto_salvage(_it, true, auto_rarity, auto_affixes, _is_cons, character_data.get("equipped", {})):
 			_doomed.append(String(_it.get("name", "item")))
 	display_game("")
 	if auto_rarity <= 0:
@@ -32798,6 +32808,8 @@ func _load_keybinds():
 					show_numpad_popup = bool(data["show_numpad_popup"])
 				if data.has("autoskip_loot_reveal"):
 					autoskip_loot_reveal = bool(data["autoskip_loot_reveal"])
+				if data.has("confirm_single_salvage"):
+					confirm_single_salvage = bool(data["confirm_single_salvage"])
 				# Load UI scale settings
 				if data.has("ui_scale_monster_art"):
 					ui_scale_monster_art = clampf(float(data["ui_scale_monster_art"]), 0.5, 3.0)
@@ -32850,6 +32862,7 @@ func _save_keybinds():
 	save_data["disable_tutorial"] = disable_tutorial
 	save_data["show_numpad_popup"] = show_numpad_popup
 	save_data["autoskip_loot_reveal"] = autoskip_loot_reveal
+	save_data["confirm_single_salvage"] = confirm_single_salvage
 	# Include UI scale settings
 	save_data["ui_scale_monster_art"] = ui_scale_monster_art
 	save_data["ui_scale_map"] = ui_scale_map
@@ -33487,6 +33500,9 @@ func display_game_settings():
 	# *"Turn them back on in Settings."*
 	var hints_status = "[color=#00FF00]ON[/color]" if account_tutorials_enabled else "[color=#FF6666]OFF[/color]"
 	display_game("[9] Help Pop-ups (this account): %s" % hints_status)
+	# ⚑ [0], AT THE END, for the same reason [9] was: nothing above is renumbered.
+	var salv_status = "[color=#00FF00]ON[/color]" if confirm_single_salvage else "[color=#FF6666]OFF[/color]"
+	display_game("[0] Confirm Before Salvaging One Item: %s" % salv_status)
 	display_game("")
 	if skip_craft or skip_gather:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -33578,6 +33594,13 @@ func _toggle_autoskip_loot_reveal():
 ## Turn the ACCOUNT's teaching pop-ups on or off. The server owns the value; this asks, and the
 ## `tutorials_state` reply is what actually updates the row - so a refusal or a dropped packet
 ## shows as the setting not changing, rather than as a row that lies about the account.
+func _toggle_confirm_single_salvage():
+	confirm_single_salvage = not confirm_single_salvage
+	_save_keybinds()
+	if settings_mode and settings_submenu == "game":
+		_page_clear()
+		display_game_settings()
+
 func _toggle_account_tutorials():
 	send_to_server({"type": "set_tutorials", "enabled": not account_tutorials_enabled})
 

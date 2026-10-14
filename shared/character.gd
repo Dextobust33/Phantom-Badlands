@@ -258,9 +258,40 @@ const MAX_INVENTORY_SIZE = 40
 const AUTO_SALVAGE_MAKE_ROOM_CEILING := 3   # rare
 
 
+## The equipment slot an item TYPE goes in, or "" if it is not gear. ONE definition for the
+## rules that must agree with the client's own `_get_slot_for_item_type`.
+static func gear_slot_for_type(item_type: String) -> String:
+	if item_type in ["jarls_ring", "unforged_crown", "crown_of_north"]:
+		return ""
+	for s in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		if s in item_type:
+			return s
+	return ""
+
+## Would wearing this plausibly beat what is on the slot now? Deliberately a CHEAP, honest test, not
+## a stat model: an empty slot, or strictly better rarity at no lower level. Auto-salvage asks it
+## so a drop that is better than your gear is never destroyed on pickup (owner 2026-10-14, playtest
+## sheet item 7: "auto-salvage vs equipped gear"). It errs toward KEEPING - an unneeded item costs a
+## slot, a wrongly eaten upgrade is gone.
+static func is_probable_upgrade(item: Dictionary, equipped: Dictionary) -> bool:
+	var slot := gear_slot_for_type(String(item.get("type", "")))
+	if slot == "":
+		return false
+	var cur = equipped.get(slot, null)
+	if not (cur is Dictionary) or (cur as Dictionary).is_empty():
+		return true
+	var order := ["common", "uncommon", "rare", "epic", "legendary", "artifact"]
+	var ri: int = order.find(String(item.get("rarity", "common")))
+	var rc: int = order.find(String((cur as Dictionary).get("rarity", "common")))
+	return ri > rc and int(item.get("level", 1)) >= int((cur as Dictionary).get("level", 1))
+
 static func would_auto_salvage(item: Dictionary, enabled: bool, max_rarity: int,
-		kept_affixes: Array, is_consumable_type: bool) -> bool:
+		kept_affixes: Array, is_consumable_type: bool, equipped: Dictionary = {}) -> bool:
 	if not enabled or max_rarity <= 0:
+		return false
+	# Better than what you wear (or fills an empty slot): never eaten. `equipped` is optional so
+	# existing callers keep working; every real caller passes it.
+	if not equipped.is_empty() and is_probable_upgrade(item, equipped):
 		return false
 	if bool(item.get("is_consumable", false)) or is_consumable_type:
 		return false
