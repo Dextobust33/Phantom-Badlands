@@ -1100,6 +1100,8 @@ run the calibration chain ONCE after the batch, never per item; release only whe
    (live base CON 17-19 vs sim 12-13; live gear hp_bonus ~3x the sim's), Fighter mitigation, the rest. Run `-- preflight`
    FIRST, then speciescal -> refcal -> rolecal ONCE each.
 
+**NEW VISION 2026-10-14 (item 14 below): strategic party combat through companions** - roles, a tactics focus, up to 5 companions (4 in the column, 1 beside you). Design-first; recommended order is release the current batch -> run the item 9 chain on it -> start item 14's S0 (no code). Read item 14 before proposing companion work.
+
 **THINGS I GOT WRONG TODAY - do not repeat them.**
 - (a) The audit's early-game finding was OLD-BUILD data: 46 of 63 "current" deaths predate the 09-19 curve refit (monsters
   at 2.4-19x today's HP). The cutoff is now 2026-09-20 (`--since` overrides). Always divide a death's recorded
@@ -1388,7 +1390,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         effects". Card gear names the CARD as it is called in your hand (`_ability_display_name`).
         Preview-only numbers: 90 -> 0. Probe `inspect_shows_what_the_card_shows.gd` (hand-built item with
         all ten chase keys + 192 generated items; goes red if the block is removed).
-6. - [ ] **COMBAT MECHANICS TO VERIFY** [4 Swift Hobgoblin landed 6 hits; 9 Distract debuff not
+6. - [x] **ALL SEVEN DONE 2026-10-14 - COMBAT MECHANICS TO VERIFY** [4 Swift Hobgoblin landed 6 hits; 9 Distract debuff not
       shown/applied; 28 "less often / once per fight" upgrades functioning?; 40 audit artifact +
       special-effect gear vs their text; 14 runes can't be applied; 34 Tome of Gambit card not in
       deck; 51 same companion registrable in several slots]. (**34 DONE 2026-10-14, server:** the tome pool spans all three paths but the deck deals only the class's own cards, so a Fighter reading a Gambit tome lost it for an inert card; `_use_ability_tome` now refuses a foreign card BEFORE spending the tome - probe `tome_card_reaches_deck`. ALSO DONE (owner chose 'mostly finder's path'): fresh tomes are marked `tome_unaimed` and `Character.add_item` re-aims 80% at a card the finder can play (measured 86-87% usable); market/trade tomes are never re-aimed. **50 DONE (4 slices, owner decisions 2026-10-14) - GOLD IS BACK, per character.** It lives in `gold_purse`, NOT the retired `gold` field (a login migration converts that to Valor and would eat the purse). All numbers are in ONE table, `shared/gold_economy.gd`, and ALL ARE FIRST GUESSES - nothing was measured. (1) kills pay level-scaled gold, solo AND party (boss x4, +50% per empowered mod); gems sell at 1,000 each from the merchant's 'Sell Gems' button; HUD shows Gold beside Valor. (2) salvage (9 paths), quest turn-ins, dungeon clears (graded by the INSTANCE tier) and floor gold piles (8% of floor rolls, taken out of the valor share) all pay - salvage is level x rarity, NOT item value (an L50 epic lists at 26,000; I first paid half of that and caught it before shipping). 'Selling' gear is the Open Market, which stays Valor. (3) a corpse keeps a random 10-50% of the purse - the rule gems already used, now one function. (4) THE SINK: Blacksmith > Temper, up to 5 tiers per worn item for gold (500 / 900 / 1,620 / 2,916 / 5,249 at L50), +damage on a weapon, +HP on everything else, capped, lives ON the item. Probes `gold_purse_core`, `gold_income_sources`, `gold_survives_death_in_part`, `gold_buys_capped_gear_tiers`. **OPEN FROM IT:** (a) BALANCE BATCH - temper gains are player power (L50 weapon +6 damage/tier, armour +45 HP/tier) and every price/payout is untuned: run `-- preflight` then the chain once, then compare gold income per hour against the 5-tier cost; (b) DONE 2026-10-14 (owner: yes): the ENCHANTER's gold sink is REWORK - priced in gold instead of Valor (`GoldEconomy.rework_gold`, 4 x level x (1 + 0.6 x reworks done): 200 -> 560 at L50), a committed Enchanter still pays no gold but always pays materials - probe `rework_costs_gold_and_keeps_temper`; (c) Valor prices were left untouched (owner chose 'Valor = market/services, gold = gear power'); (d) DONE 2026-10-14 (owner: yes): a tempered stat now SURVIVES Rework - the bought amount is recorded per stat in `item.temper_gain`, Rework rerolls only the natural part (reported old value is the natural one), a tempered-only stat is not reworkable, and a reroll can never merge onto it; (e) FIXED on the way: Disenchant (`_craft_disenchant`) crashed on EVERY use - it iterated get_salvage_value()'s {materials: {...}} as a flat dict (Nonexistent float constructor - silent on a release server) - probe `disenchant_recovers_materials` (fails on the old code); (f) no help-page / changelog text yet for gold, auto-spend or the salvage toggle - add at the next release. **GROUP 10 (owner decisions 2026-10-14): 7 DONE** - single-item salvage prompt is a Settings > Game toggle ([0] / 'Salvage Ask' button), default ON, bulk salvages always ask; auto-salvage (pickup AND make-room) never eats an item that would beat or fill a worn slot (`Character.is_probable_upgrade`: empty slot, or strictly better rarity at >= level) - probe `salvage_asks_and_spares_upgrades`. The 'market-listing popups' half of 7 was NOT found/changed - ask what it meant. **29 DONE** - each level's stat point is auto-spent on the class preset (`Character.preset_stat_for_class`, the SAME rule the simulator's reference player uses; the sim now calls it), opt-out button in the Stats panel, points already banked are never touched, saves from before load as ON - probe `stat_points_auto_spend`. BALANCE BATCH note: players who forgot to spend now have the stats the reference player already assumed. **30 DONE** - auto-skip pace now scales with the pick count (`client/autoskip_pace.gd`, one rule): a whole run takes ~3s however many reveals (floor 0.05s, base gap for short hauls) for BOTH the combat loot panel and the gather/craft scratch-offs; the owner offered 'fewer reveals OR faster auto-skip' - the REVEAL COUNT (budget x5) was left alone because cutting it is an economy change. Probe `autoskip_pace_scales_with_reveals`. **40 DONE 2026-10-14 (uniques + sets; see the gap below), server:** all 27 unique/set effect keys have a consumer through the funnel, and the consumers I read match their text (death save, kill cleanse, Time Anchor, flee, valor, XP, loot reveal, double cast). The real mismatch, found by an A/B at +100 with the same weapon in both arms: `attack_damage_pct` ('+X% attack damage', Bloodletter's Hook, plus Path's Sharpened Edge) multiplied basic attacks x1.98 and CARDS x1.01 - nearly dead in a deck game - while `spell_damage_pct` ('+X% spell damage', Cinderheart Staff) multiplied EVERY class's cards x2.0. Inverted. A card now has a school: a mage's cards take spell power, every other class's take attack power. Probe `unique_damage_keys_follow_their_text` (fails on the old code). **BALANCE BATCH:** a player-side change - non-mage Path nodes with attack_damage_pct now actually reach their cards. **NOT AUDITED:** non-unique artifact-rarity gear and proc runes (lifesteal/shocking/...) vs their text; the bleed/burn/crit-bleed and clutch-time-stop effects were read, not A/B'd. **14 DONE 2026-10-14, client:** runes could not be applied from the inventory PANEL - its Use sent a bare `inventory_use` and the choose-a-slot flow lived only in the old text inventory, where the slot choice was number-keys behind a DISABLED '1-9 Select' label. Panel Use now enters the flow, the slots are real buttons (keys 1-5 still work; both land in `_apply_rune_to_slot_choice`), and the result is held for reading. Probes `a_rune_can_be_applied_from_the_panel` (fails on the old client) + `rune_applies_on_the_server`. State is verified headless; the PIXELS are not - wants one look in the live client. **28 DONE 2026-10-14, server:** the two upgrades behind 'less often / once per fight'. HEAVY DRAW (+25% damage, 'slower to come back around') had NO drawback at all - the damage code said 'handled by the deck' and the deck did nothing, so it was a free +25%. A Heavy Draw card now goes to the BOTTOM of the reshuffled deck (stateless, nothing to lose across saves/party views). SACRIFICIAL ('spent for the rest of the fight') kept returning as a dead draw that whiffed and wasted the turn; a spent card now stays out at the next reshuffle (solo; a party view carries no fight flags, so there it still whiffs). Probe `heavy_draw_and_sacrificial_cost_something` (fails on the old code). **BALANCE BATCH:** this makes two upgrades WEAKER, so it is a player-side change - include it in the next chain run, do not run it per item. **9 DONE 2026-10-14:** Distract IS applied (monster damaged the caster in 40% of actions after it vs 62% after a plain attack) but was never SHOWN - the monster's turn resolves inside the cast and erases it, so the chip was visible in 0 of 400 casts. The monster's turn now says 'Distracted - the X's aim is off (-N% accuracy)' where it bites - probe `distract_says_when_it_bites`. **4 DONE 2026-10-14, client:** NOT a combat bug - a Swift monster lands 2-3 hits per turn (measured over 1,500+ real actions, max 3). The round-summary line counted MESSAGES as hits, so 'attacks multiple times!' / 'strikes with unexpected ferocity!' / misses all inflated it to 6-7. A hit is now a line carrying a measured dmg/taken number - probe `summary_counts_hits_not_lines` (fails on the old code). A multi-hit monster turn now reads 'attack' with the real count in the hover prose. **51 DONE 2026-10-14, server:** owner screenshots showed one Lime Hydra in two slots (Lv17 checked out, Lv53 available). ROUTE, reproduced on the old code: the Stable deposit asked 'registered?' only of the ACTIVE companion, so a registered companion in the collection was copied to the kennel with its slot flag stripped and kennel->Register made a second row. Deposit now asks `_is_registered_companion` of THIS companion and returns it to its slot; `register_companion_to_house` also refuses a duplicate id and the kennel Register puts the companion back instead of losing it - probe `deposit_never_copies_a_registered_companion` (fails on the old code) + `one_companion_one_slot`. Existing duplicate rows in live Sanctuaries are not cleaned up by this.)
@@ -1815,6 +1817,77 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       (probe rot), (3) the 29 FAILs one by one, deciding stale-vs-regression for each. Report:
       the sweep's own output was kept in the session scratchpad, not the repo - re-run
       `python tools/probe_run.py --all --report sweep.txt` (about 25 minutes, one probe at a time).
+
+14. - [ ] **VISION (owner, 2026-10-14) — STRATEGIC PARTY COMBAT, THROUGH COMPANIONS.** Recorded as
+      the owner stated it, plus three design rulings made in the same conversation. **DESIGN FIRST;
+      NOT scheduled, NOT started.** Owner: *"When we rework companion roles like the tank etc. We
+      should begin going towards one of the next visions for the game. I'd like to get our combat
+      more towards the strategic type from turn based rpgs. Ones that involve buffing and healing of
+      party members. Effectively I'd like to do this through our companions."*
+      **THE SHAPE:** give companions ROLES (tank, healer, buffer, striker, controller ...) and let a
+      player field **up to 5 companions: 4 shown in the right-hand column like party members, 1
+      beside the player on their own card** (as the single companion sits today). Party play stays
+      capped at the right-hand slots, so a column can be all humans, all companions, or a mix.
+      **RULINGS (owner, same conversation) - these are decided, do not re-ask:**
+      - *Command model: companions act on their own AI and the player sets a TACTICS FOCUS* - "all
+        out, healing, buffing, etc." Not a per-companion command menu, and not role cards dealt into
+        the player's hand (both offered and declined).
+      - *The 5th companion sits BESIDE the player*, not in the column. The column holds 4.
+      - *In a party the 4 right-hand slots are SHARED across the party* (split between players, not
+        first-come), and every player keeps their beside-you companion on their own card even in a
+        party: *"players usually have at least one companion with them even in party play next to
+        them in their card."* Solo: four in the column plus one beside you.
+      **WHAT THE CODE IS TODAY (read 2026-10-14, so the design starts from facts):** a companion is
+      ONE AI helper. Its abilities are species-tier passives / chance / threshold effects
+      (`COMPANION_MONSTER_ABILITIES`), its only "role" is an AGGRO percent - the share of monster hits
+      it soaks - and its HP is SOLVED FROM THAT AGGRO as a share of the owner's bar
+      (`calculate_companion_max_hp`), so it has no pool of its own to heal or lose. Party max is 5
+      (`PARTY_MAX_SIZE`), each member has their own deck and hand, and the right column is
+      `combat_scene_panel._party_column` drawn from `set_party_members()`. `active_companion` is read
+      in hundreds of places (corpse, registered/`house_slot`, trades, stable, death) - a data-model
+      change there needs an ADAPTER (`active_companion` stays as the beside-you slot), not a rename.
+      **ORDER (each slice shippable and probed on its own; do them in this order):**
+      - **S0 DESIGN, no code.** Settle: (1) the ROLE LIST and how a species gets a role - DERIVE it
+        from existing species data (aggro, ability tags) through one table, like `species_power`,
+        rather than hand-authoring 136 species; (2) the TACTICS list and what each does per role;
+        (3) a real HP pool per companion, and what "down" means (permanent loss? recovered after the
+        fight? - today a companion lost with its owner is a permadeath question, see memory
+        `project_permadeath_may_change`); (4) THREAT/TARGETING - how a monster picks between the
+        player, humans and companions, how taunt/aggro works, and whether AoE exists; (5) heal and
+        buff magnitudes and STACKING CAPS (the old uncapped blacksmith upgrade is the cautionary
+        tale); (6) whether companions heal/buff HUMAN party members (the vision says yes - it is the
+        reason a party and its companions interlock); (7) THE CORE BALANCE QUESTION: a player with
+        five companions fields roughly double the force. Either monsters scale up as they do for a
+        party, or each companion is individually weaker. Decide it on paper before any number.
+      - **S1 ROLES ON THE ONE COMPANION.** Add `role`, the role actions (heal the lowest ally, taunt,
+        buff, ...) and a single tactics stance, with NO slot change. Cheapest way to find out whether
+        the actions are fun and legible in the log before multiplying them by five.
+      - **S2 DATA MODEL.** `companion_party` (cap 5; slot 0 = beside the player), `active_companion`
+        kept as an alias for slot 0. Audit every site that touches a companion: registered /
+        `house_slot` (items 51 and its probes), corpse and death, trades, stable, fusion. Probe each.
+      - **S3 COMBAT ENGINE.** Several companion actors per round with their own HP, threat and
+        tactics. **THE SIMULATOR MUST MODEL THE COMPANION TEAM FIRST** - CLAUDE.md's rule: an
+        instrument that does not play the game being shipped will certify the wrong curve with full
+        confidence (the 2026-09-19 `refcal` finding). The reference player gains a companion team.
+      - **S4 UI.** Companion cards in the right column (reuse the party member card), the beside-you
+        card, a visible TACTICS button (a button, not a hotkey), and the shared-slot split in a party.
+        Needs SCREENSHOTS - UI state is not reachable headless (memory
+        `feedback_screenshot_before_theorising`).
+      - **S5 ACQUISITION AND ECONOMY.** How a player ends up with role-diverse companions (eggs,
+        stable, fusion, the species they hunt) and what the companions cost to keep. This is the same
+        problem as the standing item "Real sinks for excess eggs and companions" and as 11(c)
+        (companion variety) - decide them together, and let 11(c)'s rolled stats feed the roles.
+      - **S6 CALIBRATION.** The reference party goes into `make_char`, then the whole chain ONCE
+        (`-- preflight` first). Do not run the chain per slice; this arc is one batch.
+      **PREREQUISITES AND SEQUENCING (my recommendation, owner to rule):** (1) the current unreleased
+      work is large (this week's fixes, gold, auto-spend, the salvage and Temper changes) and the
+      BALANCE BATCH (item 9) is still waiting on it - release it and run the chain on THAT build
+      first, so the live game has a calibrated baseline and the death log starts measuring it; (2)
+      start S0 in parallel, it needs no code; (3) the earlier "rework companion roles like the tank"
+      the owner mentioned IS S1 - it is not a separate job; (4) item 11(c) and the egg/companion sink
+      item belong in S5, not before it. **Open questions for the owner, at the end of S0:** do
+      companions die for good when downed; per-companion or one global tactics focus; how many roles;
+      does a companion's role come from its SPECIES, from its VARIANT, or from the player's choice.
 
 ### ⚑ PICK UP HERE — written 2026-09-19 for a gap of unknown length
 
