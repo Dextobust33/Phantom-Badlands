@@ -1378,6 +1378,16 @@ the grouping is from reading the sheet; confirm the cause before fixing.
           what players meet". Needs an encounter counter in the server log (e.g. one `[ENCOUNTER]` line with
           role/mods/level gap and outcome) - cheap, and it would also give the real 1.81%-style rate that
           `death_log_audit` cannot compute today.
+        * **BUILT 2026-10-13 (server; needs a deploy - ships as the next release):** every finished fight prints
+          `[ENCOUNTER] outcome= role= mods= variant= mon= mlvl= mhp= class= plvl= gap= rounds= hp0= hp1= hpmax=
+          party= dead= first= dungeon=` (`CombatManager.encounter_log_line`, called from `end_combat` and
+          `_end_party_combat` before they erase the combat). `outcome` is derived: won / died (not a win at 0 HP)
+          / left (fled, retreated or aborted). No player name. `death_log_audit.py` now ends with an ENCOUNTERS
+          section - deaths per encounter by role, level band, level gap and modifier - read from
+          `journalctl`; `--no-encounters` skips it. Probe `encounter_line_is_logged.gd` (12 checks); verified by
+          ending two real fights through the engine. **No data exists until it is deployed and played.**
+          Caveats: a flock chain logs one line per monster; "left" mixes flee, retreat and disconnect; a party
+          fight is one line carrying the LEADER's class/level; the journal's retention bounds the sample.
         * **The reference-player result below still stands as a statement about L6+ scaling, but its
           motivation ("explain the early deaths") is gone:** the early deaths it was meant to explain were an
           old-build artefact. L6+ remains a real but lower-priority fidelity gap.

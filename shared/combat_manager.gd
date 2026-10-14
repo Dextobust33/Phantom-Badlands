@@ -11493,6 +11493,53 @@ func get_party_combat_summary(combat: Dictionary, pid: int) -> Dictionary:
 	}
 
 
+## One journal line per FINISHED fight, so the live game can answer "how often does each kind of monster
+## kill someone" - which the death log alone cannot (it records deaths, not the encounters they came from).
+##
+## Owner 2026-10-13, after the early-death investigation: "11 of 13 deaths were to modified monsters" is
+## meaningless without how many encounters were modified. Greppable: `journalctl -u phantom-badlands |
+## grep '\[ENCOUNTER\]'`. No player NAME is written - class and level are enough to bin it.
+##
+## OUTCOME is derived, because `end_combat(victory=false)` is shared by deaths, flees and aborts:
+##   won   - the monster fell
+##   died  - not a victory and the player is at 0 HP
+##   left  - not a victory and the player is alive (fled, retreated, disconnected, or a flock cut short)
+## `role` is boss > elite (a star in the name) > empowered (any modifier) > normal. `gap` is monster level
+## minus player level. `first=1` means the monster struck before round one (an ambush).
+static func encounter_log_line(combat: Dictionary, victory: bool, party_size: int = 1, dead: int = 0) -> String:
+	var monster: Dictionary = combat.get("monster", {})
+	var character = combat.get("character", null)
+	var mods: Array = monster.get("empowered_mods", []) if monster.get("empowered_mods", []) is Array else []
+	var name: String = String(monster.get("name", "?"))
+	var role := "normal"
+	if bool(monster.get("is_boss", false)) or bool(combat.get("is_boss_fight", false)):
+		role = "boss"
+	elif bool(monster.get("is_elite", false)) or name.find("★") >= 0:
+		role = "elite"
+	elif not mods.is_empty() or int(monster.get("empowered_mod_count", 0)) > 0:
+		role = "empowered"
+	var plvl := 0
+	var pclass := "?"
+	var hp1 := 0
+	var hpmax := 0
+	if character != null:
+		plvl = int(character.level)
+		pclass = String(character.class_type)
+		hp1 = maxi(0, int(character.current_hp))
+		hpmax = int(character.get_total_max_hp())
+	var outcome := "won"
+	if not victory:
+		outcome = "died" if (party_size <= 1 and hp1 <= 0) or dead > 0 else "left"
+	var mlvl := int(monster.get("level", 0))
+	return "[ENCOUNTER] outcome=%s role=%s mods=%s variant=%s mon=%s mlvl=%d mhp=%d class=%s plvl=%d gap=%d rounds=%d hp0=%d hp1=%d hpmax=%d party=%d dead=%d first=%d dungeon=%d" % [
+		outcome, role, (",".join(mods) if not mods.is_empty() else "-"),
+		(String(monster.get("variant_type", "")) if String(monster.get("variant_type", "")) != "" else "-"),
+		name.replace(" ", "_"), mlvl, int(monster.get("max_hp", 0)), pclass, plvl, mlvl - plvl,
+		int(combat.get("round", 0)), int(combat.get("player_hp_at_start", hp1)), hp1, hpmax,
+		party_size, dead, 1 if bool(combat.get("monster_went_first", false)) else 0,
+		1 if bool(combat.get("is_dungeon_combat", false)) else 0]
+
+
 func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 	"""End combat and clean up.
 
@@ -11566,6 +11613,8 @@ func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 			last_combat_engines[peer_id] = chain_engine_carry(
 				int(_ac.get("momentum", 0)), int(_ac.get("combo", 0)), int(_ac.get("focus", 0)),
 				int(_ac.get("forcefield_shield", 0)), int(_ac.get("forcefield_casts", 0)))
+		# One line per finished fight (see encounter_log_line). Built BEFORE the erase: it reads the combat.
+		print(encounter_log_line(combat, victory))
 		# Remove from active combats
 		active_combats.erase(peer_id)
 
@@ -15094,6 +15143,21 @@ func _end_party_combat(leader_id: int, victory: bool):
 			int(_pms_engines.get("forcefield_casts", 0)))
 		party_combat_membership.erase(pid)
 
+	# One line per finished party fight. The "character" is the leader's, so class/level are the leader's;
+	# `party` and `dead` carry the rest.
+	var _p_dead := 0
+	for _pid in combat.members:
+		if bool(combat.member_states.get(_pid, {}).get("dead", false)):
+			_p_dead += 1
+	var _p_view: Dictionary = {
+		"monster": combat.get("monster", {}),
+		"character": combat.characters.get(leader_id, null),
+		"round": combat.get("round", 0),
+		"is_boss_fight": combat.get("is_boss_fight", false),
+		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
+		"monster_went_first": combat.get("monster_went_first", false),
+	}
+	print(encounter_log_line(_p_view, victory, combat.members.size(), _p_dead))
 	active_party_combats.erase(leader_id)
 
 func get_party_combat_state(leader_id: int) -> Dictionary:

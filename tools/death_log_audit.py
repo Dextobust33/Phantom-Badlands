@@ -257,7 +257,68 @@ def main():
     for k, n in killers.most_common(12):
         print("  %-34s %d" % (k[:34], n))
     print("")
+    if "--no-encounters" not in sys.argv:
+        j = subprocess.run(
+            ["ssh", "-i", SSH_KEY, SERVER, "sudo journalctl -u phantom-badlands --no-pager -o cat | grep -a ENCOUNTER"],
+            capture_output=True, timeout=120)
+        encounter_report(parse_encounters(j.stdout.decode("utf-8", "replace")))
     return 0
+
+
+def parse_encounters(text):
+    """Parse `[ENCOUNTER] key=value ...` journal lines (see CombatManager.encounter_log_line)."""
+    import re
+    rows = []
+    for ln in text.splitlines():
+        i = ln.find("[ENCOUNTER]")
+        if i < 0:
+            continue
+        kv = dict(re.findall(r"(\w+)=(\S+)", ln[i:]))
+        try:
+            kv["plvl"] = int(kv["plvl"])
+            kv["gap"] = int(kv["gap"])
+            kv["party"] = int(kv.get("party", 1))
+        except (KeyError, ValueError):
+            continue
+        rows.append(kv)
+    return rows
+
+
+def encounter_report(rows):
+    """Deaths PER ENCOUNTER, which the death log alone cannot give: by role, by level band, by level gap."""
+    def table(title, keyfn, order=None):
+        groups = collections.defaultdict(lambda: collections.Counter())
+        for r in rows:
+            groups[keyfn(r)][r.get("outcome", "?")] += 1
+        print("  " + title)
+        print("    %-12s %6s %6s %6s %6s   %s" % ("", "n", "won", "left", "died", "died%"))
+        for k in (order or sorted(groups)):
+            if k not in groups:
+                continue
+            c = groups[k]
+            n = sum(c.values())
+            print("    %-12s %6d %6d %6d %6d   %s%%" % (k, n, c["won"], c["left"], c["died"], "%.1f" % (100.0 * c["died"] / n)))
+    print("===== ENCOUNTERS (from the journal's [ENCOUNTER] lines) =====")
+    print("  %d finished fights" % len(rows))
+    if not rows:
+        print("  none yet - the line ships with v0.9.838; older journals have none.")
+        return
+    table("by role", lambda r: r.get("role", "?"), ["normal", "empowered", "elite", "boss"])
+    table("by player level band", lambda r: band(r["plvl"]), ["1-9", "10-24", "25-49", "50-99", "100+"])
+    def gap(r):
+        g = r["gap"]
+        return "gap<=0" if g <= 0 else ("gap 1-2" if g <= 2 else ("gap 3-10" if g <= 10 else "gap 11+"))
+    table("by monster level minus player level", gap, ["gap<=0", "gap 1-2", "gap 3-10", "gap 11+"])
+    mods = collections.defaultdict(lambda: collections.Counter())
+    for r in rows:
+        for m in (r.get("mods", "-").split(",") if r.get("mods", "-") != "-" else []):
+            mods[m][r.get("outcome", "?")] += 1
+    if mods:
+        print("  by modifier (a fight with two mods counts under both)")
+        for m, c in sorted(mods.items(), key=lambda kv: -sum(kv[1].values())):
+            n = sum(c.values())
+            print("    %-14s n=%-5d died %d (%.1f%%)" % (m, n, c["died"], 100.0 * c["died"] / n))
+    print("")
 
 
 def _pct(a, b):
