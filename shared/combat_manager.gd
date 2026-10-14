@@ -7929,7 +7929,18 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 	# Path of the Badlands — ability-damage effect keys (one funnel, all
 	# trees). spell_damage_pct/keystone live only on mage nodes, low_hp on
 	# Blood Frenzy, vs_disabled on Overwhelm; non-holders read 0 and skip.
-	var path_spell_pct = character.get_path_effect_total("spell_damage_pct") + character.get_path_effect_total("spell_damage_keystone_pct")
+	# ⛑ A CARD HAS A SCHOOL, and until 2026-10-14 it did not: `spell_damage_pct` multiplied EVERY
+	# class's cards (a Fighter's Power Strike doubled at +100 - measured) while `attack_damage_pct`
+	# multiplied basic attacks only and did nothing for a card (x1.01). In a deck-driven game that
+	# made Bloodletter's Hook's "+5% attack damage" nearly dead and Cinderheart Staff's "+5% spell
+	# damage" a bonus for warriors (playtest sheet item 40). A mage's cards are spells; every other
+	# class's are attacks.
+	var _is_spell_school: bool = character.get_class_path() == "mage"
+	var path_spell_pct = 0.0
+	if _is_spell_school:
+		path_spell_pct = character.get_path_effect_total("spell_damage_pct") + character.get_path_effect_total("spell_damage_keystone_pct")
+	else:
+		path_spell_pct = character.get_path_effect_total("attack_damage_pct")
 	if path_spell_pct != 0.0:
 		dmg = dmg * (1.0 + path_spell_pct / 100.0)
 	var path_low_hp_pct = character.get_path_effect_total("low_hp_damage_pct")
