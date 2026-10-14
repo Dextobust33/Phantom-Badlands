@@ -60,6 +60,7 @@ func _init() -> void:
 		ck(before - h.gold_purse == cost and int(h.equipped["weapon"].temper) == t, "tier %d costs %s and lands" % [t, str(cost)])
 	var gain: int = int(Gold.temper_gain("weapon", 50).amount)
 	ck(int(h.equipped["weapon"].affixes.attack_bonus) == 22 + 5 * gain, "five tiers added 5 x %d damage (22 -> %d)" % [gain, int(h.equipped["weapon"].affixes.attack_bonus)])
+	ck(int(h.equipped["weapon"].get("temper_gain", {}).get("attack_bonus", -1)) == 5 * gain, "the bought amount is recorded per stat, so Rework can leave it alone")
 	ck(h.get_total_attack() > atk0, "...and the character's real attack went up (%d -> %d)" % [atk0, h.get_total_attack()])
 	# --- the cap
 	var gold_at_cap: int = h.gold_purse

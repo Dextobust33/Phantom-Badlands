@@ -63,6 +63,14 @@ static func temper_gain(slot: String, item_level: int) -> Dictionary:
 	return {"stat": "hp_bonus", "amount": maxi(10, int(round(0.9 * lvl)))}
 
 
+## ===== REWORK - the enchanter's gold sink =====
+## Rework is gear power, so by the owner's rule (Valor = market/services, gold = gear power) it is
+## priced in GOLD, rising with each rework on the item. A committed Enchanter works for free, as they
+## always did for Valor - the materials are the Enchanter's real cost.
+static func rework_gold(item_level: int, reworks_done: int) -> int:
+	return maxi(1, int(round(4.0 * float(maxi(1, item_level)) * (1.0 + 0.6 * float(maxi(0, reworks_done))))))
+
+
 ## Gold a dungeon pays when cleared (graded by the INSTANCE's tier, never the type's).
 static func dungeon_clear_gold(dungeon_tier: int, floors: int) -> int:
 	return maxi(1, int(round(120.0 * float(maxi(1, dungeon_tier)) * (1.0 + 0.25 * float(maxi(1, floors) - 1)))))

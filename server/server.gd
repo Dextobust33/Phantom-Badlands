@@ -10574,6 +10574,10 @@ func _apply_temper(peer_id: int, slot: String) -> void:
 	var stat: String = String(gain.stat)
 	item["affixes"][stat] = int(item["affixes"].get(stat, 0)) + int(gain.amount)
 	item["temper"] = tier + 1
+	# Remember how much of this stat was BOUGHT, so a Rework rerolls only the natural part.
+	if not (item.get("temper_gain", null) is Dictionary):
+		item["temper_gain"] = {}
+	item["temper_gain"][stat] = int(item["temper_gain"].get(stat, 0)) + int(gain.amount)
 	save_character(peer_id)
 	send_character_update(peer_id)
 	_send_temper_list(peer_id, "[color=#00FF00]Tempered your %s: tier %d, +%d %s (-%s gold).[/color]" % [
@@ -49477,18 +49481,17 @@ func handle_affix_reroll(peer_id: int, message: Dictionary) -> void:
 			want.append("%dx %s" % [int(mats[m]), CraftingDatabaseScript.get_material_name(String(m))])
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Not enough materials — this rework needs %s.[/color]" % ", ".join(want)})
 		return
-	var valor_cost: int = int(cost.get("valor", 0))
-	var account_id = peers[peer_id].account_id
-	if valor_cost > 0 and not persistence.spend_valor(account_id, valor_cost):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]The rework costs %d valor and you have %d.[/color]" % [valor_cost, persistence.get_valor(account_id)]})
+	var gold_cost: int = int(cost.get("gold", 0))
+	if gold_cost > 0 and not character.spend_gold(gold_cost):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]The rework costs %s gold and you carry %s.[/color]" % [_fmt_int(gold_cost), _fmt_int(int(character.gold_purse))]})
 		return
 
 	# ⛑ MATERIALS COME OUT ONLY AFTER THE REROLL SUCCEEDS, so a refusal never eats them. Valor is
 	# already spent above, which is why every refusal that can happen is checked BEFORE it.
 	var res: Dictionary = drop_tables.reroll_affix(item, stat_key)
 	if not bool(res.get("ok", false)):
-		if valor_cost > 0:
-			persistence.add_valor(account_id, valor_cost)
+		if gold_cost > 0:
+			character.add_gold(gold_cost)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % res.get("error", "That cannot be reworked.")})
 		return
 	for m in mats.keys():

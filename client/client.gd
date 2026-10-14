@@ -26056,9 +26056,9 @@ func _display_rework_quote(msg: Dictionary) -> void:
 	var parts: Array = []
 	for m in mats.keys():
 		parts.append("%dx %s" % [int(mats[m]), String(m).replace("_", " ")])
-	var valor: int = int(cost.get("valor", 0))
-	if valor > 0:
-		parts.append("%d valor" % valor)
+	var rework_gold: int = int(cost.get("gold", 0))
+	if rework_gold > 0:
+		parts.append("%s gold" % format_number(rework_gold))
 	display_game("[color=#FFD700]Cost: %s[/color]%s" % [", ".join(parts),
 		" [color=#5AC8FF](Enchanter's discount)[/color]" if bool(msg.get("is_specialist", false)) else ""])
 	display_game("")

@@ -212,8 +212,8 @@ func _init() -> void:
 		for k in cs["materials"].keys():
 			sq = int(cs["materials"][k])
 		print("  %-6d %-28s %-28s" % [n,
-			"%d mat + %d valor" % [tq, int(ct["valor"])],
-			"%d mat + %d valor" % [sq, int(cs["valor"])]])
+			"%d mat + %d gold" % [tq, int(ct["gold"])],
+			"%d mat + %d gold" % [sq, int(cs["gold"])]])
 		# ⛑ THE ZERO CHECK IS THE OWNER'S LINE, LITERALLY. A specialist cost that reaches 0
 		# materials and 0 valor IS "buffing the same item for free".
 		if sq <= 0:

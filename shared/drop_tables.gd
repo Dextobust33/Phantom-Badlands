@@ -6822,9 +6822,18 @@ func rerollable_affixes(item: Dictionary) -> Array:
 			continue
 		var v = affixes[key]
 		if v is int or v is float:
-			out.append(k)
+			# A stat that exists ONLY because it was tempered has nothing natural to rework.
+			if float(v) - float(_tempered_amount(item, k)) > 0.0:
+				out.append(k)
 	out.sort()
 	return out
+
+
+func _tempered_amount(item: Dictionary, stat_key: String) -> int:
+	"""How much of this stat's value was BOUGHT at the blacksmith (see GoldEconomy.temper_*), recorded
+	per stat in `item.temper_gain` so Rework can leave it alone."""
+	var tg = item.get("temper_gain", {})
+	return int(tg.get(stat_key, 0)) if tg is Dictionary else 0
 
 
 func _affix_slot_for(item: Dictionary, stat_key: String) -> String:
@@ -6847,7 +6856,8 @@ func _affix_slot_for(item: Dictionary, stat_key: String) -> String:
 
 
 func affix_reroll_cost(item: Dictionary, is_specialist: bool = false) -> Dictionary:
-	"""What one more reroll of this item costs. Returns {materials:{id:qty}, valor:int, capped:bool}.
+	"""What one more reroll of this item costs. Returns {materials:{id:qty}, gold:int, capped:bool}.
+	(It was Valor until 2026-10-14; rework is gear power, which is gold's job now.)
 
 	⛑ THE COST RISES WITH EACH REROLL ON THIS ITEM, which is the second brake. A flat cost plus a
 	free universal material source (salvage) is not a brake at all.
@@ -6857,19 +6867,19 @@ func affix_reroll_cost(item: Dictionary, is_specialist: bool = false) -> Diction
 	destination"). This gives the salvage ladder a sink without inventing a new currency."""
 	var done: int = int(item.get("reroll_count", 0))
 	if done >= MAX_AFFIX_REROLLS:
-		return {"materials": {}, "valor": 0, "capped": true}
+		return {"materials": {}, "gold": 0, "capped": true}
 	var level: int = int(item.get("level", 1))
 	var tier_index: int = clampi(int(level / 15), 0, SALVAGE_ENCHANT_TIERS.size() - 1)
 	var mat_id: String = SALVAGE_ENCHANT_TIERS[tier_index]
 	# 1, 2, 3, 5, 7 across the five allowed rerolls - superlinear, so the last one hurts.
 	var qty: int = int(round(1.0 + float(done) * float(done) * 0.35 + float(done)))
-	var valor: int = 20 + done * 25
+	var gold: int = preload("res://shared/gold_economy.gd").rework_gold(level, done)
 	if is_specialist:
 		# A DISCOUNT, NEVER A WAIVER. maxi(1, ...) is the floor that keeps it from reaching zero,
 		# and it is the line the owner drew.
 		qty = maxi(1, int(ceil(float(qty) * SPECIALIST_REROLL_DISCOUNT)))
-		valor = 0
-	return {"materials": {mat_id: qty}, "valor": valor, "capped": false}
+		gold = 0
+	return {"materials": {mat_id: qty}, "gold": gold, "capped": false}
 
 
 func reroll_affix(item: Dictionary, stat_key: String) -> Dictionary:
@@ -6898,7 +6908,10 @@ func reroll_affix(item: Dictionary, stat_key: String) -> Dictionary:
 		_:
 			pool = PREFIX_POOL + SUFFIX_POOL
 
-	var present: Array = rerollable_affixes(item)
+	var present: Array = []
+	for pk in affixes.keys():
+		if affixes[pk] is int or affixes[pk] is float:
+			present.append(String(pk))
 	var candidates: Array = []
 	for e in pool:
 		var st := String(e.get("stat", ""))
@@ -6914,9 +6927,15 @@ func reroll_affix(item: Dictionary, stat_key: String) -> Dictionary:
 	# BRAKE 3: a fresh roll from the item's own level range. It can land lower than what it
 	# replaced, and it stands.
 	var rolled: Dictionary = _calculate_affix_value(pick, level, _get_stat_roll_range(level))
-	var old_value = affixes[stat_key]
+	var kept: int = _tempered_amount(item, stat_key)
+	var old_value = affixes[stat_key] - kept   # the NATURAL part; the tempered part is not reworked
 
-	affixes.erase(stat_key)
+	# Temper is bought power and Rework must not eat it: the natural roll leaves, the tempered amount
+	# stays on the old stat (owner 2026-10-14).
+	if kept > 0:
+		affixes[stat_key] = kept
+	else:
+		affixes.erase(stat_key)
 	affixes[String(pick.get("stat", ""))] = rolled.value
 	if slot == "prefix":
 		affixes["prefix_name"] = pick.get("name", "")
