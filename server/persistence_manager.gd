@@ -1974,6 +1974,16 @@ func register_companion_to_house(account_id: String, companion: Dictionary, chec
 	if house.registered_companions.companions.size() >= capacity:
 		return -1
 
+	# One companion, one slot. Callers guard on `house_slot` flags living on the character, and
+	# those drift (legacy rows, archive copies); the house's own list is the record that cannot.
+	# Playtest sheet item 51. Matching is on a REAL id only - legacy companions carry "" and
+	# `"" == ""` would refuse an unrelated creature.
+	var _cid := String(companion.get("id", ""))
+	if _cid != "":
+		for existing in house.registered_companions.companions:
+			if String(existing.get("id", "")) == _cid:
+				return -1
+
 	# Add registration metadata
 	companion["registered_at"] = int(Time.get_unix_time_from_system())
 	companion["checked_out_by"] = checked_out_by

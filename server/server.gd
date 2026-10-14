@@ -38425,6 +38425,18 @@ func _use_ability_tome(peer_id: int, item_index: int, item: Dictionary):
 	if item_index < 0 or item_index >= character.inventory.size():
 		return
 
+	# A tome for another path's card used to be CONSUMED and grant a card the deck builder then
+	# drops (`_initialize_combat_deck` only deals cards in `get_all_available_abilities`) - the
+	# tome vanished and the card never appeared. Playtest sheet item 34. Refuse, keep the tome.
+	var _usable := false
+	for _entry in character.get_all_available_abilities():
+		if String(_entry.get("name", "")) == gift_ability:
+			_usable = true
+			break
+	if not _usable:
+		send_to_peer(peer_id, {"type": "error", "message": "This tome teaches %s, a card your class cannot play. It is not used up - sell or trade it." % drop_tables.get_ability_tome_display(gift_ability)})
+		return
+
 	var existing_count = character.card_copies_owned(gift_ability)
 	if character.grant_card_copy(gift_ability) == "":
 		send_to_peer(peer_id, {"type": "error", "message": "You already hold the most copies of that card a deck can carry."})
