@@ -35518,7 +35518,11 @@ func display_changelog():
 	# v0.9.836 - the rest of the owner's playtest sheet: card faces that matched the fight, hovers and
 	#            panels that lied or hid, and the Warden speaking with pop-ups off.
 	# v0.9.837 - one Scroll of Summoning and one Scroll of Finding.
-	display_game("[color=#00FF00]v0.9.837[/color] [color=#808080](Current)[/color]")
+	# v0.9.838 - party play without the old lead/follow leftovers.
+	display_game("[color=#00FF00]v0.9.838[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ PARTIES NO LONGER HAVE A LEADER YOU FOLLOW.[/color] Anyone in a party can now walk out of a trading post on their own - before, only the leader could, and only once everyone stood beside them. The Lead / Follow question when a party forms is gone (whoever invited leads), leadership no longer rotates after every fight, and the Lead: Rotate / Fixed button is removed. The Party help page now describes how it really works: everyone moves on their own, a fight pulls in members within 8 tiles, and you can walk into a teammate who is fighting to join.")
+	display_game("")
+	display_game("[color=#808080]v0.9.837[/color]")
 	display_game("  [color=#FF8000]◆ ONE SCROLL OF SUMMONING, ONE SCROLL OF FINDING.[/color] There were two sets with identical effects: the ones that drop (with Ancient and Arcane versions that did nothing extra) and the ones you scribe, which were called Monster Select and Target Farm. They now share one name each, at every rarity. Scrolls you already hold keep their old names until you make new ones.")
 	display_game("")
 	display_game("[color=#808080]v0.9.836[/color]")
