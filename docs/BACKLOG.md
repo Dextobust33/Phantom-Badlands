@@ -1080,7 +1080,7 @@ nothing is held back unreleased.** First commands of the session: `python tools/
   done; no extra guidance at (0,0) beyond the High Seat button). **24** (all four lead/follow leftovers gone; dungeon
   entry/exit, go-back-a-floor, the starter-dungeon escort and invites are STILL leader-gated on purpose - ask the owner if
   they meant those). **6** fixed on the owner's hypothesis, never reproduced live.
-- NOT STARTED: **group 6** [4 Swift Hobgoblin landed 6 hits, 9 Distract debuff, 28 "less often / once" upgrades, 40
+- GROUP 6 DONE 2026-10-14 (all seven, each with a probe; see the per-item notes at the group-6 line below): 4 (summary counted lines not hits), 9 (Distract now announced), 14 (runes from the panel), 28 (Heavy Draw / Sacrificial), 34 (tomes), 40 (attack vs spell power on cards), 51 (one hydra in two slots). STILL OPEN from it: item 40's non-unique artifact gear + proc runes vs text; the live Sanctuary's existing duplicate rows (51). NOT STARTED: **group 6** [4 Swift Hobgoblin landed 6 hits, 9 Distract debuff, 28 "less often / once" upgrades, 40
   artifact-gear audit vs text, 14 runes can't be applied, 34 Tome of Gambit card missing from the deck, 51 same companion
   in several slots] - VERIFY-THEN-FIX: cast it, read the log, do not read code and guess. **Group 10** design asks [7
   salvage confirm/auto-salvage, 29 stat-point auto-apply, 30 late minigames too long, 50 gold/gems] need owner decisions.
