@@ -2214,6 +2214,37 @@ func _get_condition_string(wear: int) -> String:
 # add_experience() did, which is how party-combat levelling froze every XP requirement at 100.
 # It is set in level_up() now, and both paths share xp_required_for_next_level().
 
+func _apply_level_stat_gains() -> void:
+	"""What ONE level grants: the class's FRACTIONAL stat gains (accumulated, so 0.35 CON a level
+	becomes +1 every third level instead of 0 forever) and one stat point (auto-spent on the class
+	preset unless the player opted out).
+
+	ONE FUNCTION BECAUSE THERE WERE TWO AND THEY DISAGREED, and the second was the combat
+	simulator's reference player. `level_up()` added the fractional gains straight into integer stats,
+	which TRUNCATES anything under 1.0 per level to zero, and it never granted a stat point - so a
+	reference character built with it lagged a real player at the same level in every stat, widening
+	with level. Measured against the rank-1 Sorcerer's death record (2026-10-14): live INT 205 / CON 57
+	at L91, reference INT 107 / CON 9. The monsters were being sized against a character weaker than the
+	players meeting them."""
+	var gains = get_stat_gains_for_class()
+	for stat_name in ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]:
+		stat_accumulator[stat_name] += gains.get(stat_name, 0.0)
+		var whole_gain = int(stat_accumulator[stat_name])
+		if whole_gain >= 1:
+			stat_accumulator[stat_name] -= whole_gain
+			match stat_name:
+				"strength": strength += whole_gain
+				"constitution": constitution += whole_gain
+				"dexterity": dexterity += whole_gain
+				"intelligence": intelligence += whole_gain
+				"wisdom": wisdom += whole_gain
+				"wits": wits += whole_gain
+	# Audit #3 Slice 1 - 1 unspent stat point per level, layered on top of the class scaling.
+	unspent_stat_points += UNSPENT_STAT_POINTS_PER_LEVEL
+	if auto_spend_stats:
+		spend_stat_point(preset_stat_for_class(class_type))
+
+
 func level_up():
 	"""Increase level and stats, INCLUDING the XP required for the next one.
 
@@ -2238,16 +2269,9 @@ func level_up():
 	rather than adding a third caller that remembers to."""
 	level += 1
 	
-	# Get stat gains for class
-	var gains = get_stat_gains_for_class()
-	
-	strength += gains.strength
-	constitution += gains.constitution
-	dexterity += gains.dexterity
-	intelligence += gains.intelligence
-	wisdom += gains.wisdom
-	wits += gains.wits
-	
+	# Stat gains + the stat point, by the SAME function the XP path uses.
+	_apply_level_stat_gains()
+
 	# Recalculate derived stats
 	calculate_derived_stats()
 
@@ -3224,29 +3248,8 @@ func add_experience(amount: int) -> Dictionary:
 		levels_gained += 1
 		leveled_up = true
 
-		# Get class-specific stat gains (fractional, totaling 2.5 per level)
-		var gains = get_stat_gains_for_class()
-
-		# Accumulate fractional stats and apply whole numbers
-		for stat_name in ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]:
-			stat_accumulator[stat_name] += gains.get(stat_name, 0.0)
-			var whole_gain = int(stat_accumulator[stat_name])
-			if whole_gain >= 1:
-				stat_accumulator[stat_name] -= whole_gain
-				match stat_name:
-					"strength": strength += whole_gain
-					"constitution": constitution += whole_gain
-					"dexterity": dexterity += whole_gain
-					"intelligence": intelligence += whole_gain
-					"wisdom": wisdom += whole_gain
-					"wits": wits += whole_gain
-
-		# Audit #3 Slice 1 — grant 1 unspent stat point per level. Stored on
-		# the character, spent via /spendstat <stat>. Layered on top of the
-		# class-fixed scaling above, not replacing it.
-		unspent_stat_points += UNSPENT_STAT_POINTS_PER_LEVEL
-		if auto_spend_stats:
-			spend_stat_point(preset_stat_for_class(class_type))
+		# Class stat gains + the level's stat point - ONE function, shared with level_up().
+		_apply_level_stat_gains()
 
 		# Recalculate derived stats with new formulas
 		calculate_derived_stats()

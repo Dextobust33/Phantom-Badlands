@@ -1416,6 +1416,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       **Dead data left in place:** `rotation_order` / `rotation_idx` / `control_mode` keys on the party
       dict and `handle_party_set_control_mode`, kept so an old client's toggle does not error.
 9. - [ ] **BALANCE BATCH — wait for the chain, do not fix one by one.**
+      **READ FIRST (2026-10-14): `docs/balance/rank1_sorcerer_death_2026-10-06.md`** - the owner's L91 rank-1 Sorcerer died in ONE round (6,060 dmg vs 2,242 HP), and comparing his record with the simulator found the reference player had ~HALF a real player's stats (`level_up()` truncated fractional gains and granted no stat points; fixed, probe `level_up_paths_agree`). **The previous curve was calibrated against that weaker character - run the chain on the corrected player and judge against absolute targets, not the old numbers.** Also asks: does admin use explain his gear/pace (owner), and measure the first-strike + ambush + drain burst tail.
       ▶ **OWNER DIRECTION 2026-10-13: empowered-monster difficulty "may need reduced slightly"** - goes in this BALANCE BATCH
       (the sim agrees empowered is the main source of non-wins: ~66-69% win at L1-10 vs a 55% target), to be set when the
       batch runs; wait for the [ENCOUNTER] data first so the size of the change is measured, not guessed.

@@ -35619,7 +35619,25 @@ func display_changelog():
 	# v0.9.837 - one Scroll of Summoning and one Scroll of Finding.
 	# v0.9.838 - party play without the old lead/follow leftovers.
 	# v0.9.839 - the Title menu and its help told the truth.
-	display_game("[color=#00FF00]v0.9.839[/color] [color=#808080](Current)[/color]")
+	# v0.9.840 - gold is back (per character), the blacksmith and enchanter spend it, stat points
+	#            auto-spend, a salvage-prompt toggle, runes apply from the panel, and a sweep of
+	#            "the text said one thing and the game did another" fixes.
+	display_game("[color=#00FF00]v0.9.840[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ GOLD IS BACK - YOUR CHARACTER'S OWN MONEY.[/color] It sits beside Valor at the top. You earn it from [b]kills[/b], [b]monster gems[/b] (1 gem = 1,000 gold, at any merchant), [b]salvaging[/b], [b]quests[/b], [b]dungeon clears[/b] and piles on dungeon floors. A random 10-50% is left on your corpse if you die. Valor still does the market, healers and the Sanctuary. Press [b]?[/b] → Gold for the details.")
+	display_game("  [color=#FF8000]★ SPEND IT ON GEAR POWER.[/color] [b]Blacksmith → Temper[/b]: up to 5 tiers per worn item - weapons gain damage, everything else gains HP, and the gain stays on the item. [b]Rework[/b] (swapping a stat you don't want) now costs gold, and a Tempered stat survives a Rework.")
+	display_game("  [color=#FF8000]★ STAT POINTS SPEND THEMSELVES.[/color] Each level's point goes to your class's main stat. Turn Auto-spend off from the Stats panel to bank them again. Points you already had are never touched.")
+	display_game("  [color=#FF8000]◆ SALVAGE:[/color] a Settings toggle for the 'are you sure?' prompt on single items; auto-salvage no longer destroys an item that beats what you wear or fills an empty slot; salvaging pays a little gold.")
+	display_game("  [color=#FF8000]◆ AUTO-SKIP IS FASTER WHEN THERE ARE MORE REVEALS[/color] - a late-game haul takes about 3 seconds instead of 15.")
+	display_game("  [color=#FF4444]★ FIXED: runes could not be applied from the inventory panel.[/color] Use now asks which slot, with buttons.")
+	display_game("  [color=#FF4444]★ FIXED: Disenchant never worked[/color] - it failed every time and returned nothing.")
+	display_game("  [color=#FF4444]◆ FIXED: reading an Ability Tome for another class's card used it up for nothing.[/color] It is now refused (and kept), and new tomes lean toward cards your class can play.")
+	display_game("  [color=#FF4444]◆ FIXED: the same companion could be registered in two Sanctuary slots[/color] (a registered companion deposited at the Stable became a plain copy).")
+	display_game("  [color=#FF4444]◆ FIXED: Heavy Draw had no downside and Sacrificial cards kept coming back.[/color] A Heavy Draw card now returns last after a reshuffle; a Sacrificial card stays gone.")
+	display_game("  [color=#FF4444]◆ FIXED: +attack-damage gear did nothing for cards, and +spell-damage gear boosted every class's cards.[/color] Mages' cards now take spell damage; everyone else's take attack damage.")
+	display_game("  [color=#FF4444]◆ FIXED: a fight you cut down without breaking stride showed no XP when it also levelled you.[/color] The number was read off the XP bar, which resets on a level-up, so it came out negative and nothing was printed.")
+	display_game("  [color=#FF4444]◆ FIXED: the combat log said '6 hits' for a 3-hit turn[/color] (it was counting lines, not hits), and Distract now says so on the monster's turn when it bites.")
+	display_game("")
+	display_game("[color=#808080]v0.9.839[/color]")
 	display_game("  [color=#FF4444]★ FIXED: the Title menu never showed what its abilities cost in Valor.[/color] It was reading prices from an old gold field, so you only found out by being refused. Every Valor price, gem price and cooldown now shows, and the Help page reads the same numbers.")
 	display_game("  [color=#FF4444]◆ FIXED: the Title menu offered a title to anyone standing next to The High Seat.[/color] You must be on the seat itself (0,0). The Help page also now says that a new High King usurps the sitting one, that a Jarl needs no High King on the throne, and that the forge is Fire Mt then Forge.")
 	display_game("")

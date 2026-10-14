@@ -1,0 +1,497 @@
+{
+ "account_username": "Dextobust33",
+ "cause_of_death": "★ Nazgul Champion",
+ "character_name": "Dexto",
+ "class": "Sorcerer",
+ "death_data": {
+  "active_companion": {
+   "bonuses": {
+    "aggro": 50.0,
+    "attack": 10.0,
+    "hp_regen": 4.0
+   },
+   "border_tier": 0,
+   "combat_hp": 2405,
+   "combat_max_hp": 2405,
+   "id": "companion_hydra_2048441648",
+   "level": 53.0,
+   "monster_type": "Hydra",
+   "name": "Hydra Sprout",
+   "sub_tier": 6.0,
+   "tier": 4.0,
+   "variant": "Lime",
+   "variant_color": "#32CD32",
+   "variant_color2": "",
+   "variant_pattern": "solid",
+   "xp": 12122.0
+  },
+  "cause_of_death": "★ Nazgul Champion",
+  "character_name": "Dexto",
+  "class_type": "Sorcerer",
+  "collected_companions": [
+   {
+    "battles_fought": 76.0,
+    "bonuses": {
+     "aggro": 50.0,
+     "attack": 10.0,
+     "hp_regen": 4.0
+    },
+    "border_tier": 0.0,
+    "house_slot": 3.0,
+    "id": "companion_hydra_2048441648",
+    "level": 53.0,
+    "monster_type": "Hydra",
+    "name": "Hydra Sprout",
+    "obtained_at": 1791236188.0,
+    "sub_tier": 6.0,
+    "tier": 4.0,
+    "variant": "Lime",
+    "variant_color": "#32CD32",
+    "variant_color2": "",
+    "variant_pattern": "solid",
+    "xp": 12122.0
+   },
+   {
+    "battles_fought": 152.0,
+    "bonuses": {
+     "aggro": 40.0,
+     "attack": 12.0,
+     "defense": 6.0
+    },
+    "border_tier": 0.0,
+    "house_slot": 3.0,
+    "id": "companion_ancient_dragon_3611499202",
+    "level": 60.0,
+    "monster_type": "Ancient Dragon",
+    "name": "Dragon Whelp",
+    "obtained_at": 1791239642.0,
+    "sub_tier": 7.0,
+    "tier": 4.0,
+    "variant": "Twilit",
+    "variant_color": "#FF69B4",
+    "variant_color2": "#00CED1",
+    "variant_pattern": "split_v",
+    "xp": 5244.0
+   },
+   {
+    "battles_fought": 21.0,
+    "bonuses": {
+     "aggro": 50.0,
+     "defense": 2.0
+    },
+    "border_tier": 0.0,
+    "id": "companion_skeleton_3444201652",
+    "level": 5.0,
+    "monster_type": "Skeleton",
+    "name": "Bone Servant",
+    "obtained_at": 1788655540.0,
+    "sub_tier": 1.0,
+    "tier": 1.0,
+    "variant": "Tidal",
+    "variant_color": "#006994",
+    "variant_color2": "#00CED1",
+    "variant_pattern": "wave",
+    "xp": 149.0
+   },
+   {
+    "battles_fought": 0.0,
+    "bonuses": {
+     "aggro": 50.0,
+     "defense": 2.0
+    },
+    "combat_hp": 55.0,
+    "id": "fused_skeleton_743192938_1779030929",
+    "level": 1.0,
+    "monster_type": "Skeleton",
+    "name": "Bone Servant",
+    "obtained_at": 1779030929.0,
+    "sub_tier": 2.0,
+    "tier": 1.0,
+    "variant": "Soul",
+    "variant_color": "#000080",
+    "variant_color2": "#00FFFF",
+    "variant_pattern": "middle",
+    "variant_rarity": 3.0,
+    "xp": 0.0
+   },
+   {
+    "bonuses": {
+     "aggro": 12.0,
+     "attack": 2.0
+    },
+    "combat_hp": 45.0,
+    "id": "companion_goblin_2797164879",
+    "level": 1.0,
+    "monster_type": "Goblin",
+    "name": "Goblin Sprite",
+    "sub_tier": 1.0,
+    "tier": 1.0,
+    "variant": "Corrupted",
+    "variant_color": "#FFFFFF",
+    "variant_color2": "#8B0000",
+    "variant_pattern": "corners",
+    "xp": 0.0
+   },
+   {
+    "battles_fought": 0,
+    "bonuses": {
+     "aggro": 12,
+     "speed": 3
+    },
+    "border_tier": 0,
+    "id": "companion_giant_rat_1914719746",
+    "level": 1,
+    "monster_type": "Giant Rat",
+    "name": "Rat Familiar",
+    "obtained_at": 1791242070,
+    "sub_tier": 1,
+    "tier": 1,
+    "variant": "Copper",
+    "variant_color": "#B87333",
+    "variant_color2": "",
+    "variant_pattern": "solid",
+    "xp": 0
+   },
+   {
+    "battles_fought": 0.0,
+    "bonuses": {
+     "aggro": 12.0,
+     "speed": 3.0
+    },
+    "border_tier": 0.0,
+    "id": "companion_giant_rat_2203122730",
+    "level": 1.0,
+    "monster_type": "Giant Rat",
+    "name": "Rat Familiar",
+    "obtained_at": 1791238632.0,
+    "sub_tier": 1.0,
+    "tier": 1.0,
+    "variant": "Mirage",
+    "variant_color": "#FF8C00",
+    "variant_color2": "#FFFACD",
+    "variant_pattern": "wave",
+    "xp": 0.0
+   },
+   {
+    "battles_fought": 0,
+    "bonuses": {
+     "aggro": 15,
+     "gathering_bonus": 5
+    },
+    "border_tier": 0,
+    "id": "companion_kobold_911432551",
+    "level": 1,
+    "monster_type": "Kobold",
+    "name": "Kobold Helper",
+    "obtained_at": 1791232604,
+    "sub_tier": 1,
+    "tier": 1,
+    "variant": "Heart",
+    "variant_color": "#4B0082",
+    "variant_color2": "#FF1493",
+    "variant_pattern": "middle",
+    "xp": 0
+   },
+   {
+    "battles_fought": 0,
+    "bonuses": {
+     "aggro": 25,
+     "attack": 3
+    },
+    "border_tier": 0,
+    "id": "companion_wolf_4037998618",
+    "level": 1,
+    "monster_type": "Wolf",
+    "name": "Wolf Pup",
+    "obtained_at": 1791243222,
+    "sub_tier": 1,
+    "tier": 1,
+    "variant": "Frost",
+    "variant_color": "#87CEEB",
+    "variant_color2": "",
+    "variant_pattern": "solid",
+    "xp": 0
+   },
+   {
+    "battles_fought": 0,
+    "bonuses": {
+     "aggro": 12,
+     "speed": 3
+    },
+    "border_tier": 0,
+    "id": "companion_giant_rat_1444496059",
+    "level": 1,
+    "monster_type": "Giant Rat",
+    "name": "Rat Familiar",
+    "obtained_at": 1791243370,
+    "sub_tier": 1,
+    "tier": 1,
+    "variant": "Mirage",
+    "variant_color": "#FF8C00",
+    "variant_color2": "#FFFACD",
+    "variant_pattern": "wave",
+    "xp": 0
+   },
+   {
+    "battles_fought": 0,
+    "bonuses": {
+     "aggro": 15,
+     "gathering_bonus": 5
+    },
+    "border_tier": 0,
+    "id": "companion_kobold_4137019461",
+    "level": 1,
+    "monster_type": "Kobold",
+    "name": "Kobold Helper",
+    "obtained_at": 1791243592,
+    "sub_tier": 1,
+    "tier": 1,
+    "variant": "Obsidian",
+    "variant_color": "#0A0A0A",
+    "variant_color2": "",
+    "variant_pattern": "solid",
+    "xp": 0
+   },
+   {
+    "battles_fought": 0,
+    "bonuses": {
+     "aggro": 25,
+     "attack": 3
+    },
+    "border_tier": 0,
+    "id": "companion_wolf_3663915047",
+    "level": 1,
+    "monster_type": "Wolf",
+    "name": "Wolf Pup",
+    "obtained_at": 1791245041,
+    "sub_tier": 1,
+    "tier": 1,
+    "variant": "Violet",
+    "variant_color": "#9400D3",
+    "variant_color2": "",
+    "variant_pattern": "solid",
+    "xp": 0
+   }
+  ],
+  "combat_log": [
+   "[color=#FFD700]You encounter a [/color][color=#FFFF00]★ Nazgul Champion[/color][color=#FFD700] (Lvl 101)![/color]\r\n[url=CHAMPION — 180% of a normal one's HP and 368% of its damage. A long fight, worth 1.5x XP and better loot.][color=#FFD700]★ CHAMPION ★[/color][/url]\n[color=#808080]Traits: [url=Life Stealer — Heals itself for half the damage it deals you.][color=#FF4444]Life Stealer[/color][/url], [url=* CUNNING PREY * — Drops TRICKSTER gear — 35%, or guaranteed if a Scroll of Finding marked it.][color=#1EFF00]* CUNNING PREY *[/color][/url], [url=! XP DRAINER ! — Steals 1-3% of your experience when it hits you.][color=#FF00FF]! XP DRAINER ![/color][/url], [url=Ambusher — Its first attack has a 75% chance to land at 1.75x damage, and it is likelier to move first.][color=#FF00FF]Ambusher[/color][/url], [url=Berserker — Deals +50% damage once it drops below half HP.][color=#FF6600]Berserker[/color][/url], [url=Ethereal — A third of your attacks pass straight through it - though it is less accurate in return.][color=#CC99FF]Ethereal[/color][/url], [url=Causes Bleeding — 40% chance on hit to stack a bleed, up to 3, each worth 15% of its strength a turn.][color=#FF4444]Causes Bleeding[/color][/url], [url=Curse — 30% chance to cut your defence by 25 for the rest of the fight. Wisdom resists up to half.][color=#BA55D3]Curse[/color][/url], [url=Weakening — 30% chance to cut your attack damage by 25% for 20 turns - which outlasts the fight.][color=#FFA500]Weakening[/color][/url], [url=Disarming — 25% chance to disarm you: -30% damage for 3 rounds.][color=#FF8800]Disarming[/color][/url], [url=Slowing Aura — Its aura cuts your chance to flee by 25%.][color=#808080]Slowing Aura[/color][/url][/color]\n[color=#FF00FF]⚠ TIER +1 — Extreme danger! (2x XP if you survive)[/color]",
+   "[color=#FF4444]⚔ ★ Nazgul Champion strikes first![/color]",
+   "[color=#FF0000]AMBUSH! The ★ Nazgul Champion strikes from the shadows![/color]\n[color=#FF4444]The ★ Nazgul Champion drains 2020 life from you![/color]\n[color=#9ACD32]Your Path punishes the blow — 189 damage reflected![/color]\n[color=#FF4444]The ★ Nazgul Champion hits you for [url=4040 damage, nothing reduced this hit.][color=#FF8800]4040[/color][/url] damage![/color]\n[color=#808080]The ★ Nazgul Champion's aura slows you! (-25% flee chance)[/color]"
+  ],
+  "combat_replay": [],
+  "equipped": {
+   "amulet": {
+    "affixes": {
+     "hp_bonus": 576,
+     "int_bonus": 51,
+     "prefix_name": "Horror-marked",
+     "roll_quality": 78,
+     "suffix_name": "of the Lich"
+    },
+    "created_at": 1791242427,
+    "from_rare_monster": true,
+    "id": 2416722905,
+    "level": 71,
+    "name": "Horror-marked Arcane Hoarder's Amulet of the Lich",
+    "rarity": "uncommon",
+    "type": "amulet_mystic",
+    "value": 2570,
+    "wear": 2
+   },
+   "armor": {
+    "affixes": {
+     "attack_bonus": 57.0,
+     "energy_bonus": 126.0,
+     "int_bonus": 41.0,
+     "prefix_name": "Draconic",
+     "roll_quality": 45.0,
+     "suffix_name": "of the Vampire"
+    },
+    "created_at": 1791238082.0,
+    "id": 4132939095.0,
+    "level": 56.0,
+    "name": "Draconic Enchanted Armor of the Vampire",
+    "rarity": "rare",
+    "type": "armor_enchanted",
+    "value": 6472.0,
+    "wear": 3
+   },
+   "boots": {
+    "affixes": {
+     "defense_bonus": 113,
+     "int_bonus": 67,
+     "prefix_name": "Golem-forged",
+     "roll_quality": 63,
+     "suffix_name": "of the Archmage"
+    },
+    "created_at": 1791244773,
+    "from_rare_monster": true,
+    "id": 4289438691,
+    "level": 97,
+    "name": "Golem-forged Cunning Prey's Boots of the Archmage",
+    "rarity": "uncommon",
+    "type": "boots_swift",
+    "value": 4754,
+    "wear": 5
+   },
+   "helm": {
+    "affixes": {
+     "attack_bonus": 29.0,
+     "card_cost_haste": 30.0,
+     "card_duration_shadowstep": 1.0,
+     "defense_bonus": 102.0,
+     "hp_bonus": 492.0,
+     "hp_on_kill": 72.0,
+     "mutation": "focused",
+     "mutation_name": "Focused",
+     "prefix_name": "Hydra-scaled",
+     "roll_quality": 44.0,
+     "suffix_name": "of Striking"
+    },
+    "created_at": 1791239754.0,
+    "id": 3569970779.0,
+    "is_unique": true,
+    "level": 70.0,
+    "lore": "Armies followed the voice beneath it into fire.",
+    "name": "Warbringer's Crown",
+    "rarity": "artifact",
+    "type": "helm_artifact",
+    "unique_effect": {
+     "buff_duration_bonus": 1.0,
+     "buff_value_pct": 15.0
+    },
+    "unique_id": "warbringers_crown",
+    "value": 3750000.0,
+    "wear": 4
+   },
+   "ring": {
+    "affixes": {
+     "attack_bonus": 69,
+     "card_cost_shadowstep": 45,
+     "defense_bonus": 112,
+     "hp_bonus": 369,
+     "hp_on_kill": 167,
+     "prefix_name": "Warded",
+     "roll_quality": 44,
+     "suffix_name": "of Ruin"
+    },
+    "created_at": 1791245197,
+    "from_rare_monster": true,
+    "id": 2877727270,
+    "level": 105,
+    "name": "Warded Arcane Hoarder's Mythical Ring of Ruin",
+    "rarity": "legendary",
+    "type": "ring_arcane",
+    "value": 556250,
+    "wear": 4
+   },
+   "shield": {
+    "affixes": {
+     "attack_bonus": 58,
+     "mana_bonus": 253,
+     "prefix_name": "Mystic",
+     "roll_quality": 33,
+     "suffix_name": "of Ruin",
+     "wis_bonus": 69
+    },
+    "created_at": 1791243279,
+    "id": 1388772137,
+    "level": 101,
+    "name": "Mystic Enchanted Shield of Ruin",
+    "rarity": "rare",
+    "type": "shield_enchanted",
+    "value": 20602,
+    "wear": 6
+   },
+   "weapon": {
+    "affixes": {
+     "attack_bonus": 40,
+     "defense_bonus": 71,
+     "int_bonus": 53,
+     "mana_bonus": 211,
+     "prefix_name": "Gargoyle-hewn",
+     "roll_quality": 60,
+     "suffix_name": "of the Sphinx"
+    },
+    "created_at": 1791241959,
+    "id": 2526996131,
+    "level": 55,
+    "name": "Gargoyle-hewn Pristine Mythic Weapon of the Sphinx",
+    "rarity": "epic",
+    "type": "weapon_mythic",
+    "value": 31250,
+    "wear": 3
+   }
+  },
+  "experience": 1042674,
+  "gold": 0,
+  "has_combat_detail": true,
+  "incubating_eggs": [
+   {
+    "bonuses": {
+     "aggro": 12,
+     "speed": 3
+    },
+    "companion_name": "Rat Familiar",
+    "egg_id": "egg_giant_rat_1145554771",
+    "hatch_steps": 75,
+    "monster_type": "Giant Rat",
+    "name": "Rat Familiar Egg",
+    "obtained_at": 1791245306,
+    "steps_remaining": 8,
+    "sub_tier": 1,
+    "tier": 1,
+    "variant": "Scarlet",
+    "variant_color": "#FF2400",
+    "variant_color2": "",
+    "variant_pattern": "solid",
+    "variant_rarity": 10
+   },
+   {
+    "bonuses": {
+     "aggro": 25,
+     "attack": 3
+    },
+    "companion_name": "Wolf Pup",
+    "egg_id": "egg_wolf_1868766166",
+    "hatch_steps": 75,
+    "monster_type": "Wolf",
+    "name": "Wolf Pup Egg",
+    "obtained_at": 1791245678,
+    "steps_remaining": 56,
+    "sub_tier": 1,
+    "tier": 1,
+    "variant": "Scarlet",
+    "variant_color": "#FF2400",
+    "variant_color2": "",
+    "variant_pattern": "solid",
+    "variant_rarity": 10
+   }
+  ],
+  "level": 91,
+  "monster_base_name": "Nazgul",
+  "monster_max_hp": 36561,
+  "monsters_killed": 486,
+  "player_hp": 0,
+  "player_hp_at_start": 2242,
+  "player_max_hp": 2242,
+  "race": "Dwarf",
+  "rounds_fought": 1,
+  "stats": {
+   "constitution": 57,
+   "dexterity": 32,
+   "intelligence": 205,
+   "strength": 8,
+   "wisdom": 57,
+   "wits": 11
+  },
+  "total_damage_dealt": 0,
+  "total_damage_taken": 0,
+  "valor": 864630
+ },
+ "died_at": 1791245738,
+ "experience": 1042674,
+ "level": 91,
+ "monsters_killed": 486,
+ "rank": 1
+}

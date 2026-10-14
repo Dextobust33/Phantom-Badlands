@@ -96,7 +96,7 @@ const HELP_TOPICS := {
 			+ "  • [b]Right-click[/b] anything for the full menu: Inspect / Use / Equip / Unequip / Lock / Salvage / Drop.\n"
 			+ "  • [b]Hover[/b] for a detailed tooltip (stats, comparison to current gear, source for materials).\n\n"
 			+ "[color=#FFD700]── Salvaging ──[/color]\n"
-			+ "  • [b]Right-click → Salvage[/b] breaks down a single item into crafting materials (with a confirm).\n"
+			+ "  • [b]Right-click → Salvage[/b] breaks down a single item into crafting materials [b]and gold[/b] (it asks first - turn that off in Settings → Game Settings).\n"
 			+ "  • The [b]Salvage ▾[/b] button has the bulk verbs: Junk (below your level), ALL equipment, consumables, plus Full Options for auto-salvage rarity + affix filters.\n"
 			+ "  • [b]Locked[/b] items are always skipped — lock anything you want to keep safe.\n\n"
 			+ "[color=#FFD700]── Materials ──[/color]\n"
@@ -129,7 +129,7 @@ const HELP_TOPICS := {
 		"title": "[color=#FFD700]Stats & Progression[/color]",
 		"body": (
 			"Your character's stats, racial passives, class passives, and the [color=#FFD700]Progression Vectors[/color] dashboard.\n\n"
-			+ "[color=#FFD700]── Stat allocation ──[/color] You earn 1 stat point per level. Spend them on STR / CON / DEX / INT / WIS / WITS to taste. Sanctuary upgrades + race bonuses stack on top.\n\n"
+			+ "[color=#FFD700]── Stat allocation ──[/color] You earn 1 stat point per level. By default it is [b]spent for you[/b] on your class's main stat (mages INT, Grifter / Ranger / Ninja DEX, warriors STR). Turn [b]Auto-spend[/b] off with the button at the top of the Stats panel to bank points and spend them on STR / CON / DEX / INT / WIS / WITS yourself. Points you had banked before are never touched. Sanctuary upgrades + race bonuses stack on top.\n\n"
 			+ "[color=#FFD700]── Class + Race passives ──[/color] Named here with full effect text. Each class has a passive that defines its identity; each race has its own. Both are always-on; you don't need to activate them.\n\n"
 			+ "[color=#FFD700]── Progression Vectors ──[/color] The dashboard names every track you're advancing:\n"
 			+ "  • Character XP + level progression\n"
@@ -572,15 +572,33 @@ const HELP_TOPICS := {
 			+ "[color=#FFD700]── Combat items ──[/color]\n"
 			+ "Map consumables to combat slots so you can use them mid-fight via the action bar. Default 5 slots; assign via Settings → Combat Items.\n\n"
 			+ "[color=#FFD700]── Quality of life ──[/color]\n"
-			+ "  • [b]Autoskip loot reveal[/b] — when on, the post-combat scratch-off auto-flips your reveal budget instantly.\n"
+			+ "  • [b]Autoskip loot reveal[/b] — when on, the post-combat scratch-off auto-flips your reveals, and faster the more there are (a whole run takes about 3 seconds).\n"
+			+ "  • [b]Confirm Before Salvaging One Item[/b] — Game Settings, key [b]0[/b] or the Salvage Ask button. On by default.\n"
 			+ "  • [b]Chat timestamps[/b] — toggle the `[HH:MM]` prefix on chat lines.\n\n"
 			+ "[color=#888888]Settings persist to user://keybinds.json + user://connection_settings.json — survive client updates.[/color]"
+		),
+	},
+	"gold_page": {
+		"title": "[color=#FFB347]Gold[/color]",
+		"body": (
+			"[color=#FFB347]Gold[/color] is YOUR character's money, shown beside Valor at the top. Valor is the account's currency (the market, healers, the Sanctuary) and survives death; gold belongs to one character and is spent on [b]gear power[/b].\n\n"
+			+ "[color=#FFD700]── Where it comes from ──[/color]\n"
+			+ "  • [b]Kills[/b] - more for higher-level monsters, bosses and Empowered ones. Everyone in a party is paid.\n"
+			+ "  • [b]Monster gems[/b] - 1,000 gold each. At any merchant, press [b]Sell Gems[/b].\n"
+			+ "  • [b]Salvaging[/b] gear, [b]quests[/b], clearing [b]dungeons[/b], and gold piles lying on dungeon floors.\n\n"
+			+ "[color=#FFD700]── Where it goes ──[/color]\n"
+			+ "  • [b]Blacksmith → Temper[/b]: up to 5 tiers per worn item. Weapons gain damage, everything else gains HP. Each tier costs more, and the gain stays on the item.\n"
+			+ "  • [b]Rework[/b] (changing a stat you don't want) costs gold, rising with each rework on that item. A committed Enchanter works for free but still needs materials.\n"
+			+ "  • A stat you Tempered survives a Rework - only the natural roll is rerolled.\n\n"
+			+ "[color=#FFD700]── If you die ──[/color] A random 10-50% of your gold (and gems) is left on your corpse for you, or anyone, to loot. The rest is gone with the character.\n\n"
+			+ "[color=#888888]Prices and payouts are early numbers and will be tuned as we see how you play.[/color]"
 		),
 	},
 	"salvage_menu": {
 		"title": "[color=#FFD700]Salvage[/color]",
 		"body": (
-			"Convert unwanted items into [color=#FFD700]Salvage Essence (ESS)[/color] + a chance at bonus materials. Open from Inventory → Salvage.\n\n"
+			"Convert unwanted items into [color=#FFD700]Salvage Essence (ESS)[/color] + a chance at bonus materials, and a little [color=#FFB347]gold[/color] (more for higher level and rarity). Open from Inventory → Salvage.\n\n"
+			+ "[color=#FFD700]── Auto-salvage never eats an upgrade ──[/color] An item that would fill an empty slot, or beats what you wear (better rarity at no lower level), is kept even if its rarity is on your auto-salvage list.\n\n"
 			+ "[color=#FFD700]── How it works ──[/color]\n"
 			+ "  • Pick an item from your inventory using [color=#9ACD32]1-5[/color] (or click).\n"
 			+ "  • The salvage view shows the ESS yield + the bonus-mat odds for that specific item.\n"

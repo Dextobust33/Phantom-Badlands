@@ -2153,8 +2153,16 @@ func resolve_without_fight(peer_id: int, character: Character, monster: Dictiona
 	# The banked delta is the true answer and cannot be fooled by markup: it is what the
 	# character actually gained, multiplier and all.
 	var xp_before: int = int(character.experience)
+	var level_before: int = int(character.level)
 	var out: Dictionary = _process_victory_with_abilities(combat, messages)
-	out["xp_gained"] = int(character.experience) - xp_before
+	# ⛑ THE XP BAR WRAPS ON A LEVEL-UP, so `experience_after - experience_before` is NEGATIVE whenever
+	# the fight levelled you (the live log showed "Corrosive Balrog +-865071 XP"), and the caller only
+	# prints a "+XP" line when the number is positive - so a level-up fight showed the player NOTHING.
+	# Add back each threshold that was crossed. Found reading the rank-1 Sorcerer's death record.
+	var gained: int = int(character.experience) - xp_before
+	for l in range(level_before, int(character.level)):
+		gained += int(character.xp_required_for_next_level(l))
+	out["xp_gained"] = gained
 	# ⛑ AND THE FIGHT HAS TO BE TORN DOWN. `_process_victory_with_abilities` does not do it -
 	# the server does, after deciding about flock chains and buffs. Without this the player is
 	# left `in_combat` with a registered combat they were never shown, which is a stuck
