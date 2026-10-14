@@ -5161,12 +5161,7 @@ func _process(delta):
 					_consume_item_select_key(i)
 					# Also mark itemkey as pressed to prevent item selection handler from firing
 					set_meta("itemkey_%d_pressed" % i, true)
-					var target_slot = rune_slot_list[i]
-					send_to_server({"type": "use_rune", "rune_index": rune_apply_index, "target_slot": target_slot})
-					rune_apply_mode = false
-					rune_apply_index = -1
-					pending_inventory_action = "use_item"
-					update_action_bar()
+					_apply_rune_to_slot_choice(i)
 			else:
 				set_meta("runekey_%d_pressed" % i, false)
 
@@ -13766,12 +13761,18 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "1-9 Select", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+			# One clickable button per gear slot the rune fits (keys 1-5 select the same ones). They
+			# used to be number-keys only behind a disabled "1-9 Select" label, so nobody could
+			# finish applying a rune with the mouse (playtest sheet item 14).
+			var _rune_slots: Array = get_meta("rune_slot_list", [])
+			for _ri in range(mini(5, _rune_slots.size())):
+				current_actions[5 + _ri] = {"label": String(_rune_slots[_ri]).capitalize(), "action_type": "local", "action_data": "rune_apply_slot_%d" % _ri, "enabled": true}
 		elif pending_inventory_action != "":
 			# Waiting for item selection - show cancel and page navigation
 			var inv = character_data.get("inventory", [])
@@ -18570,6 +18571,8 @@ func execute_local_action(action: String):
 			rework_item_index = -1
 			display_inventory()
 			update_action_bar()
+		"rune_apply_slot_0", "rune_apply_slot_1", "rune_apply_slot_2", "rune_apply_slot_3", "rune_apply_slot_4":
+			_apply_rune_to_slot_choice(int(action.trim_prefix("rune_apply_slot_")))
 		"rune_apply_cancel":
 			rune_apply_mode = false
 			rune_apply_index = -1
@@ -22842,6 +22845,18 @@ func _panel_use_item(index: int) -> void:
 	if in_combat:
 		send_to_server({"type": "combat_use_item", "index": index})
 		return
+	# A RUNE is not a potion either: it needs a gear slot. The panel's Use sent a bare
+	# `inventory_use` and the server has no idea where to put it, so a rune could not be applied
+	# from the panel at all (playtest sheet item 14) - the choose-a-slot flow lived only in the old
+	# text-mode inventory.
+	var _inv_for_rune: Array = character_data.get("inventory", [])
+	if index < _inv_for_rune.size() and _inv_for_rune[index] is Dictionary and String(_inv_for_rune[index].get("type", "")) == "rune":
+		rune_apply_mode = true
+		rune_apply_index = index
+		pending_inventory_action = "rune_apply"
+		_display_rune_apply_slots(_inv_for_rune[index])
+		update_action_bar()
+		return
 	# A TREASURE CHEST is not a potion. Opening one empties the whole stack and reports a
 	# multi-line haul - every material, every quantity, the gold - and the status row it was
 	# being funnelled into is a one-line 13pt label between two buttons, wiped by the very next
@@ -26038,6 +26053,25 @@ func _display_rework_quote(msg: Dictionary) -> void:
 		display_game("[color=#FFD700]Press 1-%d to roll that stat into a different one.[/color]" % stats.size())
 	set_meta("rework_stat_list", stats)
 	pending_inventory_action = "rework_stat"
+	update_action_bar()
+
+
+func _apply_rune_to_slot_choice(choice: int) -> void:
+	"""Apply the rune being held to the choice-th listed gear slot. The ONE path - the number keys
+	and the action-bar buttons both land here, so a click and a key cannot disagree.
+
+	The result is a sentence the player must READ ("Applied X: +3 -> +8", or why not), so it goes
+	through the same hold-the-result state a chest uses rather than being wiped by the next
+	character_update."""
+	var slots: Array = get_meta("rune_slot_list", [])
+	if choice < 0 or choice >= slots.size() or rune_apply_index < 0:
+		return
+	var target_slot: String = String(slots[choice])
+	var idx: int = rune_apply_index
+	rune_apply_mode = false
+	rune_apply_index = -1
+	pending_inventory_action = "awaiting_salvage_result"
+	send_to_server({"type": "use_rune", "rune_index": idx, "target_slot": target_slot})
 	update_action_bar()
 
 
