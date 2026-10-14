@@ -3419,9 +3419,11 @@ func _build_monster_status_bbcode(s: Dictionary) -> String:
 	if slow_turns > 0:
 		var sval: int = int(s.get("slow_value", 0))
 		chips.append(_format_status_chip("slow", "-%d%% %dT" % [sval, slow_turns]))
-	# 2026-09-07 — the Trickster kit's own debuffs. These last the FIGHT rather than a number of
+	# 2026-09-07 — the Trickster kit's own debuffs. Sabotage and Analyze last the FIGHT rather than a number of
 	# turns, so they show their magnitude and no timer; the player needs to see the number because
 	# sabotage stacks to a 50% cap and distract is overwritten rather than added to.
+	# (DISTRACT is the exception: it is spent on the monster's next attack, which in solo is the same
+	# action as the cast, so this chip is not seen there - the monster's turn announces it instead.)
 	var sab: int = int(s.get("sabotage_value", 0))
 	if sab > 0:
 		chips.append(_format_status_chip("sabotage", "-%d%% str/def" % sab))

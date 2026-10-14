@@ -9425,6 +9425,10 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 	if distract_pct_int > 0:
 		combat.erase("enemy_distracted")
 		hit_chance = int(hit_chance * (1.0 - distract_pct_int / 100.0))
+		# The monster's turn resolves in the SAME action as the cast and erases the debuff, so no
+		# status chip ever shows it (0 of 400 casts, measured). Say it here, where it bites -
+		# playtest sheet item 9: "Distract debuff not shown".
+		messages.append("[color=#6699FF]Distracted - the %s's aim is off (-%d%% accuracy).[/color]" % [monster.name, distract_pct_int])
 
 	# Companion Distraction ability: causes monster to miss (one time)
 	if combat.get("companion_distraction", false):
