@@ -1053,6 +1053,70 @@ tells you whether a check is a check.
 
 ## ▶ NEXT SESSION — START HERE
 
+### ▶▶ HANDOFF — written at the END of 2026-10-13. READ THIS FIRST; everything below it is the detail.
+
+**State: v0.9.839 is LIVE (client + server, deployed and hash-verified `e8571297a659ef5f`). Everything is pushed;
+nothing is held back unreleased.** First commands of the session: `python tools/backlog_audit.py --quiet`, then
+`python tools/probe_run.py --smoke` (15 probes, all green at the end of today).
+
+**SHIPPED TODAY (2026-10-13), in order.**
+- v0.9.834: threat-quest dungeon entry, rescue NPCs, map-overwrites-panel fixes, floor loot levels, player-weighted dungeon spawns.
+- v0.9.835: danger warning == Area readout wording, initiative/Gathering help, escort flag.
+- v0.9.836: log hover above the log window, Home Stones show no level, bulk-salvage refresh, Escape-button confirm,
+  card faces match fights (finisher + companion/dungeon strikes), Deck names == battle names, battle log opens with the
+  foe's traits, crafting XP shown == granted, upgrade recipe text, Warden speaks with pop-ups off, Stop Watching button,
+  legendary/artifact headline.
+- v0.9.837: one Scroll of Summoning and one of Finding.
+- v0.9.838: party leftovers removed (post-exit gate, Lead/Follow prompt, leadership rotation, dead follower lock) and an
+  `[ENCOUNTER]` journal line per finished fight.
+- v0.9.839: Title menu shows Valor costs, claim offered only at (0,0), Title help corrected.
+- Tooling: `tools/probe_run.py` (its smoke gate runs inside `release.sh`), `death_log_audit.py` current-era cutoff +
+  encounter report, one flaky smoke probe fixed.
+
+**THE PLAYTEST SHEET (51 items) - STATUS.**
+- DONE: 1 2 3 5 8 10 11 12 13 15 16 17 18 19 20 21 22 23 24 31 32 35 36 37 39 42 43 44 45 46 49.
+- PARTLY: **26** (loot-grid + victory-card headline done; drops that bypass the grid - dungeon floors, quest/market/craft
+  rewards - not covered; the owner said "normal fights", which IS covered, so probably done). **47** (Jarl Ring list row
+  done; no extra guidance at (0,0) beyond the High Seat button). **24** (all four lead/follow leftovers gone; dungeon
+  entry/exit, go-back-a-floor, the starter-dungeon escort and invites are STILL leader-gated on purpose - ask the owner if
+  they meant those). **6** fixed on the owner's hypothesis, never reproduced live.
+- NOT STARTED: **group 6** [4 Swift Hobgoblin landed 6 hits, 9 Distract debuff, 28 "less often / once" upgrades, 40
+  artifact-gear audit vs text, 14 runes can't be applied, 34 Tome of Gambit card missing from the deck, 51 same companion
+  in several slots] - VERIFY-THEN-FIX: cast it, read the log, do not read code and guess. **Group 10** design asks [7
+  salvage confirm/auto-salvage, 29 stat-point auto-apply, 30 late minigames too long, 50 gold/gems] need owner decisions.
+  **Item 11** (variety: quest boards, monster stat rolls, companion variety, tank mobs) is design-first. **Item 12**
+  (3-hourly restarts / events) is an idea only.
+
+**OWNER DIRECTIONS TO CARRY:** empowered monsters "may need reduced slightly" (BALANCE BATCH - size it from the
+`[ENCOUNTER]` data first, not by guessing); dungeon spawns weighted toward players (done); balance work is BATCHED -
+run the calibration chain ONCE after the batch, never per item; release only when the owner asks.
+
+**WHAT TO DO FIRST TOMORROW, in order:**
+1. **Read the new data.** `python tools/death_log_audit.py` now ends with an ENCOUNTERS table (deaths per encounter by
+   role / level band / level gap / modifier) from the `[ENCOUNTER]` lines that began with v0.9.838. It will be thin after
+   one day - report n, do not conclude. It is the input the empowered-difficulty decision needs.
+2. **Group 6, verify-then-fix** (seven small measurements). Start with 34 (Tome of Gambit not in the deck - a real bug
+   if true) and 51 (duplicate companion slots - an exploit if true).
+3. **Ask the owner** about group 10, the remaining leader gates (item 24) and item 47's turn-in guidance.
+4. **Then the BALANCE BATCH** (item 9) once the owner is ready: empowered difficulty, the L6+ reference-player scaling
+   (live base CON 17-19 vs sim 12-13; live gear hp_bonus ~3x the sim's), Fighter mitigation, the rest. Run `-- preflight`
+   FIRST, then speciescal -> refcal -> rolecal ONCE each.
+
+**THINGS I GOT WRONG TODAY - do not repeat them.**
+- (a) The audit's early-game finding was OLD-BUILD data: 46 of 63 "current" deaths predate the 09-19 curve refit (monsters
+  at 2.4-19x today's HP). The cutoff is now 2026-09-20 (`--since` overrides). Always divide a death's recorded
+  `monster_max_hp` by today's spawn HP before trusting a death count.
+- (b) "L1-2 kit too rich" came from a 20-death sample with a heavy tail and was reversed on re-measure.
+- (c) `z_index` is capped at 4096 and a `top_level` node's z is ABSOLUTE (that is why the log hover sat behind the log).
+- (d) In this shell, backslash-n inside Python heredocs can arrive as a REAL newline: build escapes with `chr(92)` and read
+  the diff of any edit to a one-line GDScript string. `docs/BACKLOG.md` has CRLF line endings in the working tree (git
+  normalises to LF) - anchor on text, not on trailing "\n".
+
+**STILL OPEN, UNCHANGED:** Player Phantoms (built, held behind `PHANTOM_POSTS_ENABLED := false`; the client surfaces are the
+remaining task - see the block below); `probe_run.py --repeat N`; move measurement scripts out of `tools/probe/`; triage
+the 10 script-error probes.
+
+
 ### ⚑ OWNER PLAYTEST SHEET — 51 items, received 2026-10-13 (Google Sheet, "anyone with link")
 
 Takes priority over the Player Phantoms client block below (owner: "start there"). Items are
@@ -1208,7 +1272,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         feels that is too stingy for a run that takes this long, the knob is that one formula - but
         it belongs to the CARD CHASE design (memory `project_card_instances_chase_loop`), not a
         one-off tweak.
-5. - [ ] **TEXT/NUMBERS THAT DISAGREE** [15 Companion card face vs log; 16 Double Cross face vs
+5. - [x] **ALL TEN DONE 2026-10-13 (v0.9.836-839) - TEXT/NUMBERS THAT DISAGREE** [15 Companion card face vs log; 16 Double Cross face vs
       actual; 18 potion HP in combat list; 39 card name differs Deck vs battle (Sorcerer Wild
       Strike/Blast); 17 log hover renders behind the log; 19 monster traits (Elite/Champion/Swift)
       missing from combat log; 44 can't inspect Tome of Fortify; 49 Title help inaccurate;
