@@ -20,8 +20,12 @@ const GEM_GOLD_VALUE: int = 1000
 const CORPSE_SHARE_MIN: float = 0.10
 const CORPSE_SHARE_MAX: float = 0.50
 
-## Gear selling pays this share of the item's value in gold.
-const SELL_VALUE_FRACTION: float = 0.5
+## Salvage gold per item level, by rarity. NOT from the item's `value` field: that is the MARKET price
+## scale (an L50 epic lists at 26,000, an L200 epic at 401,000) and would pay thousands of gold per
+## salvage against ~80 for a kill. Level x rarity keeps a salvage worth a handful of kills.
+const SALVAGE_GOLD_PER_LEVEL := {
+	"common": 0.5, "uncommon": 1.0, "rare": 2.0, "epic": 4.0, "legendary": 8.0, "artifact": 16.0,
+}
 
 
 ## Gold for one kill. Scales with the monster's level so it keeps pace with the upgrade prices.
@@ -31,6 +35,32 @@ static func kill_gold(monster_level: int, is_boss: bool = false, empowered_mods:
 	if is_boss:
 		mult *= 4.0
 	return maxi(1, int(round(base * mult)))
+
+
+## ===== TEMPERING - the gold sink (blacksmith) =====
+## Gold buys per-ITEM tiers: weapons gain damage (attack_bonus), everything else gains HP (hp_bonus).
+## Capped per item (the old uncapped blacksmith upgrade was removed on purpose - owner 2026-09-18: "we
+## don't want a player to just be able to keep buffing their same item infinitely"), and the power
+## lives ON the item, so it is lost with a lost item and travels with a traded one.
+## WARNING: costs and gains are first guesses - player power, so they belong to the BALANCE BATCH.
+const TEMPER_MAX_TIERS: int = 5
+const TEMPER_COST_PER_LEVEL: float = 10.0
+const TEMPER_COST_GROWTH: float = 1.8
+
+
+## Gold for the NEXT tier (tier_to is 1-based: the tier being bought).
+static func temper_cost(item_level: int, tier_to: int) -> int:
+	return maxi(1, int(round(TEMPER_COST_PER_LEVEL * float(maxi(1, item_level)) * pow(TEMPER_COST_GROWTH, float(maxi(1, tier_to) - 1)))))
+
+
+## What one tier adds to an item worn in `slot`: {"stat": ..., "amount": ...}.
+static func temper_gain(slot: String, item_level: int) -> Dictionary:
+	var lvl: float = float(maxi(1, item_level))
+	if slot == "weapon":
+		return {"stat": "attack_bonus", "amount": maxi(2, int(round(0.12 * lvl)))}
+	if slot == "ring" or slot == "amulet":
+		return {"stat": "hp_bonus", "amount": maxi(6, int(round(0.55 * lvl)))}
+	return {"stat": "hp_bonus", "amount": maxi(10, int(round(0.9 * lvl)))}
 
 
 ## Gold a dungeon pays when cleared (graded by the INSTANCE's tier, never the type's).
@@ -48,9 +78,10 @@ static func floor_gold(loot_level: int) -> int:
 	return maxi(1, int(round(8.0 + 3.0 * float(maxi(1, loot_level)))))
 
 
-## Gold a salvaged item pays (in addition to its materials): a share of its listed value.
+## Gold a salvaged item pays (in addition to its materials), from its level and rarity.
 static func salvage_gold(item: Dictionary) -> int:
-	return maxi(1, int(floor(float(int(item.get("value", 10))) * SELL_VALUE_FRACTION)))
+	var per: float = float(SALVAGE_GOLD_PER_LEVEL.get(String(item.get("rarity", "common")), 0.5))
+	return maxi(1, int(round(per * float(maxi(1, int(item.get("level", 1)))))))
 
 
 ## The portion of a purse OR a gem stack that a corpse holds. Rolled, so a death is never certain

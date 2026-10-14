@@ -22,7 +22,9 @@ func _init() -> void:
 	get_root().add_child(dt)
 	var sword := {"name": "Test Blade", "type": "weapon_sword", "rarity": "rare", "level": 20, "value": 400}
 	var r: Dictionary = dt.get_salvage_value(sword)
-	ck(int(r.get("gold", 0)) == 200, "salvage pays half the item's value in gold (%d of value 400)" % int(r.get("gold", 0)))
+	ck(int(r.get("gold", 0)) == 40, "salvage pays level x rarity in gold: L20 rare = 40 (%d)" % int(r.get("gold", 0)))
+	var epic50: int = int(dt.get_salvage_value({"name": "e", "type": "weapon_sword", "rarity": "epic", "level": 50, "value": 26000}).get("gold", 0))
+	ck(epic50 == 200 and epic50 < 5 * Gold.kill_gold(50), "an L50 epic salvages for ~a few kills' gold, NOT its 26,000 market value (%d vs kill %d)" % [epic50, Gold.kill_gold(50)])
 	ck(not (r.get("materials", {}) as Dictionary).is_empty(), "...and still pays materials")
 	ck(int(dt.get_salvage_value({"name": "x", "type": "ring_basic", "rarity": "common", "level": 1}).get("gold", 0)) >= 1, "even a valueless item pays at least 1")
 	# --- every salvage site credits gold

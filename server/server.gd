@@ -10489,7 +10489,17 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 	# want a player to just be able to keep buffing their same item for free infinitely."* The
 	# replacement is `handle_affix_reroll`, which TRADES one stat for another rather than adding
 	# to it, and is capped at MAX_AFFIX_REROLLS per item.
-	if choice in ["upgrade", "select_upgrade_item", "confirm_upgrade"]:
+	# ...EXCEPT TEMPERING (owner 2026-10-14, playtest sheet item 50): gold buys a few CAPPED tiers on
+	# a worn item - damage on a weapon, HP on the rest. Capped per item and priced in the run-bound
+	# currency, which is the shape the ruling above asked for.
+	if choice == "temper":
+		_send_temper_list(peer_id, "[color=#DAA520]'Gold and a hot forge. Pick the piece.'[/color]")
+		return
+	if choice == "select_upgrade_item":
+		_apply_temper(peer_id, String(message.get("slot", "")))
+		return
+
+	if choice in ["upgrade", "confirm_upgrade"]:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#C8A24A]'Enhancing? That's enchanter's work now — I just keep steel whole.'[/color]
 [color=#808080]Strengthening gear moved to crafting. To change a stat, use [b]Inventory → Rework[/b].[/color]"})
 		send_to_peer(peer_id, {"type": "blacksmith_done"})
@@ -10509,6 +10519,65 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			"player_materials": character.crafting_materials.duplicate()
 		})
 		return
+
+func _temper_rows(character) -> Array:
+	var rows: Array = []
+	for slot_name in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var item = character.equipped.get(slot_name)
+		if not (item is Dictionary):
+			continue
+		var tier: int = int(item.get("temper", 0))
+		var lvl: int = int(item.get("level", 1))
+		var line: String
+		if tier >= GoldEconomyScript.TEMPER_MAX_TIERS:
+			line = "%s (%s) - fully tempered %d/%d" % [String(item.get("name", slot_name)), slot_name, tier, GoldEconomyScript.TEMPER_MAX_TIERS]
+		else:
+			var gain: Dictionary = GoldEconomyScript.temper_gain(slot_name, lvl)
+			line = "%s (%s) tier %d -> %d: +%d %s for %s gold" % [String(item.get("name", slot_name)), slot_name, tier, tier + 1,
+				int(gain.amount), "damage" if String(gain.stat) == "attack_bonus" else "HP", _fmt_int(GoldEconomyScript.temper_cost(lvl, tier + 1))]
+		rows.append({"slot": slot_name, "name": String(item.get("name", slot_name)), "level": lvl, "tier": tier, "line": line})
+	return rows
+
+func _send_temper_list(peer_id: int, note: String) -> void:
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	send_to_peer(peer_id, {
+		"type": "blacksmith_upgrade_select_item",
+		"message": note,
+		"items": _temper_rows(character),
+		"player_gold": int(character.gold_purse),
+		"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
+	})
+
+func _apply_temper(peer_id: int, slot: String) -> void:
+	"""Buy ONE tier on the worn item in `slot`. Capped, and the gold is only taken if the tier lands."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var item = character.equipped.get(slot)
+	if not (item is Dictionary):
+		send_to_peer(peer_id, {"type": "error", "message": "Nothing is worn in that slot."})
+		return
+	var tier: int = int(item.get("temper", 0))
+	if tier >= GoldEconomyScript.TEMPER_MAX_TIERS:
+		_send_temper_list(peer_id, "[color=#C8A24A]'That piece is as good as steel gets. Nothing more I can do.'[/color]")
+		return
+	var lvl: int = int(item.get("level", 1))
+	var cost: int = GoldEconomyScript.temper_cost(lvl, tier + 1)
+	if not character.spend_gold(cost):
+		_send_temper_list(peer_id, "[color=#FF6666]'Not enough gold. That is %s and you carry %s.'[/color]" % [_fmt_int(cost), _fmt_int(int(character.gold_purse))])
+		return
+	var gain: Dictionary = GoldEconomyScript.temper_gain(slot, lvl)
+	if not (item.get("affixes", null) is Dictionary):
+		item["affixes"] = {}
+	var stat: String = String(gain.stat)
+	item["affixes"][stat] = int(item["affixes"].get(stat, 0)) + int(gain.amount)
+	item["temper"] = tier + 1
+	save_character(peer_id)
+	send_character_update(peer_id)
+	_send_temper_list(peer_id, "[color=#00FF00]Tempered your %s: tier %d, +%d %s (-%s gold).[/color]" % [
+		String(item.get("name", slot)), tier + 1, int(gain.amount), "damage" if stat == "attack_bonus" else "HP", _fmt_int(cost)])
 
 func _get_affix_display_name(affix_key: String) -> String:
 	"""Get a human-readable name for an affix key."""
@@ -28423,7 +28492,7 @@ func _craft_disenchant(character, recipe: Dictionary, quality: int, quality_colo
 	# ⛑ THE MATERIALS ARE WHAT SALVAGE WOULD GIVE, from the same function, so this can never be the
 	# worse choice again. A hand-written recovery formula beside a generated one is exactly how the
 	# old one-ore result drifted out of line without anyone noticing.
-	var mats: Dictionary = drop_tables.get_salvage_value(item)
+	var mats: Dictionary = (drop_tables.get_salvage_value(item) as Dictionary).get("materials", {})
 	var mat_parts: Array = []
 	for mat_id in mats:
 		var qty: int = maxi(1, int(round(float(mats[mat_id]) * quality_mult)))

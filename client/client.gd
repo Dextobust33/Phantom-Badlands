@@ -12248,6 +12248,7 @@ func update_action_bar():
 			current_actions = [
 				{"label": "Decline", "action_type": "local", "action_data": "blacksmith_decline", "enabled": true},
 				{"label": "All(%dg)" % blacksmith_repair_all_cost if blacksmith_repair_all_cost > 0 else "All", "action_type": "local", "action_data": "blacksmith_repair_all", "enabled": blacksmith_items.size() > 0},
+				{"label": "Temper", "action_type": "local", "action_data": "blacksmith_temper", "enabled": true},
 				# ⛑ The Enhance button is gone, not disabled. The town blacksmith no longer
 				# upgrades (owner 2026-09-18) and the path it fed was the game's one UNCAPPED
 				# stat source. Strengthening gear lives in crafting; changing a stat is
@@ -19448,6 +19449,8 @@ func execute_local_action(action: String):
 			send_blacksmith_choice("decline")
 		"blacksmith_repair_all":
 			send_blacksmith_choice("repair_all")
+		"blacksmith_temper":
+			send_blacksmith_choice("temper")
 		"blacksmith_upgrade":
 			send_blacksmith_choice("upgrade")
 		"blacksmith_cancel_upgrade":
@@ -49190,7 +49193,7 @@ func handle_blacksmith_encounter(message: Dictionary):
 	# A capability that moved should SAY where it moved to. Removing the line entirely would
 	# leave returning players hunting for a button that used to be right here.
 	display_game("")
-	display_game("[color=#808080]The Blacksmith no longer enhances gear — that is crafting work now.[/color]")
+	display_game("[%s] Temper Gear — spend [color=#FFB347]gold[/color] on up to 5 tiers per item (damage on weapons, HP on the rest)" % get_action_key_name(2))
 	display_game("[color=#808080]To change a stat you don't want, use [b]Inventory → Rework[/b].[/color]")
 
 	display_game("")
@@ -49221,17 +49224,18 @@ func handle_blacksmith_upgrade_select_item(message: Dictionary):
 		display_game("")
 	display_game(message.get("message", ""))
 	display_game("")
-	display_game("[color=#FFD700]=== Select Item to Enhance ===[/color]")
+	display_game("[color=#FFD700]=== Temper Gear (gold) ===[/color]")
+	display_game("[color=#808080]Up to 5 tiers per item: weapons gain damage, everything else gains HP. The gain stays on the item.[/color]")
 	display_game("")
 
 	for i in range(blacksmith_upgrade_items.size()):
 		var item = blacksmith_upgrade_items[i]
-		display_game("[%s] %s (Level %d)" % [str(i + 1), item.get("name", "Item"), item.get("level", 1)])
+		display_game("[%s] %s" % [str(i + 1), String(item.get("line", "%s (Level %d)" % [item.get("name", "Item"), item.get("level", 1)]))])
 
 	display_game("")
 	display_game("[%s] Back" % get_action_key_name(0))
 	display_game("")
-	display_game("[color=#808080]Valor: %d[/color]" % player_gold)
+	display_game("[color=#FFB347]Gold: %s[/color]   [color=#808080]Valor: %d[/color]" % [format_number(int(message.get("player_gold", 0))), player_gold])
 	update_action_bar()
 
 func handle_blacksmith_upgrade_select_affix(message: Dictionary):
