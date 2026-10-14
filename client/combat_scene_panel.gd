@@ -6260,7 +6260,13 @@ func log_actor_action(key: String, label: String, meta: Dictionary, raw_line: St
 	# rewrite whatever line happened to slide into that slot.
 	if int(a["index"]) >= _log_lines.size():
 		a["index"] = _log_lines.size() - 1
-	a["hits"] = int(a["hits"]) + 1
+	# ⛑ A HIT IS A LINE THAT CARRIES A NUMBER, not a line. This counted every message, so
+	# "attacks multiple times!", "strikes with unexpected ferocity!" and each miss all read as
+	# hits - a Swift monster that landed 2-3 showed "6 hits" (owner, playtest sheet item 4: big
+	# monsters showing 6 or 7, some of them misses). `dmg` / `taken` come from the server as
+	# measured numbers, so a line without one was not a hit.
+	if int(meta.get("dmg", 0)) > 0 or int(meta.get("taken", 0)) > 0:
+		a["hits"] = int(a["hits"]) + 1
 	a["dealt"] = int(a["dealt"]) + maxi(0, int(meta.get("dmg", 0)))
 	a["taken"] = int(a["taken"]) + maxi(0, int(meta.get("taken", 0)))
 	var ab := String(meta.get("ability", "")).strip_edges()
