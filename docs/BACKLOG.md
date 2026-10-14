@@ -1553,7 +1553,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       27 uneven monster damage; 33 Chaos/Magic Bolt variance; 41 Paths maxed too fast (overlaps
       existing PATHS REVAMP item ~7420); 38 minigame reward tiers — egg of faced monster or
       same-tier, rarer than low ones; 48 Jarl powers / empty realm treasury].
-10. - [ ] **DESIGN ASKS — need owner decisions before code** [7 salvage confirm toggle + auto-salvage
+10. - [x] **DESIGN ASKS — DECIDED AND BUILT 2026-10-14 (7, 29, 30, 50; see the GROUP 10 note in the handoff block)** [7 salvage confirm toggle + auto-salvage
       vs equipped gear + market-listing popups; 29 stat-point auto-apply; 30 minigame too long late;
       50 bring gold back, 1 gem = 1k gold, blacksmith/enchanter sinks into HP/damage].
 
