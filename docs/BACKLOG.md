@@ -1832,6 +1832,15 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       - *Command model: companions act on their own AI and the player sets a TACTICS FOCUS* - "all
         out, healing, buffing, etc." Not a per-companion command menu, and not role cards dealt into
         the player's hand (both offered and declined).
+      - *Companions are REVIVABLE, never lost to a KO* (owner, 2026-10-14): by consumable items, by
+        another companion's ability, by a wandering healer, and at a trading post. ALREADY BUILT:
+        the Revive Potion and the healer NPC. NEW: a companion ability that revives an ally
+        (a healer-role action), and confirming the trading-post route is the same healer service.
+      - *TACTICS FOCUS IS PER COMPANION*, not one global setting.
+      - *AT LEAST FIVE ROLES:* **Tank, Healer, DPS, Utility, Jack-of-all-trades.** A companion's role
+        comes from its **SPECIES normally**; the owner is open to VARIANTS (and other things) influencing
+        it. Treat "species sets the role, variant can tilt or modify it" as the starting hypothesis
+        for S0, not a ruling.
       - *The 5th companion sits BESIDE the player*, not in the column. The column holds 4.
       - *In a party the 4 right-hand slots are SHARED across the party* (split between players, not
         first-come), and every player keeps their beside-you companion on their own card even in a
@@ -1840,19 +1849,25 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       **WHAT THE CODE IS TODAY (read 2026-10-14, so the design starts from facts):** a companion is
       ONE AI helper. Its abilities are species-tier passives / chance / threshold effects
       (`COMPANION_MONSTER_ABILITIES`), its only "role" is an AGGRO percent - the share of monster hits
-      it soaks - and its HP is SOLVED FROM THAT AGGRO as a share of the owner's bar
-      (`calculate_companion_max_hp`), so it has no pool of its own to heal or lose. Party max is 5
+      it soaks - and its max HP is SOLVED FROM THAT AGGRO as a share of the owner's bar
+      (`calculate_companion_max_hp`). **CORRECTED 2026-10-14 (I first wrote that it has no HP pool -
+      wrong):** it DOES have a persistent combat HP pool (`get_companion_combat_hp` /
+      `set_companion_combat_hp`, stored on `active_companion`), a KNOCKED-OUT state
+      (`is_companion_ko`; natural regen skips a KO'd companion), a `potion_revive_companion` item, and
+      the healer NPC encounter already shows and revives a KO'd companion. What does NOT exist is that
+      pool for companions BEYOND the active one, or any companion healing another. Party max is 5
       (`PARTY_MAX_SIZE`), each member has their own deck and hand, and the right column is
       `combat_scene_panel._party_column` drawn from `set_party_members()`. `active_companion` is read
       in hundreds of places (corpse, registered/`house_slot`, trades, stable, death) - a data-model
       change there needs an ADAPTER (`active_companion` stays as the beside-you slot), not a rename.
       **ORDER (each slice shippable and probed on its own; do them in this order):**
-      - **S0 DESIGN, no code.** Settle: (1) the ROLE LIST and how a species gets a role - DERIVE it
-        from existing species data (aggro, ability tags) through one table, like `species_power`,
-        rather than hand-authoring 136 species; (2) the TACTICS list and what each does per role;
-        (3) a real HP pool per companion, and what "down" means (permanent loss? recovered after the
-        fight? - today a companion lost with its owner is a permadeath question, see memory
-        `project_permadeath_may_change`); (4) THREAT/TARGETING - how a monster picks between the
+      - **S0 DESIGN, no code.** Settle: (1) the five-plus ROLES (Tank, Healer, DPS, Utility, Jack-of-all-trades are
+        ruled; add more only if a gap shows) and how a species gets one - DERIVE it from existing
+        species data (aggro, ability tags) through one table, like `species_power`, rather than
+        hand-authoring 136 species, then decide what a VARIANT may tilt; (2) the TACTICS list and what each does per role;
+        (3) the HP pool for EVERY fielded companion (today only the active one has one) and the revive
+        rules - a KO is recoverable (ruled), so settle the COST of each route (a potion, an ally's
+        action, the wandering healer, a trading post) so none of them is free and none is mandatory; (4) THREAT/TARGETING - how a monster picks between the
         player, humans and companions, how taunt/aggro works, and whether AoE exists; (5) heal and
         buff magnitudes and STACKING CAPS (the old uncapped blacksmith upgrade is the cautionary
         tale); (6) whether companions heal/buff HUMAN party members (the vision says yes - it is the
@@ -1860,7 +1875,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
         five companions fields roughly double the force. Either monsters scale up as they do for a
         party, or each companion is individually weaker. Decide it on paper before any number.
       - **S1 ROLES ON THE ONE COMPANION.** Add `role`, the role actions (heal the lowest ally, taunt,
-        buff, ...) and a single tactics stance, with NO slot change. Cheapest way to find out whether
+        buff, revive an ally, ...) and a per-companion tactics focus, with NO slot change. Cheapest way to find out whether
         the actions are fun and legible in the log before multiplying them by five.
       - **S2 DATA MODEL.** `companion_party` (cap 5; slot 0 = beside the player), `active_companion`
         kept as an alias for slot 0. Audit every site that touches a companion: registered /
@@ -1885,9 +1900,10 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       first, so the live game has a calibrated baseline and the death log starts measuring it; (2)
       start S0 in parallel, it needs no code; (3) the earlier "rework companion roles like the tank"
       the owner mentioned IS S1 - it is not a separate job; (4) item 11(c) and the egg/companion sink
-      item belong in S5, not before it. **Open questions for the owner, at the end of S0:** do
-      companions die for good when downed; per-companion or one global tactics focus; how many roles;
-      does a companion's role come from its SPECIES, from its VARIANT, or from the player's choice.
+      item belong in S5, not before it. **STILL OPEN for S0:** what a VARIANT may change about a role (tilt it, swap it, add a
+      secondary); the exact TACTICS list per role (each role needs its own focuses - a Tank's "all
+      out" is not a DPS's); whether the player can OVERRIDE a species' role (probably not); and the
+      revive costs above.
 
 ### ⚑ PICK UP HERE — written 2026-09-19 for a gap of unknown length
 
