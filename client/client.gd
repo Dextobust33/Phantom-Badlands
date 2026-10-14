@@ -58928,6 +58928,10 @@ func _display_corpse_info():
 	if monster_gems > 0:
 		display_game("  [color=#AAAAAA]Monster Gems:[/color] [color=#00BFFF]%d[/color]" % monster_gems)
 		has_contents = true
+	var corpse_gold_amt: int = int(contents.get("gold", 0))
+	if corpse_gold_amt > 0:
+		display_game("  [color=#AAAAAA]Gold:[/color] [color=#FFB347]%s[/color]" % format_number(corpse_gold_amt))
+		has_contents = true
 
 	if not has_contents:
 		display_game("[color=#808080]  (Empty)[/color]")
@@ -58972,6 +58976,9 @@ func _display_corpse_loot_confirmation():
 	var monster_gems = contents.get("monster_gems", contents.get("gems", 0))
 	if monster_gems > 0:
 		display_game("  [color=#00BFFF]%d Monster Gem%s[/color]" % [monster_gems, "s" if monster_gems > 1 else ""])
+	var corpse_gold_amt2: int = int(contents.get("gold", 0))
+	if corpse_gold_amt2 > 0:
+		display_game("  [color=#FFB347]%s Gold[/color]" % format_number(corpse_gold_amt2))
 
 	display_game("")
 	display_game("[color=#808080]Press [%s] to confirm, [%s] to cancel[/color]" % [get_action_key_name(0), get_action_key_name(1)])

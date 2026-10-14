@@ -14,9 +14,11 @@ extends RefCounted
 ## What a monster gem sells for. Fixed by the owner: 1 gem = 1,000 gold.
 const GEM_GOLD_VALUE: int = 1000
 
-## The corpse keeps this share of the purse and of the carried gems (the rest is gone with the character).
-const CORPSE_GOLD_FRACTION: float = 0.5
-const CORPSE_GEM_FRACTION: float = 0.5
+## What a corpse keeps of the purse and of the carried gems: a random 10-50% (the rule gems already
+## followed - gold takes the same one, so there is one rule, not two). The rest is gone with the
+## character.
+const CORPSE_SHARE_MIN: float = 0.10
+const CORPSE_SHARE_MAX: float = 0.50
 
 ## Gear selling pays this share of the item's value in gold.
 const SELL_VALUE_FRACTION: float = 0.5
@@ -51,9 +53,9 @@ static func salvage_gold(item: Dictionary) -> int:
 	return maxi(1, int(floor(float(int(item.get("value", 10))) * SELL_VALUE_FRACTION)))
 
 
-## The portion of a purse / gem stack a corpse holds.
-static func corpse_gold(purse: int) -> int:
-	return int(floor(float(maxi(0, purse)) * CORPSE_GOLD_FRACTION))
-
-static func corpse_gems(gems: int) -> int:
-	return int(floor(float(maxi(0, gems)) * CORPSE_GEM_FRACTION))
+## The portion of a purse OR a gem stack that a corpse holds. Rolled, so a death is never certain
+## to cost exactly half.
+static func corpse_share(amount: int) -> int:
+	if amount <= 0:
+		return 0
+	return int(float(amount) * randf_range(CORPSE_SHARE_MIN, CORPSE_SHARE_MAX))

@@ -42357,6 +42357,9 @@ func _remains_ledger_text(corpse: Dictionary, reader) -> String:
 	var gems: int = int(contents.get("monster_gems", 0))
 	if gems > 0:
 		lines.append("  %d monster gem%s" % [gems, "" if gems == 1 else "s"])
+	var corpse_gold_here: int = int(contents.get("gold", 0))
+	if corpse_gold_here > 0:
+		lines.append("  %s gold" % _fmt_int(corpse_gold_here))
 	if lines.is_empty():
 		out += "[color=#808080]Nothing of worth remains on them.[/color]"
 	else:
@@ -42409,7 +42412,8 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 		"active_companion": null,
 		"other_companion": null,
 		"egg": null,
-		"monster_gems": 0
+		"monster_gems": 0,
+		"gold": 0
 	}
 
 	# Select TWO random equipped items
@@ -42444,11 +42448,13 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 	# Random percentage of monster gems (10-50%)
 	var player_monster_gems = character.crafting_materials.get("monster_gem", 0)
 	if player_monster_gems > 0:
-		var gem_percent = randf_range(0.1, 0.5)
-		contents["monster_gems"] = int(player_monster_gems * gem_percent)
+		contents["monster_gems"] = GoldEconomyScript.corpse_share(int(player_monster_gems))
+	# ...and the same share of the GOLD purse (owner 2026-10-14: "a portion of it can be found on
+	# the corpse, as well as gems"). One rule for both.
+	contents["gold"] = GoldEconomyScript.corpse_share(int(character.gold_purse))
 
 	# Don't create empty corpses
-	if contents["items"].is_empty() and contents["active_companion"] == null and contents["other_companion"] == null and contents["egg"] == null and contents["monster_gems"] == 0:
+	if contents["items"].is_empty() and contents["active_companion"] == null and contents["other_companion"] == null and contents["egg"] == null and contents["monster_gems"] == 0 and int(contents["gold"]) == 0:
 		return {}
 
 	# Generate unique corpse ID
@@ -42586,6 +42592,12 @@ func handle_loot_corpse(peer_id: int, message: Dictionary):
 		else:
 			var egg_type = egg.get("monster_type", "Unknown")
 			warnings.append("[color=#FF6666]★ %s Egg found but eggs full! (%d/%d) ★[/color]" % [egg_type, character.incubating_eggs.size(), _mbox_egg_cap])
+
+	# Transfer gold
+	var corpse_gold: int = int(contents.get("gold", 0))
+	if corpse_gold > 0:
+		character.add_gold(corpse_gold)
+		loot_summary.append("[color=#FFB347]%s Gold[/color]" % _fmt_int(corpse_gold))
 
 	# Transfer monster gems
 	var corpse_gems = contents.get("monster_gems", contents.get("gems", 0))
