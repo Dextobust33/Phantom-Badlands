@@ -12641,6 +12641,7 @@ func _draw_to_hand(combat_state: Dictionary) -> void:
 				break
 			deck = discard.duplicate()
 			deck.shuffle()
+			_heavy_cards_to_bottom(combat_state, deck)
 			discard = []
 		hand.append(deck.pop_back())
 	# 2026-09-04 — shuffle the HAND, not just the deck.
@@ -12659,6 +12660,40 @@ func _draw_to_hand(combat_state: Dictionary) -> void:
 	combat_state["combat_hand"] = hand
 	combat_state["combat_deck"] = deck
 	combat_state["combat_discard"] = discard
+
+func _heavy_cards_to_bottom(combat_state: Dictionary, deck: Array) -> void:
+	"""Heavy Draw (`greedy`): +25% damage, "but the card is slower to come back around".
+
+	That drawback was never implemented - the damage code's comment said "handled by the deck" and
+	the deck did nothing, so the upgrade was a free +25% (playtest sheet item 28). A reshuffle is
+	where a card comes back around, so a Heavy Draw card goes to the BOTTOM of the new deck
+	(draws pop from the back, so index 0) and is the last thing dealt that cycle. Stateless on
+	purpose: no extra pile to lose across a save, a party view or a flock chain."""
+	# Sacrificial's "the card is spent for the rest of the fight" is the same place: a spent card
+	# does not rejoin the deck, rather than coming back as a dead draw that whiffs and wastes the
+	# turn. (Solo only - a party member's view carries no fight flags, so there it still whiffs.)
+	var spent: Array = []
+	for card in deck:
+		if bool(combat_state.get("sacrificed_%s" % String(card), false)):
+			spent.append(card)
+	if not spent.is_empty() and spent.size() < deck.size():
+		for card in spent:
+			deck.erase(card)
+	var ch = combat_state.get("character", null)
+	if ch == null or not ch.has_method("get_milestone_picks"):
+		return
+	var heavy: Array = []
+	var rest: Array = []
+	for card in deck:
+		if "greedy" in ch.get_milestone_picks(String(card)):
+			heavy.append(card)
+		else:
+			rest.append(card)
+	if heavy.is_empty() or rest.is_empty():
+		return
+	deck.clear()
+	deck.append_array(heavy)
+	deck.append_array(rest)
 
 func _consume_card_from_hand(combat_state: Dictionary, ability_name: String, msgs: Array = []) -> bool:
 	"""Move a card from hand to discard and refill the hand. Returns true if
