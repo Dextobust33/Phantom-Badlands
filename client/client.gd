@@ -3529,6 +3529,7 @@ DDD")
 	add_child(stats_panel)
 	stats_panel.close_requested.connect(_on_stats_panel_close)
 	stats_panel.spend_requested.connect(_on_stats_panel_spend)
+	stats_panel.auto_spend_toggled.connect(_on_stats_panel_auto_spend)
 	stats_panel.paths_requested.connect(_on_stats_panel_paths)
 
 	# Path of the Badlands (ARPG pillar 3) — skill tree panel.
@@ -42510,6 +42511,7 @@ func open_stats_panel() -> void:
 	var xp_to_next: int = int(character_data.get("experience_to_next_level", 100))
 	var stats: Dictionary = character_data.get("stats", {})
 	var unspent: int = int(character_data.get("unspent_stat_points", 0))
+	stats_panel.set_auto_spend(bool(character_data.get("auto_spend_stats", true)))
 	stats_panel.open(level, xp, xp_to_next, stats, unspent, String(character_data.get("class", "")))
 
 func close_stats_panel() -> void:
@@ -42518,6 +42520,10 @@ func close_stats_panel() -> void:
 
 func _on_stats_panel_close() -> void:
 	close_stats_panel()
+
+func _on_stats_panel_auto_spend(enabled: bool) -> void:
+	character_data["auto_spend_stats"] = enabled
+	send_to_server({"type": "set_auto_spend_stats", "enabled": enabled})
 
 func _on_stats_panel_spend(stat_name: String) -> void:
 	"""Stats panel [+1] click — server validates + applies. Result text comes
@@ -42535,6 +42541,7 @@ func _refresh_stats_panel_if_open() -> void:
 	var xp_to_next: int = int(character_data.get("experience_to_next_level", 100))
 	var stats: Dictionary = character_data.get("stats", {})
 	var unspent: int = int(character_data.get("unspent_stat_points", 0))
+	stats_panel.set_auto_spend(bool(character_data.get("auto_spend_stats", true)))
 	stats_panel.refresh(level, xp, xp_to_next, stats, unspent)
 
 # ===================== In-game player feedback (v0.9.728) =====================

@@ -5180,11 +5180,7 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	# stat so NAKED resource pools (max_mana / max_stamina / max_energy, which drive
 	# the new absolute cost model) scale with level like a real focused build. The sim
 	# previously left points unspent, artificially flattening the pools.
-	var _primary := "strength"
-	if klass in ["Wizard", "Sorcerer", "Sage"]:
-		_primary = "intelligence"
-	elif klass in ["Grifter", "Ranger", "Ninja"]:
-		_primary = "dexterity"
+	var _primary: String = CharacterScript.preset_stat_for_class(klass)
 	while ch.unspent_stat_points > 0:
 		ch.spend_stat_point(_primary)
 	# Gear model. #5 CALIBRATION (2026-09-02) — "average" no longer forces one hand-picked
@@ -5845,11 +5841,7 @@ func _grow_new_character(klass: String, race: String):
 func _grow_spend_points(ch) -> void:
 	# A player spends their level-up points; leaving them unspent flattens the pools and the
 	# stat-driven damage term. Same primary-stat rule make_char uses, so the two are comparable.
-	var primary := "strength"
-	if ch.class_type in ["Wizard", "Sorcerer", "Sage"]:
-		primary = "intelligence"
-	elif ch.class_type in ["Grifter", "Ranger", "Ninja"]:
-		primary = "dexterity"
+	var primary: String = CharacterScript.preset_stat_for_class(ch.class_type)
 	var guard := 0
 	while ch.unspent_stat_points > 0 and guard < 4000:
 		guard += 1

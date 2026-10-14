@@ -15,6 +15,7 @@ const CharacterScript = preload("res://shared/character.gd")
 
 signal close_requested
 signal spend_requested(stat_name: String)
+signal auto_spend_toggled(enabled: bool)  # spend each level's point on the class preset, or bank it
 signal paths_requested  # ⚜ Paths button — opens the Path of the Badlands panel
 
 const STAT_ORDER: Array = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
@@ -51,6 +52,8 @@ var _experience: int = 0
 var _experience_to_next: int = 100
 var _stats: Dictionary = {}
 var _unspent: int = 0
+var _auto_spend: bool = true
+var _auto_btn: Button
 
 
 func _ready() -> void:
@@ -58,6 +61,19 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_layout()
 	visible = false
+
+
+func set_auto_spend(on: bool) -> void:
+	_auto_spend = on
+	_render_auto_button()
+
+
+func _render_auto_button() -> void:
+	if _auto_btn == null:
+		return
+	var preset: String = String(STAT_INFO.get(CharacterScript.preset_stat_for_class(_class_type), {}).get("abbr", "?"))
+	_auto_btn.text = ("Auto-spend: ON  (each level's point -> %s)" % preset) if _auto_spend else "Auto-spend: OFF  (points wait in your bank)"
+	_auto_btn.tooltip_text = "ON: every level's stat point is spent for you on your class's main stat. OFF: it waits here for you to spend by hand. Points already banked are never touched."
 
 
 func open(level: int, xp: int, xp_to_next: int, stats: Dictionary, unspent: int, class_type: String = "") -> void:
@@ -78,6 +94,7 @@ func refresh(level: int, xp: int, xp_to_next: int, stats: Dictionary, unspent: i
 	_experience_to_next = xp_to_next
 	_stats = stats.duplicate() if stats is Dictionary else {}
 	_unspent = unspent
+	_render_auto_button()
 	_render()
 
 
@@ -167,6 +184,18 @@ func _build_layout() -> void:
 	_bank_label.add_theme_font_size_override("normal_font_size", 13)
 	_bank_label.custom_minimum_size = Vector2(0, 22)
 	_vbox.add_child(_bank_label)
+
+	# Auto-spend opt-out - a visible button, not a hotkey.
+	_auto_btn = Button.new()
+	_auto_btn.focus_mode = Control.FOCUS_NONE
+	_auto_btn.toggle_mode = false
+	_auto_btn.custom_minimum_size = Vector2(0, 30)
+	_auto_btn.pressed.connect(func():
+		_auto_spend = not _auto_spend
+		_render_auto_button()
+		auto_spend_toggled.emit(_auto_spend))
+	_vbox.add_child(_auto_btn)
+	_render_auto_button()
 
 	# Spacer
 	var spacer := Control.new()

@@ -40,6 +40,10 @@ extends Resource
 # Bank persists across saves; spending recomputes derived stats. Sits on top of
 # the existing class-fixed stat scaling (2.5 pts/lv distributed by class).
 @export var unspent_stat_points: int = 0
+## Spend each level's point on the class preset the moment it is earned (owner 2026-10-14, playtest
+## sheet item 29: players forget to spend). ON by default; the Stats panel opts out. Points already
+## banked are left alone - this only governs points earned from now on.
+@export var auto_spend_stats: bool = true
 
 # Audit #3 Slice 3 — one-time tutorial nudge. Set to true the first time the
 # server sends the player a hint about the Progression Vectors dashboard
@@ -2378,6 +2382,7 @@ func to_dict() -> Dictionary:
 		},
 		# Audit #3 Slice 1 — banked stat-allocation points
 		"unspent_stat_points": unspent_stat_points,
+		"auto_spend_stats": auto_spend_stats,
 		# Audit #3 Slice 3 — one-time progression-hint flag
 		"seen_progression_hint": seen_progression_hint,
 		"world_reshape_relocated": world_reshape_relocated,
@@ -2612,6 +2617,7 @@ func from_dict(data: Dictionary):
 	# Audit #3 Slice 1 — banked stat-allocation points. Legacy characters
 	# default to 0 (no retroactive grant — only future level-ups award points).
 	unspent_stat_points = int(data.get("unspent_stat_points", 0))
+	auto_spend_stats = bool(data.get("auto_spend_stats", true))
 	# Audit #3 Slice 3 — legacy chars default to false; first time we observe
 	# unspent points > 0 after this version, the hint fires once.
 	seen_progression_hint = bool(data.get("seen_progression_hint", false))
@@ -3234,6 +3240,8 @@ func add_experience(amount: int) -> Dictionary:
 		# the character, spent via /spendstat <stat>. Layered on top of the
 		# class-fixed scaling above, not replacing it.
 		unspent_stat_points += UNSPENT_STAT_POINTS_PER_LEVEL
+		if auto_spend_stats:
+			spend_stat_point(preset_stat_for_class(class_type))
 
 		# Recalculate derived stats with new formulas
 		calculate_derived_stats()
@@ -3264,6 +3272,17 @@ func add_experience(amount: int) -> Dictionary:
 
 # Audit #3 Slice 1 — stat-allocation agency.
 const UNSPENT_STAT_POINTS_PER_LEVEL: int = 1
+
+## THE class preset - where a level's point goes when nobody is choosing. ONE definition: the
+## combat simulator's reference player spends by this same rule (its `make_char` and
+## `_grow_spend_points` call it), so the monsters are calibrated against exactly what an
+## auto-spending player becomes.
+static func preset_stat_for_class(klass: String) -> String:
+	if klass in ["Wizard", "Sorcerer", "Sage"]:
+		return "intelligence"
+	if klass in ["Grifter", "Ranger", "Ninja"]:
+		return "dexterity"
+	return "strength"
 const ALLOCATABLE_STATS: Array = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
 
 func spend_stat_point(stat_name: String) -> Dictionary:

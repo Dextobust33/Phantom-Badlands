@@ -2287,6 +2287,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_show_stats(peer_id)
 		"spend_stat_point":
 			handle_spend_stat_point(peer_id, message)
+		"set_auto_spend_stats":
+			handle_set_auto_spend_stats(peer_id, message)
 		# Clan system handlers (Audit #14 Slice 1)
 		"clan_create":
 			handle_clan_create(peer_id, message)
@@ -12692,6 +12694,18 @@ func handle_show_stats(peer_id: int) -> void:
 	else:
 		lines.append("[color=#888888]No unspent stat points. Level up to earn (+1 per level).[/color]")
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+func handle_set_auto_spend_stats(peer_id: int, message: Dictionary) -> void:
+	"""Stats panel toggle: spend each new level's point on the class preset, or leave it banked."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	character.auto_spend_stats = bool(message.get("enabled", true))
+	var preset: String = Character.preset_stat_for_class(character.class_type)
+	var msg := "[color=#00FF00]Auto-spend ON:[/color] each level's point goes to %s." % preset.capitalize() if character.auto_spend_stats else "[color=#FFAA00]Auto-spend OFF:[/color] new points will wait in your bank for you to spend."
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 func handle_spend_stat_point(peer_id: int, message: Dictionary) -> void:
 	"""Audit #3 Slice 1 — spend one banked stat point on the named stat.
