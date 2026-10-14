@@ -11067,14 +11067,21 @@ func handle_companion_stable_deposit(peer_id: int, message: Dictionary) -> void:
 	var account_id = peers[peer_id].account_id
 	var is_active = (not character.active_companion.is_empty()
 		and character.active_companion.get("id", "") == companion.get("id", ""))
-	var was_registered = is_active and character.using_registered_companion
+	# ⛑ Registered-ness is asked of the ONE definition, and of THIS companion - not only of the one
+	# that happens to be out. Asking `is_active and using_registered_companion` sent a registered
+	# companion sitting in the collection to the kennel as a plain copy (slot flag stripped) while
+	# its Sanctuary row stayed checked out; the kennel's Register then made a second row. That is
+	# the "same Lime Hydra in two slots, Lv17 and Lv53" the owner screenshotted (sheet item 51).
+	var was_registered = _is_registered_companion(character, companion)
 
-	# Path 1: registered active — return to slot, preserving registration.
+	# Path 1: registered - return to its slot, preserving registration.
 	if was_registered:
-		var slot = int(character.registered_companion_slot)
-		# Use the live active_companion data (it reflects any XP/level gained
-		# this character) — same pattern as the on-death return path.
-		var slot_state = character.active_companion.duplicate(true)
+		var slot = int(companion.get("house_slot", -1))
+		if slot < 0:
+			slot = int(character.registered_companion_slot)   # legacy pair (active only)
+		# Use the live data (it reflects any XP/level gained this character) - same pattern as
+		# the on-death return path. The active copy is the record when it is the one out.
+		var slot_state = (character.active_companion if is_active else companion).duplicate(true)
 		slot_state.erase("checked_out_by")
 		slot_state.erase("checkout_time")
 		slot_state.erase("house_slot")
@@ -11085,9 +11092,10 @@ func handle_companion_stable_deposit(peer_id: int, message: Dictionary) -> void:
 		# Clear the on-character checkout state. The companion still exists
 		# in the registered slot, just not in active or collected.
 		character.collected_companions.remove_at(collected_index)
-		character.active_companion = {}
-		character.using_registered_companion = false
-		character.registered_companion_slot = -1
+		if is_active:
+			character.active_companion = {}
+			character.using_registered_companion = false
+			character.registered_companion_slot = -1
 		save_character(peer_id)
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -16918,7 +16926,12 @@ func handle_house_kennel_register(peer_id: int, message: Dictionary):
 	if companion.is_empty():
 		send_to_peer(peer_id, {"type": "error", "message": "Failed to remove from kennel."})
 		return
-	persistence.register_companion_to_house(account_id, companion, null)
+	if persistence.register_companion_to_house(account_id, companion, null) == -1:
+		# Refused (the Sanctuary already holds this very companion): never lose it - put it back.
+		persistence.add_companion_to_kennel(account_id, companion)
+		send_to_peer(peer_id, {"type": "error", "message": "%s is already registered in your Sanctuary." % companion.get("name", "That companion")})
+		_send_house_update(peer_id)
+		return
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#00FF00]%s registered! Will survive death.[/color]" % companion.get("name", "companion")
