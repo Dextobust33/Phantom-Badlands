@@ -195,6 +195,9 @@ func clear_combat_temp_pool_bonuses() -> void:
 @export var x: int = 0  # X coordinate
 @export var y: int = 10  # Y coordinate (start at Sanctuary)
 @export var gold: int = 0  # Deprecated — kept for migration only
+## THE gold currency (per character, run-bound; see shared/gold_economy.gd). Not `gold` above: that one
+## is converted to Valor at login by a migration, and would eat anything stored there.
+@export var gold_purse: int = 0
 @export var gems: int = 0  # Deprecated — kept for migration only (→ monster_gem material)
 
 # Combat
@@ -2443,6 +2446,7 @@ func to_dict() -> Dictionary:
 		"y": y,
 		"health_state": get_health_state(),
 		"gold": gold,
+		"gold_purse": gold_purse,
 		"gems": 0,  # Deprecated — migrated to monster_gem material
 		"in_combat": in_combat,
 		"poison_active": poison_active,
@@ -2697,6 +2701,7 @@ func from_dict(data: Dictionary):
 	x = data.get("x", 0)
 	y = data.get("y", 10)
 	gold = data.get("gold", 0)
+	gold_purse = maxi(0, int(data.get("gold_purse", 0)))
 	gems = data.get("gems", 0)
 	in_combat = data.get("in_combat", false)
 	experience_to_next_level = data.get("experience_to_next_level", 100)
@@ -3284,6 +3289,19 @@ static func preset_stat_for_class(klass: String) -> String:
 		return "dexterity"
 	return "strength"
 const ALLOCATABLE_STATS: Array = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
+
+func add_gold(amount: int) -> int:
+	"""Earn gold. Returns what was added (never negative)."""
+	var n: int = maxi(0, amount)
+	gold_purse += n
+	return n
+
+func spend_gold(amount: int) -> bool:
+	"""Pay gold. False - and nothing taken - if the purse is short."""
+	if amount < 0 or gold_purse < amount:
+		return false
+	gold_purse -= amount
+	return true
 
 func spend_stat_point(stat_name: String) -> Dictionary:
 	"""Audit #3 Slice 1 — apply one banked stat point to the named stat.

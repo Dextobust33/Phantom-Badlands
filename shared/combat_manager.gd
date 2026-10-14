@@ -405,6 +405,7 @@ const TitlesScript = preload("res://shared/titles.gd")
 # Used alongside the `drop_tables` Node instance — script is preloaded so
 # const tables are accessible without going through the instance.
 const DropTablesScript = preload("res://shared/drop_tables.gd")
+const GoldEconomyScript = preload("res://shared/gold_economy.gd")
 
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
@@ -15127,9 +15128,18 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 		if drop_tables and drop_tables.has_method("roll_gem_drops"):
 			gems = drop_tables.roll_gem_drops(monster, character)
 
+		# Gold for the kill - every surviving member is paid, as the solo path pays (the server's
+		# `_award_gold` handles solo; party rewards are applied here, so this is the party half).
+		var _pg_mods = monster.get("empowered_mods", [])
+		var party_gold: int = GoldEconomyScript.kill_gold(int(monster.get("level", 1)),
+				bool(monster.get("is_boss", false)) or bool(combat.get("is_boss_fight", false)),
+				(_pg_mods as Array).size() if _pg_mods is Array else 0)
+		character.add_gold(party_gold)
+
 		member_rewards[pid] = {
 			"xp": final_xp,
 			"gems": gems,
+			"gold": party_gold,
 			"drops": []
 		}
 
@@ -15154,9 +15164,9 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#00FFFF]* %s leveled up to %d! *[/color]" % [
 					character.get_active_companion().get("name", "Companion"), comp_result.new_level])
 
-		messages.append("[color=#00BFFF]%s[/color]: +%d XP%s" % [
+		messages.append("[color=#00BFFF]%s[/color]: +%d XP%s, +%d gold" % [
 			character.name, final_xp,
-			", +%d gems" % gems if gems > 0 else ""])
+			(", +%d gems" % gems) if gems > 0 else "", party_gold])
 
 		# Combat durability wear for each surviving party member
 		var wear_msgs: Array = []

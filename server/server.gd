@@ -70,6 +70,7 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 ## The rank ladder. Preloaded rather than leaning on the global class name, which lives in the
 ## .godot cache this project has been bitten by before.
 const PowerRankScript = preload("res://shared/power_rank.gd")
+const GoldEconomyScript = preload("res://shared/gold_economy.gd")
 const TravelStanceScript = preload("res://shared/travel_stance.gd")
 const DangerWordsScript = preload("res://shared/danger_words.gd")
 const OnlineStatusScript = preload("res://server/online_status.gd")
@@ -6766,6 +6767,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 		if result.has("victory") and result.victory:
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
+			# GOLD for the kill (per-character currency, see shared/gold_economy.gd).
+			_award_gold(peer_id, GoldEconomyScript.kill_gold(int(result.get("monster_level", 1)),
+					bool(result.get("is_boss", false)) or bool(result.get("is_boss_fight", false)),
+					(result.get("empowered_mods", []) as Array).size() if result.get("empowered_mods", []) is Array else 0), "kill")
 
 			# v0.9.682 — Tribute companion card: bonus valor on victory.
 			var _card_valor: int = int(result.get("card_bonus_valor", 0))
@@ -8412,6 +8417,7 @@ func handle_permadeath(peer_id: int, cause_of_death: String, combat_data: Dictio
 		},
 		"equipped": character.equipped.duplicate(true),
 		"gold": character.gold,
+		"gold_purse": character.gold_purse,
 		"valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
 		"monsters_killed": character.monsters_killed,
 		"active_companion": character.get_active_companion(),
@@ -12695,6 +12701,27 @@ func handle_show_stats(peer_id: int) -> void:
 		lines.append("[color=#888888]No unspent stat points. Level up to earn (+1 per level).[/color]")
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
+func _award_gold(peer_id: int, amount: int, reason: String = "", quiet: bool = false) -> int:
+	"""THE funnel every gold income goes through: credit the purse, tell the player. One place, so
+	no source can forget to announce itself or to credit the right field."""
+	if amount <= 0 or not characters.has(peer_id):
+		return 0
+	var added: int = characters[peer_id].add_gold(amount)
+	if added > 0 and not quiet:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFB347]+%s gold%s[/color]" % [_fmt_int(added), (" (%s)" % reason) if reason != "" and reason != "kill" else ""]})
+	return added
+
+func _fmt_int(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	var c := 0
+	for i in range(s.length() - 1, -1, -1):
+		out = s[i] + out
+		c += 1
+		if c % 3 == 0 and i > 0:
+			out = "," + out
+	return ("-" if n < 0 else "") + out
+
 func handle_set_auto_spend_stats(peer_id: int, message: Dictionary) -> void:
 	"""Stats panel toggle: spend each new level's point on the class preset, or leave it banked."""
 	if not characters.has(peer_id):
@@ -15260,12 +15287,27 @@ func handle_merchant_sell_all(_peer_id: int):
 		"message": "[color=#FFD700]Items can only be sold via the Open Market at trading posts.[/color]"
 	})
 
-func handle_merchant_sell_gems(_peer_id: int, _message: Dictionary):
-	"""Gem selling removed — gems cannot be sold"""
-	send_to_peer(_peer_id, {
-		"type": "text",
-		"message": "[color=#FF4444]Gems cannot be sold.[/color]"
-	})
+func handle_merchant_sell_gems(peer_id: int, message: Dictionary):
+	"""Sell monster gems for gold at GoldEconomy.GEM_GOLD_VALUE each (owner 2026-10-14: 1 gem =
+	1,000 gold). `count` sells that many, omitted/0 sells them all. Any merchant buys them."""
+	if not at_merchant.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You are not at a merchant!"})
+		return
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var have: int = int(character.crafting_materials.get("monster_gem", 0))
+	var want: int = int(message.get("count", 0))
+	var n: int = have if want <= 0 else mini(want, have)
+	if n <= 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You have no monster gems to sell.[/color]"})
+		return
+	if not character.remove_crafting_material("monster_gem", n):
+		return
+	var gold: int = n * GoldEconomyScript.GEM_GOLD_VALUE
+	_award_gold(peer_id, gold, "%d gem%s" % [n, "" if n == 1 else "s"])
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 func handle_merchant_gamble(peer_id: int, message: Dictionary):
 	"""Handle gambling with a merchant"""

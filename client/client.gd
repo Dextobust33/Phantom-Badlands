@@ -13521,7 +13521,7 @@ func update_action_bar():
 					{"label": "Upgrade", "action_type": "local", "action_data": "merchant_upgrade", "enabled": "upgrade" in services},
 					{"label": "Gamble", "action_type": "local", "action_data": "merchant_gamble", "enabled": "gamble" in services},
 					{"label": "Buy", "action_type": "local", "action_data": "merchant_buy", "enabled": shop_items.size() > 0},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "Sell Gems", "action_type": "local", "action_data": "merchant_sell_gems", "enabled": int((character_data.get("crafting_materials", {}) as Dictionary).get("monster_gem", 0)) > 0},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -18674,6 +18674,8 @@ func execute_local_action(action: String):
 			leave_merchant()
 		"merchant_sell":
 			prompt_merchant_action("sell")
+		"merchant_sell_gems":
+			send_to_server({"type": "merchant_sell_gems", "count": 0})
 		"merchant_upgrade":
 			prompt_merchant_action("upgrade")
 		"merchant_gamble":
@@ -27048,6 +27050,35 @@ func _merge_character_delta(delta: Dictionary):
 	if not character_data.has("valor"):
 		character_data["valor"] = account_valor
 
+var _purse_label: Label = null
+
+func _update_gold_purse_label() -> void:
+	"""The character's GOLD (run-bound; Valor beside it is the account's). Built in code, once, next
+	to the Valor readout so the scene file is untouched."""
+	if gold_label == null:
+		return
+	if _purse_label == null:
+		var holder: Node = gold_label.get_parent().get_parent() if gold_label.get_parent() != null else null
+		if holder == null:
+			return
+		var box := HBoxContainer.new()
+		box.name = "PurseContainer"
+		box.add_theme_constant_override("separation", 4)
+		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var icon := Label.new()
+		icon.text = "Gold:"
+		icon.add_theme_color_override("font_color", Color(1.0, 0.70, 0.28, 1))
+		icon.add_theme_font_size_override("font_size", 14)
+		box.add_child(icon)
+		_purse_label = Label.new()
+		_purse_label.add_theme_color_override("font_color", Color(1.0, 0.70, 0.28, 1))
+		_purse_label.add_theme_font_size_override("font_size", 14)
+		_purse_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		box.add_child(_purse_label)
+		holder.add_child(box)
+		holder.move_child(box, gold_label.get_parent().get_index() + 1)
+	_purse_label.text = format_number(int(character_data.get("gold_purse", 0)))
+
 func update_currency_display():
 	if not has_character:
 		return
@@ -27057,6 +27088,7 @@ func update_currency_display():
 
 	if gold_label:
 		gold_label.text = format_number(valor)
+	_update_gold_purse_label()
 
 	if rank_label:
 		if projected_rank == 1:
