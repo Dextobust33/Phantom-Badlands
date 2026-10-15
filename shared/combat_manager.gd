@@ -10018,9 +10018,12 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			team.append({"key": akey, "name": String(ally.name), "aggro": clampi(ag, 0, 80), "sub_tier": int(adict.get("sub_tier", 1))})
 
 		var team_aggro: int = 0
+		var best_single: int = 0
 		for t in team:
 			team_aggro += int(t.aggro)
-		team_aggro = mini(team_aggro, 80)
+			best_single = maxi(best_single, int(t.aggro))
+		# One companion keeps the old ceiling (80). A team soaks less: see TEAM_AGGRO_CAP.
+		team_aggro = mini(team_aggro, 80 if team.size() <= 1 else CompanionRolesScript.TEAM_AGGRO_CAP)
 
 		# Roll each hit independently. A round can split across targets, so a multi_strike burst is
 		# shared the way the aggro percentages say it should be.

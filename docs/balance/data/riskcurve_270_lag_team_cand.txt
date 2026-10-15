@@ -1,0 +1,6 @@
+level      gearless      under    average        bis   gear pays
+3              1.9%       0.4%       0.4%       0.0%   37x safer
+10             8.9%       4.4%       1.1%       0.0%   178x safer
+30            47.4%       5.6%       1.5%       0.4%   128x safer
+100           84.4%       7.0%       0.7%       0.0%   1689x safer
+500           61.1%      15.6%       0.0%       0.0%   1222x safer

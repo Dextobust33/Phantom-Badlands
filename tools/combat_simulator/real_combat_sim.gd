@@ -227,6 +227,8 @@ func _init():
 			budget = maxi(30, int(String(arg).split("=")[1]))
 		if String(arg) == "--team":
 			_team_flag = true
+		if String(arg) == "--companion":
+			_companion_flag = true
 	_deadline_ms = Time.get_ticks_msec() + budget * 1000
 	print("[budget] this run will self-abort after %d seconds" % budget)
 
@@ -354,10 +356,10 @@ func _run_selected_audits() -> void:
 		# `--team` (item 14 S3) gives every character a companion TEAM, which is a MEASUREMENT of what players with
 		# companions experience. It must never reach the calibrators: they fit the curve to the companion-free
 		# reference player, and a team in the loop would bake the companions into the monsters.
-		if _team_flag and name in ["refcal", "speciescal", "rolecal"]:
+		if (_team_flag or _companion_flag) and name in ["refcal", "speciescal", "rolecal"]:
 			print("[sim] REFUSING '%s' with --team: calibration is fitted to the companion-free reference player." % name)
 			continue
-		_companion_mode = "match" if _team_flag else "none"
+		_companion_mode = "lag" if (_team_flag or _companion_flag) else "none"
 		reg[name][1].call()
 
 func _verify_party_combat() -> void:
@@ -4976,6 +4978,8 @@ var _companion_mode: String = "none"
 ## `-- <audit> --team`: field the full companion team (every slot the level has unlocked) on top of the
 ## companion. For MEASURING players who have companions; refused by the calibrators.
 var _team_flag: bool = false
+## `-- <audit> --companion`: the beside-you companion only, no column team (to separate what ONE companion does).
+var _companion_flag: bool = false
 
 func _use_companions_for_this_audit(mode: String = "match") -> void:
 	"""Opt this audit back into companions. The dispatcher resets the mode to the reference
@@ -5357,7 +5361,7 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	# Now: draw a REAL companion of the tier a player would plausibly have, from the game's
 	# own table. "under" gets none — a third of real saved characters have no companion.
 	if gear != "under" and gear != "gearless" and (not gear.begins_with("starter") or gear == "starter7c") and _companion_mode != "none":
-		var comp_tier: int = clampi(1 + int(level / 12.0), 1, 9)
+		var comp_tier: int = _sim_companion_tier(level)
 		var candidates: Array = []
 		for mtype in drop_tables.COMPANION_DATA.keys():
 			var cd: Dictionary = drop_tables.COMPANION_DATA[mtype]
@@ -5371,7 +5375,7 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 			"id": "sim_comp", "monster_type": pick,
 			"name": String(pick_data.get("companion_name", pick)),
 			"tier": int(pick_data.get("tier", 1)),
-			"level": (1 if _companion_mode == "l1" else (level * 10 if _companion_mode == "x10" else level)),
+			"level": _sim_companion_level(level),
 			"xp": 0,
 			"bonuses": (pick_data.get("bonuses", {}) as Dictionary).duplicate(),
 			"variant": "Normal", "sub_tier": 1, "border_tier": 1,
@@ -5388,12 +5392,28 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	ch.current_energy = ch.get_total_max_energy()
 	return ch
 
+func _sim_companion_tier(level: int) -> int:
+	"""The grade of companion a player of this level plausibly has. "lag" is the REALISTIC model: the rank-1
+	L91 Sorcerer's was a tier-4 Hydra at level 53 - not the tier-8 level-91 companion "match" hands out."""
+	if _companion_mode == "lag":
+		return clampi(1 + int(level / 24.0), 1, 9)
+	return clampi(1 + int(level / 12.0), 1, 9)
+
+func _sim_companion_level(level: int) -> int:
+	if _companion_mode == "l1":
+		return 1
+	if _companion_mode == "x10":
+		return level * 10
+	if _companion_mode == "lag":
+		return maxi(1, int(level * 0.6))
+	return level
+
 func _field_team(ch, level: int) -> void:
 	"""Fill every column slot the character has unlocked with a role-balanced companion team: tank, healer,
 	striker, utility in turn, each a real species of the same tier the beside-you companion was drawn from, at
 	the same level. Mirrors what a player with a full roster could field - not the best possible team."""
 	var Roles = load("res://shared/companion_roles.gd")
-	var comp_tier: int = clampi(1 + int(level / 12.0), 1, 9)
+	var comp_tier: int = _sim_companion_tier(level)
 	var want: Array = [Roles.ROLE_TANK, Roles.ROLE_HEALER, Roles.ROLE_DPS, Roles.ROLE_UTILITY]
 	for i in range(ch.companion_slots_unlocked()):
 		var role: String = String(want[i % want.size()])
@@ -5411,7 +5431,7 @@ func _field_team(ch, level: int) -> void:
 		var pd: Dictionary = drop_tables.COMPANION_DATA.get(pick, {})
 		var entry := {
 			"id": "sim_team_%d" % i, "monster_type": pick, "name": String(pd.get("companion_name", pick)),
-			"tier": int(pd.get("tier", 1)), "level": level, "xp": 0,
+			"tier": int(pd.get("tier", 1)), "level": _sim_companion_level(level), "xp": 0,
 			"bonuses": (pd.get("bonuses", {}) as Dictionary).duplicate(),
 			"variant": "Normal", "sub_tier": 1, "border_tier": 1,
 		}

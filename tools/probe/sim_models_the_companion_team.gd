@@ -13,7 +13,7 @@ func _init() -> void:
 	var sim = load("res://tools/combat_simulator/real_combat_sim.gd").new()
 	get_root().add_child(sim)
 	await process_frame
-	sim._companion_mode = "match"
+	sim._companion_mode = "lag"
 	var plain = sim.make_char(100, "average", "Fighter", "Human")
 	ck(plain.get_companion_party_ids().is_empty(), "without the flag: no team (%d)" % plain.get_companion_party_ids().size())
 	ck(not plain.active_companion.is_empty(), "...but the beside-you companion is still drawn")

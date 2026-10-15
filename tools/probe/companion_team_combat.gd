@@ -100,7 +100,7 @@ func _init() -> void:
 	var team := _companion_share("Wolf", ["Iron Golem"])
 	print("  share of monster turns that hit a companion: wolf alone %.0f%%, wolf + Iron Golem %.0f%%" % [solo * 100.0, team * 100.0])
 	ck(absf(solo - 0.25) < 0.08, "ONE companion keeps its old aggro share (wolf, aggro 25: %.0f%%)" % (solo * 100.0))
-	ck(team > solo + 0.25, "adding a tank column companion draws far more hits (%.0f%% vs %.0f%%)" % [team * 100.0, solo * 100.0])
+	ck(team > solo + 0.15 and absf(team - 0.50) < 0.09, "a TEAM soaks about its 50%% cap, not 80%% (%.0f%% vs %.0f%% alone)" % [team * 100.0, solo * 100.0])
 
 	print("--- a healer tends the lowest ally and revives a fallen one ---")
 	var g = _fight("Wolf", ["Phoenix", "Balrog"])

@@ -57,6 +57,10 @@ const JACK_STRENGTH := 0.6
 ## GUESS - the chain run with the team in the reference player is what checks it.
 const TEAM_MEMBER_MULT := 0.375
 ## Reviving a knocked-out ally restores this share of its max HP and costs the reviver a longer wait.
+## A TEAM (two or more companions) soaks at most this share of the monster's hits (a lone Iron Golem still
+## draws its 65). Owner 2026-10-15: the first team soaked up to 80% and
+## drove average-gear death to ~0%, far past "2.5x output". UNMEASURED FIRST GUESS.
+const TEAM_AGGRO_CAP := 50
 const REVIVE_PCT := 0.25
 const REVIVE_COOLDOWN := 3
 ## After a role action the companion makes this many ordinary attacks before it can act again.
