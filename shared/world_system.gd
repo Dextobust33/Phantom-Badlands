@@ -1896,6 +1896,9 @@ func check_encounter(x: int, y: int, player_level: int = 0, bypass_level_scaling
 	rate *= maxf(0.0, stance_mult)
 	return randf() < rate
 
+## Half-width of the monster level band, as a fraction of the area's level (was 0.10; 0.15 before that).
+const AREA_LEVEL_BAND_PCT: float = 0.05
+
 func get_monster_level_range(x: int, y: int) -> Dictionary:
 	"""Get the monster level range for this location based on distance from origin"""
 	# Check if safe zone first
@@ -1928,8 +1931,12 @@ func get_monster_level_range(x: int, y: int) -> Dictionary:
 	# Apply hotspot multiplier to base level
 	var adjusted_level = int(base_level * hotspot_multiplier)
 
-	# Calculate variance range (+/- 10% for more predictable encounters)
-	var variance = max(1, int(adjusted_level * 0.10))  # Reduced from 15%
+	# The spread of monster levels around the local level, as a PERCENTAGE of it (owner 2026-10-14: a
+	# flat cap means less at high levels, so it stays a percentage - just a tighter one). It was +/-10%
+	# (+/-9 levels at L91, +/-50 at L500), so far from the centre "around your level" stopped existing and
+	# a player could not find ground to farm. Everything - spawns, the area readout, the danger warning -
+	# reads this one range.
+	var variance = max(1, int(adjusted_level * AREA_LEVEL_BAND_PCT))
 	var min_level = max(1, adjusted_level - variance)
 	var max_level = min(10000, adjusted_level + variance)
 
