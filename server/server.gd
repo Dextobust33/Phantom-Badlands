@@ -47883,11 +47883,10 @@ func _party_combat_snapshot(leader_id: int) -> Dictionary:
 		var _comp_out := {}
 		if ch and ch.active_companion is Dictionary and not ch.active_companion.is_empty():
 			var _comp = ch.active_companion
-			var _cl := int(_comp.get("level", 1))
-			var _cs := int(_comp.get("sub_tier", 1))
-			var _cbon = _comp.get("bonuses", {})
-			var _chpb := int(_cbon.get("hp_bonus", 0)) if _cbon is Dictionary else 0
-			var _cmax := 30 + _cl * 5 + _cs * 10 + _chpb
+			# The STAMPED figure, the same one the owner's own screen shows (get_active_companion derives it).
+			# This used to re-derive it with the long-dead absolute formula `30 + level*5 + rank*10`, so a
+			# teammate's companion bar disagreed with its owner's.
+			var _cmax: int = int(ch.get_companion_max_hp())
 			_comp_out = {
 				"name": _comp.get("name", ""),
 				"monster_type": _comp.get("monster_type", _comp.get("name", "")),
@@ -47896,7 +47895,7 @@ func _party_combat_snapshot(leader_id: int) -> Dictionary:
 				"variant_pattern": _comp.get("variant_pattern", "solid"),
 				"border_tier": int(_comp.get("border_tier", 0)),  # #76 — silhouette outline colour, mirror player companion
 				"max_hp": _cmax,
-				"combat_hp": int(_comp.get("combat_hp", _cmax)),
+				"combat_hp": int(ch.get_companion_combat_hp()),
 			}
 		# Field names mirror what the client's set_party_members / _display_party_combat_hp read.
 		members.append({
