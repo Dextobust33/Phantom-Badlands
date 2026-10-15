@@ -10,6 +10,68 @@ common way to lose a session.
 
 ---
 
+## ▶ START HERE - PLAN 2026-10-15 (written after v0.9.844; supersedes the "STATE 2026-10-14" and "WHAT TO DO FIRST TOMORROW" blocks lower down)
+
+**WHERE THINGS STAND.** v0.9.844 is live (client + server). This session shipped the whole companion-team arc (item 14 S1-S5
++ party play): roles, tactics, up to four column companions (slots at L10/25/50/100), team targeting, healing/revive, the
+Stable's Role Swap, role names on every surface, and teams in party fights. Also live: gold + Temper, the opening-blow cap,
+the +/-5% level band. HELD, not shipped: the tougher monster curve (see item 9).
+
+**THE RULE THAT KEEPS US FROM CREATING WORK: ONE CHAIN RUN, AT THE END OF THE POWER CHANGES.** Anything that changes how
+strong a player or a monster is must land BEFORE the calibration chain, and the chain runs once. Every item below is
+sorted by that, not by size. Doing a power change AFTER the chain is what forced the re-runs this month.
+
+### WAVE 0 - housekeeping that pays for itself (small; do first)
+- [ ] **OWNER LOOKS AT THE LIVE SCREENS** (only the owner can): Companions panel Team section, a solo fight with a team,
+      a pair fight, the Stable's Role Swap. Screenshots from the harness are in `claude_screenshots/team_*.png`; a real-client
+      look is the one thing no probe can give. Anything that looks wrong is fixed before more is built on it.
+- [ ] **PRUNE THIS FILE.** It is 10,000+ lines, mostly ticked history, which is why it is hard to plan from and why items get
+      re-offered. Move every ticked block to `docs/archive/` (one dated file), leave the open items and this block. Mechanical;
+      `tools/backlog_audit.py` must give the same open-item list before and after.
+- [ ] **TEST DEBT** (three small things that make every later session slower): triage the 10 script-error probes;
+      `probe_run.py --repeat N`; move measurement scripts out of `tools/probe/` so "all probes pass" means something.
+- [ ] **FINISH WHAT THIS SESSION LEFT OPEN** (all small, all in the code I just touched): a role/tactics line on the
+      beside-you companion's combat card; teammates' HP bars animate with the paced playback instead of jumping; sheet item
+      47's turn-in guidance at (0,0); confirm the party slot split (pair = 1 teammate each) feels right.
+- [ ] **PLAYTEST PARTY PLAY** (item 8): built and probed, never played with two humans. Owner + one other, ten minutes.
+
+### WAVE 1 - the power inputs, designed TOGETHER, built in dependency order (no chain yet)
+These all change power or the money behind it, so they share one design pass and one calibration:
+1. **ONE ECONOMY DESIGN** for the four items that are the same question ("what do players spend on, and where does it
+   come from"): item 14 S5's economy half (Role Swap price, companion upkeep), "Real sinks for excess eggs and companions",
+   THE VALOR ECONOMY REALM-WIDE, and THE WORLD CONSUMES MATERIAL SURPLUS. Design doc first (`docs/design/economy.md`), then
+   build. Gold prices (Temper, Role Swap) are unmeasured first guesses and are tuned HERE, once, not per feature.
+2. **ITEM 11 VARIETY** (rolled monster stats, companion variety/rolls, quest-board variety). 11(c) must follow item 14
+   (roles) - done. Design first; the rolls change power so they belong before the chain.
+3. **PATHS REVAMP** (class-specific, less conditional) and the **DUNGEON CARD POWER PASS**: both change player power and
+   both are blocked only on an owner design answer. Ask once, build once.
+4. **THE REMAINING 24 CYCLICAL BURSTS** (telegraph them like the five already done): small, monster-side, must precede the chain.
+
+### WAVE 2 - the balance batch (item 9): ONE run
+`-- preflight` first, then speciescal, refcal, rolecal ONCE each (use `--budget=5400` for rolecal). Fold into it, in this order:
+(a) the held candidate curve - decide it with the team in the model (measured: with a full team the candidate is no worse
+than today's game with ONE companion; under-geared characters, who the sim gives no companions, are worse - decide whether the
+model should give them one BEFORE the run); (b) per-class death rates (Wizard 31% at own level, Sage/Barbarian/Ranger) -
+per-class levers only, a global buff is cancelled by the refit; (c) empowered difficulty; (d) the gold price tuning from Wave 1.
+Then read the death log for a week before touching anything (live population is ~5 accounts, so the sim and the owner's play
+are the evidence).
+
+### WAVE 3 - world and content (each is large; none changes power, so none waits on the chain)
+In this order, because each one's input is the one before it: **Player Phantoms client surfaces** (built, held behind
+`PHANTOM_POSTS_ENABLED := false` - this is also the long answer to "no farmable ground") -> **Living world / rework the posts**
+(explicitly sequenced after Phantoms) -> **Dungeon revamp B + dungeon questing replaces the overworld quests** (B waits on the
+card power pass in Wave 1) -> **post-to-post road travel** -> **Sanctuary redesign** -> **item 12 restarts/events** (needs the
+living world) -> **THE UNBURIED** (needs the owner's permadeath decision) -> Prize Shuffle gathering/crafting, sprite scale.
+
+### OWNER DECISIONS NEEDED (batched so they cost one conversation, not six)
+1. Is a pair getting ONE teammate each right, and is "none in a party of 3+" acceptable?
+2. Should 'under-geared' characters in the model have companions (changes whether the candidate curve can ship)?
+3. Paths revamp and the dungeon card power pass: the direction (each blocked only on this).
+4. Which Wave 3 item first, once Wave 2 is done.
+5. Permadeath: is it changing? (gates THE UNBURIED and parts of the economy.)
+
+---
+
 ## ⚑ OWNER DIRECTION 2026-09-13 — the world reshape and what it exposed
 
 All of this came out of the distribution work. Recorded before starting any of it.
@@ -1089,7 +1151,7 @@ nothing is held back unreleased.** First commands of the session: `python tools/
 `[ENCOUNTER]` data first, not by guessing); dungeon spawns weighted toward players (done); balance work is BATCHED -
 run the calibration chain ONCE after the batch, never per item; release only when the owner asks.
 
-**WHAT TO DO FIRST TOMORROW, in order:**
+**(SUPERSEDED 2026-10-15 - see "START HERE - PLAN" at the top of this file.) WHAT TO DO FIRST TOMORROW, in order:**
 1. **Read the new data.** `python tools/death_log_audit.py` now ends with an ENCOUNTERS table (deaths per encounter by
    role / level band / level gap / modifier) from the `[ENCOUNTER]` lines that began with v0.9.838. It will be thin after
    one day - report n, do not conclude. It is the input the empowered-difficulty decision needs.
@@ -1100,7 +1162,7 @@ run the calibration chain ONCE after the batch, never per item; release only whe
    (live base CON 17-19 vs sim 12-13; live gear hp_bonus ~3x the sim's), Fighter mitigation, the rest. Run `-- preflight`
    FIRST, then speciescal -> refcal -> rolecal ONCE each.
 
-**STATE 2026-10-14 END OF DAY: v0.9.841 is LIVE (see the RELEASED note in item 9). Start with the chain re-run decision (item 9), then item 14 S0.** **NEW VISION 2026-10-14 (item 14 below): strategic party combat through companions** - roles, a tactics focus, up to 5 companions (4 in the column, 1 beside you). Design-first; recommended order is release the current batch -> run the item 9 chain on it -> start item 14's S0 (no code). Read item 14 before proposing companion work.
+**(SUPERSEDED 2026-10-15: v0.9.844 is live - see "START HERE - PLAN" at the top.) STATE 2026-10-14 END OF DAY: v0.9.841 is LIVE (see the RELEASED note in item 9). Start with the chain re-run decision (item 9), then item 14 S0.** **NEW VISION 2026-10-14 (item 14 below): strategic party combat through companions** - roles, a tactics focus, up to 5 companions (4 in the column, 1 beside you). Design-first; recommended order is release the current batch -> run the item 9 chain on it -> start item 14's S0 (no code). Read item 14 before proposing companion work.
 
 **THINGS I GOT WRONG TODAY - do not repeat them.**
 - (a) The audit's early-game finding was OLD-BUILD data: 46 of 63 "current" deaths predate the 09-19 curve refit (monsters
@@ -1399,7 +1461,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       the tutorial; 31 Home Stones shouldn't have levels (DONE 2026-10-13 after the owner named the surfaces - inventory and market: `DropTables.shows_item_level`, asked at the 2 item-card and 3 market sites; probe `home_stone_shows_no_level.gd`; the old list-view text sites in client.gd were not touched. Earlier note: the item generator gives every Home Stone a `level` and nothing I found reads it for the effect, but item levels print at 5+ client sites - lines ~11221, 20659, 22147, 50606 - and the owner did not say WHICH surface; needs the screen or a decision: drop `level` at generation + suppress the Lv suffix for `home_stone_*` in one shared formatter); 6 inventory not refreshing after salvage;
       20 no way to stop watching a player (DONE 2026-10-13, client: slot 0 is a visible Stop Watching button while watching; probe `watching_has_a_stop_button.gd`, source-level, not clicked through); 13 what does Blacksmith Armor Upgrade do (DONE 2026-10-13, SERVER: the recipe text now says it raises the equipped item's LEVEL, the Poor/Fine/Masterwork multipliers, and both caps - read off the craft code; probe `upgrade_recipes_say_what_they_do.gd`); 45 why several summoning/finding scrolls (DONE 2026-10-13 per the owner's "merge into one each": there were two families with identical effects - loot "Scroll of Summoning/Finding" (with Ancient/Arcane prefixes that changed nothing) and scribed "Scroll of Monster Select/Target Farm". One name each at every rarity; probe `one_summoning_one_finding.gd`; shared change, needs a client+server release; existing saved scrolls keep their stored names until re-made); 26 legendary/artifact drops not announced in victory feed (PARTLY DONE 2026-10-13, client: the loot minigame never celebrated the ARTIFACT rarity - only rare/epic/legendary - and the victory card now opens with a coloured "LEGENDARY/ARTIFACT FOUND: name" line; probe `top_rarity_drops_are_announced.gd`, source-level, not seen on screen. NOT covered: drops that bypass the loot grid - dungeon floor pickups, quest/market/craft rewards - the owner did not say which source);
       47 Jarl ring still equippable + no turn-in guidance at 0,0 (PARTLY DONE 2026-10-13, client: the list row now says "Quest item - turn in at The High Seat (0,0)" instead of an Atk bonus; probe `title_items_are_not_gear_in_the_list.gd`. Equip was already refused server-side and has no menu entry. NOT done: guidance when standing at 0,0 beyond the existing High Seat button - needs a look at the screen); 6 salvage refresh (FIXED 2026-10-13 on the owner's hypothesis, client: the bulk-salvage result state skipped display_inventory on purpose and so never gave a still-visible inventory panel the new list - it now calls `inventory_panel.populate`; read from code, not reproduced live; probe covers the statement only); 17 (DONE 2026-10-13 - the owner named the L / death-screen log window: its hover box is top_level at z 400, which is ABSOLUTE, under the window's 4000; now 4096, the engine maximum; probe `log_hover_is_above_the_log.gd` red before, green after)].
-8. - [ ] **PARTY PLAY** - sheet item 24, MOSTLY DONE 2026-10-13 (server + client; needs a release; NOT
+8. - [ ] **PARTY PLAY** - (RELEASED v0.9.833-844; still needs a two-human PLAYTEST - Wave 0) sheet item 24, MOSTLY DONE 2026-10-13 (server + client; needs a release; NOT
       playtested). The join-a-fight half had already shipped in v0.9.833 (map marker, run-in join). What
       was still wrong was four leftovers of the old lead/follow model, which is why players "could not
       properly leave the posts": (1) a post-EXIT gate - only the leader could walk out, and only once
@@ -1878,6 +1940,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       - **RELEASED 2026-10-15 as v0.9.842 (client + server, hash `92ba16e82a5627bd` verified).** S1-S4 are LIVE: roles, tactics, the team (slots 10/25/50/100), the Companions-panel Team section, column cards in solo fights, healer NPC revives the team. Screenshots made with `tools/team_ui_shots.gd` (windowed run; writes `claude_screenshots/team_combat.png` and `team_companions_panel.png`) - the combat cards fit and read well; no real-client screenshot yet. STILL OPEN under item 14: party-play teams, a role/tactics line on the beside-you companion's combat card, paced-playback HP bars for teammates, S5 acquisition/economy, S6 (decide the tougher candidate curve now that teams exist - see S3 CORRECTION), and a live feel check of how strong the team is.
       - **S5 (ROLE ACCESS) BUILT 2026-10-15, v0.9.843.** FACTS: every one of the 53 species has exactly ONE dungeon whose boss egg is that species, so role-diverse companions were always obtainable - nothing SAID which dungeon gives which role, and there was no Striker before tier 4. OWNER DECIDED: show roles + a role fusion; Wolf/Gnoll/Orc named Strikers. BUILT: roles named on companion cards, eggs, inspect, the Stable lists and the **Dungeon Atlas egg line**; **Role Swap** at the Stable (`fusion_type` `role:<role>`): 3 companions of ONE tier + 1,000 gold/tier -> 1 companion of the chosen role (random species of it at that tier, else the nearest tier that has it), grade kept, RANK = the lowest of the three, best level and border carry - a swap, never an upgrade. Probes `role_fusion` (real handler: result role, grade, rank, level, border, gold; refusals take nothing). Screenshot `claude_screenshots/team_role_swap.png`. **STILL OPEN under S5 (the economy half):** the 1,000 gold/tier price is an unmeasured first guess; no upkeep exists for companions (the team recovers free with rest and the Healer NPC charges Valor); egg/companion SINKS beyond this fusion (item 'Real sinks for excess eggs and companions' stays open); 11(c) rolled companion stats. Gold sink check: Role Swap at tier 6 costs 6,000 gold - compare with Temper (5 tiers/item, 500..5,249 at L50) before tuning.
       - **PARTY-PLAY TEAMS BUILT 2026-10-15, v0.9.844 (supersedes the 'teams are not used in party fights' gap).** FINDING: the party engine runs each member's action AND the monster's attacks on that member through a solo-shaped view tied to the member's own Character, so every member's column team already acted, got targeted and was healed in a party; `view_carry` keeps per-companion cooldowns between actions. My v0.9.842 changelog/help said otherwise and was wrong (corrected). BUILT: the four column slots are shared - `CompanionRoles.party_team_cap(n)` = 4 alone, 1 each in a pair, 0 from three up (what is left after every other human takes a slot, split evenly); applied through `Character.team_cap_override`, set only while a member is ACTING (`_party_member_view_acting`, lifted by `_party_sync_view_back`) and never touching the stored team; the server's `_party_combat_snapshot` carries each member's trimmed `team`; the client draws everyone's teammates after the humans, tagged with the owner. Probe `party_teams` (real round functions). Screenshot `claude_screenshots/team_party_combat.png`. **FIXED IN THE SAME RELEASE:** `_party_combat_snapshot` computed a party member's beside-you companion max HP with the old `30 + level*5 + ...` formula, so a teammate's companion bar disagreed with its owner's screen - it now sends the stamped value. **KNOWN LEFT:** (2) the cap rule is my reading of the owner's 'split between players' - confirm it feels right in a real pair; (3) a 3+ party has no column companions at all.
+      - **ITEM 14 STATUS 2026-10-15 (v0.9.844): S0-S5 and party-play teams are LIVE. What remains is S5's economy half (folded into Wave 1's economy design) and S6 calibration (Wave 2). Details of each slice follow, newest first.**
       - **S0 STATUS 2026-10-15: DRAFTED in `docs/design/companion_roles_s0.md`.** Owner decided: Healer = theme-pick ~8 species via an override table (only 3 of 53 species are natural healers); slots unlock by progression; full team ~2.5x one companion's output. Rulings 1-7 in the doc (roles, role actions, tactics, per-companion HP/KO and revive costs, aggro targeting, caps, companions help humans) await a yes. Next: S1.
       - **S0 DESIGN, no code.** Settle: (1) the five-plus ROLES (Tank, Healer, DPS, Utility, Jack-of-all-trades are
         ruled; add more only if a gap shows) and how a species gets one - DERIVE it from existing
