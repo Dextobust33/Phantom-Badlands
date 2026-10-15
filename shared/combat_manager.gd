@@ -9065,6 +9065,67 @@ static func monster_turn_lines(result: Dictionary) -> Array:
 	return out
 
 
+# ===== THE OPENING-TURN CAP - "you always get to act" =====
+# Owner 2026-10-14, after the rank-1 Sorcerer died in ONE round from full health having dealt nothing
+# (a Lvl 101 Champion struck first, ambushed and drained: 6,060 damage against 2,242 HP):
+# *"it should still be possible to get killed in the first round but only if the player is blatantly
+# pushing way past what they should be fighting (severely underleveled and undergeared)."*
+#
+# So in a PROTECTED fight the monster's FIRST turn - the first strike, the ambush, anything before the
+# player has acted - cannot take more than OPENING_TURN_CAP_PCT of max HP. Protected means NOT blatantly
+# over-reaching:
+#   * the monster is no more than max(PROTECTED_GAP_MIN, PROTECTED_GAP_FRACTION x your level) above you, AND
+#   * your max HP is at least PROTECTED_MIN_REF_HP x the reference player's at your level, AND
+#   * you walked in with at least half your bar (a player who enters nearly dead has chosen the risk).
+# An over-reacher (a hotspot ground at 2x your level, or gear far behind) gets no cap and can still die
+# in round one. Later turns are never capped: by then you have had your decision (retreat, heal, guard).
+# Only the TAIL is bounded - first-strike + ambush + drain stacking - the calibrated average is untouched.
+const OPENING_TURN_CAP_PCT: float = 0.75
+const PROTECTED_GAP_MIN: int = 15
+const PROTECTED_GAP_FRACTION: float = 0.25
+const PROTECTED_MIN_REF_HP: float = 0.5
+const PROTECTED_MIN_START_HP: float = 0.5
+
+func _opening_cap_applies(combat: Dictionary, character, hp_before: int) -> bool:
+	var monster = combat.get("monster", {})
+	if not (monster is Dictionary):
+		return false
+	var max_hp: int = int(character.get_total_max_hp())
+	if max_hp <= 0 or float(hp_before) < float(max_hp) * PROTECTED_MIN_START_HP:
+		return false
+	var plvl: int = int(character.level)
+	var allowed_gap: int = maxi(PROTECTED_GAP_MIN, int(PROTECTED_GAP_FRACTION * float(plvl)))
+	if int(monster.get("level", plvl)) - plvl > allowed_gap:
+		return false
+	var ref_hp: float = Character.reference_player_hp(plvl)
+	if ref_hp > 0.0 and float(max_hp) < ref_hp * PROTECTED_MIN_REF_HP:
+		return false
+	return true
+
+
+func _apply_opening_burst_cap(combat: Dictionary, character, hp_before: int, result: Dictionary) -> void:
+	"""Run once per monster turn from the `process_monster_turn` funnel; only the FIRST turn of a
+	fight can be capped. One place, so no ability (ambush, drain, multi-strike) can route around it."""
+	var turn_no: int = int(combat.get("monster_turns_taken", 0))
+	combat["monster_turns_taken"] = turn_no + 1
+	if turn_no > 0:
+		return
+	if not _opening_cap_applies(combat, character, hp_before):
+		return
+	var max_hp: int = int(character.get_total_max_hp())
+	var floor_hp: int = int(ceil(float(max_hp) * (1.0 - OPENING_TURN_CAP_PCT)))
+	if int(character.current_hp) >= floor_hp:
+		return
+	var would_have: int = hp_before - int(character.current_hp)
+	character.current_hp = floor_hp
+	combat["opening_cap_saved"] = true
+	var line := "[color=#9ACD32]You weather the opening blow - it would have taken %d, and you hold on at %d HP.[/color]" % [would_have, floor_hp]
+	if result.get("messages", null) is Array:
+		(result["messages"] as Array).append(line)
+	else:
+		result["message"] = String(result.get("message", "")) + ("\n" if String(result.get("message", "")) != "" else "") + line
+
+
 func process_monster_turn(combat: Dictionary) -> Dictionary:
 	"""Run the monster's turn, then apply anything that keys off HAVING BEEN HIT.
 
@@ -9079,6 +9140,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	var _oth_before: int = int(_oth_char.current_hp) if _oth_char != null else 0
 	var _oth_result: Dictionary = _process_monster_turn_inner(combat)
 	if _oth_char != null:
+		_apply_opening_burst_cap(combat, _oth_char, _oth_before, _oth_result)
 		if int(_oth_char.current_hp) < _oth_before:
 			_apply_on_taken_hit(combat, _oth_char, _oth_result)
 		else:
