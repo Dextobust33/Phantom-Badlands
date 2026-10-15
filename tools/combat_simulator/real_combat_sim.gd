@@ -7372,10 +7372,14 @@ func run_risk_curve() -> void:
 	case working correctly."""
 	var levels := [3, 10, 30, 100, 500]
 	var gears := ["gearless", "under", "average", "bis"]
-	var n := 24
+	# ⛑ THIS HEADER USED TO LIE. It printed "216 fights per cell" (n * 9 with n = 24) while the loop below ran
+	# `int(n / 9.0) + 1` = 3 fights per class = 27, so every rate moved in steps of 3.7% and a single cell swung
+	# 11-15 points between identical runs. Found 2026-10-14 comparing curves. The count is now ONE variable that
+	# both the loop and the header read, and it is large enough to say something (a fight takes ~20 ms).
+	var per_class := 30
 	print("
 ===== DEATH RATE PER ENCOUNTER, BY STAGE AND GEAR =====")
-	print("%d fights per cell, all nine classes. Retreat is modelled, so these are DEATHS, not losses." % (n * 9))
+	print("%d fights per cell (%d per class x 9 classes; one death = %.2f points). Retreat is modelled, so these are DEATHS, not losses." % [per_class * 9, per_class, 100.0 / float(per_class * 9)])
 	print("Read ACROSS: does better gear cut the risk? That gradient is the careful player's route up.")
 	var header := "%-8s" % "level"
 	for g in gears:
@@ -7390,7 +7394,7 @@ func run_risk_curve() -> void:
 			var deaths := 0
 			var tot := 0
 			for klass_row in ALL_CLASSES:
-				for i in range(int(n / 9.0) + 1):
+				for i in range(per_class):
 					var r = run_fight(lvl, g, "normal", 1.0, 1.0, 1.0, String(klass_row[0]))
 					if bool(r.get("died", false)):
 						deaths += 1
