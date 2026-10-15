@@ -853,8 +853,8 @@ func _make_companion_card(c: Dictionary, is_active: bool, index: int) -> PanelCo
 	var level = int(c.get("level", 1))
 	var tier = int(c.get("tier", 1))
 	var sub_tier = int(c.get("sub_tier", 1))
-	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s [color=#5A5A66]%s[/color]  [color=%s]%s[/color]" % [
-		level, PowerRank.tag(tier, sub_tier), PowerRank.pips(tier), variant_color, variant]
+	meta.text = "[color=#AAAAAA]Lv %d[/color]  %s [color=#5A5A66]%s[/color]  [color=%s]%s[/color]  [color=#FFD700]%s[/color]" % [
+		level, PowerRank.tag(tier, sub_tier), PowerRank.pips(tier), variant_color, variant, CompanionRolesScript.role_label(CompanionRolesScript.role_of(c))]
 	vbox.add_child(meta)
 
 	var bonuses := RichTextLabel.new()
@@ -1085,7 +1085,7 @@ func _make_egg_card(egg: Dictionary, index: int) -> PanelContainer:
 		rarity_tag = str(info.get("tier", ""))
 	var rarity_prefix := ("[color=%s][%s][/color] " % [rarity_color, rarity_tag]) if rarity_tag != "" else ""
 	var frozen_tag = "  [color=#00BFFF][FROZEN][/color]" if is_frozen else ""
-	name_lbl.text = "%s[color=%s]%s %s Egg[/color] (%s)%s" % [rarity_prefix, color1, variant, egg_name, PowerRank.tag(tier, sub_tier), frozen_tag]
+	name_lbl.text = "%s[color=%s]%s %s Egg[/color] (%s) [color=#FFD700]%s[/color]%s" % [rarity_prefix, color1, variant, egg_name, PowerRank.tag(tier, sub_tier), CompanionRolesScript.role_label(CompanionRolesScript.role_of_species(str(egg.get("monster_type", "")))), frozen_tag]
 	vbox.add_child(name_lbl)
 
 	# Progress

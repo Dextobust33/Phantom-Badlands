@@ -35652,7 +35652,13 @@ func display_changelog():
 	# v0.9.841 - a monster's opening blow can no longer kill a healthy player outright, and the
 	#            monster level band around you is half as wide.
 	# v0.9.842 - companions get roles and a tactics focus, and you can field a TEAM of up to five.
-	display_game("[color=#00FF00]v0.9.842[/color] [color=#808080](Current)[/color]")
+	# v0.9.843 - how to GET the role you want: roles are named everywhere, and a Stable fusion swaps it.
+	display_game("[color=#00FF00]v0.9.843[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ ROLE SWAP AT THE COMPANION STABLE.[/color] A new [b]Role Swap[/b] fusion takes [b]3 companions of the same tier[/b] (any species, any rank) and [b]gold[/b] (1,000 per tier) and gives you [b]1 companion of the role you pick[/b] - Tank, Healer, Striker, Utility or All-rounder - a random species of that role at that tier, at the [b]lowest rank[/b] of the three (so it is a swap, never an upgrade). The best level and border carry over.")
+	display_game("  [color=#FF8000]◆ EVERY SURFACE NAMES THE ROLE.[/color] Companion cards, eggs, the inspect screen, the Stable's lists and the [b]Dungeon Atlas's egg line[/b] now say what role a species is - so you can see which dungeon's boss egg will give you a Healer before you go.")
+	display_game("  [color=#FF8000]◆ EARLY STRIKERS.[/color] Wolf, Gnoll and Orc are Strikers, so a low-level team is not without one (the first derived Striker was tier 4).")
+	display_game("")
+	display_game("[color=#808080]v0.9.842[/color]")
 	display_game("  [color=#FF8000]★ A COMPANION TEAM.[/color] Besides the companion beside you, you can now field up to [b]four more[/b] that fight in the right-hand column. Slots unlock at character [b]level 10, 25, 50 and 100[/b]. Open [b]More → Companions[/b], right-click a companion and choose [b]Add to team[/b]; the Team section lists them with their HP.")
 	display_game("  [color=#FF8000]★ ROLES.[/color] Every companion now has a role from its species: [b]Tank[/b] (draws the monster's hits), [b]Healer[/b] (heals whoever is lowest - you or a companion - and revives a fallen one), [b]Striker[/b] (lands a heavy strike), [b]Utility[/b] (buffs you, weakens the enemy) or [b]All-rounder[/b] (does whatever is needed, at 60% strength). Phoenix, Wight, Siren, Sphinx, Troll, Vampire, Succubus and Lich are the healers. A support action replaces the companion's attack that turn.")
 	display_game("  [color=#FF8000]★ TACTICS.[/color] Each companion has a [b]Tactics[/b] button: Balanced, All out (attack; heal only to save you), Protect (guard you: heal early, draw hits) or Support (buff and weaken first). It is saved with the companion.")
@@ -40152,6 +40158,7 @@ func display_companion_inspection(companion: Dictionary):
 	var info_lines = []
 	info_lines.append("[color=%s][%s][/color] [color=%s]%s %s[/color]%s" % [rarity_info.color, rarity_info.tier, variant_color, variant, comp_name, variant_bonus_text])
 	info_lines.append("[color=#AAAAAA]Level %d |[/color] %s%s" % [comp_level, PowerRank.rich_label(comp_tier, comp_sub_tier), sub_tier_text])
+	info_lines.append("[color=#FFD700]Role: %s[/color] [color=#AAAAAA]- %s[/color]" % [CompanionRolesUI.role_label(CompanionRolesUI.role_of(companion)), CompanionRolesUI.role_blurb(CompanionRolesUI.role_of(companion))])
 	info_lines.append("")
 
 	# XP Progress
@@ -43505,7 +43512,7 @@ func display_dungeon_atlas(message: Dictionary) -> void:
 			var monsters: Array = e.get("monsters", [])
 			if monsters.size() > 0:
 				display_game("   [color=#909090]Monsters:[/color] %s" % ", ".join(monsters))
-			display_game("   [color=#909090]Boss:[/color] %s   [color=#A335EE]Companion egg:[/color] %s" % [String(e.get("boss", "?")), (comp if comp != "" else "—")])
+			display_game("   [color=#909090]Boss:[/color] %s   [color=#A335EE]Companion egg:[/color] %s" % [String(e.get("boss", "?")), ((comp + " [color=#FFD700](" + CompanionRolesUI.role_label(CompanionRolesUI.role_of_species(comp)) + ")[/color]") if comp != "" else "—")])
 		elif st == 2:  # spotted
 			shown += 1
 			display_game("[color=%s]◇ %s[/color] [color=#808080](%s · seen near %d,%d — not yet explored)[/color]" % [tcol, String(e.get("name", "?")), glabel, int(e.get("x", 0)), int(e.get("y", 0))])
@@ -52600,6 +52607,7 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 		String(COMPANION_STAT_HELP.get("power", "")), variant_mult, sub_mult, border_mult]
 	lines.append("%s  [color=#AAAAAA]Level %d[/color]   [url=%s][color=#FFD700]Power x%.2f[/color][/url]" % [
 		PowerRank.rich_label(tier, sub_tier), level, power_help, power])
+	lines.append("[color=#FFD700]Role: %s[/color] [color=#AAAAAA]- %s[/color]" % [CompanionRolesUI.role_label(CompanionRolesUI.role_of(companion)), CompanionRolesUI.role_blurb(CompanionRolesUI.role_of(companion))])
 	lines.append("[color=#5A5A66]%s[/color]" % PowerRank.pips(tier))
 
 	# XP toward the next level - kept from the old screen, it was the one thing here that worked.

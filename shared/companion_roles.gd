@@ -33,6 +33,15 @@ const ACT_REVIVE := "revive"
 ## about 8"). They gain the Heal action; their aggro and HP are untouched.
 const HEALER_SPECIES: Array = ["Phoenix", "Wight", "Siren", "Sphinx", "Troll", "Vampire", "Succubus", "Lich"]
 
+## Strikers by name (owner 2026-10-15): the derived rule finds no Striker before tier 4, so these three tier 1-2
+## species are named, the way the healers were.
+const STRIKER_SPECIES: Array = ["Wolf", "Gnoll", "Orc"]
+
+## ROLE FUSION (Stable): three companions of one tier plus gold become one companion of a role you choose.
+## UNMEASURED FIRST GUESS: the gold per tier of the inputs.
+const ROLE_FUSION_GOLD_PER_TIER := 1000
+const ROLE_FUSION_INPUTS := 3
+
 # Thresholds of the derivation (aggro is a percent of monster hits the companion soaks).
 const TANK_MIN_AGGRO := 45
 const UTILITY_MAX_AGGRO := 18
@@ -77,6 +86,8 @@ const TAUNT_BELOW_SUPPORT := 0.60
 static func role_for_species(species: String, aggro: int, attack_bonus: int) -> String:
 	if species in HEALER_SPECIES:
 		return ROLE_HEALER
+	if species in STRIKER_SPECIES:
+		return ROLE_DPS
 	if aggro >= TANK_MIN_AGGRO:
 		return ROLE_TANK
 	if aggro <= UTILITY_MAX_AGGRO:
@@ -84,6 +95,35 @@ static func role_for_species(species: String, aggro: int, attack_bonus: int) -> 
 	if attack_bonus >= DPS_MIN_ATTACK:
 		return ROLE_DPS
 	return ROLE_JACK
+
+
+static func role_of_species(species: String) -> String:
+	var data: Dictionary = DropTables.COMPANION_DATA.get(species, {})
+	var b: Dictionary = data.get("bonuses", {})
+	return role_for_species(species, int(b.get("aggro", 25)), int(b.get("attack", 0)))
+
+
+static func species_for_role(role: String, tier: int) -> Array:
+	"""Species a role fusion can produce for inputs of `tier`: that role at that tier, else the nearest LOWER tier
+	that has the role, else the nearest higher. Returns [] only for an unknown role."""
+	var best: Array = []
+	var order: Array = []
+	for t in range(tier, 0, -1):
+		order.append(t)
+	for t in range(tier + 1, 10):
+		order.append(t)
+	for t in order:
+		best = []
+		for sp in DropTables.COMPANION_DATA.keys():
+			if int(DropTables.COMPANION_DATA[sp].get("tier", 1)) == int(t) and role_of_species(String(sp)) == role:
+				best.append(String(sp))
+		if not best.is_empty():
+			return best
+	return []
+
+
+static func role_fusion_cost(tier: int) -> int:
+	return ROLE_FUSION_GOLD_PER_TIER * maxi(1, tier)
 
 
 static func role_of(companion: Dictionary) -> String:

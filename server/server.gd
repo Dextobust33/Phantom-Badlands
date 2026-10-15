@@ -71,6 +71,7 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 ## .godot cache this project has been bitten by before.
 const PowerRankScript = preload("res://shared/power_rank.gd")
 const GoldEconomyScript = preload("res://shared/gold_economy.gd")
+const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 const TravelStanceScript = preload("res://shared/travel_stance.gd")
 const DangerWordsScript = preload("res://shared/danger_words.gd")
 const OnlineStatusScript = preload("res://server/online_status.gd")
@@ -11019,6 +11020,7 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 		"kennel_capacity": kennel_capacity,
 		"hybrid_catalyst_count": hybrid_catalyst_count,
 		"ascension_catalyst_count": ascension_catalyst_count,
+		"gold": int(character.gold_purse),
 	}
 
 func _handle_companion_stable_station(peer_id: int, character) -> void:
@@ -17492,6 +17494,41 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 				cat_item_asc["quantity"] = int(cat_item_asc.get("quantity", 1)) - 1
 			else:
 				character.remove_item(asc_catalyst_idx)
+	elif fusion_type.begins_with("role:"):
+		# Item 14 S5 - ROLE FUSION. 3 companions of ONE tier (any species, any rank) + gold -> 1 companion of the
+		# role you name, a random species of that role at that tier. A swap, not an upgrade: rank is the lowest of
+		# the inputs, so it costs gold and three companions but never makes anything stronger on its own.
+		var want_role: String = fusion_type.substr(5)
+		if not (want_role in CompanionRolesScript.ROLES):
+			send_to_peer(peer_id, {"type": "error", "message": "Unknown role."})
+			return
+		if companions.size() != CompanionRolesScript.ROLE_FUSION_INPUTS:
+			send_to_peer(peer_id, {"type": "error", "message": "Role fusion requires exactly 3 companions!"})
+			return
+		var rf_tier: int = int(companions[0].get("tier", 1))
+		var rf_sub: int = 9
+		var rf_best_border := 0
+		for comp in companions:
+			if int(comp.get("tier", 1)) != rf_tier:
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same tier (rank and type may differ)!"})
+				return
+			rf_sub = mini(rf_sub, int(comp.get("sub_tier", 1)))
+			rf_best_border = maxi(rf_best_border, int(comp.get("border_tier", 0)))
+		var rf_cost: int = CompanionRolesScript.role_fusion_cost(rf_tier)
+		if character.gold_purse < rf_cost:
+			send_to_peer(peer_id, {"type": "error", "message": "Role fusion costs %d gold (you have %d)." % [rf_cost, character.gold_purse]})
+			return
+		var rf_pool: Array = CompanionRolesScript.species_for_role(want_role, rf_tier)
+		if rf_pool.is_empty():
+			send_to_peer(peer_id, {"type": "error", "message": "No companion of that role exists."})
+			return
+		var rf_species: String = String(rf_pool[randi() % rf_pool.size()])
+		output = drop_tables.create_fusion_companion(rf_species, rf_sub, _check_variant_inheritance_list(companions), rf_best_border, _best_companion_level(companions))
+		if not output.is_empty():
+			# The GRADE of the inputs is kept (create_fusion_companion stamps the species' own tier, which for a
+			# dungeon-graded companion is a different number); only the species - and so the role - changes.
+			output["tier"] = rf_tier
+			character.spend_gold(rf_cost)
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": "Unknown fusion type."})
 		return

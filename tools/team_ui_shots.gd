@@ -85,6 +85,30 @@ func _run():
 	for i in 6:
 		await process_frame
 	_shot("res://claude_screenshots/team_companions_panel.png")
+
+	# ---------- 3. Stable: Role Swap with three companions picked ----------
+	cp.visible = false
+	var sp = load("res://client/companion_stable_panel.gd").new()
+	sp.anchor_right = 1.0
+	sp.anchor_bottom = 1.0
+	root.add_child(sp)
+	for i in 3:
+		await process_frame
+	var kennel := [
+		_comp("k1", "Goblin Sprite", "Goblin", 2, 1, 1), _comp("k2", "Bone Servant", "Skeleton", 2, 1, 1), _comp("k3", "Zombie Thrall", "Zombie", 2, 1, 1),
+		_comp("k4", "Wolf Pup", "Wolf", 1, 1, 1), _comp("k5", "Ogre Youngling", "Ogre", 3, 1, 1)]
+	sp.show_with_payload({"kennel": kennel, "collected": [], "registered": [], "kennel_capacity": 30, "gold": 4000})
+	sp.visible = true
+	sp._set_tab("fuse")
+	sp._set_fuse_mode("role")
+	for i in 3:
+		await process_frame
+	for k in range(3):
+		sp._fuse_selection.append({"source": "kennel", "index": k, "companion": kennel[k]})
+	sp._refresh_fuse_selection_state()
+	for i in 4:
+		await process_frame
+	_shot("res://claude_screenshots/team_role_swap.png")
 	print("done")
 	quit()
 

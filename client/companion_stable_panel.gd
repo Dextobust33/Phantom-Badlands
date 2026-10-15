@@ -40,6 +40,8 @@ const FUSE_SAME := "same"
 const FUSE_MIXED := "mixed"
 const FUSE_HYBRID := "hybrid"
 const FUSE_ASCEND := "ascend"
+const FUSE_ROLE := "role"   # item 14 S5: three of a tier + gold -> a companion of the role you pick
+const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 
 # Per-mode selection caps and sub_tier filters.
 const FUSE_MODE_RULES := {
@@ -47,6 +49,7 @@ const FUSE_MODE_RULES := {
 	"mixed":  {"cap": 8, "min_sub_tier": 8, "max_sub_tier": 8},
 	"hybrid": {"cap": 2, "min_sub_tier": 5, "max_sub_tier": 9},
 	"ascend": {"cap": 3, "min_sub_tier": 1, "max_sub_tier": 9},  # any sub_tier; validated for same monster_type + same tier; tier<9
+	"role":   {"cap": 3, "min_sub_tier": 1, "max_sub_tier": 9},  # any species and rank; validated for same tier
 }
 
 var _current_tab: String = TAB_MANAGE
@@ -59,6 +62,10 @@ var _registered: Array = []  # NEW v0.9.489 — non-checked-out registered slots
 var _kennel_capacity: int = 30
 var _hybrid_catalyst_count: int = 0  # v0.9.494
 var _ascension_catalyst_count: int = 0  # v0.9.496
+var _gold: int = 0                      # item 14 S5: role fusion is paid in gold
+var _role_choice: String = "healer"
+var _fuse_role_row: HBoxContainer
+var _fuse_mode_role_btn: Button
 
 # Fuse-tab selection state. Each entry: {source: "kennel"|"registered", index: int, companion: Dictionary}
 var _fuse_selection: Array = []
@@ -119,6 +126,7 @@ func show_with_payload(payload: Dictionary) -> void:
 	_kennel_capacity = int(payload.get("kennel_capacity", 30))
 	_hybrid_catalyst_count = int(payload.get("hybrid_catalyst_count", 0))
 	_ascension_catalyst_count = int(payload.get("ascension_catalyst_count", 0))
+	_gold = int(payload.get("gold", 0))
 	# Drop any stale fuse selections (e.g., after a successful fusion the
 	# previously-selected indices may no longer exist).
 	_fuse_selection = _fuse_selection.filter(func(sel):
@@ -324,13 +332,14 @@ func _build_manage_row(c: Dictionary, is_collected: bool) -> Control:
 	if variant_str != "" and variant_str != "Normal":
 		variant_bbcode = "[color=%s]%s[/color] " % [rarity_color.to_html(false), variant_str]
 	info.append_text(
-		"[b]%s[/b]%s%s\n[color=#888888]%s %s  Lv %d[/color]" % [
+		"[b]%s[/b]%s%s\n[color=#888888]%s %s  Lv %d[/color]  [color=#FFD700]%s[/color]" % [
 			c.get("name", "Unknown"),
 			hybrid_marker,
 			active_marker,
 			variant_bbcode + str(c.get("monster_type", "")),
 			PowerRank.tag(int(c.get("tier", 1)), int(c.get("sub_tier", 1))),
 			int(c.get("level", 1)),
+			CompanionRolesScript.role_label(CompanionRolesScript.role_of(c)),
 		]
 	)
 	hb.add_child(info)
@@ -374,6 +383,10 @@ func _refresh_fuse() -> void:
 		_fuse_mode_hybrid_btn.button_pressed = (_current_fuse_mode == FUSE_HYBRID)
 	if _fuse_mode_ascend_btn:
 		_fuse_mode_ascend_btn.button_pressed = (_current_fuse_mode == FUSE_ASCEND)
+	if _fuse_mode_role_btn:
+		_fuse_mode_role_btn.button_pressed = (_current_fuse_mode == FUSE_ROLE)
+	if _fuse_role_row:
+		_fuse_role_row.visible = (_current_fuse_mode == FUSE_ROLE)
 	# Mode-specific hint.
 	_fuse_hint_label.clear()
 	match _current_fuse_mode:
@@ -394,6 +407,12 @@ func _refresh_fuse() -> void:
 				"[color=#FF66FF]Hybrid Fusion[/color] — Select [b]2[/b] companions of [b]DIFFERENT[/b] monster types, both at rank [b]5+[/b]. "
 				+ "Output is a hybrid that blends both parents' bonuses + abilities. Consumes [color=#FFD700]1 Hybrid Catalyst[/color].\n"
 				+ "[color=#888888]Catalysts available: %d. Inputs can be kennel or registered. If any input is registered, output is auto-registered.[/color]" % _hybrid_catalyst_count
+			)
+		FUSE_ROLE:
+			_fuse_hint_label.append_text((
+				"[color=#FFD700]Role Swap[/color] - Select [b]3[/b] companions of the [b]SAME tier[/b] (any species, any rank). They become [b]1[/b] companion of the [b]role you choose[/b] "
+				+ "(a random species of that role at that tier), at the [b]lowest rank[/b] among them. Costs [color=#FFD700]gold[/color] - %d per tier. "
+				+ "[color=#888888]Gold: %d. Eggs, cards and the Atlas all name each species' role. Inputs can be kennel or registered.[/color]") % [CompanionRolesScript.ROLE_FUSION_GOLD_PER_TIER, _gold]
 			)
 		FUSE_ASCEND:
 			_fuse_hint_label.append_text(
@@ -453,6 +472,8 @@ func _populate_fuse_candidates() -> void:
 				msg = "[color=#808080]No A8 companions available. Mixed A9 needs tier A companions maxed to rank 8 — the capstone of the tier ladder.[/color]"
 			FUSE_HYBRID:
 				msg = "[color=#808080]No rank 5+ companions available. Build them up via Same Type fusion first.[/color]"
+			FUSE_ROLE:
+				msg = "[color=#808080]No companions available. Role Swap takes any three companions of the same tier.[/color]"
 			FUSE_ASCEND:
 				msg = "[color=#808080]No ascendable companions available. Tier Ascension accepts any rank but excludes tier S (already maxed).[/color]"
 		lbl.append_text(msg)
@@ -526,13 +547,14 @@ func _build_fuse_candidate_row(cand: Dictionary) -> Control:
 	if variant_str != "" and variant_str != "Normal":
 		variant_bbcode = "[color=%s]%s[/color] " % [rarity_color.to_html(false), variant_str]
 	info.append_text(
-		"[b]%s[/b]%s%s\n[color=#888888]%s %s  Lv %d[/color]" % [
+		"[b]%s[/b]%s%s\n[color=#888888]%s %s  Lv %d[/color]  [color=#FFD700]%s[/color]" % [
 			c.get("name", "Unknown"),
 			source_tag,
 			hybrid_marker,
 			variant_bbcode + str(c.get("monster_type", "")),
 			PowerRank.tag(int(c.get("tier", 1)), int(c.get("sub_tier", 1))),
 			int(c.get("level", 1)),
+			CompanionRolesScript.role_label(CompanionRolesScript.role_of(c)),
 		]
 	)
 	hb.add_child(info)
@@ -647,6 +669,27 @@ func _refresh_fuse_selection_state() -> void:
 					]
 			elif count > 0:
 				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
+		FUSE_ROLE:
+			if count == cap:
+				var rf_tier: int = int(_fuse_selection[0].companion.get("tier", 1))
+				var rf_same := true
+				for sel in _fuse_selection:
+					if int(sel.companion.get("tier", 1)) != rf_tier:
+						rf_same = false
+				var rf_cost: int = CompanionRolesScript.role_fusion_cost(rf_tier)
+				var rf_pool: Array = CompanionRolesScript.species_for_role(_role_choice, rf_tier)
+				if not rf_same:
+					preview = "[color=#FF6644]All 3 must be the same tier.[/color]"
+				elif _gold < rf_cost:
+					preview = "[color=#FF6644]Needs %d gold (you have %d).[/color]" % [rf_cost, _gold]
+				elif rf_pool.is_empty():
+					preview = "[color=#FF6644]No companion of that role exists.[/color]"
+				else:
+					fuse_ready = true
+					preview = "[color=#88FF88]-> a %s (%s) will be added to %s for %d gold.[/color]" % [
+						CompanionRolesScript.role_label(_role_choice), " / ".join(rf_pool.slice(0, 4)) + (" ..." if rf_pool.size() > 4 else ""), dest_str, rf_cost]
+			elif count > 0:
+				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
 		FUSE_ASCEND:
 			if count == cap:
 				var first_asc: Dictionary = _fuse_selection[0].companion
@@ -693,7 +736,8 @@ func _on_fuse_button_pressed() -> void:
 	var inputs: Array = []
 	for sel in _fuse_selection:
 		inputs.append({"source": String(sel.source), "index": int(sel.index)})
-	emit_signal("fuse_requested", _current_fuse_mode, inputs)
+	var wire_mode: String = _current_fuse_mode if _current_fuse_mode != FUSE_ROLE else "role:%s" % _role_choice
+	emit_signal("fuse_requested", wire_mode, inputs)
 	_fuse_selection = []
 
 
@@ -959,6 +1003,31 @@ func _build_fuse_view() -> Control:
 	mode_row.add_child(_fuse_mode_hybrid_btn)
 	_fuse_mode_ascend_btn = _make_fuse_mode_button("Tier Ascend", FUSE_ASCEND)
 	mode_row.add_child(_fuse_mode_ascend_btn)
+	_fuse_mode_role_btn = _make_fuse_mode_button("Role Swap", FUSE_ROLE)
+	mode_row.add_child(_fuse_mode_role_btn)
+
+	# Role Swap: which role the result should have.
+	_fuse_role_row = HBoxContainer.new()
+	_fuse_role_row.add_theme_constant_override("separation", 6)
+	_fuse_role_row.visible = false
+	vb.add_child(_fuse_role_row)
+	var role_lbl := Label.new()
+	role_lbl.text = "Result role:"
+	_fuse_role_row.add_child(role_lbl)
+	for r in CompanionRolesScript.ROLES:
+		var rb := Button.new()
+		rb.text = CompanionRolesScript.role_label(String(r))
+		rb.toggle_mode = true
+		rb.focus_mode = Control.FOCUS_NONE
+		rb.button_pressed = (String(r) == _role_choice)
+		rb.set_meta("role_id", String(r))
+		rb.pressed.connect(func():
+			_role_choice = String(r)
+			for sib in _fuse_role_row.get_children():
+				if sib is Button:
+					(sib as Button).button_pressed = (String(sib.get_meta("role_id", "")) == _role_choice)
+			_refresh_fuse_selection_state())
+		_fuse_role_row.add_child(rb)
 
 	_fuse_hint_label = RichTextLabel.new()
 	_fuse_hint_label.bbcode_enabled = true
