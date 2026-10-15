@@ -1792,101 +1792,21 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	"""
 	var _mark_from: int = messages.size()
 	_process_companion_attack_body(combat, messages)
+	if combat.has("character") and combat.character != null and not combat.character.get_companion_party_ids().is_empty():
+		_process_companion_team(combat, messages)
 	if messages.size() > _mark_from:
 		_mark_actor(combat, _mark_from, ACTOR_COMPANION)
 		_mark_actor(combat, messages.size(), ACTOR_PLAYER)
 
 
-func _companion_role_choice(combat: Dictionary, character, companion: Dictionary) -> String:
-	"""What the companion does this turn (see shared/companion_roles.gd). Also runs the cooldown:
-	it ticks down on every companion turn and is set when a role action (or a Striker's strike) is chosen."""
-	var max_hp: int = maxi(1, int(character.get_total_max_hp()))
-	var ctx: Dictionary = {
-		"owner_hp_pct": float(character.current_hp) / float(max_hp),
-		"cooldown": int(combat.get("companion_role_cd", 0)),
-		"taunt_active": int(combat.get("companion_taunt_turns", 0)) > 0,
-		"buff_active": int(combat.get("companion_buff_left", 0)) > 0,
-		"debuff_active": int(combat.get("monster_weakness_duration", 0)) > 0,
-	}
-	var act: String = CompanionRolesScript.choose_action(CompanionRolesScript.role_of(companion), CompanionRolesScript.tactics_of(companion), ctx)
-	if int(combat.get("companion_buff_left", 0)) > 0:
-		combat["companion_buff_left"] = int(combat["companion_buff_left"]) - 1
-	if act == CompanionRolesScript.ACT_ATTACK:
-		combat["companion_role_cd"] = maxi(0, int(combat.get("companion_role_cd", 0)) - 1)
-	else:
-		combat["companion_role_cd"] = CompanionRolesScript.ACTION_COOLDOWN
-	return act
-
-
-func _companion_role_action(combat: Dictionary, character, companion: Dictionary, act: String, messages: Array) -> void:
-	var role: String = CompanionRolesScript.role_of(companion)
-	var tactics: String = CompanionRolesScript.tactics_of(companion)
-	var cname: String = str(companion.get("name", "companion"))
-	var monster = combat.monster
-	match act:
-		CompanionRolesScript.ACT_HEAL:
-			var amount: int = maxi(1, int(float(character.get_total_max_hp()) * CompanionRolesScript.heal_fraction(role)))
-			var healed: int = int(character.heal(amount))
-			messages.append("[color=#00FF88]Your %s mends your wounds, restoring %d HP![/color]" % [cname, healed])
-		CompanionRolesScript.ACT_TAUNT:
-			var bonus: int = CompanionRolesScript.taunt_value(role)
-			combat["companion_taunt_bonus"] = maxi(int(combat.get("companion_taunt_bonus", 0)), bonus)
-			combat["companion_taunt_turns"] = maxi(int(combat.get("companion_taunt_turns", 0)), CompanionRolesScript.TAUNT_TURNS)
-			messages.append("[color=#FF8800]Your %s roars, drawing the %s's attention! (+%d%% aggro for %d turns)[/color]" % [cname, monster.name, bonus, CompanionRolesScript.TAUNT_TURNS])
-		CompanionRolesScript.ACT_BUFF:
-			var val: int = CompanionRolesScript.buff_value(role)
-			if tactics == CompanionRolesScript.TACTIC_PROTECT:
-				character.add_buff("damage_reduction", val, CompanionRolesScript.BUFF_ROUNDS)
-				messages.append("[color=#66B0FF]Your %s shields you! (%d%% damage reduction for %d rounds)[/color]" % [cname, val, CompanionRolesScript.BUFF_ROUNDS])
-			else:
-				character.add_buff("damage", val, CompanionRolesScript.BUFF_ROUNDS)
-				messages.append("[color=#FF8800]Your %s rallies you! (+%d%% damage for %d rounds)[/color]" % [cname, val, CompanionRolesScript.BUFF_ROUNDS])
-			combat["companion_buff_left"] = CompanionRolesScript.BUFF_ROUNDS
-		CompanionRolesScript.ACT_DEBUFF:
-			var weak: int = CompanionRolesScript.debuff_value(role)
-			combat["monster_weakness"] = maxi(int(combat.get("monster_weakness", 0)), weak)
-			combat["monster_weakness_duration"] = maxi(int(combat.get("monster_weakness_duration", 0)), CompanionRolesScript.DEBUFF_ROUNDS)
-			messages.append("[color=#808080]Your %s hampers the %s! (-%d%% attack for %d rounds)[/color]" % [cname, monster.name, weak, CompanionRolesScript.DEBUFF_ROUNDS])
-
-
-func _process_companion_attack_body(combat: Dictionary, messages: Array) -> void:
-	"""Process companion attack during player's turn.
-	Called by both regular attacks and ability usage."""
-	var character = combat.character
-	var monster = combat.monster
-
-	if monster.current_hp <= 0:
-		return
-
-	if not character.has_active_companion():
-		return
-
-	# Phase B1 — KO companions skip their turn (they're at 0 combat HP and
-	# need to be healed at a healer NPC / station before they can fight).
-	if character.is_companion_ko():
-		return
-
-	var companion = character.get_active_companion()
+func _companion_base_damage(character, companion: Dictionary) -> int:
+	"""One companion's ordinary hit, before role or team scaling. Shared by the beside-you companion and the
+	column companions so the two cannot drift apart."""
 	var companion_tier = companion.get("tier", 1)
 	var companion_level = companion.get("level", 1)
 	var companion_bonuses = companion.get("bonuses", {})
 	var companion_sub_tier = companion.get("sub_tier", 1)
-	# v0.9.570 — companion border tier (double-rarity stat layer). 0-6 → 1.00x-3.00x.
 	var companion_border_tier = int(companion.get("border_tier", 0))
-
-	# ROLE + TACTICS (item 14 S1). The companion's role and its tactics focus choose what it does this
-	# turn; a support action REPLACES its attack, so helping costs damage.
-	var _role_act: String = _companion_role_choice(combat, character, companion)
-	if _role_act in [CompanionRolesScript.ACT_HEAL, CompanionRolesScript.ACT_TAUNT, CompanionRolesScript.ACT_BUFF, CompanionRolesScript.ACT_DEBUFF]:
-		_companion_role_action(combat, character, companion, _role_act, messages)
-		return
-	var _is_strike: bool = (_role_act == CompanionRolesScript.ACT_STRIKE)
-
-	# 95% hit chance for companions
-	if randi() % 100 >= 95:
-		messages.append("[color=#00FFFF]Your %s lunges but misses![/color]" % companion.get("name", "companion"))
-		return
-
 	# Calculate companion damage (now scales with companion level and rank)
 	var companion_damage = 0
 	if drop_tables:
@@ -1950,12 +1870,239 @@ func _process_companion_attack_body(combat: Dictionary, messages: Array) -> void
 		companion_damage = int(companion_damage * border_mult)
 
 	# Apply variant multiplier
-	var variant_mult = character.get_variant_stat_multiplier()
+	var variant_mult = DropTablesScript.companion_stat_mult(companion)
 	companion_damage = int(companion_damage * variant_mult)
 
 	# Apply some variance (80-120%)
 	companion_damage = int(companion_damage * randf_range(0.8, 1.2))
 	companion_damage = max(1, companion_damage)
+	return companion_damage
+
+
+## ---- the companion TEAM (item 14 S3). The beside-you companion is key "active"; a column companion's
+## key is its id. Per-actor combat state lives in combat["companion_state"][key].
+func _team_state(combat: Dictionary, key: String) -> Dictionary:
+	var all: Dictionary = combat.get("companion_state", {})
+	if not all.has(key):
+		all[key] = {"cd": 0, "buff_left": 0, "taunt_bonus": 0, "taunt_turns": 0}
+	combat["companion_state"] = all
+	return all[key]
+
+
+func _team_taunt(combat: Dictionary, key: String) -> Array:
+	"""[bonus, turns]. The beside-you companion keeps the legacy keys the Taunt Charm item writes."""
+	if key == "active":
+		return [int(combat.get("companion_taunt_bonus", 0)), int(combat.get("companion_taunt_turns", 0))]
+	var st: Dictionary = _team_state(combat, key)
+	return [int(st.get("taunt_bonus", 0)), int(st.get("taunt_turns", 0))]
+
+
+func _team_set_taunt(combat: Dictionary, key: String, bonus: int, turns: int) -> void:
+	if key == "active":
+		if turns <= 0:
+			combat.erase("companion_taunt_bonus")
+			combat.erase("companion_taunt_turns")
+		else:
+			combat["companion_taunt_bonus"] = bonus
+			combat["companion_taunt_turns"] = turns
+		return
+	var st: Dictionary = _team_state(combat, key)
+	st["taunt_bonus"] = bonus if turns > 0 else 0
+	st["taunt_turns"] = maxi(0, turns)
+
+
+func _ally_hp(character, key: String) -> Array:
+	if key == "active":
+		return [character.get_companion_combat_hp(), character.get_companion_max_hp()]
+	return [character.get_party_companion_combat_hp(key), character.get_party_companion_max_hp(key)]
+
+
+func _ally_set_hp(character, key: String, hp: int) -> void:
+	if key == "active":
+		character.set_companion_combat_hp(hp)
+	else:
+		character.set_party_companion_combat_hp(key, hp)
+
+
+func _companion_allies(character) -> Array:
+	"""Every companion on the owner's side, beside-you first: {key, name, cur, max, frac, ko}."""
+	var out: Array = []
+	var roster: Array = []
+	if character.has_active_companion():
+		roster.append({"key": "active", "name": str(character.active_companion.get("name", "companion"))})
+	for c in character.get_companion_party():
+		roster.append({"key": str(c.get("id", "")), "name": str(c.get("name", "companion"))})
+	for r in roster:
+		var hp: Array = _ally_hp(character, String(r.key))
+		var mx: int = maxi(1, int(hp[1]))
+		r["cur"] = int(hp[0])
+		r["max"] = mx
+		r["frac"] = float(hp[0]) / float(mx)
+		r["ko"] = int(hp[0]) <= 0
+		out.append(r)
+	return out
+
+
+func _companion_role_choice(combat: Dictionary, character, companion: Dictionary, key: String = "active") -> String:
+	"""What the companion does this turn (see shared/companion_roles.gd). Also runs its cooldown: it ticks down
+	on every turn of that companion and is set when a role action (or a Striker's strike) is chosen."""
+	var st: Dictionary = _team_state(combat, key)
+	var max_hp: int = maxi(1, int(character.get_total_max_hp()))
+	var lowest: float = 1.0
+	var any_ko: bool = false
+	for a in _companion_allies(character):
+		if bool(a.ko):
+			if String(a.key) != key:
+				any_ko = true
+		else:
+			lowest = minf(lowest, float(a.frac))
+	var buff_active: bool = false
+	for k in combat.get("companion_state", {}):
+		if int(combat["companion_state"][k].get("buff_left", 0)) > 0:
+			buff_active = true
+	var ctx: Dictionary = {
+		"owner_hp_pct": float(character.current_hp) / float(max_hp),
+		"cooldown": int(st.get("cd", 0)),
+		"taunt_active": int(_team_taunt(combat, key)[1]) > 0,
+		"buff_active": buff_active,
+		"debuff_active": int(combat.get("monster_weakness_duration", 0)) > 0,
+		"lowest_ally_pct": lowest,
+		"ally_ko": any_ko,
+	}
+	var act: String = CompanionRolesScript.choose_action(CompanionRolesScript.role_of(companion), CompanionRolesScript.tactics_of(companion), ctx)
+	if int(st.get("buff_left", 0)) > 0:
+		st["buff_left"] = int(st["buff_left"]) - 1
+	if act == CompanionRolesScript.ACT_ATTACK:
+		st["cd"] = maxi(0, int(st.get("cd", 0)) - 1)
+	elif act == CompanionRolesScript.ACT_REVIVE:
+		st["cd"] = CompanionRolesScript.REVIVE_COOLDOWN
+	else:
+		st["cd"] = CompanionRolesScript.ACTION_COOLDOWN
+	return act
+
+
+func _companion_role_action(combat: Dictionary, character, companion: Dictionary, act: String, messages: Array, key: String = "active") -> void:
+	var role: String = CompanionRolesScript.role_of(companion)
+	var tactics: String = CompanionRolesScript.tactics_of(companion)
+	var cname: String = str(companion.get("name", "companion"))
+	var mult: float = 1.0 if key == "active" else CompanionRolesScript.TEAM_MEMBER_MULT
+	var monster = combat.monster
+	match act:
+		CompanionRolesScript.ACT_HEAL:
+			# Heal whoever is lowest: you, or a companion that is still on its feet.
+			var owner_frac: float = float(character.current_hp) / float(maxi(1, int(character.get_total_max_hp())))
+			var target = null
+			var low: float = owner_frac
+			for a in _companion_allies(character):
+				if not bool(a.ko) and float(a.frac) < low:
+					low = float(a.frac)
+					target = a
+			var frac_amt: float = CompanionRolesScript.heal_fraction(role) * mult
+			if target == null:
+				var amount: int = maxi(1, int(float(character.get_total_max_hp()) * frac_amt))
+				var healed: int = int(character.heal(amount))
+				messages.append("[color=#00FF88]Your %s mends your wounds, restoring %d HP![/color]" % [cname, healed])
+			else:
+				var amt2: int = maxi(1, int(float(target.max) * frac_amt))
+				var new_hp: int = mini(int(target.max), int(target.cur) + amt2)
+				_ally_set_hp(character, String(target.key), new_hp)
+				messages.append("[color=#00FF88]Your %s mends your %s, restoring %d HP![/color]" % [cname, target.name, new_hp - int(target.cur)])
+		CompanionRolesScript.ACT_REVIVE:
+			for a in _companion_allies(character):
+				if bool(a.ko) and String(a.key) != key:
+					var back: int = maxi(1, int(float(a.max) * CompanionRolesScript.REVIVE_PCT * CompanionRolesScript.strength_of(role)))
+					_ally_set_hp(character, String(a.key), back)
+					messages.append("[color=#FFD700]Your %s revives your %s! (%d HP)[/color]" % [cname, a.name, back])
+					break
+		CompanionRolesScript.ACT_TAUNT:
+			var bonus: int = CompanionRolesScript.taunt_value(role)
+			var cur: Array = _team_taunt(combat, key)
+			_team_set_taunt(combat, key, maxi(int(cur[0]), bonus), maxi(int(cur[1]), CompanionRolesScript.TAUNT_TURNS))
+			messages.append("[color=#FF8800]Your %s roars, drawing the %s's attention! (+%d%% aggro for %d turns)[/color]" % [cname, monster.name, bonus, CompanionRolesScript.TAUNT_TURNS])
+		CompanionRolesScript.ACT_BUFF:
+			var val: int = maxi(1, int(round(float(CompanionRolesScript.buff_value(role)) * mult)))
+			if tactics == CompanionRolesScript.TACTIC_PROTECT:
+				character.add_buff("damage_reduction", val, CompanionRolesScript.BUFF_ROUNDS)
+				messages.append("[color=#66B0FF]Your %s shields you! (%d%% damage reduction for %d rounds)[/color]" % [cname, val, CompanionRolesScript.BUFF_ROUNDS])
+			else:
+				character.add_buff("damage", val, CompanionRolesScript.BUFF_ROUNDS)
+				messages.append("[color=#FF8800]Your %s rallies you! (+%d%% damage for %d rounds)[/color]" % [cname, val, CompanionRolesScript.BUFF_ROUNDS])
+			_team_state(combat, key)["buff_left"] = CompanionRolesScript.BUFF_ROUNDS
+		CompanionRolesScript.ACT_DEBUFF:
+			var weak: int = maxi(1, int(round(float(CompanionRolesScript.debuff_value(role)) * mult)))
+			combat["monster_weakness"] = maxi(int(combat.get("monster_weakness", 0)), weak)
+			combat["monster_weakness_duration"] = maxi(int(combat.get("monster_weakness_duration", 0)), CompanionRolesScript.DEBUFF_ROUNDS)
+			messages.append("[color=#808080]Your %s hampers the %s! (-%d%% attack for %d rounds)[/color]" % [cname, monster.name, weak, CompanionRolesScript.DEBUFF_ROUNDS])
+
+
+func _process_companion_team(combat: Dictionary, messages: Array) -> void:
+	"""The column companions act, in slot order, after the beside-you companion."""
+	var character = combat.character
+	var monster = combat.monster
+	for comp in character.get_companion_party():
+		if monster.current_hp <= 0:
+			return
+		var key: String = str(comp.get("id", ""))
+		if character.is_party_companion_ko(key):
+			continue
+		var act: String = _companion_role_choice(combat, character, comp, key)
+		if act in [CompanionRolesScript.ACT_HEAL, CompanionRolesScript.ACT_TAUNT, CompanionRolesScript.ACT_BUFF, CompanionRolesScript.ACT_DEBUFF, CompanionRolesScript.ACT_REVIVE]:
+			_companion_role_action(combat, character, comp, act, messages, key)
+			continue
+		if randi() % 100 >= 95:
+			messages.append("[color=#00FFFF]Your %s lunges but misses![/color]" % comp.get("name", "companion"))
+			continue
+		var dmg: int = int(_companion_base_damage(character, comp) * CompanionRolesScript.TEAM_MEMBER_MULT)
+		if act == CompanionRolesScript.ACT_STRIKE:
+			dmg = int(dmg * CompanionRolesScript.STRIKE_MULT)
+		dmg = maxi(1, dmg)
+		monster.current_hp = maxi(0, monster.current_hp - dmg)
+		_note_dmg(combat, messages, dmg)
+		if act == CompanionRolesScript.ACT_STRIKE:
+			messages.append("[color=#FFD700]Your %s strikes hard for %d damage![/color]" % [comp.get("name", "companion"), dmg])
+		else:
+			messages.append("[color=#00FFFF]Your %s attacks for %d damage![/color]" % [comp.get("name", "companion"), dmg])
+
+
+func _process_companion_attack_body(combat: Dictionary, messages: Array) -> void:
+	"""Process companion attack during player's turn.
+	Called by both regular attacks and ability usage."""
+	var character = combat.character
+	var monster = combat.monster
+
+	if monster.current_hp <= 0:
+		return
+
+	if not character.has_active_companion():
+		return
+
+	# Phase B1 — KO companions skip their turn (they're at 0 combat HP and
+	# need to be healed at a healer NPC / station before they can fight).
+	if character.is_companion_ko():
+		return
+
+	var companion = character.get_active_companion()
+	var companion_tier = companion.get("tier", 1)
+	var companion_level = companion.get("level", 1)
+	var companion_bonuses = companion.get("bonuses", {})
+	var companion_sub_tier = companion.get("sub_tier", 1)
+	# v0.9.570 — companion border tier (double-rarity stat layer). 0-6 → 1.00x-3.00x.
+	var companion_border_tier = int(companion.get("border_tier", 0))
+
+	# ROLE + TACTICS (item 14 S1). The companion's role and its tactics focus choose what it does this
+	# turn; a support action REPLACES its attack, so helping costs damage.
+	var _role_act: String = _companion_role_choice(combat, character, companion, "active")
+	if _role_act in [CompanionRolesScript.ACT_HEAL, CompanionRolesScript.ACT_TAUNT, CompanionRolesScript.ACT_BUFF, CompanionRolesScript.ACT_DEBUFF, CompanionRolesScript.ACT_REVIVE]:
+		_companion_role_action(combat, character, companion, _role_act, messages, "active")
+		return
+	var _is_strike: bool = (_role_act == CompanionRolesScript.ACT_STRIKE)
+
+	# 95% hit chance for companions
+	if randi() % 100 >= 95:
+		messages.append("[color=#00FFFF]Your %s lunges but misses![/color]" % companion.get("name", "companion"))
+		return
+
+	var companion_damage: int = _companion_base_damage(character, companion)
 	if _is_strike:
 		companion_damage = int(companion_damage * CompanionRolesScript.STRIKE_MULT)
 	monster.current_hp -= companion_damage
@@ -9845,63 +9992,67 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		# Taunt Charm consumable applies a temporary additive bonus for a
 		# few monster turns. Final aggro is clamped to [0, 80] so even tanks
 		# don't permanently soak every hit.
-		var companion_target_name := ""
-		var final_aggro: int = 0
-		if character.has_active_companion() and not character.is_companion_ko():
-			var comp_dict: Dictionary = character.get_active_companion()
-			var comp_bonuses: Dictionary = comp_dict.get("bonuses", {})
-			var base_aggro: int = int(comp_bonuses.get("aggro", 25))
-			var taunt_bonus: int = int(combat.get("companion_taunt_bonus", 0))
-			var taunt_turns: int = int(combat.get("companion_taunt_turns", 0))
-			final_aggro = base_aggro
-			if taunt_turns > 0:
-				final_aggro += taunt_bonus
-				# Decrement taunt counter each monster turn (regardless of
-				# whether the roll favors companion). The buff shouldn't
-				# survive longer than its declared duration.
-				combat["companion_taunt_turns"] = taunt_turns - 1
-				if combat["companion_taunt_turns"] <= 0:
-					combat.erase("companion_taunt_bonus")
-					combat.erase("companion_taunt_turns")
-			# Provoking (rank-up) drags the fight onto YOU and off your companion. Owner:
-			# "Provoke should still work in solo as you can still have a companion in solo play
-			# (possibly NPC teammates as well in the future)." That is the better reading of
-			# the word than a flat damage penalty, and it makes the pick a real trade rather
-			# than a drawback: your companion stops being hit, and you start being hit.
-			if bool(combat.get("provoked", false)):
-				final_aggro -= 45
-			final_aggro = clampi(final_aggro, 0, 80)
-			companion_target_name = str(comp_dict.get("name", "companion"))
+		# ITEM 14 S3: the target pool is every companion on its feet - the beside-you one and the column.
+		# With ONE companion this reduces exactly to the old per-hit roll (team aggro = its aggro, <= 80).
+		var team: Array = []
+		var provoked: bool = bool(combat.get("provoked", false))
+		for ally in _companion_allies(character):
+			if bool(ally.ko):
+				continue
+			var akey: String = String(ally.key)
+			var adict: Dictionary = character.get_active_companion() if akey == "active" else {}
+			if akey != "active":
+				for pc in character.get_companion_party():
+					if str(pc.get("id", "")) == akey:
+						adict = pc
+			var ag: int = int(adict.get("bonuses", {}).get("aggro", 25))
+			var tz: Array = _team_taunt(combat, akey)
+			if int(tz[1]) > 0:
+				ag += int(tz[0])
+				# The taunt only lives for its declared duration, whether or not the roll favours the companion.
+				_team_set_taunt(combat, akey, int(tz[0]), int(tz[1]) - 1)
+			# Provoking (rank-up) drags the fight onto YOU and off your companions (owner: it should still work
+			# in solo as you can still have a companion).
+			if provoked:
+				ag -= 45
+			team.append({"key": akey, "name": String(ally.name), "aggro": clampi(ag, 0, 80), "sub_tier": int(adict.get("sub_tier", 1))})
 
-		# Roll each hit independently. A round can now split across both targets, so a
-		# multi_strike burst is shared the way the aggro percentage says it should be.
-		var comp_raw_damage: int = 0
+		var team_aggro: int = 0
+		for t in team:
+			team_aggro += int(t.aggro)
+		team_aggro = mini(team_aggro, 80)
+
+		# Roll each hit independently. A round can split across targets, so a multi_strike burst is
+		# shared the way the aggro percentages say it should be.
+		var hits_by: Dictionary = {}     # key -> raw damage
+		var hit_count_by: Dictionary = {}
 		var comp_hits: int = 0
-		if companion_target_name != "" and final_aggro > 0:
+		var _pick = func(roll_total: int):
+			var r: float = randf() * float(roll_total)
+			for t in team:
+				r -= float(t.aggro)
+				if r < 0.0:
+					return t
+			return team[team.size() - 1]
+		if not team.is_empty() and team_aggro > 0:
+			var sum_ag: int = 0
+			for t in team:
+				sum_ag += int(t.aggro)
 			var _remaining: Array = []
 			for _d in hit_damages:
-				if randf() * 100.0 < float(final_aggro):
-					comp_raw_damage += int(_d)
+				if randf() * 100.0 < float(team_aggro):
+					var tgt = _pick.call(sum_ag)
+					hits_by[tgt.key] = int(hits_by.get(tgt.key, 0)) + int(_d)
+					hit_count_by[tgt.key] = int(hit_count_by.get(tgt.key, 0)) + 1
 					comp_hits += 1
 				else:
 					_remaining.append(_d)
-			# ⛑ A BURST NEVER LANDS ENTIRELY ON THE PLAYER.
-			#
-			# Owner 2026-09-14: *"for swift enemies can we make sure the hits can be divided up
-			# ... Maybe it targets you with 2 of the 3 hits it did that round and 1 to your
-			# companion."*
-			#
-			# Rolling each hit independently at the default 25% aggro means all three land on the
-			# player 0.75^3 = 42% of the time - and THAT is the round that reads as a one-shot,
-			# because a Swift monster's three hits are three FULL hits. The per-hit roll was
-			# already here and it is not enough on its own: independent rolls have no memory, so
-			# nothing stops the worst case coming up two fights in a row.
-			#
-			# So when a multi-hit round would otherwise all land on the player, one hit goes to
-			# the companion. The aggro weighting still decides everything else; this only removes
-			# the tail. A single-hit round is untouched - there is nothing to divide.
+			# A BURST NEVER LANDS ENTIRELY ON THE PLAYER (owner 2026-09-14): when a multi-hit round would
+			# otherwise all land on you, one hit goes to a companion. A single-hit round is untouched.
 			if comp_hits == 0 and _remaining.size() >= 2:
-				comp_raw_damage += int(_remaining[0])
+				var tgt2 = _pick.call(sum_ag)
+				hits_by[tgt2.key] = int(hits_by.get(tgt2.key, 0)) + int(_remaining[0])
+				hit_count_by[tgt2.key] = int(hit_count_by.get(tgt2.key, 0)) + 1
 				comp_hits += 1
 				_remaining.remove_at(0)
 			hit_damages = _remaining
@@ -9910,30 +10061,35 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 				total_damage += int(_d)
 
 		if comp_hits > 0:
-			var comp_hp_before: int = character.get_companion_combat_hp()
-			# Per-sub_tier damage reduction so tankier companions feel tougher.
-			# 3% per sub_tier, capped at 27% (sub_tier 9). Tracks the same
-			# sub_tier scaling already used for HP pool / variant bonuses.
-			var comp_sub_tier: int = int(character.get_active_companion().get("sub_tier", 1))
-			var comp_dr_pct: int = clampi(comp_sub_tier * 3, 0, 27)
-			var damage_to_companion: int = comp_raw_damage
-			var dr_amount: int = 0
-			if comp_dr_pct > 0:
-				dr_amount = int(comp_raw_damage * comp_dr_pct / 100.0)
-				damage_to_companion = maxi(1, comp_raw_damage - dr_amount)
-			var comp_new_hp: int = maxi(0, comp_hp_before - damage_to_companion)
-			character.set_companion_combat_hp(comp_new_hp)
-			combat["total_damage_taken"] = combat.get("total_damage_taken", 0)  # companion damage not counted toward player
-			if comp_hits > 1:
-				messages.append("[color=#FF8888]The %s hits your %s %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, companion_target_name, comp_hits, damage_to_companion])
-			else:
-				messages.append("[color=#FF8888]The %s attacks your %s for [color=#FF8800]%d[/color] damage![/color]" % [monster.name, companion_target_name, damage_to_companion])
-			if dr_amount > 0:
-				messages.append("[color=#3DD9FF]  Rank %d toughness absorbs %d damage.[/color]" % [comp_sub_tier, dr_amount])
-			if comp_new_hp <= 0 and comp_hp_before > 0:
-				messages.append("[color=#808080]Your %s is knocked out![/color]" % companion_target_name)
-			# Only short-circuit when the companion soaked the WHOLE round. If some hits landed
-			# on the player, fall through so they resolve normally.
+			for t in team:
+				if not hits_by.has(t.key):
+					continue
+				var raw: int = int(hits_by[t.key])
+				var n_hits: int = int(hit_count_by[t.key])
+				var hp_pair: Array = _ally_hp(character, String(t.key))
+				var comp_hp_before: int = int(hp_pair[0])
+				# Per-sub_tier damage reduction so tankier companions feel tougher.
+				# 3% per sub_tier, capped at 27% (sub_tier 9).
+				var comp_sub_tier: int = int(t.sub_tier)
+				var comp_dr_pct: int = clampi(comp_sub_tier * 3, 0, 27)
+				var damage_to_companion: int = raw
+				var dr_amount: int = 0
+				if comp_dr_pct > 0:
+					dr_amount = int(raw * comp_dr_pct / 100.0)
+					damage_to_companion = maxi(1, raw - dr_amount)
+				var comp_new_hp: int = maxi(0, comp_hp_before - damage_to_companion)
+				_ally_set_hp(character, String(t.key), comp_new_hp)
+				combat["total_damage_taken"] = combat.get("total_damage_taken", 0)  # companion damage not counted toward player
+				if n_hits > 1:
+					messages.append("[color=#FF8888]The %s hits your %s %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, t.name, n_hits, damage_to_companion])
+				else:
+					messages.append("[color=#FF8888]The %s attacks your %s for [color=#FF8800]%d[/color] damage![/color]" % [monster.name, t.name, damage_to_companion])
+				if dr_amount > 0:
+					messages.append("[color=#3DD9FF]  Rank %d toughness absorbs %d damage.[/color]" % [comp_sub_tier, dr_amount])
+				if comp_new_hp <= 0 and comp_hp_before > 0:
+					messages.append("[color=#808080]Your %s is knocked out![/color]" % t.name)
+			# Only short-circuit when the companions soaked the WHOLE round. If some hits landed on the player,
+			# fall through so they resolve normally.
 			if total_damage <= 0:
 				return {"success": true, "message": "\n".join(messages), "companion_hit": true}
 

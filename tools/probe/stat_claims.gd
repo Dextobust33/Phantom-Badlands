@@ -129,7 +129,7 @@ func _init() -> void:
 	ck(not hl.contains("Scales with YOUR max health"),
 		"...and no longer claims it scales with the owner, which was removed on 2026-09-04")
 	var ag: String = String(CL.COMPANION_STAT_HELP.get("aggro", ""))
-	ck(ag.contains("80%") and cm.contains("clampi(final_aggro, 0, 80)"),
+	ck(ag.contains("80%") and cm.contains("clampi(ag, 0, 80)"),
 		"Aggro states the real 80%% cap")
 
 	print("\n%s (%d failures)" % ["ALL PASS" if fails == 0 else "FAILURES", fails])

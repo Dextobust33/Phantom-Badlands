@@ -10773,6 +10773,10 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 				character.set_companion_combat_hp(comp_cur + comp_heal)
 				var comp_name: String = str(character.active_companion.get("name", "your companion"))
 				msg += "\n[color=#00FFFF]Your %s recovers %d HP.[/color]" % [comp_name, comp_heal]
+	# Item 14 S3: the healer tends the column companions too, and revives any that were knocked out.
+	if heal_percent > 0 and not character.get_companion_party_ids().is_empty():
+		var _revived: int = character.revive_party_companions(float(heal_percent) / 100.0)
+		msg += "\n[color=#00FFFF]Your companion team is tended to%s.[/color]" % ((" (%d revived)" % _revived) if _revived > 0 else "")
 
 	if cure_debuffs:
 		# ⚡ THIS USED TO BE `persistent_buffs.clear()`, WHICH DESTROYED WHAT THE PLAYER PAID FOR.

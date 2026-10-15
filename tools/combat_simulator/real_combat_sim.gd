@@ -225,6 +225,8 @@ func _init():
 	for arg in OS.get_cmdline_user_args():
 		if String(arg).begins_with("--budget="):
 			budget = maxi(30, int(String(arg).split("=")[1]))
+		if String(arg) == "--team":
+			_team_flag = true
 	_deadline_ms = Time.get_ticks_msec() + budget * 1000
 	print("[budget] this run will self-abort after %d seconds" % budget)
 
@@ -349,7 +351,13 @@ func _run_selected_audits() -> void:
 		# via _use_companions_for_this_audit(); resetting here rather than restoring inside each
 		# of them means an opt-in can never leak into whatever runs next, however the audits are
 		# ordered on the command line.
-		_companion_mode = "none"
+		# `--team` (item 14 S3) gives every character a companion TEAM, which is a MEASUREMENT of what players with
+		# companions experience. It must never reach the calibrators: they fit the curve to the companion-free
+		# reference player, and a team in the loop would bake the companions into the monsters.
+		if _team_flag and name in ["refcal", "speciescal", "rolecal"]:
+			print("[sim] REFUSING '%s' with --team: calibration is fitted to the companion-free reference player." % name)
+			continue
+		_companion_mode = "match" if _team_flag else "none"
 		reg[name][1].call()
 
 func _verify_party_combat() -> void:
@@ -4965,6 +4973,9 @@ var _gear_avg_empty_chance: float = 0.0  # chance a slot is simply unfilled
 # The audits that EXIST to measure companions opt back in explicitly — see the calls to
 # `_use_companions_for_this_audit()` in each.
 var _companion_mode: String = "none"
+## `-- <audit> --team`: field the full companion team (every slot the level has unlocked) on top of the
+## companion. For MEASURING players who have companions; refused by the calibrators.
+var _team_flag: bool = false
 
 func _use_companions_for_this_audit(mode: String = "match") -> void:
 	"""Opt this audit back into companions. The dispatcher resets the mode to the reference
@@ -5365,6 +5376,8 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 			"bonuses": (pick_data.get("bonuses", {}) as Dictionary).duplicate(),
 			"variant": "Normal", "sub_tier": 1, "border_tier": 1,
 		}
+	if _team_flag and not ch.active_companion.is_empty():
+		_field_team(ch, level)
 	ch.current_hp = ch.get_total_max_hp()
 	# Enter combat at FULL resources — in real play, out-of-combat regen tops the
 	# pool between fights. (level_up/equip raise MAX but don't refill current, and
@@ -5374,6 +5387,36 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	ch.current_mana = ch.get_total_max_mana()
 	ch.current_energy = ch.get_total_max_energy()
 	return ch
+
+func _field_team(ch, level: int) -> void:
+	"""Fill every column slot the character has unlocked with a role-balanced companion team: tank, healer,
+	striker, utility in turn, each a real species of the same tier the beside-you companion was drawn from, at
+	the same level. Mirrors what a player with a full roster could field - not the best possible team."""
+	var Roles = load("res://shared/companion_roles.gd")
+	var comp_tier: int = clampi(1 + int(level / 12.0), 1, 9)
+	var want: Array = [Roles.ROLE_TANK, Roles.ROLE_HEALER, Roles.ROLE_DPS, Roles.ROLE_UTILITY]
+	for i in range(ch.companion_slots_unlocked()):
+		var role: String = String(want[i % want.size()])
+		var pool: Array = []
+		for t in range(comp_tier, 0, -1):     # the best tier that HAS this role, at or below the draw
+			for mtype in drop_tables.COMPANION_DATA.keys():
+				var cd: Dictionary = drop_tables.COMPANION_DATA[mtype]
+				if int(cd.get("tier", 1)) == t and Roles.role_for_species(String(mtype), int((cd.get("bonuses", {}) as Dictionary).get("aggro", 25)), int((cd.get("bonuses", {}) as Dictionary).get("attack", 0))) == role:
+					pool.append(mtype)
+			if not pool.is_empty():
+				break
+		if pool.is_empty():
+			continue
+		var pick: String = String(pool[randi() % pool.size()])
+		var pd: Dictionary = drop_tables.COMPANION_DATA.get(pick, {})
+		var entry := {
+			"id": "sim_team_%d" % i, "monster_type": pick, "name": String(pd.get("companion_name", pick)),
+			"tier": int(pd.get("tier", 1)), "level": level, "xp": 0,
+			"bonuses": (pd.get("bonuses", {}) as Dictionary).duplicate(),
+			"variant": "Normal", "sub_tier": 1, "border_tier": 1,
+		}
+		ch.collected_companions.append(entry)
+		ch.companion_party.append(entry.id)
 
 func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Dictionary:
 	# #5 (2026-09-02) — was hardcoded to "Orc" at every level. An Orc is a TIER-2 monster,

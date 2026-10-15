@@ -35,7 +35,7 @@ func _turn(species: String, tactics: String, hp_frac: float) -> Dictionary:
 	ch.in_combat = false
 	sim.combat_mgr.start_combat(0, ch, mon)
 	var c = sim.combat_mgr.active_combats[0]
-	c["companion_role_cd"] = 0
+	c["companion_state"] = {"active": {"cd": 0, "buff_left": 0, "taunt_bonus": 0, "taunt_turns": 0}}
 	var hp0: int = ch.current_hp
 	var m0: int = int(c.monster.current_hp)
 	var msgs: Array = []
@@ -107,7 +107,7 @@ func _init() -> void:
 		ch.in_combat = false
 		sim.combat_mgr.start_combat(0, ch, mon)
 		var c = sim.combat_mgr.active_combats[0]
-		c["companion_role_cd"] = 2     # on cooldown: its next turn is a plain attack
+		c["companion_state"] = {"active": {"cd": 2, "buff_left": 0, "taunt_bonus": 0, "taunt_turns": 0}}     # on cooldown: its next turn is a plain attack
 		var m0: int = int(c.monster.current_hp)
 		sim.combat_mgr._process_companion_attack(c, [])
 		plain_sum += m0 - int(c.monster.current_hp)

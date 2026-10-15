@@ -5682,10 +5682,34 @@ func heal_companion(amount: int) -> int:
 		set_companion_combat_hp(current + healed)
 	return healed
 
+func regen_party_companions(percent: float) -> void:
+	"""Natural recovery for the column companions: same rule as the beside-you one (a knocked-out companion
+	does not recover on its own)."""
+	for cid in get_companion_party_ids():
+		var sid := String(cid)
+		if is_party_companion_ko(sid):
+			continue
+		var mx: int = get_party_companion_max_hp(sid)
+		var cur: int = get_party_companion_combat_hp(sid)
+		if cur < mx:
+			set_party_companion_combat_hp(sid, cur + maxi(1, int(mx * percent)))
+
+func revive_party_companions(pct: float = 1.0) -> int:
+	"""A healer's service: bring every knocked-out column companion back to `pct` of max HP and top the rest up.
+	Returns how many were revived."""
+	var n := 0
+	for cid in get_companion_party_ids():
+		var sid := String(cid)
+		if is_party_companion_ko(sid):
+			n += 1
+		set_party_companion_combat_hp(sid, maxi(get_party_companion_combat_hp(sid), int(get_party_companion_max_hp(sid) * pct)))
+	return n
+
 func regen_companion(percent: float) -> int:
 	"""Natural regen of companion combat HP by `percent` of max HP. Skipped
 	when companion is KO'd — once knocked out, only healers / NPC revives
 	bring them back, not rest/meditate/move/potions. Returns amount healed."""
+	regen_party_companions(percent)
 	if active_companion.is_empty() or is_companion_ko():
 		return 0
 	var max_hp: int = get_companion_max_hp()
@@ -6007,8 +6031,25 @@ func get_companion_xp_to_next_level(companion_level: int) -> int:
 		return 0
 	return int(pow(companion_level + 1, 2.0) * COMPANION_XP_BASE)
 
+func _add_team_companion_xp(xp_amount: int) -> void:
+	"""The column companions earn the same XP the beside-you companion does. Hooked into add_companion_xp
+	(which every victory path already calls) so no path has to remember them."""
+	for cid in get_companion_party_ids():
+		var idx := _collected_index_by_id(String(cid))
+		if idx < 0:
+			continue
+		var comp: Dictionary = collected_companions[idx]
+		var lv: int = int(comp.get("level", 1))
+		var xp: int = int(comp.get("xp", 0)) + xp_amount
+		while lv < COMPANION_MAX_LEVEL and xp >= get_companion_xp_to_next_level(lv):
+			xp -= get_companion_xp_to_next_level(lv)
+			lv += 1
+		comp["level"] = lv
+		comp["xp"] = xp
+
 func add_companion_xp(xp_amount: int) -> Dictionary:
 	"""Add XP to the active companion. Returns {leveled_up: bool, new_level: int, xp: int, xp_to_next: int, abilities_unlocked: Array}"""
+	_add_team_companion_xp(xp_amount)
 	if active_companion.is_empty():
 		return {"leveled_up": false, "new_level": 0, "xp": 0, "xp_to_next": 0, "abilities_unlocked": []}
 

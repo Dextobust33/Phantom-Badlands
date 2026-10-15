@@ -27,6 +27,7 @@ const ACT_TAUNT := "taunt"
 const ACT_HEAL := "heal"
 const ACT_BUFF := "buff"
 const ACT_DEBUFF := "debuff"
+const ACT_REVIVE := "revive"
 
 ## Species the roster would not call healers by its numbers, picked by theme (owner 2026-10-15: "theme-pick
 ## about 8"). They gain the Heal action; their aggro and HP are untouched.
@@ -51,6 +52,13 @@ const TAUNT_TURNS := 2
 const STRIKE_MULT := 1.5
 ## The Jack-of-all-trades does whatever is needed, at this share of a specialist's strength.
 const JACK_STRENGTH := 0.6
+## A column companion's output (damage, heals, buffs) as a share of the beside-you companion's. The owner
+## decided a full team is about 2.5x one companion: 1.0 (beside you) + 4 x 0.375 = 2.5. UNMEASURED FIRST
+## GUESS - the chain run with the team in the reference player is what checks it.
+const TEAM_MEMBER_MULT := 0.375
+## Reviving a knocked-out ally restores this share of its max HP and costs the reviver a longer wait.
+const REVIVE_PCT := 0.25
+const REVIVE_COOLDOWN := 3
 ## After a role action the companion makes this many ordinary attacks before it can act again.
 const ACTION_COOLDOWN := 2
 
@@ -151,7 +159,8 @@ static func taunt_value(role: String) -> int:
 
 static func choose_action(role: String, tactics: String, ctx: Dictionary) -> String:
 	"""What the companion does this turn. ctx: owner_hp_pct (0-1), cooldown (int, 0 = ready),
-	taunt_active (bool), buff_active (bool), debuff_active (bool)."""
+	taunt_active (bool), buff_active (bool), debuff_active (bool), lowest_ally_pct (0-1, defaults to
+	full), ally_ko (a knocked-out companion ally exists)."""
 	if int(ctx.get("cooldown", 0)) > 0:
 		return ACT_ATTACK
 	var hp: float = float(ctx.get("owner_hp_pct", 1.0))
@@ -167,11 +176,15 @@ static func choose_action(role: String, tactics: String, ctx: Dictionary) -> Str
 		TACTIC_SUPPORT: taunt_ok = hp < TAUNT_BELOW_SUPPORT and not bool(ctx.get("taunt_active", false))
 	var can_buff: bool = not bool(ctx.get("buff_active", false))
 	var can_debuff: bool = not bool(ctx.get("debuff_active", false))
-	var needs_heal: bool = hp < heal_below
+	var low: float = minf(hp, float(ctx.get("lowest_ally_pct", 1.0)))
+	var needs_heal: bool = low < heal_below
+	var wants_revive: bool = bool(ctx.get("ally_ko", false)) and tactics != TACTIC_ALL_OUT
 	match role:
 		ROLE_TANK:
 			return ACT_TAUNT if taunt_ok else ACT_ATTACK
 		ROLE_HEALER:
+			if wants_revive:
+				return ACT_REVIVE
 			return ACT_HEAL if needs_heal else ACT_ATTACK
 		ROLE_DPS:
 			return ACT_ATTACK if tactics == TACTIC_PROTECT else ACT_STRIKE
@@ -184,7 +197,9 @@ static func choose_action(role: String, tactics: String, ctx: Dictionary) -> Str
 				return ACT_BUFF
 			return ACT_DEBUFF if can_debuff else ACT_ATTACK
 		_:
-			# Jack: heal if you are low, else taunt if that applies, else a buff, else attack.
+			# Jack: revive or heal if needed, else taunt if that applies, else a buff, else attack.
+			if wants_revive:
+				return ACT_REVIVE
 			if needs_heal:
 				return ACT_HEAL
 			if taunt_ok:
