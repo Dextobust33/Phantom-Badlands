@@ -3406,6 +3406,7 @@ DDD")
 		companions_panel.companion_inspect_requested.connect(_on_comp_panel_inspect)
 		companions_panel.companion_release_requested.connect(_on_comp_panel_release)
 		companions_panel.companion_dismiss_requested.connect(_on_comp_panel_dismiss)
+		companions_panel.companion_tactics_requested.connect(_on_comp_panel_tactics)
 		companions_panel.egg_freeze_toggled.connect(_on_comp_panel_egg_freeze)
 		companions_panel.egg_discard_requested.connect(_on_comp_panel_egg_discard)
 		companions_panel.sort_changed.connect(_on_comp_panel_sort_changed)
@@ -52407,6 +52408,9 @@ func _on_comp_panel_release(companion: Dictionary) -> void:
 	pending_companion_action = ""
 	if companions_panel:
 		companions_panel.clear_inspect()
+
+func _on_comp_panel_tactics(tactics: String) -> void:
+	send_to_server({"type": "set_companion_tactics", "tactics": tactics})
 
 func _on_comp_panel_dismiss() -> void:
 	send_to_server({"type": "dismiss_companion"})

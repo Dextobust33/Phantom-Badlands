@@ -5831,10 +5831,24 @@ func activate_hatched_companion(companion_id: String) -> bool:
 				# combat, it does not have the white border."
 				"border_tier": int(companion.get("border_tier", 0)),
 				"level": companion.get("level", 1),
-				"xp": companion.get("xp", 0)
+				"xp": companion.get("xp", 0),
+				# Tactics focus (item 14 S1) travels with the companion, not the slot.
+				"tactics": str(companion.get("tactics", "balanced"))
 			}
 			return true
 	return false
+
+func set_companion_tactics(tactics: String) -> bool:
+	"""Set the ACTIVE companion's tactics focus (and the copy in the collection, which is what a later
+	re-activation reads). Refuses a value that is not one of the known tactics."""
+	if active_companion.is_empty() or not (tactics in ["balanced", "all_out", "protect", "support"]):
+		return false
+	active_companion["tactics"] = tactics
+	var cid = active_companion.get("id", "")
+	for c in collected_companions:
+		if c.get("id") == cid:
+			c["tactics"] = tactics
+	return true
 
 func get_incubating_eggs() -> Array:
 	"""Get all incubating eggs with progress info."""

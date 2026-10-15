@@ -2201,6 +2201,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_activate_companion(peer_id, message)
 		"dismiss_companion":
 			handle_dismiss_companion(peer_id)
+		"set_companion_tactics":
+			handle_set_companion_tactics(peer_id, message)
 		"release_companion":
 			handle_release_companion(peer_id, message)
 		"release_all_companions":
@@ -22661,6 +22663,17 @@ func _notify_deck_backfill(peer_id: int, added: Array) -> void:
 		else:
 			names.append(String(cid).capitalize().replace("_", " "))
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]Your deck dipped below %d cards — added %s to keep it full.[/color]" % [Character.MIN_DECK_SIZE, ", ".join(names)]})
+
+func handle_set_companion_tactics(peer_id: int, message: Dictionary):
+	"""Set the active companion's tactics focus (item 14 S1). The panel cycles through them."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not character.set_companion_tactics(str(message.get("tactics", ""))):
+		return
+	send_character_update(peer_id)
+	save_character(peer_id)
+
 
 func handle_dismiss_companion(peer_id: int):
 	"""Handle dismissing the active companion"""

@@ -13,6 +13,7 @@ signal companion_activated(companion_id: String)
 signal companion_inspect_requested(companion: Dictionary)
 signal companion_release_requested(companion: Dictionary)
 signal companion_dismiss_requested
+signal companion_tactics_requested(tactics: String)
 signal egg_freeze_toggled(egg_index: int)
 signal egg_discard_requested(egg_index: int)  # v0.9.720 — discard an unwanted egg
 signal sort_changed(sort_option: String, ascending: bool)
@@ -48,6 +49,8 @@ var _active_section: PanelContainer
 var _active_label: RichTextLabel
 var _active_abilities: RichTextLabel
 var _dismiss_button: Button
+var _tactics_button: Button
+const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 var _no_active_label: Label
 var _companion_grid: HFlowContainer
 var _companion_empty: Label
@@ -213,6 +216,9 @@ func _build_layout() -> void:
 
 	_dismiss_button = _make_action_btn("Dismiss", _on_dismiss_pressed)
 	active_action_row.add_child(_dismiss_button)
+	# Tactics focus (item 14 S1): a visible button that cycles the companion's focus.
+	_tactics_button = _make_action_btn("Tactics", _on_tactics_pressed)
+	active_action_row.add_child(_tactics_button)
 
 	var active_spacer := Control.new()
 	active_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -593,6 +599,13 @@ func _rebuild_active_section() -> void:
 		lines.append("[color=#FFD700]MAX LEVEL[/color]")
 
 	_active_label.text = "\n".join(lines)
+	var _role: String = CompanionRolesScript.role_of(c)
+	var _tac: String = CompanionRolesScript.tactics_of(c)
+	_active_label.text += "\n[color=#FFD700]Role: %s[/color] [color=#AAAAAA]- %s[/color]\n[color=#FFD700]Tactics: %s[/color] [color=#AAAAAA]- %s[/color]" % [
+		CompanionRolesScript.role_label(_role), CompanionRolesScript.role_blurb(_role),
+		CompanionRolesScript.tactics_label(_tac), CompanionRolesScript.tactics_blurb(_tac)]
+	if _tactics_button != null:
+		_tactics_button.text = "Tactics: %s" % CompanionRolesScript.tactics_label(_tac)
 
 	# Abilities — keep concise: list unlocked names only
 	if client_ref and client_ref.has_method("_format_companion_abilities_summary"):
@@ -1071,6 +1084,9 @@ func _on_sort_pressed() -> void:
 func _on_asc_pressed() -> void:
 	emit_signal("sort_changed", _sort_option, not _sort_ascending)
 
+
+func _on_tactics_pressed() -> void:
+	emit_signal("companion_tactics_requested", CompanionRolesScript.next_tactics(CompanionRolesScript.tactics_of(_active_companion)))
 
 func _on_dismiss_pressed() -> void:
 	emit_signal("companion_dismiss_requested")

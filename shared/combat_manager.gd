@@ -406,6 +406,7 @@ const TitlesScript = preload("res://shared/titles.gd")
 # const tables are accessible without going through the instance.
 const DropTablesScript = preload("res://shared/drop_tables.gd")
 const GoldEconomyScript = preload("res://shared/gold_economy.gd")
+const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
@@ -1796,6 +1797,58 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 		_mark_actor(combat, messages.size(), ACTOR_PLAYER)
 
 
+func _companion_role_choice(combat: Dictionary, character, companion: Dictionary) -> String:
+	"""What the companion does this turn (see shared/companion_roles.gd). Also runs the cooldown:
+	it ticks down on every companion turn and is set when a role action (or a Striker's strike) is chosen."""
+	var max_hp: int = maxi(1, int(character.get_total_max_hp()))
+	var ctx: Dictionary = {
+		"owner_hp_pct": float(character.current_hp) / float(max_hp),
+		"cooldown": int(combat.get("companion_role_cd", 0)),
+		"taunt_active": int(combat.get("companion_taunt_turns", 0)) > 0,
+		"buff_active": int(combat.get("companion_buff_left", 0)) > 0,
+		"debuff_active": int(combat.get("monster_weakness_duration", 0)) > 0,
+	}
+	var act: String = CompanionRolesScript.choose_action(CompanionRolesScript.role_of(companion), CompanionRolesScript.tactics_of(companion), ctx)
+	if int(combat.get("companion_buff_left", 0)) > 0:
+		combat["companion_buff_left"] = int(combat["companion_buff_left"]) - 1
+	if act == CompanionRolesScript.ACT_ATTACK:
+		combat["companion_role_cd"] = maxi(0, int(combat.get("companion_role_cd", 0)) - 1)
+	else:
+		combat["companion_role_cd"] = CompanionRolesScript.ACTION_COOLDOWN
+	return act
+
+
+func _companion_role_action(combat: Dictionary, character, companion: Dictionary, act: String, messages: Array) -> void:
+	var role: String = CompanionRolesScript.role_of(companion)
+	var tactics: String = CompanionRolesScript.tactics_of(companion)
+	var cname: String = str(companion.get("name", "companion"))
+	var monster = combat.monster
+	match act:
+		CompanionRolesScript.ACT_HEAL:
+			var amount: int = maxi(1, int(float(character.get_total_max_hp()) * CompanionRolesScript.heal_fraction(role)))
+			var healed: int = int(character.heal(amount))
+			messages.append("[color=#00FF88]Your %s mends your wounds, restoring %d HP![/color]" % [cname, healed])
+		CompanionRolesScript.ACT_TAUNT:
+			var bonus: int = CompanionRolesScript.taunt_value(role)
+			combat["companion_taunt_bonus"] = maxi(int(combat.get("companion_taunt_bonus", 0)), bonus)
+			combat["companion_taunt_turns"] = maxi(int(combat.get("companion_taunt_turns", 0)), CompanionRolesScript.TAUNT_TURNS)
+			messages.append("[color=#FF8800]Your %s roars, drawing the %s's attention! (+%d%% aggro for %d turns)[/color]" % [cname, monster.name, bonus, CompanionRolesScript.TAUNT_TURNS])
+		CompanionRolesScript.ACT_BUFF:
+			var val: int = CompanionRolesScript.buff_value(role)
+			if tactics == CompanionRolesScript.TACTIC_PROTECT:
+				character.add_buff("damage_reduction", val, CompanionRolesScript.BUFF_ROUNDS)
+				messages.append("[color=#66B0FF]Your %s shields you! (%d%% damage reduction for %d rounds)[/color]" % [cname, val, CompanionRolesScript.BUFF_ROUNDS])
+			else:
+				character.add_buff("damage", val, CompanionRolesScript.BUFF_ROUNDS)
+				messages.append("[color=#FF8800]Your %s rallies you! (+%d%% damage for %d rounds)[/color]" % [cname, val, CompanionRolesScript.BUFF_ROUNDS])
+			combat["companion_buff_left"] = CompanionRolesScript.BUFF_ROUNDS
+		CompanionRolesScript.ACT_DEBUFF:
+			var weak: int = CompanionRolesScript.debuff_value(role)
+			combat["monster_weakness"] = maxi(int(combat.get("monster_weakness", 0)), weak)
+			combat["monster_weakness_duration"] = maxi(int(combat.get("monster_weakness_duration", 0)), CompanionRolesScript.DEBUFF_ROUNDS)
+			messages.append("[color=#808080]Your %s hampers the %s! (-%d%% attack for %d rounds)[/color]" % [cname, monster.name, weak, CompanionRolesScript.DEBUFF_ROUNDS])
+
+
 func _process_companion_attack_body(combat: Dictionary, messages: Array) -> void:
 	"""Process companion attack during player's turn.
 	Called by both regular attacks and ability usage."""
@@ -1820,6 +1873,14 @@ func _process_companion_attack_body(combat: Dictionary, messages: Array) -> void
 	var companion_sub_tier = companion.get("sub_tier", 1)
 	# v0.9.570 — companion border tier (double-rarity stat layer). 0-6 → 1.00x-3.00x.
 	var companion_border_tier = int(companion.get("border_tier", 0))
+
+	# ROLE + TACTICS (item 14 S1). The companion's role and its tactics focus choose what it does this
+	# turn; a support action REPLACES its attack, so helping costs damage.
+	var _role_act: String = _companion_role_choice(combat, character, companion)
+	if _role_act in [CompanionRolesScript.ACT_HEAL, CompanionRolesScript.ACT_TAUNT, CompanionRolesScript.ACT_BUFF, CompanionRolesScript.ACT_DEBUFF]:
+		_companion_role_action(combat, character, companion, _role_act, messages)
+		return
+	var _is_strike: bool = (_role_act == CompanionRolesScript.ACT_STRIKE)
 
 	# 95% hit chance for companions
 	if randi() % 100 >= 95:
@@ -1895,10 +1956,15 @@ func _process_companion_attack_body(combat: Dictionary, messages: Array) -> void
 	# Apply some variance (80-120%)
 	companion_damage = int(companion_damage * randf_range(0.8, 1.2))
 	companion_damage = max(1, companion_damage)
+	if _is_strike:
+		companion_damage = int(companion_damage * CompanionRolesScript.STRIKE_MULT)
 	monster.current_hp -= companion_damage
 	monster.current_hp = max(0, monster.current_hp)
 	_note_dmg(combat, messages, companion_damage)
-	messages.append("[color=#00FFFF]Your %s attacks for %d damage![/color]" % [companion.name, companion_damage])
+	if _is_strike:
+		messages.append("[color=#FFD700]Your %s strikes hard for %d damage![/color]" % [companion.name, companion_damage])
+	else:
+		messages.append("[color=#00FFFF]Your %s attacks for %d damage![/color]" % [companion.name, companion_damage])
 
 	# === COMPANION CHANCE ABILITIES ===
 	# Use monster-specific abilities stored at combat start (pre-scaled by level + variant)
