@@ -747,6 +747,12 @@ const COMPANION_XP_BASE = 15  # XP formula: (level+1)^2.0 * 15 - slightly slower
 #           obtained_at: int, battles_fought: int, variant: String, variant_color: String,
 #           level: int, xp: int}]
 @export var collected_companions: Array = []
+## Item 14 S2 - the COLUMN companions: ids of up to COMPANION_PARTY_MAX entries of `collected_companions`
+## that fight beside `active_companion` (slot 0, the one "beside you"). Stored as IDS, never copies, and
+## every read goes through `get_companion_party_ids()`, which drops any id that no longer names a
+## collected companion, is the active one, or is a duplicate. That is the whole point of the shape: the
+## ~15 places that release / trade / register / lose a companion never have to know this list exists.
+@export var companion_party: Array = []
 
 # ===== FISHING SYSTEM =====
 @export var fishing_skill: int = 1  # Fishing skill level (1-100)
@@ -2541,6 +2547,7 @@ func to_dict() -> Dictionary:
 		"soul_gems": soul_gems,
 		"incubating_eggs": incubating_eggs.duplicate(true),  # Save raw data for persistence
 		"collected_companions": get_collected_companions(),
+		"companion_party": get_companion_party_ids(),
 		"discovered_posts": discovered_posts,
 		"dungeon_atlas": dungeon_atlas,
 		"cartography_xp": cartography_xp,
@@ -2876,6 +2883,7 @@ func from_dict(data: Dictionary):
 	soul_gems = data.get("soul_gems", [])
 	incubating_eggs = data.get("incubating_eggs", [])
 	collected_companions = data.get("collected_companions", [])
+	companion_party = data.get("companion_party", [])
 
 	# Migrate companions: add level/xp/pattern/sub_tier fields if missing (for existing saves)
 	# v0.9.570 — also roll a border_tier for legacy companions per the
@@ -5809,6 +5817,7 @@ func activate_hatched_companion(companion_id: String) -> bool:
 	"""Activate a companion from collected_companions. Returns true if successful."""
 	for companion in collected_companions:
 		if companion.get("id") == companion_id:
+			remove_from_companion_party(companion_id)   # it moves to slot 0; never in both
 			active_companion = {
 				"id": companion.id,
 				"name": companion.name,
@@ -5837,6 +5846,98 @@ func activate_hatched_companion(companion_id: String) -> bool:
 			}
 			return true
 	return false
+
+## Column slots a character has earned, by level (owner 2026-10-15: "unlock by progression"). FIRST GUESS,
+## unmeasured: the first column slot at 10, then 25 / 50 / 100.
+const COMPANION_PARTY_MAX := 4
+const COMPANION_SLOT_UNLOCK_LEVELS: Array = [10, 25, 50, 100]
+
+func companion_slots_unlocked() -> int:
+	var n := 0
+	for lv in COMPANION_SLOT_UNLOCK_LEVELS:
+		if level >= int(lv):
+			n += 1
+	return mini(n, COMPANION_PARTY_MAX)
+
+func _collected_index_by_id(companion_id: String) -> int:
+	if companion_id == "":
+		return -1
+	for i in range(collected_companions.size()):
+		if String(collected_companions[i].get("id", "")) == companion_id:
+			return i
+	return -1
+
+func get_companion_party_ids() -> Array:
+	"""The fielded column companions' ids, validated: each still exists, is not the active companion,
+	appears once, and fits in the slots this character has unlocked. Prunes the stored list as it reads."""
+	var keep: Array = []
+	var active_id: String = String(active_companion.get("id", ""))
+	var cap: int = companion_slots_unlocked()
+	for cid in companion_party:
+		var sid := String(cid)
+		if keep.size() >= cap:
+			break
+		if sid == "" or sid == active_id or sid in keep or _collected_index_by_id(sid) < 0:
+			continue
+		keep.append(sid)
+	if keep.size() != companion_party.size():
+		companion_party = keep.duplicate()
+	return keep
+
+func get_companion_party() -> Array:
+	"""Copies of the column companions' dictionaries, in slot order."""
+	var out: Array = []
+	for cid in get_companion_party_ids():
+		out.append(collected_companions[_collected_index_by_id(String(cid))].duplicate(true))
+	return out
+
+func add_to_companion_party(companion_id: String) -> String:
+	"""Field a collected companion in the first free column slot. Returns "" on success, else the reason."""
+	var idx := _collected_index_by_id(companion_id)
+	if idx < 0:
+		return "You do not have that companion."
+	if companion_id == String(active_companion.get("id", "")):
+		return "That companion is already beside you."
+	var ids: Array = get_companion_party_ids()
+	if companion_id in ids:
+		return "That companion is already fielded."
+	if companion_slots_unlocked() <= 0:
+		return "You have not unlocked a companion slot yet (level %d)." % int(COMPANION_SLOT_UNLOCK_LEVELS[0])
+	if ids.size() >= companion_slots_unlocked():
+		return "All your companion slots are full."
+	companion_party.append(companion_id)
+	return ""
+
+func remove_from_companion_party(companion_id: String) -> bool:
+	var at := companion_party.find(companion_id)
+	if at < 0:
+		return false
+	companion_party.remove_at(at)
+	return true
+
+func get_party_companion_max_hp(companion_id: String) -> int:
+	var idx := _collected_index_by_id(companion_id)
+	if idx < 0:
+		return 0
+	return calculate_companion_max_hp(collected_companions[idx], get_total_max_hp(), level)
+
+func get_party_companion_combat_hp(companion_id: String) -> int:
+	"""A fielded companion's own HP pool: full on first read, persisted on its collection entry."""
+	var idx := _collected_index_by_id(companion_id)
+	if idx < 0:
+		return 0
+	if not collected_companions[idx].has("combat_hp"):
+		collected_companions[idx]["combat_hp"] = get_party_companion_max_hp(companion_id)
+	return int(collected_companions[idx]["combat_hp"])
+
+func set_party_companion_combat_hp(companion_id: String, new_hp: int) -> void:
+	var idx := _collected_index_by_id(companion_id)
+	if idx < 0:
+		return
+	collected_companions[idx]["combat_hp"] = clampi(new_hp, 0, get_party_companion_max_hp(companion_id))
+
+func is_party_companion_ko(companion_id: String) -> bool:
+	return _collected_index_by_id(companion_id) >= 0 and get_party_companion_combat_hp(companion_id) <= 0
 
 func set_companion_tactics(tactics: String) -> bool:
 	"""Set the ACTIVE companion's tactics focus (and the copy in the collection, which is what a later
