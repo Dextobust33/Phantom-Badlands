@@ -2529,7 +2529,7 @@ const USE_REFERENCE_MODEL := true          # false = legacy base_level scaling
 # steering by an arbitrary "flee at N%" constant.
 const ROLE_TARGETS := {
 	"normal":    {"turns": 5.0,  "danger": 0.40, "win": 0.60},
-	"empowered": {"turns": 7.0,  "danger": 0.55, "win": 0.58},
+	"empowered": {"turns": 7.0,  "danger": 0.55, "win": 0.50},
 	"elite":     {"turns": 9.0,  "danger": 0.65, "win": 0.40},
 	"boss":      {"turns": 14.0, "danger": 0.80, "win": 0.30},
 }
