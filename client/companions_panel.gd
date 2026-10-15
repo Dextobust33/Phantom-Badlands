@@ -13,7 +13,9 @@ signal companion_activated(companion_id: String)
 signal companion_inspect_requested(companion: Dictionary)
 signal companion_release_requested(companion: Dictionary)
 signal companion_dismiss_requested
-signal companion_tactics_requested(tactics: String)
+signal companion_tactics_requested(tactics: String, companion_id: String)
+signal companion_field_requested(companion_id: String)
+signal companion_unfield_requested(companion_id: String)
 signal egg_freeze_toggled(egg_index: int)
 signal egg_discard_requested(egg_index: int)  # v0.9.720 — discard an unwanted egg
 signal sort_changed(sort_option: String, ascending: bool)
@@ -50,6 +52,8 @@ var _active_label: RichTextLabel
 var _active_abilities: RichTextLabel
 var _dismiss_button: Button
 var _tactics_button: Button
+var _team_section: PanelContainer
+var _team_vbox: VBoxContainer
 const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 var _no_active_label: Label
 var _companion_grid: HFlowContainer
@@ -92,6 +96,8 @@ var _tooltip_label: RichTextLabel
 const CTX_INSPECT := 1
 const CTX_RELEASE := 2
 const CTX_ACTIVATE := 3
+const CTX_FIELD := 4
+const CTX_UNFIELD := 5
 
 
 func _ready() -> void:
@@ -209,6 +215,13 @@ func _build_layout() -> void:
 	_active_abilities.add_theme_font_size_override("normal_font_size", 13)
 	_active_abilities.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	active_vbox.add_child(_active_abilities)
+
+	# Item 14 S4: the TEAM - the column companions that fight beside the active one.
+	_team_section = _make_subpanel()
+	_companions_tab.add_child(_team_section)
+	_team_vbox = VBoxContainer.new()
+	_team_vbox.add_theme_constant_override("separation", 4)
+	_team_section.add_child(_team_vbox)
 
 	var active_action_row := HBoxContainer.new()
 	active_action_row.add_theme_constant_override("separation", 8)
@@ -484,6 +497,7 @@ func populate_companions(companions: Array, active_companion: Dictionary, sort_o
 	_update_tab_styles()
 	_update_sort_buttons()
 	_rebuild_active_section()
+	_rebuild_team_section()
 	_rebuild_registered_section()
 	_rebuild_companion_grid()
 
@@ -550,6 +564,56 @@ func _update_sort_buttons() -> void:
 	# Sort controls only meaningful on the Companions tab
 	_sort_button.visible = (_current_tab == TAB_COMPANIONS)
 	_asc_button.visible = (_current_tab == TAB_COMPANIONS)
+
+
+func _team_ids() -> Array:
+	if client_ref == null:
+		return []
+	var cd = client_ref.get("character_data")
+	return (cd.get("companion_party", []) as Array) if cd is Dictionary and cd.get("companion_party", []) is Array else []
+
+
+func _rebuild_team_section() -> void:
+	if _team_vbox == null:
+		return
+	for ch in _team_vbox.get_children():
+		ch.queue_free()
+	var cd = client_ref.get("character_data") if client_ref != null else {}
+	var slots: int = int(cd.get("companion_slots", 0)) if cd is Dictionary else 0
+	var team: Array = (cd.get("companion_team", []) as Array) if cd is Dictionary and cd.get("companion_team", []) is Array else []
+	var head := RichTextLabel.new()
+	head.bbcode_enabled = true
+	head.fit_content = true
+	head.scroll_active = false
+	head.add_theme_font_size_override("normal_font_size", 14)
+	if slots <= 0:
+		head.text = "[color=#FFD700]Team:[/color] [color=#AAAAAA]companion slots unlock at character level 10, 25, 50 and 100. Companions you add to your team fight beside the active one.[/color]"
+	else:
+		head.text = "[color=#FFD700]Team:[/color] %d / %d slots  [color=#AAAAAA]- right-click a companion below and choose Add to team[/color]" % [team.size(), slots]
+	_team_vbox.add_child(head)
+	for c in team:
+		if not (c is Dictionary):
+			continue
+		var role: String = CompanionRolesScript.role_of(c)
+		var tac: String = CompanionRolesScript.tactics_of(c)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var lbl := RichTextLabel.new()
+		lbl.bbcode_enabled = true
+		lbl.fit_content = true
+		lbl.scroll_active = false
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.add_theme_font_size_override("normal_font_size", 13)
+		var hp_txt := "[color=#FF6666]KNOCKED OUT[/color]" if bool(c.get("ko", false)) else "HP %d / %d" % [int(c.get("combat_hp", 0)), int(c.get("combat_max_hp", 0))]
+		lbl.text = "[color=#00FFFF]%s[/color] [color=#AAAAAA](Lv %d)[/color]  [color=#FFD700]%s[/color] [color=#AAAAAA]- %s[/color]  %s" % [
+			str(c.get("name", "Companion")), int(c.get("level", 1)), CompanionRolesScript.role_label(role), CompanionRolesScript.role_blurb(role), hp_txt]
+		row.add_child(lbl)
+		var cid: String = str(c.get("id", ""))
+		var tb := _make_action_btn("Tactics: %s" % CompanionRolesScript.tactics_label(tac), func(): emit_signal("companion_tactics_requested", CompanionRolesScript.next_tactics(tac), cid))
+		row.add_child(tb)
+		var rb := _make_action_btn("Remove", func(): emit_signal("companion_unfield_requested", cid))
+		row.add_child(rb)
+		_team_vbox.add_child(row)
 
 
 func _rebuild_active_section() -> void:
@@ -912,6 +976,10 @@ func _open_ctx_menu(companion: Dictionary, screen_pos: Vector2) -> void:
 	var active_id = str(_active_companion.get("id", ""))
 	if clicked_id != active_id:
 		_ctx_menu.add_item("Activate", CTX_ACTIVATE)
+		if _team_ids().has(clicked_id):
+			_ctx_menu.add_item("Remove from team", CTX_UNFIELD)
+		else:
+			_ctx_menu.add_item("Add to team", CTX_FIELD)
 	_ctx_menu.add_item("Inspect", CTX_INSPECT)
 	_ctx_menu.add_item("Release...", CTX_RELEASE)
 	_ctx_menu.position = Vector2i(screen_pos)
@@ -924,6 +992,10 @@ func _on_ctx_menu_id_pressed(id: int) -> void:
 	match id:
 		CTX_ACTIVATE:
 			emit_signal("companion_activated", str(_ctx_companion.get("id", "")))
+		CTX_FIELD:
+			emit_signal("companion_field_requested", str(_ctx_companion.get("id", "")))
+		CTX_UNFIELD:
+			emit_signal("companion_unfield_requested", str(_ctx_companion.get("id", "")))
 		CTX_INSPECT:
 			emit_signal("companion_inspect_requested", _ctx_companion)
 		CTX_RELEASE:
@@ -1086,7 +1158,7 @@ func _on_asc_pressed() -> void:
 
 
 func _on_tactics_pressed() -> void:
-	emit_signal("companion_tactics_requested", CompanionRolesScript.next_tactics(CompanionRolesScript.tactics_of(_active_companion)))
+	emit_signal("companion_tactics_requested", CompanionRolesScript.next_tactics(CompanionRolesScript.tactics_of(_active_companion)), "")
 
 func _on_dismiss_pressed() -> void:
 	emit_signal("companion_dismiss_requested")

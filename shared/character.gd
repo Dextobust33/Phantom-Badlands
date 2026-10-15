@@ -2548,6 +2548,8 @@ func to_dict() -> Dictionary:
 		"incubating_eggs": incubating_eggs.duplicate(true),  # Save raw data for persistence
 		"collected_companions": get_collected_companions(),
 		"companion_party": get_companion_party_ids(),
+		"companion_team": get_companion_team_view(),
+		"companion_slots": companion_slots_unlocked(),
 		"discovered_posts": discovered_posts,
 		"dungeon_atlas": dungeon_atlas,
 		"cartography_xp": cartography_xp,
@@ -5932,6 +5934,19 @@ func add_to_companion_party(companion_id: String) -> String:
 	companion_party.append(companion_id)
 	return ""
 
+func get_companion_team_view() -> Array:
+	"""What the client draws for the column companions: each one's dictionary with its derived HP stamped on
+	(the client must never re-derive it - see get_active_companion), in slot order."""
+	var out: Array = []
+	for cid in get_companion_party_ids():
+		var sid := String(cid)
+		var c: Dictionary = collected_companions[_collected_index_by_id(sid)].duplicate(true)
+		c["combat_max_hp"] = get_party_companion_max_hp(sid)
+		c["combat_hp"] = get_party_companion_combat_hp(sid)
+		c["ko"] = c["combat_hp"] <= 0
+		out.append(c)
+	return out
+
 func remove_from_companion_party(companion_id: String) -> bool:
 	var at := companion_party.find(companion_id)
 	if at < 0:
@@ -5962,6 +5977,13 @@ func set_party_companion_combat_hp(companion_id: String, new_hp: int) -> void:
 
 func is_party_companion_ko(companion_id: String) -> bool:
 	return _collected_index_by_id(companion_id) >= 0 and get_party_companion_combat_hp(companion_id) <= 0
+
+func set_party_companion_tactics(companion_id: String, tactics: String) -> bool:
+	var idx := _collected_index_by_id(companion_id)
+	if idx < 0 or not (tactics in ["balanced", "all_out", "protect", "support"]):
+		return false
+	collected_companions[idx]["tactics"] = tactics
+	return true
 
 func set_companion_tactics(tactics: String) -> bool:
 	"""Set the ACTIVE companion's tactics focus (and the copy in the collection, which is what a later

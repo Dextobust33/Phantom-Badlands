@@ -2203,6 +2203,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_dismiss_companion(peer_id)
 		"set_companion_tactics":
 			handle_set_companion_tactics(peer_id, message)
+		"field_companion":
+			handle_field_companion(peer_id, message)
+		"unfield_companion":
+			handle_unfield_companion(peer_id, message)
 		"release_companion":
 			handle_release_companion(peer_id, message)
 		"release_all_companions":
@@ -22668,11 +22672,41 @@ func _notify_deck_backfill(peer_id: int, added: Array) -> void:
 			names.append(String(cid).capitalize().replace("_", " "))
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]Your deck dipped below %d cards — added %s to keep it full.[/color]" % [Character.MIN_DECK_SIZE, ", ".join(names)]})
 
-func handle_set_companion_tactics(peer_id: int, message: Dictionary):
-	"""Set the active companion's tactics focus (item 14 S1). The panel cycles through them."""
+func handle_field_companion(peer_id: int, message: Dictionary):
+	"""Put a collected companion in the first free column slot (item 14 S4)."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
+	var why: String = character.add_to_companion_party(str(message.get("id", "")))
+	if why != "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800]%s[/color]" % why})
+		return
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]Companion added to your team.[/color]"})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+
+func handle_unfield_companion(peer_id: int, message: Dictionary):
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.remove_from_companion_party(str(message.get("id", ""))):
+		send_character_update(peer_id)
+		save_character(peer_id)
+
+
+func handle_set_companion_tactics(peer_id: int, message: Dictionary):
+	"""Set a companion's tactics focus (item 14 S1/S4). `id` names a column companion; absent = the beside-you one."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var cid: String = str(message.get("id", ""))
+	if cid != "" and cid != str(character.active_companion.get("id", "")):
+		if not character.set_party_companion_tactics(cid, str(message.get("tactics", ""))):
+			return
+		send_character_update(peer_id)
+		save_character(peer_id)
+		return
 	if not character.set_companion_tactics(str(message.get("tactics", ""))):
 		return
 	send_character_update(peer_id)

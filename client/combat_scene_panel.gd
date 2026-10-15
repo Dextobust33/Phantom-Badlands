@@ -991,6 +991,10 @@ func set_party_members(members: Array, skip_bars: bool = false) -> void:
 		var is_fled := bool(m.get("is_fled", false))
 		var comp = m.get("companion", {})
 		var name_lbl: Label = card.get_meta("name_lbl")
+		# Item 14 S4: a COLUMN COMPANION is drawn on the same card with the human half hidden.
+		var _comp_only: bool = bool(m.get("companion_only", false))
+		name_lbl.get_parent().visible = not _comp_only
+		(card.get_meta("sprite") as Control).get_parent().visible = not _comp_only
 		var status := ""
 		if is_dead:
 			status = "  (DEAD)"

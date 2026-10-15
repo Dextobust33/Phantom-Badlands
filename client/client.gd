@@ -3407,6 +3407,8 @@ DDD")
 		companions_panel.companion_release_requested.connect(_on_comp_panel_release)
 		companions_panel.companion_dismiss_requested.connect(_on_comp_panel_dismiss)
 		companions_panel.companion_tactics_requested.connect(_on_comp_panel_tactics)
+		companions_panel.companion_field_requested.connect(func(id): send_to_server({"type": "field_companion", "id": id}))
+		companions_panel.companion_unfield_requested.connect(func(id): send_to_server({"type": "unfield_companion", "id": id}))
 		companions_panel.egg_freeze_toggled.connect(_on_comp_panel_egg_freeze)
 		companions_panel.egg_discard_requested.connect(_on_comp_panel_egg_discard)
 		companions_panel.sort_changed.connect(_on_comp_panel_sort_changed)
@@ -29662,6 +29664,7 @@ func handle_server_message(message: Dictionary):
 				# damage / your Bone Servant is knocked out" while the card still showed
 				# HP 24/65 and no KO, "for a long while". Now the pending value is stashed and
 				# applied when the queue drains, exactly like the player bar.
+				_apply_companion_team_to_panel(state.get("companion_team", []))
 				if combat_scene_panel and combat_scene_panel.has_method("update_companion_combat_hp"):
 					var _comp_hp := int(state.get("companion_combat_hp", -1))
 					var _comp_max := int(state.get("companion_combat_max_hp", -1))
@@ -34791,6 +34794,29 @@ func _clear_party_state():
 	party_waiting_for_turn = false
 	party_combat_active = false
 	party_combat_turn_name = ""
+
+const CompanionRolesUI = preload("res://shared/companion_roles.gd")
+
+func _apply_companion_team_to_panel(team) -> void:
+	"""Item 14 S4: draw the column companions on the right-hand column of the combat scene (solo play; in a
+	party the humans' cards own the column for now). Each is a party card with the human half hidden."""
+	if combat_scene_panel == null or not combat_scene_panel.has_method("set_party_members"):
+		return
+	if not (team is Array) or (team as Array).is_empty():
+		return
+	if party_combat_active:
+		return
+	var cards: Array = []
+	for c in team:
+		if not (c is Dictionary):
+			continue
+		var comp: Dictionary = (c as Dictionary).duplicate(true)
+		var role: String = CompanionRolesUI.role_of(comp)
+		var tag: String = CompanionRolesUI.role_label(role)
+		comp["max_hp"] = int(comp.get("combat_max_hp", 1))
+		comp["name"] = "%s [%s]%s" % [str(comp.get("name", "Companion")), tag, "  (KO)" if bool(comp.get("ko", false)) else ""]
+		cards.append({"name": "", "companion_only": true, "companion": comp, "current_hp": 1, "max_hp": 1})
+	combat_scene_panel.set_party_members(cards)
 
 func _apply_party_members_to_panel(combat_state: Dictionary, skip_bars: bool = false) -> void:
 	"""Feed the OTHER party members (exclude self) into the combat scene panel's
@@ -44289,6 +44315,7 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	# it right after this call via _apply_party_members_to_panel.
 	if combat_scene_panel.has_method("set_party_members"):
 		combat_scene_panel.set_party_members([])
+		_apply_companion_team_to_panel(combat_state.get("companion_team", []))
 	# v0.9.610 — replaced the racy `_combat_scene_was_flock_pending` per-frame
 	# tracker with `_pending_flock_archive` set explicitly at combat_end when
 	# flock_incoming is true. Race-free: even if combat_end + combat_start
@@ -52409,8 +52436,8 @@ func _on_comp_panel_release(companion: Dictionary) -> void:
 	if companions_panel:
 		companions_panel.clear_inspect()
 
-func _on_comp_panel_tactics(tactics: String) -> void:
-	send_to_server({"type": "set_companion_tactics", "tactics": tactics})
+func _on_comp_panel_tactics(tactics: String, companion_id: String = "") -> void:
+	send_to_server({"type": "set_companion_tactics", "tactics": tactics, "id": companion_id})
 
 func _on_comp_panel_dismiss() -> void:
 	send_to_server({"type": "dismiss_companion"})

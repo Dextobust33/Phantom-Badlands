@@ -12220,6 +12220,8 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"companion_combat_hp": character.get_companion_combat_hp() if character.has_active_companion() else -1,
 		"companion_combat_max_hp": character.get_companion_max_hp() if character.has_active_companion() else -1,
 		"companion_ko": character.is_companion_ko() if character.has_active_companion() else false,
+		# Item 14 S4: the column companions, with their own derived HP.
+		"companion_team": character.get_companion_team_view(),
 	}
 	_state.merge(engine_display_fields(character, combat))
 	_state.merge(status_display_fields(character, combat))
