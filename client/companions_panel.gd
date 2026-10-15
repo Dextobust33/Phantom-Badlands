@@ -604,6 +604,7 @@ func _rebuild_team_section() -> void:
 		lbl.scroll_active = false
 		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		lbl.add_theme_font_size_override("normal_font_size", 13)
+		lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var hp_txt := "[color=#FF6666]KNOCKED OUT[/color]" if bool(c.get("ko", false)) else "HP %d / %d" % [int(c.get("combat_hp", 0)), int(c.get("combat_max_hp", 0))]
 		lbl.text = "[color=#00FFFF]%s[/color] [color=#AAAAAA](Lv %d)[/color]  [color=#FFD700]%s[/color] [color=#AAAAAA]- %s[/color]  %s" % [
 			str(c.get("name", "Companion")), int(c.get("level", 1)), CompanionRolesScript.role_label(role), CompanionRolesScript.role_blurb(role), hp_txt]
