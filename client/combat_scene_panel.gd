@@ -158,6 +158,7 @@ var _player_ascii_label: RichTextLabel
 # Companion column (below player)
 var _companion_section: Control  # v0.9.383 — VBox in standard/chrono, HBox in lufia stat-box
 var _companion_art: RichTextLabel
+const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 var _companion_name_label: RichTextLabel
 # Tiny XP + HP bars between the companion name and the ASCII art. XP bar
 # fills as the companion gains XP from kills; HP bar (Phase B1) shows the
@@ -2337,14 +2338,8 @@ func _populate_battlefield_overlay() -> void:
 			_overlay_companion_xp_text.text = "Lv %d · %d / %d" % [c_level, c_xp_cur, c_xp_needed]
 	if _overlay_companion_name and is_instance_valid(_overlay_companion_name):
 		var overlay_name := str(_companion_data.get("name", "Companion"))
-		# v0.9.508 — append aggro role tag (Label, no BBCode, plain text).
-		if client_ref != null and client_ref.has_method("_get_aggro_role_info"):
-			var ov_bonuses: Dictionary = _companion_data.get("bonuses", {})
-			var ov_aggro := int(ov_bonuses.get("aggro", 25))
-			var ov_role: Dictionary = client_ref._get_aggro_role_info(ov_aggro)
-			var ov_label := str(ov_role.get("label", ""))
-			if ov_label != "":
-				overlay_name += " [%s]" % ov_label.to_upper()
+		# The companion's ROLE (plain text, this is a Label) - the same word every other surface uses.
+		overlay_name += " [%s]" % CompanionRolesScript.role_label(CompanionRolesScript.role_of(_companion_data)).to_upper()
 		_overlay_companion_name.text = overlay_name
 
 	# Reposition (handles window resize / layout shifts).
@@ -7258,18 +7253,14 @@ func _refresh_companion() -> void:
 	#
 	# The default also used to fall back to `tier` when `sub_tier` was missing, which would print
 	# a companion's TIER in the rank position - two different quantities behind one label.
+	# ROLE + TACTICS (item 14). This used to be a label read off the aggro number alone (Tank / Fighter /
+	# Default / Evasive) - a SECOND role vocabulary that disagreed with the real one (a Wolf read "Default" here
+	# and "Striker" everywhere else). One source now: shared/companion_roles.gd.
 	var role_tag := ""
-	if client_ref != null and client_ref.has_method("_get_aggro_role_info"):
-		var bonuses_for_aggro: Dictionary = _companion_data.get("bonuses", {})
-		var aggro_value := int(bonuses_for_aggro.get("aggro", 25))
-		var role_info: Dictionary = client_ref._get_aggro_role_info(aggro_value)
-		var role_label := str(role_info.get("label", ""))
-		var role_color := str(role_info.get("color", "#FFFFFF"))
-		if role_label != "":
-			# v0.9.663 — conservatively sized: small font, title-case (not ALLCAPS),
-			# no bold, so it reads as a quiet stance label rather than shouting over
-			# the companion's name.
-			role_tag = "  [font_size=9][color=%s]%s[/color][/font_size]" % [role_color, role_label.capitalize()]
+	var _rl: String = CompanionRolesScript.role_of(_companion_data)
+	role_tag = "  [font_size=9][color=%s]%s[/color] [color=#888888]- %s[/color][/font_size]" % [
+		CompanionRolesScript.role_color(_rl), CompanionRolesScript.role_label(_rl),
+		CompanionRolesScript.tactics_label(CompanionRolesScript.tactics_of(_companion_data))]
 	_companion_name_label.text = "[color=%s]%s[/color] [color=#888888]Lv %d[/color] %s [color=#888888]%s[/color]%s" % [
 		variant_color, name, level, PowerRank.tag(comp_tier, sub_tier), variant, role_tag]
 

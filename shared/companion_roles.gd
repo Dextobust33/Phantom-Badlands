@@ -166,6 +166,28 @@ static func role_label(role: String) -> String:
 	return "All-rounder"
 
 
+static func role_color(role: String) -> String:
+	match role:
+		ROLE_TANK: return "#FFD700"
+		ROLE_HEALER: return "#7CFC9A"
+		ROLE_DPS: return "#FF7755"
+		ROLE_UTILITY: return "#87CEEB"
+	return "#FFFFFF"
+
+
+static func aggro_phrase(aggro: int) -> String:
+	"""How often a companion draws the monster's attacks, in words that are NOT role names - the role is a
+	separate thing (shared/companion_roles.gd). Aggro used to be labelled Tank / Fighter / Default / Evasive,
+	a second role vocabulary that disagreed with the real one."""
+	if aggro >= 50:
+		return "draws many attacks"
+	if aggro >= 30:
+		return "draws a fair share"
+	if aggro >= 20:
+		return "average"
+	return "rarely targeted"
+
+
 static func tactics_label(tactics: String) -> String:
 	match tactics:
 		TACTIC_ALL_OUT: return "All out"

@@ -2277,6 +2277,7 @@ const ANIMATION_DURATION: float = 0.6
 var combat_msg_queue: Array[Dictionary] = []
 # Companion HP/KO held back while combat beats are still playing, applied on queue drain.
 var _pending_companion_hp: Dictionary = {}
+var _pending_team: Array = []   # item 14: the column companions' HP, held back while a round plays out, like _pending_companion_hp
 # Authoritative per-turn regen and per-card costs, sent by the server in combat_state. The
 # client's own estimates were wrong five different ways before this; these are what the server
 # will actually charge and restore.
@@ -14288,7 +14289,14 @@ func update_action_bar():
 		if has_title:
 			fourth_action = {"label": "Title", "action_type": "local", "action_data": "title", "enabled": true}
 		elif at_high_seat:
-			fourth_action = {"label": "High Seat", "action_type": "local", "action_data": "title", "enabled": true}
+			# Sheet item 47 ("no turn-in guidance at 0,0"): standing on the seat while CARRYING a Jarl's Ring or a
+			# Crown, the button says what to do with it instead of the neutral name of the place.
+			var _carrying_title_item := false
+			for _it in character_data.get("inventory", []):
+				if _it is Dictionary and bool(_it.get("is_title_item", false)):
+					_carrying_title_item = true
+					break
+			fourth_action = {"label": "Claim Title" if _carrying_title_item else "High Seat", "action_type": "local", "action_data": "title", "enabled": true}
 		else:
 			fourth_action = {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
 		# Forge button if at Infernal Forge with Unforged Crown, or "Fire Mt" at fire mountain
@@ -29706,7 +29714,13 @@ func handle_server_message(message: Dictionary):
 				# damage / your Bone Servant is knocked out" while the card still showed
 				# HP 24/65 and no KO, "for a long while". Now the pending value is stashed and
 				# applied when the queue drains, exactly like the player bar.
-				_apply_companion_team_to_panel(state.get("companion_team", []))
+				# Held DURING playback and applied when it drains - the same rule as the companion's own bar, or a
+				# teammate's HP would drop before the log line that explains it.
+				if _coop_playback_pending():
+					_pending_team = (state.get("companion_team", []) as Array).duplicate(true) if state.get("companion_team", []) is Array else []
+				else:
+					_pending_team = []
+					_apply_companion_team_to_panel(state.get("companion_team", []))
 				if combat_scene_panel and combat_scene_panel.has_method("update_companion_combat_hp"):
 					var _comp_hp := int(state.get("companion_combat_hp", -1))
 					var _comp_max := int(state.get("companion_combat_max_hp", -1))
@@ -40283,21 +40297,7 @@ func display_companion_inspection(companion: Dictionary):
 	# attacks instead of the player. Read raw aggro from base bonuses (no
 	# variant/sub_tier mult — the combat_manager uses raw values too).
 	var raw_aggro: int = int(bonuses.get("aggro", 25))
-	var aggro_label: String
-	var aggro_color: String
-	if raw_aggro >= 50:
-		aggro_label = "Tank"
-		aggro_color = "#FFD700"
-	elif raw_aggro >= 30:
-		aggro_label = "Fighter"
-		aggro_color = "#FFA500"
-	elif raw_aggro >= 20:
-		aggro_label = "Default"
-		aggro_color = "#FFFFFF"
-	else:
-		aggro_label = "Evasive"
-		aggro_color = "#87CEEB"
-	info_lines.append("  [color=#FF8800]Aggro:[/color] [color=%s]%d%% (%s)[/color]" % [aggro_color, raw_aggro, aggro_label])
+	info_lines.append("  [color=#FF8800]Aggro:[/color] %d%% (%s)" % [raw_aggro, CompanionRolesUI.aggro_phrase(raw_aggro)])
 
 	if gather_parts.size() > 0:
 		info_lines.append("")
@@ -44389,6 +44389,7 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	# Clear any stale party column — solo fights show none; party combat re-populates
 	# it right after this call via _apply_party_members_to_panel.
 	if combat_scene_panel.has_method("set_party_members"):
+		_pending_team = []   # a held team update from the LAST fight must not land in this one
 		combat_scene_panel.set_party_members([])
 		_apply_companion_team_to_panel(combat_state.get("companion_team", []))
 	# v0.9.610 — replaced the racy `_combat_scene_was_flock_pending` per-frame
@@ -47061,6 +47062,10 @@ func _settle_combat_bars() -> void:
 		# a stale HP/KO must not survive into the NEXT fight. This is the safety property the
 		# five discard sites were reaching for, kept now that they apply instead of drop.
 		_pending_companion_hp = {}
+	if not _pending_team.is_empty():
+		var _pt: Array = _pending_team
+		_pending_team = []
+		_apply_companion_team_to_panel(_pt)
 	if not _pending_party_my_state.is_empty():
 		var _pms: Dictionary = _pending_party_my_state
 		_pending_party_my_state = {}
@@ -47157,6 +47162,10 @@ func _drain_combat_queue():
 				_pending_companion_hp = {}
 				combat_scene_panel.update_companion_combat_hp(
 					int(_pc2.get("hp", -1)), int(_pc2.get("max", -1)), bool(_pc2.get("ko", false)))
+			if not _pending_team.is_empty():
+				var _pt2: Array = _pending_team
+				_pending_team = []
+				_apply_companion_team_to_panel(_pt2)
 			var payload = _pending_victory_card_payload
 			_pending_victory_card_payload = null
 			_card_scheduled = true
@@ -52179,40 +52188,6 @@ func _short_bonus_label(key: String) -> String:
 		_: return key.capitalize()
 
 # v0.9.499 — Single source of truth for aggro role labeling. Thresholds match
-# the existing inline logic in display_companion_inspection + tooltip so all
-# three surfaces (inspect / tooltip / panel inspect) read the same.
-# Returns {label, color, short_desc} for use in display.
-func _get_aggro_role_info(aggro_value: int) -> Dictionary:
-	if aggro_value >= 50:
-		return {
-			"label": "Tank",
-			"color": "#FFD700",
-			"short_desc": "Frontliner. Draws enemy attacks — designed to soak hits so your character stays safe.",
-		}
-	elif aggro_value >= 30:
-		return {
-			"label": "Fighter",
-			"color": "#FFA500",
-			"short_desc": "Engaged participant. Targeted moderately often; balances damage output with attention drawn.",
-		}
-	elif aggro_value >= 20:
-		return {
-			"label": "Default",
-			"color": "#FFFFFF",
-			"short_desc": "Neutral engagement. Targeted at the baseline rate.",
-		}
-	else:
-		return {
-			"label": "Evasive",
-			"color": "#87CEEB",
-			"short_desc": "Backline. Rarely targeted — relies on positioning. Best paired with a tank or self.",
-		}
-
-# v0.9.499 — Authored ascended display name resolver. v0.9.496's Tier
-# Ascension Fusion bumps a companion's tier but leaves its name as the base
-# COMPANION_DATA companion_name. This helper applies a step-ladder of veteran
-# suffixes so the climb is visible: +1 tier from base = Veteran, +2 = Champion,
-# +3 = Warlord, +4 = Tyrant, +5+ = Apex. Used by all display surfaces.
 func _get_authored_companion_name(companion: Dictionary) -> String:
 	var base_name = str(companion.get("name", "Unknown"))
 	var monster_type = str(companion.get("monster_type", ""))
@@ -52300,21 +52275,7 @@ func format_companion_tooltip_bbcode(companion: Dictionary) -> String:
 
 	# Aggro role
 	var raw_aggro: int = int(bonuses.get("aggro", 25))
-	var aggro_label: String
-	var aggro_color: String
-	if raw_aggro >= 50:
-		aggro_label = "Tank"
-		aggro_color = "#FFD700"
-	elif raw_aggro >= 30:
-		aggro_label = "Fighter"
-		aggro_color = "#FFA500"
-	elif raw_aggro >= 20:
-		aggro_label = "Default"
-		aggro_color = "#FFFFFF"
-	else:
-		aggro_label = "Evasive"
-		aggro_color = "#87CEEB"
-	lines.append("[color=#FF8800]Aggro:[/color] [color=%s]%d%% %s[/color]" % [aggro_color, raw_aggro, aggro_label])
+	lines.append("[color=#FF8800]Aggro:[/color] %d%% (%s)" % [raw_aggro, CompanionRolesUI.aggro_phrase(raw_aggro)])
 
 	# Top stat bonuses (effective values, capped at first 3 non-zero)
 	var effective_mult: float = variant_mult * sub_tier_mult
@@ -52696,9 +52657,7 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	lines.append(_companion_stat("Damage", "%d - %d per turn" % [int(dmg2.min), int(dmg2.max)],
 		"damage", "#FF6666"))
 	var raw_aggro: int = int(bonuses.get("aggro", 25))
-	var role = _get_aggro_role_info(raw_aggro)
-	lines.append(_companion_stat("Aggro", "[color=%s]%s[/color]  %d%% of enemy attacks" % [
-		role.color, role.label, raw_aggro], "aggro", "#FFFFFF"))
+	lines.append(_companion_stat("Aggro", "%d%% of enemy attacks" % raw_aggro, "aggro", "#FFFFFF"))
 	var spd: int = int(bonuses.get("speed", 0))
 	if spd > 0:
 		lines.append(_companion_stat("Speed", "+%d%%" % spd, "speed", "#87CEEB"))

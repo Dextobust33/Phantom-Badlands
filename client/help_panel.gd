@@ -74,12 +74,10 @@ const HELP_TOPICS := {
 			+ "  • Color-coded rarity tag — variant tier from [color=#888888][C][/color] common up to [color=#FFD700][P][/color] prismatic.\n"
 			+ "  • [b]<letter><number>[/b] — tier and rank, e.g. [b]D5[/b]. Tiers run [b]H G F E D C B A S[/b], weakest to strongest; rank runs 1-9 within a tier. Both climb the same way, so D9 beats D1 and C1 beats D9. Hover any label for the full ladder.\n"
 			+ "  • [color=#FFAA66]Veteran/Champion/Warlord/Tyrant/Apex[/color] prefix — appears on companions ascended via Tier Ascension Fusion. The prefix tells you how many tier-steps above the base species the companion has climbed.\n\n"
-			+ "[color=#FFD700]── Aggro Roles ──[/color]\n"
-			+ "Each companion has an Aggro value (0-100%) controlling how often enemies target it instead of you. Roles:\n"
-			+ "  • [color=#FFD700]Tank[/color] (50%+) — Frontliner. Draws enemy attacks; designed to soak hits so your character stays safe.\n"
-			+ "  • [color=#FFA500]Fighter[/color] (30-49%) — Engaged participant. Balances damage with attention drawn.\n"
-			+ "  • [color=#FFFFFF]Default[/color] (20-29%) — Neutral. Targeted at the baseline rate.\n"
-			+ "  • [color=#87CEEB]Evasive[/color] (<20%) — Backline. Rarely targeted; relies on positioning. Pair with a tank or your character.\n\n"
+			+ "[color=#FFD700]── Roles ──[/color]\n"
+			+ "Every companion has a role from its species, shown on its card, in combat and on every egg: [color=#FFD700]Tank[/color] (draws the monster's hits), [color=#7CFC9A]Healer[/color] (heals the lowest ally, revives a fallen one), [color=#FF7755]Striker[/color] (a heavy strike), [color=#87CEEB]Utility[/color] (buffs you, weakens the enemy) and All-rounder (fills any gap at 60% strength). Each companion also has a Tactics button: Balanced, All out, Protect or Support.\n"
+			+ "[color=#FFD700]── Aggro ──[/color]\n"
+			+ "Separately, every companion has an Aggro value (0-100%) - how often a monster attacks it instead of you. High aggro (50%+) draws many attacks, 30-49% a fair share, 20-29% average, under 20% rarely targeted. A team of two or more soaks at most 50% of the hits together.\n\n"
 			+ "[color=#888888]Hover any card for a detail tooltip. Right-click for the full Inspect view (abilities, effective bonuses, role, art).[/color]"
 		),
 	},
