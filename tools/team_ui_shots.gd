@@ -109,6 +109,25 @@ func _run():
 	for i in 4:
 		await process_frame
 	_shot("res://claude_screenshots/team_role_swap.png")
+
+	# ---------- 4. a PAIR party: the other human + one teammate each ----------
+	sp.visible = false
+	panel.visible = true
+	var kira := {"name": "Kira", "battler_id": "2_1", "current_hp": 1400, "max_hp": 1800, "resource_cur": 50, "resource_max": 80,
+		"companion": {"name": "Ashfang", "monster_type": "Kobold", "combat_hp": 60, "max_hp": 90}}
+	var mine: Dictionary = _comp("t1", "Golem Fragment", "Iron Golem", 6, 300, 400)
+	var hers: Dictionary = _comp("t9", "Phoenix Chick", "Phoenix", 6, 90, 90)
+	var RolesUI = load("res://shared/companion_roles.gd")
+	var cards2: Array = [kira]
+	for pair in [[mine, ""], [hers, "Kira"]]:
+		var comp2: Dictionary = (pair[0] as Dictionary).duplicate(true)
+		comp2["max_hp"] = int(comp2.combat_max_hp)
+		comp2["name"] = "%s [%s]%s" % [comp2.name, RolesUI.role_label(RolesUI.role_of(comp2)), (" (%s)" % pair[1]) if pair[1] != "" else ""]
+		cards2.append({"name": "", "companion_only": true, "companion": comp2, "current_hp": 1, "max_hp": 1})
+	panel.set_party_members(cards2)
+	for i in 6:
+		await process_frame
+	_shot("res://claude_screenshots/team_party_combat.png")
 	print("done")
 	quit()
 

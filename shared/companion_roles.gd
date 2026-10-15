@@ -70,6 +70,16 @@ const TEAM_MEMBER_MULT := 0.375
 ## draws its 65). Owner 2026-10-15: the first team soaked up to 80% and
 ## drove average-gear death to ~0%, far past "2.5x output". UNMEASURED FIRST GUESS.
 const TEAM_AGGRO_CAP := 50
+
+## The right-hand column has FOUR slots. In a party it also shows every OTHER human, so what is left for
+## companions is 5 - n (n = humans in the party), split evenly between the players: 4 each alone, 1 each in a
+## pair, none each from three up (every player still keeps the companion beside them). Owner ruling 2026-10-14:
+## "the 4 right slots are shared across the party (split between players)".
+const COLUMN_SLOTS := 4
+static func party_team_cap(humans: int) -> int:
+	if humans <= 1:
+		return COLUMN_SLOTS
+	return maxi(0, (COLUMN_SLOTS + 1 - humans) / humans)
 const REVIVE_PCT := 0.25
 const REVIVE_COOLDOWN := 3
 ## After a role action the companion makes this many ordinary attacks before it can act again.

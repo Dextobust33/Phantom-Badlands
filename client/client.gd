@@ -34806,7 +34806,14 @@ func _apply_companion_team_to_panel(team) -> void:
 		return
 	if party_combat_active:
 		return
+	combat_scene_panel.set_party_members(_team_cards(team, ""))
+
+func _team_cards(team, owner_name: String) -> Array:
+	"""Party-card dictionaries for a list of column companions (solo: yours; party: any member's, tagged with
+	whose they are)."""
 	var cards: Array = []
+	if not (team is Array):
+		return cards
 	for c in team:
 		if not (c is Dictionary):
 			continue
@@ -34814,9 +34821,9 @@ func _apply_companion_team_to_panel(team) -> void:
 		var role: String = CompanionRolesUI.role_of(comp)
 		var tag: String = CompanionRolesUI.role_label(role)
 		comp["max_hp"] = int(comp.get("combat_max_hp", 1))
-		comp["name"] = "%s [%s]%s" % [str(comp.get("name", "Companion")), tag, "  (KO)" if bool(comp.get("ko", false)) else ""]
+		comp["name"] = "%s [%s]%s%s" % [str(comp.get("name", "Companion")), tag, (" (%s)" % owner_name) if owner_name != "" else "", "  (KO)" if bool(comp.get("ko", false)) else ""]
 		cards.append({"name": "", "companion_only": true, "companion": comp, "current_hp": 1, "max_hp": 1})
-	combat_scene_panel.set_party_members(cards)
+	return cards
 
 func _apply_party_members_to_panel(combat_state: Dictionary, skip_bars: bool = false) -> void:
 	"""Feed the OTHER party members (exclude self) into the combat scene panel's
@@ -34846,7 +34853,14 @@ func _apply_party_members_to_panel(combat_state: Dictionary, skip_bars: bool = f
 			update_player_hp_bar()
 	if int(combat_state.get("monster_max_hp", 0)) > 0:
 		_party_monster_max_hp = int(combat_state["monster_max_hp"])
-	combat_scene_panel.set_party_members(others, skip_bars)
+	# Item 14: every member's column companions share the column after the humans. The server has already
+	# trimmed each team to its share of the four slots (CompanionRoles.party_team_cap).
+	var team_cards: Array = []
+	for m in combat_state.get("members", []):
+		if m is Dictionary and m.get("team", []) is Array and not (m.get("team", []) as Array).is_empty():
+			var mine: bool = str(m.get("name", "")) == my_name
+			team_cards.append_array(_team_cards(m.get("team", []), "" if mine else str(m.get("name", ""))))
+	combat_scene_panel.set_party_members(others + team_cards, skip_bars)
 
 
 func _handle_party_combat_start(message: Dictionary):
@@ -35653,7 +35667,12 @@ func display_changelog():
 	#            monster level band around you is half as wide.
 	# v0.9.842 - companions get roles and a tactics focus, and you can field a TEAM of up to five.
 	# v0.9.843 - how to GET the role you want: roles are named everywhere, and a Stable fusion swaps it.
-	display_game("[color=#00FF00]v0.9.843[/color] [color=#808080](Current)[/color]")
+	# v0.9.844 - companion teams in party fights: they DO fight there; now they are shown and the slots are split.
+	display_game("[color=#00FF00]v0.9.844[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ COMPANION TEAMS IN PARTY FIGHTS.[/color] Everyone's team already fought in a party (my v0.9.842 notes wrongly said otherwise); now you can [b]see[/b] them. The right-hand column has four slots, and in a party it also holds every other player - so what is left is [b]shared out evenly[/b]: [b]a pair gets one teammate each[/b], three or more get none (everyone still keeps the companion beside them). Each card is tagged with whose it is. Leaving the party gives your whole team back; nothing is stored differently.")
+	display_game("")
+	display_game("[color=#808080]v0.9.843[/color]")
+
 	display_game("  [color=#FF8000]★ ROLE SWAP AT THE COMPANION STABLE.[/color] A new [b]Role Swap[/b] fusion takes [b]3 companions of the same tier[/b] (any species, any rank) and [b]gold[/b] (1,000 per tier) and gives you [b]1 companion of the role you pick[/b] - Tank, Healer, Striker, Utility or All-rounder - a random species of that role at that tier, at the [b]lowest rank[/b] of the three (so it is a swap, never an upgrade). The best level and border carry over.")
 	display_game("  [color=#FF8000]◆ EVERY SURFACE NAMES THE ROLE.[/color] Companion cards, eggs, the inspect screen, the Stable's lists and the [b]Dungeon Atlas's egg line[/b] now say what role a species is - so you can see which dungeon's boss egg will give you a Healer before you go.")
 	display_game("  [color=#FF8000]◆ EARLY STRIKERS.[/color] Wolf, Gnoll and Orc are Strikers, so a low-level team is not without one (the first derived Striker was tier 4).")
@@ -41586,7 +41605,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "COMPANIONS",
 			"keywords": ["companion", "companions", "soul", "gem", "gems", "pet", "wolf", "phoenix", "shadow", "wisp", "guardian", "spirit", "ember", "bonus"],
-			"content": "[color=#00FFFF]Companions[/color]\n\nA companion fights beside you, earns a share of the XP, and grows stronger as you play. One is active beside you; from level 10 you can field up to four more as a [color=#FFD700]team[/color] (slots at levels 10, 25, 50, 100). Activate, swap, add to the team and inspect from [color=#00FFFF]More → Companions[/color].\n\n[color=#FFD700]Roles:[/color] Tank draws hits, Healer heals the lowest ally and revives a fallen one, Striker lands a heavy strike, Utility buffs you and weakens the enemy, All-rounder fills any gap at 60% strength. [color=#FFD700]Tactics:[/color] each companion has a button - Balanced, All out, Protect or Support. A support action replaces that companion's attack for the turn. A team soaks at most half of a monster's hits; teammates do about 37% of the active companion's output each, and are not used in party fights yet.\n\n[color=#FFD700]Eggs:[/color] companions hatch from eggs as you walk. [color=#87CEEB]Dungeons are the main source[/color] - the boss guarantees an egg of the dungeon's type, and more turn up as floor loot. Overworld kills very rarely drop one.\n[color=#FFD700]Its card:[/color] every companion lends you a combat card. Cast it enough and it becomes a permanent card in your collection.\n[color=#FFD700]Tier & rank:[/color] a label like [color=#FFCC00]E5[/color] - a later letter is stronger, and a higher number is stronger within a letter. See the Tier & Rank page.\n[color=#FFD700]Keeping them:[/color] register a companion to your Sanctuary and it survives your character's death. At a [color=#FF80FF]Companion Stable[/color] you can deposit, withdraw and fuse companions.\n\n[color=#AAAAAA]Soul Gems[/color] are a separate, rare find from tier 7+ monsters: Wolf Spirit, Phoenix Ember, Shadow Wisp, Dragon Essence, Titan's Soul, Void Fragment, Celestial Spark. They are collected automatically and activated from the same Companions screen."
+			"content": "[color=#00FFFF]Companions[/color]\n\nA companion fights beside you, earns a share of the XP, and grows stronger as you play. One is active beside you; from level 10 you can field up to four more as a [color=#FFD700]team[/color] (slots at levels 10, 25, 50, 100). Activate, swap, add to the team and inspect from [color=#00FFFF]More → Companions[/color].\n\n[color=#FFD700]Roles:[/color] Tank draws hits, Healer heals the lowest ally and revives a fallen one, Striker lands a heavy strike, Utility buffs you and weakens the enemy, All-rounder fills any gap at 60% strength. [color=#FFD700]Tactics:[/color] each companion has a button - Balanced, All out, Protect or Support. A support action replaces that companion's attack for the turn. A team soaks at most half of a monster's hits; teammates do about 37% of the active companion's output each, and share the four column slots in a party (see Party play in the changelog).\n\n[color=#FFD700]Eggs:[/color] companions hatch from eggs as you walk. [color=#87CEEB]Dungeons are the main source[/color] - the boss guarantees an egg of the dungeon's type, and more turn up as floor loot. Overworld kills very rarely drop one.\n[color=#FFD700]Its card:[/color] every companion lends you a combat card. Cast it enough and it becomes a permanent card in your collection.\n[color=#FFD700]Tier & rank:[/color] a label like [color=#FFCC00]E5[/color] - a later letter is stronger, and a higher number is stronger within a letter. See the Tier & Rank page.\n[color=#FFD700]Keeping them:[/color] register a companion to your Sanctuary and it survives your character's death. At a [color=#FF80FF]Companion Stable[/color] you can deposit, withdraw and fuse companions.\n\n[color=#AAAAAA]Soul Gems[/color] are a separate, rare find from tier 7+ monsters: Wolf Spirit, Phoenix Ember, Shadow Wisp, Dragon Essence, Titan's Soul, Void Fragment, Celestial Spark. They are collected automatically and activated from the same Companions screen."
 		},
 		{
 			"title": "GATHERING",

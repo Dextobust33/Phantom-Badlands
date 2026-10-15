@@ -5893,6 +5893,11 @@ func _collected_index_by_id(companion_id: String) -> int:
 			return i
 	return -1
 
+## Set by a PARTY fight while one of this character's actions is being resolved (see combat_manager
+## `_party_member_view`): the most column companions this character may field in THIS fight. It only limits what
+## is returned - never what is stored - so leaving the party gives the whole team back.
+var team_cap_override: int = -1
+
 func get_companion_party_ids() -> Array:
 	"""The fielded column companions' ids, validated: each still exists, is not the active companion,
 	appears once, and fits in the slots this character has unlocked. Prunes the stored list as it reads."""
@@ -5908,6 +5913,8 @@ func get_companion_party_ids() -> Array:
 		keep.append(sid)
 	if keep.size() != companion_party.size():
 		companion_party = keep.duplicate()
+	if team_cap_override >= 0 and keep.size() > team_cap_override:
+		return keep.slice(0, team_cap_override)
 	return keep
 
 func get_companion_party() -> Array:

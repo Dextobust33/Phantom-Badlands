@@ -9224,7 +9224,7 @@ func party_use_item(leader_id: int, pid: int, item_index: int, target: String = 
 	if st.is_empty() or st.get("dead", false) or st.get("fled", false):
 		return {"success": false, "message": "You are out of the fight."}
 	var spent: bool = bool(st.get("free_item_used", false))
-	var view := _party_member_view(combat, pid)
+	var view := _party_member_view_acting(combat, pid)
 	# v0.9.740 — TARGETING. "self" / "companion" mean the user and their own companion, as
 	# before. "pid:N" and "comp:N" name a TEAMMATE or that teammate's companion: the item still
 	# leaves the user's inventory, but the effect lands on them. The recipient is passed on the
@@ -13995,7 +13995,33 @@ func _party_member_view(combat: Dictionary, pid: int) -> Dictionary:
 	view["player_hp_at_start"] = int(st.get("player_hp_at_start", combat.characters[pid].current_hp))
 	return view
 
+func _party_member_view_acting(combat: Dictionary, pid: int) -> Dictionary:
+	"""The view for a member who is ACTING (or being acted on): same as `_party_member_view`, plus this member's
+	column team trimmed to their share of the four slots until `_party_sync_view_back` lifts it. The plain view
+	stays read-only - the status strip and the server snapshot build it without ever syncing back."""
+	combat.characters[pid].team_cap_override = _party_team_cap(combat)
+	return _party_member_view(combat, pid)
+
+
+func party_team_view(combat: Dictionary, character) -> Array:
+	"""What every client should draw for this member's column companions: the derived-HP view, trimmed to the
+	member's share. Leaves nothing set."""
+	character.team_cap_override = _party_team_cap(combat)
+	var out: Array = character.get_companion_team_view()
+	character.team_cap_override = -1
+	return out
+
+
+func _party_team_cap(combat: Dictionary) -> int:
+	var humans: int = 0
+	for m in combat.get("members", []):
+		if not (int(m) in combat.get("npc_members", [])):
+			humans += 1
+	return CompanionRolesScript.party_team_cap(humans)
+
+
 func _party_sync_view_back(combat: Dictionary, pid: int, view: Dictionary) -> void:
+	combat.characters[pid].team_cap_override = -1
 	var st = combat.member_states[pid]
 	st["momentum"] = int(view.get("momentum", 0))
 	st["focus"] = int(view.get("focus", 0))
@@ -14326,7 +14352,7 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		return [_party_entry(pid,
 			"[color=#FFAA00]You slip away from the fight.[/color]",
 			"[color=#FFAA00]%s slips away from the fight.[/color]" % pname)]
-	var view := _party_member_view(combat, pid)
+	var view := _party_member_view_acting(combat, pid)
 	active_combats[pid] = view
 	# v0.9.740 — a buff aimed at a teammate. Resolve it on the CASTER (their cost, their stats,
 	# their rank-ups) and move only the RESULT afterwards; see _party_redirect_buff.
@@ -14513,7 +14539,7 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 		var st = combat.member_states.get(target_pid, {})
 		if st.get("dead", false) or st.get("fled", false):
 			continue   # dropped earlier in this same phase
-		var view := _party_member_view(combat, target_pid)
+		var view := _party_member_view_acting(combat, target_pid)
 		# Is this action aimed at the guide? Read by the life-steal branch in
 		# _process_monster_turn_inner - a monster heals nothing off a teaching device.
 		view["guide_target"] = int(target_pid) in combat.get("npc_members", [])
@@ -15482,6 +15508,7 @@ func _end_party_combat(leader_id: int, victory: bool):
 	for pid in combat.members:
 		var character = combat.characters.get(pid)
 		if character:
+			character.team_cap_override = -1
 			character.in_combat = false
 			# Restore companion boosts
 			character.clear_combat_temp_pool_bonuses()
@@ -15528,7 +15555,9 @@ func get_party_combat_state(leader_id: int) -> Dictionary:
 		var ch = combat.characters.get(pid)
 		if not ch:
 			continue
+		var _team_view: Array = party_team_view(combat, ch)
 		members_info.append({
+			"team": _team_view,
 			"peer_id": pid,
 			"name": ch.name,
 			"current_hp": max(0, ch.current_hp),
@@ -15554,6 +15583,11 @@ func get_party_combat_state(leader_id: int) -> Dictionary:
 			# was the only thing that carried the fields.
 			"status": status_display_fields(ch, _party_member_view(combat, pid))["player_status"],
 		})
+	# `_party_member_view` (used above for the status strip) trims the member's team; lift that again.
+	for _pid in combat.members:
+		var _c = combat.characters.get(_pid)
+		if _c:
+			_c.team_cap_override = -1
 	return {
 		"monster_name": monster.get("name", "Monster"),
 		"monster_level": monster.get("level", 1),

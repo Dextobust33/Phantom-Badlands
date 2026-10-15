@@ -47900,6 +47900,8 @@ func _party_combat_snapshot(leader_id: int) -> Dictionary:
 			}
 		# Field names mirror what the client's set_party_members / _display_party_combat_hp read.
 		members.append({
+			# Item 14: this member's column companions, trimmed to their share of the four slots.
+			"team": combat_mgr.party_team_view(c, ch) if ch else [],
 			"name": ch.name if ch else "?",
 			"peer_id": pid,
 			"current_hp": ch.current_hp if ch else 0,
