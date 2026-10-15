@@ -7841,6 +7841,48 @@ func _dev_run_shots() -> void:
 				display_companions()
 				await _dev_shot_capture("companions")
 				close_companions()
+			"team":
+				# Item 14: the companion TEAM as a player sees it - the Companions panel with its Team
+				# section, then a real fight with the column cards. Run it against the `team_solo` or
+				# `team_pair` scenario (they give the characters a fielded team); in a pair the leader's
+				# GM spawn opens the PARTY fight, so the same scene photographs the party layout.
+				# A pair scenario starts the second client ~6s after the first; wait until the party exists so the
+				# spawn below opens a PARTY fight rather than a solo one.
+				for _w in range(45):
+					if in_party and party_members.size() >= 2:
+						break
+					await get_tree().create_timer(1.0).timeout
+				show_companion_info()      # the REAL entry: sets companions_mode, so the visual panel (not the text list) shows
+				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_capture("team_companions")
+				close_companions()
+				send_to_server({"type": "gm_godmode"})
+				await get_tree().create_timer(0.6).timeout
+				if in_party and party_members.size() >= 2:
+					# A GM spawn opens a SOLO fight even for a party member; only an encounter the leader walks into
+					# pulls the party in (see the `partyfight` scene). Hunt until one starts.
+					for _try in range(25):
+						if in_combat:
+							break
+						_on_hunt_button()
+						await get_tree().create_timer(1.1).timeout
+					await get_tree().create_timer(2.0).timeout
+				else:
+					var _tl: int = maxi(80, int(character_data.get("level", 10)) * 3)
+					send_to_server({"type": "gm_spawnmonster", "monster_name": "Troll", "level": _tl})
+					await get_tree().create_timer(3.0).timeout
+				print("[TEAMSHOT] in_combat=%s coop=%s party=%s members=%d" % [str(in_combat), str(party_combat_active), str(in_party), party_members.size()])
+				# Solo: play a few rounds so the log and the team's lines are on screen. A PARTY fight against whatever the
+				# leader happened to meet can end in one round, so photograph it as it opens.
+				for _round in range(3 if not party_combat_active else 0):
+					if not in_combat and not party_combat_active:
+						break
+					send_to_server({"type": "combat", "command": "attack"})
+					await get_tree().create_timer(3.0).timeout
+				if in_combat or party_combat_active:
+					await _dev_shot_capture("team_combat")
+				else:
+					print("[SHOTS] WARNING: the team fight ended before the capture - nothing to photograph.")
 			"companion_art":
 				# A LIST of companion names shows nothing of what they look like. The inspect
 				# view renders each one's ASCII art, which is the actual variety on offer, so

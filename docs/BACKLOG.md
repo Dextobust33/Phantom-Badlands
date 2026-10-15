@@ -63,6 +63,11 @@ In this order, because each one's input is the one before it: **Player Phantoms 
 card power pass in Wave 1) -> **post-to-post road travel** -> **Sanctuary redesign** -> **item 12 restarts/events** (needs the
 living world) -> **THE UNBURIED** (needs the owner's permadeath decision) -> Prize Shuffle gathering/crafting, sprite scale.
 
+### OWNER DECISIONS 2026-10-15 (answers to the five below)
+2. **Under-geared characters have AT LEAST ONE companion** - DONE in the simulator (`make_char`: only `gearless`, a character created today, has none). MEASURED (death % per fight, average / under-geared, L30 / L100 / L500): shipped curve + one companion 3.0 / 2.2 / 0.0 and 3.0 / 3.0 / 0.0 (under L30/L100/L500: 3.0, 3.0->, 0.0); the held CANDIDATE curve + one companion 1.5 / 3.0 / 0.0 average, 1.1 / 3.3 / 1.1 under; + a full team 2.2 / 0.4 / 0.0 average, 0.7 / 2.2 / 0.0 under. **The candidate curve is no worse than the shipped one once everyone has a companion - the shipping condition is MET from L30 up.** STILL WORSE on the candidate: a brand-new GEARLESS character with no companion (L3 0.0 -> 1.9, L10 5.2 -> 7.8) - decide a starter companion or leave the early game on its own table before shipping. Data: `docs/balance/data/riskcurve_270_everyone_has_a_companion_*`.
+4. **Wave 3 starts with PLAYER PHANTOMS.** 5. **Permadeath is staying** - THE UNBURIED and the economy design may assume it.
+1 and 3 are being worked out WITH the owner (1: how the party slot split works; 3: the paths / dungeon-card design conversation).
+
 ### OWNER DECISIONS NEEDED (batched so they cost one conversation, not six)
 1. Is a pair getting ONE teammate each right, and is "none in a party of 3+" acceptable?
 2. Should 'under-geared' characters in the model have companions (changes whether the candidate curve can ship)?

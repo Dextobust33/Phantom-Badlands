@@ -28,21 +28,26 @@ func _init() -> void:
 	var low = sim.make_char(5, "average", "Fighter", "Human")
 	ck(low.get_companion_party_ids().is_empty(), "a level-5 character has no unlocked slots, so no team")
 	var und = sim.make_char(100, "under", "Fighter", "Human")
-	ck(und.active_companion.is_empty() and und.get_companion_party_ids().is_empty(), "an 'under' character still has no companions at all (the sim's own rule)")
+	ck(not und.active_companion.is_empty(), "an 'under' character has a companion too (owner 2026-10-15: at least one)")
+	var gl = sim.make_char(100, "gearless", "Fighter", "Human")
+	ck(gl.active_companion.is_empty(), "...but a gearless (brand-new) character has none")
 
 	# A fight really uses the team. PAIRED: each trial is the SAME character fought twice, once alone and once after
 	# the team is fielded (the first version compared two random characters and measured their gear, not the team).
 	sim._team_flag = false
 	var taken_plain := 0
 	var taken_team := 0
-	for i in 60:
+	for i in 150:
 		var ch = sim.make_char(100, "average", "Fighter", "Human")
+		# ONE monster per pair, copied for each pass: the first version drew a fresh monster per pass, and a
+		# monster's strength varies by species enough to bury the team's effect in 60 fights.
+		var mon0 = sim.make_monster(100, "normal", 1.0)
+		mon0["abilities"] = []
+		mon0["empowered_mods"] = []
 		for pass_i in 2:
 			if pass_i == 1:
 				sim._field_team(ch, 100)
-			var mon = sim.make_monster(100, "normal", 1.0)
-			mon["abilities"] = []
-			mon["empowered_mods"] = []
+			var mon: Dictionary = mon0.duplicate(true)
 			ch.current_hp = ch.get_total_max_hp()
 			ch.in_combat = false
 			sim.combat_mgr.start_combat(0, ch, mon)
@@ -56,7 +61,7 @@ func _init() -> void:
 			else:
 				taken_team += hp0 - ch.current_hp
 			sim.combat_mgr.end_combat(0, false, false)
-	ck(taken_team < taken_plain * 0.85, "the same player takes less damage once the team is fielded (%d vs %d over 60 paired fights)" % [taken_team, taken_plain])
+	ck(taken_team < taken_plain * 0.85, "the same player takes less damage once the team is fielded (%d vs %d over 150 paired fights)" % [taken_team, taken_plain])
 	print("")
 	print(("PASS - sim_models_the_companion_team" if fails == 0 else "FAIL - sim_models_the_companion_team: %d check(s)" % fails))
 	quit(1 if fails > 0 else 0)

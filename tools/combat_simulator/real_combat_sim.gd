@@ -5359,8 +5359,10 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	# (Dexto's L45 Ogre: attack 5, hp_bonus 3). The sim was handing every character a
 	# companion 2-4x stronger than the game can produce, on top of the gear inflation.
 	# Now: draw a REAL companion of the tier a player would plausibly have, from the game's
-	# own table. "under" gets none — a third of real saved characters have no companion.
-	if gear != "under" and gear != "gearless" and (not gear.begins_with("starter") or gear == "starter7c") and _companion_mode != "none":
+	# own table. Owner 2026-10-15: even an UNDER-geared character has AT LEAST ONE companion ("They should have at
+	# least one companion") - it used to get none, which made the under-geared rows the only ones a companion
+	# could not help. Only `gearless` (a character created today) has none.
+	if gear != "gearless" and (not gear.begins_with("starter") or gear == "starter7c") and _companion_mode != "none":
 		var comp_tier: int = _sim_companion_tier(level)
 		var candidates: Array = []
 		for mtype in drop_tables.COMPANION_DATA.keys():

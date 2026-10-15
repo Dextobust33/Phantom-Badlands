@@ -429,7 +429,43 @@ def feel_check(c):
     return []
 
 
+# Item 14: a companion TEAM for the screenshot harness - a Wolf beside the player and four column companions
+# (tank / healer / striker / utility), at a level whose four slots are unlocked.
+_TEAM_BONUSES = {
+    "Wolf":       ("Wolf Pup", 1, {"attack": 3, "aggro": 25}),
+    "Iron Golem": ("Golem Fragment", 6, {"defense": 15, "hp_bonus": 10, "aggro": 65}),
+    "Phoenix":    ("Phoenix Chick", 6, {"hp_regen": 5, "attack": 8, "aggro": 35}),
+    "Demon":      ("Demon Imp", 4, {"attack": 10, "aggro": 35}),
+    "Siren":      ("Siren Sprite", 2, {"mana_bonus": 5, "aggro": 12}),
+}
+
+
+def give_team(c):
+    def comp(i, species):
+        nm, tier, bon = _TEAM_BONUSES[species]
+        return {"id": "shot_%s_%d" % (species.lower().replace(" ", "_"), i), "name": nm, "monster_type": species,
+                "tier": tier, "sub_tier": 2, "level": 60, "xp": 0, "bonuses": dict(bon), "variant": "Normal",
+                "variant_color": "#FFFFFF", "variant_color2": "", "variant_pattern": "solid", "border_tier": 2,
+                "battles_fought": 0}
+    c["level"] = max(int(c.get("level", 1)), 100)
+    roster = [comp(0, "Wolf"), comp(1, "Iron Golem"), comp(2, "Phoenix"), comp(3, "Demon"), comp(4, "Siren")]
+    c["collected_companions"] = roster
+    c["active_companion"] = dict(roster[0])
+    c["companion_party"] = [r["id"] for r in roster[1:]]
+    c["current_hp"] = c.get("max_hp", 100)
+    return ["fielded: " + ", ".join(r["name"] for r in roster[1:])]
+
+
 SCENARIOS = {
+    "team_solo": dict(
+        doc="ONE player, a Wolf beside them and a four-companion team (tank/healer/striker/utility), level 100.",
+        players=1, apply=give_team),
+
+    "team_pair": dict(
+        doc="TWO players, each with the same five-companion roster, level 100 - in a pair each keeps ONE column "
+            "companion. For the party-play card layout.",
+        players=2, apply=give_team),
+
     "healthy": dict(
         doc="Everyone at full HP, standing together. The default sandbox.",
         players=2, apply=lambda c: c.update({"current_hp": c.get("max_hp", 100)})),
