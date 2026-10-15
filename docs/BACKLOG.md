@@ -1870,6 +1870,7 @@ the grouping is from reading the sheet; confirm the cause before fixing.
       in hundreds of places (corpse, registered/`house_slot`, trades, stable, death) - a data-model
       change there needs an ADAPTER (`active_companion` stays as the beside-you slot), not a rename.
       **ORDER (each slice shippable and probed on its own; do them in this order):**
+      - **S0 STATUS 2026-10-15: DRAFTED in `docs/design/companion_roles_s0.md`.** Owner decided: Healer = theme-pick ~8 species via an override table (only 3 of 53 species are natural healers); slots unlock by progression; full team ~2.5x one companion's output. Rulings 1-7 in the doc (roles, role actions, tactics, per-companion HP/KO and revive costs, aggro targeting, caps, companions help humans) await a yes. Next: S1.
       - **S0 DESIGN, no code.** Settle: (1) the five-plus ROLES (Tank, Healer, DPS, Utility, Jack-of-all-trades are
         ruled; add more only if a gap shows) and how a species gets one - DERIVE it from existing
         species data (aggro, ability tags) through one table, like `species_power`, rather than
