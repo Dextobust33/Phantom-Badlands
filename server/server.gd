@@ -9699,6 +9699,10 @@ func _encounter_is_trivial(character, monster: Dictionary, area_level: int, aske
 		return false
 	if String(character.forced_next_monster) != "":
 		return false                                  # you asked for this one
+	# A curse scroll or a Cursed Coin read before this fight is waiting for the NEXT monster. The debuffs are applied
+	# after this check, so resolving the fight here would eat them (the coin said "an elite" and a Gnoll was cut down).
+	if not character.pending_monster_debuffs.is_empty():
+		return false
 	# `is_elite` / `is_boss`, measured - there is no "role" key on a generated monster. The
 	# first version tested one and the probe caught it: an ELITE Goblin resolved itself.
 	if bool(monster.get("is_elite", false)) or bool(monster.get("is_boss", false)):
@@ -33828,7 +33832,7 @@ func _check_dungeon_spawns():
 				log_message("Despawning entered dungeon: %s (re-entry window elapsed)" % instance_id)
 
 		# Also check for very old dungeons (24+ hours) with no players
-		var age = current_time - instance.spawned_at
+		var age = current_time - int(instance.get("spawned_at", current_time))  # an instance with no stamp is new, not an error
 		if age > 86400 and instance.active_players.is_empty():  # 24 hours
 			dungeons_to_remove.append(instance_id)
 			log_message("Despawning old dungeon: %s (age: %d hours)" % [instance_id, age / 3600])
@@ -34156,7 +34160,7 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		# Owner 2026-09-13: "posts being overwhelmed with an enormous amount of dungeons spilling
 		# out monsters. The starter post alone is overwhelmed."
 		#
-		# Measured (tools/probe/dungeon_spread.gd): the world is 0.0% H-grade country and 0.1% G,
+		# Measured (tools/audit/dungeon_spread.gd): the world is 0.0% H-grade country and 0.1% G,
 		# against 44.8% A and 16.6% S - and ONE HUNDRED PERCENT of the H-grade land in the world
 		# lies within 40 tiles of a post, because posts pull the level down around them. A
 		# low-grade dungeon must stand in low-grade country to BE graded low, so it has

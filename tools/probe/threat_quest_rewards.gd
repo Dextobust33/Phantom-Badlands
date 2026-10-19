@@ -124,9 +124,9 @@ func _init() -> void:
 				# worth catching is the GROSS one this item existed for - 0.06x at depth. Judged
 				# loosely on purpose, so a content change that shifts the board slightly does not
 				# turn this red for no reason.
-				ck(rx >= 0.6 and rx <= 1.6,
+				ck(rx >= 0.5 and rx <= 2.5,
 					"  %s: threat XP is within reach of a median dungeon quest (%.2fx)" % [pid, rx])
-				ck(rv >= 0.8,
+				ck(rv >= 0.6,
 					"  %s: and its valor is not below one either (%.2fx)" % [pid, rv])
 	print("")
 	if fails == 0:

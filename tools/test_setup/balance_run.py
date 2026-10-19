@@ -192,7 +192,7 @@ def main():
     try:
         out = subprocess.run(
             [GODOT, "--headless", "--path", PROJECT,
-             "--script", "res://tools/probe/spawn_species.gd", "--", str(args.level)],
+             "--script", "res://tools/audit/spawn_species.gd", "--", str(args.level)],
             capture_output=True, text=True, timeout=120).stdout
         for line in out.splitlines():
             if line.startswith("Species actually") or line.startswith("   "):

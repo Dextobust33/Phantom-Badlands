@@ -76,7 +76,7 @@ const PLAYER_ATTEMPTS_FLEE: float = 1.0 / 44.0
 ## the living). `fleecal` solves for the rate that reproduces it. Treat this as a proxy for ALL the
 ## outs a real player has - fleeing, potions, declining the fight - not just the flee command.
 ## ⛑ CALIBRATED, 2026-09-18: the rate that reproduces the live death-per-encounter figure.
-## Measured by `tools/probe/flee_rate_matches_live.gd` at L1-10, the only band with live deaths:
+## Measured by `tools/audit/flee_rate_matches_live.gd` at L1-10, the only band with live deaths:
 ##
 ##     flee 0.00 -> 15.81% death      flee 0.85 ->  2.56%
 ##     flee 0.55 ->  8.55% death      flee 1.00 ->  0.85%      live target: <= 1.81%
@@ -3376,7 +3376,7 @@ func run_role_calibrate():
 	# bound on every one of the six passes, so the loop wrote the furthest value it can reach and
 	# stopped. The comment that used to sit here claimed "1.35^6 still spans ~6x overall, which is
 	# ample range" - it is not 6x, because `CAL_CORRECTION_EXP` is 0.75, so the real span is
-	# 1.35^(0.75*6) = 3.86x. `tools/probe/rolecal_l1_reach.gd` then measured what L1 needs: win
+	# 1.35^(0.75*6) = 3.86x. `tools/audit/rolecal_l1_reach.gd` then measured what L1 needs: win
 	# rate responds strongly to str_mult there (it falls 84-94pp over a x1 -> x64 sweep) and every
 	# role crosses its target between x3.86 and x8. The knob was right; the travel was short.
 	#

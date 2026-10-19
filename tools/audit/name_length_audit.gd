@@ -16,7 +16,7 @@ extends SceneTree
 ## rolled says nothing about frequency, and frequency is the whole question here.
 ##
 ## Run:
-##   godot --headless --path . --script res://tools/probe/name_length_audit.gd
+##   godot --headless --path . --script res://tools/audit/name_length_audit.gd
 
 const MonsterDatabaseScript := preload("res://shared/monster_database.gd")
 const DropTablesScript := preload("res://shared/drop_tables.gd")

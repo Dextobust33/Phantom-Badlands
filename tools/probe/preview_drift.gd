@@ -109,6 +109,7 @@ func _init():
 	if failures > 0:
 		print("A drifted row means the CARD IS LYING to the player again. Fix preview_ability_effect")
 		print("to match the resolve path, or convert the ability so both read the same formula.")
+	print("[PREVIEWDRIFT] PASS" if failures == 0 else "[PREVIEWDRIFT] FAIL")
 	quit(1 if failures > 0 else 0)
 
 func _make_combat(ch, mon: Dictionary, ability: String) -> Dictionary:

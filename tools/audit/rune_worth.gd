@@ -23,7 +23,7 @@ extends SceneTree
 ## would send someone to buff a constant that does not bind.
 ##
 ## Run:
-##   godot --headless --path . --script res://tools/probe/rune_worth.gd
+##   godot --headless --path . --script res://tools/audit/rune_worth.gd
 
 const CD := preload("res://shared/crafting_database.gd")
 const DT := preload("res://shared/drop_tables.gd")

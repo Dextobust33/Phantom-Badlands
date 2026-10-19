@@ -114,8 +114,8 @@ func _init() -> void:
 	var ssrc := FileAccess.get_file_as_string("res://server/server.gd")
 	ck(ssrc.count("_best_kennel_level(kennel, indices)") == 2,
 		"both house-fusion call sites pass the best input level")
-	ck(ssrc.count("_best_companion_level(companions)") == 1,
-		"and the stable-fusion one does too")
+	ck(ssrc.count("_best_companion_level(companions)") == 2,
+		"and the stable-fusion ones do too (fusion + Role Swap, v0.9.843)")
 	var dsrc := FileAccess.get_file_as_string("res://shared/drop_tables.gd")
 	ck(dsrc.find('"level": maxi(1, inherited_level),') >= 0, "fusion writes the inherited level")
 	ck(dsrc.find('"level": inherited_level,') >= 0, "ascension writes the inherited level")

@@ -15,7 +15,7 @@ extends SceneTree
 ## configuration, not that the game reaches it. The shots harness covers the second half.
 ##
 ## Run:
-##   godot --headless --path . --script res://tools/probe/map_widget_overlap.gd
+##   godot --headless --path . --script res://tools/audit/map_widget_overlap.gd
 
 func _init() -> void:
 	get_root().set_content_scale_size(Vector2i(1920, 1080))

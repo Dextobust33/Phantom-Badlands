@@ -25,7 +25,7 @@ class RecServer extends "res://server/server.gd":
 		else:
 			said.append(t)
 		super.send_to_peer(peer_id, message)
-	func send_combat_message(peer_id: int, msg: String, actor: String = "", dmg: int = 0, mhp: int = -1):
+	func send_combat_message(peer_id: int, msg: String, actor: String = "", dmg: int = 0, mhp: int = -1, taken: int = 0):
 		said.append("combat: " + msg)
 
 

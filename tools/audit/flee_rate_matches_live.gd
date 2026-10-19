@@ -24,7 +24,7 @@ extends SceneTree
 ## observed yet - the highest living character is L25-49.
 ##
 ## Run:
-##   godot --headless --path . --script res://tools/probe/flee_rate_matches_live.gd
+##   godot --headless --path . --script res://tools/audit/flee_rate_matches_live.gd
 
 const SimScript := preload("res://tools/combat_simulator/real_combat_sim.gd")
 

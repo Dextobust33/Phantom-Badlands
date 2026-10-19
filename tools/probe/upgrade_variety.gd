@@ -152,4 +152,5 @@ func _init() -> void:
 	else:
 		fails += 1
 		print("  FAIL  unclassified timing: %s" % ", ".join(unclassified_timing))
+	print("[UPGRADEVARIETY] PASS" if fails == 0 else "[UPGRADEVARIETY] FAIL")
 	quit(1 if fails > 0 else 0)

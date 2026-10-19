@@ -607,7 +607,7 @@ func get_biome_empty_color(biome: String) -> String:
 ##
 ## Owner 2026-09-13, on the measured distribution: *"Option 3 with a mild version of option 2."*
 ##
-## Measured before this existed (`tools/probe/world_grade_spread.gd`): the world was 0.02%
+## Measured before this existed (`tools/audit/world_grade_spread.gd`): the world was 0.02%
 ## H-grade country and 51% S-grade, because level was a pure function of distance and a ring's
 ## area grows with its radius - so the rim held both the highest levels and nearly all the
 ## ground. One consequence was that the ONLY low-grade land in the world sat beside posts (they
@@ -1575,7 +1575,7 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-## Report the map-render timing split on EVERY call (tools/probe/overworld_render_cost.gd).
+## Report the map-render timing split on EVERY call (tools/audit/overworld_render_cost.gd).
 ## Off in play: the 80ms spike threshold below is what production wants.
 var map_diag_always: bool = false
 
@@ -3000,7 +3000,7 @@ func _map_cells(center_x: int, center_y: int, radius: int, nearby_players: Array
 	# loop, or the final string join. Spike threshold is 80ms = the bottom of
 	# the 200-240ms move spikes we're chasing.
 	var _diag_total_us: int = _diag_setup_us + _diag_los_us + _diag_render_us + _diag_join_us
-	# `map_diag_always` reports EVERY call, for tools/probe/overworld_render_cost.gd: the split
+	# `map_diag_always` reports EVERY call, for tools/audit/overworld_render_cost.gd: the split
 	# decides how much of this cost Phase 2.95 PHASE 1 can actually move off the server.
 	if _diag_total_us >= 80000 or map_diag_always:
 		print("[MAPRENDER] total=%.1fms setup=%.1fms los=%.1fms render=%.1fms join=%.1fms (r=%d, visible=%d)" % [

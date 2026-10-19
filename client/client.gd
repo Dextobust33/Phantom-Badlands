@@ -54062,7 +54062,7 @@ func _dungeon_side_panel_text() -> String:
 	#
 	# "Letters = Monsters" RETIRED 2026-09-09. Every monster in the roster resolves to a sprite
 	# now (owner: "For monsters use the closest match we have, no glyphs for them" - verified
-	# 53/53 by `tools/probe/monster_sprite_gaps.gd`), so the only letters left on a floor are
+	# 53/53 by `tools/audit/monster_sprite_gaps.gd`), so the only letters left on a floor are
 	# this dungeon's THEME tiles. The old line pointed the player at exactly the wrong reading
 	# of them: it said a bull-rune was a goblin.
 	# The KEY is drawn under the floor on the canvas now, not here - see `_dungeon_key_text`.
@@ -55421,7 +55421,7 @@ func _dungeon_supports_floor(grid: Array, x: int, y: int) -> bool:
 	would do this job better than a rim tile borrowed from an autotile. That is a different asset,
 	not a different rule, and none of the pool packs ship one.
 
-	Three rules were compared on the SAME generated floor (`tools/probe/wall_samples.gd`), because
+	Three rules were compared on the SAME generated floor (`tools/audit/wall_samples.gd`), because
 	rendering three different floors would have compared the floors."""
 	return _dungeon_walkable_cell(grid, x, y - 1)
 

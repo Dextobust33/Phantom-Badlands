@@ -39,6 +39,8 @@ func _srv() -> Node:
 	s.combat_mgr.set_drop_tables(s.drop_tables)
 	s.combat_mgr.set_monster_database(s.monster_db)
 	s.world_system = _ws
+	s.chunk_manager = _ws.chunk_manager
+	s.persistence = _PersistenceStub.new()  # send_location reads corpses from it (stale since the map got corpse markers)
 	return s
 
 
@@ -171,6 +173,8 @@ func _init() -> void:
 	var s5 = _srv()
 	var a5 := _mk("Leader", "warrior")
 	var b5 := _mk("Mate", "mage")
+	a5.max_hp = 1000000   # a level-40 Wolf can kill a default fixture hero before the first turn (permadeath then needs a real peer)
+	a5.current_hp = a5.max_hp
 	s5.characters = {1: a5, 2: b5}
 	s5.active_parties = {1: {"leader": 1, "members": [1, 2], "formed_at": 0}}
 	s5.party_membership = {1: 1, 2: 1}
@@ -190,3 +194,9 @@ func _init() -> void:
 	else:
 		print("FAIL - %d check(s) failed" % fails)
 	quit(1 if fails > 0 else 0)
+
+
+class _PersistenceStub extends "res://server/persistence_manager.gd":
+	# The real manager, never added to the tree (so it loads nothing) and with its writer silenced.
+	func save_corpses() -> void:
+		pass

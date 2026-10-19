@@ -11,6 +11,7 @@ extends SceneTree
 const WorldSystemScript = preload("res://shared/world_system.gd")
 const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
 const Room = preload("res://client/overworld_room.gd")
+const MapPayload = preload("res://shared/map_payload.gd")
 
 var fails := 0
 func ck(ok: bool, msg: String) -> void:
@@ -54,7 +55,7 @@ func _init() -> void:
 
 	print("\n===== THE PAYLOAD NAMES IT =====")
 	var payload: Dictionary = ws.build_map_payload(road.x, road.y, 11)
-	var meaning: Array = payload.get("meaning", [])
+	var meaning: Array = MapPayload.cells(payload.get("meaning", {}))
 	# The player is always the centre cell of their own view.
 	var mrow = meaning[11]
 	var cell := String(mrow[11])

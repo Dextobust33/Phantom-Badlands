@@ -72,6 +72,9 @@ func _init() -> void:
 		else:
 			ck(ratio < 1.25, "%s %s %s: %s correctly does NOT apply (x%.2f)" % [r[0], r[1], r[2], r[3], ratio])
 	var ch = sim.make_char(40, "average", "Fighter", "Human")
+	# Baseline is measured WITH the plain replacement weapon already worn: the starting weapon carries its own
+	# HP/defense, so swapping it for the unique drops that and compared the unique against a larger baseline.
+	ch.equipped["weapon"] = {"name": "W", "type": "weapon", "level": 40}
 	var hp0: int = ch.get_total_max_hp()
 	var def0: int = ch.get_total_defense()
 	ch.equipped["weapon"] = {"name": "W", "type": "weapon", "level": 40, "unique_effect": {"max_hp_pct": 50, "defense_pct": 50}}

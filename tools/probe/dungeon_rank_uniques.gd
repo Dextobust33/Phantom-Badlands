@@ -22,6 +22,9 @@ func ck(ok: bool, msg: String) -> void:
 func _init() -> void:
 	var srv = ServerScript.new()
 	srv.monster_db = MonsterDB.new()
+	srv.quest_db = load("res://shared/quest_database.gd").new()
+	srv.quest_mgr = load("res://shared/quest_manager.gd").new()
+	srv.world_system = load("res://shared/world_system.gd").new()  # kill-quest progress asks it whether the kill was in a hotzone
 
 	print("===== THE UNIQUE CHANCE, ONE DEFINITION =====")
 	print("  %-6s %14s %14s" % ["rank", "boss kill", "ordinary kill"])

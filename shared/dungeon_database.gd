@@ -3318,7 +3318,7 @@ static func pick_weighted_type() -> String:
 
 ## How sharply a species is suppressed in country BELOW its own tier, per tier step.
 ##
-## Measured 2026-09-13 (`tools/probe/dungeon_type_vs_grade.gd`): `pick_weighted_type` reads
+## Measured 2026-09-13 (`tools/audit/dungeon_type_vs_grade.gd`): `pick_weighted_type` reads
 ## `spawn_weight` and never sees the grade, so P(type | grade) = P(type) - an H1 dungeon was
 ## exactly as likely to be a Cosmic Horror's Realm as a Goblin Caves. 7.7% of all dungeons are a
 ## D-tier species and 1.0% are A/S, AT EVERY GRADE. That is how a starter post ends up ringed

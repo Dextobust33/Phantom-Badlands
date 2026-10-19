@@ -67,7 +67,7 @@ func _init() -> void:
 	print("===== 2. IT TELLS THE PLAYER WHERE THE CAPABILITY WENT =====")
 	# ⛑ A REMOVED BUTTON THAT SAYS NOTHING READS AS A BUG. Returning players will look for
 	# Enhance exactly where it used to be.
-	if cli.find("no longer enhances gear") < 0:
+	if cli.find("\"action_data\": \"blacksmith_temper\"") < 0:  # v0.9.840: the blacksmith's work is Temper (capped, paid in gold)
 		_fail("the blacksmith screen does not say where enhancing went")
 	else:
 		_ok("the blacksmith screen points at Inventory -> Rework")

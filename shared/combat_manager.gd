@@ -301,7 +301,7 @@ const VARIABLE_COST_MIN_FRACTION: float = 0.3
 const VARIABLE_COST_TABLE: Dictionary = {
 	# ⚑ 2026-09-12 - cost_percent DOUBLED across the board. The band this table says it holds
 	# ("~6-10 casts at a full pool") was not being met: measured with
-	# tools/probe/resource_flow.gd, a full bar bought 20.5 casts at L20, 16.3 at L100 and 14.5
+	# tools/audit/resource_flow.gd, a full bar bought 20.5 casts at L20, 16.3 at L100 and 14.5
 	# at L1000 - two to three times the intended band - so the resource bar never bound. Across
 	# 630 fights not ONE turn fell back to a basic attack and the bar never dropped below half.
 	#
@@ -310,7 +310,7 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	#
 	# A UNIFORM factor on purpose: it holds every card's price relative to every other card, so
 	# this changes the economy without re-opening which card is worth casting. The early game is
-	# untouched by construction - tools/probe/cost_branch.gd measured that the FLAT ceiling still
+	# untouched by construction - tools/audit/cost_branch.gd measured that the FLAT ceiling still
 	# wins for 9 of 9 classes at L1 and 8 of 9 at L5, so cost_percent is dead weight there, which
 	# is what keeps L1 at its already-correct ~9 casts while the mid and late game tighten.
 	# #6c (2026-09-02) — cost_percent values re-solved to hold a CASTS-PER-BAR band (~6-10 at a

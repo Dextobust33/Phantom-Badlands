@@ -122,7 +122,7 @@ func _init() -> void:
 
 	_capability("THE TOWN BLACKSMITH NO LONGER UPGRADES",
 		"Enchanter's work", {
-			"the screen says where enhancing went": _cli.find("no longer enhances gear") >= 0,
+			"the screen says where enhancing went": _cli.find("\"action_data\": \"blacksmith_temper\"") >= 0,  # v0.9.840: Temper replaced the old note
 			"it points at the replacement": _cli.find("Inventory → Rework") >= 0,
 			"the dead button is gone": _cli.find("\"action_data\": \"blacksmith_upgrade\"") < 0,
 		})

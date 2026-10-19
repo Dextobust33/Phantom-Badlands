@@ -26,4 +26,5 @@ func _init():
 	print("\n--- the exact reported failure ---")
 	var k: String = MonsterArt.resolve_art_key("Venomous Orc")
 	print("  'Venomous Orc' -> '%s'  %s" % [k, "FIXED" if k != "" else "*** STILL BROKEN ***"])
+	print("[ARTRESOLVE] PASS" if fails == 0 else "[ARTRESOLVE] FAIL")
 	quit(1 if fails > 0 else 0)

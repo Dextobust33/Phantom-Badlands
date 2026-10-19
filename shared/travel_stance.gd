@@ -12,7 +12,7 @@ class_name TravelStance
 ## doubled and the resource bar started actually binding - before that "you get less back each
 ## step" cost nobody anything. The two changes hold each other up.
 ##
-## WHY IT IS NEEDED. Measured after the world reshape (tools/probe/travel_encounters.gd): a
+## WHY IT IS NEEDED. Measured after the world reshape (tools/audit/travel_encounters.gd): a
 ## player at their OWN level meets about 94 fights per 500 tiles walked - one every five steps.
 ## Removing the over-levelled encounter floor fixed crossing country beneath you; it does nothing
 ## for crossing country AT your level, which is most of a journey. A stance is the player's own
@@ -48,7 +48,7 @@ const STANCES := {
 		"regen": 0.35,
 		"vision": 0,
 		# THE REAL COST, and it replaces one that did not bite. The regen penalty was measured
-		# (tools/probe/stance_feel.gd) and found nearly free: an empty bar refills in 57 steps
+		# (tools/audit/stance_feel.gd) and found nearly free: an empty bar refills in 57 steps
 		# against a 500-step journey, so "you arrive tired" was not true - you arrived full.
 		# Moving instead of watching means the fights you DO get start badly, which costs you
 		# exactly when you are already in trouble.

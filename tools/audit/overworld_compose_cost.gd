@@ -76,7 +76,7 @@ func _init() -> void:
 			for i in range(n):
 				Room._darken(img, i % 23, (i / 23) % 23, 0.45)
 		var dms := float(Time.get_ticks_usec() - t1) / float(REPS) / 1000.0
-		print("  %3d darkened cells: %7.1f ms  (%d get_pixel + %d set_pixel)" % [
+		print("  %3d darkened cells: %7.1f ms  (%d get_pixel + %d set_pixel)" % [n, dms, n * 1024, n * 1024])
 	print("")
 	print("--- and SLICING the composed image into 529 cell textures ---")
 	# Composing is only half a redraw. The grid then has to become 529 things an [img] tag can
@@ -100,7 +100,6 @@ func _init() -> void:
 	print("  compose only            : %6.1f ms" % only)
 	print("  compose + 529 cell slices: %6.1f ms   (slicing = %.1f ms)" % [full, full - only])
 	print("  that is the REAL per-move client cost of the sprite map.")
-
-			n, dms, n * 1024, n * 1024])
-	print("\nIf the darken dominates, the fix is a rect operation, not a pixel loop.")
+	print("
+If the darken dominates, the fix is a rect operation, not a pixel loop.")
 	quit(0)

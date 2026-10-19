@@ -12,7 +12,7 @@ extends RefCounted
 # left T6 distance bands underserved.
 ## ⚑ POSTS MUST COVER THE WORLD, because the travel design now rests on them.
 ##
-## Measured 2026-09-13 (tools/probe/post_spacing.gd) on a 60-post world with a 600-tile placement
+## Measured 2026-09-13 (tools/audit/post_spacing.gd) on a 60-post world with a 600-tile placement
 ## radius: the median distance from a random spot to the nearest post was 1,353 tiles and 87% of
 ## the world lay more than 400 tiles from any post - while post-to-nearest-NEIGHBOUR was only 98.
 ## The posts were not sparse, they were CLUSTERED: all 60 inside the inner 5% of the map by area,

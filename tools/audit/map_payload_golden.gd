@@ -5,8 +5,8 @@ extends SceneTree
 ## whole promise of that step is that the player sees nothing change, so the only honest check is
 ## a byte-for-byte comparison against what the function produced before the refactor.
 ##
-##   --script res://tools/probe/map_payload_golden.gd -- capture   (before, writes the golden)
-##   --script res://tools/probe/map_payload_golden.gd              (after, compares)
+##   --script res://tools/audit/map_payload_golden.gd -- capture   (before, writes the golden)
+##   --script res://tools/audit/map_payload_golden.gd              (after, compares)
 ##
 ## ⚑ WHEN THE WORLD ITSELF CHANGES, THIS BASELINE MUST BE RE-CAPTURED DELIBERATELY, and the
 ## reason written down - otherwise a future failure means nothing, because nobody can tell a real

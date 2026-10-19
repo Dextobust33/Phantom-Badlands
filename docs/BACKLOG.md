@@ -24,17 +24,15 @@ strong a player or a monster is must land BEFORE the calibration chain, and the 
 sorted by that, not by size. Doing a power change AFTER the chain is what forced the re-runs this month.
 
 ### WAVE 0 - housekeeping that pays for itself (small; do first)
-- [ ] **OWNER LOOKS AT THE LIVE SCREENS** (only the owner can): Companions panel Team section, a solo fight with a team,
+- [ ] **OWNER LOOKS AT THE LIVE SCREENS** (only the owner can; real-client screens are on the private page https://claude.ai/artifact/5PfKkaBpe4NzGtpjJcZGMY and the harness can capture any other team scene on request): Companions panel Team section, a solo fight with a team,
       a pair fight, the Stable's Role Swap. Screenshots from the harness are in `claude_screenshots/team_*.png`; a real-client
       look is the one thing no probe can give. Anything that looks wrong is fixed before more is built on it.
-- [ ] **PRUNE THIS FILE.** It is 10,000+ lines, mostly ticked history, which is why it is hard to plan from and why items get
+- [x] **PRUNE THIS FILE** (DONE 2026-10-15: 10,939 -> ~5,400 lines, 283 closed items in `docs/archive/BACKLOG_closed_to_2026-10-15.md`, `tools/backlog_prune.py` refuses if an open item would move). It is 10,000+ lines, mostly ticked history, which is why it is hard to plan from and why items get
       re-offered. Move every ticked block to `docs/archive/` (one dated file), leave the open items and this block. Mechanical;
       `tools/backlog_audit.py` must give the same open-item list before and after.
-- [ ] **TEST DEBT** (three small things that make every later session slower): triage the 10 script-error probes;
-      `probe_run.py --repeat N`; move measurement scripts out of `tools/probe/` so "all probes pass" means something.
-- [ ] **FINISH WHAT THIS SESSION LEFT OPEN** (all small, all in the code I just touched): a role/tactics line on the
-      beside-you companion's combat card; teammates' HP bars animate with the paced playback instead of jumping; sheet item
-      47's turn-in guidance at (0,0); confirm the party slot split (pair = 1 teammate each) feels right.
+- [x] **TEST DEBT** (DONE 2026-10-18): the full run was 391 probes / 82 failures. 62 were measurement scripts with no verdict -> 58 moved to `tools/audit/` (with 4 more that need a renderer or live state), 4 given a PASS line; 17 were stale probes (Temper replaced the blacksmith text, gold pile band, Role Swap passes the level, fixtures missing persistence/world/chunk_manager, a broken file) and are fixed; 2 were REAL bugs (below). `probe_run.py --repeat N` lists flaky probes. Remaining intermittent: none found in 10 repeats.
+      REAL BUGS FOUND: (a) Cursed Coin tails / curse scrolls were eaten by an auto-resolved trivial encounter (the debuffs apply after the trivial check) - fixed in `_encounter_is_trivial`; (b) `_check_dungeon_spawns` read `instance.spawned_at` directly and errored on an instance without one - now `.get`.
+- [x] **FINISH WHAT THIS SESSION LEFT OPEN** (DONE, unreleased): role/tactics line on the beside-you card; team HP bars held during paced playback; 'Claim Title' at the High Seat (built, not clicked through on screen). The party slot split feel awaits the pair playtest below.
 - [ ] **PLAYTEST PARTY PLAY** (item 8): built and probed, never played with two humans. Owner + one other, ten minutes.
 
 ### WAVE 1 - the power inputs, designed TOGETHER, built in dependency order (no chain yet)
@@ -68,7 +66,7 @@ living world) -> **THE UNBURIED** (needs the owner's permadeath decision) -> Pri
 ### OWNER DECISIONS 2026-10-15 (answers to the five below)
 2. **Under-geared characters have AT LEAST ONE companion** - DONE in the simulator (`make_char`: only `gearless`, a character created today, has none). MEASURED, death % per fight at L30 / L100 / L500 (270 fights per cell): **average gear** - shipped curve + one companion 3.0 / 2.2 / 0.0, + full team 0.4 / 0.4 / 0.0; CANDIDATE + one companion 1.5 / 3.0 / 0.0, + full team 2.2 / 0.4 / 0.0. **under-geared** - shipped + one companion 3.0 / 3.0 / 0.0, + team 1.1 / 0.7 / 0.0; CANDIDATE + one companion 1.1 / 3.3 / 1.1, + team 0.7 / 2.2 / 0.0. **So the candidate curve is no worse than the shipped one once everyone has a companion (differences are within the ~1.7-point noise) - the shipping condition is MET from L30 up.** STILL WORSE on the candidate: a brand-new GEARLESS character with no companion (L3 0.0 -> 1.9, L10 5.2 -> 7.8) - decide a starter companion or leave the early game on its own table before shipping. Data: `docs/balance/data/riskcurve_270_everyone_has_a_companion_*`.
 4. **Wave 3 starts with PLAYER PHANTOMS.** 5. **Permadeath is staying** - THE UNBURIED and the economy design may assume it.
-1 and 3 are being worked out WITH the owner (1: how the party slot split works; 3: the paths / dungeon-card design conversation).
+1 (party slot split) was elaborated to the owner 2026-10-18 and awaits the keep-or-make-flexible answer; 3 (paths / dungeon-card design) is a back-and-forth design conversation, questions sent 2026-10-18.
 
 ### OWNER DECISIONS NEEDED (batched so they cost one conversation, not six)
 1. Is a pair getting ONE teammate each right, and is "none in a party of 3+" acceptable?
@@ -2599,7 +2597,7 @@ live defects because the arc adds more of exactly the surfaces those defects liv
    Floor Skip Charm is refunded now (`_refund_used_item`); every other refusal branch in that handler
    needs the same check (measured list below). Structural fix: validate before consuming, in one
    place, rather than a refund per branch.
-   **MEASURED 2026-09-15** (`tools/probe/equipment_audit.gd`, `tools/probe/items_in_combat.gd`; every
+   **MEASURED 2026-09-15** (`tools/audit/equipment_audit.gd`, `tools/probe/items_in_combat.gd`; every
    row executed, instrument defects found and fixed first: a no-weapon baseline, a shallow `to_dict`
    snapshot that hid every buff change, a companion modifier that was never parsed):
    - ✅ FIXED: **Enhancement Scroll on capped gear DUPLICATED the scroll** (the refusals re-inserted a
@@ -3216,7 +3214,7 @@ Render it, execute it, and make the control differ in ONE thing. See
 The owner's FULL equipment/item audit (backlog item 4), its fixes, and the tutorial faults a live
 two-player session turned up. Everything here was MEASURED by executing the real code - two probes
 were written for it (`tools/probe/items_in_combat.gd` uses every usable item three ways and fails on
-a duplication, an unread buff name or a use that eats a stack; `tools/probe/equipment_audit.gd`
+a duplication, an unread buff name or a use that eats a stack; `tools/audit/equipment_audit.gd`
 measures each gear stat against what combat actually reads) - and several first results were
 instrument defects found and corrected before anything was believed.
 
@@ -4059,7 +4057,7 @@ overworld? ... How will it effect server and client performance? How will it imp
 of supported players on the server at once?"*
 
 **RE-MEASURED 2026-09-11 against the REAL server world, and it overturns the plan below.**
-`tools/probe/overworld_render_cost.gd` builds a live chunk manager and calls the real
+`tools/audit/overworld_render_cost.gd` builds a live chunk manager and calls the real
 `generate_map_display`, then times its parts. The old figures came from a standalone timing with
 no chunk manager wired (the caveat at the end of this section said so); they were wrong about
 both the size and the CAUSE.

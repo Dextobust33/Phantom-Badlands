@@ -32,7 +32,10 @@ func _bands() -> Dictionary:
 	for i in range(a, b):
 		var m := re.search(lines[i])
 		if m != null:
-			out[m.get_string(2).strip_edges()] = int(m.get_string(1))
+			var key: String = m.get_string(2).strip_edges()
+			if key == "" and lines[i].find("roll >= 48 and roll < 56") >= 0:
+				key = "gold pile"  # its comment is upper-case, which the pattern does not capture
+			out[key] = int(m.get_string(1))
 	return out
 
 
@@ -41,7 +44,8 @@ func _init() -> void:
 	print("      roll boundaries: %s" % str(b))
 	ck(b.has("crafting material") and b.has("valor coins") and b.has("equipment"),
 		"found the material / valor / equipment bands")
-	var eq_lo: int = int(b.get("valor coins", 0))
+	# v0.9.840 put a gold pile band (roll >= 48 and < 56) between valor and equipment, so equipment starts where it ends
+	var eq_lo: int = int(b.get("gold pile", b.get("valor coins", 0)))
 	var eq_hi: int = int(b.get("equipment", 0))
 	var eq_pct: int = eq_hi - eq_lo
 	print("      equipment band: %d..%d  = %d%%" % [eq_lo, eq_hi, eq_pct])

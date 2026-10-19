@@ -35,6 +35,11 @@ func _mk(nm: String, cls: String) -> Character:
 	return c
 
 
+const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
+const WorldSystemScript = preload("res://shared/world_system.gd")
+var _ws = null
+
+
 func _srv() -> Node:
 	## A server with just enough state to run the dungeon co-op path. _ready never runs (it would
 	## open a TCP port), so combat_mgr is constructed here exactly as server.gd line 741 does.
@@ -46,6 +51,19 @@ func _srv() -> Node:
 	s.quest_mgr = QuestMgr.new()
 	s.combat_mgr.set_drop_tables(s.drop_tables)
 	s.combat_mgr.set_monster_database(s.monster_db)
+	# send_location_update reads the world (biome, hotspot, nearest post), so give it a real one - built once.
+	if _ws == null:
+		var cm = ChunkManagerScript.new()
+		get_root().add_child(cm)
+		cm.load_world_seed()
+		cm.load_npc_posts()
+		_ws = WorldSystemScript.new()
+		get_root().add_child(_ws)
+		_ws.chunk_manager = cm
+		cm.terrain_generator = _ws
+	s.world_system = _ws
+	s.persistence = _PersistenceStub.new()
+	s.chunk_manager = _ws.chunk_manager
 	return s
 
 
@@ -61,6 +79,16 @@ func _party(s, lead_floor: int, mate_floor: int, mate_inst: String, mate_in_dung
 	b.current_dungeon_id = mate_inst
 	b.in_dungeon = mate_in_dungeon
 	s.characters = {1: a, 2: b}
+	# The instance has to EXIST: _send_dungeon_state now sends anyone flagged inside a place that does not back to the overworld.
+	s.active_dungeons = {"inst_A": {"dungeon_type": "goblin_caves", "dungeon_level": 10, "sub_tier": 1,
+									"active_players": [1, 2], "spawned_at": 0}}
+	var g: Array = []
+	for _y in range(7):
+		var row: Array = []
+		for _x in range(7):
+			row.append(DungeonDB.TileType.EMPTY)
+		g.append(row)
+	s.dungeon_floors = {"inst_A": [g]}
 	s.active_parties = {1: {"leader": 1, "members": [1, 2], "formed_at": 0}}
 	s.party_membership = {1: 1, 2: 1}
 	return [a, b]
@@ -136,8 +164,8 @@ func _init() -> void:
 	var s6 = _srv()
 	var pc6 := _party(s6, 0, 0, "inst_A")
 	s6.dungeon_monsters = {"inst_A": {0: [
-		{"id": 77, "alive": true, "x": 3, "y": 3, "is_boss": false},
-		{"id": 78, "alive": true, "x": 9, "y": 9, "is_boss": false},
+		{"id": 77, "monster_type": "Goblin", "level": 10, "alive": true, "alert": false, "display_char": "g", "display_color": "#FFFFFF", "x": 3, "y": 3, "is_boss": false},
+		{"id": 78, "monster_type": "Goblin", "level": 10, "alive": true, "alert": false, "display_char": "g", "display_color": "#FFFFFF", "x": 9, "y": 9, "is_boss": false},
 	]}}
 	var ctx := {"is_boss_fight": false, "dungeon_monster_id": 77,
 				"dungeon_instance_id": "inst_A", "dungeon_floor": 0, "all_members": [1, 2]}
@@ -158,7 +186,7 @@ func _init() -> void:
 	print("----- a fallen teammate gets no floor progress -----")
 	var s7 = _srv()
 	var pc7 := _party(s7, 0, 0, "inst_A")
-	s7.dungeon_monsters = {"inst_A": {0: [{"id": 77, "alive": true, "x": 1, "y": 1, "is_boss": false}]}}
+	s7.dungeon_monsters = {"inst_A": {0: [{"id": 77, "monster_type": "Goblin", "level": 10, "alive": true, "alert": false, "display_char": "g", "display_color": "#FFFFFF", "x": 1, "y": 1, "is_boss": false}]}}
 	var dead_before := int(pc7[1].dungeon_encounters_cleared)
 	s7._party_dungeon_after_combat(1, [1], ctx, true)   # survivors = leader only
 	ck(int(pc7[1].dungeon_encounters_cleared) == dead_before,
@@ -168,7 +196,7 @@ func _init() -> void:
 	print("----- a party WIPE kills nothing on the grid -----")
 	var s8 = _srv()
 	var _pc8 := _party(s8, 0, 0, "inst_A")
-	s8.dungeon_monsters = {"inst_A": {0: [{"id": 77, "alive": true, "x": 1, "y": 1, "is_boss": false}]}}
+	s8.dungeon_monsters = {"inst_A": {0: [{"id": 77, "monster_type": "Goblin", "level": 10, "alive": true, "alert": false, "display_char": "g", "display_color": "#FFFFFF", "x": 1, "y": 1, "is_boss": false}]}}
 	s8._party_dungeon_after_combat(1, [], ctx, false)
 	ck(bool(s8.dungeon_monsters["inst_A"][0][0].alive),
 		"the monster that beat the party is still standing")
@@ -188,7 +216,7 @@ func _init() -> void:
 									 "sub_tier": 1, "active_players": [1, 2]}}
 	# dungeon_floors left empty on purpose: _send_dungeon_state returns early without it, so the
 	# starter runs to the branch under test without needing a generated grid.
-	var entity := {"id": 77, "monster_type": "Goblin", "level": 10, "alive": true,
+	var entity := {"id": 77, "monster_type": "Goblin", "level": 10, "alive": true, "alert": false, "display_char": "g", "display_color": "#FFFFFF",
 				   "x": 5, "y": 4, "is_boss": false, "boss_data": {}, "is_elite": false}
 	s9._start_dungeon_monster_combat(1, entity)
 	ck(s9.combat_mgr.active_party_combats.has(1),
@@ -235,7 +263,7 @@ func _init() -> void:
 			row.append(DungeonDB.TileType.EMPTY)
 		grid.append(row)
 	s11.dungeon_floors = {"inst_A": [grid]}
-	s11.dungeon_monsters = {"inst_A": {0: [{"id": 99, "alive": true, "x": 3, "y": 4, "is_boss": true}]}}
+	s11.dungeon_monsters = {"inst_A": {0: [{"id": 99, "monster_type": "Goblin", "level": 10, "alive": true, "alert": false, "display_char": "g", "display_color": "#FFFFFF", "x": 3, "y": 4, "is_boss": true}]}}
 	var bctx := {"is_boss_fight": true, "dungeon_monster_id": 99,
 				 "dungeon_instance_id": "inst_A", "dungeon_floor": 0, "all_members": [1, 2]}
 	s11._party_dungeon_after_combat(1, [1, 2], bctx, true)
@@ -261,7 +289,7 @@ func _init() -> void:
 			row2.append(DungeonDB.TileType.EMPTY)
 		grid2.append(row2)
 	s12.dungeon_floors = {"inst_A": [grid2]}
-	s12.dungeon_monsters = {"inst_A": {0: [{"id": 99, "alive": true, "x": 3, "y": 4, "is_boss": true}]}}
+	s12.dungeon_monsters = {"inst_A": {0: [{"id": 99, "monster_type": "Goblin", "level": 10, "alive": true, "alert": false, "display_char": "g", "display_color": "#FFFFFF", "x": 3, "y": 4, "is_boss": true}]}}
 	# NOTE: this one prints a SCRIPT ERROR from send_location_update, which wants a world_system
 	# the harness has no cheap way to build. It fires AFTER the exit, so the assertion below is
 	# still meaningful - but do not read that line as a failure.
@@ -293,7 +321,7 @@ func _init() -> void:
 	sg1.active_dungeons = {"starter1": {"dungeon_type": "goblin_caves", "dungeon_level": 2,
 										"sub_tier": 1, "tier": 1, "starter": true,
 										"active_players": [1], "modifiers": []}}
-	var ent2 := {"id": 5, "monster_type": "Goblin", "level": 2, "alive": true,
+	var ent2 := {"id": 5, "monster_type": "Goblin", "level": 2, "alive": true, "alert": false, "display_char": "g", "display_color": "#FFFFFF",
 				 "x": 5, "y": 4, "is_boss": false, "boss_data": {}, "is_elite": false}
 	sg1._start_dungeon_monster_combat(1, ent2)
 	ck(sg1.combat_mgr.active_party_combats.has(1),
@@ -340,3 +368,9 @@ func _init() -> void:
 	else:
 		print("FAIL - %d check(s) failed" % fails)
 	quit(1 if fails > 0 else 0)
+
+
+class _PersistenceStub extends "res://server/persistence_manager.gd":
+	# The real manager, never added to the tree (so it loads nothing) and with its writer silenced.
+	func save_corpses() -> void:
+		pass

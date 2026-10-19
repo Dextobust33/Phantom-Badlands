@@ -17,7 +17,7 @@ extends SceneTree
 ## the comparison is explicit rather than remembered.
 ##
 ## Run:
-##   godot --headless --path . --script res://tools/probe/reference_player_is_a_real_player.gd
+##   godot --headless --path . --script res://tools/audit/reference_player_is_a_real_player.gd
 
 const SimScript := preload("res://tools/combat_simulator/real_combat_sim.gd")
 

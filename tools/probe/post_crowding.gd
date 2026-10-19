@@ -4,7 +4,7 @@ extends SceneTree
 ## Owner 2026-09-13: *"posts being overwhelmed with an enormous amount of dungeons spilling out
 ## monsters. The starter post alone is overwhelmed."*
 ##
-## Measured cause (`tools/probe/dungeon_spread.gd`): the world is 0.0% H-grade country, 44.8% A
+## Measured cause (`tools/audit/dungeon_spread.gd`): the world is 0.0% H-grade country, 44.8% A
 ## and 16.6% S, and 100% of its H-grade land is within 40 tiles of a post - so a low-grade
 ## dungeon, which must stand in low-grade country to BE graded low, has one legal address: a
 ## post's doorstep.

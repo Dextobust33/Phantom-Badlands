@@ -14,7 +14,7 @@ extends SceneTree
 ## one potion from the next at the moment you are choosing under pressure.
 ##
 ## Run:
-##   godot --headless --path . --script res://tools/probe/consumable_clarity.gd
+##   godot --headless --path . --script res://tools/audit/consumable_clarity.gd
 
 const CD := preload("res://shared/crafting_database.gd")
 

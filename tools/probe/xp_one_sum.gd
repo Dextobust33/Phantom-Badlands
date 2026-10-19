@@ -42,6 +42,8 @@ func _srv() -> Node:
 	s.combat_mgr.set_drop_tables(s.drop_tables)
 	s.combat_mgr.set_monster_database(s.monster_db)
 	s.world_system = _ws
+	s.chunk_manager = _ws.chunk_manager
+	s.persistence = _PersistenceStub.new()  # send_location reads corpses from it (stale since the map got corpse markers)
 	return s
 
 
@@ -147,3 +149,9 @@ func _init() -> void:
 
 	print("RESULT: %s (%d failing)" % ["PASS" if fails == 0 else "FAIL", fails])
 	quit(0 if fails == 0 else 1)
+
+
+class _PersistenceStub extends "res://server/persistence_manager.gd":
+	# The real manager, never added to the tree (so it loads nothing) and with its writer silenced.
+	func save_corpses() -> void:
+		pass

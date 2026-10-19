@@ -24,6 +24,7 @@ Usage:
     python tools/probe_run.py --all              # all of tools/probe/*.gd (long - run it in the background)
     python tools/probe_run.py name1 name2        # specific probes (no .gd)
     python tools/probe_run.py --all --report out.txt
+    python tools/probe_run.py --repeat 5 name1 name2   # run each N times; names that pass only SOMETIMES are listed as FLAKY
 Exit status is non-zero if ANY probe failed any of the four tests.
 """
 import os
@@ -198,6 +199,11 @@ def main(argv):
         i = argv.index("--report")
         report = argv[i + 1]
         argv = argv[:i] + argv[i + 2:]
+    repeat = 1
+    if "--repeat" in argv:
+        i = argv.index("--repeat")
+        repeat = max(1, int(argv[i + 1]))
+        argv = argv[:i] + argv[i + 2:]
     if "--smoke" in argv:
         names = list(SMOKE)
     elif "--all" in argv:
@@ -211,8 +217,15 @@ def main(argv):
     allowed = load_allowlist()
     bad = []
     lines = []
+    # A probe that passes four times in five is not a pass, it is a coin: --repeat runs every name N times
+    # and names the ones that disagree with themselves. (A single run cannot tell this from a real failure.)
+    tally = {}
+    base_names = list(names)
+    names = [nm for nm in base_names for _ in range(repeat)]
     for n, name in enumerate(names, 1):
         r = run_probe(name, allowed)
+        t = tally.setdefault(name, [0, 0])
+        t[0 if r["ok"] else 1] += 1
         tag = "ok  " if r["ok"] else "FAIL"
         row = "[%d/%d] %s %-60s %5.1fs" % (n, len(names), tag, r["name"], r["secs"])
         print(row, flush=True)
@@ -228,6 +241,11 @@ def main(argv):
     summary = chr(10) + "%d probe(s) run, %d failed%s" % (len(names), len(bad), (": " + names_failed) if bad else "")
     print(summary)
     lines.append(summary)
+    if repeat > 1:
+        flaky = ["%s %d/%d failed" % (k, v[1], v[0] + v[1]) for k, v in tally.items() if v[0] and v[1]]
+        line = chr(10) + ("FLAKY (passes only sometimes): " + "; ".join(flaky)) if flaky else chr(10) + "no flaky probes in %d run(s) each" % repeat
+        print(line)
+        lines.append(line)
     if report:
         with open(report, "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")

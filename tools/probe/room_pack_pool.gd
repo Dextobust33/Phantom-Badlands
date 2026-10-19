@@ -78,4 +78,5 @@ func _init() -> void:
 	ck(seen.size() >= Tiles.ROOM_PACKS.size(),
 		"%d distinct floor tiles reached across 90 room ids, pool is %d packs" % [
 			seen.size(), Tiles.ROOM_PACKS.size()])
+	print("[ROOMPACKS] PASS" if fails == 0 else "[ROOMPACKS] FAIL")
 	quit(0 if fails == 0 else 1)

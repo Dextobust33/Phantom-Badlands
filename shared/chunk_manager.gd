@@ -78,7 +78,7 @@ func world_to_local(world_x: int, world_y: int) -> Vector2i:
 ## so a generated tile never changes and can be kept. MODIFIED tiles are NOT in here - they are
 ## checked first, straight out of the chunk - so a player's edit can never be masked by this.
 ##
-## 2026-09-11, measured (tools/probe/overworld_render_cost.gd): one `get_tile` cost 21us and a
+## 2026-09-11, measured (tools/audit/overworld_render_cost.gd): one `get_tile` cost 21us and a
 ## single player MOVE made ~1,390 of them (529 for the map, 861 for the minimap) - 29ms of the
 ## 46ms the server spent on one location update. Two causes, both fixed here:
 ##   1. every call re-ran `generate_tile` for the same tile;
