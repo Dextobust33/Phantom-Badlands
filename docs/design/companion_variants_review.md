@@ -1,13 +1,13 @@
 # Companion variant review list
 
-All 111 variants, grouped by rarity (1 = rarest). `mult` is the STAT multiplier from
+All 119 variants, grouped by rarity (1 = rarest). `mult` is the STAT multiplier from
 `VARIANT_STAT_MULTIPLIERS`; **1.00x means the variant is cosmetic only**.
 
 Owner is reviewing for two things: whether the RARITY matches how good the variant
 LOOKS, and whether the NAME conveys its rarity.
 
 
-## Rarity 1  (10 variants)
+## Rarity 1  (18 variants)
 
 | variant | mult | pattern | colour | colour2 |
 |---|---|---|---|---|
@@ -21,6 +21,14 @@ LOOKS, and whether the NAME conveys its rarity.
 | Void | **x1.50** | gradient_down | `#4B0082` | `#000000` |
 | Cosmic | **x1.50** | diagonal_down | `#FFFFFF` | `#4B0082` |
 | Divine | x1.00 *(looks only)* | middle | `#FFFFFF` | `#FFD700` |
+| Eclipsed | x1.00 *(looks only)* | radial | `#1A1A2E` | `#FF6B00` |
+| Wyrmgold | x1.00 *(looks only)* | scales | `#FFD700` | `#8B0000` |
+| Abyssal | x1.00 *(looks only)* | gradient_down | `#00121F` | `#00E5FF` |
+| Emberwake | x1.00 *(looks only)* | gradient_up | `#FF3300` | `#FFD700` |
+| Hoarfrost | x1.00 *(looks only)* | edges | `#E0FFFF` | `#0077BE` |
+| Nightbloom | x1.00 *(looks only)* | diagonal_up | `#2E003E` | `#FF5FA2` |
+| Stormglass | x1.00 *(looks only)* | striped | `#3A3A5C` | `#7DF9FF` |
+| Gravebloom | x1.00 *(looks only)* | middle | `#0B0B0B` | `#7CFC00` |
 
 ## Rarity 2  (37 variants)
 
