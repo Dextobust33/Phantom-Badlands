@@ -1211,6 +1211,7 @@ func _notification(what: int) -> void:
 	# for hard kills where this doesn't fire, e.g. headless SIGTERM).
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_save_dungeon_state()
+		persistence.flush_valor_ledger()
 
 func load_balance_config():
 	"""Load balance configuration from JSON file. Falls back to defaults if missing."""
@@ -2890,7 +2891,7 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	# for a save older than the changeover - which is what it was written for.
 	if character.gold > 0:
 		var converted_valor = maxi(1, character.gold / GOLD_TO_VALOR)
-		persistence.add_valor(account_id, converted_valor)
+		persistence.add_valor(account_id, converted_valor, "handle_select_character")
 		log_message("Gold migration: %s converted %d gold → %d Valor" % [char_name, character.gold, converted_valor])
 		character.gold = 0
 		persistence.save_character(account_id, character)
@@ -3405,7 +3406,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	character.house_bonuses = house_bonuses
 	# Apply starting valor bonus
 	if house_bonuses.get("starting_valor", 0) > 0:
-		persistence.add_valor(account_id, house_bonuses.starting_valor)
+		persistence.add_valor(account_id, house_bonuses.starting_valor, "handle_create_character")
 
 	# Audit #13 Slice 1 — Companion Sanctum starter stones. Each level of
 	# the Sanctum upgrade injects one Home Stone (Companion) into the
@@ -4644,8 +4645,8 @@ func _resolve_duel(challenger_peer: int, target_peer: int, stakes: String, chall
 			var loser_wager_at_resolution = int(floor(float(loser_current_valor) * DUEL_STAKES_VALOR_PCT))
 			actual_payout = min(loser_wager_at_resolution, loser_current_valor)
 			if actual_payout > 0:
-				persistence.spend_valor(loser_account_id, actual_payout)
-				persistence.add_valor(winner_account_id, actual_payout)
+				persistence.spend_valor(loser_account_id, actual_payout, "_resolve_duel")
+				persistence.add_valor(winner_account_id, actual_payout, "_resolve_duel")
 	# Build the announcement message. Both players see the same lines.
 	var stakes_summary = ""
 	if stakes == "valor_10" and actual_payout > 0:
@@ -5055,7 +5056,7 @@ func _apply_apex_ko(winner_peer: int, loser_peer: int) -> void:
 		var loser_valor = persistence.get_valor(loser_account_id)
 		sack_valor = int(floor(float(loser_valor) * PVP_KO_VALOR_PCT))
 		if sack_valor > 0:
-			persistence.spend_valor(loser_account_id, sack_valor)
+			persistence.spend_valor(loser_account_id, sack_valor, "_apply_apex_ko")
 	# 2) 1 random equipped item — pick a random non-empty slot, push to sack.
 	var equipped_slots = ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
 	var equipped_with_items: Array = []
@@ -5193,7 +5194,7 @@ func _claim_pvp_sack(claimant_peer: int, x: int, y: int) -> bool:
 	# Valor.
 	var sack_valor = int(sack.get("valor", 0))
 	if sack_valor > 0 and claimant_account_id != "":
-		persistence.add_valor(claimant_account_id, sack_valor)
+		persistence.add_valor(claimant_account_id, sack_valor, "_claim_pvp_sack")
 		claimed_parts.append("[color=#FFD700]%d valor[/color]" % sack_valor)
 	# Items — push to inventory respecting cap.
 	var sack_items: Array = sack.get("items", [])
@@ -5311,7 +5312,7 @@ func handle_bounty_post(peer_id: int, message: Dictionary) -> void:
 	if poster_valor < amount:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Not enough valor — you have %d, bounty costs %d.[/color]" % [poster_valor, amount]})
 		return
-	if not persistence.spend_valor(poster_account_id, amount):
+	if not persistence.spend_valor(poster_account_id, amount, "handle_bounty_post"):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Failed to lock bounty valor.[/color]"})
 		return
 	# Add the bounty entry.
@@ -5430,7 +5431,7 @@ func handle_bounty_cancel(peer_id: int, message: Dictionary) -> void:
 		active_bounties_on_players.erase(key)
 	else:
 		active_bounties_on_players[key] = remaining
-	persistence.add_valor(poster_account_id, refund_total)
+	persistence.add_valor(poster_account_id, refund_total, "handle_bounty_cancel")
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#88FF88]💰 Bounty canceled — %d valor refunded.[/color]" % refund_total
@@ -5456,7 +5457,7 @@ func _payout_bounties_on_ko(killer_peer: int, victim_name: String) -> int:
 	var killer_account_id = String(peers.get(killer_peer, {}).get("account_id", ""))
 	if killer_account_id == "":
 		return 0
-	persistence.add_valor(killer_account_id, total)
+	persistence.add_valor(killer_account_id, total, "_payout_bounties_on_ko")
 	active_bounties_on_players.erase(key)
 	return total
 
@@ -6784,7 +6785,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			if _card_valor > 0:
 				var _tv_account = peers.get(peer_id, {}).get("account_id", "")
 				if _tv_account != "":
-					persistence.add_valor(_tv_account, _card_valor)
+					persistence.add_valor(_tv_account, _card_valor, "handle_combat_command")
 					send_combat_message(peer_id, "[color=#FFD700]★ Tribute: +%d Valor![/color]" % _card_valor)
 
 			# Path milestones (ARPG pillar 3) — one-time feats, +1 Path point
@@ -9657,6 +9658,7 @@ func _exit_tree():
 	print("Server shutting down...")
 	# Save all characters before exit
 	save_all_active_characters()
+	persistence.flush_valor_ledger()
 	server.stop()
 
 ## ⛑ A LEVEL GAP, NOT A RATIO - and the first version was unreachable because of it.
@@ -10415,7 +10417,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 	if choice == "repair_all":
 		var valor_cost = encounter.repair_all_cost
 		var account_id = peers[peer_id].account_id
-		if not persistence.spend_valor(account_id, valor_cost):
+		if not persistence.spend_valor(account_id, valor_cost, "handle_blacksmith_choice"):
 			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
 			return
 
@@ -10449,7 +10451,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 
 		var valor_cost = item_data.cost
 		var account_id = peers[peer_id].account_id
-		if not persistence.spend_valor(account_id, valor_cost):
+		if not persistence.spend_valor(account_id, valor_cost, "handle_blacksmith_choice"):
 			send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
 			return
 
@@ -10576,7 +10578,9 @@ func _apply_temper(peer_id: int, slot: String) -> void:
 		return
 	var lvl: int = int(item.get("level", 1))
 	var cost: int = GoldEconomyScript.temper_cost(lvl, tier + 1)
-	if not character.spend_gold(cost):
+	if character.spend_gold(cost):
+		_note_gold("out", "temper", cost)
+	else:
 		_send_temper_list(peer_id, "[color=#FF6666]'Not enough gold. That is %s and you carry %s.'[/color]" % [_fmt_int(cost), _fmt_int(int(character.gold_purse))])
 		return
 	var gain: Dictionary = GoldEconomyScript.temper_gain(slot, lvl)
@@ -10759,7 +10763,7 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 
 	var valor_cost = cost  # Already in valor
 	var healer_account_id = peers[peer_id].account_id
-	if not persistence.spend_valor(healer_account_id, valor_cost):
+	if not persistence.spend_valor(healer_account_id, valor_cost, "handle_healer_choice"):
 		send_to_peer(peer_id, {"type": "error", "message": "Not enough valor! (Need %d)" % valor_cost})
 		send_to_peer(peer_id, {"type": "healer_done"})
 		return
@@ -11600,7 +11604,7 @@ func _open_treasure_chest(peer_id: int, item_index: int):
 	# it used to be worth once converted - and nothing anywhere mints gold any more.
 	var chest_valor: int = maxi(1, total_gold / GOLD_TO_VALOR) if total_gold > 0 else 0
 	if chest_valor > 0 and peers.has(peer_id):
-		persistence.add_valor(peers[peer_id].account_id, chest_valor)
+		persistence.add_valor(peers[peer_id].account_id, chest_valor, "_open_treasure_chest")
 	for cd in compass_drops:
 		character.add_item(cd)
 
@@ -12762,7 +12766,7 @@ func handle_buy_home_stone(peer_id: int, message: Dictionary) -> void:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6644]Vendor stock failed — try again.[/color]"})
 		return
 
-	persistence.add_valor(account_id, -price)
+	persistence.spend_valor(account_id, price, "handle_buy_home_stone")
 	character.inventory.append(stone)
 	character.npc_stones_bought[stone_type] = owned + 1
 
@@ -12793,12 +12797,19 @@ func handle_show_stats(peer_id: int) -> void:
 		lines.append("[color=#888888]No unspent stat points. Level up to earn (+1 per level).[/color]")
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
+func _note_gold(direction: String, reason: String, amount: int) -> void:
+	"""Gold telemetry (see persistence.note_gold). Tolerates a fixture with no persistence."""
+	if persistence != null:
+		persistence.note_gold(direction, reason, amount)
+
 func _award_gold(peer_id: int, amount: int, reason: String = "", quiet: bool = false) -> int:
 	"""THE funnel every gold income goes through: credit the purse, tell the player. One place, so
 	no source can forget to announce itself or to credit the right field."""
 	if amount <= 0 or not characters.has(peer_id):
 		return 0
 	var added: int = characters[peer_id].add_gold(amount)
+	if added > 0:
+		_note_gold("in", reason if reason != "" else "kill", added)
 	if added > 0 and not quiet:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFB347]+%s gold%s[/color]" % [_fmt_int(added), (" (%s)" % reason) if reason != "" and reason != "kill" else ""]})
 	return added
@@ -15494,13 +15505,13 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 			result_msg = "[color=#FFD700]★★★ TRIPLE SIXES! JACKPOT! ★★★[/color]\n[color=%s]You won: %s![/color]" % [rarity_color, items[0].get("name", "Unknown")]
 		else:
 			var winnings = bet_amount * 10
-			persistence.add_valor(gamble_account_id, winnings - bet_amount)
+			persistence.add_valor(gamble_account_id, winnings - bet_amount, "handle_merchant_gamble")
 			result_msg = "[color=#FFD700]★★★ TRIPLE SIXES! You win %d valor! ★★★[/color]" % winnings
 		won = true
 	# Check for any triple (other than 6s) - nice bonus (~2.3% chance)
 	elif player_dice[0] == player_dice[1] and player_dice[1] == player_dice[2]:
 		var winnings = bet_amount * 3
-		persistence.add_valor(gamble_account_id, winnings - bet_amount)
+		persistence.add_valor(gamble_account_id, winnings - bet_amount, "handle_merchant_gamble")
 		result_msg = "[color=#FFD700]TRIPLE %ds! Lucky roll! You win %d valor![/color]" % [player_dice[0], winnings]
 		won = true
 	else:
@@ -15509,39 +15520,39 @@ func handle_merchant_gamble(peer_id: int, message: Dictionary):
 
 		if diff < -6:
 			# Crushing loss - lose full bet
-			persistence.spend_valor(gamble_account_id, bet_amount)
+			persistence.spend_valor(gamble_account_id, bet_amount, "handle_merchant_gamble")
 			result_msg = "[color=#FF4444]Crushing defeat! You lose %d valor.[/color]" % bet_amount
 		elif diff < -2:
 			# Bad loss - lose 75% bet
 			var loss = int(bet_amount * 0.75)
-			persistence.spend_valor(gamble_account_id, loss)
+			persistence.spend_valor(gamble_account_id, loss, "handle_merchant_gamble")
 			result_msg = "[color=#FF4444]The merchant outrolls you! You lose %d valor.[/color]" % loss
 		elif diff < 0:
 			# Small loss - lose half bet
 			var loss = int(bet_amount * 0.5)
-			persistence.spend_valor(gamble_account_id, loss)
+			persistence.spend_valor(gamble_account_id, loss, "handle_merchant_gamble")
 			result_msg = "[color=#FF4444]Close, but not enough. You lose %d valor.[/color]" % loss
 		elif diff == 0:
 			# Near-tie - lose small ante (house always wins ties)
 			var loss = int(bet_amount * 0.25)
-			persistence.spend_valor(gamble_account_id, loss)
+			persistence.spend_valor(gamble_account_id, loss, "handle_merchant_gamble")
 			result_msg = "[color=#FFAA00]Too close to call... house takes a small cut: %d valor.[/color]" % loss
 		elif diff <= 3:
 			# Small win - win 1.25x (net +25%)
 			var winnings = int(bet_amount * 1.25)
-			persistence.add_valor(gamble_account_id, winnings - bet_amount)
+			persistence.add_valor(gamble_account_id, winnings - bet_amount, "handle_merchant_gamble")
 			result_msg = "[color=#00FF00]Victory! You win %d valor![/color]" % winnings
 			won = true
 		elif diff <= 6:
 			# Good win - win 1.75x
 			var winnings = int(bet_amount * 1.75)
-			persistence.add_valor(gamble_account_id, winnings - bet_amount)
+			persistence.add_valor(gamble_account_id, winnings - bet_amount, "handle_merchant_gamble")
 			result_msg = "[color=#00FF00]Strong roll! You win %d valor![/color]" % winnings
 			won = true
 		else:
 			# Dominating win - win 2.5x
 			var winnings = int(bet_amount * 2.5)
-			persistence.add_valor(gamble_account_id, winnings - bet_amount)
+			persistence.add_valor(gamble_account_id, winnings - bet_amount, "handle_merchant_gamble")
 			result_msg = "[color=#FFD700]DOMINATING! You win %d valor![/color]" % winnings
 			won = true
 
@@ -15616,7 +15627,7 @@ func handle_merchant_recharge(peer_id: int):
 
 	# Check if player has enough valor
 	var recharge_account_id = peers[peer_id].account_id
-	if not persistence.spend_valor(recharge_account_id, cost):
+	if not persistence.spend_valor(recharge_account_id, cost, "handle_merchant_recharge"):
 		send_to_peer(peer_id, {
 			"type": "merchant_message",
 			"message": "[color=#FF0000]\"You don't have enough valor! Recharge costs %d valor.\"[/color]" % cost
@@ -16080,7 +16091,7 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 
 	# Charge buyer. Seller already got base_valor at LIST time; pass half the road
 	# markup to the seller as a bonus (mirrors the Open Market), rest to treasury.
-	persistence.spend_valor(buyer_account_id, price)
+	persistence.spend_valor(buyer_account_id, price, "handle_merchant_buy")
 	var base_valor := int(shop_item.get("base_valor", price))
 	var seller_account_id := String(shop_item.get("account_id", ""))
 	if seller_account_id != "" and seller_account_id != buyer_account_id and price > base_valor:
@@ -16088,7 +16099,7 @@ func handle_merchant_buy(peer_id: int, message: Dictionary):
 		var seller_bonus := int(markup_total / 2)
 		var treasury_cut := markup_total - seller_bonus
 		if seller_bonus > 0:
-			persistence.add_valor(seller_account_id, seller_bonus)
+			persistence.add_valor(seller_account_id, seller_bonus, "handle_merchant_buy")
 			for pid in peers.keys():
 				if peers[pid].account_id == seller_account_id and characters.has(pid):
 					send_to_peer(pid, {"type": "text", "message": "[color=#FFD700]A courier sold your %s on the road — you earned %d bonus Valor![/color]" % [item.get("name", "item"), seller_bonus]})
@@ -16411,7 +16422,7 @@ func handle_dungeon_locate(peer_id: int, message: Dictionary):
 		return
 	# Charge the Cartographer's fee (skipped when locating via your own 'sense' at rank 8+).
 	if not has_sense:
-		if not persistence.spend_valor(account_id, CARTOGRAPHER_LOCATE_VALOR_COST):
+		if not persistence.spend_valor(account_id, CARTOGRAPHER_LOCATE_VALOR_COST, "handle_dungeon_locate"):
 			var have: int = persistence.get_valor(account_id)
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]🧭 The Cartographer wants [b]%d Valor[/b] to mark a dungeon — you have %d.[/color]" % [CARTOGRAPHER_LOCATE_VALOR_COST, have]})
 			return
@@ -17533,6 +17544,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 			# dungeon-graded companion is a different number); only the species - and so the role - changes.
 			output["tier"] = rf_tier
 			character.spend_gold(rf_cost)
+			_note_gold("out", "role_swap", rf_cost)
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": "Unknown fusion type."})
 		return
@@ -18231,7 +18243,7 @@ func handle_trading_post_recharge(peer_id: int):
 
 	var valor_cost = max(1, cost / 10)
 	var tp_heal_account_id = peers[peer_id].account_id
-	if not persistence.spend_valor(tp_heal_account_id, valor_cost):
+	if not persistence.spend_valor(tp_heal_account_id, valor_cost, "handle_trading_post_recharge"):
 		send_to_peer(peer_id, {
 			"type": "trading_post_message",
 			"message": "[color=#FF0000]You don't have enough valor! Recharge costs %d valor.[/color]" % valor_cost
@@ -18292,7 +18304,7 @@ func handle_trading_post_wits_training(peer_id: int):
 	var valor_cost = 5 + character.wits_training_bonus * 10
 	var wits_account_id = peers[peer_id].account_id
 
-	if not persistence.spend_valor(wits_account_id, valor_cost):
+	if not persistence.spend_valor(wits_account_id, valor_cost, "handle_trading_post_wits_training"):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Not enough valor! Training costs %d valor. (You have %d)[/color]" % [valor_cost, persistence.get_valor(wits_account_id)]})
 		return
 
@@ -18994,7 +19006,7 @@ func handle_market_list_item(peer_id: int, message: Dictionary):
 	# Add listing and award valor (base + optional owner bonus paid directly)
 	var listing_id = persistence.add_market_listing(post_id, listing)
 	var seller_award = base_valor + owner_bonus_amount
-	persistence.add_valor(account_id, seller_award)
+	persistence.add_valor(account_id, seller_award, "handle_market_list_item")
 
 	save_character(peer_id)
 
@@ -19065,7 +19077,7 @@ func handle_market_list_material(peer_id: int, message: Dictionary):
 	}
 
 	persistence.add_market_listing(post_id, listing)
-	persistence.add_valor(account_id, total_valor)
+	persistence.add_valor(account_id, total_valor, "handle_market_list_material")
 
 	save_character(peer_id)
 
@@ -19175,7 +19187,7 @@ func handle_market_list_egg(peer_id: int, message: Dictionary):
 
 	# Add listing and award valor
 	var listing_id = persistence.add_market_listing(post_id, listing)
-	persistence.add_valor(account_id, base_valor)
+	persistence.add_valor(account_id, base_valor, "handle_market_list_egg")
 
 	save_character(peer_id)
 
@@ -19242,7 +19254,7 @@ func handle_market_list_card(peer_id: int, message: Dictionary):
 		"quantity": 1
 	}
 	var listing_id = persistence.add_market_listing(post_id, listing)
-	persistence.add_valor(account_id, base_valor)
+	persistence.add_valor(account_id, base_valor, "handle_market_list_card")
 	save_character(peer_id)
 
 	send_to_peer(peer_id, {
@@ -19402,7 +19414,7 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		price = int(per_unit_valor * buy_qty * markup)
 
 	# Process purchase
-	persistence.spend_valor(buyer_account_id, price)
+	persistence.spend_valor(buyer_account_id, price, "handle_market_buy")
 
 	# If cross-player purchase, seller gets half the markup as bonus
 	if buyer_account_id != seller_account_id and price > partial_base:
@@ -19410,7 +19422,7 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		var seller_bonus = int(markup_total / 2)
 		var treasury_cut = markup_total - seller_bonus
 		if seller_bonus > 0:
-			persistence.add_valor(seller_account_id, seller_bonus)
+			persistence.add_valor(seller_account_id, seller_bonus, "handle_market_buy")
 		for pid in peers.keys():
 			if peers[pid].account_id == seller_account_id and characters.has(pid):
 				var qty_text = " x%d" % buy_qty if buy_qty > 1 else ""
@@ -19565,7 +19577,7 @@ func _handle_market_buy_npc_stock(peer_id: int, listing_id: String, requested_qt
 
 	# Spend valor, generate item, deliver. Item level scales with player
 	# level so consumable tier (potions etc) matches their progression.
-	persistence.spend_valor(buyer_account_id, price)
+	persistence.spend_valor(buyer_account_id, price, "_handle_market_buy_npc_stock")
 	var drop_entry: Dictionary = {
 		"item_type": String(matched_entry.get("item_type", "")),
 		"rarity": String(matched_entry.get("rarity", "common")),
@@ -19574,7 +19586,7 @@ func _handle_market_buy_npc_stock(peer_id: int, listing_id: String, requested_qt
 	var fresh_item: Dictionary = drop_tables._generate_item(drop_entry, item_level)
 	if fresh_item.is_empty():
 		# Refund and bail if generation failed.
-		persistence.add_valor(buyer_account_id, price)
+		persistence.add_valor(buyer_account_id, price, "_handle_market_buy_npc_stock")
 		send_to_peer(peer_id, {"type": "market_error", "message": "The trader fumbles — try again."})
 		return
 
@@ -19698,7 +19710,7 @@ func handle_market_network_buy(peer_id: int, message: Dictionary):
 		return
 
 	# Charge valor + consume Travel Stone.
-	persistence.spend_valor(buyer_account_id, price)
+	persistence.spend_valor(buyer_account_id, price, "handle_market_network_buy")
 	# Remove the stone — defensive re-scan in case the index drifted during validation.
 	var stone_consumed: bool = false
 	if stone_index >= 0 and stone_index < character.inventory.size() and String(character.inventory[stone_index].get("type", "")) == "travel_stone":
@@ -19718,7 +19730,7 @@ func handle_market_network_buy(peer_id: int, message: Dictionary):
 				break
 	if not stone_consumed:
 		# Race condition: stone disappeared between checks. Refund + bail.
-		persistence.add_valor(buyer_account_id, price)
+		persistence.add_valor(buyer_account_id, price, "handle_market_network_buy")
 		# Put the listing back since we already removed it.
 		# Best-effort restore — uses add_market_listing API if available.
 		send_to_peer(peer_id, {"type": "market_error", "message": "Travel Stone vanished — purchase rolled back."})
@@ -19728,7 +19740,7 @@ func handle_market_network_buy(peer_id: int, message: Dictionary):
 	# seller already got base_valor when they listed). Mirror existing
 	# market_buy seller-credit semantics.
 	if seller_account_id != "" and seller_account_id != buyer_account_id:
-		persistence.add_valor(seller_account_id, base_valor)
+		persistence.add_valor(seller_account_id, base_valor, "handle_market_network_buy")
 
 	# Deliver the item.
 	if item_type == "material":
@@ -19841,7 +19853,7 @@ func handle_market_cancel(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor to cancel (you were paid %d)." % valor_refund})
 		return
 
-	persistence.spend_valor(account_id, valor_refund)
+	persistence.spend_valor(account_id, valor_refund, "handle_market_cancel")
 
 	# Return the pulled portion
 	if item.get("type", "") == "material":
@@ -19937,7 +19949,7 @@ func handle_market_cancel_all(peer_id: int, message: Dictionary):
 				continue
 
 		# Deduct valor and remove listing
-		persistence.spend_valor(account_id, base_valor)
+		persistence.spend_valor(account_id, base_valor, "handle_market_cancel_all")
 		current_valor -= base_valor
 		total_valor_deducted += base_valor
 		persistence.remove_market_listing(post_id, listing_id)
@@ -20296,7 +20308,7 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 	var owner_bonus_total = 0
 	if owner_post_bonus_active:
 		owner_bonus_total = int(total_valor * 0.25)
-	persistence.add_valor(account_id, total_valor + owner_bonus_total)
+	persistence.add_valor(account_id, total_valor + owner_bonus_total, "handle_market_list_all")
 	save_character(peer_id)
 
 	send_to_peer(peer_id, {
@@ -20513,7 +20525,7 @@ func handle_market_order_create(peer_id: int, message: Dictionary):
 	if buyer_valor < total_escrow:
 		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor. Need %d, have %d." % [total_escrow, buyer_valor]})
 		return
-	persistence.spend_valor(account_id, total_escrow)
+	persistence.spend_valor(account_id, total_escrow, "handle_market_order_create")
 
 	var order = {
 		"account_id": account_id,
@@ -20651,7 +20663,7 @@ func handle_market_order_fulfill(peer_id: int, message: Dictionary):
 
 	# Pay seller
 	var payout = per_unit_valor * fulfill_qty
-	persistence.add_valor(seller_account_id, payout)
+	persistence.add_valor(seller_account_id, payout, "handle_market_order_fulfill")
 	save_character(peer_id)
 
 	# Audit #9 Slice 4 — record paid price for rolling average (mirrors handle_market_buy)
@@ -20777,7 +20789,7 @@ func handle_market_order_cancel(peer_id: int, message: Dictionary):
 	var refund = _order_remaining(order) * int(order.get("per_unit_valor", 0))
 	persistence.remove_market_order(post_id, order_id)
 	if refund > 0:
-		persistence.add_valor(buyer_account_id, refund)
+		persistence.add_valor(buyer_account_id, refund, "handle_market_order_cancel")
 
 	send_to_peer(peer_id, {
 		"type": "market_order_cancel_success",
@@ -21346,7 +21358,7 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 					chain_progress_msg = "[color=#FFAA00]Chain advances! Next: %s[/color]" % next_quest.get("name", "")
 
 		if valor_reward > 0 and peers.has(peer_id):
-			persistence.add_valor(peers[peer_id].account_id, valor_reward)
+			persistence.add_valor(peers[peer_id].account_id, valor_reward, "handle_quest_turn_in")
 		# Quests pay GOLD too (the per-character currency), sized to the quest's level.
 		_award_gold(peer_id, GoldEconomyScript.quest_gold(maxi(1, old_level)), "quest")
 
@@ -23897,7 +23909,7 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 			if v > 0:
 				var acct: String = str(peers[peer_id].get("account_id", "")) if peers.has(peer_id) else ""
 				if acct != "":
-					persistence.add_valor(acct, v)
+					persistence.add_valor(acct, v, "_complete_scratch_off_fishing")
 			total_xp += int(slot.get("xp", 6))
 			awarded.append({"kind": "AUTO_MARKET", "name": String(slot.get("name", "Sold for Valor")), "type": "valor", "valor": v})
 			continue
@@ -24343,7 +24355,7 @@ func _award_combat_loot_slot(peer_id: int, slot: Dictionary, monster_tier: int =
 			if peers.has(peer_id):
 				var acct_id: String = str(peers[peer_id].get("account_id", ""))
 				if acct_id != "":
-					persistence.add_valor(acct_id, amount)
+					persistence.add_valor(acct_id, amount, "_award_combat_loot_slot")
 			return {
 				"kind": "filler_valor",
 				"name": "+%d Valor" % amount,
@@ -24439,7 +24451,7 @@ func _award_combat_loot_slot(peer_id: int, slot: Dictionary, monster_tier: int =
 				if peers.has(peer_id):
 					var acct_id3: String = str(peers[peer_id].get("account_id", ""))
 					if acct_id3 != "":
-						persistence.add_valor(acct_id3, amount3)
+						persistence.add_valor(acct_id3, amount3, "_award_combat_loot_slot")
 				return {
 					"kind": "filler_mystery",
 					"name": "Mystery: +%d Valor!" % amount3,
@@ -27482,7 +27494,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			return
 		var fee: int = commission_fee(recipe)
 		var comm_account = peers[peer_id].account_id if peers.has(peer_id) else ""
-		if not persistence.spend_valor(comm_account, fee):
+		if not persistence.spend_valor(comm_account, fee, "handle_craft_item"):
 			send_to_peer(peer_id, {"type": "error",
 				"message": "The %s wants [b]%d Valor[/b] for that commission - you have %d." % [
 					required_job.capitalize(), fee, persistence.get_valor(comm_account)]})
@@ -27607,7 +27619,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				persistence.remove_market_listing(_craft_post_id, _plan.listing_id)
 			character.add_crafting_material(_plan.mat_id, int(_plan.take))
 		if _listing_pull_cost > 0:
-			persistence.spend_valor(_craft_account_id, _listing_pull_cost)
+			persistence.spend_valor(_craft_account_id, _listing_pull_cost, "handle_craft_item")
 			var _parts: Array = []
 			for _mid in _listing_pull_summary:
 				_parts.append("%d %s" % [int(_listing_pull_summary[_mid]), str(_mid).replace("_", " ")])
@@ -29941,7 +29953,7 @@ func handle_buy_prefab_post(peer_id: int, message: Dictionary) -> void:
 	var cost := int(tier.get("valor", 0))
 	# `spend_valor` returns false when short, so the check and the debit are ONE operation - a
 	# separate "can afford" test would be a window for two purchases to both pass it.
-	if not persistence.spend_valor(acct, cost):
+	if not persistence.spend_valor(acct, cost, "handle_buy_prefab_post"):
 		send_to_peer(peer_id, {"type": "text", "message":
 			"[color=#FF4444]%s costs %d valor; you have %d.[/color]"
 			% [String(tier.get("name", "That charter")), cost, persistence.get_valor(acct)]})
@@ -31309,7 +31321,7 @@ func handle_guard_hire(peer_id: int, message: Dictionary):
 		return
 
 	# Deduct costs
-	persistence.add_valor(account_id, -GUARD_HIRE_VALOR_COST)
+	persistence.spend_valor(account_id, GUARD_HIRE_VALOR_COST, "handle_guard_hire")
 	_consume_guard_food(character, GUARD_HIRE_FOOD_COST)
 
 	# Check for nearby tower
@@ -32511,7 +32523,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	elif tile == DungeonDatabaseScript.TileType.SCATTERED_LOOT:
 		var loot_valor = randi_range(1, 5)
 		var account_id_loot = peers[peer_id].account_id
-		persistence.add_valor(account_id_loot, loot_valor)
+		persistence.add_valor(account_id_loot, loot_valor, "handle_dungeon_move")
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#DAA520]You scoop up a goblin's hoard ([color=#FFD700]+%d Valor[/color]).[/color]" % loot_valor})
 	# Audit #5 Slice 13 theme tag — Siren's Cove SHALLOW_TIDE wading + Lullaby chance.
@@ -32560,12 +32572,12 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		if _groll < 40:
 			var _jv := randi_range(30, 60) * _gtier
 			if _acct_g != "":
-				persistence.add_valor(_acct_g, _jv)
+				persistence.add_valor(_acct_g, _jv, "handle_dungeon_move")
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#5AC8FF]JACKPOT! The gamble cache pays out [color=#FFD700]+%d Valor[/color]![/color]" % _jv})
 		elif _groll < 80:
 			var _sv := randi_range(5, 15) * _gtier
 			if _acct_g != "":
-				persistence.add_valor(_acct_g, _sv)
+				persistence.add_valor(_acct_g, _sv, "handle_dungeon_move")
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#5AC8FF]The gamble cache yields a modest [color=#FFD700]+%d Valor[/color].[/color]" % _sv})
 		else:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The gamble cache was empty — better luck next time.[/color]"})
@@ -32600,7 +32612,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	elif tile == DungeonDatabaseScript.TileType.TRINKET_PILE:
 		var trinket_valor = randi_range(2, 4)
 		var account_id_tk = peers[peer_id].account_id
-		persistence.add_valor(account_id_tk, trinket_valor)
+		persistence.add_valor(account_id_tk, trinket_valor, "handle_dungeon_move")
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#DAA520]You pocket a shiny kobold trinket ([color=#FFD700]+%d Valor[/color]).[/color]" % trinket_valor})
 	# Audit #5 Slice 14 theme tag — Orc Stronghold WAR_BANNER (consumed buff).
@@ -32767,7 +32779,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		# - a static scan for valor calls whose first argument is not account-shaped, which
 		# flagged exactly two sites and cleared the other.
 		var account_id_hoard = peers[peer_id].account_id
-		persistence.add_valor(account_id_hoard, hoard_valor)
+		persistence.add_valor(account_id_hoard, hoard_valor, "handle_dungeon_move")
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]You snatch a handful of dragon-hoard coins ([color=#FFAA00]+%d Valor[/color]).[/color]" % hoard_valor})
 	# Audit #5 Slice 18 theme tag — Golem Foundry MOLTEN_SLAG +1 step cost.
@@ -37701,7 +37713,7 @@ func _open_final_chest(peer_id: int):
 	# climbing rank pays off; this was one of the places it quietly did not.
 	var valor_bonus = int((3 + randi() % 3) * dungeon_tier * 5 * (1.0 + (inst_sub_tier - 1) * 0.1))
 	if peers.has(peer_id):
-		persistence.add_valor(peers[peer_id].account_id, valor_bonus)
+		persistence.add_valor(peers[peer_id].account_id, valor_bonus, "_open_final_chest")
 	reward_lines.append("[color=#FFD700]+%d Valor[/color]" % valor_bonus)
 
 	# v0.9.679 — stash the chest loot so _complete_dungeon can show it ON the
@@ -39382,7 +39394,7 @@ func _award_floor_item(peer_id: int, item: Dictionary) -> bool:
 			return true
 		"valor":
 			if peers.has(peer_id):
-				persistence.add_valor(peers[peer_id].account_id, int(data.get("valor", 0)))
+				persistence.add_valor(peers[peer_id].account_id, int(data.get("valor", 0)), "_award_floor_item")
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]You pick up %d Valor.[/color]" % int(data.get("valor", 0))})
 			return true
 		"material":
@@ -40972,7 +40984,7 @@ func handle_title_ability(peer_id: int, message: Dictionary):
 
 	# Deduct costs after all checks pass
 	if valor_cost > 0:
-		persistence.spend_valor(title_account_id, valor_cost)
+		persistence.spend_valor(title_account_id, valor_cost, "handle_title_ability")
 	if gem_cost > 0:
 		character.remove_crafting_material("monster_gem", gem_cost)
 
@@ -41131,8 +41143,8 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 			if target and peers.has(target_peer_id):
 				var target_account_id = peers[target_peer_id].account_id
 				var tax_amount = mini(500, int(persistence.get_valor(target_account_id) * 0.05))
-				persistence.spend_valor(target_account_id, tax_amount)
-				persistence.add_valor(title_account_id, tax_amount)
+				persistence.spend_valor(target_account_id, tax_amount, "_execute_title_ability")
+				persistence.add_valor(title_account_id, tax_amount, "_execute_title_ability")
 				send_to_peer(target_peer_id, {
 					"type": "text",
 					"message": "[color=#C0C0C0]The Jarl has taxed you %d valor![/color]" % tax_amount
@@ -41148,7 +41160,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 		"gift_silver":
 			if target and peers.has(target_peer_id):
 				var gift_amount = int(persistence.get_valor(title_account_id) * 0.08)  # They already paid 5%, give 8%
-				persistence.add_valor(peers[target_peer_id].account_id, gift_amount)
+				persistence.add_valor(peers[target_peer_id].account_id, gift_amount, "_execute_title_ability")
 				send_to_peer(target_peer_id, {
 					"type": "text",
 					"message": "[color=#FFD700]The Jarl has gifted you %d valor![/color]" % gift_amount
@@ -41168,7 +41180,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 			var tribute = int(current_treasury * treasury_percent / 100.0)
 			if tribute > 0:
 				var withdrawn = persistence.withdraw_from_realm_treasury(tribute)
-				persistence.add_valor(title_account_id, withdrawn)
+				persistence.add_valor(title_account_id, withdrawn, "_execute_title_ability")
 				send_to_peer(peer_id, {
 					"type": "text",
 					"message": "[color=#FFD700]You claim %d valor from the realm treasury (%d%% of %d).[/color]" % [withdrawn, treasury_percent, current_treasury]
@@ -41236,7 +41248,7 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 			var tribute = int(current_treasury * treasury_percent / 100.0)
 			if tribute > 0:
 				var withdrawn = persistence.withdraw_from_realm_treasury(tribute)
-				persistence.add_valor(title_account_id, withdrawn)
+				persistence.add_valor(title_account_id, withdrawn, "_execute_title_ability")
 				send_to_peer(peer_id, {
 					"type": "text",
 					"message": "[color=#FFD700]You claim %d valor from the royal treasury (%d%% of %d).[/color]" % [withdrawn, treasury_percent, current_treasury]
@@ -41493,7 +41505,7 @@ func handle_pilgrimage_donate(peer_id: int, message: Dictionary):
 		return
 
 	# Process donation
-	persistence.spend_valor(pilgrim_account_id, amount)
+	persistence.spend_valor(pilgrim_account_id, amount, "handle_pilgrimage_donate")
 	character.add_pilgrimage_gold_donation(amount)
 
 	var total_donated = character.pilgrimage_progress.get("gold_donated", 0)
@@ -41568,7 +41580,7 @@ func handle_summon_response(peer_id: int, message: Dictionary):
 			var abilities = TitlesScript.get_title_abilities("jarl")
 			var refund_valor_cost = abilities.get("summon", {}).get("valor_cost", 50)
 			if peers.has(from_peer_id):
-				persistence.add_valor(peers[from_peer_id].account_id, refund_valor_cost)
+				persistence.add_valor(peers[from_peer_id].account_id, refund_valor_cost, "handle_summon_response")
 			send_to_peer(from_peer_id, {
 				"type": "text",
 				"message": "[color=#FFD700]%d valor refunded.[/color]" % refund_valor_cost
@@ -43344,7 +43356,7 @@ func handle_gm_giveall(peer_id: int):
 		return
 	var ch = characters[peer_id]
 	# Valor and materials
-	persistence.add_valor(peers[peer_id].account_id, 5000)
+	persistence.add_valor(peers[peer_id].account_id, 5000, "handle_gm_giveall")
 	ch.add_crafting_material("monster_gem", 100)
 	# Give a set of materials
 	var mats_to_give = {"copper_ore": 50, "iron_ore": 50, "steel_ore": 30, "mithril_ore": 20,
@@ -45207,7 +45219,7 @@ func _sync_party_quest_turn_in(leader_pid: int, quest_id: String, quest: Diction
 		# Award valor via persistence for party member
 		var member_valor = turn_in_result.rewards.get("valor", 0)
 		if member_valor > 0 and peers.has(pid):
-			persistence.add_valor(peers[pid].account_id, member_valor)
+			persistence.add_valor(peers[pid].account_id, member_valor, "_sync_party_quest_turn_in")
 
 		var unlocked = []
 		if turn_in_result.leveled_up:
@@ -49575,7 +49587,9 @@ func handle_affix_reroll(peer_id: int, message: Dictionary) -> void:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Not enough materials — this rework needs %s.[/color]" % ", ".join(want)})
 		return
 	var gold_cost: int = int(cost.get("gold", 0))
-	if gold_cost > 0 and not character.spend_gold(gold_cost):
+	if gold_cost > 0 and character.spend_gold(gold_cost):
+		_note_gold("out", "affix_reroll", gold_cost)
+	elif gold_cost > 0:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]The rework costs %s gold and you carry %s.[/color]" % [_fmt_int(gold_cost), _fmt_int(int(character.gold_purse))]})
 		return
 

@@ -37,7 +37,7 @@ sorted by that, not by size. Doing a power change AFTER the chain is what forced
 
 ### WAVE 1 - the power inputs, designed TOGETHER, built in dependency order (no chain yet)
 These all change power or the money behind it, so they share one design pass and one calibration:
-1. **ONE ECONOMY DESIGN** for the four items that are the same question ("what do players spend on, and where does it
+1. **[DRAFT WRITTEN 2026-10-20: `docs/design/economy.md` - owner to answer Q1-Q4 in it; ledger + gold telemetry BUILT (valor_ledger probe)]** **ONE ECONOMY DESIGN** for the four items that are the same question ("what do players spend on, and where does it
    come from"): item 14 S5's economy half (Role Swap price, companion upkeep), "Real sinks for excess eggs and companions",
    THE VALOR ECONOMY REALM-WIDE, and THE WORLD CONSUMES MATERIAL SURPLUS. Design doc first (`docs/design/economy.md`), then
    build. Gold prices (Temper, Role Swap) are unmeasured first guesses and are tuned HERE, once, not per feature.

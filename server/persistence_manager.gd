@@ -2479,20 +2479,70 @@ func get_valor(account_id: String) -> int:
 	var house = get_house(account_id)
 	return house.get("valor", 0)
 
-func add_valor(account_id: String, amount: int):
-	"""Add valor to an account. Also increments total_valor_earned."""
+## ===== VALOR LEDGER (2026-10-20, docs/design/economy.md finding V2) =====
+## `total_valor_earned` counts a market sale or a duel payout as "earned", so nothing could answer how much valor
+## ENTERS the world. Every change now carries a `reason` (the calling function) and is tallied here:
+## "in:<reason>" and "out:<reason>" -> {n, sum}. Mint vs transfer is decided by reading the reasons (the design doc
+## lists them), not by the call, so labelling stays mechanical. No behaviour change.
+const VALOR_LEDGER_PATH := "user://valor_ledger.json"
+const VALOR_LEDGER_FLUSH_EVERY := 25
+var valor_ledger: Dictionary = {}
+var _valor_ledger_loaded := false
+var _valor_ledger_dirty := 0
+
+func _ledger_note(direction: String, reason: String, amount: int) -> void:
+	if not _valor_ledger_loaded:
+		_valor_ledger_loaded = true
+		if FileAccess.file_exists(VALOR_LEDGER_PATH):
+			var f = FileAccess.open(VALOR_LEDGER_PATH, FileAccess.READ)
+			if f:
+				var parsed = JSON.parse_string(f.get_as_text())
+				if parsed is Dictionary:
+					valor_ledger = parsed
+	var key := "%s:%s" % [direction, reason if reason != "" else "unlabelled"]
+	var row: Dictionary = valor_ledger.get(key, {"n": 0, "sum": 0})
+	row["n"] = int(row.get("n", 0)) + 1
+	row["sum"] = int(row.get("sum", 0)) + absi(amount)
+	valor_ledger[key] = row
+	_valor_ledger_dirty += 1
+	if _valor_ledger_dirty >= VALOR_LEDGER_FLUSH_EVERY:
+		flush_valor_ledger()
+
+func note_gold(direction: String, reason: String, amount: int) -> void:
+	"""Gold telemetry in the same ledger ("gold_in:<reason>" / "gold_out:<reason>") so kills-per-Temper-tier is measured."""
+	_ledger_note("gold_" + direction, reason if reason != "" else "other", amount)
+
+func flush_valor_ledger() -> void:
+	_valor_ledger_dirty = 0
+	var f = FileAccess.open(VALOR_LEDGER_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(valor_ledger))
+
+func add_valor(account_id: String, amount: int, reason: String = ""):
+	"""Add valor to an account. Also increments total_valor_earned. Spending is `spend_valor`, which checks the
+	balance; two sinks were once written as add_valor(-price) and shaved the 'earned' statistic. A negative amount
+	still applies (no behaviour change) but is warned about and ledgered as an OUT, not counted as earned."""
+	if amount < 0:
+		push_warning("add_valor called with a negative amount (%d, %s) - use spend_valor" % [amount, reason])
+		var h = get_house(account_id)
+		h["valor"] = h.get("valor", 0) + amount
+		save_house(account_id, h)
+		_ledger_note("out", reason, amount)
+		return
 	var house = get_house(account_id)
 	house["valor"] = house.get("valor", 0) + amount
 	house["total_valor_earned"] = house.get("total_valor_earned", 0) + amount
 	save_house(account_id, house)
+	_ledger_note("in", reason, amount)
 
-func spend_valor(account_id: String, amount: int) -> bool:
+func spend_valor(account_id: String, amount: int, reason: String = "") -> bool:
 	"""Spend valor from an account. Returns false if insufficient."""
 	var house = get_house(account_id)
 	if house.get("valor", 0) < amount:
 		return false
 	house["valor"] = house.get("valor", 0) - amount
 	save_house(account_id, house)
+	_ledger_note("out", reason, amount)
 	return true
 
 func set_valor(account_id: String, amount: int):
