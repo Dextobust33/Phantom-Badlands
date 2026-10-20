@@ -2693,6 +2693,16 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
+	# Passives are always on and act inside the damage maths, so name them once at the start of the fight
+	# (owner 2026-10-20: a boost with no visible origin reads as the class just being stronger).
+	var _cp: Dictionary = character.get_class_passive()
+	var _rp: Dictionary = character.race_passive_for(String(character.race))
+	if not _cp.is_empty() and String(_cp.get("name", "")) != "":
+		msg += "
+[color=#9AA7B5]Passive - %s: %s[/color]" % [String(_cp["name"]), String(_cp.get("description", ""))]
+	if not _rp.is_empty() and String(_rp.get("name", "None")) != "None":
+		msg += "
+[color=#9AA7B5]Racial - %s: %s[/color]" % [String(_rp["name"]), String(_rp.get("description", ""))]
 	if combat_state.has("warrior_stance_dr"):
 		msg += "
 [color=#7AE07A]%s: you open braced - %d%% damage reduction for 4 rounds, +%d defense for 5. (Fighters only; it is not a card.)[/color]" % [
@@ -11981,6 +11991,14 @@ func player_mitigation_breakdown(character, combat: Dictionary) -> Array:
 	if buff_dr > 0:
 		var dr_src: String = character.get_buff_source("damage_reduction")
 		out.append({"label": dr_src if dr_src != "" else "Damage reduction", "pct": buff_dr})
+	# Armor with a damage-reduction roll multiplies in with the rest (see the damage path), so it is listed.
+	var armor_dr := 0
+	for slot_name in ["armor", "helm", "shield", "boots"]:
+		var piece = character.equipped.get(slot_name, {})
+		if piece is Dictionary:
+			armor_dr += int(float(piece.get("rarity_bonuses", {}).get("damage_reduction", 0)))
+	if armor_dr > 0:
+		out.append({"label": "Armor", "pct": armor_dr})
 	var def_buff := int(character.get_buff_value("defense"))
 	if def_buff > 0:
 		var def_src: String = character.get_buff_source("defense")

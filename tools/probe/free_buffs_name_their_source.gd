@@ -29,5 +29,16 @@ func _init() -> void:
 	var b = CH.new()
 	b.initialize("probe_barb", "Barbarian", "Human")
 	ck(cm._apply_opening_stance(b).is_empty() and b.get_buff_value("damage_reduction") == 0, "Barbarian opens with nothing")
+	# the fight's opening line names the class passive, the racial passive and (Fighter) the stance
+	var cm2 = CM.new()
+	var f2 = CH.new()
+	f2.initialize("probe_f2", "Fighter", "Orc")
+	var mon: Dictionary = {"name": "Rat", "level": 1, "max_hp": 50, "current_hp": 50, "strength": 5, "defense": 1, "speed": 1, "abilities": [], "experience_reward": 1, "gold_reward": 1}
+	var res: Dictionary = cm2.start_combat(7, f2, mon)
+	var log_txt: String = "
+".join(cm2.active_combats[7].get("combat_log", [])) if cm2.active_combats.has(7) else ""
+	ck(log_txt.find("Passive - Tactical Discipline") >= 0, "opening line names the class passive")
+	ck(log_txt.find("Racial - Berserker") >= 0, "opening line names the racial passive")
+	ck(log_txt.find("Fighter's stance") >= 0, "opening line names the stance")
 	print("PASS" if fails == 0 else "FAIL (%d)" % fails)
 	quit(1 if fails else 0)
