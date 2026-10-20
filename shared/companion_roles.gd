@@ -39,7 +39,10 @@ const STRIKER_SPECIES: Array = ["Wolf", "Gnoll", "Orc"]
 
 ## ROLE FUSION (Stable): three companions of one tier plus gold become one companion of a role you choose.
 ## UNMEASURED FIRST GUESS: the gold per tier of the inputs.
-const ROLE_FUSION_GOLD_PER_TIER := 1000
+## 2026-10-20 (docs/design/economy.md G2): priced in KILLS of the player's current level, not a flat number. The old
+## 1,000 gold a tier was 300 kills at level 10 and 8 kills at level 500, so it stopped being a decision as you grew.
+## 25 kills a tier means tier 4 is ~100 kills at any level. A first guess (G).
+const ROLE_FUSION_KILLS_PER_TIER := 25
 const ROLE_FUSION_INPUTS := 3
 
 # Thresholds of the derivation (aggro is a percent of monster hits the companion soaks).
@@ -132,8 +135,9 @@ static func species_for_role(role: String, tier: int) -> Array:
 	return []
 
 
-static func role_fusion_cost(tier: int) -> int:
-	return ROLE_FUSION_GOLD_PER_TIER * maxi(1, tier)
+static func role_fusion_cost(tier: int, player_level: int = 1) -> int:
+	var kill_gold: int = int(round(5.0 + 1.5 * float(maxi(1, player_level))))   # GoldEconomy.kill_gold, unboosted
+	return ROLE_FUSION_KILLS_PER_TIER * maxi(1, tier) * kill_gold
 
 
 static func role_of(companion: Dictionary) -> String:

@@ -63,7 +63,7 @@ func _init() -> void:
 			for sp in pool:
 				if RolesScript.role_of_species(String(sp)) != r:
 					ck(false, "%s listed for %s but is %s" % [sp, r, RolesScript.role_of_species(String(sp))])
-	ck(RolesScript.role_fusion_cost(3) == 3000, "cost is 1,000 gold per tier")
+	ck(RolesScript.role_fusion_cost(3, 50) == 25 * 3 * 80, "cost is 25 kills of your level per tier (L50: 80 gold a kill)")
 
 	print("--- the fusion ---")
 	var kennel := [_k(0, "Goblin", 2, 5), _k(1, "Skeleton", 2, 3), _k(2, "Zombie", 2, 7)]
@@ -80,7 +80,8 @@ func _init() -> void:
 		ck(int(o.get("sub_tier", 0)) == 3, "rank is the LOWEST of the three (%d)" % int(o.get("sub_tier", 0)))
 		ck(int(o.get("level", 0)) >= 22, "the best level carries (%d)" % int(o.get("level", 0)))
 		ck(int(o.get("border_tier", 0)) == 2, "the best border carries (%d)" % int(o.get("border_tier", 0)))
-	ck(hero.gold_purse == 5000 - 2000, "it cost 2,000 gold (purse %d)" % hero.gold_purse)
+	var want_cost: int = RolesScript.role_fusion_cost(2, hero.level)
+	ck(hero.gold_purse == 5000 - want_cost, "it cost %d gold, 25 kills x tier 2 at the hero's level (purse %d)" % [want_cost, hero.gold_purse])
 
 	print("--- refusals leave everything alone ---")
 	var s2 = _setup(500, kennel.duplicate(true))

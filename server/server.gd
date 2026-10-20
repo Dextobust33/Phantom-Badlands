@@ -11032,6 +11032,7 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 		"hybrid_catalyst_count": hybrid_catalyst_count,
 		"ascension_catalyst_count": ascension_catalyst_count,
 		"gold": int(character.gold_purse),
+		"player_level": character.level,
 	}
 
 func _handle_companion_stable_station(peer_id: int, character) -> void:
@@ -17550,7 +17551,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 				return
 			rf_sub = mini(rf_sub, int(comp.get("sub_tier", 1)))
 			rf_best_border = maxi(rf_best_border, int(comp.get("border_tier", 0)))
-		var rf_cost: int = CompanionRolesScript.role_fusion_cost(rf_tier)
+		var rf_cost: int = CompanionRolesScript.role_fusion_cost(rf_tier, character.level)
 		if character.gold_purse < rf_cost:
 			send_to_peer(peer_id, {"type": "error", "message": "Role fusion costs %d gold (you have %d)." % [rf_cost, character.gold_purse]})
 			return

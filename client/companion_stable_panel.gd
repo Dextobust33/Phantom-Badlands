@@ -62,6 +62,7 @@ var _registered: Array = []  # NEW v0.9.489 — non-checked-out registered slots
 var _kennel_capacity: int = 30
 var _hybrid_catalyst_count: int = 0  # v0.9.494
 var _ascension_catalyst_count: int = 0  # v0.9.496
+var _player_level: int = 1
 var _gold: int = 0                      # item 14 S5: role fusion is paid in gold
 var _role_choice: String = "healer"
 var _fuse_role_row: HBoxContainer
@@ -127,6 +128,7 @@ func show_with_payload(payload: Dictionary) -> void:
 	_hybrid_catalyst_count = int(payload.get("hybrid_catalyst_count", 0))
 	_ascension_catalyst_count = int(payload.get("ascension_catalyst_count", 0))
 	_gold = int(payload.get("gold", 0))
+	_player_level = int(payload.get("player_level", 1))
 	# Drop any stale fuse selections (e.g., after a successful fusion the
 	# previously-selected indices may no longer exist).
 	_fuse_selection = _fuse_selection.filter(func(sel):
@@ -411,8 +413,8 @@ func _refresh_fuse() -> void:
 		FUSE_ROLE:
 			_fuse_hint_label.append_text((
 				"[color=#FFD700]Role Swap[/color] - Select [b]3[/b] companions of the [b]SAME tier[/b] (any species, any rank). They become [b]1[/b] companion of the [b]role you choose[/b] "
-				+ "(a random species of that role at that tier), at the [b]lowest rank[/b] among them. Costs [color=#FFD700]gold[/color] - %d per tier. "
-				+ "[color=#888888]Gold: %d. Eggs, cards and the Atlas all name each species' role. Inputs can be kennel or registered.[/color]") % [CompanionRolesScript.ROLE_FUSION_GOLD_PER_TIER, _gold]
+				+ "(a random species of that role at that tier), at the [b]lowest rank[/b] among them. Costs [color=#FFD700]gold[/color] - %d per tier (25 kills of your level a tier). "
+				+ "[color=#888888]Gold: %d. Eggs, cards and the Atlas all name each species' role. Inputs can be kennel or registered.[/color]") % [CompanionRolesScript.role_fusion_cost(1, _player_level), _gold]
 			)
 		FUSE_ASCEND:
 			_fuse_hint_label.append_text(
@@ -676,7 +678,7 @@ func _refresh_fuse_selection_state() -> void:
 				for sel in _fuse_selection:
 					if int(sel.companion.get("tier", 1)) != rf_tier:
 						rf_same = false
-				var rf_cost: int = CompanionRolesScript.role_fusion_cost(rf_tier)
+				var rf_cost: int = CompanionRolesScript.role_fusion_cost(rf_tier, _player_level)
 				var rf_pool: Array = CompanionRolesScript.species_for_role(_role_choice, rf_tier)
 				if not rf_same:
 					preview = "[color=#FF6644]All 3 must be the same tier.[/color]"
