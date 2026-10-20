@@ -13070,6 +13070,9 @@ const ABILITY_FLOOR_RATIO := 0.3
 # the opening turns back to shorten it. A full-value stance grants exactly that and nothing else
 # - it does not raise ABILITY_WEIGHTS, whose totals already match the Mage's.
 const WARRIOR_STANCE_RATIO := 1.0
+# Scales the Fighter's opening stance. 1.0 = shipped. Exists so the simulator can A/B the stance (`-- classrisk`);
+# nothing in the game sets it.
+var opening_stance_scale: float = 1.0
 
 const ABILITY_DISPLAY_NAMES := {
 	# 2026-09-07 — COMPLETED. This held only the cards whose display name differs from their id,
@@ -13591,8 +13594,10 @@ func _apply_opening_stance(character) -> Dictionary:
 	if character == null or String(character.class_type) != "Fighter":
 		return {}
 	var _stance_str: int = character.get_effective_stat("strength")
-	var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO))
-	var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * WARRIOR_STANCE_RATIO))
+	if opening_stance_scale <= 0.0:
+		return {}
+	var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO * opening_stance_scale))
+	var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * WARRIOR_STANCE_RATIO * opening_stance_scale))
 	character.add_buff("damage_reduction", _stance_dr, 4)
 	character.add_buff("defense", _stance_def, 5)
 	return {"warrior_stance_dr": _stance_dr, "warrior_stance_def": _stance_def}

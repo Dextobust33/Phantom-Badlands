@@ -266,6 +266,7 @@ func _audit_registry() -> Dictionary:
 		"cardpromise": ["does every card GRANT the engine gain its face advertises?", run_cardpromise],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
+		"classrisk": ["PER-CLASS win/death at set levels and gear, with the Fighter opening stance A/B (--stance=1.0|0.5|0)", run_class_risk],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
 		"endgame": ["the 95% target: does a WELL-GEARED endgame player survive 19 fights in 20?", run_endgame],
 		"climbcost": ["how many encounters a climb to L20 actually costs", run_climbcost],
@@ -7412,6 +7413,46 @@ func run_preflight() -> void:
 %s" % ("PREFLIGHT PASSED - the chain is worth running." if fail == 0
 		else "PREFLIGHT FAILED (%d) - fix these BEFORE the chain; it cannot detect them itself." % fail))
 	print("=============================================================")
+
+
+func run_class_risk() -> void:
+	"""Win and death rate PER CLASS (riskcurve only reports the nine-class average, which is how one class
+	being far safer than the rest stays invisible). Seeded per cell, so changing only the Fighter's stance
+	(--stance=) must leave the other eight rows byte-identical - that is the control."""
+	var scale := 1.0
+	for a in OS.get_cmdline_user_args():
+		if String(a).begins_with("--stance="):
+			scale = float(String(a).substr(9))
+	combat_mgr.opening_stance_scale = scale
+	var levels := [10, 30, 100, 500]
+	var gears := ["under", "average"]
+	var n := 150
+	print("
+===== PER-CLASS RESULTS, Fighter stance scale %.2f, %d fights per cell =====" % [scale, n])
+	print("(one death = %.2f points; win%% / death%%)" % (100.0 / float(n)))
+	for g in gears:
+		print("
+-- gear: %s" % g)
+		var head := "%-10s" % "class"
+		for lvl in levels:
+			head += " %14s" % ("L%d" % lvl)
+		print(head)
+		for klass_row in ALL_CLASSES:
+			var k := String(klass_row[0])
+			var row := "%-10s" % k
+			for lvl in levels:
+				seed(hash("classrisk|%s|%d|%s" % [k, lvl, g]))
+				var w := 0
+				var d := 0
+				for i in range(n):
+					var r = run_fight(lvl, g, "normal", 1.0, 1.0, 1.0, k)
+					if bool(r.get("win", false)):
+						w += 1
+					if bool(r.get("died", false)):
+						d += 1
+				row += " %5.0f%% /%5.1f%%" % [100.0 * w / n, 100.0 * d / n]
+			print(row)
+	combat_mgr.opening_stance_scale = 1.0
 
 
 func run_risk_curve() -> void:

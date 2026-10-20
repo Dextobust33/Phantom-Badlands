@@ -68,6 +68,10 @@ living world) -> **THE UNBURIED** (needs the owner's permadeath decision) -> Pri
 4. **Wave 3 starts with PLAYER PHANTOMS.** 5. **Permadeath is staying** - THE UNBURIED and the economy design may assume it.
 1 (party slot split) was elaborated to the owner 2026-10-18 and awaits the keep-or-make-flexible answer; 3 (paths / dungeon-card design) is a back-and-forth design conversation, questions sent 2026-10-18.
 
+### FIGHTER OPENING STANCE + NINJA - measured 2026-10-20 (`-- classrisk --stance=1.0|0.5|0`, data `docs/balance/data/classrisk_stance_*`)
+Owner asked why the Fighter gets 60% DR + defence free at every fight start. 150 fights/cell, every class has a companion, other eight rows byte-identical across runs (control holds). **Win % shipped stance vs none (average gear, L10/30/100/500): Fighter 100/97/85/86 vs 95/89/75/68; Barbarian 96/85/75/75; Paladin 94/79/70/63.** Without the stance the Fighter sits with its Warrior siblings; with it the Fighter is the safest class at L10-30 (0.0-0.7% death) and +10-18pp at L100-500. Deaths at L100-500 are 3-5%, not lower than others. Stance 0.5 lands in between (99/94/79/69). NOT CHANGED - owner decides (trim to 0.5 as a per-class change inside the Wave 2 chain run, or keep).
+**NEW FINDING: the Ninja wins only 6-44% of fights at every level and dies 6-18%** (next worst class 51-70%) - a broken class in the sim; check the card/policy first (instrument), then the class. Put in Wave 2 per-class work.
+
 ### OWNER DECISIONS NEEDED (batched so they cost one conversation, not six)
 1. Is a pair getting ONE teammate each right, and is "none in a party of 3+" acceptable?
 2. Should 'under-geared' characters in the model have companions (changes whether the candidate curve can ship)?
