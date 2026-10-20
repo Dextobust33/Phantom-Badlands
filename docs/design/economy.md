@@ -57,6 +57,7 @@ loot slots; dungeon floor coins / jewels / trinkets / the Ancient Dragon hoard /
 fishing scratch-off; party quest sync; starting valor from Sanctuary upgrades; a one-off conversion of retired character
 gold on login. **Transfers** (no net mint): market sales and orders, merchant seller bonus, duel stakes, PvP sacks,
 bounties, title tax/gift/vault. **Refunds**: bounty cancel, market cancel, summon refund.
+(Sanctuary upgrades are NOT here - they cost Baddie Points, see 4.7.)
 **Sinks**: blacksmith repair-all (encounter cost), healer cure/cleanse, merchant recharge, trading-post recharge (cost/10),
 home stones (price, capped per type), Cartographer locate (15), guard hire (50 + food), wits training (`5 + 10 x bonus`),
 crafting commission fees and listing pulls, prefab post charters, title abilities, shrine pilgrimage, the merchant gamble
@@ -112,18 +113,53 @@ bigger lever - Q3); it needs **V2's ledger first** because it moves valor and mu
 ledger and after the living-world work it pairs with (Wave 3).
 
 ### 4.5 Valor
-Order of work: (1) ledger (V2); (2) read a week of live income and spend; (3) set Sanctuary / service prices against
-"hours of play per upgrade" (target stated by the owner, Q4); (4) only then change `QUEST_VALOR_PER_LEVEL`. Audit the
+Order of work: (1) ledger (V2); (2) read a week of live income and spend; (3) set SERVICE prices against hours of play (Sanctuary pacing is its own proposal, 4.7); (4) only then change `QUEST_VALOR_PER_LEVEL`. Audit the
 merchant gamble's odds for a hidden faucet.
 
-## 5. Questions only the owner can answer
-- **Q1.** Is "gold is a flat ~6-kills-a-tier tax and runs out of uses once your kit is tempered" what you want, or should
-  gold keep a sink at high investment (more tiers, a second tier-set, or enchant-style rerolls)?
-- **Q2.** Companion upkeep: none (my proposal), or a real recurring cost to make a large team a trade-off?
-- **Q3.** Should the surplus-converting NPC pay listers a floor price, or only absorb the leftover for free?
-- **Q4.** How many hours of play should one Sanctuary upgrade cost - for a first upgrade and for the top of the ladder?
+## 5. Owner answers (2026-10-20) and what they change
 
-## 6. What I can build now without waiting on any answer
+- **Q1 - gold needs a sink worth saving for.** *"The player should be able to sink their gold into a piece of gear waaaay
+  better than anything they have if they save up... something that happens to them every so often but not all the time."*
+  -> new section 4.6 (the Master's Commission). This also fixes G1: gold gets a goal beyond the flat Temper tax.
+- **Q2 - companion upkeep: none.** Section 4.3 item 3 stands; the Healer's valor price is the only team cost.
+- **Q3 - the surplus-buying NPC pays sellers a REDUCED amount** (below the market floor). Section 4.4: it is a relief valve
+  that pays less than a player buyer would, so it never competes with real sales; proposed 60% of the going price (G).
+- **Q4 - Sanctuary: one unlock per 20-30 minutes of play.** *Discovery while pricing this:* **Sanctuary upgrades are NOT
+  bought with valor. They cost Baddie Points, and those are awarded only at DEATH** (`_award_baddie_points_on_death`,
+  ~60 a death after the 2026-09-19 repricing; ladder total 189,820 points, 23 tracks, rung 1 = 240-510, top rungs 3-4.6K).
+  Under permadeath a character lives hours, so a time-based target cannot be met by the current faucet at ANY price.
+  -> new section 4.7. My earlier section-3 wording ("Sanctuary / service prices in valor") was wrong and is corrected there.
+
+### 4.6 The Master's Commission (gold sink; owner Q1) - proposed
+- **What:** an occasional visitor (a master smith who passes through a trading post) offers one piece of gear far above
+  anything the player's level drops - one rarity step above the best normal drop and a higher item level - for GOLD only.
+  Gear power is gold's job (principle 1), and it is run-bound: save up, buy it, and it is yours; die first and most of the
+  saved purse is gone. That tension is intended.
+- **Rare, not constant:** appears roughly once per ~90-120 minutes of play (G), not on a timer players can camp; it
+  stays at that post for a limited real-time window so a player can finish a dungeon and come back with the gold.
+- **Price:** a multiple of income, not a flat number: ~800 kills' gold (G) at the player's level (at L50: 80 x 800 =
+  64,000 gold, ~6x one item's full Temper). Scales with level exactly like kill gold, so it stays a saved-up purchase at
+  every level instead of becoming trivial (G2's mistake).
+- **Which item:** the player's own class-appropriate slot with the most room to improve (so the offer is never junk), with
+  the stats rolled from the real generator; never a unique/set (those stay a chase).
+- **Cost to the balance model:** it is a power input. The "average gear" model has to include one such piece per the
+  expected number of visits at that level, so it belongs BEFORE the chain (it is on the Wave 1 list for that reason).
+- **Open sub-questions for the owner:** (a) announce it on the map, or let players stumble on it? (b) offer 1 piece, or 3
+  to choose from (more choice, more UI)? (c) should an unspent offer carry to the next visit?
+
+### 4.7 Sanctuary pacing (owner Q4) - proposed, needs the owner's yes
+Target: ~one rung every 20-30 minutes. The ladder is 23 tracks, ~140 rungs, 189,820 points, average rung ~1,350; at
+25 minutes a rung that is **~3,250 points an hour** needed. The death award (~60) cannot supply it.
+Proposal: **Baddie Points accrue as you play**, with death keeping a smaller bonus:
+- a small award per fight won, per quest turn-in and per dungeon clear, scaled by the level relationship (a trivial
+  kill pays near nothing, a worthy one pays full) so farming weak monsters is not the fast route;
+- the death award stays (a lifetime-so-far bonus) but stops being the only faucet;
+- prices are then re-set from MEASURED points per active hour (encounters/hour is in the live `[ENCOUNTER]` log), not
+  guessed; the 2026-09-19 repricing was a death-rate model and has to be redone against hours.
+This changes what the Sanctuary IS (a play-time reward, not a legacy reward). Owner: is that the intent, or should
+playing only ever speed it up modestly while deaths stay the main route?
+
+## 6. What I can build now
 1. The valor **ledger** (kind + reason on every change; no behaviour change; makes sections 3 and 4.5 measurable).
 2. Gold telemetry: log gold in/out per reason per character, so kills-per-tier is measured, not computed.
 3. A probe that every valor change goes through the ledger, so a new sink cannot bypass it (the V1 shape).
