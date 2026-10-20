@@ -1386,7 +1386,10 @@ var pending_blacksmith: bool = false
 var blacksmith_items: Array = []  # Items available to repair
 var blacksmith_repair_all_cost: int = 0
 var blacksmith_can_upgrade: bool = false
-var blacksmith_upgrade_mode: String = ""  # "", "select_item", "select_affix"
+var blacksmith_upgrade_mode: String = ""  # "", "select_item", "select_affix", "master"
+var blacksmith_master_offer: bool = false   # a live Master Smith offer at this post
+var blacksmith_master_items: Array = []
+var blacksmith_master_locked: bool = false
 var blacksmith_upgrade_items: Array = []  # Items available for upgrade
 var blacksmith_upgrade_affixes: Array = []  # Affixes available on selected item
 var blacksmith_upgrade_item_name: String = ""  # Name of selected item
@@ -5782,6 +5785,17 @@ func _process(delta):
 							send_blacksmith_choice("select_upgrade_item", slot)
 				else:
 					set_meta("blacksmithkey_%d_pressed" % i, false)
+		elif blacksmith_upgrade_mode == "master":
+			for i in range(min(9, blacksmith_master_items.size())):
+				var m_regular = is_item_select_key_pressed(i)
+				var m_numpad = Input.is_physical_key_pressed(KEY_KP_1 + i) and not Input.is_key_pressed(KEY_SHIFT)
+				if m_regular or m_numpad:
+					if not get_meta("blacksmithkey_%d_pressed" % i, false):
+						set_meta("blacksmithkey_%d_pressed" % i, true)
+						_consume_item_select_key(i)
+						send_blacksmith_choice("master_buy", str(i))
+				else:
+					set_meta("blacksmithkey_%d_pressed" % i, false)
 		elif blacksmith_upgrade_mode == "select_affix":
 			# Selecting affix to upgrade
 			for i in range(min(9, blacksmith_upgrade_affixes.size())):
@@ -7413,6 +7427,23 @@ func _dev_run_shots() -> void:
 				display_dungeon_floor()
 				print("[SHOTS] rescuenpcs placed=%d of %d dungeon_mode=%s" % [_placed, _types.size(), str(dungeon_mode)])
 				await _dev_shot_capture("rescue_npcs")
+
+			"master":
+				# The Master Smith panel (docs/design/economy.md 4.6), rendered by the REAL client from locally generated items.
+				var _dt = DropTables.new()
+				var _mi: Array = []
+				for _slot in ["weapon", "helm", "ring"]:
+					_mi.append(_dt._generate_item({"item_type": _slot}, 62, "legendary"))
+				handle_blacksmith_encounter({"message": "[color=#DAA520]'Anything need fixing?'[/color]", "items": [], "repair_all_cost": 0,
+					"master_offer": true, "player_valor": 120})
+				await get_tree().create_timer(0.8).timeout
+				await _dev_shot_capture("master_01_blacksmith_menu")
+				handle_master_smith_offer({"message": "[color=#DAA520]'Work like this does not come cheap, and it does not come twice.'[/color]",
+					"items": _mi, "worn": [{}, {}, {}], "price": 64000, "locked": false, "expires_in": 1500, "player_gold": 18500})
+				await get_tree().create_timer(0.8).timeout
+				await _dev_shot_capture("master_02_offer")
+				pending_blacksmith = false
+				blacksmith_upgrade_mode = ""
 
 			"rework":
 				# The rework flow, which the owner watched vanish off the screen. A capture after
@@ -12275,6 +12306,19 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif blacksmith_upgrade_mode == "master":
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "blacksmith_cancel_upgrade", "enabled": true},
+				{"label": "Unlock" if blacksmith_master_locked else "Lock", "action_type": "local", "action_data": "blacksmith_master_lock", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "1-3=Buy", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif blacksmith_upgrade_mode == "select_affix":
 			# Selecting affix to upgrade
 			current_actions = [
@@ -12295,11 +12339,11 @@ func update_action_bar():
 				{"label": "Decline", "action_type": "local", "action_data": "blacksmith_decline", "enabled": true},
 				{"label": "All(%dg)" % blacksmith_repair_all_cost if blacksmith_repair_all_cost > 0 else "All", "action_type": "local", "action_data": "blacksmith_repair_all", "enabled": blacksmith_items.size() > 0},
 				{"label": "Temper", "action_type": "local", "action_data": "blacksmith_temper", "enabled": true},
+				{"label": "Master", "action_type": "local", "action_data": "blacksmith_master", "enabled": true} if blacksmith_master_offer else {"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				# ⛑ The Enhance button is gone, not disabled. The town blacksmith no longer
 				# upgrades (owner 2026-09-18) and the path it fed was the game's one UNCAPPED
 				# stat source. Strengthening gear lives in crafting; changing a stat is
 				# Inventory -> Rework, which trades instead of adding and is capped per item.
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "1-9=Item", "action_type": "none", "action_data": "", "enabled": false},
@@ -19504,6 +19548,10 @@ func execute_local_action(action: String):
 			send_blacksmith_choice("repair_all")
 		"blacksmith_temper":
 			send_blacksmith_choice("temper")
+		"blacksmith_master":
+			send_blacksmith_choice("master")
+		"blacksmith_master_lock":
+			send_blacksmith_choice("master_lock")
 		"blacksmith_upgrade":
 			send_blacksmith_choice("upgrade")
 		"blacksmith_cancel_upgrade":
@@ -30752,6 +30800,8 @@ func handle_server_message(message: Dictionary):
 
 		"blacksmith_upgrade_select_item":
 			handle_blacksmith_upgrade_select_item(message)
+		"master_smith_offer":
+			handle_master_smith_offer(message)
 
 		"blacksmith_upgrade_select_affix":
 			handle_blacksmith_upgrade_select_affix(message)
@@ -35726,7 +35776,13 @@ func display_changelog():
 	# v0.9.844 - companion teams in party fights: they DO fight there; now they are shown and the slots are split.
 	# v0.9.845 - one companion role vocabulary, team HP bars, the Claim Title button, and the Cursed Coin fix.
 	# v0.9.846 - the Fighter's opening stance halved and named; passives announced; armor listed in mitigation.
-	display_game("[color=#00FF00]v0.9.846[/color] [color=#808080](Current)[/color]")
+	# v0.9.847 - the Master Smith, Sanctuary points earned by playing, Role Swap priced by level.
+	display_game("[color=#00FF00]v0.9.847[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ THE MASTER SMITH.[/color] From level 10, every so often (about every 90-120 minutes of play) a master smith arrives at a post - the game tells you where. At that post's blacksmith, press [b]Master[/b]: [b]three[/b] pieces far better than anything your level drops, for about 800 kills' worth of [b]gold[/b]. Buy one. [b]Lock[/b] the offer to hold it while you save up; unlocked, he moves on after about 30 minutes. Gold is lost with a dead character, so saving it is a gamble.")
+	display_game("  [color=#FF8000]★ SANCTUARY POINTS ARE EARNED BY PLAYING.[/color] Baddie Points used to come only when a character died. Now wins, quests and dungeon clears pay them as you go (a trivial monster pays almost nothing), and a death pays a bonus on top - so the Sanctuary keeps pace with how much you play.")
+	display_game("  [color=#FF8000]◆ ROLE SWAP PRICE.[/color] It now costs 25 kills' worth of gold per tier at your level, instead of a flat 1,000 per tier that stopped mattering as you grew.")
+	display_game("")
+	display_game("[color=#808080]v0.9.846[/color]")
 	display_game("  [color=#FF8000]★ THE FIGHTER'S OPENING STANCE IS HALVED, AND NAMED.[/color] Fighters open every fight braced (30% damage reduction for 4 rounds, plus a defense bonus). It used to be twice that and never said where it came from. The fight now opens with a line explaining it, and your status chips read [b](Fighter's stance)[/b].")
 	display_game("  [color=#FF8000]◆ NOTHING BOOSTS YOU IN SILENCE.[/color] Every fight now opens by naming your class passive and racial passive, a buff from a companion shows the companion's name, and your armor's damage reduction is listed in the mitigation breakdown.")
 	display_game("")
@@ -35744,12 +35800,6 @@ func display_changelog():
 	display_game("  [color=#FF8000]★ ROLE SWAP AT THE COMPANION STABLE.[/color] A new [b]Role Swap[/b] fusion takes [b]3 companions of the same tier[/b] (any species, any rank) and [b]gold[/b] (1,000 per tier) and gives you [b]1 companion of the role you pick[/b] - Tank, Healer, Striker, Utility or All-rounder - a random species of that role at that tier, at the [b]lowest rank[/b] of the three (so it is a swap, never an upgrade). The best level and border carry over.")
 	display_game("  [color=#FF8000]◆ EVERY SURFACE NAMES THE ROLE.[/color] Companion cards, eggs, the inspect screen, the Stable's lists and the [b]Dungeon Atlas's egg line[/b] now say what role a species is - so you can see which dungeon's boss egg will give you a Healer before you go.")
 	display_game("  [color=#FF8000]◆ EARLY STRIKERS.[/color] Wolf, Gnoll and Orc are Strikers, so a low-level team is not without one (the first derived Striker was tier 4).")
-	display_game("")
-	display_game("[color=#808080]v0.9.842[/color]")
-	display_game("  [color=#FF8000]★ A COMPANION TEAM.[/color] Besides the companion beside you, you can now field up to [b]four more[/b] that fight in the right-hand column. Slots unlock at character [b]level 10, 25, 50 and 100[/b]. Open [b]More → Companions[/b], right-click a companion and choose [b]Add to team[/b]; the Team section lists them with their HP.")
-	display_game("  [color=#FF8000]★ ROLES.[/color] Every companion now has a role from its species: [b]Tank[/b] (draws the monster's hits), [b]Healer[/b] (heals whoever is lowest - you or a companion - and revives a fallen one), [b]Striker[/b] (lands a heavy strike), [b]Utility[/b] (buffs you, weakens the enemy) or [b]All-rounder[/b] (does whatever is needed, at 60% strength). Phoenix, Wight, Siren, Sphinx, Troll, Vampire, Succubus and Lich are the healers. A support action replaces the companion's attack that turn.")
-	display_game("  [color=#FF8000]★ TACTICS.[/color] Each companion has a [b]Tactics[/b] button: Balanced, All out (attack; heal only to save you), Protect (guard you: heal early, draw hits) or Support (buff and weaken first). It is saved with the companion.")
-	display_game("  [color=#FF8000]◆ HOW A TEAM FIGHTS.[/color] Each teammate has its own HP and can be knocked out. Monsters pick their target across the whole team, but a team soaks at most half of a monster's hits. Teammates earn the same XP as your active companion, recover when you rest, and the Healer NPC revives them. A teammate does about 37% of what your active companion does, so five together are about 2.5 times one. (Party fights: see v0.9.844.)")
 	display_game("")
 	display_game("[color=#808080]v0.9.838[/color]")
 	display_game("  [color=#FF8000]★ PARTIES NO LONGER HAVE A LEADER YOU FOLLOW.[/color] Anyone in a party can now walk out of a trading post on their own - before, only the leader could, and only once everyone stood beside them. The Lead / Follow question when a party forms is gone (whoever invited leads), leadership no longer rotates after every fight, and the Lead: Rotate / Fixed button is removed. The Party help page now describes how it really works: everyone moves on their own, a fight pulls in members within 8 tiles, and you can walk into a teammate who is fighting to join.")
@@ -41357,7 +41407,7 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
   • [color=#00FF00]Same-Type:[/color] 3 same monster + rank → 1 with rank+1 (rank 9 is the cap)
   • [color=#FF00FF]Mixed A9:[/color] 8 A8 companions → 1 random A9 companion
   • Fused companions start at Lv1 with a new random variant
-[color=#FF69B4]Baddie Points (BP):[/color] Meta-currency earned when characters die. Spend on upgrades:
+[color=#FF69B4]Baddie Points (BP):[/color] Meta-currency earned as you play (wins, quests, dungeon clears) plus a bonus when a character dies. Spend on upgrades:
   • Storage (+10 slots/lv) | Registered Companions (+1 slot/lv) | Kennel Capacity
   • Escape Training (+2% flee/lv) | Family Inheritance (+50g start/lv)
   • Ancestral Wisdom (+1% XP/lv) | Homesteading (+5% gathering/lv)
@@ -49263,6 +49313,7 @@ func handle_blacksmith_encounter(message: Dictionary):
 	blacksmith_items = message.get("items", [])
 	blacksmith_repair_all_cost = message.get("repair_all_cost", 0)
 	blacksmith_can_upgrade = message.get("can_upgrade", false)
+	blacksmith_master_offer = bool(message.get("master_offer", false))
 	var player_gold = message.get("player_valor", 0)
 	var player_materials = message.get("player_materials", {})
 
@@ -49320,6 +49371,9 @@ func handle_blacksmith_encounter(message: Dictionary):
 	display_game("")
 	display_game("[%s] Temper Gear — spend [color=#FFB347]gold[/color] on up to 5 tiers per item (damage on weapons, HP on the rest)" % get_action_key_name(2))
 	display_game("[color=#808080]To change a stat you don't want, use [b]Inventory → Rework[/b].[/color]")
+	if blacksmith_master_offer:
+		display_game("")
+		display_game("[%s] [color=#FFD700]★ THE MASTER SMITH is here[/color] - three pieces far beyond what you have found, for gold" % get_action_key_name(3))
 
 	display_game("")
 	display_game("[%s] Decline" % get_action_key_name(0))
@@ -49336,6 +49390,45 @@ func send_blacksmith_choice(choice: String, slot: String = "", affix_key: String
 	if affix_key != "":
 		msg["affix_key"] = affix_key
 	send_to_server(msg)
+
+func handle_master_smith_offer(message: Dictionary):
+	"""The Master Smith's three pieces (shared/master_smith.gd). Number keys buy; the action bar locks/unlocks."""
+	blacksmith_upgrade_mode = "master"
+	blacksmith_master_items = message.get("items", [])
+	blacksmith_master_locked = bool(message.get("locked", false))
+	var price: int = int(message.get("price", 0))
+	var gold: int = int(message.get("player_gold", 0))
+	var worn: Array = message.get("worn", [])
+	_page_clear()
+	if blacksmith_trader_art != "":
+		display_game(blacksmith_trader_art)
+		display_game("")
+	display_game(message.get("message", ""))
+	display_game("")
+	display_game("[color=#FFD700]=== THE MASTER SMITH ===[/color]")
+	var mins: int = int(ceil(float(message.get("expires_in", 0)) / 60.0))
+	if blacksmith_master_locked:
+		display_game("[color=#7AE07A]Held for you - he will wait until you buy.[/color]")
+	else:
+		display_game("[color=#C8A24A]He moves on in about %d minute(s). Lock the offer to hold it.[/color]" % mins)
+	display_game("[color=#808080]Buy ONE of the three. Each costs the same: [/color][color=#FFB347]%s gold[/color][color=#808080].[/color]" % format_number(price))
+	display_game("")
+	for i in range(blacksmith_master_items.size()):
+		var it: Dictionary = blacksmith_master_items[i]
+		var rc: String = _get_rarity_color(String(it.get("rarity", "common")))
+		display_game("[%d] [color=%s]%s[/color]  (Lv %d %s)" % [i + 1, rc, String(it.get("name", "Item")), int(it.get("level", 1)), String(it.get("type", ""))])
+		display_game("      %s" % _get_item_bonus_summary(it))
+		var cur: Dictionary = worn[i] if i < worn.size() and worn[i] is Dictionary else {}
+		if cur.is_empty():
+			display_game("      [color=#808080]You wear nothing in this slot.[/color]")
+		else:
+			display_game("      [color=#808080]You wear: %s (Lv %d) %s[/color]" % [String(cur.get("name", "?")), int(cur.get("level", 1)), _get_item_bonus_summary(cur)])
+	display_game("")
+	display_game("[%s] Back    [%s] %s" % [get_action_key_name(0), get_action_key_name(1), "Unlock (let it lapse)" if blacksmith_master_locked else "Lock (hold it for me)"])
+	display_game("")
+	var afford: String = "[color=#00FF00]" if gold >= price else "[color=#FF6666]"
+	display_game("%sYou carry %s gold.[/color]" % [afford, format_number(gold)])
+	update_action_bar()
 
 func handle_blacksmith_upgrade_select_item(message: Dictionary):
 	"""Handle item selection for upgrade"""

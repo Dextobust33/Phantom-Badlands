@@ -180,7 +180,7 @@ const HELP_TOPICS := {
 	"sanctuary_page": {
 		"title": "[color=#FFD700]Sanctuary[/color]",
 		"body": (
-			"Your account-level home that survives permadeath. Spend [color=#FF6600]Baddie Points[/color] (earned on character death) on permanent upgrades that buff every future character.\n\n"
+			"Your account-level home that survives permadeath. Spend [color=#FF6600]Baddie Points[/color] on permanent upgrades that buff every future character. You earn them [b]as you play[/b] (wins, quests, dungeon clears - a trivial monster pays almost nothing) and a character's death pays a bonus on top.\n\n"
 			+ "[color=#FFD700]── 5 tabs ──[/color]\n"
 			+ "  • [color=#88FF88]Storage[/color] — house storage, kennel, egg incubator, companion slots — all the bigger-bag upgrades.\n"
 			+ "  • [color=#FF8888]Combat[/color] — HP / resource max / regen, defensive bonuses.\n"
@@ -414,7 +414,7 @@ const HELP_TOPICS := {
 			+ "If your resource pool is too small for the cards you draw, [b]upgrade gear[/b]:\n"
 			+ "  • [color=#FFD700]Equipment[/color] is the main lever — armor, accessories, weapons all roll resource bonuses at higher tiers. Gear tier 5+ typically rolls +N max resource lines.\n"
 			+ "  • [color=#88FF88]Sources[/color] — drops from monster kills (scratch-off), dungeon chests, crafting (specialty recipes), market listings, salvaging for materials → crafting.\n"
-			+ "  • [color=#A335EE]Sanctuary upgrades[/color] — the [color=#FFAA66]Combat[/color] tab in Sanctuary boosts max resource pool account-wide. Spend Baddie Points (earned on death).\n"
+			+ "  • [color=#A335EE]Sanctuary upgrades[/color] — the [color=#FFAA66]Combat[/color] tab in Sanctuary boosts max resource pool account-wide. Spend Baddie Points (earned by playing, plus a bonus on death).\n"
 			+ "  • [color=#9ACD32]Stat allocation[/color] — INT raises Mana, CON raises Stamina, DEX raises Energy. Spend points in /stats.\n"
 			+ "  • [color=#FFD700]Consumables[/color] — Mana / Stamina potions and similar can be brought into combat (mapped via Settings → Combat Items).\n\n"
 			+ "[color=#FFD700]── Flee / Item / Companion ──[/color]\n"
@@ -589,7 +589,9 @@ const HELP_TOPICS := {
 			+ "[color=#FFD700]── Where it goes ──[/color]\n"
 			+ "  • [b]Blacksmith → Temper[/b]: up to 5 tiers per worn item. Weapons gain damage, everything else gains HP. Each tier costs more, and the gain stays on the item.\n"
 			+ "  • [b]Rework[/b] (changing a stat you don't want) costs gold, rising with each rework on that item. A committed Enchanter works for free but still needs materials.\n"
-			+ "  • A stat you Tempered survives a Rework - only the natural roll is rerolled.\n\n"
+			+ "  • A stat you Tempered survives a Rework - only the natural roll is rerolled.\n"
+			+ "  • [b]The Master Smith[/b] visits now and then (level 10+, roughly every 90-120 minutes of play) and the game tells you where. At that post's blacksmith, choose [b]one of three[/b] pieces far better than anything your level drops - for about 800 kills' worth of gold. [b]Lock[/b] the offer to hold it while you save up; an unlocked offer lapses after about 30 minutes.\n"
+			+ "  • [b]Role Swap[/b] at the Companion Stable costs gold too: 25 kills' worth per tier of the companions you feed it.\n\n"
 			+ "[color=#FFD700]── If you die ──[/color] A random 10-50% of your gold (and gems) is left on your corpse for you, or anyone, to loot. The rest is gone with the character.\n\n"
 			+ "[color=#888888]Prices and payouts are early numbers and will be tuned as we see how you play.[/color]"
 		),

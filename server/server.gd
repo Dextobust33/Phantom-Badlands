@@ -72,6 +72,7 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 const PowerRankScript = preload("res://shared/power_rank.gd")
 const GoldEconomyScript = preload("res://shared/gold_economy.gd")
 const SanctuaryPointsScript = preload("res://shared/sanctuary_points.gd")
+const MasterSmithScript = preload("res://shared/master_smith.gd")
 const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 const TravelStanceScript = preload("res://shared/travel_stance.gd")
 const DangerWordsScript = preload("res://shared/danger_words.gd")
@@ -1512,6 +1513,7 @@ func _process(delta):
 	var _flush_chr_start_us: int = Time.get_ticks_usec() if diag_timing_enabled else 0
 	# The Warden walking somebody to the dungeon. Costs nothing when nobody is being led.
 	_escort_walk_tick()
+	_master_smith_tick(delta)
 	_flush_pending_character_saves()
 	if diag_timing_enabled:
 		_diag_flush_char_saves_us = Time.get_ticks_usec() - _flush_chr_start_us
@@ -10384,6 +10386,7 @@ func _handle_blacksmith_station(peer_id: int, character):
 		"items": damaged_items,
 		"repair_all_cost": repair_all_cost,
 		"can_upgrade": false,
+		"master_offer": _master_offer_here(peer_id),
 		"player_valor": persistence.get_valor(bs_account_id),
 		"player_materials": character.crafting_materials.duplicate(),
 		"under_threat": threatened,
@@ -10508,6 +10511,9 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 	# ...EXCEPT TEMPERING (owner 2026-10-14, playtest sheet item 50): gold buys a few CAPPED tiers on
 	# a worn item - damage on a weapon, HP on the rest. Capped per item and priced in the run-bound
 	# currency, which is the shape the ruling above asked for.
+	if choice in ["master", "master_lock", "master_buy"]:
+		_master_choice(peer_id, String(choice), message)
+		return
 	if choice == "temper":
 		_send_temper_list(peer_id, "[color=#DAA520]'Gold and a hot forge. Pick the piece.'[/color]")
 		return
@@ -10531,6 +10537,7 @@ func handle_blacksmith_choice(peer_id: int, message: Dictionary):
 			"items": encounter.get("items", []),
 			"repair_all_cost": encounter.get("repair_all_cost", 0),
 			"can_upgrade": false,
+			"master_offer": _master_offer_here(peer_id),
 			"player_valor": persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0,
 			"player_materials": character.crafting_materials.duplicate()
 		})
@@ -12800,6 +12807,109 @@ func handle_show_stats(peer_id: int) -> void:
 	else:
 		lines.append("[color=#888888]No unspent stat points. Level up to earn (+1 per level).[/color]")
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+## ===== THE MASTER SMITH (shared/master_smith.gd, docs/design/economy.md 4.6) =====
+var _master_tick_accum: float = 0.0
+
+func _master_smith_tick(delta: float) -> void:
+	"""Counts each character's play-time to its next Master Smith visit, announces the visit, and lets an unlocked
+	offer lapse. Five-second steps, so it costs nothing per frame."""
+	_master_tick_accum += delta
+	if _master_tick_accum < 5.0:
+		return
+	var step: float = _master_tick_accum
+	_master_tick_accum = 0.0
+	var now: int = int(Time.get_unix_time_from_system())
+	for peer_id in characters.keys():
+		var ch = characters[peer_id]
+		if not peers.has(peer_id) or combat_mgr.is_in_combat(peer_id) or ch.level < MasterSmithScript.MIN_LEVEL:
+			continue
+		if not ch.master_offer.is_empty() and not MasterSmithScript.is_live(ch.master_offer, now):
+			var gone_from: String = String(ch.master_offer.get("post_name", "the post"))
+			ch.master_offer = {}
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#C8A24A]The Master Smith has moved on from %s.[/color]" % gone_from})
+		if ch.master_clock < 0.0:
+			ch.master_clock = MasterSmithScript.next_clock()
+		if ch.master_offer.is_empty():
+			ch.master_clock -= step
+			if ch.master_clock <= 0.0:
+				_master_smith_visit(peer_id)
+
+func _master_smith_visit(peer_id: int) -> void:
+	var ch = characters[peer_id]
+	ch.master_clock = MasterSmithScript.next_clock()
+	var post: Dictionary = chunk_manager.get_nearest_npc_post(ch.x, ch.y)
+	if post.is_empty():
+		return
+	var offer: Dictionary = MasterSmithScript.build_offer(ch, post, int(Time.get_unix_time_from_system()),
+		func(slot: String, level: int, rarity: String) -> Dictionary:
+			return drop_tables._generate_item({"item_type": slot}, level, rarity))
+	if offer.is_empty():
+		return
+	ch.master_offer = offer
+	var dx: int = int(post.get("x", 0)) - ch.x
+	var dy: int = int(post.get("y", 0)) - ch.y
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]★ A MASTER SMITH has arrived at %s (%d, %d), about %d steps away![/color]\n[color=#C8A24A]Three pieces far beyond anything you have found, for gold. Visit the blacksmith there within %d minutes - or lock the offer to hold it while you earn the gold.[/color]" % [
+		String(post.get("name", "a trading post")), int(post.get("x", 0)), int(post.get("y", 0)), maxi(absi(dx), absi(dy)), MasterSmithScript.OFFER_WINDOW / 60]})
+	save_character(peer_id)
+
+func _master_offer_here(peer_id: int) -> bool:
+	"""Is there a live offer at the post the player is standing at?"""
+	if not characters.has(peer_id):
+		return false
+	var ch = characters[peer_id]
+	if not MasterSmithScript.is_live(ch.master_offer, int(Time.get_unix_time_from_system())):
+		return false
+	var post: Dictionary = chunk_manager.get_nearest_npc_post(ch.x, ch.y)
+	return not post.is_empty() and int(post.get("x", 0)) == int(ch.master_offer.get("post_x", -1)) and int(post.get("y", 0)) == int(ch.master_offer.get("post_y", -1))
+
+func _send_master_offer(peer_id: int, note: String) -> void:
+	var ch = characters[peer_id]
+	var offer: Dictionary = ch.master_offer
+	var worn: Array = []
+	for it in offer.get("items", []):
+		var cur = ch.equipped.get(String(it.get("type", "")))
+		worn.append(cur if cur is Dictionary else {})
+	send_to_peer(peer_id, {
+		"type": "master_smith_offer", "message": note, "items": offer.get("items", []), "worn": worn,
+		"price": int(offer.get("price", 0)), "locked": bool(offer.get("locked", false)),
+		"expires_in": maxi(0, int(offer.get("expires", 0)) - int(Time.get_unix_time_from_system())),
+		"player_gold": int(ch.gold_purse),
+	})
+
+func _master_choice(peer_id: int, choice: String, message: Dictionary) -> void:
+	var ch = characters[peer_id]
+	if not _master_offer_here(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#C8A24A]'The master has gone.'[/color]"})
+		send_to_peer(peer_id, {"type": "blacksmith_done"})
+		return
+	if choice == "master":
+		_send_master_offer(peer_id, "[color=#DAA520]'Work like this does not come cheap, and it does not come twice.'[/color]")
+	elif choice == "master_lock":
+		ch.master_offer["locked"] = not bool(ch.master_offer.get("locked", false))
+		save_character(peer_id)
+		_send_master_offer(peer_id, "[color=#C8A24A]%s[/color]" % ("'I will keep these by for you.' The offer is held until you buy." if bool(ch.master_offer["locked"]) else "'Then I move on within the hour.' The offer will lapse."))
+	elif choice == "master_buy":
+		var idx: int = int(String(message.get("slot", "-1")))
+		var items: Array = ch.master_offer.get("items", [])
+		if idx < 0 or idx >= items.size():
+			_send_master_offer(peer_id, "[color=#FF6666]Pick one of the pieces.[/color]")
+			return
+		var price: int = int(ch.master_offer.get("price", 0))
+		if not ch.can_add_item():
+			_send_master_offer(peer_id, "[color=#FF6666]Your pack is full - make room first.[/color]")
+			return
+		if not ch.spend_gold(price):
+			_send_master_offer(peer_id, "[color=#FF6666]'That is %s gold and you carry %s. Come back when you can pay.' (Lock the offer to keep it.)[/color]" % [_fmt_int(price), _fmt_int(int(ch.gold_purse))])
+			return
+		_note_gold("out", "master_smith", price)
+		var bought: Dictionary = items[idx]
+		ch.add_item(bought)
+		ch.master_offer = {}
+		save_character(peer_id)
+		send_character_update(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]The Master Smith hands you %s for %s gold.[/color]\n[color=#808080]The other pieces go back into his pack - he moves on.[/color]" % [String(bought.get("name", "the piece")), _fmt_int(price)]})
+		send_to_peer(peer_id, {"type": "blacksmith_done"})
 
 func _award_play_points(peer_id: int, points: int, reason: String) -> void:
 	"""Sanctuary points for PLAYING (shared/sanctuary_points.gd). Fights are summed quietly and reported every ten

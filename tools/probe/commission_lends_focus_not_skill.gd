@@ -105,7 +105,7 @@ func _init() -> void:
 		_fail("the fee does not rise with the recipe's skill requirement")
 	else:
 		_ok("a skill-90 commission costs %.1fx a skill-5 one" % (float(fees[fees.size() - 1]) / float(fees[0])))
-	if srv.find("persistence.spend_valor(comm_account, fee)") < 0:
+	if srv.find('persistence.spend_valor(comm_account, fee, "handle_craft_item")') < 0:
 		_fail("the fee is never actually charged")
 	else:
 		_ok("the fee is charged before the craft runs")

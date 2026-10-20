@@ -145,8 +145,11 @@ merchant gamble's odds for a hidden faucet.
 - **Cost to the balance model:** it is a power input. The "average gear" model has to include one such piece per the
   expected number of visits at that level, so it belongs BEFORE the chain (it is on the Wave 1 list for that reason).
 - **Owner ruled 2026-10-20:** (a) ANNOUNCE it; (b) offer THREE pieces to choose from; (c) an offer can be LOCKED / saved for later
-  (so a player can walk away to earn the gold and return). Not built yet - it needs a visitor event, a three-item offer
-  panel, a per-character "held offer", and the announcement surface.
+  (so a player can walk away to earn the gold and return). **BUILT 2026-10-20 (v0.9.847, unreleased):** `shared/master_smith.gd` + server `_master_smith_*` + the blacksmith panel's "Master"
+  button. Level 10+, one visit per 90-120 min of play, announced in chat with the post and distance, three pieces (one rarity
+  step above your best worn, min epic, item level x1.25+5, your weakest slots first), 800 kills' gold, 30 min window,
+  Lock holds it. Probe `master_smith`; screenshots `claude_screenshots/shot_9305.png`/`shot_12120.png` (`shots.py master`).
+  Not yet: a map marker for the post (chat message only), and the balance model does not count the pieces yet (Wave 2).
 
 ### 4.7 Sanctuary pacing (owner Q4) - proposed, needs the owner's yes
 Target: ~one rung every 20-30 minutes. The ladder is 23 tracks, ~140 rungs, 189,820 points, average rung ~1,350; at
@@ -161,7 +164,11 @@ Proposal: **Baddie Points accrue as you play**, with death keeping a smaller bon
 This changes what the Sanctuary IS (a play-time reward, not a legacy reward). Owner: is that the intent, or should
 playing only ever speed it up modestly while deaths stay the main route?
 
-## 6. What I can build now
+## 6. Build status 2026-10-20
+BUILT: valor ledger + gold telemetry; Sanctuary points by play; Role Swap priced in kills; the Master Smith. NOT BUILT: companion
+feeding sink (4.3.1), surplus conversion (4.4, Wave 3), repricing of the Sanctuary ladder (needs a week of measured points/hour).
+
+## 7. What was buildable without waiting (original list)
 1. The valor **ledger** (kind + reason on every change; no behaviour change; makes sections 3 and 4.5 measurable).
 2. Gold telemetry: log gold in/out per reason per character, so kills-per-tier is measured, not computed.
 3. A probe that every valor change goes through the ledger, so a new sink cannot bypass it (the V1 shape).

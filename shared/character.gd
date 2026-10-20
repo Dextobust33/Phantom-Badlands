@@ -439,6 +439,10 @@ static func get_item_slot_from_type(item_type: String) -> String:
 # Tracking / Persistence
 @export var created_at: int = 0
 @export var played_time_seconds: int = 0
+## The Master Smith's current offer (shared/master_smith.gd): {} when none. {post_x, post_y, post_name, expires (unix),
+## locked, price, items: [3 item dicts]}. `master_clock` counts down, in seconds of play, to the next visit; -1 = unset.
+@export var master_offer: Dictionary = {}
+@export var master_clock: float = -1.0
 @export var monsters_killed: int = 0
 @export var deaths: int = 0
 
@@ -2494,6 +2498,8 @@ func to_dict() -> Dictionary:
 		"equipped": equipped,
 		"created_at": created_at,
 		"played_time_seconds": played_time_seconds,
+		"master_offer": master_offer,
+		"master_clock": master_clock,
 		"monsters_killed": monsters_killed,
 		"deaths": deaths,
 		"active_buffs": active_buffs,
@@ -2788,6 +2794,8 @@ func from_dict(data: Dictionary):
 	# Tracking fields
 	created_at = data.get("created_at", 0)
 	played_time_seconds = data.get("played_time_seconds", 0)
+	master_offer = data.get("master_offer", {}) if data.get("master_offer", {}) is Dictionary else {}
+	master_clock = float(data.get("master_clock", -1.0))
 	monsters_killed = data.get("monsters_killed", 0)
 	deaths = data.get("deaths", 0)
 
