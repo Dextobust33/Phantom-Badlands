@@ -86,7 +86,7 @@ Not yet shipped (needs a release); `-- cardtrace --class=X --level=N` prints a t
 
 ### OWNER DECISIONS NEEDED (batched so they cost one conversation, not six)
 1. Is a pair getting ONE teammate each right, and is "none in a party of 3+" acceptable?
-2. Should 'under-geared' characters in the model have companions (changes whether the candidate curve can ship)?
+2. Should 'under-geared' characters in the model have companions (changes whether the candidate curve can ship)? **ANSWERED 2026-10-20: YES - players get their first companion after the tutorial, so the model gives gearless characters one.**
 3. Paths revamp and the dungeon card power pass: the direction (each blocked only on this).
 4. Which Wave 3 item first, once Wave 2 is done.
 5. Permadeath: is it changing? (gates THE UNBURIED and parts of the economy.)
