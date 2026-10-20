@@ -266,6 +266,7 @@ func _audit_registry() -> Dictionary:
 		"cardpromise": ["does every card GRANT the engine gain its face advertises?", run_cardpromise],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
+		"cardtrace": ["TURN-BY-TURN trace of one trickster class: card played, Read, assassinate chance (--class=Ninja --level=30)", run_card_trace],
 		"classrisk": ["PER-CLASS win/death at set levels and gear, with the Fighter opening stance A/B (--stance=1.0|0.5|0)", run_class_risk],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
 		"endgame": ["the 95% target: does a WELL-GEARED endgame player survive 19 fights in 20?", run_endgame],
@@ -4594,6 +4595,8 @@ func _player_act_trickster(combat: Dictionary, ch) -> void:
 		_: _trickster_assassin(combat, ch)
 
 
+var _ninja_finisher_read := 6   # `--ninjaread=N` overrides, to find the Read worth cashing at
+
 func _finisher_is_ready(combat: Dictionary, ch) -> bool:
 	"""Should the Trickster spend its finisher THIS turn? The answer now differs by class.
 
@@ -4608,6 +4611,14 @@ func _finisher_is_ready(combat: Dictionary, ch) -> bool:
 	match String(ch.class_type):
 		"Grifter", "Ranger":
 			return read >= 6
+		"Ninja":
+			# 2026-10-20 - THE NINJA'S GATE WAS A DEAD LETTER. It asked for `assassinate_chance >= 45`, written for
+			# the pre-2026-09-08 gamble. Since the rework the strike ALWAYS lands for damage scaled by the Read it
+			# spends and the chance is only a bonus instant-kill that tops out at 26%, so the gate could never be
+			# true. The finisher then fired only from the "anything castable" fallback, at ANY Read - and
+			# casting it zeroes the Read bank, so the simulated Ninja kept emptying its own engine at 1-4 stacks.
+			# That is the 6-44% win / 6-18% death row `classrisk` printed. It banks like its siblings now.
+			return read >= _ninja_finisher_read
 		_:
 			return int(combat_mgr.assassinate_chance(ch, combat.get("monster", {}), combat)) >= 45
 
@@ -4672,8 +4683,11 @@ func _trickster_deny_first(combat: Dictionary, ch) -> void:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	# Anything still castable beats a staff swing.
+	# Anything still castable beats a staff swing - EXCEPT the finisher, which zeroes the Read bank: casting it
+	# here at 1-4 stacks threw the engine away (the Ninja's whole measured weakness, 2026-10-20).
 	for ab in hand:
+		if String(ab) == "perfect_heist":
+			continue
 		if combat_mgr.process_ability_command(0, String(ab), "").get("success", false):
 			return
 	_counted_attack(combat)
@@ -7415,6 +7429,69 @@ func run_preflight() -> void:
 	print("=============================================================")
 
 
+func run_card_trace() -> void:
+	"""What a simulated trickster actually DOES each turn, so a bad class row can be told apart from a bad policy.
+	Prints the card that left the hand, the Read bank, the Assassinate chance and both HP bars, for a few fights,
+	then a tally of cards played over many."""
+	var klass := "Ninja"
+	var level := 30
+	for a in OS.get_cmdline_user_args():
+		if String(a).begins_with("--class="):
+			klass = String(a).substr(8)
+		if String(a).begins_with("--level="):
+			level = int(String(a).substr(8))
+	print("
+===== CARD TRACE: %s L%d average gear, normal monster =====" % [klass, level])
+	var tally := {}
+	var total_turns := 0
+	var shown := 0
+	for f in range(60):
+		seed(hash("cardtrace|%s|%d|%d" % [klass, level, f]))
+		var ch = make_char(level, "average", klass, "Human")
+		var monster = make_monster(level, "normal", 1.0)
+		combat_mgr.start_combat(0, ch, monster)
+		if not combat_mgr.active_combats.has(0):
+			continue
+		var combat = combat_mgr.active_combats[0]
+		var show: bool = shown < 3
+		if show:
+			print("-- fight %d: monster hp %d, player hp %d, energy %d" % [f, int(monster.max_hp), ch.get_total_max_hp(), int(ch.current_energy)])
+		var turns := 0
+		while turns < 60 and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0 and not combat.get("combat_ended", false):
+			turns += 1
+			var hand0: Array = combat.get("combat_hand", []).duplicate()
+			var chance := int(combat_mgr.assassinate_chance(ch, monster, combat))
+			var read := int(combat.get("combo", 0))
+			var en := int(ch.current_energy)
+			var php: int = ch.current_hp
+			var mhp: int = int(monster.get("current_hp", 0))
+			if combat.get("player_can_act", true):
+				_player_act_trickster(combat, ch)
+			var hand1: Array = combat.get("combat_hand", [])
+			var played := "attack"
+			var left: Array = hand0.duplicate()
+			for c in hand1:
+				var i := left.find(c)
+				if i >= 0:
+					left.remove_at(i)
+			if left.size() > 0:
+				played = String(left[0])
+			tally[played] = int(tally.get(played, 0)) + 1
+			total_turns += 1
+			if show:
+				print("  t%-2d hand=%s read=%d assn=%d%% en=%d  -> %-14s monster %d->%d  me %d->%d" % [turns, str(hand0), read, chance, en, played, mhp, int(monster.get("current_hp", 0)), php, ch.current_hp])
+			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+				break
+			_monster_turn_if_owed(combat)
+		if show:
+			print("  result: %s after %d turns" % ["WIN" if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0 else "not a win", turns])
+			shown += 1
+		combat_mgr.end_combat(0, int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0, false)
+	print("card tally over %d turns:" % total_turns)
+	for k in tally.keys():
+		print("  %-16s %5.1f%%" % [k, 100.0 * float(tally[k]) / float(maxi(1, total_turns))])
+
+
 func run_class_risk() -> void:
 	"""Win and death rate PER CLASS (riskcurve only reports the nine-class average, which is how one class
 	being far safer than the rest stays invisible). Seeded per cell, so changing only the Fighter's stance
@@ -7423,6 +7500,8 @@ func run_class_risk() -> void:
 	for a in OS.get_cmdline_user_args():
 		if String(a).begins_with("--stance="):
 			scale = float(String(a).substr(9))
+		if String(a).begins_with("--ninjaread="):
+			_ninja_finisher_read = int(String(a).substr(12))
 	combat_mgr.opening_stance_scale = scale
 	var levels := [10, 30, 100, 500]
 	var gears := ["under", "average"]

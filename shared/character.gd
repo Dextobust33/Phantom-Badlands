@@ -3523,17 +3523,35 @@ func _clamp_resources_to_max():
 
 # ===== BUFF SYSTEM =====
 
-func add_buff(buff_type: String, value: int, duration: int):
-	"""Add or refresh a combat buff (lasts rounds). If buff already exists, refreshes duration and uses higher value."""
+func add_buff(buff_type: String, value: int, duration: int, source: String = ""):
+	"""Add or refresh a combat buff (lasts rounds). If buff already exists, refreshes duration and uses higher value.
+
+	`source` names where a buff the player did not cast came from ("Fighter's stance", a companion's name), so the
+	status line can say so. Owner 2026-10-20: a buff with no visible origin reads as the class randomly being
+	stronger. A cast card needs none - the player chose it. The label follows the larger value when two merge."""
 	# Path: buff_duration_bonus (War Drums / Lingering Enchantment / Lasting
 	# Tricks — combat buffs last +2 rounds)
 	duration += int(get_path_effect_total("buff_duration_bonus"))
 	for buff in active_buffs:
 		if buff.type == buff_type:
+			if source != "" and value >= int(buff.value):
+				buff["source"] = source
+			elif source == "" and value > int(buff.value):
+				buff.erase("source")
 			buff.value = max(buff.value, value)
 			buff.duration = max(buff.duration, duration)
 			return
-	active_buffs.append({"type": buff_type, "value": value, "duration": duration})
+	var entry := {"type": buff_type, "value": value, "duration": duration}
+	if source != "":
+		entry["source"] = source
+	active_buffs.append(entry)
+
+func get_buff_source(buff_type: String) -> String:
+	"""The `source` label of the active combat buff of this type, or "" (a cast card, or none)."""
+	for buff in active_buffs:
+		if buff.type == buff_type:
+			return String(buff.get("source", ""))
+	return ""
 
 func add_persistent_buff(buff_type: String, value: int, battles: int):
 	"""Add or refresh a persistent buff (lasts multiple battles). If buff already exists, refreshes battles and uses higher value."""

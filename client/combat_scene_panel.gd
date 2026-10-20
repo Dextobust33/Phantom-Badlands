@@ -3371,6 +3371,9 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 			var bval: int = int(b.get("value", 0))
 			var dur_txt := ("this fight" if bdur >= CombatManager.REST_OF_COMBAT_DISPLAY_MIN
 				else "%dT" % bdur)
+			# A buff the player did not cast says where it came from (Fighter's stance, a companion).
+			if str(b.get("source", "")) != "":
+				_stack_tag += "  (%s)" % str(b.get("source"))
 			if bval > 0:
 				chips.append(_format_status_chip(btype, "+%d%% %s%s" % [bval, dur_txt, _stack_tag]))
 			elif bval < 0:

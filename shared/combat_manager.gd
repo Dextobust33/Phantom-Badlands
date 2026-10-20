@@ -2022,10 +2022,10 @@ func _companion_role_action(combat: Dictionary, character, companion: Dictionary
 		CompanionRolesScript.ACT_BUFF:
 			var val: int = maxi(1, int(round(float(CompanionRolesScript.buff_value(role)) * mult)))
 			if tactics == CompanionRolesScript.TACTIC_PROTECT:
-				character.add_buff("damage_reduction", val, CompanionRolesScript.BUFF_ROUNDS)
+				character.add_buff("damage_reduction", val, CompanionRolesScript.BUFF_ROUNDS, "Your " + String(cname))
 				messages.append("[color=#66B0FF]Your %s shields you! (%d%% damage reduction for %d rounds)[/color]" % [cname, val, CompanionRolesScript.BUFF_ROUNDS])
 			else:
-				character.add_buff("damage", val, CompanionRolesScript.BUFF_ROUNDS)
+				character.add_buff("damage", val, CompanionRolesScript.BUFF_ROUNDS, "Your " + String(cname))
 				messages.append("[color=#FF8800]Your %s rallies you! (+%d%% damage for %d rounds)[/color]" % [cname, val, CompanionRolesScript.BUFF_ROUNDS])
 			_team_state(combat, key)["buff_left"] = CompanionRolesScript.BUFF_ROUNDS
 		CompanionRolesScript.ACT_DEBUFF:
@@ -2693,6 +2693,10 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
+	if combat_state.has("warrior_stance_dr"):
+		msg += "
+[color=#7AE07A]%s: you open braced - %d%% damage reduction for 4 rounds, +%d defense for 5. (Fighters only; it is not a card.)[/color]" % [
+			STANCE_LABEL, int(combat_state["warrior_stance_dr"]), int(combat_state["warrior_stance_def"])]
 
 	# Add XP zone hint - shows the player where they stand relative to optimal XP range
 	var hint_level_diff = monster.get("level", 1) - character.level
@@ -11971,12 +11975,16 @@ func player_mitigation_breakdown(character, combat: Dictionary) -> Array:
 	var con_dr := con_damage_reduction(character)
 	if con_dr > 0.0:
 		out.append({"label": "Constitution", "pct": int(round(con_dr * 100.0))})
+	# A buff that carries a `source` (the Fighter's stance, a companion) is named for it, so nothing the player
+	# did not cast shows up as an anonymous number.
 	var buff_dr := int(character.get_buff_value("damage_reduction"))
 	if buff_dr > 0:
-		out.append({"label": "Damage reduction", "pct": buff_dr})
+		var dr_src: String = character.get_buff_source("damage_reduction")
+		out.append({"label": dr_src if dr_src != "" else "Damage reduction", "pct": buff_dr})
 	var def_buff := int(character.get_buff_value("defense"))
 	if def_buff > 0:
-		out.append({"label": "Defense", "pct": def_buff})
+		var def_src: String = character.get_buff_source("defense")
+		out.append({"label": (def_src + " (defense)") if def_src != "" else "Defense", "pct": def_buff})
 	var cls := String(character.class_type)
 	if cls == "Fighter":
 		var m := clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
@@ -13069,7 +13077,13 @@ const ABILITY_FLOOR_RATIO := 0.3
 # The measured problem is that it needs BOTH: strong mitigation to survive its six-turn kill, and
 # the opening turns back to shorten it. A full-value stance grants exactly that and nothing else
 # - it does not raise ABILITY_WEIGHTS, whose totals already match the Mage's.
-const WARRIOR_STANCE_RATIO := 1.0
+#
+# 2026-10-20 - HALVED (1.0 -> 0.5), owner ruling after `-- classrisk` measured the full stance at +10-18pp win
+# at L100-500 and the Fighter the safest class at L10-30. At 0.5 the Fighter sits level with the Wizard. It is
+# also NAMED on the status line ("Fighter's stance"), because a free buff with no visible origin reads as the
+# class just being stronger. Still a per-class change: the chain's refit cancels global buffs.
+const STANCE_LABEL := "Fighter's stance"
+const WARRIOR_STANCE_RATIO := 0.5
 # Scales the Fighter's opening stance. 1.0 = shipped. Exists so the simulator can A/B the stance (`-- classrisk`);
 # nothing in the game sets it.
 var opening_stance_scale: float = 1.0
@@ -13598,8 +13612,8 @@ func _apply_opening_stance(character) -> Dictionary:
 		return {}
 	var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO * opening_stance_scale))
 	var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * WARRIOR_STANCE_RATIO * opening_stance_scale))
-	character.add_buff("damage_reduction", _stance_dr, 4)
-	character.add_buff("defense", _stance_def, 5)
+	character.add_buff("damage_reduction", _stance_dr, 4, STANCE_LABEL)
+	character.add_buff("defense", _stance_def, 5, STANCE_LABEL)
 	return {"warrior_stance_dr": _stance_dr, "warrior_stance_def": _stance_def}
 
 

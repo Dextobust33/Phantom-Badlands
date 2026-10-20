@@ -72,6 +72,18 @@ living world) -> **THE UNBURIED** (needs the owner's permadeath decision) -> Pri
 Owner asked why the Fighter gets 60% DR + defence free at every fight start. 150 fights/cell, every class has a companion, other eight rows byte-identical across runs (control holds). **Win % shipped stance vs none (average gear, L10/30/100/500): Fighter 100/97/85/86 vs 95/89/75/68; Barbarian 96/85/75/75; Paladin 94/79/70/63.** Without the stance the Fighter sits with its Warrior siblings; with it the Fighter is the safest class at L10-30 (0.0-0.7% death) and +10-18pp at L100-500. Deaths at L100-500 are 3-5%, not lower than others. Stance 0.5 lands in between (99/94/79/69). NOT CHANGED - owner decides (trim to 0.5 as a per-class change inside the Wave 2 chain run, or keep).
 **NEW FINDING: the Ninja wins only 6-44% of fights at every level and dies 6-18%** (next worst class 51-70%) - a broken class in the sim; check the card/policy first (instrument), then the class. Put in Wave 2 per-class work.
 
+**FIGHTER STANCE HALVED + NINJA RESOLVED - 2026-10-20 (owner ruling).** (1) The Fighter's free opening stance is now half strength
+(`WARRIOR_STANCE_RATIO` 1.0 -> 0.5: 30% damage reduction for 4 rounds) and is NAMED: the combat log says "Fighter's stance: you open
+braced..." and the status chip / mitigation list show it as "(Fighter's stance)". General rule from the owner: **any buff the player did
+not cast must show where it came from.** Mechanism: `Character.add_buff(..., source)` + `get_buff_source()`; companion buffs are tagged
+with the companion's name; engines (Momentum/Volatility/Read) and CON were already listed. Probe: `free_buffs_name_their_source`.
+STILL TO SWEEP for the same rule: racial/class passives and path effects that act silently in the damage path. (2) NINJA was an
+INSTRUMENT defect, not a class defect: `_finisher_is_ready` gated Assassinate on `assassinate_chance >= 45`, which cannot be true since
+the 09-08 rework (cap ~26%), so the finisher fired only from the "anything castable" fallback at 1-4 Read and zeroed its own bank.
+Fixed in the simulator (bank to Read 6 like its siblings; fallback never burns the finisher). Ninja average gear 44/38/11/8 -> 81/84/65/72
+win% at L10/30/100/500; Grifter/Ranger rows byte-identical. Data: `docs/balance/data/classrisk_stance_0.5_ninja_policy_fixed_2026-10-20.txt`.
+Not yet shipped (needs a release); `-- cardtrace --class=X --level=N` prints a turn-by-turn trace for any trickster.
+
 ### OWNER DECISIONS NEEDED (batched so they cost one conversation, not six)
 1. Is a pair getting ONE teammate each right, and is "none in a party of 3+" acceptable?
 2. Should 'under-geared' characters in the model have companions (changes whether the candidate curve can ship)?
