@@ -71,6 +71,7 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 ## .godot cache this project has been bitten by before.
 const PowerRankScript = preload("res://shared/power_rank.gd")
 const GoldEconomyScript = preload("res://shared/gold_economy.gd")
+const SanctuaryPointsScript = preload("res://shared/sanctuary_points.gd")
 const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 const TravelStanceScript = preload("res://shared/travel_stance.gd")
 const DangerWordsScript = preload("res://shared/danger_words.gd")
@@ -6775,6 +6776,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 		if result.has("victory") and result.victory:
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
+			_award_play_points(peer_id, SanctuaryPointsScript.win_points(int(result.get("monster_level", 1)), characters[peer_id].level,
+					bool(result.get("is_boss", false)) or bool(result.get("is_boss_fight", false))), "win")
 			# GOLD for the kill (per-character currency, see shared/gold_economy.gd).
 			_award_gold(peer_id, GoldEconomyScript.kill_gold(int(result.get("monster_level", 1)),
 					bool(result.get("is_boss", false)) or bool(result.get("is_boss_fight", false)),
@@ -12796,6 +12799,24 @@ func handle_show_stats(peer_id: int) -> void:
 	else:
 		lines.append("[color=#888888]No unspent stat points. Level up to earn (+1 per level).[/color]")
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+func _award_play_points(peer_id: int, points: int, reason: String) -> void:
+	"""Sanctuary points for PLAYING (shared/sanctuary_points.gd). Fights are summed quietly and reported every ten
+	wins so a long session is not a wall of '+12'; quests and dungeons report at once."""
+	if points <= 0 or persistence == null or not peers.has(peer_id):
+		return
+	var acct: String = String(peers[peer_id].get("account_id", ""))
+	if acct == "":
+		return
+	persistence.add_baddie_points(acct, points)
+	persistence.note_points(reason, points)
+	var pending: int = int(_play_points_pending.get(peer_id, 0)) + points
+	_play_points_pending[peer_id] = pending
+	if reason != "win" or pending >= 120:
+		_play_points_pending[peer_id] = 0
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#C9A0FF]+%d Sanctuary points (%s)[/color]" % [pending, reason]})
+
+var _play_points_pending: Dictionary = {}
 
 func _note_gold(direction: String, reason: String, amount: int) -> void:
 	"""Gold telemetry (see persistence.note_gold). Tolerates a fixture with no persistence."""
@@ -21359,6 +21380,7 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 
 		if valor_reward > 0 and peers.has(peer_id):
 			persistence.add_valor(peers[peer_id].account_id, valor_reward, "handle_quest_turn_in")
+		_award_play_points(peer_id, SanctuaryPointsScript.POINTS_PER_QUEST, "quest")
 		# Quests pay GOLD too (the per-character currency), sized to the quest's level.
 		_award_gold(peer_id, GoldEconomyScript.quest_gold(maxi(1, old_level)), "quest")
 
@@ -37876,6 +37898,7 @@ func _complete_dungeon(peer_id: int):
 	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier, _current_dungeon_tier(character))
 	# Clearing a dungeon pays GOLD (per-character), graded by the INSTANCE's tier - never the type's.
 	_award_gold(peer_id, GoldEconomyScript.dungeon_clear_gold(_current_dungeon_tier(character), character.dungeon_floor + 1), "dungeon clear")
+	_award_play_points(peer_id, SanctuaryPointsScript.dungeon_points(_current_dungeon_tier(character), character.dungeon_floor + 1), "dungeon")
 
 	# Hard mode bonus: +75% XP, +50% materials
 	var is_hard_completion = false

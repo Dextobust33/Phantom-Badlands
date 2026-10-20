@@ -2225,11 +2225,8 @@ func calculate_baddie_points(character: Character) -> int:
 	# Monster Gem contribution: 5 BP per gem
 	points += character.crafting_materials.get("monster_gem", 0) * 5
 
-	# Kill contribution: 1 BP per 5 kills
-	points += int(character.monsters_killed / 5)
-
-	# Quest contribution: 10 BP per completed quest
-	points += character.completed_quests.size() * 10
+	# 2026-10-20: the kill and quest terms were REMOVED from the death award - kills and quests now pay Sanctuary
+	# points as they happen (shared/sanctuary_points.gd), so keeping them here would pay them twice.
 
 	# Level milestones
 	if character.level >= 10:
@@ -2511,6 +2508,10 @@ func _ledger_note(direction: String, reason: String, amount: int) -> void:
 func note_gold(direction: String, reason: String, amount: int) -> void:
 	"""Gold telemetry in the same ledger ("gold_in:<reason>" / "gold_out:<reason>") so kills-per-Temper-tier is measured."""
 	_ledger_note("gold_" + direction, reason if reason != "" else "other", amount)
+
+func note_points(reason: String, amount: int) -> void:
+	"""Sanctuary points earned by playing, in the same ledger ("bp_in:<reason>")."""
+	_ledger_note("bp_in", reason, amount)
 
 func flush_valor_ledger() -> void:
 	_valor_ledger_dirty = 0

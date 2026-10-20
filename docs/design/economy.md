@@ -144,8 +144,9 @@ merchant gamble's odds for a hidden faucet.
   the stats rolled from the real generator; never a unique/set (those stay a chase).
 - **Cost to the balance model:** it is a power input. The "average gear" model has to include one such piece per the
   expected number of visits at that level, so it belongs BEFORE the chain (it is on the Wave 1 list for that reason).
-- **Open sub-questions for the owner:** (a) announce it on the map, or let players stumble on it? (b) offer 1 piece, or 3
-  to choose from (more choice, more UI)? (c) should an unspent offer carry to the next visit?
+- **Owner ruled 2026-10-20:** (a) ANNOUNCE it; (b) offer THREE pieces to choose from; (c) an offer can be LOCKED / saved for later
+  (so a player can walk away to earn the gold and return). Not built yet - it needs a visitor event, a three-item offer
+  panel, a per-character "held offer", and the announcement surface.
 
 ### 4.7 Sanctuary pacing (owner Q4) - proposed, needs the owner's yes
 Target: ~one rung every 20-30 minutes. The ladder is 23 tracks, ~140 rungs, 189,820 points, average rung ~1,350; at
@@ -156,6 +157,7 @@ Proposal: **Baddie Points accrue as you play**, with death keeping a smaller bon
 - the death award stays (a lifetime-so-far bonus) but stops being the only faucet;
 - prices are then re-set from MEASURED points per active hour (encounters/hour is in the live `[ENCOUNTER]` log), not
   guessed; the 2026-09-19 repricing was a death-rate model and has to be redone against hours.
+**Owner: yes (2026-10-20). BUILT in v0.9.847 (unreleased): `shared/sanctuary_points.gd` - 16 points per even win (x0.1-1.5 by level relation, bosses x4), 120 per quest, 150 x tier per dungeon clear; the death award lost its kill and quest terms. Rates are guesses (the live server logged no play for a week); party-fight wins do not award yet.**
 This changes what the Sanctuary IS (a play-time reward, not a legacy reward). Owner: is that the intent, or should
 playing only ever speed it up modestly while deaths stay the main route?
 
