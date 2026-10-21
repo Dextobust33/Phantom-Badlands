@@ -30,12 +30,12 @@ Status: design draft from the owner's three rulings. Nothing built. Every number
 ### 3.2 Depth: ranks
 - Plain nodes get **5 ranks**. Rank r costs r points (1,2,3,4,5 = 15 to max a node). Keystones and Signature capstones stay single-rank.
 - Each rank adds a fifth of the node's full value, so the first point is cheap and the fifth is a commitment.
-- Capacity is deliberately **larger than income**: ~37 nodes x 15 = ~555 points of capacity vs ~220 earned by L10000 (3.3).
+- Capacity is deliberately **larger than income**: ~37 nodes x 15 = ~555 points of capacity vs ~290 earned by L10000 (3.3), so about half the tree is reachable.
   Nobody finishes the tree; the question at every level is what to specialise in. That is the "deep" answer to maxing out at L50.
 
 ### 3.3 Point income to L10000 (G)
 - Keep 1 point per 5 levels to L100 (20 points), so early play feels exactly as today (L50 = 10 + milestones).
-- Then 1 point per 50 levels to L10000 (+198). Total ~218 + 6 milestones (+ more milestones, 3.6).
+- Then 1 point per 50 levels to L10000 (+198). Total ~218 from levels, plus ~70 from feats (3.6) = ~290.
 - Band-gated tiers (3.4) are what make a level-3000 character differ from a level-300 one even with similar point totals.
 
 ### 3.4 Level-gated tiers: new KINDS of effect, not bigger numbers
@@ -64,8 +64,41 @@ Rule from the owner's buff-transparency ruling: **every path effect that changes
 mitigation/buff breakdown** ("Path - <node>"). Path talents were deliberately excluded from that rule before; with card-rule
 nodes they must be included.
 
-### 3.6 Milestones
-Keep the six; add band milestones (first kill at L1000, first Empowered at L5000 ...) so points also arrive from play. (G, list to design.)
+### 3.6 Milestones: feats from normal play (owner 2026-10-21)
+Rulings: points should come from doing ordinary things, e.g. wearing a level-20 piece, killing 10 champions, beating 5 bosses.
+Today only 6 one-time milestones exist, hooked ad hoc in `server.gd` (~6798, 38277). Replace the pattern with **one table of feats**
+(`shared/path_feats.gd`): each feat = a counter key, a threshold ladder, and points per rung. A character carries `feat_counts: Dictionary`
+(plus the existing `monsters_killed`, `dungeons_completed`), and one server funnel `_note_feat(peer, key, amount)` bumps the counter and
+grants every rung it crosses (toast + 1 point). The six existing milestones become the first rungs, ids kept so nothing is re-granted.
+
+Each ladder is geometric, so there is always a next rung from L1 to L10000 and the points stay a minor income beside the level curve (3.3).
+
+| feat (counter) | rungs (G) | note |
+|---|---|---|
+| Slay monsters (`monsters_killed`) | 100, 1k, 10k, 100k, 1M | existing `hundred_kills` is rung 1 |
+| Slay champions / Empowered (`empowered_kills`) | 1, 10, 100, 1k, 10k | rung 1 is `first_empowered_kill` |
+| Slay 3-modifier Empowered (`triple_empowered_kills`) | 1, 10, 100, 1k | |
+| Defeat bosses (`boss_kills`) | 1, 5, 25, 100, 500 | rung 1 is `first_boss_kill` |
+| Clear dungeons (`dungeons_completed`, sum) | 1, 5, 25, 100, 500 | rung 1 is `first_dungeon_clear` |
+| Clear a dungeon of each grade (distinct grades) | F..A, one rung per grade | rewards going places, not grinding |
+| Wear a piece of level N (best equipped item level) | 20, 50, 100, 500, 2k, 8k | checked on equip, so gear progress pays |
+| Wear a full set of one rarity (all slots >= rare, epic, legendary) | 3 rungs | |
+| Slay in the Apex Frontier (`apex_kills`) | 1, 25, 250 | rung 1 is `first_apex_kill` |
+| Complete quests (`completed_quests`) | 10, 50, 250, 1k | |
+| Reach a level (the level itself) | 100, 500, 1k, 2.5k, 5k, 10k | the "band" rungs: pays at the moment each tier opens |
+| Tame / hatch companions, fuse to a tier (`companion_feats`) | 1, 5, 25 | ties paths to the companion team |
+| Gather and craft (`ore_gathered + wood_gathered + crafts`) | 100, 1k, 10k | rewards the non-combat loop |
+| Spend gold at the Master Smith (purchases) | 1, 5, 20 | the new sink pays a point |
+| Win a fight at <10% HP; win without taking damage | 1, 25 | skill feats, not volume |
+| Survive a Phantom-hunt / defeat a Phantom (Wave 3) | reserved | added when Phantoms ship |
+
+Totals (G): about 16 ladders x ~4-5 rungs = ~70 points, **about a quarter of the ~290 income at L10000**. Early rungs come in the first hours
+(a feat every few levels, as the owner's examples), late rungs are the long-tail reason to keep doing the thing. Every rung announces itself
+("Path point earned: Slay 10 champions") and the Path panel lists feats with progress, so the player sees WHY a point arrived (same
+transparency rule as buffs).
+
+Anti-grind: counters count real fights at or above the player's level band (no points for trivial monsters, as with Sanctuary points), and
+dungeon/boss feats count once per instance, not per party member re-entering.
 
 ### 3.7 Limited respec (G)
 - Refund **one branch at a time**, never the whole tree. Cost: **40 kills' gold at the current level per point refunded**
@@ -86,7 +119,7 @@ Keep the six; add band milestones (first kill at L1000, first Empowered at L5000
   (a plausible spec per class, not a maximiser: "model the player, not the math").
 
 ## 6. Open questions
-1. Count of options: nodes (46) or decisions (ranks)? See 3.1.
-2. Band milestones: yes, and how many?
-3. Respec price/limits, and whether Ascendant nodes can be respecced.
-4. Whether card-rule nodes may touch other classes' interactions in party play (a Paladin blessing a human teammate).
+Resolved 2026-10-21: (1) 37 nodes, depth via ranks; (2) feats from normal play, section 3.6; (3) respec price/limits accepted;
+(4) owner open either way. DECISION: ally-facing card-rule nodes reach human party members as well as companions (party play is a pillar;
+the party probes cover it).
+Still open: the exact feat ladders (3.6 table is a first pass) and the 21 Signature nodes, which come from the real decks.
