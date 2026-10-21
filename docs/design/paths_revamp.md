@@ -123,3 +123,129 @@ Resolved 2026-10-21: (1) 37 nodes, depth via ranks; (2) feats from normal play, 
 (4) owner open either way. DECISION: ally-facing card-rule nodes reach human party members as well as companions (party play is a pillar;
 the party probes cover it).
 Still open: the exact feat ladders (3.6 table is a first pass) and the 21 Signature nodes, which come from the real decks.
+
+## 7. Signature branches - first draft (2026-10-21)
+
+Source of truth for names and engines: `-- cardnames` (run today) and `Character.class_passive_for`. Layout of every Signature branch (7 nodes):
+**S1-S3 engine perks** (5 ranks each, small), **S4-S6 card rules** (single rank, each chained to the one before), **S7 the existing class
+keystone** (`ck_*`, unchanged). Three **Ascendant** nodes per class (L500 / L2000 / L6000) sit outside the branch, listed last.
+(G) throughout. Items marked `[verify]` depend on card behaviour I have not read line by line: each is read and traced with `-- cardtrace`
+before it is written, so no node ships on a guess about its card.
+
+The Oracle is stored as `Sage` (`ck_Sage`; node ids use `Sage`); the player sees "Oracle".
+
+### Fighter - Momentum (Cleave, Shield Bash, Bulwark, Power Strike, Devastate)
+| node | effect |
+|---|---|
+| S1 Drilled Stance | each rank: the opening stance is 4% stronger, up to 70% of the old full strength (it stays HALF strength by default; this is where the rest is earned, shown as "Path - Drilled Stance") |
+| S2 Banked Momentum | start each fight with +1 Momentum per rank (max 5) |
+| S3 Shield Wall | Shield Bash adds 4% of your defense as damage per rank |
+| S4 Second Brace | Bulwark may be cast a second time in one fight, at double cost |
+| S5 Staggering Bash | Shield Bash at 4+ Momentum also skips the enemy's next action [verify the stun rules] |
+| S6 Aftershock | Devastate leaves 2 Momentum behind instead of spending all |
+| S7 Drillmaster (existing) | all ability costs -15% |
+
+### Barbarian - Rage (Power Strike, Cleave, Bull Rush, Berserk, Rampage)
+| node | effect |
+|---|---|
+| S1 Thicker Skin | +1.5% damage reduction per rank while below 50% HP (offsets Blood Rage's missing-HP risk) |
+| S2 Fury Reserve | +1 starting Rage per rank (max 5) |
+| S3 Reaver | +3% lifesteal on Rampage per rank |
+| S4 Berserk Discipline | Berserk lasts 1 round longer and its defense penalty is halved |
+| S5 Bull Rush Breaks | Bull Rush removes one enemy buff [verify monster buff model] |
+| S6 Unchained | Rampage cast at max Rage ignores monster mitigation this round |
+| S7 Blood Rage (existing) | no Berserk penalty, +3% damage a round (max +30%) |
+
+### Paladin - Conviction (Reproach, Invocation, Shield of Faith, Lay on Hands, Judgement)
+| node | effect |
+|---|---|
+| S1 Steadfast | +1 Conviction per rank when a blow lands on you while below 50% HP |
+| S2 Sanctified | +4% bonus vs undead/demons per rank |
+| S3 Mercy | Lay on Hands heals +5% per rank |
+| S4 Shared Blessing | Lay on Hands also heals your companion and any party member for half |
+| S5 Radiant Shield | Shield of Faith reflects 20% of blocked damage as holy damage |
+| S6 Verdict | Judgement at max Conviction executes below 15% enemy HP [verify cap and lethal rules] |
+| S7 Crusader's Aura (existing) | 2% max HP on kill, +40% vs undead/demons |
+
+### Wizard - Focus (Magic Bolt, Blast, Forcefield, Arcane Surge, Meteor)
+| node | effect |
+|---|---|
+| S1 Deep Focus | +1 starting Focus per rank (max 4; Focus caps at 5) |
+| S2 Precision | +2% spell crit per rank |
+| S3 Resonance | Meteor does +5% damage per rank per Focus held |
+| S4 Flowing Casting | the third spell cast in a row is free |
+| S5 Warded Surge | Arcane Surge also grants a small Forcefield [verify the card] |
+| S6 Twin Bolt | Magic Bolt at 5 Focus casts twice (same shape as the existing double-cast keystone) |
+| S7 Archmage (existing) | 15% of spells cast twice |
+
+### Sorcerer - Volatility (Chaos Bolt, Wild Surge, Frost Nova, Forcefield, Cataclysm)
+| node | effect |
+|---|---|
+| S1 Loaded Dice | +1% double-damage chance per rank |
+| S2 Steady Hands | -1% backfire chance per rank (min 0%) |
+| S3 Fractured Frost | Frost Nova damage +5% per rank |
+| S4 Banked Chaos | a failed double-damage roll is banked: the next spell is guaranteed to double |
+| S5 Controlled Backfire | a backfire also hits the enemy for half |
+| S6 Cataclysm Reborn | Cataclysm cast on a banked double also resets Volatility [verify] |
+| S7 Chaos Theory (existing) | double-damage chance 25% -> 35% |
+
+### Oracle (stored Sage) - Insight (Mind Lance, Stillness, Transfix, Premonition, Unmaking)
+| node | effect |
+|---|---|
+| S1 Clear Sight | +1 Insight per rank on an unharmed round, on top of Foresight (max +3) |
+| S2 Quiet Mind | Premonition absorbs +6% more per rank |
+| S3 Piercing Lance | Mind Lance +4% damage per rank per Insight held |
+| S4 Gentle Stillness | Stillness also clears one debuff from you |
+| S5 Deep Transfix | Transfix lasts 1 round longer |
+| S6 Final Reading | Unmaking at max Insight cannot be resisted and refunds 3 Insight |
+| S7 Transcendence (existing) | Meditate also restores 5% max HP |
+
+### Grifter - Leverage (Size Them Up, Distract, Sabotage, Sucker Punch, Double Cross)
+| node | effect |
+|---|---|
+| S1 Loaded Odds | +1 starting Read per rank (max 4) |
+| S2 Quick Fingers | +3% pickpocket success per rank |
+| S3 Cash Out | Double Cross deals +2% damage per rank per Read spent |
+| S4 Hot Hand | a successful pickpocket feeds +1 Read |
+| S5 Double Dealing | Sabotage may be cast twice in a row |
+| S6 House Edge | Double Cross returns half the Read it spent on a kill |
+| S7 Cutpurse King (existing) | pickpocket always succeeds, +50% materials |
+
+### Ranger - Aim (Track, Snare, Weak Point, Ambush, Killing Shot)
+| node | effect |
+|---|---|
+| S1 Steady Aim | +1 starting Aim per rank (max 4) |
+| S2 Hunter's Reach | +3% damage vs beasts per rank |
+| S3 Bowyer | Killing Shot +4% damage per rank per Aim held |
+| S4 Pack Hunter | marked monsters take +15% from your companion |
+| S5 Pinning Snare | Snare also lowers enemy dodge |
+| S6 Deadeye | Killing Shot at 8 Aim cannot be dodged (the Ranger never crits, so its payoff is reliability) |
+| S7 Apex Hunter (existing) | beast bonus +40%, +10% XP |
+
+### Ninja - Read (Mark, Hamstring, Ambush, Phantom Strike, Assassinate)
+| node | effect |
+|---|---|
+| S1 Patient Blade | +1 starting Read per rank (max 4) |
+| S2 Ghost | +2% flee and dodge per rank |
+| S3 Edge | Assassinate +3% lethal chance per rank |
+| S4 Lingering Mark | Mark lasts 2 more rounds |
+| S5 Shadow Echo | an Assassinate that does not kill leaves 2 Read behind (traced with `cardtrace`, since the Ninja's finisher gate went stale once) |
+| S6 Vanishing Act | Hamstring has a 25% chance to vanish you for a round |
+| S7 Shadow Lord (existing) | Vanish costs 50% less, +15% flee |
+
+### Ascendant nodes (one set per class; L500 / L2000 / L6000)
+Each rewrites one card. The L2000 and L6000 ones carry a trade-off (the card-upgrade rule). Drafts only:
+
+| class | L500 | L2000 | L6000 |
+|---|---|---|---|
+| Fighter | Bulwark also taunts: the enemy must target you | Power Strike spends all Momentum for +25% each | Opening stance returns to full strength but you cannot flee |
+| Barbarian | Rampage heals for 10% of damage dealt | Berserk is permanent, defense -20% | A death save at 1 HP, once per fight |
+| Paladin | Judgement heals the lowest-HP ally | Invocation lasts the whole fight at half strength | Judgement costs 3 less Conviction but consumes all |
+| Wizard | Meteor leaves a burn | Forcefield is cast free once per fight | Focus cap rises to 7, spells cost 25% more |
+| Sorcerer | Cataclysm cannot backfire | Backfire chance 0%, but double chance 20% | Chaos Bolt chains to a second hit |
+| Oracle | Premonition triggers twice | Transfix applies to a second enemy in groups | Unmaking costs 2 less Insight but cannot kill bosses |
+| Grifter | Double Cross refunds a card | Sucker Punch always crits on a Distracted foe | Leverage doubles, but you start fights at -25% HP |
+| Ranger | Track reveals and lowers enemy defense | Snare slows the monster's next two attacks | Killing Shot +100% but requires 8 Aim |
+| Ninja | Phantom Strike carries over to the next fight | Hamstring and Mark apply to a second target | Assassinate costs all Read, +50% lethal |
+
+All of these are drafts for the owner to react to. The keystones and passives named are the current game's; the rest are new.
