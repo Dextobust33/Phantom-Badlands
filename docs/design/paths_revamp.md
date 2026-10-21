@@ -328,3 +328,15 @@ Design changes forced by reading the cards (the `[verify]` rule working):
 - S1 Drilled Stance is capped at 5 ranks = +20% (ratio 0.5 -> 0.7), recorded on the fight and named in its opening line.
 - S2 Banked Momentum caps at 3 ranks (Momentum max is 5).
 Next: the other eight Signature branches, one class at a time, each read against its cards; then the six new archetype branches.
+
+**Slice 3 - Barbarian and Paladin Signature branches: BUILT (2026-10-21).** Probe `barbarian_paladin_signature_fires` (22 checks, each node with and without).
+Changes from the section 7 drafts, all forced by reading the cards:
+- Barbarian: S5 "Bull Rush Breaks" is now -10% monster attack for 3 rounds (the weakness debuff a companion applies; the game has no monster-buff
+  list to strip). S6 "Unchained" is now a stun at full Rage (it was "ignore mitigation", which has no single place to hook). Fury Reserve caps at 2 ranks
+  because every Rage is +16% damage. Thicker Skin is named in the mitigation breakdown as "Path - Thicker Skin".
+- Paladin: S1 is "Resolute" (first blow each fight builds extra Conviction) instead of a below-50%-HP trigger, to obey the less-conditional rule;
+  S2 is Bastion of Faith (+2% max HP per rank) instead of undead bonus, which is a narrow condition. S4 is **Cleansing Hands** (Lay on Hands cleanses
+  poison/bleed): "heals your companion and party" cannot be built as written - companions have no HP bar in combat, and the party fight has its own
+  card path. Ally healing for a human teammate is filed for the party-combat pass, not dropped. S5 is Radiant Shield (+10% damage reduction with Shield of Faith,
+  sourced as "Path - Radiant Shield"). S6 is Verdict (+10 points of Judgement's lethal chance; the card face quotes it).
+Card faces stay truthful: Mercy and Verdict change the quoted heal and lethal numbers, covered by the probe.

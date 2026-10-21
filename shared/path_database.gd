@@ -170,6 +170,28 @@ const MAX_SCALABLE_AMOUNT := 10.0
 # card-rule node names the card it changes, and each was written against that card's code, not its name.
 # Ids are "sig_<Class>_<n>". The class keystone keeps its old id and its old unlock rule.
 const SIGNATURES = {
+	"Barbarian": {
+		"id": "signature", "name": "Way of the Berserker", "color": "#8B0000",
+		"nodes": [
+			{"id": "sig_Barbarian_1", "name": "Thicker Skin", "desc": "While below half HP, take 1.5% less damage.", "effect": {"low_hp_reduction_pct": 1.5}},
+			{"id": "sig_Barbarian_2", "name": "Fury Reserve", "desc": "Begin every fight with +1 Rage.", "effect": {"start_momentum": 1}, "ranks": 2},
+			{"id": "sig_Barbarian_3", "name": "Reaver", "desc": "Rampage heals you for 3% of the damage it deals.", "effect": {"rampage_lifesteal_pct": 3}},
+			{"id": "sig_Barbarian_4", "name": "Berserk Discipline", "desc": "Berserk lasts 1 round longer and its defense penalty is halved.", "effect": {"berserk_duration_bonus": 1, "berserk_penalty_cut_pct": 50}, "ranks": 1},
+			{"id": "sig_Barbarian_5", "name": "Bull Rush Breaks", "desc": "Bull Rush also saps the target: -10% attack for 3 rounds.", "effect": {"bull_rush_weaken_pct": 10}, "ranks": 1},
+			{"id": "sig_Barbarian_6", "name": "Unchained", "desc": "Rampage at full Rage also stuns the target (subject to its stun resistance).", "effect": {"rampage_full_stun": true}},
+		],
+	},
+	"Paladin": {
+		"id": "signature", "name": "Way of the Crusader", "color": "#FFD700",
+		"nodes": [
+			{"id": "sig_Paladin_1", "name": "Resolute", "desc": "The first blow that lands on you each fight builds +1 extra Conviction.", "effect": {"first_hit_conviction": 1}, "ranks": 3},
+			{"id": "sig_Paladin_2", "name": "Bastion of Faith", "desc": "+2% max HP.", "effect": {"max_hp_pct": 2}},
+			{"id": "sig_Paladin_3", "name": "Mercy", "desc": "Lay on Hands heals 5% more.", "effect": {"lay_on_hands_heal_pct": 5}},
+			{"id": "sig_Paladin_4", "name": "Cleansing Hands", "desc": "Lay on Hands also cleanses your poison and bleed.", "effect": {"lay_on_hands_cleanse": true}},
+			{"id": "sig_Paladin_5", "name": "Radiant Shield", "desc": "Shield of Faith also blocks 10% of damage for as long as it lasts.", "effect": {"shield_of_faith_dr_pct": 10}, "ranks": 1},
+			{"id": "sig_Paladin_6", "name": "Verdict", "desc": "Judgement is 10% more likely to be simply lethal.", "effect": {"judgement_lethal_bonus": 10}, "ranks": 1},
+		],
+	},
 	"Fighter": {
 		"id": "signature", "name": "Drillmaster's Way", "color": "#C0C0C0",
 		"nodes": [

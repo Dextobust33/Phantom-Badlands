@@ -5368,7 +5368,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 			if _wcls == "Paladin":
 				# The lethal chance is the whole point of the Paladin's version, so the card has
 				# to state it. Single source: same expression the cast uses.
-				var _pv: int = maxi(1, PALADIN_LETHAL_BASE + mom * PALADIN_LETHAL_PER)
+				var _pv: int = maxi(1, PALADIN_LETHAL_BASE + mom * PALADIN_LETHAL_PER + int(character.get_path_effect_total("judgement_lethal_bonus")))
 				var _pmon = combat.get("monster", null)
 				if _pmon is Dictionary:
 					var _pgap: int = int(_pmon.get("level", character.level)) - character.level
@@ -5412,7 +5412,8 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 		"rally":
 			var s_con: float = float(character.get_effective_stat("constitution"))
 			return {"kind": "heal",
-					"value": _apply_buff_value_modifiers(character, "rally", int(30.0 + sqrt(s_con) * 10.0)),
+					"value": int(float(_apply_buff_value_modifiers(character, "rally", int(30.0 + sqrt(s_con) * 10.0)))
+						* (1.0 + character.get_path_effect_total("lay_on_hands_heal_pct") / 100.0)),
 					"scales": ""}
 	return {}
 
@@ -7046,6 +7047,12 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 					messages.append("[color=#FFFF00]You deal %d damage but the enemy resists the stun![/color]" % damage)
 			if cc_resist > 0:
 				messages.append("[color=#808080](Enemy stun resistance: next stun ~%d%%)[/color]" % int(100.0 * pow(STUN_REPEAT_FALLOFF, cc_resist + 1)))
+			# Bull Rush Breaks (Barbarian signature path): the same -attack debuff a companion's weaken applies.
+			var _bw: float = character.get_path_effect_total("bull_rush_weaken_pct")
+			if _bw > 0.0:
+				combat["monster_weakness"] = maxi(int(combat.get("monster_weakness", 0)), int(_bw))
+				combat["monster_weakness_duration"] = maxi(int(combat.get("monster_weakness_duration", 0)), 3)
+				messages.append("[color=#C9A0FF]Path - Bull Rush Breaks: the %s is sapped (-%d%% attack for 3 rounds).[/color]" % [monster.name, int(_bw)])
 
 		"cleave":
 			# Buffed: 2.5x damage multiplier (was 2x), sqrt STR scaling.
@@ -7089,7 +7096,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# (Defense penalty stays as-is — players don't pick rank-up to nerf
 			# themselves; only the positive buff scales.)
 			damage_bonus = _apply_buff_value_modifiers(character, "berserk", damage_bonus)
-			var bk_dur = _buff_duration(character, "berserk", 4)
+			var bk_dur = _buff_duration(character, "berserk", 4) + int(character.get_path_effect_total("berserk_duration_bonus"))
+			# Berserk Discipline (Barbarian signature path): the penalty is cut, not removed (Blood Rage removes it).
+			var _bk_cut: float = character.get_path_effect_total("berserk_penalty_cut_pct")
+			if _bk_cut > 0.0:
+				defense_penalty = int(float(defense_penalty) * (1.0 - _bk_cut / 100.0))
 			character.add_buff("damage", damage_bonus, bk_dur)
 			if defense_penalty != 0:
 				character.add_buff("defense_penalty", defense_penalty, bk_dur)
@@ -7127,6 +7138,21 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 				messages.append("[color=#FF0000][b]RAMPAGE![/b][/color] [color=#C8A24A](spent %d Rage)[/color]" % _bg_rage)
 				messages.append("[color=#FFFF00]Nothing is held back — %s[/color]"
 					% _damage_with_detail(combat, messages, _bg_dmg))
+				# Reaver (Barbarian signature path): the blow feeds you.
+				var _reave: float = character.get_path_effect_total("rampage_lifesteal_pct")
+				if _reave > 0.0:
+					var _reaved: int = character.heal(maxi(1, int(float(_bg_dmg) * _reave / 100.0)))
+					if _reaved > 0:
+						messages.append("[color=#C9A0FF]Path - Reaver: Rampage heals you for %d.[/color]" % _reaved)
+				# Unchained (Barbarian signature path): a full-Rage Rampage stuns, under the same resistance as any stun.
+				if _bg_rage >= MOMENTUM_MAX and character.has_path_effect("rampage_full_stun"):
+					var _rs_resist: int = int(combat.get("cc_resistance", 0))
+					var _rs_consec: int = int(combat.get("consec_stuns", 0))
+					if _rs_consec < 2 and randi() % 100 < int(100.0 * pow(STUN_REPEAT_FALLOFF, _rs_resist)):
+						combat["monster_stunned"] = 1
+						combat["cc_resistance"] = _rs_resist + 1
+						combat["consec_stuns"] = _rs_consec + 1
+						messages.append("[color=#C9A0FF]Path - Unchained: the full-Rage blow stuns it.[/color]")
 				if monster.current_hp <= 0:
 					return _process_victory(combat, messages)
 				return {"success": true, "messages": messages, "combat_ended": false}
@@ -7138,7 +7164,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 				_pj_dmg = apply_skill_damage_bonus(character, ability_name, _pj_dmg, combat)
 				_pj_dmg = apply_damage_variance(apply_ability_damage_modifiers(
 					_pj_dmg, character.level, monster, character, combat, messages))
-				var _pj_lethal: int = PALADIN_LETHAL_BASE + _pj_conv * PALADIN_LETHAL_PER
+				var _pj_lethal: int = PALADIN_LETHAL_BASE + _pj_conv * PALADIN_LETHAL_PER + int(character.get_path_effect_total("judgement_lethal_bonus"))
 				var _pj_gap: int = monster.level - character.level
 				if _pj_gap > 0:
 					_pj_lethal = maxi(1, _pj_lethal - _pj_gap)
@@ -7202,6 +7228,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			defense_bonus = _apply_buff_value_modifiers(character, "fortify", defense_bonus)
 			var ft_dur = _buff_duration(character, "fortify", 5)
 			character.add_buff("defense", defense_bonus, ft_dur)
+			# Radiant Shield (Paladin signature path): named as a Path source so the breakdown says where it comes from.
+			var _sof: int = int(character.get_path_effect_total("shield_of_faith_dr_pct"))
+			if _sof > 0:
+				character.add_buff("damage_reduction", _sof, ft_dur, "Path - Radiant Shield")
 			messages.append("[color=#00FFFF]%s[/color]" % [ability_line(character, "fortify", "body",
 				"You fortify your defenses! (+%d%% defense for %d rounds)") % [defense_bonus, ft_dur]])
 			is_buff_ability = true
@@ -7213,7 +7243,14 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var heal_amount = max(1, int((30 + sqrt(float(con_stat)) * 10) * variable_fraction))
 			# v0.9.637 — rank-up +Damage scales BOTH heal amount AND STR buff for rally.
 			heal_amount = _apply_buff_value_modifiers(character, "rally", heal_amount)
+			# Mercy (Paladin signature path). The card face quotes the same figure (`_card_effect`).
+			heal_amount = int(float(heal_amount) * (1.0 + character.get_path_effect_total("lay_on_hands_heal_pct") / 100.0))
 			var actual_heal = character.heal(heal_amount)
+			# Cleansing Hands (Paladin signature path)
+			if character.has_path_effect("lay_on_hands_cleanse") and (character.poison_active or int(combat.get("player_bleed_stacks", 0)) > 0):
+				character.cure_poison()
+				combat["player_bleed_stacks"] = 0
+				messages.append("[color=#C9A0FF]Path - Cleansing Hands: your poison and bleed are cleansed.[/color]")
 			var str_bonus = max(1, int((10 + character.get_effective_stat("strength") / 5) * variable_fraction))
 			str_bonus = _apply_buff_value_modifiers(character, "rally", str_bonus)
 			var rl_dur = _buff_duration(character, "rally", 3)
@@ -9446,6 +9483,12 @@ func _apply_on_taken_hit(combat: Dictionary, character, result: Dictionary) -> v
 		return
 	var effects: Dictionary = character.get_class_passive().get("effects", {})
 	var gain: int = int(effects.get("conviction_on_hit", 0))
+	# Resolute (Paladin signature path): the FIRST blow each fight builds extra Conviction.
+	var first_gain := 0
+	if not bool(combat.get("_first_hit_conviction_done", false)):
+		combat["_first_hit_conviction_done"] = true
+		first_gain = int(character.get_path_effect_total("first_hit_conviction"))
+	gain += first_gain
 	if gain <= 0:
 		return
 	var before: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
@@ -9456,6 +9499,8 @@ func _apply_on_taken_hit(combat: Dictionary, character, result: Dictionary) -> v
 	# Same attribution as Foresight above - see the note there.
 	combat["_engine_from_passive"] = int(combat.get("_engine_from_passive", 0)) + (after - before)
 	var line := "[color=#FFD700]⚔ Retribution — Conviction %d/%d[/color]" % [after, MOMENTUM_MAX]
+	if first_gain > 0:
+		line += " [color=#C9A0FF](Path - Resolute: +%d on the first blow)[/color]" % first_gain
 	if result.has("message"):
 		result["message"] = "%s\n%s" % [String(result["message"]), line]
 
@@ -9933,6 +9978,10 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			var damage_reduction = character.get_buff_value("damage_reduction")
 			if damage_reduction > 0:
 				_mit_mult *= (1.0 - damage_reduction / 100.0)
+			# Thicker Skin (Barbarian signature path): a damage reduction that only counts while you are hurt.
+			var _path_skin: float = character.get_path_effect_total("low_hp_reduction_pct")
+			if _path_skin > 0.0 and character.current_hp * 2 <= character.get_total_max_hp():
+				_mit_mult *= (1.0 - _path_skin / 100.0)
 			if armor_dr_total > 0:
 				_mit_mult *= (1.0 - armor_dr_total / 100.0)
 			var defense_buff = character.get_buff_value("defense")
@@ -12015,6 +12064,9 @@ func player_mitigation_breakdown(character, combat: Dictionary) -> Array:
 	if buff_dr > 0:
 		var dr_src: String = character.get_buff_source("damage_reduction")
 		out.append({"label": dr_src if dr_src != "" else "Damage reduction", "pct": buff_dr})
+	var path_skin: float = character.get_path_effect_total("low_hp_reduction_pct")
+	if path_skin > 0.0 and character.current_hp * 2 <= character.get_total_max_hp():
+		out.append({"label": "Path - Thicker Skin", "pct": int(round(path_skin))})
 	# Armor with a damage-reduction roll multiplies in with the rest (see the damage path), so it is listed.
 	var armor_dr := 0
 	for slot_name in ["armor", "helm", "shield", "boots"]:
