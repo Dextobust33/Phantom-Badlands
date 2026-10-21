@@ -4564,6 +4564,10 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
 - [ ] **PATHS NEED A REVAMP — CLASS-SPECIFIC AND LESS CONDITIONAL. Owner direction 2026-09-18:** <!-- audited: 2026-09-19 --> Verified still open: `shared/path_database.gd` holds exactly three trees, keyed `"warrior"`,
       `"mage"`, `"trickster"` — per-ARCHETYPE, which is precisely what this asks to change.
       *"Path's need revamped and should be class specific and less conditional."*
+      **2026-10-21 DESIGN DRAFTED: `docs/design/paths_revamp.md`** (ranks, feats, Signature branches per class, limited respec,
+      and section 8: the instruments to build so paths close the per-class gaps - path spec in the sim, pathfires, pathvalue,
+      pathcurve, pathspread, pathgap). Owner approved the node drafts. Build order: data model -> wiring -> instruments ->
+      per-class values -> the ONE Wave 2 chain.
 
       Two distinct complaints, and they pull in the same direction:
 
