@@ -11,8 +11,11 @@ class_name PathsPanel
 
 signal close_requested
 signal learn_requested(node_id: String)
+signal respec_requested(branch_id: String, confirm: bool)
 
 const PathDatabaseScript = preload("res://shared/path_database.gd")
+const PathPointsScript = preload("res://shared/path_points.gd")
+const PathFeatsScript = preload("res://shared/path_feats.gd")
 
 var _root_panel: PanelContainer
 var _header_label: RichTextLabel
@@ -26,6 +29,7 @@ var _learn_button: Button
 var _character_data: Dictionary = {}
 var _selected_node_id: String = ""
 var _node_buttons: Dictionary = {}  # node_id -> Button
+var _respec_armed: String = ""      # branch id awaiting a second click to confirm
 
 const COLOR_TAKEN := Color(0.35, 0.85, 0.35)
 const COLOR_AVAILABLE := Color(1.0, 0.84, 0.0)
@@ -65,42 +69,66 @@ static func archetype_for_class(class_type: String) -> String:
 			return "warrior"
 
 
-func _taken() -> Array:
-	var t = _character_data.get("path_nodes", [])
-	return t if t is Array else []
+func _ranks() -> Dictionary:
+	var r = _character_data.get("path_ranks", {})
+	if r is Dictionary:
+		return r
+	return {}
 
 
-func _milestones() -> Array:
-	var m = _character_data.get("path_milestones", [])
-	return m if m is Array else []
+func _rank(node_id: String) -> int:
+	return int(_ranks().get(node_id, 0))
+
+
+func _spent() -> int:
+	var n := 0
+	for id in _ranks():
+		n += PathPointsScript.total_cost(int(_ranks()[id]))
+	return n
+
+
+func _feat_src() -> Dictionary:
+	var q = _character_data.get("completed_quests", [])
+	return {"monsters_killed": int(_character_data.get("monsters_killed", 0)),
+		"completed_quests": (q.size() if q is Array else 0),
+		"level": int(_character_data.get("level", 1)),
+		"counts": _character_data.get("feat_counts", {})}
+
+
+func _points_earned() -> int:
+	# The SAME functions the server uses (shared/path_points.gd), so the panel cannot drift from it.
+	var claimed = _character_data.get("feats_claimed", {})
+	var feat_points := 0
+	if claimed is Dictionary:
+		for fid in claimed:
+			feat_points += int(claimed[fid])
+	return PathPointsScript.from_level(int(_character_data.get("level", 1))) + feat_points
 
 
 func _points_available() -> int:
-	# Mirrors character.get_path_points_earned(): level/5 + milestones. The
-	# server re-validates every spend, so drift here is display-only.
-	var earned: int = int(int(_character_data.get("level", 1)) / 5.0) + _milestones().size()
-	return max(0, earned - _taken().size())
+	return max(0, _points_earned() - _spent())
 
 
 func _node_state(node: Dictionary) -> String:
-	"""'taken' | 'available' | 'locked' — display mirror of the server gating."""
+	"""'maxed' | 'ranked' (some ranks, more to buy) | 'available' | 'locked' - display mirror of the server gating."""
 	var node_id: String = String(node.get("id", ""))
-	var taken: Array = _taken()
-	if node_id in taken:
-		return "taken"
+	var have: int = _rank(node_id)
+	var top: int = PathDatabaseScript.max_rank(node)
+	if have >= top:
+		return "maxed"
 	var class_lock: String = String(node.get("class_lock", ""))
 	if class_lock != "":
 		if class_lock != String(_character_data.get("class", "")):
 			return "locked"
-		if taken.size() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
+		if _spent() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
 			return "locked"
 	else:
 		var prereq: String = PathDatabaseScript.get_prereq_id(node_id)
-		if prereq != "" and not (prereq in taken):
+		if prereq != "" and _rank(prereq) < 1:
 			return "locked"
-	if _points_available() < 1:
+	if _points_available() < PathPointsScript.rank_cost(have + 1):
 		return "locked"
-	return "available"
+	return "ranked" if have > 0 else "available"
 
 
 func _build_layout() -> void:
@@ -233,6 +261,17 @@ func _render() -> void:
 		branch_title.add_theme_font_size_override("normal_font_size", 15)
 		branch_title.text = "[center][color=%s][b]%s[/b][/color][/center]" % [String(branch.get("color", "#FFFFFF")), String(branch.get("name", ""))]
 		col.add_child(branch_title)
+		var respec_btn := Button.new()
+		var bid: String = String(branch.get("id", ""))
+		var refund := 0
+		for n in branch.get("nodes", []):
+			refund += PathPointsScript.total_cost(_rank(String(n.get("id", ""))))
+		respec_btn.focus_mode = Control.FOCUS_NONE
+		respec_btn.disabled = refund <= 0
+		respec_btn.text = ("Click again: refund %d pts for %s gold" % [refund, str(PathPointsScript.respec_price(int(_character_data.get("level", 1)), refund))]) if _respec_armed == bid else "Respec branch"
+		respec_btn.tooltip_text = "Refund every point in this branch. Costs gold (%d kills' worth per point) and one of your limited respecs." % PathPointsScript.RESPEC_KILLS_PER_POINT
+		respec_btn.pressed.connect(_on_respec_pressed.bind(bid))
+		col.add_child(respec_btn)
 
 		for node in branch.get("nodes", []):
 			col.add_child(_make_node_button(node))
@@ -257,13 +296,20 @@ func _render() -> void:
 		ck_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_keystone_row.add_child(ck_btn)
 
-	# Milestones strip
-	var ms_taken := _milestones()
+	# Feats strip: each ladder with progress toward its next rung (every rung pays +1 point)
+	var claimed = _character_data.get("feats_claimed", {})
+	var src := _feat_src()
 	var ms_parts: Array = []
-	for ms_id in PathDatabaseScript.MILESTONES:
-		var done: bool = ms_id in ms_taken
-		ms_parts.append("[color=%s]%s %s[/color]" % ["#66FF66" if done else "#666666", "✓" if done else "·", String(PathDatabaseScript.MILESTONES[ms_id])])
-	_milestone_label.text = "[color=#8A7B5C]Feats (+1 point each):[/color]  " + "   ".join(ms_parts)
+	for fid in PathFeatsScript.FEATS:
+		var f: Dictionary = PathFeatsScript.FEATS[fid]
+		var rungs: Array = f.get("rungs", [])
+		var have: int = int((claimed as Dictionary).get(fid, 0)) if claimed is Dictionary else 0
+		var val: int = PathFeatsScript.value_of(String(fid), src)
+		if have >= rungs.size():
+			ms_parts.append("[color=#66FF66]✓ %s (all %d)[/color]" % [String(f.get("label", fid)), rungs.size()])
+		else:
+			ms_parts.append("[color=#B0A080]%s %d/%d (%d/%d)[/color]" % [String(f.get("label", fid)), val, int(rungs[have]), have, rungs.size()])
+	_milestone_label.text = "[color=#8A7B5C]Feats (each rung +1 point):[/color]  " + "   ".join(ms_parts)
 
 	_refresh_detail()
 
@@ -273,18 +319,23 @@ func _make_node_button(node: Dictionary) -> Button:
 	var state := _node_state(node)
 	var btn := Button.new()
 	var star := "★ " if node.get("keystone", false) or String(node.get("class_lock", "")) != "" else ""
-	var mark := "✓ " if state == "taken" else ""
-	btn.text = mark + star + String(node.get("name", node_id))
+	var top: int = PathDatabaseScript.max_rank(node)
+	var have: int = _rank(node_id)
+	var mark := "✓ " if state == "maxed" else ""
+	var rank_txt := "" if top <= 1 else " %d/%d" % [have, top]
+	btn.text = mark + star + String(node.get("name", node_id)) + rank_txt
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.custom_minimum_size = Vector2(0, 38)
 	btn.tooltip_text = String(node.get("desc", ""))
 	match state:
-		"taken":
+		"maxed", "ranked":
 			btn.add_theme_color_override("font_color", COLOR_TAKEN)
 		"available":
 			btn.add_theme_color_override("font_color", COLOR_AVAILABLE)
 		_:
 			btn.add_theme_color_override("font_color", COLOR_LOCKED)
+	if state == "ranked":
+		btn.add_theme_color_override("font_color", COLOR_AVAILABLE if _points_available() >= PathPointsScript.rank_cost(have + 1) else COLOR_TAKEN)
 	btn.pressed.connect(_on_node_pressed.bind(node))
 	_node_buttons[node_id] = btn
 	return btn
@@ -299,23 +350,40 @@ func _refresh_detail(node: Dictionary = {}) -> void:
 	if node.is_empty() and _selected_node_id != "":
 		node = PathDatabaseScript.find_node(_selected_node_id)
 	if node.is_empty():
-		_detail_label.text = "[color=#8A7B5C]Select a node to read it. Earn Path points every 5 levels and from the feats above. Choices are permanent for this life.[/color]"
+		_detail_label.text = "[color=#8A7B5C]Select a node to read it. Earn Path points by levelling and from the feats above; most nodes can be ranked up. Choices are permanent for this life, apart from a limited, paid respec.[/color]"
 		_learn_button.disabled = true
 		return
 	var state := _node_state(node)
+	var nid: String = String(node.get("id", ""))
+	var have: int = _rank(nid)
+	var top: int = PathDatabaseScript.max_rank(node)
+	var cost: int = PathPointsScript.rank_cost(have + 1)
 	var status_line := ""
 	match state:
-		"taken":
-			status_line = "[color=#66FF66]Learned.[/color]"
-		"available":
-			status_line = "[color=#FFD700]Available — costs 1 Path point.[/color]"
+		"maxed":
+			status_line = "[color=#66FF66]Learned%s.[/color]" % ("" if top <= 1 else " - fully ranked (%d/%d)" % [have, top])
+		"available", "ranked":
+			status_line = "[color=#FFD700]%s - costs %d Path point(s).[/color]" % ["Available" if have == 0 else "Rank %d of %d learned; rank %d is available" % [have, top, have + 1], cost]
 		_:
-			if _points_available() < 1:
-				status_line = "[color=#FF6666]No Path points available.[/color]"
+			if have > 0 and _points_available() < cost:
+				status_line = "[color=#FF6666]Rank %d costs %d point(s); you have %d.[/color]" % [have + 1, cost, _points_available()]
+			elif _points_available() < cost:
+				status_line = "[color=#FF6666]Costs %d point(s); you have %d.[/color]" % [cost, _points_available()]
 			else:
 				status_line = "[color=#FF6666]Locked — requires the previous node in this branch%s.[/color]" % (" / %d points spent" % PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ if String(node.get("class_lock", "")) != "" else "")
-	_detail_label.text = "[b][color=#FFD700]%s[/color][/b]\n%s\n%s" % [String(node.get("name", "")), String(node.get("desc", "")), status_line]
-	_learn_button.disabled = state != "available"
+	var per_rank := "" if top <= 1 else "\n[color=#C4A882]Each rank adds this again (you have %dx).[/color]" % have
+	_detail_label.text = "[b][color=#FFD700]%s[/color][/b]\n%s%s\n%s" % [String(node.get("name", "")), String(node.get("desc", "")), per_rank, status_line]
+	_learn_button.text = "Learn (%d pt)" % cost if have == 0 else "Rank up (%d pt)" % cost
+	_learn_button.disabled = not (state == "available" or state == "ranked")
+
+
+func _on_respec_pressed(branch_id: String) -> void:
+	if _respec_armed == branch_id:
+		_respec_armed = ""
+		respec_requested.emit(branch_id, true)
+	else:
+		_respec_armed = branch_id
+		_render()
 
 
 func _on_learn_pressed() -> void:

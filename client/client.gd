@@ -3545,6 +3545,7 @@ DDD")
 	add_child(paths_panel)
 	paths_panel.close_requested.connect(_on_paths_panel_close)
 	paths_panel.learn_requested.connect(_on_paths_panel_learn)
+	paths_panel.respec_requested.connect(_on_paths_panel_respec)
 
 	# Audit #12 UI remediation — post status panel + Feed All.
 	post_status_panel = PostStatusPanelScript.new()
@@ -7444,6 +7445,19 @@ func _dev_run_shots() -> void:
 				await _dev_shot_capture("master_02_offer")
 				pending_blacksmith = false
 				blacksmith_upgrade_mode = ""
+
+			"paths":
+				# The ranked Paths panel (docs/design/paths_revamp.md), rendered by the REAL panel from a local character.
+				paths_panel.open({"class": "Fighter", "level": 130, "monsters_killed": 340, "completed_quests": ["a", "b", "c"],
+					"path_ranks": {"warrior_1_1": 3, "warrior_1_2": 1, "warrior_2_1": 5, "warrior_3_1": 2},
+					"feat_counts": {"bosses": 2, "champions": 3, "dungeons": 6, "gear_level": 45},
+					"feats_claimed": {"bosses": 1, "champions": 1, "dungeons": 2, "gear_level": 1, "level": 1}})
+				await get_tree().create_timer(0.8).timeout
+				await _dev_shot_capture("paths_01_ranked")
+				paths_panel._on_node_pressed(PathDatabase.find_node("warrior_1_1"))
+				await get_tree().create_timer(0.5).timeout
+				await _dev_shot_capture("paths_02_rank_detail")
+				close_paths_panel()
 
 			"rework":
 				# The rework flow, which the owner watched vanish off the screen. A capture after
@@ -43560,6 +43574,9 @@ func _on_paths_panel_close() -> void:
 
 func _on_paths_panel_learn(node_id: String) -> void:
 	send_to_server({"type": "path_spend", "node_id": node_id})
+
+func _on_paths_panel_respec(branch_id: String, confirm: bool) -> void:
+	send_to_server({"type": "path_respec", "branch": branch_id, "confirm": confirm})
 
 func display_dungeon_atlas(message: Dictionary) -> void:
 	"""Dungeon Atlas (P1) — render the server's state-gated dungeon view in game_output."""

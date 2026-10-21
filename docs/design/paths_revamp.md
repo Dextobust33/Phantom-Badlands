@@ -301,3 +301,20 @@ circumstance reads as dead weight at the point of choosing. Several of my sectio
 Rage`, `below 50% HP`). Rule for writing the real nodes: **a rank-able engine perk must always do something every fight**; a threshold
 is allowed only on card-rule nodes where the threshold IS the class's engine (Momentum, Read...), and the card text must say it plainly.
 `pathfires` reports how often each node's condition is actually met in a fight; a node met in under ~25% of fights is rewritten.
+
+## 9. Build status (2026-10-21)
+
+**Slice 1 - data model: BUILT** (`shared/path_points.gd`, `shared/path_feats.gd`, `PathDatabase.max_rank/rank_effect`, Character ranks/feats/respec
+fields, server `handle_path_spend` (rank-aware), `handle_path_respec`, `_check_feats`, the ranked Paths panel). Probe: `path_ranks_and_feats`.
+
+Decisions made while building (one value per rank = what the node was worth before ranks, so no saved character lost anything):
+- A rank adds the node's listed value AGAIN (so a +5% node is +25% at rank 5), not a fifth of it. Differs from 3.2's wording; it is the choice that
+  does not nerf anyone, and `pathvalue` will say whether 5 ranks of that is too much.
+- Only small plain percent perks (listed amount <= 10, no duration/boolean keys) get 5 ranks; the rest are single-rank until `pathvalue` measures
+  them. New nodes name their own `ranks`.
+- Saves from before ranks: each node id becomes rank 1; each legacy milestone is marked as rung 1 of its feat, so earned points do not change.
+- Feats wired so far: kills, champions, 3-modifier champions, bosses, dungeons, Apex, quests, best gear level, level, Master Smith purchases.
+  Not yet: distinct dungeon grades, full sets, companions, gather/craft, skill feats (need counters and hook sites).
+- Party kills do not yet bump feat counters (the party fight path has no solo-style kill block); fixed with the Sanctuary-points party gap.
+
+Next: the six new branches per archetype and the Signature branches (content), then the instruments in section 8.

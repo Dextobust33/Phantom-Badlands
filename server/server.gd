@@ -73,6 +73,7 @@ const PowerRankScript = preload("res://shared/power_rank.gd")
 const GoldEconomyScript = preload("res://shared/gold_economy.gd")
 const SanctuaryPointsScript = preload("res://shared/sanctuary_points.gd")
 const MasterSmithScript = preload("res://shared/master_smith.gd")
+const PathPointsScript = preload("res://shared/path_points.gd")
 const CompanionRolesScript = preload("res://shared/companion_roles.gd")
 const TravelStanceScript = preload("res://shared/travel_stance.gd")
 const DangerWordsScript = preload("res://shared/danger_words.gd")
@@ -2124,6 +2125,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_inventory_salvage(peer_id, message)
 		"path_spend":
 			handle_path_spend(peer_id, message)
+		"path_respec":
+			handle_path_respec(peer_id, message)
 		"auto_salvage_settings":
 			handle_auto_salvage_settings(peer_id, message)
 		"auto_salvage_affix_settings":
@@ -6796,17 +6799,17 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Path milestones (ARPG pillar 3) — one-time feats, +1 Path point
 			# each. grant helper no-ops when already claimed. Dungeon-clear
 			# milestone hooks at the dungeon completion site instead.
-			if characters[peer_id].monsters_killed >= 100:
-				_grant_path_milestone(peer_id, "hundred_kills")
+			# Feats (shared/path_feats.gd): bump the counters this kill touches, then pay any rung reached.
 			if result.get("is_boss_fight", false):
-				_grant_path_milestone(peer_id, "first_boss_kill")
+				characters[peer_id].bump_feat("bosses")
 			var _path_emp_mods: Array = result.get("empowered_mods", [])
 			if _path_emp_mods.size() > 0:
-				_grant_path_milestone(peer_id, "first_empowered_kill")
+				characters[peer_id].bump_feat("champions")
 			if _path_emp_mods.size() >= 3:
-				_grant_path_milestone(peer_id, "first_triple_empowered_kill")
+				characters[peer_id].bump_feat("triple_champions")
 			if result.get("is_apex_frontier", false) or result.get("is_apex_variant", false):
-				_grant_path_milestone(peer_id, "first_apex_kill")
+				characters[peer_id].bump_feat("apex")
+			_check_feats(peer_id)
 
 			# Track pilgrimage progress for Elders
 			var char = characters[peer_id]
@@ -12906,6 +12909,8 @@ func _master_choice(peer_id: int, choice: String, message: Dictionary) -> void:
 		var bought: Dictionary = items[idx]
 		ch.add_item(bought)
 		ch.master_offer = {}
+		ch.bump_feat("master_smith")
+		_check_feats(peer_id)
 		save_character(peer_id)
 		send_character_update(peer_id)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]The Master Smith hands you %s for %s gold.[/color]\n[color=#808080]The other pieces go back into his pack - he moves on.[/color]" % [String(bought.get("name", "the piece")), _fmt_int(price)]})
@@ -14079,6 +14084,8 @@ func handle_inventory_equip(peer_id: int, message: Dictionary):
 
 	# Equip and get old item
 	var old_item = character.equip_item(equip_item, slot)
+	character.note_feat_max("gear_level", int(equip_item.get("level", 0)))
+	_check_feats(peer_id)
 
 	# If there was an old item, add to inventory
 	if old_item != null and old_item.has("name"):
@@ -14520,10 +14527,9 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 
 func handle_path_spend(peer_id: int, message: Dictionary):
-	"""Path of the Badlands (ARPG pillar 3) — spend 1 Path point on a node.
-	All gating server-side: archetype match, branch prereq order, class
-	keystone requirements, duplicate + point checks. Client paths_panel just
-	sends the node_id and re-renders from character_update."""
+	"""Path of the Badlands - buy the NEXT RANK of a node (rank r costs r points; PathPoints).
+	All gating server-side: archetype match, branch prereq order, class keystone requirement, max rank and
+	points. The client panel only sends the node_id and re-renders from character_update."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
@@ -14532,8 +14538,10 @@ func handle_path_spend(peer_id: int, message: Dictionary):
 	if node.is_empty():
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Unknown Path node.[/color]"})
 		return
-	if character.has_path_node(node_id):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You have already walked that step of the Path.[/color]"})
+	var have: int = character.path_rank(node_id)
+	var top: int = PathDatabaseScript.max_rank(node)
+	if have >= top:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You have taken that step of the Path as far as it goes.[/color]"})
 		return
 	if String(node.get("archetype", "")) != character.get_class_path():
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]That Path belongs to another archetype.[/color]"})
@@ -14543,8 +14551,8 @@ func handle_path_spend(peer_id: int, message: Dictionary):
 		if class_lock != character.class_type:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]That keystone belongs to the %s class.[/color]" % class_lock})
 			return
-		if character.path_nodes.size() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Class keystones unlock after spending %d Path points (you have spent %d).[/color]" % [PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ, character.path_nodes.size()]})
+		if character.get_path_points_spent() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Class keystones unlock after spending %d Path points (you have spent %d).[/color]" % [PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ, character.get_path_points_spent()]})
 			return
 	else:
 		var prereq = PathDatabaseScript.get_prereq_id(node_id)
@@ -14552,11 +14560,68 @@ func handle_path_spend(peer_id: int, message: Dictionary):
 			var prereq_node: Dictionary = PathDatabaseScript.find_node(prereq)
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Requires %s first.[/color]" % String(prereq_node.get("name", "the previous node"))})
 			return
-	if character.get_path_points_available() < 1:
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]No Path points available. Earn more by leveling (every 5 levels) and completing feats.[/color]"})
+	var cost: int = PathPointsScript.rank_cost(have + 1)
+	if character.get_path_points_available() < cost:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]That costs %d Path point(s) and you have %d. Earn more by levelling and by feats.[/color]" % [cost, character.get_path_points_available()]})
 		return
-	character.path_nodes.append(node_id)
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ Path learned: [b]%s[/b][/color]\n[color=#C4A882]%s[/color]" % [String(node.get("name", node_id)), String(node.get("desc", ""))]})
+	character.set_path_rank(node_id, have + 1)
+	var rank_text: String = "" if top <= 1 else " (rank %d/%d)" % [have + 1, top]
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ Path learned: [b]%s[/b]%s[/color]\n[color=#C4A882]%s[/color]" % [String(node.get("name", node_id)), rank_text, String(node.get("desc", ""))]})
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+func handle_path_respec(peer_id: int, message: Dictionary):
+	"""Limited respec (docs/design/paths_revamp.md 3.7): refund ONE branch (`branch` = its id, or "class"),
+	for gold priced in kills' worth at the character's level, and only PathPoints.respec_allowance times a life.
+	Permadeath makes a free respec wrong; gold is run-bound, so this is also a sink."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var branch_key: String = String(message.get("branch", ""))
+	var ids: Array = PathDatabaseScript.branch_node_ids(character.get_class_path(), branch_key)
+	if branch_key == "class":
+		ids = ids.filter(func(i): return String(PathDatabaseScript.find_node(i).get("class_lock", "")) == character.class_type)
+	if ids.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]No such branch.[/color]"})
+		return
+	var refund := 0
+	for i in ids:
+		refund += PathPointsScript.total_cost(character.path_rank(String(i)))
+	if refund <= 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You have spent nothing in that branch.[/color]"})
+		return
+	var left: int = PathPointsScript.respec_allowance(character.level) - character.path_respecs_used
+	if left <= 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]You have used every respec this life allows (one more at level 1,000 and again at 5,000).[/color]"})
+		return
+	var price: int = PathPointsScript.respec_price(character.level, refund)
+	if not bool(message.get("confirm", false)):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#C9A0FF]Respec this branch: refund %d point(s) for %s gold (you carry %s; %d respec(s) left). Confirm to proceed.[/color]" % [refund, _fmt_int(price), _fmt_int(int(character.gold_purse)), left]})
+		return
+	if not character.spend_gold(price):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]That costs %s gold and you carry %s.[/color]" % [_fmt_int(price), _fmt_int(int(character.gold_purse))]})
+		return
+	_note_gold("out", "path_respec", price)
+	for i in ids:
+		character.set_path_rank(String(i), 0)
+	character.path_respecs_used += 1
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ Path unwound: %d point(s) returned for %s gold. %d respec(s) left.[/color]" % [refund, _fmt_int(price), left - 1]})
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+func _check_feats(peer_id: int) -> void:
+	"""Pay every feat rung a character has reached (shared/path_feats.gd) and say why each point arrived.
+	A veteran loading a save that predates feats may owe many at once; those are summarised, not listed."""
+	if not characters.has(peer_id):
+		return
+	var got: Array = characters[peer_id].claim_feat_rungs()
+	if got.is_empty():
+		return
+	if got.size() <= 3:
+		for g in got:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ PATH FEAT: %s - +1 Path point![/color]" % String(g.get("text", ""))})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ PATH FEATS: %d feats reached - +%d Path points! (see the Paths screen)[/color]" % [got.size(), got.size()]})
 	save_character(peer_id)
 	send_character_update(peer_id)
 
@@ -21520,6 +21585,7 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		})
 		# Check for Elder auto-grant (level 1000)
 		check_elder_auto_grant(peer_id)
+		_check_feats(peer_id)
 		send_character_update(peer_id)
 		save_character(peer_id)
 		# Party quest sync: auto-turn-in for members with same completed quest
@@ -38273,8 +38339,10 @@ func _complete_dungeon(peer_id: int):
 		"boss_egg_lost_to_full": boss_egg_lost_to_full
 	})
 
-	# Path milestone (ARPG pillar 3) — first dungeon clear, +1 Path point.
-	_grant_path_milestone(peer_id, "first_dungeon_clear")
+	# Feat: dungeons cleared (one count per instance cleared by this character).
+	if characters.has(peer_id):
+		characters[peer_id].bump_feat("dungeons")
+		_check_feats(peer_id)
 
 	send_location_update(peer_id)
 	send_character_update(peer_id)
@@ -38380,8 +38448,9 @@ func _complete_dungeon(peer_id: int):
 				"boss_egg_lost_to_full": f_egg_lost
 			})
 
-			# Path milestone — party followers clear the dungeon too.
-			_grant_path_milestone(pid, "first_dungeon_clear")
+			# Feat - party followers clear the dungeon too.
+			follower.bump_feat("dungeons")
+			_check_feats(pid)
 
 			# Place follower near leader's overworld position
 			follower.x = character.x

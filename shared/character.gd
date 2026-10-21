@@ -537,19 +537,29 @@ const CardGearScript = preload("res://shared/card_gear.gd")
 
 # Path of the Badlands (ARPG pillar 3, design 2026-06-10) — per-character
 # skill tree. Points earned are DERIVED (level/5 + milestones.size()), never
-# stored, so level-ups grant points with no hook. Only the taken node ids and
-# claimed milestone ids persist. Permadeath: dies with the character.
-@export var path_nodes: Array = []        # taken node ids (PathDatabase)
-@export var path_milestones: Array = []   # claimed milestone ids (+1 point each)
+# stored, so level-ups grant points with no hook. Permadeath: dies with the character.
+# 2026-10-21 (docs/design/paths_revamp.md): nodes have RANKS and the milestones became feat LADDERS.
+#   path_ranks    node id -> rank bought; rank r costs r points (PathPoints). THE source of truth.
+#   path_nodes    just the ids with rank > 0, still written so older readers keep working; read only on load
+#                 of a save that predates ranks (each id becomes rank 1 - exactly what it was worth).
+#   feat_counts   stored feat counters; feats_claimed: feat id -> rungs already paid (never goes down).
+#   path_milestones  the six legacy ids, kept as history; each is rung 1 of a feat (see from_dict).
+@export var path_nodes: Array = []
+@export var path_ranks: Dictionary = {}
+@export var path_milestones: Array = []
+@export var feat_counts: Dictionary = {}
+@export var feats_claimed: Dictionary = {}
+@export var path_respecs_used: int = 0
 
 # path_database.gd / unique_database.gd are dependency-free, so preloads here
 # can't create a load-order cycle (unlike Constants, deliberately inlined).
 const PathDatabaseScript = preload("res://shared/path_database.gd")
 const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
-# Effect aggregation cache — path_nodes only ever appends (no respec), so the
-# cache is valid while the count matches.
+const PathPointsScript = preload("res://shared/path_points.gd")
+const PathFeatsScript = preload("res://shared/path_feats.gd")
+# Effect aggregation cache - rebuilt after any rank change (`set_path_rank` / `from_dict` mark it dirty).
 var _path_fx_cache: Dictionary = {}
-var _path_fx_cache_count: int = -1
+var _path_fx_dirty: bool = true
 
 # Ability mastery rank thresholds + damage multipliers. Mirrors Constants.MASTERY_*
 # but inlined here so character.gd doesn't have to depend on the global script
@@ -2520,8 +2530,12 @@ func to_dict() -> Dictionary:
 		"pending_rank_choices": pending_rank_choices.duplicate(true),
 		"deck_collection_initialized": deck_collection_initialized,
 		"deck_repair_version": deck_repair_version,
-		"path_nodes": path_nodes.duplicate(),
+		"path_nodes": path_ranks.keys(),
+		"path_ranks": path_ranks.duplicate(),
 		"path_milestones": path_milestones.duplicate(),
+		"feat_counts": feat_counts.duplicate(),
+		"feats_claimed": feats_claimed.duplicate(),
+		"path_respecs_used": path_respecs_used,
 		"swap_attack_with_ability": swap_attack_with_ability,
 		"cloak_active": cloak_active,
 		"safe_passage_steps": safe_passage_steps,
@@ -2847,6 +2861,34 @@ func from_dict(data: Dictionary):
 	deck_repair_version = int(data.get("deck_repair_version", 0))
 	path_nodes = data.get("path_nodes", []) if data.get("path_nodes", []) is Array else []
 	path_milestones = data.get("path_milestones", []) if data.get("path_milestones", []) is Array else []
+	path_ranks = {}
+	var _saved_ranks = data.get("path_ranks", null)
+	if _saved_ranks is Dictionary:
+		for k in _saved_ranks:
+			if int(_saved_ranks[k]) > 0:
+				path_ranks[String(k)] = int(_saved_ranks[k])
+	else:
+		for legacy_id in path_nodes:    # a save from before ranks: one point bought one node
+			path_ranks[String(legacy_id)] = 1
+	path_nodes = path_ranks.keys()
+	feat_counts = {}
+	var _saved_counts = data.get("feat_counts", {})
+	if _saved_counts is Dictionary:
+		for k in _saved_counts:
+			feat_counts[String(k)] = int(_saved_counts[k])
+	feats_claimed = {}
+	var _saved_claimed = data.get("feats_claimed", {})
+	if _saved_claimed is Dictionary:
+		for k in _saved_claimed:
+			feats_claimed[String(k)] = int(_saved_claimed[k])
+	# A legacy milestone IS rung 1 of its feat. It was paid as +1 point already, so mark the rung claimed
+	# and the character's earned total does not move (nothing is paid twice, nothing is lost).
+	for ms in path_milestones:
+		var _fid: String = PathFeatsScript.legacy_feat_for(String(ms))
+		if _fid != "" and int(feats_claimed.get(_fid, 0)) < 1:
+			feats_claimed[_fid] = 1
+	path_respecs_used = int(data.get("path_respecs_used", 0))
+	_path_fx_dirty = true
 	# Ensure keybinds has all slots (in case of legacy data)
 	for slot in DEFAULT_ABILITY_KEYBINDS.keys():
 		if not ability_keybinds.has(slot):
@@ -4171,24 +4213,73 @@ func get_ability_rank_bonus(_ability_name: String) -> int:
 # === Path of the Badlands (ARPG pillar 3) ===
 
 func get_path_points_earned() -> int:
-	"""1 point per 5 levels + 1 per claimed milestone. Derived, never stored —
-	level-ups grant points automatically with no grant hook."""
-	return int(level / 5.0) + path_milestones.size()
+	"""What the LEVEL has paid (PathPoints.from_level) plus one per feat rung claimed. Derived from level
+	and the claimed-rung counts, never a stored total, so level-ups need no grant hook."""
+	var feat_points := 0
+	for fid in feats_claimed:
+		feat_points += int(feats_claimed[fid])
+	return PathPointsScript.from_level(level) + feat_points
+
+func get_path_points_spent() -> int:
+	var spent := 0
+	for node_id in path_ranks:
+		spent += PathPointsScript.total_cost(int(path_ranks[node_id]))
+	return spent
 
 func get_path_points_available() -> int:
-	"""Every Path node costs exactly 1 point."""
-	return max(0, get_path_points_earned() - path_nodes.size())
+	return max(0, get_path_points_earned() - get_path_points_spent())
+
+func path_rank(node_id: String) -> int:
+	return int(path_ranks.get(node_id, 0))
 
 func has_path_node(node_id: String) -> bool:
-	return node_id in path_nodes
+	return path_rank(node_id) > 0
+
+func set_path_rank(node_id: String, rank: int) -> void:
+	"""The one place a rank changes, so the effect cache can never go stale."""
+	if rank <= 0:
+		path_ranks.erase(node_id)
+	else:
+		path_ranks[node_id] = rank
+	path_nodes = path_ranks.keys()
+	_path_fx_dirty = true
 
 func grant_path_milestone(milestone_id: String) -> bool:
-	"""Claim a one-time milestone (+1 Path point via the derived total).
-	Returns true only when newly granted."""
-	if milestone_id in path_milestones:
+	"""Legacy entry point: claims rung 1 of the feat this milestone became. True only when newly granted."""
+	var fid: String = PathFeatsScript.legacy_feat_for(milestone_id)
+	if fid == "" or int(feats_claimed.get(fid, 0)) >= 1:
 		return false
-	path_milestones.append(milestone_id)
+	feats_claimed[fid] = 1
+	if not (milestone_id in path_milestones):
+		path_milestones.append(milestone_id)
 	return true
+
+# --- feats (docs/design/paths_revamp.md 3.6) ---
+
+func feat_value(feat_id: String) -> int:
+	"""The counter a feat ladder is measured against."""
+	return PathFeatsScript.value_of(feat_id, {"monsters_killed": monsters_killed,
+		"completed_quests": completed_quests.size(), "level": level, "counts": feat_counts})
+
+func bump_feat(feat_id: String, amount: int = 1) -> void:
+	feat_counts[feat_id] = int(feat_counts.get(feat_id, 0)) + amount
+
+func note_feat_max(feat_id: String, value: int) -> void:
+	if value > int(feat_counts.get(feat_id, 0)):
+		feat_counts[feat_id] = value
+
+func claim_feat_rungs() -> Array:
+	"""Pay every rung any ladder has reached and not yet paid. Returns [{feat, rung, text}] for the toast.
+	Idempotent: a rung is claimed once, and the claimed count never goes down."""
+	var out: Array = []
+	for fid in PathFeatsScript.FEATS:
+		var reached: int = PathFeatsScript.rungs_reached(String(fid), feat_value(String(fid)))
+		var have: int = int(feats_claimed.get(fid, 0))
+		if reached > have:
+			for r in range(have + 1, reached + 1):
+				out.append({"feat": String(fid), "rung": r, "text": PathFeatsScript.describe_rung(String(fid), r)})
+			feats_claimed[fid] = reached
+	return out
 
 func get_path_effect_total(effect_key: String) -> float:
 	"""Sum an effect key across all taken Path nodes (booleans count as 1.0)
@@ -4199,11 +4290,11 @@ func get_path_effect_total(effect_key: String) -> float:
 	effect key, never for a node or item id. Path part is cached by node
 	count (append-only); the equipped part is summed per-read like
 	_sum_affix_across_equipped."""
-	if _path_fx_cache_count != path_nodes.size():
+	if _path_fx_dirty:
 		_path_fx_cache.clear()
-		for node_id in path_nodes:
+		for node_id in path_ranks:
 			var node: Dictionary = PathDatabaseScript.find_node(String(node_id))
-			var fx: Dictionary = node.get("effect", {})
+			var fx: Dictionary = PathDatabaseScript.rank_effect(node, int(path_ranks[node_id]))
 			for k in fx:
 				var v = fx[k]
 				var num: float = 0.0
@@ -4212,7 +4303,7 @@ func get_path_effect_total(effect_key: String) -> float:
 				elif v is int or v is float:
 					num = float(v)
 				_path_fx_cache[k] = float(_path_fx_cache.get(k, 0.0)) + num
-		_path_fx_cache_count = path_nodes.size()
+		_path_fx_dirty = false
 	var total: float = float(_path_fx_cache.get(effect_key, 0.0))
 	var set_counts: Dictionary = {}
 	for slot in equipped.keys():

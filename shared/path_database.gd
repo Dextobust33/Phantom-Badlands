@@ -16,6 +16,8 @@
 # (slices 2-3 wire warrior, then mage/trickster).
 class_name PathDatabase
 
+const PathPointsScript = preload("res://shared/path_points.gd")
+
 const CLASS_KEYSTONE_SPEND_REQ := 8
 
 # archetype -> ordered branch list. Node ids: "<archetype>_<branch#>_<tier>".
@@ -152,6 +154,64 @@ const MILESTONES = {
 	"hundred_kills": "Slay 100 monsters",
 	"first_apex_kill": "Slay a monster in the Apex Frontier",
 }
+
+
+# Effect keys that do NOT multiply with rank: durations, booleans and per-combat counts are one-shot facts, not
+# amounts. A node carrying any of them is a single-rank node unless it names its own `ranks`.
+const NON_SCALING_KEYS := ["stun_duration_reduction", "buff_duration_bonus", "crit_bleed_rounds",
+	"death_save_per_combat", "clutch_time_stop_per_combat", "loot_reveal_bonus", "ramp_damage_cap"]
+## Per-rank amounts larger than this are not safely multiplied by five; those nodes stay single-rank until
+## `pathvalue` has measured what a rank is worth. (New nodes name their own `ranks`.)
+const MAX_SCALABLE_AMOUNT := 10.0
+
+
+static func max_rank(node: Dictionary) -> int:
+	"""How many times a node can be bought. A node may name `ranks`; otherwise keystones, class keystones and
+	anything with a duration/boolean/large amount are single-rank, and the small plain percent perks get
+	PathPoints.DEFAULT_MAX_RANK. One rank is worth exactly what the node was worth before ranks existed, so
+	nothing a character already bought changed."""
+	if node.has("ranks"):
+		return maxi(1, int(node["ranks"]))
+	if bool(node.get("keystone", false)) or String(node.get("class_lock", "")) != "":
+		return 1
+	var fx: Dictionary = node.get("effect", {})
+	if fx.is_empty():
+		return 1
+	for k in fx:
+		var v = fx[k]
+		if v is bool or String(k) in NON_SCALING_KEYS:
+			return 1
+		if (v is int or v is float) and absf(float(v)) > MAX_SCALABLE_AMOUNT:
+			return 1
+	return PathPointsScript.DEFAULT_MAX_RANK
+
+
+static func rank_effect(node: Dictionary, rank: int) -> Dictionary:
+	"""The node's effect dict at `rank`: scalable keys times rank, the rest unchanged."""
+	var out: Dictionary = {}
+	var fx: Dictionary = node.get("effect", {})
+	for k in fx:
+		var v = fx[k]
+		if (v is int or v is float) and not (v is bool) and not (String(k) in NON_SCALING_KEYS):
+			out[k] = v * maxi(1, rank)
+		else:
+			out[k] = v
+	return out
+
+
+static func branch_node_ids(archetype: String, branch_key: String) -> Array:
+	"""Every node id in one branch (`branch_key` is the branch id, or "class" for the class keystone)."""
+	var ids: Array = []
+	var tree: Dictionary = TREES.get(archetype, {})
+	if branch_key == "class":
+		for cls in tree.get("class_keystones", {}):
+			ids.append(String(tree["class_keystones"][cls].get("id", "")))
+		return ids
+	for b in tree.get("branches", []):
+		if String(b.get("id", "")) == branch_key:
+			for n in b.get("nodes", []):
+				ids.append(String(n.get("id", "")))
+	return ids
 
 
 static func get_archetype_tree(archetype: String) -> Dictionary:
