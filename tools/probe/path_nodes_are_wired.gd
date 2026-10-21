@@ -39,6 +39,10 @@ func _init() -> void:
 			for n in b.get("nodes", []):
 				for k in n.get("effect", {}):
 					keys[String(k)] = String(n.get("id", ""))
+		for cls in PD.SIGNATURES:
+			for sn in PD.SIGNATURES[cls].get("nodes", []):
+				for k in sn.get("effect", {}):
+					keys[String(k)] = String(sn.get("id", ""))
 		for cls in tree.get("class_keystones", {}):
 			var ck_node: Dictionary = tree["class_keystones"][cls]
 			for k in ck_node.get("effect", {}):

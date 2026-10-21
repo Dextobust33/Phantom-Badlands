@@ -4220,6 +4220,18 @@ func get_path_points_earned() -> int:
 		feat_points += int(feats_claimed[fid])
 	return PathPointsScript.from_level(level) + feat_points
 
+func path_summary() -> String:
+	"""'Sharpened Edge 3, Iron Hide 5, ...' - every node held, with its rank, for the opening line of a fight.
+	A path effect that changes a fight is named there, so a stronger number always has a visible origin."""
+	var parts: Array = []
+	for node_id in path_ranks:
+		var node: Dictionary = PathDatabaseScript.find_node(String(node_id))
+		if node.is_empty():
+			continue
+		var r: int = int(path_ranks[node_id])
+		parts.append("%s %d" % [String(node.get("name", node_id)), r] if PathDatabaseScript.max_rank(node) > 1 else String(node.get("name", node_id)))
+	return ", ".join(parts)
+
 func get_path_points_spent() -> int:
 	var spent := 0
 	for node_id in path_ranks:

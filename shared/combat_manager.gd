@@ -2690,6 +2690,10 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# ramp went 0.11 -> 0.16 per stack (+80% at cap), so it survives by killing sooner. That is
 	# the difference between tuning to the target and tuning to the sibling.
 	combat_state.merge(_apply_opening_stance(character))
+	# Banked Momentum (Fighter signature path): begin the fight with Momentum already built.
+	var _start_mom: int = int(character.get_path_effect_total("start_momentum"))
+	if _start_mom > 0:
+		combat_state["momentum"] = mini(MOMENTUM_MAX, _start_mom)
 
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
@@ -2707,6 +2711,13 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		msg += "
 [color=#7AE07A]%s: you open braced - %d%% damage reduction for 4 rounds, +%d defense for 5. (Fighters only; it is not a card.)[/color]" % [
 			STANCE_LABEL, int(combat_state["warrior_stance_dr"]), int(combat_state["warrior_stance_def"])]
+		if int(combat_state.get("warrior_stance_path_pct", 0)) > 0:
+			msg += "
+[color=#7AE07A]  (Path - Drilled Stance makes it %d%% stronger.)[/color]" % int(combat_state["warrior_stance_path_pct"])
+	var _path_line: String = character.path_summary()
+	if _path_line != "":
+		msg += "
+[color=#C9A0FF]Path: %s[/color]" % _path_line
 
 	# Add XP zone hint - shows the player where they stand relative to optimal XP range
 	var hint_level_diff = monster.get("level", 1) - character.level
@@ -6995,6 +7006,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# against a 509-986 health bar).
 			var _sb_anchor: float = _ability_anchored_damage(character, "strength", float(ABILITY_WEIGHTS.get("shield_bash", 0.16)))
 			var base_dmg = int(_sb_anchor * damage_multiplier * variable_fraction) if _sb_anchor > 0.0 				else int(total_attack * 1.5 * damage_multiplier * str_mult * variable_fraction)
+			# Shield Wall (Fighter signature path): the shield is the weapon - a share of your defense joins the blow.
+			var _wall_pct: float = character.get_path_effect_total("shield_bash_defense_pct")
+			if _wall_pct > 0.0:
+				base_dmg += int(float(character.get_total_defense()) * _wall_pct / 100.0 * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var sb_skill_bonus = character.get_skill_damage_bonus("shield_bash")
 			base_dmg = apply_skill_damage_bonus(character, "shield_bash", base_dmg, combat)
@@ -7020,6 +7035,9 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 				combat["cc_resistance"] = cc_resist + 1
 				combat["consec_stuns"] = consec_stuns + 1
 				messages.append("[color=#FFFF00]%s and stuns[/color]" % _damage_with_detail(combat, messages, damage))
+				if character.has_path_effect("bash_stun_momentum"):
+					combat["momentum"] = mini(MOMENTUM_MAX, int(combat.get("momentum", 0)) + 1)
+					messages.append("[color=#C9A0FF]Path - Staggering Bash: the stun builds an extra Momentum.[/color]")
 			else:
 				combat["consec_stuns"] = 0  # monster shakes it off and will act next turn
 				if consec_stuns >= 2:
@@ -7088,7 +7106,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# v0.9.637 — rank-up +Damage scales the buff value too (damage
 			# reduction is the "damage" knob for this ability).
 			iron_skin_reduction = _apply_buff_value_modifiers(character, "iron_skin", iron_skin_reduction)
-			var is_dur = _buff_duration(character, "iron_skin", 4)
+			var is_dur = _buff_duration(character, "iron_skin", 4) + int(character.get_path_effect_total("bulwark_duration_bonus"))
 			character.add_buff("damage_reduction", iron_skin_reduction, is_dur)
 			messages.append("[color=#AAAAAA]%s[/color]" % ability_line(character, "iron_skin", "title", "IRON SKIN!"))
 			messages.append("[color=#00FF00]%s[/color]" % [ability_line(character, "iron_skin", "body",
@@ -7166,7 +7184,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			combat["momentum"] = 0  # spent
+			# Aftershock (Fighter signature path): keep some of it. Zero for everyone without the node.
+			combat["momentum"] = mini(_mom, int(character.get_path_effect_total("devastate_aftershock")))
 			# 2026-09-06 — dropped the "x%.0f" that used to be printed here. It was `dev_mult`
 			# (2 + Momentum), the multiplier from the OLD attack-based formula; the damage has
 			# been anchored per-Momentum since 2026-09-03, so the log was quoting a number that
@@ -13633,11 +13652,14 @@ func _apply_opening_stance(character) -> Dictionary:
 	var _stance_str: int = character.get_effective_stat("strength")
 	if opening_stance_scale <= 0.0:
 		return {}
-	var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO * opening_stance_scale))
-	var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * WARRIOR_STANCE_RATIO * opening_stance_scale))
+	# Drilled Stance (Fighter signature path): each rank adds to the ratio, so the half-strength stance can be earned back to 70%.
+	var _stance_path: float = character.get_path_effect_total("stance_strength_pct")
+	var _ratio: float = WARRIOR_STANCE_RATIO + _stance_path / 100.0
+	var _stance_dr: int = maxi(1, int(60.0 * _ratio * opening_stance_scale))
+	var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * _ratio * opening_stance_scale))
 	character.add_buff("damage_reduction", _stance_dr, 4, STANCE_LABEL)
 	character.add_buff("defense", _stance_def, 5, STANCE_LABEL)
-	return {"warrior_stance_dr": _stance_dr, "warrior_stance_def": _stance_def}
+	return {"warrior_stance_dr": _stance_dr, "warrior_stance_def": _stance_def, "warrior_stance_path_pct": int(_stance_path)}
 
 
 ## ⚑ JOIN A FIGHT THAT IS ALREADY RUNNING - the other half of the Dragon Quest IX model.

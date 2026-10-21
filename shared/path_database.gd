@@ -165,6 +165,29 @@ const NON_SCALING_KEYS := ["stun_duration_reduction", "buff_duration_bonus", "cr
 const MAX_SCALABLE_AMOUNT := 10.0
 
 
+# Class SIGNATURE branches (docs/design/paths_revamp.md section 7): six nodes only that class can see, chained S1..S6,
+# then the class keystone (`ck_*`) as the seventh. Engine perks rank; card-rule nodes are single purchases. Every
+# card-rule node names the card it changes, and each was written against that card's code, not its name.
+# Ids are "sig_<Class>_<n>". The class keystone keeps its old id and its old unlock rule.
+const SIGNATURES = {
+	"Fighter": {
+		"id": "signature", "name": "Drillmaster's Way", "color": "#C0C0C0",
+		"nodes": [
+			{"id": "sig_Fighter_1", "name": "Drilled Stance", "desc": "Your opening stance is 4% stronger. (It starts at half strength; this is where the rest is earned.)", "effect": {"stance_strength_pct": 4}},
+			{"id": "sig_Fighter_2", "name": "Banked Momentum", "desc": "Begin every fight with +1 Momentum.", "effect": {"start_momentum": 1}, "ranks": 3},
+			{"id": "sig_Fighter_3", "name": "Shield Wall", "desc": "Shield Bash adds 4% of your defense to its damage.", "effect": {"shield_bash_defense_pct": 4}},
+			{"id": "sig_Fighter_4", "name": "Lasting Guard", "desc": "Bulwark lasts 2 rounds longer.", "effect": {"bulwark_duration_bonus": 2}, "ranks": 1},
+			{"id": "sig_Fighter_5", "name": "Staggering Bash", "desc": "A Shield Bash that stuns builds an extra Momentum.", "effect": {"bash_stun_momentum": true}},
+			{"id": "sig_Fighter_6", "name": "Aftershock", "desc": "Devastate leaves 2 Momentum behind instead of spending it all.", "effect": {"devastate_aftershock": 2}, "ranks": 1},
+		],
+	},
+}
+
+
+static func signature_nodes(class_type: String) -> Array:
+	return SIGNATURES.get(class_type, {}).get("nodes", [])
+
+
 static func max_rank(node: Dictionary) -> int:
 	"""How many times a node can be bought. A node may name `ranks`; otherwise keystones, class keystones and
 	anything with a duration/boolean/large amount are single-rank, and the small plain percent perks get
@@ -172,7 +195,7 @@ static func max_rank(node: Dictionary) -> int:
 	nothing a character already bought changed."""
 	if node.has("ranks"):
 		return maxi(1, int(node["ranks"]))
-	if bool(node.get("keystone", false)) or String(node.get("class_lock", "")) != "":
+	if bool(node.get("keystone", false)) or (String(node.get("class_lock", "")) != "" and not bool(node.get("signature", false))):
 		return 1
 	var fx: Dictionary = node.get("effect", {})
 	if fx.is_empty():
@@ -203,6 +226,11 @@ static func branch_node_ids(archetype: String, branch_key: String) -> Array:
 	"""Every node id in one branch (`branch_key` is the branch id, or "class" for the class keystone)."""
 	var ids: Array = []
 	var tree: Dictionary = TREES.get(archetype, {})
+	if branch_key == "signature":
+		for cls in SIGNATURES:
+			for n in SIGNATURES[cls].get("nodes", []):
+				ids.append(String(n.get("id", "")))
+		return ids
 	if branch_key == "class":
 		for cls in tree.get("class_keystones", {}):
 			ids.append(String(tree["class_keystones"][cls].get("id", "")))
@@ -218,11 +246,35 @@ static func get_archetype_tree(archetype: String) -> Dictionary:
 	return TREES.get(archetype, {})
 
 
+static func class_archetype(class_type: String) -> String:
+	match class_type:
+		"Fighter", "Barbarian", "Paladin":
+			return "warrior"
+		"Wizard", "Sorcerer", "Sage":
+			return "mage"
+		"Grifter", "Ranger", "Ninja":
+			return "trickster"
+	return ""
+
+
 static func find_node(node_id: String) -> Dictionary:
 	"""Locate any node (branch node or class keystone) by id. Returns {} when
 	unknown. Result includes 'archetype', 'branch_index' (-1 for class
 	keystones), 'tier' (1-5, 0 for class keystones), 'class_lock' ("" unless
 	class keystone)."""
+	if node_id.begins_with("sig_"):
+		for cls in SIGNATURES:
+			var sig_nodes: Array = SIGNATURES[cls].get("nodes", [])
+			for i in range(sig_nodes.size()):
+				if String(sig_nodes[i].get("id", "")) == node_id:
+					var out_s: Dictionary = sig_nodes[i].duplicate()
+					out_s["archetype"] = class_archetype(String(cls))
+					out_s["branch_index"] = -2
+					out_s["tier"] = i + 1
+					out_s["class_lock"] = String(cls)
+					out_s["signature"] = true
+					return out_s
+		return {}
 	for archetype in TREES:
 		var tree: Dictionary = TREES[archetype]
 		var branches: Array = tree.get("branches", [])
@@ -255,6 +307,11 @@ static func get_prereq_id(node_id: String) -> String:
 	and class keystones have no node prereq (class keystones gate on spend
 	count + class instead)."""
 	var node := find_node(node_id)
+	if not node.is_empty() and int(node.get("branch_index", -1)) == -2:
+		var s_tier: int = int(node.get("tier", 1))
+		if s_tier <= 1:
+			return ""
+		return String(signature_nodes(String(node.get("class_lock", "")))[s_tier - 2].get("id", ""))
 	if node.is_empty() or node.get("branch_index", -1) < 0:
 		return ""
 	var tier: int = int(node.get("tier", 1))

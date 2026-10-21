@@ -318,3 +318,13 @@ Decisions made while building (one value per rank = what the node was worth befo
 - Party kills do not yet bump feat counters (the party fight path has no solo-style kill block); fixed with the Sanctuary-points party gap.
 
 Next: the six new branches per archetype and the Signature branches (content), then the instruments in section 8.
+
+**Slice 2 - Fighter Signature branch: BUILT (2026-10-21).** `PathDatabase.SIGNATURES`, `signature_nodes`, chain S1..S6 + `ck_Fighter`; panel row with its own respec;
+`Character.path_summary()` puts a "Path: ..." line in every fight's opening message. Probes: `path_nodes_are_wired` (every effect key has a reader - it found
+that the Mage's Combustion never worked; fixed), `fighter_signature_fires` (each node changes the fight it names, with and without).
+Design changes forced by reading the cards (the `[verify]` rule working):
+- S4 "Second Brace" -> **Lasting Guard** (Bulwark +2 rounds): Bulwark has no once-per-fight limit, so "cast twice" meant nothing.
+- S5 "Staggering Bash" -> a stunning Shield Bash builds an extra Momentum (Shield Bash already stuns; its stun decays per use and is hard-capped at 2 in a row).
+- S1 Drilled Stance is capped at 5 ranks = +20% (ratio 0.5 -> 0.7), recorded on the fight and named in its opening line.
+- S2 Banked Momentum caps at 3 ranks (Momentum max is 5).
+Next: the other eight Signature branches, one class at a time, each read against its cards; then the six new archetype branches.

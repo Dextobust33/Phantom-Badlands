@@ -7449,7 +7449,7 @@ func _dev_run_shots() -> void:
 			"paths":
 				# The ranked Paths panel (docs/design/paths_revamp.md), rendered by the REAL panel from a local character.
 				paths_panel.open({"class": "Fighter", "level": 130, "monsters_killed": 340, "completed_quests": ["a", "b", "c"],
-					"path_ranks": {"warrior_1_1": 3, "warrior_1_2": 1, "warrior_2_1": 5, "warrior_3_1": 2},
+					"path_ranks": {"warrior_1_1": 3, "warrior_1_2": 1, "warrior_2_1": 5, "warrior_3_1": 2, "sig_Fighter_1": 2, "sig_Fighter_2": 1},
 					"feat_counts": {"bosses": 2, "champions": 3, "dungeons": 6, "gear_level": 45},
 					"feats_claimed": {"bosses": 1, "champions": 1, "dungeons": 2, "gear_level": 1, "level": 1}})
 				await get_tree().create_timer(0.8).timeout

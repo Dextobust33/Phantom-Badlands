@@ -120,7 +120,11 @@ func _node_state(node: Dictionary) -> String:
 	if class_lock != "":
 		if class_lock != String(_character_data.get("class", "")):
 			return "locked"
-		if _spent() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
+		if bool(node.get("signature", false)):
+			var sp: String = PathDatabaseScript.get_prereq_id(node_id)
+			if sp != "" and _rank(sp) < 1:
+				return "locked"
+		elif _spent() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
 			return "locked"
 	else:
 		var prereq: String = PathDatabaseScript.get_prereq_id(node_id)
@@ -276,9 +280,40 @@ func _render() -> void:
 		for node in branch.get("nodes", []):
 			col.add_child(_make_node_button(node))
 
-	# Class keystone (only the player's own class)
+	# Class keystone (only the player's own class), preceded by the class's Signature branch when it has one
 	for child in _keystone_row.get_children():
 		child.queue_free()
+	var sig_nodes: Array = PathDatabaseScript.signature_nodes(String(_character_data.get("class", "")))
+	if not sig_nodes.is_empty():
+		var sig_def: Dictionary = PathDatabaseScript.SIGNATURES[String(_character_data.get("class", ""))]
+		var sig_box := VBoxContainer.new()
+		sig_box.add_theme_constant_override("separation", 4)
+		sig_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_keystone_row.add_child(sig_box)
+		var sig_title := RichTextLabel.new()
+		sig_title.bbcode_enabled = true
+		sig_title.fit_content = true
+		sig_title.scroll_active = false
+		sig_title.add_theme_font_size_override("normal_font_size", 14)
+		sig_title.text = "[color=%s][b]%s[/b][/color]  [color=#8A7B5C](%s only)[/color]" % [String(sig_def.get("color", "#C0C0C0")), String(sig_def.get("name", "Signature")), String(_character_data.get("class", ""))]
+		sig_box.add_child(sig_title)
+		var sig_row := HBoxContainer.new()
+		sig_row.add_theme_constant_override("separation", 6)
+		sig_box.add_child(sig_row)
+		var sig_refund := 0
+		for sn in sig_nodes:
+			var sd: Dictionary = PathDatabaseScript.find_node(String(sn.get("id", "")))
+			sig_refund += PathPointsScript.total_cost(_rank(String(sn.get("id", ""))))
+			var sb := _make_node_button(sd)
+			sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			sig_row.add_child(sb)
+		var sig_respec := Button.new()
+		sig_respec.focus_mode = Control.FOCUS_NONE
+		sig_respec.disabled = sig_refund <= 0
+		sig_respec.text = ("Click again: refund %d pts for %s gold" % [sig_refund, str(PathPointsScript.respec_price(int(_character_data.get("level", 1)), sig_refund))]) if _respec_armed == "signature" else "Respec"
+		sig_respec.pressed.connect(_on_respec_pressed.bind("signature"))
+		sig_row.add_child(sig_respec)
+		_keystone_row.move_child(sig_box, 0)
 	var keystones: Dictionary = tree.get("class_keystones", {})
 	var cls := String(_character_data.get("class", ""))
 	if keystones.has(cls):
@@ -318,7 +353,7 @@ func _make_node_button(node: Dictionary) -> Button:
 	var node_id := String(node.get("id", ""))
 	var state := _node_state(node)
 	var btn := Button.new()
-	var star := "★ " if node.get("keystone", false) or String(node.get("class_lock", "")) != "" else ""
+	var star := "★ " if node.get("keystone", false) or (String(node.get("class_lock", "")) != "" and not bool(node.get("signature", false))) else ""
 	var top: int = PathDatabaseScript.max_rank(node)
 	var have: int = _rank(node_id)
 	var mark := "✓ " if state == "maxed" else ""
