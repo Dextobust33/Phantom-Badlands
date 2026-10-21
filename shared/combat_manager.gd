@@ -8186,6 +8186,11 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 		var path_vs_disabled = character.get_path_effect_total("vs_disabled_damage_pct")
 		if path_vs_disabled != 0.0 and (int(combat.get("monster_stunned", 0)) > 0 or int(combat.get("monster_charmed", 0)) > 0):
 			dmg = dmg * (1.0 + path_vs_disabled / 100.0)
+		# Path: Combustion (+30% spell damage against a burning monster). It had no reader at all until `path_nodes_are_wired`
+		# listed it - a node that was taken, paid for, and did nothing.
+		var path_vs_burning = character.get_path_effect_total("vs_burning_damage_pct")
+		if path_vs_burning != 0.0 and _is_spell_school and int(combat.get("monster_burn_duration", 0)) > 0:
+			dmg = dmg * (1.0 + path_vs_burning / 100.0)
 		# Path class keystone — Blood Rage ramp (+3%/round, capped) applies
 		# to abilities too.
 		var path_ramp = character.get_path_effect_total("ramp_damage_pct")
