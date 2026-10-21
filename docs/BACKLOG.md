@@ -4568,6 +4568,11 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       and section 8: the instruments to build so paths close the per-class gaps - path spec in the sim, pathfires, pathvalue,
       pathcurve, pathspread, pathgap). Owner approved the node drafts. Build order: data model -> wiring -> instruments ->
       per-class values -> the ONE Wave 2 chain.
+      **BUILT 2026-10-21:** data model (ranks, point curve, feat ladders, limited respec, ranked panel) + the Signature branch for ALL NINE classes, each node
+      proven by a probe (`path_ranks_and_feats`, `path_nodes_are_wired`, `*_signature_fires`). STILL TO DO: the six new archetype branches (3 per archetype),
+      then the instruments (`pathfires` as a sim audit, `pathvalue`, `pathcurve`, `pathspread`, `pathgap`, path spec in `make_char`), per-class values, the
+      Wave 2 chain. Filed by this work (owner call, changes power): the Assassinate keystone reaches only the basic attack; `monster_slowed` is never read;
+      Paladin ally-heal for a human teammate needs the party card path.
 
       Two distinct complaints, and they pull in the same direction:
 

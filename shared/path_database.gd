@@ -170,6 +170,39 @@ const MAX_SCALABLE_AMOUNT := 10.0
 # card-rule node names the card it changes, and each was written against that card's code, not its name.
 # Ids are "sig_<Class>_<n>". The class keystone keeps its old id and its old unlock rule.
 const SIGNATURES = {
+	"Grifter": {
+		"id": "signature", "name": "Way of the Con", "color": "#C8A0FF",
+		"nodes": [
+			{"id": "sig_Grifter_1", "name": "Loaded Odds", "desc": "Begin every fight with +1 Read.", "effect": {"start_combo": 1}, "ranks": 3},
+			{"id": "sig_Grifter_2", "name": "Dirty Tricks", "desc": "Sucker Punch deals 4% more damage.", "effect": {"ambush_damage_pct": 4}},
+			{"id": "sig_Grifter_3", "name": "Cash Out", "desc": "Double Cross deals 2% more damage per Read it spends.", "effect": {"heist_per_read_pct": 2}},
+			{"id": "sig_Grifter_4", "name": "Hot Hand", "desc": "Distract builds an extra Read.", "effect": {"distract_read_bonus": true}},
+			{"id": "sig_Grifter_5", "name": "Deep Cuts", "desc": "Sabotage can sap the target up to 65% (it caps at 50%).", "effect": {"sabotage_cap_bonus": 15}, "ranks": 1},
+			{"id": "sig_Grifter_6", "name": "House Edge", "desc": "Double Cross leaves you 2 Read instead of spending it all.", "effect": {"heist_keep_read": 2}, "ranks": 1},
+		],
+	},
+	"Ranger": {
+		"id": "signature", "name": "Way of the Hunt", "color": "#4CAF50",
+		"nodes": [
+			{"id": "sig_Ranger_1", "name": "Steady Aim", "desc": "Begin every fight with +1 Aim.", "effect": {"start_combo": 1}, "ranks": 2},
+			{"id": "sig_Ranger_2", "name": "Hunter's Reach", "desc": "Weak Point deals 4% more damage.", "effect": {"exploit_damage_pct": 4}},
+			{"id": "sig_Ranger_3", "name": "Bowyer", "desc": "Killing Shot deals 3% more damage per Aim it spends.", "effect": {"heist_per_read_pct": 3}},
+			{"id": "sig_Ranger_4", "name": "Eagle Eye", "desc": "Track's damage bonus is 10 points stronger.", "effect": {"analyze_bonus_bonus": 10}, "ranks": 1},
+			{"id": "sig_Ranger_5", "name": "Pinning Snare", "desc": "Snare also rattles the target: -20% accuracy.", "effect": {"snare_distract_pct": 20}, "ranks": 1},
+			{"id": "sig_Ranger_6", "name": "Deadeye", "desc": "Killing Shot at full Aim (8) deals 25% more damage.", "effect": {"shot_full_aim_pct": 25}, "ranks": 1},
+		],
+	},
+	"Ninja": {
+		"id": "signature", "name": "Way of the Shadow", "color": "#191970",
+		"nodes": [
+			{"id": "sig_Ninja_1", "name": "Patient Blade", "desc": "Begin every fight with +1 Read.", "effect": {"start_combo": 1}, "ranks": 3},
+			{"id": "sig_Ninja_2", "name": "Keen Edge", "desc": "Your critical hits with cards deal 4% more damage.", "effect": {"ability_crit_damage_pct": 4}},
+			{"id": "sig_Ninja_3", "name": "Assassin's Edge", "desc": "+3% chance for Assassinate to simply end it.", "effect": {"assassinate_pct": 3}},
+			{"id": "sig_Ninja_4", "name": "Marked for Death", "desc": "Mark builds an extra Read.", "effect": {"mark_read_bonus": true}},
+			{"id": "sig_Ninja_5", "name": "Shadow Echo", "desc": "Assassinate leaves you 2 Read instead of spending it all.", "effect": {"assassinate_keep_read": 2}, "ranks": 1},
+			{"id": "sig_Ninja_6", "name": "Vanishing Act", "desc": "Phantom Strike also leaves you 25% harder to hit for 2 rounds.", "effect": {"vanish_evasion_pct": 25}, "ranks": 1},
+		],
+	},
 	"Wizard": {
 		"id": "signature", "name": "Way of the Arcanum", "color": "#4169E1",
 		"nodes": [

@@ -2694,6 +2694,10 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var _start_mom: int = int(character.get_path_effect_total("start_momentum"))
 	if _start_mom > 0:
 		combat_state["momentum"] = mini(MOMENTUM_MAX, _start_mom)
+	# Loaded Odds / Steady Aim / Patient Blade (Trickster signature paths): the Read engine starts built.
+	var _start_combo: int = int(character.get_path_effect_total("start_combo"))
+	if _start_combo > 0:
+		combat_state["combo"] = mini(COMBO_MAX, _start_combo)
 	# Deep Focus / Clear Sight (Wizard and Oracle signature paths): the mage engine starts built.
 	var _start_focus: int = int(character.get_path_effect_total("start_focus"))
 	if _start_focus > 0:
@@ -4628,7 +4632,9 @@ static func ability_crit_multiplier(character) -> float:
 	damage used to reach basic attacks only (equipment_audit.gd: +100% crit damage, Power Strike +0%).
 	Owner: gear stats reach cards."""
 	var gear: float = float(character.get_crit_damage_bonus()) / 100.0 if character != null else 0.0
-	return ABILITY_CRIT_DAMAGE + gear
+	# Keen Edge (Ninja signature path). Its own key: the Assassinate keystone's `crit_damage_pct` is read by the basic attack alone.
+	var path: float = character.get_path_effect_total("ability_crit_damage_pct") / 100.0 if character != null else 0.0
+	return ABILITY_CRIT_DAMAGE + gear + path
 # 2026-09-05 — abilities with an inherent crit affinity, as a BONUS to the player's own crit
 # chance rather than a private roll of their own.
 #
@@ -5316,6 +5322,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 							# the card shows the average rather than a range it cannot predict.
 							dmg *= (1.0 + float(focus) * (FOCUS_METEOR_PER + character.get_path_effect_total("meteor_per_focus_pct") / 100.0))
 				"ambush":
+					dmg *= 1.0 + character.get_path_effect_total("ambush_damage_pct") / 100.0
 					# 2026-09-05 — the x1.25 here was Ambush's private 50%/1.5x crit, which was
 					# retired when crit was consolidated. It survived in the PREVIEW, so the card
 					# over-quoted the normal hit by 25% — and I had already told the owner this
@@ -5404,7 +5411,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 				mhp = float(mon.get("max_hp", 0))
 			if mhp > 0.0:
 				return {"kind": "damage",
-						"value": apply_skill_damage_bonus(character, name, int(mhp * float(pct) / 100.0), combat, true),
+						"value": int(float(apply_skill_damage_bonus(character, name, int(mhp * float(pct) / 100.0), combat, true)) * (1.0 + character.get_path_effect_total("exploit_damage_pct") / 100.0)),
 						"scales": "%d%% of enemy max HP" % pct}
 			return {}
 		"forcefield", "shield":
@@ -7388,6 +7395,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	# all the early-returning ability paths.
 	var _read_gain: int = 1
 	var _long_con_proc: bool = false
+	# Hot Hand (Grifter) / Marked for Death (Ninja) - signature path nodes: one card builds an extra Read.
+	if (ability_name == "distract" and character.has_path_effect("distract_read_bonus")) or (ability_name == "analyze" and character.has_path_effect("mark_read_bonus")):
+		_read_gain += 1
 	# Grifter "Long Con" — the denial cards that skip the monster's turn build DOUBLE Read, so
 	# stalling is an engine rather than a delaying action. Only the turn-skip cards qualify:
 	# every Grifter ability already builds Read, and doubling all of them would just be a flat
@@ -7488,7 +7498,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 						messages.append("[color=#00FFFF]%s:[/color] ~%s guaranteed%s" % [
 							_fin, _short_num(int(_ability_anchored_damage(character, "wits",
 								(GRIFTER_CASHOUT_PER_READ if character.class_type == "Grifter" else RANGER_SHOT_PER_READ)
-								* float(_stacks)))), level_warning])
+								* float(_stacks)) * _finisher_path_mult(character, _stacks))), level_warning])
 				_:
 					messages.append("[color=#00FFFF]%s Chance:[/color] %d%%%s" % [
 						_fin, assassinate_chance(character, monster, combat), level_warning])
@@ -7499,8 +7509,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# debuff's value by 1.6 AND costs 4% of your health one cast in five - but this bonus
 			# was a bare literal that no modifier touched, so the card took the downside and got
 			# none of the upside. A trade-off where only the trade applied.
-			combat["analyze_bonus"] = maxi(1, int(_apply_buff_value_modifiers(character, ability_name, 10)))
-			messages.append("[color=#00FF00]+10%% damage bonus for this combat![/color]" % [])
+			combat["analyze_bonus"] = maxi(1, int(_apply_buff_value_modifiers(character, ability_name, 10)) + int(character.get_path_effect_total("analyze_bonus_bonus")))
+			messages.append("[color=#00FF00]+%d%% damage bonus for this combat![/color]" % int(combat["analyze_bonus"]))
 			# Skip monster turn for analyze (information only)
 			# Include revealed HP data for client health bar update
 			return {
@@ -7600,6 +7610,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var _am_anchor: float = _ability_anchored_damage(character, "wits", float(ABILITY_WEIGHTS.get("ambush", 0.20)))
 			var base_dmg = int(_am_anchor * damage_multiplier * variable_fraction) if _am_anchor > 0.0 				else int(base_damage * 2.2 * damage_multiplier * wits_mult * variable_fraction)  # #55 identity: 2.5→2.2 — Trickster's RELIABLE damage is weaker so a whiffed Outsmart really leaves it struggling (high-variance identity)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
+			# Dirty Tricks (Grifter signature path)
+			base_dmg = int(float(base_dmg) * (1.0 + character.get_path_effect_total("ambush_damage_pct") / 100.0))
 			var ambush_skill_bonus = character.get_skill_damage_bonus("ambush")
 			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg, combat)
 			if ambush_skill_bonus > 0:
@@ -7642,6 +7654,10 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				_vn_dmg, character.level, monster, character, combat, messages))
 			monster.current_hp = max(0, monster.current_hp - _vn_dmg)
 			combat["vanished"] = true  # the NEXT damaging action auto-crits
+			# Vanishing Act (Ninja signature path): named as a Path source so the buff panel says where it comes from.
+			var _va: int = int(character.get_path_effect_total("vanish_evasion_pct"))
+			if _va > 0:
+				character.add_buff("evasion", _va, 2, "Path - Vanishing Act")
 			messages.append("[color=#00FF00]PHANTOM STRIKE![/color]")
 			messages.append("[color=#00FF00]You strike from the dark — %s[/color]"
 				% _damage_with_detail(combat, messages, _vn_dmg))
@@ -7664,6 +7680,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var exploit_skill_bonus = character.get_skill_damage_bonus("exploit")
 			var damage = apply_skill_damage_bonus(character, "exploit", raw_damage, combat)
+			# Hunter's Reach (Ranger signature path)
+			damage = int(float(damage) * (1.0 + character.get_path_effect_total("exploit_damage_pct") / 100.0))
 			if exploit_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(exploit_skill_bonus))
 			monster.current_hp -= damage
@@ -7681,11 +7699,12 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					messages.append("[color=#808080]You have nothing on it yet — read it first.[/color]")
 					return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 				var _gc_dmg: int = int(_ability_anchored_damage(character, "wits",
-					GRIFTER_CASHOUT_PER_READ * float(_gc_read)))
+					GRIFTER_CASHOUT_PER_READ * float(_gc_read)) * _finisher_path_mult(character, _gc_read))
 				_gc_dmg = apply_skill_damage_bonus(character, ability_name, _gc_dmg, combat)
 				_gc_dmg = apply_damage_variance(apply_ability_damage_modifiers(
 					_gc_dmg, character.level, monster, character, combat, messages))
-				combat["combo"] = 0
+				# House Edge (Grifter signature path): keep some of the Read. Zero for everyone without the node.
+				combat["combo"] = mini(_gc_read, int(character.get_path_effect_total("heist_keep_read")))
 				monster.current_hp = max(0, monster.current_hp - _gc_dmg)
 				messages.append("[color=#FFD700][b]DOUBLE CROSS![/b][/color]")
 				messages.append("[color=#00FF00]You cash in everything you had on it — %s[/color]"
@@ -7700,7 +7719,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					messages.append("[color=#808080]You have not steadied the shot yet.[/color]")
 					return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 				var _rs_dmg: int = int(_ability_anchored_damage(character, "wits",
-					RANGER_SHOT_PER_READ * float(_rs_read)))
+					RANGER_SHOT_PER_READ * float(_rs_read)) * _finisher_path_mult(character, _rs_read))
 				_rs_dmg = apply_skill_damage_bonus(character, ability_name, _rs_dmg, combat)
 				_rs_dmg = apply_damage_variance(apply_ability_damage_modifiers(
 					_rs_dmg, character.level, monster, character, combat, messages))
@@ -7738,7 +7757,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# exact formula - level penalty, path bonuses and partial commit included - so the
 			# number on the card IS the number rolled, by construction rather than by care.
 			var success_chance = assassinate_chance(character, monster, combat, variable_fraction)
-			combat["combo"] = 0
+			# Shadow Echo (Ninja signature path): the strike leaves some Read behind. Zero for everyone without the node.
+			combat["combo"] = mini(_nj_read, int(character.get_path_effect_total("assassinate_keep_read")))
 
 			var roll = randi() % 100
 			if roll < success_chance:
@@ -7897,7 +7917,12 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			debuff_amount = _apply_buff_value_modifiers(character, "sabotage", debuff_amount)
 			# Store debuffs in combat state
 			var existing_sabotage = combat.get("monster_sabotaged", 0)
-			combat["monster_sabotaged"] = min(50, existing_sabotage + debuff_amount)  # Cap at 50%
+			combat["monster_sabotaged"] = min(50 + int(character.get_path_effect_total("sabotage_cap_bonus")), existing_sabotage + debuff_amount)  # Cap at 50% (65% with Deep Cuts)
+			# Pinning Snare (Ranger signature path): the same accuracy debuff Distract applies, never downgrading a stronger one.
+			var _snare_acc: int = int(character.get_path_effect_total("snare_distract_pct"))
+			if _snare_acc > 0:
+				combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), _snare_acc)
+				messages.append("[color=#C9A0FF]Path - Pinning Snare: the %s is rattled (-%d%% accuracy).[/color]" % [monster.name, _snare_acc])
 			# Named per class — a Ninja hamstrings. Same effect, and the log says what the card
 			# in that player's hand is actually called.
 			if character.class_type == "Ninja":
@@ -15819,13 +15844,13 @@ func _finisher_damage(character, combat: Dictionary) -> int:
 	var raw: float = 0.0
 	match String(character.class_type):
 		"Grifter":
-			raw = _ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n))
+			raw = _ability_anchored_damage(character, "wits", GRIFTER_CASHOUT_PER_READ * float(n)) * _finisher_path_mult(character, n)
 		"Ranger":
 			# The Aim ramp is applied TWICE in the real hit - once by the discharge and once by
 			# `apply_ability_damage_modifiers`. See the note in _finisher_value; the estimate has
 			# to match the hit, not the formula.
 			var _rs: float = _ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))
-			raw = _rs * (1.0 + float(n) * RANGER_AIM_DMG_PER)
+			raw = _rs * (1.0 + float(n) * RANGER_AIM_DMG_PER) * _finisher_path_mult(character, n)
 		"Ninja":
 			raw = _ability_anchored_damage(character, "wits", NINJA_STRIKE_PER_READ * float(n))
 		_:
@@ -15842,6 +15867,15 @@ func _finisher_damage(character, combat: Dictionary) -> int:
 	buff_mult *= 1.0 + float(int(combat.get("analyze_bonus", 0))) / 100.0
 	buff_mult *= 1.0 - minf(0.90, float(character.get_buff_value("damage_penalty")) / 100.0)
 	return apply_skill_damage_bonus(character, "perfect_heist", int(raw * buff_mult), combat, true)
+
+
+func _finisher_path_mult(character, n: int) -> float:
+	"""What the Grifter's and Ranger's Path does to the finisher, as one multiplier: Cash Out / Bowyer (per Read or Aim spent)
+	and Deadeye (a full bank). The cast and every card quote call this, so they cannot disagree."""
+	var m: float = 1.0 + float(n) * character.get_path_effect_total("heist_per_read_pct") / 100.0
+	if n >= COMBO_MAX:
+		m *= 1.0 + character.get_path_effect_total("shot_full_aim_pct") / 100.0
+	return m
 
 
 func _finisher_value(character, combat: Dictionary) -> int:
@@ -15869,7 +15903,7 @@ func _finisher_value(character, combat: Dictionary) -> int:
 			# other card's face subtracts the target's armour, and adding it here would make this
 			# card the odd one out in the other direction.
 			var _rs: float = _ability_anchored_damage(character, "wits", RANGER_SHOT_PER_READ * float(n))
-			return int(_rs * (1.0 + float(n) * RANGER_AIM_DMG_PER))
+			return int(_rs * (1.0 + float(n) * RANGER_AIM_DMG_PER) * _finisher_path_mult(character, n))
 		"Ninja":
 			var mon = combat.get("monster", null)
 			if not (mon is Dictionary):

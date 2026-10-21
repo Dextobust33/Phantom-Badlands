@@ -356,3 +356,19 @@ Nodes: Wizard Deep Focus, Resonance (Meteor +3%/Focus), Echoing Casts (+2% doubl
 Steady Hands, Fractured Frost, Banked Chaos, Controlled Backfire, Cataclysm Unbound. Oracle Clear Sight, Quiet Mind, Piercing Lance, Gentle Stillness, Deep Transfix,
 Final Reading. Card faces quote Resonance, Fractured Frost, Cataclysm Unbound, Piercing Lance and Final Reading.
 Remaining Signature branches: Grifter, Ranger, Ninja.
+
+**Slice 5 - Grifter, Ranger and Ninja Signature branches: BUILT (2026-10-21). All nine classes now have a Signature branch.** Probe `trickster_signature_fires`
+(24 checks). Card faces quote Dirty Tricks, Cash Out, Hunter's Reach, Bowyer, Deadeye and Assassin's Edge through the same functions the casts use
+(`_finisher_path_mult`, `assassinate_chance`).
+Changes from the section 7 drafts, all forced by the cards:
+- Grifter: S2 is **Dirty Tricks** (Sucker Punch +4%/rank) because Pickpocket is not in the Grifter's deck; S4 **Hot Hand** is Distract building an extra Read;
+  S5 **Deep Cuts** raises Sabotage's 50% cap to 65%; S6 **House Edge** is Double Cross leaving 2 Read. ("Sabotage twice in a row" had no rule to break.)
+- Ranger: S2 **Hunter's Reach** is Weak Point +4%/rank (a beast bonus is a narrow condition); S4 **Eagle Eye** (Track's bonus +10 points); S5 **Pinning Snare**
+  (-20% accuracy; the game has no enemy dodge); S6 **Deadeye** is +25% at full Aim (Killing Shot already cannot be dodged). Steady Aim caps at 2 ranks: each Aim is +11% damage.
+- Ninja: S2 **Keen Edge** is +4% CARD crit DAMAGE per rank, not crit chance - **a level-60 Ninja on average gear is already at the 75% crit cap**, so chance would do
+  nothing. S4 **Marked for Death** (Mark builds an extra Read); S5 **Shadow Echo**; S6 **Vanishing Act** (Phantom Strike grants +25% evasion for 2 rounds, sourced to the Path).
+Found while reading (filed, not fixed - each is the owner's call because it changes player power):
+- **The Assassinate keystone (`crit_damage_pct` +50%, and its -10% `noncrit_damage_pct`) is read by the basic attack alone**, like Chaos Theory was: a deck-driven
+  trickster never gets it. Fixing the upside without the downside would be pure gain, so both must move together.
+- **Companion/monster "slow" (`monster_slowed`) is written and never read** (only displayed): the slowing cards do nothing to the fight.
+- Track's log line said "+10% damage bonus" whatever the real figure was (it is 8% on an unranked card); it now prints the real number.
