@@ -249,3 +249,55 @@ Each rewrites one card. The L2000 and L6000 ones carry a trade-off (the card-upg
 | Ninja | Phantom Strike carries over to the next fight | Hamstring and Mark apply to a second target | Assassinate costs all Read, +50% lethal |
 
 All of these are drafts for the owner to react to. The keystones and passives named are the current game's; the rest are new.
+
+## 8. Using paths to close the class gaps - and the instruments that needs (2026-10-21)
+
+Owner ruling: paths are the per-class lever that shores up each class's gaps and brings the classes to similar power. They are
+player-side and per-class, which is exactly the kind of change that survives a monster refit (a global buff washes out; this does not).
+Any simulation or metric needed for that gets built.
+
+### 8.1 Where the gaps are today (measured: `classrisk`, stance 0.5, Ninja policy fixed, 150 fights/cell, 2026-10-20)
+Average gear, win% / death%: at L100 Wizard 87/4, Sorcerer 81/5, Ranger 79/3, Grifter 81/7, Fighter 82/6 against **Ninja 65/7, Paladin 70/7,
+Sage 71/11**; at L500 Wizard 91/3 against **Paladin 63/9, Fighter 69/8, Sage 71/9**. Undergeared the spread is wider (Fighter 65%, Paladin 55%
+at L100 against Wizard 83%). Beyond L500 there is no measurement at all, and characters go to L10000.
+
+### 8.2 Target, not siblings
+"Similar power" means **each class hits the same absolute band at each level** (what BALANCED means: most die by design, death risk
+falls with progression). It does NOT mean "match the strongest class". Tuning to siblings is a treadmill (`feedback_tune_to_targets`):
+Wizard is both the highest and possibly over the band. So the paths budget can also pull an over-performer DOWN (its engine perks get
+smaller ranks, or a trade-off on its Ascendants), and the per-class path budget is sized from the gap to the target band, not to a rival.
+
+### 8.3 Instruments to build (in this order; each is its own probe/audit with a PASS line)
+1. **Path support in the instrument.** `make_char` takes a path SPEC: a per-class ordered priority list, spent from the points the
+   level has earned (`PathPoints.earned(level, feats)`). Specs model the PLAYER, not the maximiser: a "typical" build per class plus two
+   alternates per class (defensive / offensive), never a solver-picked optimum. Without this nothing below can run.
+   Proof it works: identical numbers after a real change mean the change is not running, so each node gets a "fires" assertion.
+2. **`pathfires` (node coverage).** For every node, cast the card/hook with and without it and require a measurable difference in the
+   state it claims to change (the `upgradefit` pattern: it found four upgrades that did nothing). Catches dead nodes before any balance
+   run, and catches the Ninja-style stale-gate defect for path nodes.
+3. **`pathvalue` (marginal worth).** For each node, rank 1 and rank 5, per class, at L30/L100/L500/L2000: paired A/B on the same seeds
+   (per-cell seeding, then re-measure something unchanged: it must come back byte-identical). Output: win pp, death pp, damage/turn, with
+   a confidence flag (±10pp rule: nothing under ~6pp is called a difference). Tells us which nodes are worth their points.
+4. **`pathcurve` (point economy).** Points earned by level and by feat versus tree capacity, per class; reachable fraction at each level;
+   confirms the tree is never full before L10000 and never empty of choices before L50.
+5. **`pathspread` (no dominant build).** Per class: best spec vs median spec vs worst reasonable spec. Deep means choices matter but none
+   is mandatory; flag any class where one spec beats the median by more than ~10pp or where the "typical" spec is a trap.
+6. **`pathgap` (the closer).** Per class and level band: gap to the target band with the typical spec, then the smallest path budget (points
+   by branch) that closes it, reported as a per-class path profile. This is the number that feeds the nodes' rank values. It reports
+   whether the class is bound by its clamp (saturation is not convergence).
+7. **High-level reach.** `classrisk` stops at L500. Extend the cells to L1000/2500/5000/10000 using the existing reference curve and
+   check the curve's top end against live saves before trusting it (the reference player was wrong once without anyone seeing it).
+8. **Feats telemetry.** The valor-ledger pattern: `feat_ledger.json` counts rungs earned per feat per hour of play, so the ladder numbers
+   (3.6) are retuned from real play rather than guessed. (There is none yet; this is the same blind spot as the economy numbers.)
+
+### 8.4 Process, so the chain is run once
+Build data model and wiring -> `pathfires` -> `pathvalue`/`pathcurve`/`pathspread` (iterate here, 2-4 minutes each) -> per-class `pathgap`
+profile -> set the rank values -> THEN the single Wave 2 chain (`preflight` -> `speciescal` -> `refcal` -> `rolecal`) with paths in the
+model. Paths are never tuned by running the chain repeatedly.
+
+### 8.5 Design constraint carried over: LESS CONDITIONAL (BACKLOG, owner 2026-09-18)
+Owner direction: *"Path's need revamped and should be class specific and less conditional"*: a node that only fires in a narrow
+circumstance reads as dead weight at the point of choosing. Several of my section 7 drafts are conditional (`at 4+ Momentum`, `at max
+Rage`, `below 50% HP`). Rule for writing the real nodes: **a rank-able engine perk must always do something every fight**; a threshold
+is allowed only on card-rule nodes where the threshold IS the class's engine (Momentum, Read...), and the card text must say it plainly.
+`pathfires` reports how often each node's condition is actually met in a fight; a node met in under ~25% of fights is rewritten.
