@@ -340,3 +340,19 @@ Changes from the section 7 drafts, all forced by reading the cards:
   card path. Ally healing for a human teammate is filed for the party-combat pass, not dropped. S5 is Radiant Shield (+10% damage reduction with Shield of Faith,
   sourced as "Path - Radiant Shield"). S6 is Verdict (+10 points of Judgement's lethal chance; the card face quotes it).
 Card faces stay truthful: Mercy and Verdict change the quoted heal and lethal numbers, covered by the probe.
+
+**Slice 4 - Wizard, Sorcerer and Oracle Signature branches: BUILT (2026-10-21).** Probe `mage_signature_fires` (27 checks; random rolls compared on the same seed,
+card quotes compared on ONE character with the node toggled - two `make_char` calls are two different characters, which is what made the first run fail
+six checks that were not the nodes' fault).
+Found while reading the cards:
+- **The Sorcerer's class keystone Chaos Theory (35% double) was read only by the basic attack.** A deck-driven Sorcerer almost never uses the basic attack, so
+  the keystone did nothing for the cards. `_chaos_adjusted` now folds it (and Loaded Dice / Steady Hands) into the passive every spell reads. This is a real
+  power change for any Sorcerer that took the keystone; it goes into the Wave 2 model.
+- Drafts that did not survive the card: Sorcerer "backfire also hits the enemy" (a backfire already halves the spell and still hits), Wizard "third spell
+  free" (no single mana hook), Wizard "Warded Surge" (replaced by Smoldering Impact: Meteor leaves a burn), Oracle "Stillness clears a debuff" (now builds
+  an extra Insight, the engine), Oracle "Final Reading refunds Insight" (now +8 lethal chance).
+- An Oracle earns Foresight Insight even with the monster turn suppressed, so Gentle Stillness is tested as "one more than without".
+Nodes: Wizard Deep Focus, Resonance (Meteor +3%/Focus), Echoing Casts (+2% double-cast), Surging Focus, Twin Bolt, Smoldering Impact. Sorcerer Loaded Dice,
+Steady Hands, Fractured Frost, Banked Chaos, Controlled Backfire, Cataclysm Unbound. Oracle Clear Sight, Quiet Mind, Piercing Lance, Gentle Stillness, Deep Transfix,
+Final Reading. Card faces quote Resonance, Fractured Frost, Cataclysm Unbound, Piercing Lance and Final Reading.
+Remaining Signature branches: Grifter, Ranger, Ninja.

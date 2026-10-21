@@ -2694,6 +2694,10 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var _start_mom: int = int(character.get_path_effect_total("start_momentum"))
 	if _start_mom > 0:
 		combat_state["momentum"] = mini(MOMENTUM_MAX, _start_mom)
+	# Deep Focus / Clear Sight (Wizard and Oracle signature paths): the mage engine starts built.
+	var _start_focus: int = int(character.get_path_effect_total("start_focus"))
+	if _start_focus > 0:
+		combat_state["focus"] = mini(FOCUS_MAX, _start_focus)
 
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
@@ -5220,6 +5224,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 	var focus_mult: float = 1.0
 	if character.class_type == "Wizard":
 		focus_mult = 1.0 + float(focus) * FOCUS_DMG_PER
+	var lance_quote: float = 1.0 + float(focus) * character.get_path_effect_total("oracle_lance_per_focus_pct") / 100.0
 	# 2026-09-05 — the quote reacts to LIVE buffs. Owner: "is that taking into account the
 	# characters current buffs, debuffs, as well as the cards upgrades?" Upgrades were already
 	# in (they ride apply_skill_damage_bonus); buffs were not, so casting War Cry moved the real
@@ -5277,7 +5282,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 					var _p_raw: float = _p_spend / _p_ceiling
 					var _p_frac: float = _p_raw if _p_raw <= 1.0 else minf(1.5, 1.0 + 0.3 * (sqrt(_p_raw) - 1.0))
 					var _p_eff: float = MAGIC_BOLT_MIN_EFF + (1.0 - MAGIC_BOLT_MIN_EFF) * _p_frac
-					dmg *= _p_frac * _p_eff * focus_mult
+					dmg *= _p_frac * _p_eff * focus_mult * lance_quote
 					# Always name the spend. Owner: "what does the damage on the card for magic
 					# bolt represent since it is a variable cost it's rather confusing." It is
 					# the damage for the mana THIS cast will actually commit — but the card only
@@ -5287,17 +5292,19 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 					note = "at %d mana" % int(_p_spend)
 				"blast", "frost_nova":
 					dmg *= focus_mult
+					if name == "frost_nova":
+						dmg *= 1.0 + character.get_path_effect_total("frost_nova_pct") / 100.0
 				"meteor":
 					# One card, three mechanics — so three quotes. Anything else means two of
 					# the three Mages read a number that has nothing to do with their cast.
 					match String(character.class_type):
 						"Sorcerer":
 							dmg = _ability_anchored_damage(character, "intelligence",
-								SORCERER_CATACLYSM_PER * float(focus))
+								SORCERER_CATACLYSM_PER * float(focus + (int(character.get_path_effect_total("cataclysm_bonus_stacks")) if focus > 0 else 0)))
 						"Sage":
 							dmg = _ability_anchored_damage(character, "intelligence",
 								ORACLE_UNMAKING_PER * float(focus))
-							var _ol: int = maxi(1, ORACLE_LETHAL_BASE + focus * ORACLE_LETHAL_PER)
+							var _ol: int = maxi(1, ORACLE_LETHAL_BASE + focus * ORACLE_LETHAL_PER + int(character.get_path_effect_total("unmaking_lethal_bonus")))
 							var _omon = combat.get("monster", null)
 							if _omon is Dictionary:
 								var _ogap: int = int(_omon.get("level", character.level)) - character.level
@@ -5307,7 +5314,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 						_:
 							# meteor_mult is a 3.0-4.0 roll divided by 3.5, so it averages 1.0 —
 							# the card shows the average rather than a range it cannot predict.
-							dmg *= (1.0 + float(focus) * FOCUS_METEOR_PER)
+							dmg *= (1.0 + float(focus) * (FOCUS_METEOR_PER + character.get_path_effect_total("meteor_per_focus_pct") / 100.0))
 				"ambush":
 					# 2026-09-05 — the x1.25 here was Ambush's private 50%/1.5x crit, which was
 					# retired when crit was consolidated. It survived in the PREVIEW, so the card
@@ -6002,6 +6009,36 @@ func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dic
 
 	return {"success": false, "messages": ["[color=#FF4444]Unknown universal ability![/color]"], "combat_ended": false}
 
+func _chaos_adjusted(character, fx: Dictionary) -> Dictionary:
+	"""The Sorcerer's Chaos Magic with its Path folded in: the class keystone (Chaos Theory), Loaded Dice and Steady Hands.
+	The keystone used to be read only by the basic attack, which a deck-driven Sorcerer almost never uses, so it did nothing for the cards."""
+	if not fx.has("double_damage_chance"):
+		return fx
+	var out: Dictionary = fx.duplicate()
+	var dd: float = float(fx.get("double_damage_chance", 0.25))
+	var keystone: float = character.get_path_effect_total("sorcerer_double_pct") / 100.0
+	if keystone > dd:
+		dd = keystone
+	out["double_damage_chance"] = dd + character.get_path_effect_total("chaos_double_pct") / 100.0
+	out["backfire_chance"] = maxf(0.0, float(fx.get("backfire_chance", 0.10)) - character.get_path_effect_total("chaos_backfire_cut_pct") / 100.0)
+	return out
+
+
+func _chaos_roll(combat: Dictionary, character, fx: Dictionary) -> float:
+	"""The Chaos Magic roll. Banked Chaos (Sorcerer signature path): a spell that fails to double is remembered, and the next one
+	lands in the double zone of the roll."""
+	var back: float = float(fx.get("backfire_chance", 0.10))
+	var dbl: float = float(fx.get("double_damage_chance", 0.25))
+	var banking: bool = character.has_path_effect("chaos_bank")
+	if banking and bool(combat.get("_chaos_banked", false)):
+		combat["_chaos_banked"] = false
+		return back + dbl * 0.5
+	var r: float = randf()
+	if banking and r >= back + dbl:
+		combat["_chaos_banked"] = true
+	return r
+
+
 func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String) -> Dictionary:
 	"""Process mage abilities (use mana)"""
 	var character = combat.character
@@ -6034,7 +6071,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 	# Get class passive for spell modifications
 	var passive = character.get_class_passive()
-	var passive_effects = passive.get("effects", {})
+	var passive_effects = _chaos_adjusted(character, passive.get("effects", {}))
 
 	# Audit #1 variable-cost rework — abilities in VARIABLE_COST_TABLE (blast,
 	# meteor in v0.9.260) auto-spend max-affordable up to ceiling. Magic Bolt
@@ -6060,6 +6097,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	var _focus_mult: float = 1.0
 	if character.class_type == "Wizard":
 		_focus_mult = 1.0 + float(_focus_prior) * FOCUS_DMG_PER
+	# Piercing Lance (Oracle signature path): Mind Lance only, so it is its own multiplier and not folded into the ramp.
+	var _lance_mult: float = 1.0 + float(_focus_prior) * character.get_path_effect_total("oracle_lance_per_focus_pct") / 100.0
 
 	match ability_name:
 		"magic_bolt":
@@ -6148,7 +6187,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# keeping the spend FRACTION (_mb_frac) as the scaler: commit your whole bar and
 			# you get the full weight, chip and you get a fraction of it.
 			var _mb_anchor: float = _ability_anchored_damage(character, "intelligence", float(ABILITY_WEIGHTS.get("magic_bolt", 0.55)))
-			var base_damage: int = int(_mb_anchor * _mb_frac * _mb_eff * _focus_mult) if _mb_anchor > 0.0 				else int(bolt_amount * int_multiplier * _mb_eff * _focus_mult)  # v0.9.697 Focus ramp
+			var base_damage: int = int(_mb_anchor * _mb_frac * _mb_eff * _focus_mult * _lance_mult) if _mb_anchor > 0.0 				else int(bolt_amount * int_multiplier * _mb_eff * _focus_mult * _lance_mult)  # v0.9.697 Focus ramp
 
 			# Apply damage buff (from War Cry, potions, etc.)
 			var damage_buff = character.get_buff_value("damage")
@@ -6170,10 +6209,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# === CLASS PASSIVE: Sorcerer Chaos Magic ===
 			# 25% double damage, 5% backfire
 			if passive_effects.has("double_damage_chance"):
-				var chaos_roll = randf()
+				var chaos_roll = _chaos_roll(combat, character, passive_effects)
 				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
 					# Backfire: damage yourself (capped at 15% max HP)
 					var backfire_dmg = mini(int(base_damage * 0.5), int(character.get_total_max_hp() * 0.15))
+					# Controlled Backfire (Sorcerer signature path)
+					backfire_dmg = int(float(backfire_dmg) * (1.0 - character.get_path_effect_total("backfire_self_cut_pct") / 100.0))
 					character.current_hp -= backfire_dmg
 					character.current_hp = max(1, character.current_hp)
 					base_damage = int(base_damage * 0.5)
@@ -6206,6 +6247,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				actual_mana_cost, _damage_with_detail(combat, messages, final_damage)])
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_mb = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
+			if _focus_prior >= FOCUS_MAX and character.has_path_effect("bolt_full_focus_double"):
+				dc_chance_mb = 100    # Twin Bolt (Wizard signature path)
 			if dc_chance_mb > 0 and randi() % 100 < dc_chance_mb:
 				monster.current_hp -= final_damage
 				monster.current_hp = max(0, monster.current_hp)
@@ -6250,9 +6293,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 			# === CLASS PASSIVE: Sorcerer Chaos Magic ===
 			if passive_effects.has("double_damage_chance"):
-				var chaos_roll = randf()
+				var chaos_roll = _chaos_roll(combat, character, passive_effects)
 				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
 					var backfire_dmg = mini(int(base_damage * 0.5), int(character.get_total_max_hp() * 0.15))
+					# Controlled Backfire (Sorcerer signature path)
+					backfire_dmg = int(float(backfire_dmg) * (1.0 - character.get_path_effect_total("backfire_self_cut_pct") / 100.0))
 					character.current_hp -= backfire_dmg
 					character.current_hp = max(1, character.current_hp)
 					base_damage = int(base_damage * 0.5)
@@ -6368,7 +6413,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 					messages.append("[color=#808080]You have nothing banked yet — cast first, then loose it.[/color]")
 					return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 				var _sc_dmg: int = int(_ability_anchored_damage(character, "intelligence",
-					SORCERER_CATACLYSM_PER * float(_sc_vol)) * variable_fraction)
+					SORCERER_CATACLYSM_PER * float(_sc_vol + int(character.get_path_effect_total("cataclysm_bonus_stacks")))) * variable_fraction)
 				_sc_dmg = int(float(_sc_dmg) * (1.0 + float(character.get_buff_value("damage")) / 100.0))
 				_sc_dmg = apply_skill_damage_bonus(character, ability_name, _sc_dmg, combat)
 				_sc_dmg = apply_damage_variance(apply_ability_damage_modifiers(
@@ -6393,7 +6438,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				_or_dmg = apply_skill_damage_bonus(character, ability_name, _or_dmg, combat)
 				_or_dmg = apply_damage_variance(apply_ability_damage_modifiers(
 					_or_dmg, character.level, monster, character, combat, messages))
-				var _or_lethal: int = ORACLE_LETHAL_BASE + _or_ins * ORACLE_LETHAL_PER
+				var _or_lethal: int = ORACLE_LETHAL_BASE + _or_ins * ORACLE_LETHAL_PER + int(character.get_path_effect_total("unmaking_lethal_bonus"))
 				var _or_gap: int = monster.level - character.level
 				if _or_gap > 0:
 					_or_lethal = maxi(1, _or_lethal - _or_gap)
@@ -6421,7 +6466,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
 			var meteor_mult = 3.0 + randf()  # 3.0 to 4.0x random multiplier
 			# v0.9.697 — Meteor DISCHARGES Focus with a bigger per-Focus bonus.
-			var _focus_meteor_mult: float = 1.0 + float(_focus_prior) * FOCUS_METEOR_PER
+			var _res_pct: float = character.get_path_effect_total("meteor_per_focus_pct") / 100.0
+			var _focus_meteor_mult: float = 1.0 + float(_focus_prior) * (FOCUS_METEOR_PER + _res_pct)
 			# #6c — anchored form. The old base was a FLAT 100, so Meteor was 175% of a
 			# health bar at L1 and 38% at L10000: the last early-game one-shot, and irrelevant
 			# late. meteor_mult keeps its 3-4x roll as flavour variance around the anchor.
@@ -6442,9 +6488,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 			# === CLASS PASSIVE: Sorcerer Chaos Magic ===
 			if passive_effects.has("double_damage_chance"):
-				var chaos_roll = randf()
+				var chaos_roll = _chaos_roll(combat, character, passive_effects)
 				if chaos_roll < passive_effects.get("backfire_chance", 0.10):
 					var backfire_dmg = mini(int(base_damage * 0.5), int(character.get_total_max_hp() * 0.15))
+					# Controlled Backfire (Sorcerer signature path)
+					backfire_dmg = int(float(backfire_dmg) * (1.0 - character.get_path_effect_total("backfire_self_cut_pct") / 100.0))
 					character.current_hp -= backfire_dmg
 					character.current_hp = max(1, character.current_hp)
 					base_damage = int(base_damage * 0.5)
@@ -6465,6 +6513,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				messages.append("[color=#FF00FF]ARCANE SURGE: DOUBLE CAST![/color]")
 				_note_dmg(combat, messages, damage)
 				messages.append("[color=#FF4444]A second meteor crashes down for %d damage![/color]" % damage)
+			# Smoldering Impact (Wizard signature path): the same burn Blast leaves.
+			if character.has_path_effect("meteor_burn"):
+				combat["monster_burn"] = max(1, int(int_stat * 0.2 * variable_fraction))
+				combat["monster_burn_duration"] = 3
+				messages.append("[color=#C9A0FF]Path - Smoldering Impact: the target is left burning (%d damage/round for 3 rounds).[/color]" % int(combat["monster_burn"]))
 
 		"haste":
 			# v0.9.423 — repurposed from a speed buff (mages rarely benefit
@@ -6507,7 +6560,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var base_chance = mini(85, 50 + int(int_stat / 2))
 			var success_chance = int(base_chance * pow(STUN_REPEAT_FALLOFF, cc_resist) * variable_fraction)
 			if consec_stuns < 2 and randf() * 100 < success_chance:
-				var stun_duration = 1 + (randi() % 2)  # 1-2 turns
+				var stun_duration = 1 + (randi() % 2) + int(character.get_path_effect_total("transfix_duration_bonus"))  # 1-2 turns (+1 with Deep Transfix)
 				combat["monster_stunned"] = stun_duration
 				combat["cc_resistance"] = cc_resist + 1
 				combat["consec_stuns"] = consec_stuns + 1
@@ -6563,6 +6616,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var _fn_anchor: float = _ability_anchored_damage(character, "intelligence", float(ABILITY_WEIGHTS.get("frost_nova", 0.10)))
 			var fn_base = int(_fn_anchor * variable_fraction * _focus_mult) if _fn_anchor > 0.0 				else int(30 * (1.0 + fn_int * 0.04) * variable_fraction * _focus_mult)
 			fn_base = apply_skill_damage_bonus(character, "frost_nova", fn_base, combat)
+			fn_base = int(float(fn_base) * (1.0 + character.get_path_effect_total("frost_nova_pct") / 100.0))
 			var fn_mod = apply_ability_damage_modifiers(fn_base, character.level, monster, character, combat, messages)
 			var fn_dmg = apply_damage_variance(fn_mod)
 			monster.current_hp = max(0, monster.current_hp - fn_dmg)
@@ -6596,9 +6650,14 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#5AC8FF]◈ %s discharged! (%s +%d%% damage)[/color]" % [
 				class_engine_label(String(character.class_type)),
 				_ability_display_name(character, "meteor"),
-				int(_focus_prior * FOCUS_METEOR_PER * 100)])
+				int(_focus_prior * (FOCUS_METEOR_PER + character.get_path_effect_total("meteor_per_focus_pct") / 100.0) * 100)])
 	else:
-		var _newfocus: int = min(FOCUS_MAX, _focus_prior + 1)
+		var _extra_focus: int = 0
+		if ability_name == "haste" and character.has_path_effect("surge_focus"):
+			_extra_focus = 1         # Surging Focus (Wizard signature path)
+		elif ability_name == "frost_nova" and character.has_path_effect("stillness_insight"):
+			_extra_focus = 1         # Gentle Stillness (Oracle signature path)
+		var _newfocus: int = min(FOCUS_MAX, _focus_prior + 1 + _extra_focus)
 		combat["focus"] = _newfocus
 		# 2026-09-04 — NOT a log line. The Focus meter is permanently on screen beside the hand
 		# ("◈ Focus ◇◇◇◇◇  +10% spell dmg") and updates live, so this spent a line of the log
@@ -15877,7 +15936,7 @@ func _engine_note(character, combat: Dictionary) -> String:
 		"Sage":
 			if n <= 0:
 				return "watch it work first"
-			var lethal: int = maxi(1, ORACLE_LETHAL_BASE + n * ORACLE_LETHAL_PER)
+			var lethal: int = maxi(1, ORACLE_LETHAL_BASE + n * ORACLE_LETHAL_PER + int(character.get_path_effect_total("unmaking_lethal_bonus")))
 			var mon = combat.get("monster", null)
 			if mon is Dictionary:
 				var gap: int = int(mon.get("level", character.level)) - int(character.level)

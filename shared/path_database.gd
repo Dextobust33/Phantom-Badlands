@@ -170,6 +170,39 @@ const MAX_SCALABLE_AMOUNT := 10.0
 # card-rule node names the card it changes, and each was written against that card's code, not its name.
 # Ids are "sig_<Class>_<n>". The class keystone keeps its old id and its old unlock rule.
 const SIGNATURES = {
+	"Wizard": {
+		"id": "signature", "name": "Way of the Arcanum", "color": "#4169E1",
+		"nodes": [
+			{"id": "sig_Wizard_1", "name": "Deep Focus", "desc": "Begin every fight with +1 Focus.", "effect": {"start_focus": 1}, "ranks": 2},
+			{"id": "sig_Wizard_2", "name": "Resonance", "desc": "Meteor gains 3% more damage per Focus held.", "effect": {"meteor_per_focus_pct": 3}},
+			{"id": "sig_Wizard_3", "name": "Echoing Casts", "desc": "+2% chance for your spells to cast twice.", "effect": {"double_cast_pct": 2}},
+			{"id": "sig_Wizard_4", "name": "Surging Focus", "desc": "Arcane Surge builds an extra Focus.", "effect": {"surge_focus": true}},
+			{"id": "sig_Wizard_5", "name": "Twin Bolt", "desc": "Magic Bolt cast at full Focus always casts twice.", "effect": {"bolt_full_focus_double": true}},
+			{"id": "sig_Wizard_6", "name": "Smoldering Impact", "desc": "Meteor leaves a burning wound (20% of your INT a round for 3 rounds).", "effect": {"meteor_burn": true}},
+		],
+	},
+	"Sorcerer": {
+		"id": "signature", "name": "Way of the Storm", "color": "#9400D3",
+		"nodes": [
+			{"id": "sig_Sorcerer_1", "name": "Loaded Dice", "desc": "+1% chance for double spell damage.", "effect": {"chaos_double_pct": 1}},
+			{"id": "sig_Sorcerer_2", "name": "Steady Hands", "desc": "-1% chance to backfire (it starts at 5%).", "effect": {"chaos_backfire_cut_pct": 1}},
+			{"id": "sig_Sorcerer_3", "name": "Fractured Frost", "desc": "Frost Nova deals 5% more damage.", "effect": {"frost_nova_pct": 5}},
+			{"id": "sig_Sorcerer_4", "name": "Banked Chaos", "desc": "A spell that fails to double is banked: your next spell is guaranteed to double.", "effect": {"chaos_bank": true}},
+			{"id": "sig_Sorcerer_5", "name": "Controlled Backfire", "desc": "The damage a backfire does to you is halved.", "effect": {"backfire_self_cut_pct": 50}, "ranks": 1},
+			{"id": "sig_Sorcerer_6", "name": "Cataclysm Unbound", "desc": "Cataclysm counts as one Volatility higher.", "effect": {"cataclysm_bonus_stacks": 1}, "ranks": 1},
+		],
+	},
+	"Sage": {
+		"id": "signature", "name": "Way of the Seer", "color": "#20B2AA",
+		"nodes": [
+			{"id": "sig_Sage_1", "name": "Clear Sight", "desc": "Begin every fight with +1 Insight.", "effect": {"start_focus": 1}, "ranks": 3},
+			{"id": "sig_Sage_2", "name": "Quiet Mind", "desc": "Premonition absorbs 6% more.", "effect": {"forcefield_power_pct": 6}},
+			{"id": "sig_Sage_3", "name": "Piercing Lance", "desc": "Mind Lance deals 4% more damage per Insight held.", "effect": {"oracle_lance_per_focus_pct": 4}},
+			{"id": "sig_Sage_4", "name": "Gentle Stillness", "desc": "Stillness builds an extra Insight.", "effect": {"stillness_insight": true}},
+			{"id": "sig_Sage_5", "name": "Deep Transfix", "desc": "Transfix lasts 1 round longer.", "effect": {"transfix_duration_bonus": 1}, "ranks": 1},
+			{"id": "sig_Sage_6", "name": "Final Reading", "desc": "Unmaking is 8% more likely to simply be lethal.", "effect": {"unmaking_lethal_bonus": 8}, "ranks": 1},
+		],
+	},
 	"Barbarian": {
 		"id": "signature", "name": "Way of the Berserker", "color": "#8B0000",
 		"nodes": [
