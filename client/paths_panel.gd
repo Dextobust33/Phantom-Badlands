@@ -20,7 +20,7 @@ const PathFeatsScript = preload("res://shared/path_feats.gd")
 var _root_panel: PanelContainer
 var _header_label: RichTextLabel
 var _points_label: RichTextLabel
-var _columns_hbox: HBoxContainer
+var _columns_hbox: GridContainer
 var _keystone_row: HBoxContainer
 var _milestone_label: RichTextLabel
 var _detail_label: RichTextLabel
@@ -158,7 +158,7 @@ func _build_layout() -> void:
 	sb.content_margin_top = 10
 	sb.content_margin_bottom = 10
 	_root_panel.add_theme_stylebox_override("panel", sb)
-	_root_panel.custom_minimum_size = Vector2(900, 620)
+	_root_panel.custom_minimum_size = Vector2(900, 860)
 	center.add_child(_root_panel)
 
 	var vbox := VBoxContainer.new()
@@ -199,10 +199,17 @@ func _build_layout() -> void:
 	title_hbox.add_child(close_btn)
 
 	# Branch columns
-	_columns_hbox = HBoxContainer.new()
-	_columns_hbox.add_theme_constant_override("separation", 10)
-	_columns_hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_child(_columns_hbox)
+	# Six branches per archetype: two rows of three, scrolled, so each column stays wide enough to read.
+	var columns_scroll := ScrollContainer.new()
+	columns_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	columns_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vbox.add_child(columns_scroll)
+	_columns_hbox = GridContainer.new()
+	_columns_hbox.columns = 3
+	_columns_hbox.add_theme_constant_override("h_separation", 10)
+	_columns_hbox.add_theme_constant_override("v_separation", 16)
+	_columns_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns_scroll.add_child(_columns_hbox)
 
 	# Class keystone row
 	_keystone_row = HBoxContainer.new()

@@ -4570,10 +4570,11 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       pathcurve, pathspread, pathgap). Owner approved the node drafts. Build order: data model -> wiring -> instruments ->
       per-class values -> the ONE Wave 2 chain.
       **BUILT 2026-10-21:** data model (ranks, point curve, feat ladders, limited respec, ranked panel) + the Signature branch for ALL NINE classes, each node
-      proven by a probe (`path_ranks_and_feats`, `path_nodes_are_wired`, `*_signature_fires`). STILL TO DO: the six new archetype branches (3 per archetype),
-      then the instruments (`pathfires` as a sim audit, `pathvalue`, `pathcurve`, `pathspread`, `pathgap`, path spec in `make_char`), per-class values, the
-      Wave 2 chain. Filed by this work (owner call, changes power): the Assassinate keystone reaches only the basic attack; `monster_slowed` is never read;
-      Paladin ally-heal for a human teammate needs the party card path.
+      proven by a probe (`path_ranks_and_feats`, `path_nodes_are_wired`, `*_signature_fires`). **BUILT 2026-10-22:** the six new archetype branches (45 nodes, probe
+      `archetype_branches_fire`, panel shows them as two rows of three) and the two owner-approved fixes (Assassinate keystone now reaches cards with both halves;
+      a slowed monster now hits less; probe `assassinate_and_slow`). STILL TO DO: the instruments (`pathfires` as a sim audit, `pathvalue`, `pathcurve`,
+      `pathspread`, `pathgap`, path spec in `make_char`), per-class values, the Wave 2 chain. Known gaps: party (co-op) fights do not run the card-damage nodes or
+      cast riders; Paladin ally-heal for a human teammate needs the party card path.
 
       Two distinct complaints, and they pull in the same direction:
 

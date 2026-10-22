@@ -372,3 +372,32 @@ Found while reading (filed, not fixed - each is the owner's call because it chan
   trickster never gets it. Fixing the upside without the downside would be pure gain, so both must move together.
 - **Companion/monster "slow" (`monster_slowed`) is written and never read** (only displayed): the slowing cards do nothing to the fight.
 - Track's log line said "+10% damage bonus" whatever the real figure was (it is 8% on an unranked card); it now prints the real number.
+
+**Slice 6 - the six new archetype branches: BUILT (2026-10-22).** 45 nodes (3 archetypes x 3 branches x 5), appended after the original three so every saved
+character keeps its ids. Probe `archetype_branches_fire` (the unit is the EFFECT KEY, 31 keys incl. reused ones; a closing check fails if any key used by the 45
+nodes was not exercised). Each plain node has 5 ranks, each branch ends in a keystone with a price.
+
+| archetype | branch | nodes (rank 5 unless noted) |
+|---|---|---|
+| warrior | Vanguard | Steel Nerves (-10% damage taken) / Shrug It Off (+5% max HP a round below half) / Stand Firm (hits over 25% max HP cut 30%) / Rally (kill: -20% damage 3 rounds) / **Immovable** (-15% damage taken, cards -10%) |
+| warrior | Reaver | Opening Salvo (first card +40%) / Executioner (+30% under 30% HP) / Sundering (+5% per hit, 5 stacks) / Bloodletter (kill: +15% stamina) / **Glass Cannon** (+25% damage, -15% max HP) |
+| warrior | Provisioner | Field Medic (+40% potion healing) / Second Helping (potion: +20% stamina) / Iron Stomach (poison, bleed -40%) / Antidote Lore (potion cleanses) / **Last Rations** (potion: -25% damage 3 rounds, -10% max HP) |
+| mage | Arcana | Varied Arsenal (+10% per distinct card cast, up to 3) / Echo (15% refund) / Opening Gambit (first card -50% cost) / Siphon (+5% mana a card) / **Overdrive** (every 4th card free, +30%; -10% max mana) |
+| mage | Warding | Mana Ward (-10% damage taken) / Blur (-10% hit chance, relative) / Reflective Veil (20% reflected) / Quiet Mind (+2.5% HP a round) / **Pale Veil** (first 2 rounds -50% damage; spells -8%) |
+| mage | Lorekeeper | Focused Study (kill: +15% mana) / Arcane Alchemy (potion: +20% mana) / Quickened (10% extra turn) / Mind Over Matter (hit taken: +5% mana) / **Prodigy** (10% extra turn; cards cost 15% more) |
+| trickster | Gambit | Lucky Streak / Pilfer / Slippery Hands / Sleight of Hand (shared keys with Arcana) / **High Roller** (8% extra turn; take 10% more damage) |
+| trickster | Evasion | Light Step (-10% hit chance) / Slip Away (big hits -30%) / Feint (first 2 rounds -30%) / Counterfeint (hit taken: +5% energy) / **Untouchable** (-12% hit chance; -15% max HP) |
+| trickster | Cutthroat | Hit Where It Hurts / Open Wounds (Sundering) / Predator's Eye (+5% crit) / Vicious Rhythm (Opening Salvo) / **Cold Blood** (card crits +25 points; -10% max HP) |
+
+Design points that came out of testing, not out of the draft:
+- **Dodge is relative and applied AFTER the 40% floor.** A level-60 Ranger already sits on the floor, so a flat "-12 to hit" before the clamp did nothing for exactly the
+  builds that take the Evasion branch. "N% less likely to hit you" now multiplies the clamped chance (floor 25%).
+- **Rally and Last Rations use their own buff type, `path_guard`.** Buffs of one type merge to their maximum, and the Fighter's stance defence (39%) swallowed a 20%
+  Rally entirely. `path_guard` multiplies with every other defence, appears in the mitigation breakdown named for the Path, and has icon, hover and help text.
+- **Counters are written after a cast and read before it** (`path_cards_cast`, `path_cards_seen`, `path_sunder`), so a card face quotes exactly what the cast will do
+  and a quote never advances anything. Overdrive's free cast and Opening Gambit's discount live in the cost funnel (`apply_variable_cost`).
+- **Variety is the only node family that directly rewards playing the whole deck** (Varied Arsenal / Lucky Streak); it is the first piece of the combat-variety work
+  (`docs/design/combat_loop_variety.md`) that landed.
+- The panel shows six branches as two rows of three inside a scroll area.
+- **Not covered:** party (co-op) fights use their own damage path, so the card-damage nodes (Opening Salvo, Executioner, Sundering, Varied Arsenal, Overdrive) and
+  the cast riders do not yet apply there; the mitigation, dodge, sustain and kill nodes do where the shared funnels are used. Filed as a known gap, same as feats.

@@ -98,6 +98,7 @@ const BUFF_ICONS := {
 	"forcefield": {"path": "res://client/sprites/items_pack/RuneStone/RuneStone12.png"},
 	"evasion": {"path": "res://client/sprites/items_pack/Equip/Feet/BootsA0.png"},
 	"cloak": {"path": "res://client/sprites/items_pack/Equip/Back/CloakA0.png"},
+	"path_guard": {"path": "res://client/sprites/items_pack/Equip/Shield/Shield5.png", "tint": "#C8A0FF"},
 	"damage_penalty": {"path": "res://client/sprites/items_pack/Equip/Set/FineBlade0.png", "tint": "#FF7070"},
 	"defense_penalty": {"path": "res://client/sprites/items_pack/Equip/Shield/Shield5.png", "tint": "#FF7070"},
 	# The last two applied effects that had no picture, closing the set. Neither needed new
@@ -123,6 +124,7 @@ const BUFF_HELP := {
 	"thorns": ["Thorns", "Anything that hits you takes %d damage back."],
 	"forcefield": ["Forcefield", "A %d point shield soaks damage before your health does."],
 	"evasion": ["Evasive", "Monsters are %d%% less likely to hit you."],
+	"path_guard": ["Path guard", "Incoming damage cut by %d%%. It multiplies with your other defences."],
 	"cloak": ["Cloaked", "Nothing on the overworld starts a fight with you - and your pools do not refill while it holds. Hunting drops it."],
 	"damage_penalty": ["Damage down", "Your damage is reduced by %d%%."],
 	"defense_penalty": ["Defense down", "You take %d%% more damage."],
@@ -7449,7 +7451,7 @@ func _dev_run_shots() -> void:
 			"paths":
 				# The ranked Paths panel (docs/design/paths_revamp.md), rendered by the REAL panel from a local character.
 				paths_panel.open({"class": "Fighter", "level": 130, "monsters_killed": 340, "completed_quests": ["a", "b", "c"],
-					"path_ranks": {"warrior_1_1": 3, "warrior_1_2": 1, "warrior_2_1": 5, "warrior_3_1": 2, "sig_Fighter_1": 2, "sig_Fighter_2": 1},
+					"path_ranks": {"warrior_1_1": 3, "warrior_1_2": 1, "warrior_2_1": 5, "warrior_3_1": 2, "warrior_4_1": 4, "warrior_4_2": 2, "warrior_5_1": 3, "warrior_6_1": 1, "sig_Fighter_1": 2, "sig_Fighter_2": 1},
 					"feat_counts": {"bosses": 2, "champions": 3, "dungeons": 6, "gear_level": 45},
 					"feats_claimed": {"bosses": 1, "champions": 1, "dungeons": 2, "gear_level": 1, "level": 1}})
 				await get_tree().create_timer(0.8).timeout
@@ -41285,8 +41287,8 @@ func _main_help_text() -> String:
 [color=#AAAAAA]Apex stacks with ELITE and Empowered — an elite apex carries both tags, and both rewards.[/color]
 
 [b][color=#FFD700]══ ⚜ PATHS (TALENT TREE) ══[/color][/b]
-[color=#AAAAAA]Permanent talents for this life. Open via [/color][color=#FFD700]Stats → ⚜ Paths[/color][color=#AAAAAA]. Earn 1 point per 5 levels + 1 per feat (first dungeon/boss/Empowered/3-mod/100 kills/apex kill).[/color]
-[color=#AAAAAA]3 branches per archetype, unlock top-down, every node costs 1 point. Branch [color=#FFB74D]★ keystones[/color] trade power for a downside. Class keystone unlocks at 8 points spent. Choices are permanent — full clear is impossible, build with intent![/color]
+[color=#AAAAAA]Permanent talents for this life. Open via [/color][color=#FFD700]Stats → ⚜ Paths[/color][color=#AAAAAA]. Earn 1 point per 5 levels (1 per 50 after level 100) + 1 per feat rung (kills, champions, bosses, dungeons, quests, gear, levels).[/color]
+[color=#AAAAAA]6 branches per archetype plus your class's Signature branch. Nodes unlock top-down and most can be ranked up to 5 (rank r costs r points). Branch [color=#FFB74D]★ keystones[/color] trade power for a downside. Class keystone unlocks at 8 points spent. You can respec one branch at a time for gold. Full clear is impossible, build with intent![/color]
 
 [b][color=#FFD700]══ PARTY COMBAT ══[/color][/b]
 Party up and hit a monster together and you all fight [b]ONE shared enemy[/b]. Everyone locks in a

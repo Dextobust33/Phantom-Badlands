@@ -110,7 +110,7 @@ const HELP_TOPICS := {
 	"paths_page": {
 		"title": "[color=#FFD700]⚜ Path of the Badlands[/color]",
 		"body": (
-			"Your character's talent tree. Each archetype (Warrior / Mage / Trickster) has its own Path with three themed branches — choices are [b]permanent for this life[/b] and die with your character.\n\n"
+			"Your character's talent tree. Each archetype (Warrior / Mage / Trickster) has its own Path with [b]six themed branches[/b] plus a [b]Signature branch[/b] only your class can see (it changes how your cards play) — choices are [b]permanent for this life[/b] and die with your character.\n\n"
 			+ "[color=#FFD700]── Earning Path points ──[/color]\n"
 			+ "  • [b]1 point every 5 levels[/b] up to level 100, then [b]1 every 50 levels[/b] (automatic).\n"
 			+ "  • [b]+1 per feat rung[/b]: each feat is a ladder - slay monsters, champions or bosses, clear dungeons, complete quests, wear better gear, reach levels, buy from the Master Smith. Every rung you reach pays 1 point, and the feats strip shows how far you are from the next.\n\n"

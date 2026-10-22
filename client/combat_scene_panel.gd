@@ -3218,6 +3218,7 @@ const _STATUS_TAGS := {
 	"crit_chance":        {"label": "Crit",     "color": "#FFD93D"},
 	"defense_penalty":    {"label": "Exposed",  "color": "#FF6666"},
 	"evasion":            {"label": "Evasion",  "color": "#66FFCC"},
+	"path_guard":         {"label": "Guard",    "color": "#C8A0FF"},
 	"open_guard_penalty": {"label": "Guard down", "color": "#FF6666"},
 	"time_stop":          {"label": "Time Stop", "color": "#C8A0FF"},
 }
@@ -3253,6 +3254,7 @@ const _STATUS_HELP := {
 	"crit_chance":        "Raised critical chance. More of your hits land as criticals while it lasts.",
 	"defense_penalty":    "Exposed. Its defence is cut, so your attacks bite deeper.",
 	"evasion":            "Evasion. A better chance to avoid incoming attacks outright.",
+	"path_guard":         "Path guard. A short defence earned by a kill or a healing item; it multiplies with every other defence you have.",
 	"open_guard_penalty": "Guard down. You take more damage than usual until it passes - the cost of a card that traded defence for power.",
 	"time_stop":          "Time stopped. You act again before the enemy gets another turn.",
 }

@@ -55,6 +55,36 @@ const TREES = {
 					{"id": "warrior_3_5", "name": "Last Stand", "desc": "KEYSTONE: Once per combat, a lethal hit leaves you at 1 HP instead. Your max HP is reduced 10%.", "keystone": true, "effect": {"death_save_per_combat": 1, "max_hp_pct": -10}},
 				],
 			},
+			{
+				"id": "vanguard", "name": "Vanguard", "color": "#7FB2FF",
+				"nodes": [
+					{"id": "warrior_4_1", "name": "Steel Nerves", "desc": "Take 2% less damage from every hit.", "effect": {"damage_reduction_pct": 2}},
+					{"id": "warrior_4_2", "name": "Shrug It Off", "desc": "Below half HP, recover 1% of your max HP at the start of each of your rounds.", "effect": {"low_hp_regen_pct": 1}},
+					{"id": "warrior_4_3", "name": "Stand Firm", "desc": "Hits that would take more than a quarter of your max HP are reduced by 6%.", "effect": {"big_hit_reduction_pct": 6}},
+					{"id": "warrior_4_4", "name": "Rally", "desc": "Killing blows give you 4% damage reduction for 3 rounds.", "effect": {"kill_defense_buff_pct": 4}},
+					{"id": "warrior_4_5", "name": "Immovable", "desc": "KEYSTONE: Take 15% less damage from every hit, but your attacks and cards deal 10% less.", "keystone": true, "effect": {"damage_reduction_pct": 15, "attack_damage_pct": -10}},
+				],
+			},
+			{
+				"id": "reaver", "name": "Reaver", "color": "#FF8A5C",
+				"nodes": [
+					{"id": "warrior_5_1", "name": "Opening Salvo", "desc": "Your first card each fight deals 8% more damage.", "effect": {"first_card_damage_pct": 8}},
+					{"id": "warrior_5_2", "name": "Executioner", "desc": "Cards deal 6% more damage to monsters below 30% HP.", "effect": {"vs_low_hp_damage_pct": 6}},
+					{"id": "warrior_5_3", "name": "Sundering", "desc": "Each card that hits makes the monster take 1% more from your cards, up to 5 times.", "effect": {"sunder_pct": 1}},
+					{"id": "warrior_5_4", "name": "Bloodletter", "desc": "Killing blows restore 3% of your max stamina.", "effect": {"kill_resource_pct": 3}},
+					{"id": "warrior_5_5", "name": "Glass Cannon", "desc": "KEYSTONE: Your attacks and cards deal 25% more damage, but your max HP is reduced 15%.", "keystone": true, "effect": {"attack_damage_pct": 25, "max_hp_pct": -15}},
+				],
+			},
+			{
+				"id": "provisioner", "name": "Provisioner", "color": "#9ACD6B",
+				"nodes": [
+					{"id": "warrior_6_1", "name": "Field Medic", "desc": "Healing items restore 8% more.", "effect": {"item_heal_pct": 8}},
+					{"id": "warrior_6_2", "name": "Second Helping", "desc": "Healing items also restore 4% of your max stamina.", "effect": {"item_resource_pct": 4}},
+					{"id": "warrior_6_3", "name": "Iron Stomach", "desc": "Poison and bleed hurt you 8% less.", "effect": {"dot_reduction_pct": 8}},
+					{"id": "warrior_6_4", "name": "Antidote Lore", "desc": "Healing items also cleanse your poison and bleed.", "effect": {"item_cleanse": true}},
+					{"id": "warrior_6_5", "name": "Last Rations", "desc": "KEYSTONE: Using a healing item also grants 25% damage reduction for 3 rounds, but your max HP is reduced 10%.", "keystone": true, "effect": {"item_guard_pct": 25, "max_hp_pct": -10}},
+				],
+			},
 		],
 		"class_keystones": {
 			"Fighter": {"id": "ck_Fighter", "name": "Drillmaster", "desc": "CLASS KEYSTONE: All ability costs reduced 15%.", "effect": {"ability_cost_pct": -15}},
@@ -95,6 +125,36 @@ const TREES = {
 					{"id": "mage_3_5", "name": "Time Anchor", "desc": "KEYSTONE: Once per combat, surviving a hit that leaves you below 20% HP freezes time — the monster skips its next turn. Your max HP is reduced 10%.", "keystone": true, "effect": {"clutch_time_stop_per_combat": 1, "max_hp_pct": -10}},
 				],
 			},
+			{
+				"id": "arcana", "name": "Arcana", "color": "#B58CFF",
+				"nodes": [
+					{"id": "mage_4_1", "name": "Varied Arsenal", "desc": "Your cards deal 2% more damage for each different card you have cast this fight, counting this one (up to 3).", "effect": {"variety_damage_pct": 2}},
+					{"id": "mage_4_2", "name": "Echo", "desc": "3% chance a card refunds its whole cost.", "effect": {"card_refund_pct": 3}},
+					{"id": "mage_4_3", "name": "Opening Gambit", "desc": "Your first card each fight costs 10% less.", "effect": {"first_card_cost_pct": 10}},
+					{"id": "mage_4_4", "name": "Siphon", "desc": "Each card you cast restores 1% of your max mana.", "effect": {"cast_resource_pct": 1}},
+					{"id": "mage_4_5", "name": "Overdrive", "desc": "KEYSTONE: Every fourth card you cast is free and deals 30% more damage, but your max mana is reduced 10%.", "keystone": true, "effect": {"overdrive_damage_pct": 30, "max_resource_pct": -10}},
+				],
+			},
+			{
+				"id": "warding", "name": "Warding", "color": "#6FD0E0",
+				"nodes": [
+					{"id": "mage_5_1", "name": "Mana Ward", "desc": "Take 2% less damage from every hit.", "effect": {"damage_reduction_pct": 2}},
+					{"id": "mage_5_2", "name": "Blur", "desc": "Monsters are 2% less likely to hit you.", "effect": {"dodge_pct": 2}},
+					{"id": "mage_5_3", "name": "Reflective Veil", "desc": "Reflect 4% of the damage you take back at the attacker.", "effect": {"reflect_pct": 4}},
+					{"id": "mage_5_4", "name": "Quiet Mind", "desc": "Recover 0.5% of your max HP at the start of each of your rounds.", "effect": {"round_heal_pct": 0.5}},
+					{"id": "mage_5_5", "name": "Pale Veil", "desc": "KEYSTONE: For the first 2 rounds of a fight you take 50% less damage, but your spells deal 8% less.", "keystone": true, "effect": {"opening_guard_pct": 50, "spell_damage_keystone_pct": -8}},
+				],
+			},
+			{
+				"id": "lorekeeper", "name": "Lorekeeper", "color": "#E8C170",
+				"nodes": [
+					{"id": "mage_6_1", "name": "Focused Study", "desc": "Killing blows restore 3% of your max mana.", "effect": {"kill_resource_pct": 3}},
+					{"id": "mage_6_2", "name": "Arcane Alchemy", "desc": "Healing items also restore 4% of your max mana.", "effect": {"item_resource_pct": 4}},
+					{"id": "mage_6_3", "name": "Quickened", "desc": "2% chance after a damaging card to act again before the monster.", "effect": {"extra_turn_pct": 2}},
+					{"id": "mage_6_4", "name": "Mind Over Matter", "desc": "When a monster hits you, restore 1% of your max mana.", "effect": {"hurt_resource_pct": 1}},
+					{"id": "mage_6_5", "name": "Prodigy", "desc": "KEYSTONE: 10% chance after a damaging card to act again, but your cards cost 15% more.", "keystone": true, "effect": {"extra_turn_pct": 10, "ability_cost_pct": 15}},
+				],
+			},
 		],
 		"class_keystones": {
 			"Wizard": {"id": "ck_Wizard", "name": "Archmage", "desc": "CLASS KEYSTONE: 15% chance for your spells to cast twice.", "effect": {"double_cast_pct": 15}},
@@ -133,6 +193,36 @@ const TREES = {
 					{"id": "trickster_3_3", "name": "Profiteer", "desc": "+15% Valor from kills.", "effect": {"valor_pct": 15}},
 					{"id": "trickster_3_4", "name": "Silver Tongue", "desc": "+15% Assassinate success chance.", "effect": {"assassinate_pct": 15}},
 					{"id": "trickster_3_5", "name": "Jackpot", "desc": "KEYSTONE: +1 loot reveal on every combat victory, but you gain 10% less XP.", "keystone": true, "effect": {"loot_reveal_bonus": 1, "xp_pct": -10}},
+				],
+			},
+			{
+				"id": "gambit", "name": "Gambit", "color": "#FF9FD0",
+				"nodes": [
+					{"id": "trickster_4_1", "name": "Lucky Streak", "desc": "Your cards deal 2% more damage for each different card you have cast this fight, counting this one (up to 3).", "effect": {"variety_damage_pct": 2}},
+					{"id": "trickster_4_2", "name": "Pilfer", "desc": "Killing blows restore 3% of your max energy.", "effect": {"kill_resource_pct": 3}},
+					{"id": "trickster_4_3", "name": "Slippery Hands", "desc": "3% chance a card refunds its whole cost.", "effect": {"card_refund_pct": 3}},
+					{"id": "trickster_4_4", "name": "Sleight of Hand", "desc": "Your first card each fight costs 10% less.", "effect": {"first_card_cost_pct": 10}},
+					{"id": "trickster_4_5", "name": "High Roller", "desc": "KEYSTONE: 8% chance after a damaging card to act again, but you take 10% more damage.", "keystone": true, "effect": {"extra_turn_pct": 8, "damage_reduction_pct": -10}},
+				],
+			},
+			{
+				"id": "evasion", "name": "Evasion", "color": "#7FE3C0",
+				"nodes": [
+					{"id": "trickster_5_1", "name": "Light Step", "desc": "Monsters are 2% less likely to hit you.", "effect": {"dodge_pct": 2}},
+					{"id": "trickster_5_2", "name": "Slip Away", "desc": "Hits that would take more than a quarter of your max HP are reduced by 6%.", "effect": {"big_hit_reduction_pct": 6}},
+					{"id": "trickster_5_3", "name": "Feint", "desc": "For the first 2 rounds of a fight you take 6% less damage.", "effect": {"opening_guard_pct": 6}},
+					{"id": "trickster_5_4", "name": "Counterfeint", "desc": "When a monster hits you, restore 1% of your max energy.", "effect": {"hurt_resource_pct": 1}},
+					{"id": "trickster_5_5", "name": "Untouchable", "desc": "KEYSTONE: Monsters are 12% less likely to hit you, but your max HP is reduced 15%.", "keystone": true, "effect": {"dodge_pct": 12, "max_hp_pct": -15}},
+				],
+			},
+			{
+				"id": "cutthroat", "name": "Cutthroat", "color": "#FF6F6F",
+				"nodes": [
+					{"id": "trickster_6_1", "name": "Hit Where It Hurts", "desc": "Cards deal 6% more damage to monsters below 30% HP.", "effect": {"vs_low_hp_damage_pct": 6}},
+					{"id": "trickster_6_2", "name": "Open Wounds", "desc": "Each card that hits makes the monster take 1% more from your cards, up to 5 times.", "effect": {"sunder_pct": 1}},
+					{"id": "trickster_6_3", "name": "Predator's Eye", "desc": "+1% critical hit chance.", "effect": {"crit_chance_pct": 1}},
+					{"id": "trickster_6_4", "name": "Vicious Rhythm", "desc": "Your first card each fight deals 8% more damage.", "effect": {"first_card_damage_pct": 8}},
+					{"id": "trickster_6_5", "name": "Cold Blood", "desc": "KEYSTONE: Your card crits deal 25% more damage, but your max HP is reduced 10%.", "keystone": true, "effect": {"ability_crit_damage_pct": 25, "max_hp_pct": -10}},
 				],
 			},
 		],

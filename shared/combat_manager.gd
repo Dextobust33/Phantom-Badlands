@@ -1072,6 +1072,10 @@ func _process_status_ticks(character: Character, messages: Array) -> void:
 	# === POISON TICK ===
 	if character.poison_active:
 		var poison_dmg = character.tick_poison()
+		if poison_dmg > 0:
+			var _dot_cut: float = character.get_path_effect_total("dot_reduction_pct")
+			if _dot_cut > 0.0:
+				poison_dmg = maxi(1, int(float(poison_dmg) * (1.0 - _dot_cut / 100.0)))
 		if poison_dmg < 0:
 			# 2026-09-05 — Undead racial: poison HEALS. The out-of-combat tick sites all handled
 			# the negative return; this one only checked `> 0`, so the racial did nothing at all
@@ -1163,6 +1167,15 @@ func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 					var en_amt = max(1, int(character.get_total_max_energy() * path_regen_pct / 100.0))
 					character.current_energy = mini(character.get_total_max_energy(), character.current_energy + en_amt)
 					messages.append("[color=#FFD700]⚜ Your Path restores %d energy.[/color]" % en_amt)
+
+	# Archetype-branch nodes: Quiet Mind (every round) and Shrug It Off (only while below half HP).
+	var _round_heal: float = character.get_path_effect_total("round_heal_pct")
+	if character.current_hp * 2 <= character.get_total_max_hp():
+		_round_heal += character.get_path_effect_total("low_hp_regen_pct")
+	if _round_heal > 0.0 and character.current_hp < character.get_total_max_hp():
+		var _rh: int = character.heal(maxi(1, int(float(character.get_total_max_hp()) * _round_heal / 100.0)))
+		if _rh > 0:
+			messages.append("[color=#66DD99]⚜ Your Path mends %d HP.[/color]" % _rh)
 
 	# Combine gear mana_regen with buff mana_regen (from crafted consumables like Enchanted Kindling)
 	var mana_regen = bonuses.get("mana_regen", 0) + character.get_buff_value("mana_regen")
@@ -3158,6 +3171,9 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	if bleed_stacks > 0:
 		var bleed_dmg_per_stack = combat.get("player_bleed_damage", 5)
 		var total_bleed = bleed_stacks * bleed_dmg_per_stack
+		var _bleed_cut: float = character.get_path_effect_total("dot_reduction_pct")
+		if _bleed_cut > 0.0:
+			total_bleed = maxi(1, int(float(total_bleed) * (1.0 - _bleed_cut / 100.0)))
 		character.current_hp -= total_bleed
 		character.current_hp = max(1, character.current_hp)  # Bleed can't kill either
 		messages.append("[color=#FF4444]Bleeding deals [color=#FF8800]%d[/color] damage! (%d stacks)[/color]" % [total_bleed, bleed_stacks])
@@ -3801,6 +3817,17 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		var kh_amt = character.heal(max(1, int(character.get_total_max_hp() * path_kill_heal / 100.0)))
 		if kh_amt > 0:
 			messages.append("[color=#FFD700]⚜ Crusader's Aura restores %d HP.[/color]" % kh_amt)
+
+	# Archetype-branch kill riders: Bloodletter / Focused Study / Pilfer (resource back) and Rally (a short guard).
+	var _kill_res: float = character.get_path_effect_total("kill_resource_pct")
+	if _kill_res > 0.0:
+		var _kr: int = _path_restore_primary_pct(character, _kill_res)
+		if _kr > 0:
+			messages.append("[color=#FFD700]⚜ The kill restores %d %s.[/color]" % [_kr, character.get_primary_resource()])
+	var _kill_guard: float = character.get_path_effect_total("kill_defense_buff_pct")
+	if _kill_guard > 0.0:
+		character.add_buff("path_guard", int(_kill_guard), 3, "Path - Rally")
+		messages.append("[color=#7FB2FF]⚜ Rally: %d%% less damage for 3 rounds.[/color]" % int(_kill_guard))
 
 	# Empowered kill callout (v0.9.651) — the +30%/mod XP is already baked
 	# into experience_reward at generation; this line tells the player WHY the
@@ -4653,6 +4680,124 @@ static func ability_noncrit_multiplier(character) -> float:
 	if character == null:
 		return 1.0
 	return maxf(0.1, 1.0 + character.get_path_effect_total("noncrit_damage_pct") / 100.0)
+
+
+# ---- Archetype-branch path effects (docs/design/paths_revamp.md, "the six new branches") ----
+# Counters live on the combat dictionary: path_cards_cast (cards cast so far), path_cards_seen (distinct card ids),
+# path_sunder (stacks). They are written AFTER a cast resolves (`_apply_path_cast_riders`) and read BEFORE it, so a
+# cast and its card-face quote see the same numbers, and a quote never advances anything.
+const PATH_DODGE_FLOOR := 25
+const PATH_SUNDER_MAX_STACKS := 5
+const PATH_VARIETY_MAX := 3
+const PATH_OVERDRIVE_EVERY := 4
+const PATH_LOW_HP_THRESHOLD := 0.30
+
+
+func path_card_damage_mult(character, ability_name: String, combat) -> float:
+	"""Multiplier for one card's damage from the archetype-branch nodes. 1.0 without them (or without a combat).
+	Pure: reads state, never writes it - the card face and the cast both call this."""
+	if character == null or combat == null or not (combat is Dictionary):
+		return 1.0
+	var mult := 1.0
+	var cast_n: int = int(combat.get("path_cards_cast", 0))
+	var first: float = character.get_path_effect_total("first_card_damage_pct")
+	if first > 0.0 and cast_n == 0:
+		mult *= 1.0 + first / 100.0
+	var low: float = character.get_path_effect_total("vs_low_hp_damage_pct")
+	if low > 0.0:
+		var mon = combat.get("monster", {})
+		if mon is Dictionary and float(mon.get("current_hp", 1)) <= float(mon.get("max_hp", 1)) * PATH_LOW_HP_THRESHOLD:
+			mult *= 1.0 + low / 100.0
+	var sunder: float = character.get_path_effect_total("sunder_pct")
+	if sunder > 0.0:
+		mult *= 1.0 + sunder * float(int(combat.get("path_sunder", 0))) / 100.0
+	var variety: float = character.get_path_effect_total("variety_damage_pct")
+	if variety > 0.0:
+		var seen: Array = combat.get("path_cards_seen", [])
+		var n: int = mini(PATH_VARIETY_MAX, seen.size() + (0 if ability_name in seen else 1))
+		mult *= 1.0 + variety * float(n) / 100.0
+	var od: float = character.get_path_effect_total("overdrive_damage_pct")
+	if od > 0.0 and (cast_n + 1) % PATH_OVERDRIVE_EVERY == 0:
+		mult *= 1.0 + od / 100.0
+	return mult
+
+
+func _apply_path_item_riders(combat: Dictionary, character, messages: Array) -> void:
+	"""Provisioner nodes: what a healing item does besides healing."""
+	var res: float = character.get_path_effect_total("item_resource_pct")
+	if res > 0.0:
+		var got: int = _path_restore_primary_pct(character, res)
+		if got > 0:
+			messages.append("[color=#FFD700]⚜ Second Helping: +%d %s.[/color]" % [got, character.get_primary_resource()])
+	if character.has_path_effect("item_cleanse") and (character.poison_active or int(combat.get("player_bleed_stacks", 0)) > 0):
+		character.cure_poison()
+		combat["player_bleed_stacks"] = 0
+		messages.append("[color=#9ACD32]⚜ Antidote Lore: poison and bleed cleansed.[/color]")
+	var guard: float = character.get_path_effect_total("item_guard_pct")
+	if guard > 0.0:
+		character.add_buff("path_guard", int(guard), 3, "Path - Last Rations")
+		messages.append("[color=#7FB2FF]⚜ Last Rations: %d%% less damage for 3 rounds.[/color]" % int(guard))
+
+
+func _path_overdrive_free(character, combat) -> bool:
+	"""True when THIS cast is the free one (Overdrive keystone: every fourth card)."""
+	if character == null or combat == null or not (combat is Dictionary):
+		return false
+	return character.get_path_effect_total("overdrive_damage_pct") > 0.0 and (int(combat.get("path_cards_cast", 0)) + 1) % PATH_OVERDRIVE_EVERY == 0
+
+
+func _apply_path_cast_riders(combat: Dictionary, ability_name: String, damage_dealt: int, result: Dictionary) -> void:
+	"""Archetype-branch riders that resolve after a card: the counters first, then refund / sustain / sunder."""
+	var character = combat.get("character", null)
+	if character == null:
+		return
+	combat["path_cards_cast"] = int(combat.get("path_cards_cast", 0)) + 1
+	var seen: Array = combat.get("path_cards_seen", [])
+	if not (ability_name in seen):
+		seen.append(ability_name)
+	combat["path_cards_seen"] = seen
+	if not result.has("messages"):
+		result["messages"] = []
+	if damage_dealt > 0 and character.get_path_effect_total("sunder_pct") > 0.0:
+		combat["path_sunder"] = mini(PATH_SUNDER_MAX_STACKS, int(combat.get("path_sunder", 0)) + 1)
+	# Echo / Slippery Hands: the card's whole cost comes back.
+	var refund_pct: float = character.get_path_effect_total("card_refund_pct")
+	var paid: int = int(character.get_meta("path_last_ability_cost", 0))
+	if refund_pct > 0.0 and paid > 0 and randf() * 100.0 < refund_pct:
+		_path_restore_resource(character, String(character.get_meta("path_last_ability_resource", "")), paid)
+		result["messages"].append("[color=#FFD700]⚜ Echo: %s costs nothing after all (+%d).[/color]" % [_ability_display_name(character, ability_name), paid])
+	# Siphon: a slice of the pool back for every card.
+	var siphon: float = character.get_path_effect_total("cast_resource_pct")
+	if siphon > 0.0:
+		_path_restore_primary_pct(character, siphon)
+
+
+func _path_restore_resource(character, resource: String, amount: int) -> void:
+	match resource:
+		"stamina":
+			character.current_stamina = mini(character.get_total_max_stamina(), character.current_stamina + amount)
+		"mana":
+			character.current_mana = mini(character.get_total_max_mana(), character.current_mana + amount)
+		"energy":
+			character.current_energy = mini(character.get_total_max_energy(), character.current_energy + amount)
+
+
+func _path_restore_primary_pct(character, pct: float) -> int:
+	"""Restore `pct` of the max of the class's own resource. Returns what was restored."""
+	var res: String = "stamina"
+	var mx: int = character.get_total_max_stamina()
+	match character.get_class_path():
+		"mage":
+			res = "mana"
+			mx = character.get_total_max_mana()
+		"trickster":
+			res = "energy"
+			mx = character.get_total_max_energy()
+	var amt: int = maxi(1, int(float(mx) * pct / 100.0))
+	var before: int = {"stamina": character.current_stamina, "mana": character.current_mana, "energy": character.current_energy}[res]
+	_path_restore_resource(character, res, amt)
+	var after: int = {"stamina": character.current_stamina, "mana": character.current_mana, "energy": character.current_energy}[res]
+	return after - before
 # 2026-09-05 — abilities with an inherent crit affinity, as a BONUS to the player's own crit
 # chance rather than a private roll of their own.
 #
@@ -5764,7 +5909,7 @@ func _process_ability_command_inner(peer_id: int, ability_name: String, arg: Str
 		# act this round. Bounded: per-cast roll, not recursive — no infinite
 		# extra-turn chain even at 100% chance.
 		if imprint_damage_dealt > 0 and not result.get("skip_monster_turn", false):
-			var et_pct: float = combat.character.get_extra_turn_chance()
+			var et_pct: float = combat.character.get_extra_turn_chance() + combat.character.get_path_effect_total("extra_turn_pct")
 			# Swift (rank-up) rides the same roll rather than adding a second, independent one —
 			# two stacking extra-turn rolls is how a chain becomes possible.
 			if "swift" in combat.character.get_milestone_picks(ability_name):
@@ -5786,6 +5931,7 @@ func _process_ability_command_inner(peer_id: int, ability_name: String, arg: Str
 	# 2026-09-03 — card upgrades that need the RESULT of the hit rather than its magnitude.
 	# Kept beside the rider block below, which is the same shape of hook and the model these
 	# follow: read the damage actually dealt, then apply.
+	_apply_path_cast_riders(combat, ability_name, ability_damage_dealt, result)
 	_apply_card_upgrade_on_hit(combat, ability_name, ability_damage_dealt, result)
 	# v0.9.676 — Tier 'rider' milestone picks: a damaging ability inflicts BLEED,
 	# scaling with rider level + the hit's damage. Reuses the monster_bleed DoT
@@ -8228,6 +8374,18 @@ func apply_variable_cost(character: Character, ability_name: String, combat: Dic
 	# Apply skill enhancement + racial reduction proportionally to both
 	var adj_floor = apply_skill_cost_reduction(character, ability_name, base_floor)
 	var adj_ceiling = apply_skill_cost_reduction(character, ability_name, base_ceiling)
+	# Archetype-branch nodes: Overdrive makes every fourth card free; Opening Gambit / Sleight of Hand discount the first.
+	if _path_overdrive_free(character, combat):
+		result.messages.append("[color=#FFD700]⚜ Overdrive: this card is free![/color]")
+		character.set_meta("path_last_ability_cost", 0)
+		result["ok"] = true
+		result["spent"] = 0
+		result["fraction"] = 1.0
+		return result
+	var _first_cost: float = character.get_path_effect_total("first_card_cost_pct")
+	if _first_cost > 0.0 and int(combat.get("path_cards_cast", 0)) == 0:
+		adj_floor = maxi(1, int(adj_floor * (1.0 - _first_cost / 100.0)))
+		adj_ceiling = maxi(1, int(adj_ceiling * (1.0 - _first_cost / 100.0)))
 	var skill_reduction = character.get_skill_cost_reduction(ability_name)
 	if skill_reduction > 0:
 		result.messages.append("[color=#00FFFF]Skill Enhancement: -%d%% cost![/color]" % int(skill_reduction))
@@ -8370,6 +8528,7 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 	# 2026-09-03 — CARD RANK-UP UPGRADES (damage side). Applied here, at the end of the existing
 	# modifier chain, because this is already the single funnel every ability's damage passes
 	# through: nineteen scattered checks would drift apart the way the cost tables did.
+	dmg = dmg * path_card_damage_mult(character, ability_name, combat)
 	dmg = _apply_card_upgrade_damage(character, ability_name, dmg, combat, preview)
 	return int(dmg)
 
@@ -9301,6 +9460,11 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		if target == "companion" and recipient.has_active_companion():
 			heal_max_hp = recipient.get_companion_max_hp()
 		var heal_amount: int = drop_tables.consumable_heal_amount(item, effect, heal_max_hp, item_tier)
+		# Field Medic: the user's own healing items restore more.
+		if target != "companion" and recipient == character:
+			var _fm: float = character.get_path_effect_total("item_heal_pct")
+			if _fm > 0.0:
+				heal_amount = int(float(heal_amount) * (1.0 + _fm / 100.0))
 		if target == "companion" and recipient.has_active_companion():
 			var actual_heal: int = recipient.heal_companion(heal_amount)
 			var comp_name: String = str(recipient.active_companion.get("name", "your companion"))
@@ -9308,6 +9472,8 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		else:
 			var actual_heal = recipient.heal(heal_amount)
 			messages.append("[color=#00FF00]You %s %s and restore %d HP![/color]" % [use_verb, item_name, actual_heal])
+			if recipient == character:
+				_apply_path_item_riders(combat, character, messages)
 	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
 		# Resource potion - restores the player's PRIMARY resource based on class path
 		var primary_resource = recipient.get_primary_resource()
@@ -9879,6 +10045,11 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		hit_chance -= armor_dodge_total
 
 	hit_chance = clamp(hit_chance, 40, 95)  # 40% minimum (can dodge well), 95% maximum
+	# Blur / Untouchable: "N% less likely to hit you" is RELATIVE, and applied after the clamp. A character with real DEX
+	# already sits on the 40% floor, so a flat subtraction before it would do nothing for exactly the builds that take it.
+	var _path_dodge: float = character.get_path_effect_total("dodge_pct")
+	if _path_dodge > 0.0:
+		hit_chance = maxi(PATH_DODGE_FLOOR, int(round(float(hit_chance) * (1.0 - _path_dodge / 100.0))))
 
 	# Ethereal ability: 50% chance for player attacks to miss (handled elsewhere)
 	# but ethereal monsters also have lower hit chance
@@ -10091,6 +10262,22 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			var _path_skin: float = character.get_path_effect_total("low_hp_reduction_pct")
 			if _path_skin > 0.0 and character.current_hp * 2 <= character.get_total_max_hp():
 				_mit_mult *= (1.0 - _path_skin / 100.0)
+			# Archetype-branch nodes: flat damage reduction (Steel Nerves, Immovable; negative for High Roller), the opening
+			# window (Pale Veil, Feint) and the big-hit guard (Stand Firm, Slip Away).
+			var _path_dr: float = character.get_path_effect_total("damage_reduction_pct")
+			if _path_dr != 0.0:
+				_mit_mult *= (1.0 - _path_dr / 100.0)
+			var _path_open: float = character.get_path_effect_total("opening_guard_pct")
+			if _path_open > 0.0 and int(combat.get("round", 1)) <= 2:
+				_mit_mult *= (1.0 - _path_open / 100.0)
+			# Rally / Last Rations: its own buff type, so it multiplies WITH the stance and the cards' guards instead of
+			# being swallowed by whichever is larger (buffs of one type merge to their maximum).
+			var _path_guard: int = character.get_buff_value("path_guard")
+			if _path_guard > 0:
+				_mit_mult *= (1.0 - float(_path_guard) / 100.0)
+			var _path_big: float = character.get_path_effect_total("big_hit_reduction_pct")
+			if _path_big > 0.0 and float(_raw_hit) * 4.0 > float(character.get_total_max_hp()):
+				_mit_mult *= (1.0 - _path_big / 100.0)
 			if armor_dr_total > 0:
 				_mit_mult *= (1.0 - armor_dr_total / 100.0)
 			var defense_buff = character.get_buff_value("defense")
@@ -10372,7 +10559,10 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		# Path: melee_reflect_pct (Retribution node) + shock_thorns_int_pct
 		# (Static Veil — flat INT-scaled shock per hit taken). Same shape as
 		# the equipment reflect proc above; can kill the monster.
-		var path_reflect_pct = character.get_path_effect_total("melee_reflect_pct")
+		var path_reflect_pct = character.get_path_effect_total("melee_reflect_pct") + character.get_path_effect_total("reflect_pct")
+		var _path_hurt_res: float = character.get_path_effect_total("hurt_resource_pct")
+		if _path_hurt_res > 0.0 and total_damage > 0:
+			_path_restore_primary_pct(character, _path_hurt_res)
 		var path_shock_int_pct = character.get_path_effect_total("shock_thorns_int_pct")
 		if (path_reflect_pct > 0.0 and total_damage > 0) or path_shock_int_pct > 0.0:
 			var path_reflect_total = 0
@@ -12176,6 +12366,15 @@ func player_mitigation_breakdown(character, combat: Dictionary) -> Array:
 	var path_skin: float = character.get_path_effect_total("low_hp_reduction_pct")
 	if path_skin > 0.0 and character.current_hp * 2 <= character.get_total_max_hp():
 		out.append({"label": "Path - Thicker Skin", "pct": int(round(path_skin))})
+	var _bd_dr: float = character.get_path_effect_total("damage_reduction_pct")
+	if _bd_dr != 0.0:
+		out.append({"label": "Path - Damage reduction", "pct": int(round(_bd_dr))})
+	var _bd_guard: int = int(character.get_buff_value("path_guard"))
+	if _bd_guard > 0:
+		out.append({"label": character.get_buff_source("path_guard"), "pct": _bd_guard})
+	var _bd_open: float = character.get_path_effect_total("opening_guard_pct")
+	if _bd_open > 0.0 and int(combat.get("round", 1)) <= 2:
+		out.append({"label": "Path - Opening guard", "pct": int(round(_bd_open))})
 	# Armor with a damage-reduction roll multiplies in with the rest (see the damage path), so it is listed.
 	var armor_dr := 0
 	for slot_name in ["armor", "helm", "shield", "boots"]:
