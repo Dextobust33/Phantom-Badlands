@@ -239,6 +239,12 @@ func _init():
 			_team_flag = true
 		if String(arg) == "--companion":
 			_companion_flag = true
+		if String(arg).begins_with("--dccls="):
+			combat_mgr.dungeon_card_class_scale_override = float(String(arg).substr(8))
+		if String(arg).begins_with("--dcfeed="):
+			combat_mgr.dungeon_card_feed_override = int(String(arg).substr(9))
+		if String(arg).begins_with("--dcmult="):
+			combat_mgr.dungeon_card_power_override = float(String(arg).substr(9))
 		if String(arg).begins_with("--pathscale="):
 			_path_scale = float(String(arg).substr(12))
 		if String(arg).begins_with("--path="):

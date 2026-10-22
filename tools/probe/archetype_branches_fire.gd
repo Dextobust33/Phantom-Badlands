@@ -20,9 +20,17 @@ func covered(keys: Array) -> void:
 var _proto = null
 var _last_reflect := 0
 
+func _plain_monster() -> Dictionary:
+	# A random monster now carries a trait one time in three (Skittish, Swift, Juggernaut...), and a damage-taken comparison needs ONE monster that does the same thing every time.
+	var m: Dictionary = sim.make_monster(60, "normal", 1.0)
+	m["abilities"] = []
+	m["empowered_mods"] = []
+	return m
+
+
 func _fight(ch, hp_frac: float = 1.0, suppress: bool = true, proto = null) -> Array:
 	_pid += 1
-	var mon = proto.duplicate(true) if proto != null else sim.make_monster(60, "normal", 1.0)
+	var mon = proto.duplicate(true) if proto != null else _plain_monster()
 	mon.max_hp = 9999999
 	mon.current_hp = int(9999999 * hp_frac)
 	sim.combat_mgr.start_combat(_pid, ch, mon)
@@ -47,10 +55,11 @@ func _lost(t: Array, seeds: int, mul: float = 1.0, rnd: int = 1) -> int:
 	var total := 0
 	_last_reflect = 0
 	if _proto == null:
-		_proto = sim.make_monster(60, "normal", 1.0)
+		_proto = _plain_monster()
 	for s in range(seeds):
 		var ft = _fight(ch, 1.0, false, _proto)
-		ft[2].strength = int(ft[2].strength * mul)
+		# a NEGATIVE multiplier means "a monster of exactly this strength" (a hit that is certainly small), a positive one scales the species' own
+		ft[2].strength = int(-mul) if mul < 0.0 else int(ft[2].strength * mul)
 		ft[1]["round"] = rnd
 		var mx: int = ch.get_total_max_hp()
 		ch.current_hp = mx
@@ -99,14 +108,18 @@ func _init() -> void:
 	ck(nh > nb and abs(float(nh) / float(nb) - 1.10) < 0.04, "High Roller: you take 10%% more (x%.2f) - its price" % (float(nh) / float(nb)))
 	_setr(n, "trickster_4_5", 0)
 
-	var small_base: int = _lost(t, 24)
+	# Size the monster to the character rather than assuming a hit size: a random species and random gear make a "normal" hit anywhere from 8% to 40% of max HP.
+	var per_turn: float = float(_lost(t, 12)) / 12.0 / float(f.get_total_max_hp())
+	var small_mul: float = -4.0
+	var big_mul: float = 0.28 / maxf(0.001, per_turn)
+	var small_base: int = _lost(t, 24, small_mul)
 	_setr(f, "warrior_4_3", 5)
-	var small_guard: int = _lost(t, 24)
+	var small_guard: int = _lost(t, 24, small_mul)
 	ck(small_base == small_guard, "Stand Firm: an ordinary hit (13%% of max HP) is untouched (%d vs %d)" % [small_base, small_guard])
 	_setr(f, "warrior_4_3", 0)
-	var big_base: int = _lost(t, 24, 12.0)
+	var big_base: int = _lost(t, 24, big_mul)
 	_setr(f, "warrior_4_3", 5)
-	var big_guard: int = _lost(t, 24, 12.0)
+	var big_guard: int = _lost(t, 24, big_mul)
 	ck(big_base > 0 and abs(float(big_guard) / float(big_base) - 0.70) < 0.04, "Stand Firm r5: a hit over a quarter of max HP is cut 30%% (x%.2f)" % (float(big_guard) / float(big_base)))
 	_setr(f, "warrior_4_3", 0)
 	covered(["big_hit_reduction_pct"])

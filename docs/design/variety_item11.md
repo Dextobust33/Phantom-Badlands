@@ -80,3 +80,22 @@ modifiers (25% of monsters from L5, named prefixes, XP and loot per modifier), a
 
 **Known follow-ups:** terrain themes; a board "theme" label shown to the player; trait hunts for one specific trait (needs a way to find one); a trait glyph on the combat nameplate beyond the name.
 **Release note to write:** boards reshuffle when this deploys, so a dungeon quest accepted before it can point at a different dungeon than the board now shows (accepted quests keep their stored data, so turn-in is unaffected).
+
+## 7. THE DUNGEON CARD POWER PASS - RESULT (2026-10-22, unreleased)
+
+`dungeoncardswap` (171 card/class cells; 30 paired fights each; the monster's HP is scaled until the plain deck wins about 62%, so a card is judged in a fight that is in doubt; the weakest slot is the one whose removal costs least).
+
+**Before:** 3 of 9 classes had fewer than two cards worth a slot (Wizard 0, Ranger 0, Sorcerer 1) and the cards that DID qualify were almost all guard / heal cards (Bulwark of Bone, Trollish Regrowth, Stonewatch). An attack-type dungeon card trailed the weakest class card by 10-50 points at every tier.
+
+**What did NOT fix it, measured:** raising strike power alone. A x3.5 strike still lost 10-30 points for the Wizard and the Ranger. A dungeon card is a guest in a deck built around an ENGINE (Momentum / Read / Focus): playing one skips the build the class's own card would have made.
+
+**What did (all in `combat_manager.gd`, dungeon cards only):**
+1. `DUNGEON_CARD_POWER_MULT = 2.0` on a dungeon card's strike.
+2. `DUNGEON_CARD_ENGINE_FEED = 2`: casting a dungeon card builds 2 of the caster's own engine ("The dungeon card feeds your Focus (+2)").
+3. `DUNGEON_CARD_CLASS_SCALE = {"Wizard": 3.0}`: the per-class remainder. Even at x8 the Wizard's weakest slot beat most dungeon cards (its own cards are sized by a mana pool and a Focus ramp that a flat share of the reference bar cannot match), so the generic number cannot reach it without being absurd for the other eight.
+
+**After:** every class has the two it needs, at the tiers measured (T1 L3, T3 L22, T5 L71): Fighter 18, Barbarian 13, Paladin 16, Wizard 3 (with the class scale), Sorcerer 10, Sage 6, Grifter 4, Ranger 2, Ninja 5. The martial counts are large because their weakest slot (Shield Bash, Cleave) is weak, not because the cards are strong; the Ranger sits exactly on the bar.
+These constants are NOT cancelled by the monster refit: the calibration chain's reference deck carries no dungeon card, so raising them changes what an optional card is worth, not the baseline.
+
+**Caveats, stated:** the generic play rule (guard cards under 65% HP, Execute under 40% monster HP, everything else when drawn) is a competent player, not a perfect one; plunder and tribute pay in loot and valor which a fight does not measure, so they are under-reported; tiers 2, 4, 6+ were interpolated, not measured. Re-run `dungeoncardswap` after any change to a class deck or an engine.
+Also fixed on the way: Stand Firm's "a hit that would take more than a quarter of your max HP" now judges the hit AFTER your defences (a blow your Constitution cuts to 8% was being counted as a big hit).

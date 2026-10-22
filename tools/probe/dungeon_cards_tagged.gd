@@ -50,5 +50,20 @@ func _init() -> void:
 	for m in r.get("messages", []):
 		blob += String(m)
 	ck(bool(r.get("success", false)) and blob.find("Steady Hands") >= 0, "a trigger fires from a real dungeon-card cast (Steady Hands from Bulwark of Bone)")
+	# A dungeon card feeds the caster's own engine (DUNGEON_CARD_ENGINE_FEED), so it does not skip the build the class's cards would have made
+	var wz = sim.make_char(60, "average", "Wizard", "Human")
+	wz.combat_deck_collection["dungeon_card_bog_club"] = 1
+	var mon2 = sim.make_monster(60, "normal", 1.0)
+	mon2.max_hp = 99999999
+	mon2.current_hp = 99999999
+	sim.combat_mgr.start_combat(1501, wz, mon2)
+	var c2 = sim.combat_mgr.active_combats[1501]
+	c2["player_can_act"] = true
+	c2["suppress_monster_turn"] = true
+	c2["combat_hand"] = ["dungeon_card_bog_club"]
+	c2["focus"] = 0
+	var r2 = sim.combat_mgr.process_ability_command(1501, "dungeon_card_bog_club", "")
+	ck(bool(r2.get("success", false)) and int(c2.get("focus", 0)) >= sim.combat_mgr.DUNGEON_CARD_ENGINE_FEED, "casting a dungeon card builds the caster's own engine (a Wizard's Focus: %d)" % int(c2.get("focus", 0)))
+	ck(sim.combat_mgr.DUNGEON_CARD_POWER_MULT >= 1.0 and float(sim.combat_mgr.DUNGEON_CARD_CLASS_SCALE.get("Wizard", 1.0)) > 1.0, "the dungeon-card power constants are set (x%.1f, Wizard x%.1f)" % [sim.combat_mgr.DUNGEON_CARD_POWER_MULT, float(sim.combat_mgr.DUNGEON_CARD_CLASS_SCALE.get("Wizard", 1.0))])
 	print("PASS" if fails == 0 else "FAIL (%d)" % fails)
 	quit(1 if fails else 0)

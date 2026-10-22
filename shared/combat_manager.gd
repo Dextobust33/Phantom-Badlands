@@ -5040,6 +5040,12 @@ func _apply_path_cast_riders(combat: Dictionary, ability_name: String, damage_de
 	var siphon: float = character.get_path_effect_total("cast_resource_pct")
 	if siphon > 0.0:
 		_path_restore_primary_pct(character, siphon)
+	if ability_name.begins_with("dungeon_card_"):
+		var feed: int = dungeon_card_feed_override if dungeon_card_feed_override >= 0 else DUNGEON_CARD_ENGINE_FEED
+		if feed > 0:
+			var lab: String = _add_engine_stacks(character, combat, feed)
+			if lab != "":
+				result["messages"].append("[color=#C8A0FF]The dungeon card feeds your %s (+%d).[/color]" % [lab, feed])
 	# Combat triggers: the cast, the hit and the crit are three separate events.
 	var crit_now: bool = bool(combat.get("trg_crit", false))
 	combat["trg_crit"] = false
@@ -7161,6 +7167,21 @@ const COMPANION_STRIKE_POWER := {
 	"plunder": 2.0, "tribute": 2.0,
 }
 
+## How hard a dungeon card's STRIKE hits, as a multiplier on the shared companion-card path. `dungeoncardswap` (2026-10-22) found that, swapped into a class's weakest slot, the attack-type dungeon cards
+## trailed it by 10-50 points of win rate at every tier, so only guard and heal cards were ever worth a slot. Dungeon cards are not in the calibration chain's reference deck, so this can be raised
+## without the monster refit cancelling it. Fit by the same audit; `dungeon_card_power_override` lets the simulator sweep it without editing the file.
+const DUNGEON_CARD_POWER_MULT := 2.0
+## The per-class remainder. Even at x8 the Wizard's weakest slot beat most dungeon cards: its own cards are sized by a mana pool and a Focus ramp that a flat share of the reference HP bar cannot
+## match, so the generic multiplier that makes eight of nine classes want two or more cannot reach it without being absurd for the other eight. An entry multiplies the generic one.
+const DUNGEON_CARD_CLASS_SCALE := {"Wizard": 3.0}
+var dungeon_card_class_scale_override: float = -1.0
+var dungeon_card_power_override: float = -1.0
+## A dungeon card is a guest in a deck built around a class ENGINE (Momentum, Read, Focus); playing it skips the build the class's own cards would have made. So a dungeon card builds this much of the
+## caster's own engine when cast. `dungeoncardswap` showed that power alone does not make an engine class want one (a x3.5 strike still lost 10-30 points for a Wizard and a Ranger).
+const DUNGEON_CARD_ENGINE_FEED := 2
+var dungeon_card_feed_override: int = -1
+
+
 func _companion_strike_mod(character, monster, ability_name: String, combat: Dictionary, power: float) -> int:
 	"""The strike's damage BEFORE variance - the middle of what the cast will deal.
 
@@ -7196,7 +7217,7 @@ func _companion_strike_mod(character, monster, ability_name: String, combat: Dic
 	var atk_profile: float = 1.0
 	if ability_name.begins_with("dungeon_card_"):
 		var dtier: int = maxi(1, int(DropTablesScript.get_card_data_by_id(ability_name).get("tier", 1)))
-		quality = 1.0 + 0.06 * float(dtier - 1) + COMPANION_CARD_SUBTIER_STEP * float(dtier - 1)
+		quality = (1.0 + 0.06 * float(dtier - 1) + COMPANION_CARD_SUBTIER_STEP * float(dtier - 1)) * (dungeon_card_power_override if dungeon_card_power_override >= 0.0 else DUNGEON_CARD_POWER_MULT) * (dungeon_card_class_scale_override if dungeon_card_class_scale_override >= 0.0 else float(DUNGEON_CARD_CLASS_SCALE.get(String(character.class_type), 1.0)))
 	else:
 		var comp: Dictionary = character.active_companion if character != null else {}
 		var _sub: int = maxi(1, int(comp.get("sub_tier", comp.get("tier", 1))))
@@ -10574,7 +10595,8 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			if _path_guard > 0:
 				_mit_mult *= (1.0 - float(_path_guard) / 100.0)
 			var _path_big: float = character.get_path_effect_total("big_hit_reduction_pct")
-			if _path_big > 0.0 and float(_raw_hit) * 4.0 > float(character.get_total_max_hp()):
+			# "Would take more than a quarter of your max HP" is read AFTER the defences already counted: a raw blow that your Constitution and stance cut to 8% is not a big hit.
+			if _path_big > 0.0 and float(_raw_hit) * _mit_mult * 4.0 > float(character.get_total_max_hp()):
 				_mit_mult *= (1.0 - _path_big / 100.0)
 			if armor_dr_total > 0:
 				_mit_mult *= (1.0 - armor_dr_total / 100.0)
