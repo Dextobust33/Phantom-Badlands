@@ -119,6 +119,7 @@ const HELP_TOPICS := {
 			+ "  • Branches unlock top-down — take a node to reach the one below it.\n"
 			+ "  • The 5th node of each branch is a [color=#FFB74D]★ keystone[/color]: a big effect with a real downside. Read carefully — this is a permadeath game.\n"
 			+ "  • Your [b]class keystone[/b] (bottom row) unlocks after spending 8 points anywhere in your tree.\n"
+			+ "  • Three [color=#FFB74D]Ascendant[/color] nodes open at [b]levels 500, 2,000 and 6,000[/b], whatever you have spent. Each is a [b]trigger[/b] - an effect that fires on a crit, a kill, a guard card, a big blow and so on - and the second and third carry a price. Gear can roll the same triggers.\n"
 			+ "  • You can't take everything — a full tree costs more points than one life typically earns. Build with intent.\n"
 			+ "  • [b]Respec[/b] one branch at a time with its button: every point comes back, for gold (40 kills' worth per point at your level). You get 3 respecs a life, one more at level 1,000 and another at 5,000.\n\n"
 			+ "[color=#FFD700]── Reading the tree ──[/color]\n"

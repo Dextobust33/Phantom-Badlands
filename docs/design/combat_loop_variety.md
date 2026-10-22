@@ -165,8 +165,7 @@ gear affix of the same key. So the same trigger can come from a node, a unique o
 | Opening Surge | the fight opens | start with +1 engine |
 
 **Sources built:** epic+ chase gear (four of the chase pool's slots, so roughly one chase roll in six; 37 of 600 epic L120 rolls carried one), power 1/2/3 by item level like card
-gear, shown on the item and in the compare text. **Sources not built yet:** path nodes (the Ascendant tier - L500 / L2000 / L6000 - is the natural home, since those were always
-"change how a card plays" nodes), uniques, and the persistent boons.
+gear, shown on the item and in the compare text. **Path nodes: built** - the Ascendant tier (27 nodes, `docs/design/paths_revamp.md` slice 8) is a set of trigger bundles. **Not built yet:** uniques and the persistent boons.
 
 **Known gaps:** co-op party fights do not fire triggers (same gap as the path card nodes); the compact card face and the stats comparison show triggers only in the Inspect text and the
 compare line; the simulator's gear model now rolls them like any drop, so the reference player will carry some, which is correct but means the Wave 2 chain sees them.

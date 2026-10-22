@@ -79,6 +79,9 @@ static func plan(klass: String, kind: String) -> Array:
 		steps.append([id, 1])
 	if ck != "":
 		steps.append([ck, 1])
+	# The Ascendant tier, as soon as the level opens it (apply() enforces the level gate).
+	for an in PD.ascendant_nodes(klass):
+		steps.append([String(an.get("id", "")), 1])
 	for br in primary:
 		for id in _branch_ids(arch, String(br)):
 			steps.append([id, first_rank])
@@ -121,7 +124,10 @@ static func apply(ch, klass: String, kind: String, level: int) -> int:
 		var pre: String = PD.get_prereq_id(id)
 		if pre != "" and int(ch.path_ranks.get(pre, 0)) < 1:
 			continue
-		if String(node.get("class_lock", "")) != "" and not bool(node.get("signature", false)) and spent < PD.CLASS_KEYSTONE_SPEND_REQ:
+		if bool(node.get("ascendant", false)):
+			if not PD.ascendant_unlocked(node, level):
+				continue
+		elif String(node.get("class_lock", "")) != "" and not bool(node.get("signature", false)) and spent < PD.CLASS_KEYSTONE_SPEND_REQ:
 			continue
 		var r: int = int(ch.path_ranks.get(id, 0))
 		while r < cap and spent + PP.rank_cost(r + 1) <= budget:
@@ -150,6 +156,7 @@ static func capacity(klass: String) -> int:
 	var ck: String = String(PD.get_archetype_tree(arch).get("class_keystones", {}).get(klass, {}).get("id", ""))
 	if ck != "":
 		total += 1
+	total += PD.ascendant_nodes(klass).size()   # three single-rank nodes, one point each
 	return total
 
 

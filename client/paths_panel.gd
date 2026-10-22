@@ -20,6 +20,7 @@ const PathFeatsScript = preload("res://shared/path_feats.gd")
 var _root_panel: PanelContainer
 var _header_label: RichTextLabel
 var _points_label: RichTextLabel
+var _ascendant_row: HBoxContainer
 var _columns_hbox: GridContainer
 var _keystone_row: HBoxContainer
 var _milestone_label: RichTextLabel
@@ -129,6 +130,9 @@ func _node_state(node: Dictionary) -> String:
 			var sp: String = PathDatabaseScript.get_prereq_id(node_id)
 			if sp != "" and _rank(sp) < 1:
 				return "locked"
+		elif bool(node.get("ascendant", false)):
+			if not PathDatabaseScript.ascendant_unlocked(node, int(_character_data.get("level", 1))):
+				return "locked"
 		elif _spent() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
 			return "locked"
 	else:
@@ -220,6 +224,10 @@ func _build_layout() -> void:
 	_keystone_row = HBoxContainer.new()
 	_keystone_row.add_theme_constant_override("separation", 8)
 	vbox.add_child(_keystone_row)
+	# The Ascendant row sits under it: three more wide buttons in the same row pushed the whole panel past its width.
+	_ascendant_row = HBoxContainer.new()
+	_ascendant_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(_ascendant_row)
 
 	# Milestones strip
 	_milestone_label = RichTextLabel.new()
@@ -326,6 +334,38 @@ func _render() -> void:
 		sig_respec.pressed.connect(_on_respec_pressed.bind("signature"))
 		sig_row.add_child(sig_respec)
 		_keystone_row.move_child(sig_box, 0)
+	# The Ascendant tier: three level-gated trigger nodes (L500 / L2000 / L6000), after the Signature row.
+	var asc_nodes: Array = PathDatabaseScript.ascendant_nodes(String(_character_data.get("class", "")))
+	for child in _ascendant_row.get_children():
+		child.queue_free()
+	if not asc_nodes.is_empty():
+		var asc_box := VBoxContainer.new()
+		asc_box.add_theme_constant_override("separation", 4)
+		asc_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_ascendant_row.add_child(asc_box)
+		var asc_title := RichTextLabel.new()
+		asc_title.bbcode_enabled = true
+		asc_title.fit_content = true
+		asc_title.scroll_active = false
+		asc_title.add_theme_font_size_override("normal_font_size", 14)
+		asc_title.text = "[color=#FFB74D][b]Ascendant[/b][/color]  [color=#8A7B5C](open at levels %s)[/color]" % " / ".join(PathDatabaseScript.ASCENDANT_LEVELS.map(func(l): return str(l)))
+		asc_box.add_child(asc_title)
+		var asc_row := HBoxContainer.new()
+		asc_row.add_theme_constant_override("separation", 6)
+		asc_box.add_child(asc_row)
+		var asc_refund := 0
+		for an in asc_nodes:
+			var ad: Dictionary = PathDatabaseScript.find_node(String(an.get("id", "")))
+			asc_refund += PathPointsScript.total_cost(_rank(String(an.get("id", ""))))
+			var ab := _make_node_button(ad)
+			ab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			asc_row.add_child(ab)
+		var asc_respec := Button.new()
+		asc_respec.focus_mode = Control.FOCUS_NONE
+		asc_respec.disabled = asc_refund <= 0
+		asc_respec.text = ("Click again: refund %d pts for %s gold" % [asc_refund, str(PathPointsScript.respec_price(int(_character_data.get("level", 1)), asc_refund))]) if _respec_armed == "ascendant" else "Respec"
+		asc_respec.pressed.connect(_on_respec_pressed.bind("ascendant"))
+		asc_row.add_child(asc_respec)
 	var keystones: Dictionary = tree.get("class_keystones", {})
 	var cls := String(_character_data.get("class", ""))
 	if keystones.has(cls):
@@ -412,7 +452,9 @@ func _refresh_detail(node: Dictionary = {}) -> void:
 		"available", "ranked":
 			status_line = "[color=#FFD700]%s - costs %d Path point(s).[/color]" % ["Available" if have == 0 else "Rank %d of %d learned; rank %d is available" % [have, top, have + 1], cost]
 		_:
-			if have > 0 and _points_available() < cost:
+			if bool(node.get("ascendant", false)) and not PathDatabaseScript.ascendant_unlocked(node, int(_character_data.get("level", 1))):
+				status_line = "[color=#FF6666]Locked — this Ascendant opens at level %d (you are level %d).[/color]" % [int(node.get("level_req", 0)), int(_character_data.get("level", 1))]
+			elif have > 0 and _points_available() < cost:
 				status_line = "[color=#FF6666]Rank %d costs %d point(s); you have %d.[/color]" % [have + 1, cost, _points_available()]
 			elif _points_available() < cost:
 				status_line = "[color=#FF6666]Costs %d point(s); you have %d.[/color]" % [cost, _points_available()]

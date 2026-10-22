@@ -38,7 +38,7 @@ static func class_scale(class_type: String) -> float:
 
 static func scale_effect_value(effect_key: String, v: float, scale: float) -> float:
 	"""A path effect value under a class scale. Durations, caps and counts (NON_SCALING_KEYS) are never scaled."""
-	if scale == 1.0 or effect_key in NON_SCALING_KEYS:
+	if scale == 1.0 or effect_key in NON_SCALING_KEYS or effect_key.begins_with("trg_"):
 		return v
 	return v * scale
 
@@ -388,6 +388,70 @@ static func signature_nodes(class_type: String) -> Array:
 	return SIGNATURES.get(class_type, {}).get("nodes", [])
 
 
+## ASCENDANT nodes (docs/design/paths_revamp.md 3.4 / section 7): the level-gated tier. Three per class, open at L500 / L2000 / L6000, each a COMBAT TRIGGER
+## bundle (shared/combat_triggers.gd) - a new KIND of effect, not a bigger number - and the second and third carry a price ("trade-offs only later", the card-upgrade
+## rule). Single purchase, one point. `trg_<id>` effect values are trigger POWER and are never scaled by the class value table. Ids are "asc_<Class>_<n>".
+## Hand-picked for the class's own engine and deck: the Ranger gets no crit trigger (Steady Hand never crits), Barbarian leans on blows and finishers, Oracle on
+## setup and control cards.
+const ASCENDANT_LEVELS := [500, 2000, 6000]
+const ASCENDANTS = {
+	"Fighter": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Fighter_1", "name": "Bulwark Drive", "desc": "Your guard cards build +2 Momentum (up to 4 times a fight).", "ranks": 1, "level_req": 500, "effect": {"trg_bulwark_drive": 1}},
+		{"id": "asc_Fighter_2", "name": "Unbroken", "desc": "Blows that take 15%+ of your max HP build Momentum, and once a fight a blow that leaves you under 35% heals you - ALL TWICE AS STRONG. Your attacks and cards deal 8% less.", "ranks": 1, "level_req": 2000, "effect": {"trg_pain_fuel": 2, "trg_last_gasp": 2, "attack_damage_pct": -8}},
+		{"id": "asc_Fighter_3", "name": "Iron Warlord", "desc": "Every fight opens with +2 Momentum, a crit builds more, and guard cards build Momentum. Your max HP is reduced 10%.", "ranks": 1, "level_req": 6000, "effect": {"trg_opening_surge": 2, "trg_killing_rhythm": 1, "trg_bulwark_drive": 1, "max_hp_pct": -10}},
+	]},
+	"Barbarian": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Barbarian_1", "name": "Rampage Feast", "desc": "Your finishers heal 10% of your max HP (up to 3 times a fight).", "ranks": 1, "level_req": 500, "effect": {"trg_rampage_feast": 1}},
+		{"id": "asc_Barbarian_2", "name": "Berserker's Feast", "desc": "A kill restores twice the pool, and your finishers heal more. You take 8% more damage.", "ranks": 1, "level_req": 2000, "effect": {"trg_kill_vigor": 2, "trg_rampage_feast": 1, "damage_reduction_pct": -8}},
+		{"id": "asc_Barbarian_3", "name": "Unchained Fury", "desc": "Crits build Rage twice as hard, big blows build Rage, and your strikes bleed far more often. Your max HP is reduced 12%.", "ranks": 1, "level_req": 6000, "effect": {"trg_killing_rhythm": 2, "trg_pain_fuel": 1, "trg_barbed_strikes": 2, "max_hp_pct": -12}},
+	]},
+	"Paladin": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Paladin_1", "name": "Judgement's Mantle", "desc": "Your finishers wrap you in 15% damage reduction for 3 rounds.", "ranks": 1, "level_req": 500, "effect": {"trg_judgement_mend": 1}},
+		{"id": "asc_Paladin_2", "name": "Radiant Vow", "desc": "Guard cards heal twice as much and your buffs also shield you. Your attacks and cards deal 8% less.", "ranks": 1, "level_req": 2000, "effect": {"trg_steady_hands": 2, "trg_warding_buff": 2, "attack_damage_pct": -8}},
+		{"id": "asc_Paladin_3", "name": "Martyr's Grace", "desc": "Last Gasp heals twice as much, and your finishers shield you more. Your cards cost 15% more.", "ranks": 1, "level_req": 6000, "effect": {"trg_last_gasp": 2, "trg_judgement_mend": 1, "ability_cost_pct": 15}},
+	]},
+	"Wizard": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Wizard_1", "name": "Meteor Ember", "desc": "Meteor leaves a burn worth 40% of its damage (up to 4 times a fight).", "ranks": 1, "level_req": 500, "effect": {"trg_meteor_ember": 1}},
+		{"id": "asc_Wizard_2", "name": "Arcane Tempo", "desc": "Spells echo twice as often and a setup card sharpens the next spell. Your max mana is reduced 10%.", "ranks": 1, "level_req": 2000, "effect": {"trg_echo_bolt": 2, "trg_setup_edge": 1, "max_resource_pct": -10}},
+		{"id": "asc_Wizard_3", "name": "Archmage's Repertoire", "desc": "Casting three different cards in a row hits twice as hard, and spells echo more often. Your spells deal 10% less.", "ranks": 1, "level_req": 6000, "effect": {"trg_variety_burst": 2, "trg_echo_bolt": 1, "spell_damage_keystone_pct": -10}},
+	]},
+	"Sorcerer": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Sorcerer_1", "name": "Stormsurge", "desc": "20% chance a spell makes your next damaging card hit 30% harder.", "ranks": 1, "level_req": 500, "effect": {"trg_stormsurge": 1}},
+		{"id": "asc_Sorcerer_2", "name": "Chaos Channel", "desc": "Stormsurge twice as likely, and a crit builds Volatility. Your max HP is reduced 10%.", "ranks": 1, "level_req": 2000, "effect": {"trg_stormsurge": 2, "trg_killing_rhythm": 1, "max_hp_pct": -10}},
+		{"id": "asc_Sorcerer_3", "name": "Tempest's Eye", "desc": "Spells echo twice as often and varied casting pays double. You take 10% more damage.", "ranks": 1, "level_req": 6000, "effect": {"trg_echo_bolt": 2, "trg_variety_burst": 1, "damage_reduction_pct": -10}},
+	]},
+	"Sage": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Sage_1", "name": "Seer's Flow", "desc": "Setup and control cards build +1 Insight (up to 4 times a fight).", "ranks": 1, "level_req": 500, "effect": {"trg_seer_flow": 1}},
+		{"id": "asc_Sage_2", "name": "Far Sight", "desc": "Seer's Flow builds twice the Insight, and control cards slow far more often. Your spells deal 10% less.", "ranks": 1, "level_req": 2000, "effect": {"trg_seer_flow": 2, "trg_chilling_touch": 2, "spell_damage_keystone_pct": -10}},
+		{"id": "asc_Sage_3", "name": "The Unwritten", "desc": "Varied casting pays double and setup cards sharpen your next card twice as much. Your max HP is reduced 10%.", "ranks": 1, "level_req": 6000, "effect": {"trg_variety_burst": 2, "trg_setup_edge": 2, "max_hp_pct": -10}},
+	]},
+	"Grifter": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Grifter_1", "name": "Cash Out", "desc": "Your finishers restore 25% of your energy (twice a fight).", "ranks": 1, "level_req": 500, "effect": {"trg_cash_out_refund": 1}},
+		{"id": "asc_Grifter_2", "name": "Loaded Dice", "desc": "Cash Out twice as strong and setup cards sharpen your next card. Your max HP is reduced 8%.", "ranks": 1, "level_req": 2000, "effect": {"trg_cash_out_refund": 2, "trg_setup_edge": 1, "max_hp_pct": -8}},
+		{"id": "asc_Grifter_3", "name": "The Long Con", "desc": "Varied casting pays double and every fight opens with more Read. You take 10% more damage.", "ranks": 1, "level_req": 6000, "effect": {"trg_variety_burst": 2, "trg_opening_surge": 2, "damage_reduction_pct": -10}},
+	]},
+	"Ranger": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Ranger_1", "name": "Hunter's Mark", "desc": "A setup card marks the quarry: your next damaging card hits 20% harder.", "ranks": 1, "level_req": 500, "effect": {"trg_hunters_mark": 1}},
+		{"id": "asc_Ranger_2", "name": "Patient Hunter", "desc": "The mark bites twice as hard and your strikes bleed far more often. Your max HP is reduced 8%.", "ranks": 1, "level_req": 2000, "effect": {"trg_hunters_mark": 2, "trg_barbed_strikes": 2, "max_hp_pct": -8}},
+		{"id": "asc_Ranger_3", "name": "Apex Predator", "desc": "Every fight opens with more Aim, the mark bites harder, and control cards slow. You take 10% more damage.", "ranks": 1, "level_req": 6000, "effect": {"trg_opening_surge": 2, "trg_hunters_mark": 2, "trg_chilling_touch": 1, "damage_reduction_pct": -10}},
+	]},
+	"Ninja": {"id": "ascendant", "name": "Ascendant", "color": "#FFB74D", "nodes": [
+		{"id": "asc_Ninja_1", "name": "Shadow's Gift", "desc": "Your buff cards build +2 Read (up to 3 times a fight).", "ranks": 1, "level_req": 500, "effect": {"trg_shadow_gift": 1}},
+		{"id": "asc_Ninja_2", "name": "Silent Step", "desc": "Shadow's Gift builds twice the Read and a crit builds Read. Your max HP is reduced 8%.", "ranks": 1, "level_req": 2000, "effect": {"trg_shadow_gift": 2, "trg_killing_rhythm": 1, "max_hp_pct": -8}},
+		{"id": "asc_Ninja_3", "name": "Dead of Night", "desc": "Crits build Read twice as hard and your strikes bleed far more often. You take 12% more damage.", "ranks": 1, "level_req": 6000, "effect": {"trg_killing_rhythm": 2, "trg_barbed_strikes": 2, "damage_reduction_pct": -12}},
+	]},
+}
+
+
+static func ascendant_nodes(class_type: String) -> Array:
+	return ASCENDANTS.get(class_type, {}).get("nodes", [])
+
+
+static func ascendant_unlocked(node: Dictionary, level: int) -> bool:
+	"""True when a character of `level` may take this Ascendant node. The server gates on this and the panel mirrors it."""
+	return level >= int(node.get("level_req", 0))
+
+
 static func max_rank(node: Dictionary) -> int:
 	"""How many times a node can be bought. A node may name `ranks`; otherwise keystones, class keystones and
 	anything with a duration/boolean/large amount are single-rank, and the small plain percent perks get
@@ -435,6 +499,11 @@ static func branch_node_ids(archetype: String, branch_key: String) -> Array:
 			for n in SIGNATURES[cls].get("nodes", []):
 				ids.append(String(n.get("id", "")))
 		return ids
+	if branch_key == "ascendant":
+		for cls in ASCENDANTS:
+			for n in ASCENDANTS[cls].get("nodes", []):
+				ids.append(String(n.get("id", "")))
+		return ids
 	if branch_key == "class":
 		for cls in tree.get("class_keystones", {}):
 			ids.append(String(tree["class_keystones"][cls].get("id", "")))
@@ -478,6 +547,19 @@ static func find_node(node_id: String) -> Dictionary:
 					out_s["class_lock"] = String(cls)
 					out_s["signature"] = true
 					return out_s
+		return {}
+	if node_id.begins_with("asc_"):
+		for cls in ASCENDANTS:
+			var asc_nodes: Array = ASCENDANTS[cls].get("nodes", [])
+			for i in range(asc_nodes.size()):
+				if String(asc_nodes[i].get("id", "")) == node_id:
+					var out_a: Dictionary = asc_nodes[i].duplicate()
+					out_a["archetype"] = class_archetype(String(cls))
+					out_a["branch_index"] = -3
+					out_a["tier"] = i + 1
+					out_a["class_lock"] = String(cls)
+					out_a["ascendant"] = true
+					return out_a
 		return {}
 	for archetype in TREES:
 		var tree: Dictionary = TREES[archetype]

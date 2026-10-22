@@ -14556,6 +14556,11 @@ func handle_path_spend(peer_id: int, message: Dictionary):
 			if sig_prereq != "" and not character.has_path_node(sig_prereq):
 				send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Requires %s first.[/color]" % String(PathDatabaseScript.find_node(sig_prereq).get("name", "the previous node"))})
 				return
+		elif bool(node.get("ascendant", false)):
+			# The Ascendant tier is gated by LEVEL alone (L500 / L2000 / L6000), not by points spent.
+			if not PathDatabaseScript.ascendant_unlocked(node, int(character.level)):
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s opens at level %d (you are level %d).[/color]" % [String(node.get("name", "That node")), int(node.get("level_req", 0)), int(character.level)]})
+				return
 		elif character.get_path_points_spent() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Class keystones unlock after spending %d Path points (you have spent %d).[/color]" % [PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ, character.get_path_points_spent()]})
 			return
@@ -14584,7 +14589,7 @@ func handle_path_respec(peer_id: int, message: Dictionary):
 	var character = characters[peer_id]
 	var branch_key: String = String(message.get("branch", ""))
 	var ids: Array = PathDatabaseScript.branch_node_ids(character.get_class_path(), branch_key)
-	if branch_key == "class" or branch_key == "signature":
+	if branch_key == "class" or branch_key == "signature" or branch_key == "ascendant":
 		ids = ids.filter(func(i): return String(PathDatabaseScript.find_node(i).get("class_lock", "")) == character.class_type)
 	if ids.is_empty():
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]No such branch.[/color]"})

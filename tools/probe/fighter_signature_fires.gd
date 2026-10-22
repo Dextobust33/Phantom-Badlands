@@ -11,10 +11,10 @@ func ck(ok: bool, msg: String) -> void:
 	print(("  PASS  " if ok else "  FAIL  ") + msg)
 
 var _next_pid := 100
-func _fresh(ranks: Dictionary) -> Array:
+func _fresh(ranks: Dictionary, existing = null) -> Array:
 	_next_pid += 1
 	var pid: int = _next_pid
-	var ch = sim.make_char(60, "average", "Fighter", "Human")
+	var ch = existing if existing != null else sim.make_char(60, "average", "Fighter", "Human")
 	ch.initialize_deck_collection_if_needed()
 	for k in ranks:
 		ch.set_path_rank(String(k), int(ranks[k]))
@@ -93,10 +93,11 @@ func _init() -> void:
 	ck(dur0 > 0 and dur1 == dur0 + 2, "Bulwark lasts 2 rounds longer (%d -> %d)" % [dur0, dur1])
 
 	print("--- S5 Staggering Bash ---")
+	# ONE character, the node toggled: a stun roll depends on the caster's stats, and two make_char calls are two characters with different random gear.
 	var s0 = _fresh({})
-	var s1 = _fresh({"sig_Fighter_5": 1})
 	seed(5)
 	_cast(s0[0], s0[1], "shield_bash")
+	var s1 = _fresh({"sig_Fighter_5": 1}, s0[0])
 	seed(5)
 	_cast(s1[0], s1[1], "shield_bash")
 	var m0: int = int(s0[1].get("momentum", 0))

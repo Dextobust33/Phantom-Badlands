@@ -4881,6 +4881,9 @@ func _fire_triggers(combat: Dictionary, event: String, ctx: Dictionary, messages
 		var power: float = character.trigger_power(String(id))
 		if power <= 0.0:
 			continue
+		var cards_only: Array = t.get("cards", [])
+		if not cards_only.is_empty() and not (String(ctx.get("ability", "")) in cards_only):
+			continue
 		var need: Array = t.get("tags", [])
 		if not need.is_empty():
 			var ok := false
@@ -4933,6 +4936,11 @@ func _run_trigger_effect(combat: Dictionary, character, t: Dictionary, strength:
 			var dmg: int = maxi(1, int(float(ctx.get("damage", 0)) * float(t.get("value", 0)) / 100.0))
 			monster["current_hp"] = maxi(1, int(monster.get("current_hp", 0)) - dmg)
 			return "it echoes for %d more." % dmg
+		"burn":
+			var btick: int = maxi(1, int(float(ctx.get("damage", 0)) * float(t.get("value", 0)) / 100.0 / 3.0))
+			combat["monster_burn"] = maxi(int(combat.get("monster_burn", 0)), btick)
+			combat["monster_burn_duration"] = maxi(int(combat.get("monster_burn_duration", 0)), 3)
+			return "a burn (%d a round, 3 rounds)." % btick
 		"bleed":
 			var tick: int = maxi(1, int(float(ctx.get("damage", 0)) * float(t.get("value", 0)) / 100.0 / 3.0))
 			combat["monster_bleed"] = maxi(int(combat.get("monster_bleed", 0)), tick)

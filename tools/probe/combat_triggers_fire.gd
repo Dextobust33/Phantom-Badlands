@@ -71,7 +71,7 @@ func _init() -> void:
 	var bad := 0
 	for id in CT.TRIGGERS:
 		var t: Dictionary = CT.TRIGGERS[id]
-		if not (String(t["event"]) in events) or not (String(t["effect"]) in ["engine", "resource_pct", "heal_pct", "next_damage", "echo_hit", "bleed", "slow", "guard"]):
+		if not (String(t["event"]) in events) or not (String(t["effect"]) in ["engine", "resource_pct", "heal_pct", "next_damage", "echo_hit", "bleed", "burn", "slow", "guard"]):
 			bad += 1
 	ck(bad == 0, "every trigger names a supported event and effect (%d triggers)" % CT.TRIGGERS.size())
 	var all_cards_tagged := true
@@ -253,6 +253,66 @@ func _init() -> void:
 			break
 	ck(killed and kb.find("Kill Vigor") >= 0 and chk.current_stamina > 0, "Kill Vigor: a kill restores the pool (stamina %d)" % chk.current_stamina)
 	tested["kill_vigor"] = true
+
+	# the Ascendant tier's own triggers
+	var cb = _char("Fighter", "bulwark_drive")
+	var tcb = _fight(cb)
+	tcb[1]["momentum"] = 0
+	ck(_cast(tcb, "fortify", 2).find("Bulwark Drive") >= 0 and int(tcb[1]["momentum"]) >= 2, "Bulwark Drive: a guard card builds +2 Momentum (%d)" % int(tcb[1]["momentum"]))
+	tested["bulwark_drive"] = true
+	var crf = _char("Fighter", "rampage_feast")
+	var tcr = _fight(crf)
+	tcr[1]["momentum"] = 3
+	crf.current_hp = int(crf.get_total_max_hp() * 0.5)
+	var hpf: int = crf.current_hp
+	ck(_cast(tcr, "devastate", 2).find("Rampage Feast") >= 0 and crf.current_hp > hpf, "Rampage Feast: a finisher heals (%d -> %d)" % [hpf, crf.current_hp])
+	tested["rampage_feast"] = true
+	var cjm = _char("Fighter", "judgement_mend")
+	var tjm = _fight(cjm)
+	tjm[1]["momentum"] = 3
+	cjm.active_buffs.clear()
+	_cast(tjm, "devastate", 2)
+	ck(cjm.get_buff_value("path_guard") == 15, "Judgement's Mantle: a finisher grants 15%% damage reduction (%d)" % cjm.get_buff_value("path_guard"))
+	tested["judgement_mend"] = true
+	var cme = _char("Wizard", "meteor_ember")
+	var tme = _fight(cme)
+	tme[1]["focus"] = 3
+	var burned := false
+	for sd in range(1, 10):
+		_cast(tme, "meteor", sd)
+		if int(tme[1].get("monster_burn", 0)) > 0:
+			burned = true
+			break
+	ck(burned, "Meteor Ember: Meteor leaves a burn (%d a round)" % int(tme[1].get("monster_burn", 0)))
+	var cme2 = _char("Wizard", "meteor_ember")
+	var tme2 = _fight(cme2)
+	ck(_cast(tme2, "blast", 3).find("Meteor Ember") < 0, "...and only Meteor does (a Blast does not fire it)")
+	tested["meteor_ember"] = true
+	var ss: int = _count("Wizard", "stormsurge", "blast", 150)
+	ck(ss >= 12 and ss <= 55, "Stormsurge: about 20%% of spells promise the next card more (%d of 150)" % ss)
+	tested["stormsurge"] = true
+	var csf = _char("Wizard", "seer_flow")
+	var tsf = _fight(csf)
+	tsf[1]["focus"] = 0
+	ck(_cast(tsf, "analyze", 2).find("Seer's Flow") >= 0 and int(tsf[1]["focus"]) >= 1, "Seer's Flow: a setup card builds Focus (%d)" % int(tsf[1]["focus"]))
+	tested["seer_flow"] = true
+	var cco = _char("Grifter", "cash_out_refund")
+	var tco = _fight(cco)
+	tco[1]["combo"] = 4
+	cco.current_energy = 5
+	var bco: String = _cast(tco, "perfect_heist", 2)
+	ck(bco.find("Cash Out") >= 0, "Cash Out: a finisher restores energy")
+	tested["cash_out_refund"] = true
+	var chm = _char("Ranger", "hunters_mark")
+	var thm = _fight(chm)
+	var bhm: String = _cast(thm, "analyze", 2)
+	ck(bhm.find("Hunter's Mark") >= 0 and abs(float(thm[1].get("trg_next_mult", 1.0)) - 1.2) < 0.001, "Hunter's Mark: a setup card promises +20%% (x%.2f)" % float(thm[1].get("trg_next_mult", 1.0)))
+	tested["hunters_mark"] = true
+	var csg = _char("Ninja", "shadow_gift")
+	var tsg = _fight(csg)
+	tsg[1]["combo"] = 0
+	ck(_cast(tsg, "vanish", 2).find("Shadow's Gift") >= 0 and int(tsg[1]["combo"]) >= 2, "Shadow's Gift: a buff card builds +2 Read (%d)" % int(tsg[1]["combo"]))
+	tested["shadow_gift"] = true
 
 	# on_fight_start
 	var cho = _char("Fighter", "opening_surge")

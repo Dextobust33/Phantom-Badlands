@@ -47,10 +47,17 @@ func _init() -> void:
 			var ck_node: Dictionary = tree["class_keystones"][cls]
 			for k in ck_node.get("effect", {}):
 				keys[String(k)] = String(ck_node.get("id", ""))
+	for cls in PD.ASCENDANTS:
+		for an in PD.ASCENDANTS[cls].get("nodes", []):
+			for k in an.get("effect", {}):
+				keys[String(k)] = String(an.get("id", ""))
 	print("--- %d distinct effect keys across the trees ---" % keys.size())
 	var unread: Array = []
 	for k in keys:
 		var read: bool = code.contains("get_path_effect_total(\"%s\")" % k) or code.contains("has_path_effect(\"%s\")" % k)
+		# A trigger key is read by Character.trigger_power for every id in the trigger table, so it is "read" exactly when that trigger exists.
+		if String(k).begins_with("trg_"):
+			read = preload("res://shared/combat_triggers.gd").TRIGGERS.has(String(k).substr(4))
 		if not read:
 			unread.append("%s (node %s)" % [k, keys[k]])
 	ck(unread.is_empty(), "every effect key has a reader" + ("" if unread.is_empty() else ": UNREAD " + ", ".join(unread)))

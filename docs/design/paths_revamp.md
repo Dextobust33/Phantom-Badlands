@@ -468,3 +468,27 @@ exactly 0 everywhere because the simulator never uses a potion - unmeasurable, n
 - **Feat ledger:** `persistence.note_feat` in the existing valor ledger (`user://valor_ledger.json`): `feat:<id>#<rung>` counts characters reaching the rung, `feat_level:` and
   `feat_hours:` sum the level and played hours (x100) at that moment. Only rungs reached IN PLAY are recorded: a veteran's catch-up on load (more than three at once) is not evidence
   of how fast a ladder is climbed. Probe `feat_ledger`. Retune the ladders from `sum / n`; until live characters have produced some, the 70-points-by-L10000 assumption stands.
+
+**Slice 8 - the Ascendant tier: BUILT (2026-10-22).** Three nodes per class (27), open at **L500 / L2000 / L6000** by LEVEL alone (not by points spent; the server refuses
+below the level, the panel greys them with the reason), single rank, one point each. Every Ascendant is a **combat trigger bundle** (`docs/design/combat_loop_variety.md` 11), so the
+tier delivers what section 3.4 asked for - a new KIND of effect, not a bigger number - and the second and third carry a price ("trade-offs only later"): the first is free,
+the L2000 one costs 8-10%, the L6000 one 10-15% (damage, max HP, max mana, damage taken or card cost, by class).
+The drafts in section 7 were card rewrites; these are trigger bundles instead, because a trigger is something the probe can prove and the next piece (boons) hands out the
+same way. Probe `ascendant_nodes_fire`.
+
+| class | L500 (free) | L2000 (price) | L6000 (price) |
+|---|---|---|---|
+| Fighter | Bulwark Drive: guard cards build +2 Momentum | Unbroken: Pain Fuel and Last Gasp x2 (-8% damage) | Iron Warlord: open with +2 Momentum, crits and guards build it (-10% max HP) |
+| Barbarian | Rampage Feast: finishers heal 10% | Berserker's Feast: kills restore x2, finishers heal more (+8% damage taken) | Unchained Fury: crits build Rage x2, big blows build Rage, strikes bleed (-12% max HP) |
+| Paladin | Judgement's Mantle: finishers grant 15% reduction, 3 rounds | Radiant Vow: guard cards heal x2, buffs shield (-8% damage) | Martyr's Grace: Last Gasp x2, bigger mantle (+15% card cost) |
+| Wizard | Meteor Ember: Meteor leaves a burn | Arcane Tempo: spells echo x2, setup sharpens the next spell (-10% max mana) | Archmage's Repertoire: varied casting x2, more echoes (-10% spell damage) |
+| Sorcerer | Stormsurge: 20% a spell promises the next card +30% | Chaos Channel: Stormsurge x2, crits build Volatility (-10% max HP) | Tempest's Eye: echoes x2, varied casting (+10% damage taken) |
+| Oracle | Seer's Flow: setup and control cards build Insight | Far Sight: x2, control slows more (-10% spell damage) | The Unwritten: varied casting x2, setup x2 (-10% max HP) |
+| Grifter | Cash Out: finishers restore 25% energy | Loaded Dice: x2, setup sharpens (-8% max HP) | The Long Con: varied casting x2, opens with more Read (+10% damage taken) |
+| Ranger | Hunter's Mark: a setup card marks the quarry, +20% | Patient Hunter: mark x2, strikes bleed (-8% max HP) | Apex Predator: opens with Aim, bigger mark, slows (+10% damage taken) |
+| Ninja | Shadow's Gift: buff cards build +2 Read | Silent Step: x2, crits build Read (-8% max HP) | Dead of Night: crits x2, strikes bleed (+12% damage taken) |
+
+The Ranger gets no crit trigger (Steady Hand never crits). Class value scaling never scales a trigger's power (a Paladin's Mantle is power 1, not 1.5); the prices still follow
+the class table. The simulator's specs take an Ascendant as soon as the level opens it, so the Wave 2 chain's reference player at L500+ now carries them and `pathgap` must be
+re-run there. Nine new class-flavoured triggers were added to the table for this tier (Bulwark Drive, Rampage Feast, Judgement's Mantle, Meteor Ember, Stormsurge, Seer's Flow, Cash Out,
+Hunter's Mark, Shadow's Gift), one new effect (burn) and a per-card filter.
