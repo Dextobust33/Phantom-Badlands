@@ -4561,6 +4561,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       case.
 
 
+- [ ] **COMBAT IS NOT INTERESTING ENOUGH - bring in ARPG / survivor-style elements. Owner direction 2026-10-22:** "I'd like to find a way to make our combat include more elements that ARPGs or Survivor type games do. Combat isn't interesting enough overall. I like having strategy but my favourite games are Survival Crafting games and ARPGs." No example game does it, so this is DESIGN-FIRST: a written proposal with the owner before any code. Candidate axes to put to the owner: build-defining proc/trigger gear and path nodes that change HOW a card plays (the Signature branches are the first step), enemy telegraphs the player answers (the 24 cyclical bursts), in-fight pickups/choices between rounds (survivor-style level-up picks), and loot that visibly changes the deck. Sits in Wave 1 beside the dungeon card power pass, because it decides what those cards ARE. Owner-side question to ask first: which fight moments feel flat today (the middle rounds? trash fights?).
 - [ ] **PATHS NEED A REVAMP — CLASS-SPECIFIC AND LESS CONDITIONAL. Owner direction 2026-09-18:** <!-- audited: 2026-09-19 --> Verified still open: `shared/path_database.gd` holds exactly three trees, keyed `"warrior"`,
       `"mage"`, `"trickster"` — per-ARCHETYPE, which is precisely what this asks to change.
       *"Path's need revamped and should be class specific and less conditional."*

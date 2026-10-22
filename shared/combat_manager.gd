@@ -1032,7 +1032,10 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		if _passive_has_no_glance(character):
 			cc = 0
 		_note_crit_ramp_attempt(character, combat)
+		var _noncrit_mult: float = ability_noncrit_multiplier(character)
+		var _crit_landed: bool = false
 		if cc > 0 and (randi() % 100) < cc:
+			_crit_landed = true
 			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character))
 			_note_crit_escalation(character, combat)
 			# 2026-09-05 — buffer it for the damage-number hover. Ambush used to note its own
@@ -1052,6 +1055,11 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 				_note_modifier(combat, "Glancing blow -%d%% (%d%% chance)" % [int((1.0 - ABILITY_GLANCE_DAMAGE) * 100.0), gc])
 				if messages != null and messages is Array:
 					messages.append("[color=#808080]Glancing blow — the strike lands badly.[/color]")
+		# Assassinate keystone: the price of the bigger crit. Only a character that CAN crit pays it
+		# (a Ranger on Steady Hand has cc = 0, and would otherwise take the cost with no upside).
+		if not _crit_landed and cc > 0 and _noncrit_mult < 1.0:
+			mod_damage = int(float(mod_damage) * _noncrit_mult)
+			_note_modifier(combat, "Assassinate -%d%% (no crit)" % int(round((1.0 - _noncrit_mult) * 100.0)))
 	return max(1, mod_damage)
 
 func set_monster_database(db: Node):
@@ -4634,7 +4642,17 @@ static func ability_crit_multiplier(character) -> float:
 	var gear: float = float(character.get_crit_damage_bonus()) / 100.0 if character != null else 0.0
 	# Keen Edge (Ninja signature path). Its own key: the Assassinate keystone's `crit_damage_pct` is read by the basic attack alone.
 	var path: float = character.get_path_effect_total("ability_crit_damage_pct") / 100.0 if character != null else 0.0
-	return ABILITY_CRIT_DAMAGE + gear + path
+	# Assassinate keystone: the SAME +50% the basic attack gets. Its other half (normal hits -10%)
+	# is `ability_noncrit_multiplier`; they are read together or the keystone becomes pure gain.
+	var keystone: float = character.get_path_effect_total("crit_damage_pct") / 100.0 if character != null else 0.0
+	return ABILITY_CRIT_DAMAGE + gear + path + keystone
+
+
+static func ability_noncrit_multiplier(character) -> float:
+	"""Assassinate keystone's price on cards: a cast that does not crit deals less. 1.0 without it."""
+	if character == null:
+		return 1.0
+	return maxf(0.1, 1.0 + character.get_path_effect_total("noncrit_damage_pct") / 100.0)
 # 2026-09-05 — abilities with an inherent crit affinity, as a BONUS to the player's own crit
 # chance rather than a private roll of their own.
 #
@@ -9810,6 +9828,13 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		# Speed buff directly reduces hit chance (e.g., +20 speed = -10% hit chance)
 		hit_chance -= int(speed_buff / 2)
 
+	# A SLOWED monster (companion Web Trap / Undertow, random_debuff). `monster_slowed` was written,
+	# ticked down and drawn as a chip on the combat panel but never read, so the cards did nothing.
+	# It uses the same exchange rate as the player's own speed buff above: -N% speed = -N/2 to hit.
+	var monster_slow = int(combat.get("monster_slowed", 0))
+	if monster_slow > 0:
+		hit_chance -= int(monster_slow / 2)
+
 	# Equipment speed bonus also helps dodge
 	var equipment_bonuses = character.get_equipment_bonuses()
 	var equipment_speed = equipment_bonuses.get("speed", 0)
@@ -10514,7 +10539,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 						var duration = ability.get("duration", 2)
 						combat["monster_slowed"] = slow_value
 						combat["monster_slow_duration"] = duration
-						messages.append("[color=#6699FF]%s uses %s! The %s is slowed![/color]" % [companion.name, ability_name, monster.name])
+						messages.append("[color=#6699FF]%s uses %s! The %s is slowed! (%d%% less likely to hit you for %d rounds)[/color]" % [companion.name, ability_name, monster.name, int(slow_value / 2), duration])
 					elif effect == "enemy_miss":
 						var duration = ability.get("duration", 2)
 						combat["companion_enemy_miss"] = duration
