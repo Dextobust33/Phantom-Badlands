@@ -102,7 +102,12 @@ func _points_earned() -> int:
 	if claimed is Dictionary:
 		for fid in claimed:
 			feat_points += int(claimed[fid])
-	return PathPointsScript.from_level(int(_character_data.get("level", 1))) + feat_points
+	var legacy_free = _character_data.get("path_legacy_free", [])
+	var ranks = _character_data.get("path_ranks", {})
+	var bonus := 0
+	if legacy_free is Array and ranks is Dictionary:
+		bonus = PathPointsScript.legacy_bonus(ranks, legacy_free)
+	return PathPointsScript.from_level(int(_character_data.get("level", 1))) + feat_points + bonus
 
 
 func _points_available() -> int:
@@ -414,6 +419,8 @@ func _refresh_detail(node: Dictionary = {}) -> void:
 			else:
 				status_line = "[color=#FF6666]Locked — requires the previous node in this branch%s.[/color]" % (" / %d points spent" % PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ if String(node.get("class_lock", "")) != "" else "")
 	var per_rank := "" if top <= 1 else "\n[color=#C4A882]Each rank adds this again (you have %dx).[/color]" % have
+	if node.has("rank_curve"):
+		per_rank = "\n[color=#C4A882]Rank 1 gives half of this, rank 2 three quarters, rank %d all of it (you have rank %d).[/color]" % [top, have]
 	_detail_label.text = "[b][color=#FFD700]%s[/color][/b]\n%s%s\n%s" % [String(node.get("name", "")), String(node.get("desc", "")), per_rank, status_line]
 	_learn_button.text = "Learn (%d pt)" % cost if have == 0 else "Rank up (%d pt)" % cost
 	_learn_button.disabled = not (state == "available" or state == "ranked")

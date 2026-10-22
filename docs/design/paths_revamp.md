@@ -380,10 +380,10 @@ nodes was not exercised). Each plain node has 5 ranks, each branch ends in a key
 | archetype | branch | nodes (rank 5 unless noted) |
 |---|---|---|
 | warrior | Vanguard | Steel Nerves (-10% damage taken) / Shrug It Off (+5% max HP a round below half) / Stand Firm (hits over 25% max HP cut 30%) / Rally (kill: -20% damage 3 rounds) / **Immovable** (-15% damage taken, cards -10%) |
-| warrior | Reaver | Opening Salvo (first card +40%) / Executioner (+30% under 30% HP) / Sundering (+5% per hit, 5 stacks) / Bloodletter (kill: +15% stamina) / **Glass Cannon** (+25% damage, -15% max HP) |
+| warrior | Slayer | Opening Salvo (first card +40%) / Executioner (+30% under 30% HP) / Sundering (+5% per hit, 5 stacks) / Bloodletter (kill: +15% stamina) / **Glass Cannon** (+25% damage, -15% max HP) |
 | warrior | Provisioner | Field Medic (+40% potion healing) / Second Helping (potion: +20% stamina) / Iron Stomach (poison, bleed -40%) / Antidote Lore (potion cleanses) / **Last Rations** (potion: -25% damage 3 rounds, -10% max HP) |
 | mage | Arcana | Varied Arsenal (+10% per distinct card cast, up to 3) / Echo (15% refund) / Opening Gambit (first card -50% cost) / Siphon (+5% mana a card) / **Overdrive** (every 4th card free, +30%; -10% max mana) |
-| mage | Warding | Mana Ward (-10% damage taken) / Blur (-10% hit chance, relative) / Reflective Veil (20% reflected) / Quiet Mind (+2.5% HP a round) / **Pale Veil** (first 2 rounds -50% damage; spells -8%) |
+| mage | Warding | Mana Ward (-10% damage taken) / Blur (-10% hit chance, relative) / Reflective Veil (20% reflected) / Steady Breath (+2.5% HP a round) / **Pale Veil** (first 2 rounds -50% damage; spells -8%) |
 | mage | Lorekeeper | Focused Study (kill: +15% mana) / Arcane Alchemy (potion: +20% mana) / Quickened (10% extra turn) / Mind Over Matter (hit taken: +5% mana) / **Prodigy** (10% extra turn; cards cost 15% more) |
 | trickster | Gambit | Lucky Streak / Pilfer / Slippery Hands / Sleight of Hand (shared keys with Arcana) / **High Roller** (8% extra turn; take 10% more damage) |
 | trickster | Evasion | Light Step (-10% hit chance) / Slip Away (big hits -30%) / Feint (first 2 rounds -30%) / Counterfeint (hit taken: +5% energy) / **Untouchable** (-12% hit chance; -15% max HP) |

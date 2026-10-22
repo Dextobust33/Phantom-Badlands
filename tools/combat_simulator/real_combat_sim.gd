@@ -187,6 +187,9 @@ func _write_curve(fields: Dictionary, what: String) -> bool:
 	return true
 
 
+const PathSpecs = preload("res://tools/combat_simulator/path_specs.gd")
+var _path_kind := ""
+
 func _init():
 	seed(20260824)  # reproducible run-to-run (gear affixes/crits/empowered are RNG)
 	drop_tables = load("res://shared/drop_tables.gd").new()
@@ -229,6 +232,9 @@ func _init():
 			_team_flag = true
 		if String(arg) == "--companion":
 			_companion_flag = true
+		if String(arg).begins_with("--path="):
+			# Path spec (tools/combat_simulator/path_specs.gd): typical | offense | defense | none. Default none = the control.
+			_path_kind = String(arg).substr(7)
 	_deadline_ms = Time.get_ticks_msec() + budget * 1000
 	print("[budget] this run will self-abort after %d seconds" % budget)
 
@@ -253,6 +259,8 @@ func _audit_registry() -> Dictionary:
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
+		"pathspec": ["PATHS: do the path specs spend legally, and does make_char carry them?", func(): PathSpecs.audit_spec(self)],
+		"pathcurve": ["PATHS: point economy - earned by level vs what the tree can absorb", func(): PathSpecs.audit_curve(self)],
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
 		"cardnames": ["every class: what each of its 5 cards is CALLED", run_cardnames],
 		"compcards": ["is a COMPANION card worth a deck slot against the class's own five?", run_compcards],
@@ -5399,6 +5407,9 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 		}
 	if _team_flag and not ch.active_companion.is_empty():
 		_field_team(ch, level)
+	# Paths: spend the points this level has earned on the chosen spec BEFORE hp/resources are topped up (it can move the maximums).
+	if _path_kind != "" and _path_kind != "none":
+		PathSpecs.apply(ch, klass, _path_kind, level)
 	ch.current_hp = ch.get_total_max_hp()
 	# Enter combat at FULL resources — in real play, out-of-combat regen tops the
 	# pool between fights. (level_up/equip raise MAX but don't refill current, and

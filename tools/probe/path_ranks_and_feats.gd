@@ -47,15 +47,17 @@ func _init() -> void:
 	ck(PD.max_rank(PD.find_node("warrior_1_1")) == 5, "a small percent perk takes 5 ranks")
 	ck(PD.max_rank(PD.find_node("warrior_2_2")) == 1, "a duration node stays single-rank")
 	ck(PD.max_rank(PD.find_node("warrior_1_5")) == 1 and PD.max_rank(PD.find_node("ck_Fighter")) == 1, "keystones stay single-rank")
-	ck(PD.max_rank(PD.find_node("warrior_1_2")) == 1, "a 50% node is not multiplied by five untested")
+	ck(PD.max_rank(PD.find_node("warrior_1_2")) == 3, "a 50% node climbs to its old value over THREE ranks, not five")
+	ck(float(PD.rank_effect(PD.find_node("warrior_1_2"), 1).get("bleed_power_pct", 0)) == 25.0 and float(PD.rank_effect(PD.find_node("warrior_1_2"), 3).get("bleed_power_pct", 0)) == 50.0, "...rank 1 is half of it, rank 3 is all of it")
 	ck(float(PD.rank_effect(PD.find_node("warrior_1_1"), 3).get("attack_damage_pct", 0)) == 15.0, "rank 3 of +5% damage is +15%")
 
 	print("--- a save from before ranks loses nothing ---")
 	var old_save := {"level": 40, "monsters_killed": 10, "path_nodes": ["warrior_1_1", "warrior_1_2"], "path_milestones": ["first_boss_kill"]}
 	var vet = CharacterScript.new()
 	vet.from_dict(old_save)
-	ck(vet.path_rank("warrior_1_1") == 1 and vet.path_rank("warrior_1_2") == 1, "each old node id becomes rank 1")
-	ck(vet.get_path_points_earned() == 9 and vet.get_path_points_available() == 7, "earned 8 (level) + 1 (milestone) = 9, as before; 7 left (%d / %d)" % [vet.get_path_points_earned(), vet.get_path_points_available()])
+	ck(vet.path_rank("warrior_1_1") == 1 and vet.path_rank("warrior_1_2") == 3, "an old plain node becomes rank 1; an old big node is held at its full rank 3 (grandfathered)")
+	ck(float(vet.get_path_effect_total("bleed_power_pct")) == 50.0, "...so the veteran still has the full 50%% bleed bonus they paid one point for")
+	ck(vet.get_path_points_available() == 7, "points left are 7, exactly as before ranks existed (earned %d incl. the grandfather refund; %d left)" % [vet.get_path_points_earned(), vet.get_path_points_available()])
 	ck(vet.claim_feat_rungs().is_empty(), "the old milestone is rung 1 already: nothing is paid twice")
 	ck(vet.get_path_effect_total("attack_damage_pct") == 5.0, "its effect is what it was")
 

@@ -20,6 +20,11 @@ const PathPointsScript = preload("res://shared/path_points.gd")
 
 const CLASS_KEYSTONE_SPEND_REQ := 8
 
+## Nodes whose full effect is too large to multiply by five (+30% damage vs stunned, 50% kill refunds, ...) get THREE ranks that
+## climb to the old value: rank 1 is half of it, rank 2 three quarters, rank 3 all of it. Characters who held the node before ranks
+## existed are grandfathered at rank 3 (see Character.path_legacy_free), so nobody loses power. Owner 2026-10-22.
+const CURVE_BIG := [0.5, 0.75, 1.0]
+
 # archetype -> ordered branch list. Node ids: "<archetype>_<branch#>_<tier>".
 const TREES = {
 	"warrior": {
@@ -29,9 +34,9 @@ const TREES = {
 				"id": "onslaught", "name": "Onslaught", "color": "#FF6666",
 				"nodes": [
 					{"id": "warrior_1_1", "name": "Sharpened Edge", "desc": "+5% attack damage.", "effect": {"attack_damage_pct": 5}},
-					{"id": "warrior_1_2", "name": "Rending Blows", "desc": "Your bleed effects tick 50% harder.", "effect": {"bleed_power_pct": 50}},
-					{"id": "warrior_1_3", "name": "Momentum", "desc": "Killing blows refund 50% of the ability's stamina cost.", "effect": {"kill_cost_refund_pct": 50}},
-					{"id": "warrior_1_4", "name": "Overwhelm", "desc": "+30% damage against stunned or charmed monsters.", "effect": {"vs_disabled_damage_pct": 30}},
+					{"id": "warrior_1_2", "name": "Rending Blows", "desc": "Your bleed effects tick 50% harder.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"bleed_power_pct": 50}},
+					{"id": "warrior_1_3", "name": "Momentum", "desc": "Killing blows refund 50% of the ability's stamina cost.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"kill_cost_refund_pct": 50}},
+					{"id": "warrior_1_4", "name": "Overwhelm", "desc": "+30% damage against stunned or charmed monsters.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"vs_disabled_damage_pct": 30}},
 					{"id": "warrior_1_5", "name": "Blood Frenzy", "desc": "KEYSTONE: +35% damage while below 50% HP, but healing you receive is reduced 30%.", "keystone": true, "effect": {"low_hp_damage_pct": 35, "healing_received_pct": -30}},
 				],
 			},
@@ -40,7 +45,7 @@ const TREES = {
 				"nodes": [
 					{"id": "warrior_2_1", "name": "Iron Hide", "desc": "+8% defense.", "effect": {"defense_pct": 8}},
 					{"id": "warrior_2_2", "name": "Unshakeable", "desc": "Stuns and webs on you last 1 turn less.", "effect": {"stun_duration_reduction": 1}},
-					{"id": "warrior_2_3", "name": "Retribution", "desc": "Reflect 15% of melee damage you take back at the attacker.", "effect": {"melee_reflect_pct": 15}},
+					{"id": "warrior_2_3", "name": "Retribution", "desc": "Reflect 15% of melee damage you take back at the attacker.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"melee_reflect_pct": 15}},
 					{"id": "warrior_2_4", "name": "Purging Strikes", "desc": "Killing blows cleanse your poison and bleed.", "effect": {"kill_cleanse": true}},
 					{"id": "warrior_2_5", "name": "Juggernaut's Resolve", "desc": "KEYSTONE: You are immune to stun, but your flee chance is reduced 15%.", "keystone": true, "effect": {"stun_immune": true, "flee_chance_pct": -15}},
 				],
@@ -51,7 +56,7 @@ const TREES = {
 					{"id": "warrior_3_1", "name": "Conditioning", "desc": "+10% max stamina.", "effect": {"max_resource_pct": 10}},
 					{"id": "warrior_3_2", "name": "War Drums", "desc": "Your combat buffs last 2 extra rounds.", "effect": {"buff_duration_bonus": 2}},
 					{"id": "warrior_3_3", "name": "Second Wind", "desc": "Regenerate 2% max stamina each combat round.", "effect": {"combat_resource_regen_pct": 2}},
-					{"id": "warrior_3_4", "name": "Commanding Presence", "desc": "Your buff effects are 20% stronger.", "effect": {"buff_value_pct": 20}},
+					{"id": "warrior_3_4", "name": "Commanding Presence", "desc": "Your buff effects are 20% stronger.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"buff_value_pct": 20}},
 					{"id": "warrior_3_5", "name": "Last Stand", "desc": "KEYSTONE: Once per combat, a lethal hit leaves you at 1 HP instead. Your max HP is reduced 10%.", "keystone": true, "effect": {"death_save_per_combat": 1, "max_hp_pct": -10}},
 				],
 			},
@@ -66,7 +71,7 @@ const TREES = {
 				],
 			},
 			{
-				"id": "reaver", "name": "Reaver", "color": "#FF8A5C",
+				"id": "reaver", "name": "Slayer", "color": "#FF8A5C",
 				"nodes": [
 					{"id": "warrior_5_1", "name": "Opening Salvo", "desc": "Your first card each fight deals 8% more damage.", "effect": {"first_card_damage_pct": 8}},
 					{"id": "warrior_5_2", "name": "Executioner", "desc": "Cards deal 6% more damage to monsters below 30% HP.", "effect": {"vs_low_hp_damage_pct": 6}},
@@ -99,9 +104,9 @@ const TREES = {
 				"id": "destruction", "name": "Destruction", "color": "#FF6666",
 				"nodes": [
 					{"id": "mage_1_1", "name": "Focused Mind", "desc": "+5% spell damage.", "effect": {"spell_damage_pct": 5}},
-					{"id": "mage_1_2", "name": "Kindling", "desc": "Your burn effects tick 50% harder.", "effect": {"burn_power_pct": 50}},
-					{"id": "mage_1_3", "name": "Essence Tap", "desc": "Killing blows refund 50% of the spell's mana cost.", "effect": {"kill_cost_refund_pct": 50}},
-					{"id": "mage_1_4", "name": "Combustion", "desc": "+30% damage against burning monsters.", "effect": {"vs_burning_damage_pct": 30}},
+					{"id": "mage_1_2", "name": "Kindling", "desc": "Your burn effects tick 50% harder.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"burn_power_pct": 50}},
+					{"id": "mage_1_3", "name": "Essence Tap", "desc": "Killing blows refund 50% of the spell's mana cost.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"kill_cost_refund_pct": 50}},
+					{"id": "mage_1_4", "name": "Combustion", "desc": "+30% damage against burning monsters.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"vs_burning_damage_pct": 30}},
 					{"id": "mage_1_5", "name": "Overload", "desc": "KEYSTONE: Your spells deal +30% damage but cost 20% more mana.", "keystone": true, "effect": {"spell_damage_keystone_pct": 30, "ability_cost_pct": 20}},
 				],
 			},
@@ -110,7 +115,7 @@ const TREES = {
 				"nodes": [
 					{"id": "mage_2_1", "name": "Warded Robes", "desc": "+8% defense.", "effect": {"defense_pct": 8}},
 					{"id": "mage_2_2", "name": "Temporal Slip", "desc": "Stuns and webs on you last 1 turn less.", "effect": {"stun_duration_reduction": 1}},
-					{"id": "mage_2_3", "name": "Static Veil", "desc": "Monsters that strike you take shock damage equal to 30% of your INT.", "effect": {"shock_thorns_int_pct": 30}},
+					{"id": "mage_2_3", "name": "Static Veil", "desc": "Monsters that strike you take shock damage equal to 30% of your INT.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"shock_thorns_int_pct": 30}},
 					{"id": "mage_2_4", "name": "Cleansing Flame", "desc": "Killing blows cleanse your poison and bleed.", "effect": {"kill_cleanse": true}},
 					{"id": "mage_2_5", "name": "Archmage's Ward", "desc": "KEYSTONE: Forcefield absorbs 50% more damage, but your max HP is reduced 10%.", "keystone": true, "effect": {"forcefield_power_pct": 50, "max_hp_pct": -10}},
 				],
@@ -120,8 +125,8 @@ const TREES = {
 				"nodes": [
 					{"id": "mage_3_1", "name": "Deep Reserves", "desc": "+10% max mana.", "effect": {"max_resource_pct": 10}},
 					{"id": "mage_3_2", "name": "Lingering Enchantment", "desc": "Your combat buffs last 2 extra rounds.", "effect": {"buff_duration_bonus": 2}},
-					{"id": "mage_3_3", "name": "Flowing Font", "desc": "Your in-combat mana regeneration is 50% stronger.", "effect": {"combat_regen_bonus_pct": 50}},
-					{"id": "mage_3_4", "name": "Empowered Casting", "desc": "Your buff effects are 20% stronger.", "effect": {"buff_value_pct": 20}},
+					{"id": "mage_3_3", "name": "Flowing Font", "desc": "Your in-combat mana regeneration is 50% stronger.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"combat_regen_bonus_pct": 50}},
+					{"id": "mage_3_4", "name": "Empowered Casting", "desc": "Your buff effects are 20% stronger.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"buff_value_pct": 20}},
 					{"id": "mage_3_5", "name": "Time Anchor", "desc": "KEYSTONE: Once per combat, surviving a hit that leaves you below 20% HP freezes time — the monster skips its next turn. Your max HP is reduced 10%.", "keystone": true, "effect": {"clutch_time_stop_per_combat": 1, "max_hp_pct": -10}},
 				],
 			},
@@ -141,7 +146,7 @@ const TREES = {
 					{"id": "mage_5_1", "name": "Mana Ward", "desc": "Take 2% less damage from every hit.", "effect": {"damage_reduction_pct": 2}},
 					{"id": "mage_5_2", "name": "Blur", "desc": "Monsters are 2% less likely to hit you.", "effect": {"dodge_pct": 2}},
 					{"id": "mage_5_3", "name": "Reflective Veil", "desc": "Reflect 4% of the damage you take back at the attacker.", "effect": {"reflect_pct": 4}},
-					{"id": "mage_5_4", "name": "Quiet Mind", "desc": "Recover 0.5% of your max HP at the start of each of your rounds.", "effect": {"round_heal_pct": 0.5}},
+					{"id": "mage_5_4", "name": "Steady Breath", "desc": "Recover 0.5% of your max HP at the start of each of your rounds.", "effect": {"round_heal_pct": 0.5}},
 					{"id": "mage_5_5", "name": "Pale Veil", "desc": "KEYSTONE: For the first 2 rounds of a fight you take 50% less damage, but your spells deal 8% less.", "keystone": true, "effect": {"opening_guard_pct": 50, "spell_damage_keystone_pct": -8}},
 				],
 			},
@@ -169,9 +174,9 @@ const TREES = {
 				"id": "lethality", "name": "Lethality", "color": "#FF6666",
 				"nodes": [
 					{"id": "trickster_1_1", "name": "Keen Eye", "desc": "+3% critical hit chance.", "effect": {"crit_chance_pct": 3}},
-					{"id": "trickster_1_2", "name": "Serrated Tools", "desc": "Your critical hits apply a bleed (30% of WIT per round, 3 rounds).", "effect": {"crit_bleed_wit_pct": 30, "crit_bleed_rounds": 3}},
-					{"id": "trickster_1_3", "name": "Efficient Violence", "desc": "Killing blows refund 50% of the ability's energy cost.", "effect": {"kill_cost_refund_pct": 50}},
-					{"id": "trickster_1_4", "name": "First Blood", "desc": "+30% damage against monsters at full HP.", "effect": {"vs_full_hp_damage_pct": 30}},
+					{"id": "trickster_1_2", "name": "Serrated Tools", "desc": "Your critical hits apply a bleed (30% of WIT per round, 3 rounds).", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"crit_bleed_wit_pct": 30, "crit_bleed_rounds": 3}},
+					{"id": "trickster_1_3", "name": "Efficient Violence", "desc": "Killing blows refund 50% of the ability's energy cost.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"kill_cost_refund_pct": 50}},
+					{"id": "trickster_1_4", "name": "First Blood", "desc": "+30% damage against monsters at full HP.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"vs_full_hp_damage_pct": 30}},
 					{"id": "trickster_1_5", "name": "Assassinate", "desc": "KEYSTONE: Your critical hits deal +50% damage, but your normal hits deal 10% less.", "keystone": true, "effect": {"crit_damage_pct": 50, "noncrit_damage_pct": -10}},
 				],
 			},
@@ -180,7 +185,7 @@ const TREES = {
 				"nodes": [
 					{"id": "trickster_2_1", "name": "Fleet Footed", "desc": "+8% flee chance.", "effect": {"flee_chance_pct": 8}},
 					{"id": "trickster_2_2", "name": "Slippery", "desc": "Stuns and webs on you last 1 turn less.", "effect": {"stun_duration_reduction": 1}},
-					{"id": "trickster_2_3", "name": "Ghost Step", "desc": "After a failed flee attempt, +30% dodge until your next turn.", "effect": {"failed_flee_dodge_pct": 30}},
+					{"id": "trickster_2_3", "name": "Ghost Step", "desc": "After a failed flee attempt, +30% dodge until your next turn.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"failed_flee_dodge_pct": 30}},
 					{"id": "trickster_2_4", "name": "Bleed Them Dry", "desc": "Killing blows cleanse your poison and bleed.", "effect": {"kill_cleanse": true}},
 					{"id": "trickster_2_5", "name": "Phantom Strike", "desc": "KEYSTONE: Your first damaging action each combat always crits, and a first attack cannot miss. Your max HP is reduced 10%.", "keystone": true, "effect": {"first_strike_autocrit": true, "max_hp_pct": -10}},
 				],
@@ -190,8 +195,8 @@ const TREES = {
 				"nodes": [
 					{"id": "trickster_3_1", "name": "Deep Pockets", "desc": "+10% max energy.", "effect": {"max_resource_pct": 10}},
 					{"id": "trickster_3_2", "name": "Lasting Tricks", "desc": "Your combat buffs last 2 extra rounds.", "effect": {"buff_duration_bonus": 2}},
-					{"id": "trickster_3_3", "name": "Profiteer", "desc": "+15% Valor from kills.", "effect": {"valor_pct": 15}},
-					{"id": "trickster_3_4", "name": "Silver Tongue", "desc": "+15% Assassinate success chance.", "effect": {"assassinate_pct": 15}},
+					{"id": "trickster_3_3", "name": "Profiteer", "desc": "+15% Valor from kills.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"valor_pct": 15}},
+					{"id": "trickster_3_4", "name": "Silver Tongue", "desc": "+15% Assassinate success chance.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"assassinate_pct": 15}},
 					{"id": "trickster_3_5", "name": "Jackpot", "desc": "KEYSTONE: +1 loot reveal on every combat victory, but you gain 10% less XP.", "keystone": true, "effect": {"loot_reveal_bonus": 1, "xp_pct": -10}},
 				],
 			},
@@ -391,10 +396,14 @@ static func rank_effect(node: Dictionary, rank: int) -> Dictionary:
 	"""The node's effect dict at `rank`: scalable keys times rank, the rest unchanged."""
 	var out: Dictionary = {}
 	var fx: Dictionary = node.get("effect", {})
+	var curve: Array = node.get("rank_curve", [])
 	for k in fx:
 		var v = fx[k]
 		if (v is int or v is float) and not (v is bool) and not (String(k) in NON_SCALING_KEYS):
-			out[k] = v * maxi(1, rank)
+			if not curve.is_empty():
+				out[k] = v * float(curve[clampi(rank, 1, curve.size()) - 1])
+			else:
+				out[k] = v * maxi(1, rank)
 		else:
 			out[k] = v
 	return out

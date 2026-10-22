@@ -30,6 +30,17 @@ static func from_level(level: int) -> int:
 	return EARLY_LEVELS / EARLY_STEP + (lv - EARLY_LEVELS) / LATE_STEP
 
 
+static func legacy_bonus(ranks: Dictionary, legacy_free: Array) -> int:
+	"""Points that make a grandfathered node cost what it cost when it was one point: a node bought before ranks existed is held at its
+	full rank, and the difference between that rank's price and one point comes back as earned points - for as long as the node is held."""
+	var bonus := 0
+	for id in legacy_free:
+		var r: int = int(ranks.get(String(id), 0))
+		if r >= 1:
+			bonus += total_cost(r) - 1
+	return bonus
+
+
 static func rank_cost(next_rank: int) -> int:
 	"""What buying rank `next_rank` (1-based) costs."""
 	return maxi(1, next_rank)

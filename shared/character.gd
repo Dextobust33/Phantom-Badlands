@@ -546,6 +546,9 @@ const CardGearScript = preload("res://shared/card_gear.gd")
 #   path_milestones  the six legacy ids, kept as history; each is rung 1 of a feat (see from_dict).
 @export var path_nodes: Array = []
 @export var path_ranks: Dictionary = {}
+## Node ids bought before ranks existed whose full effect now takes several ranks to reach; held at full rank, their extra price is refunded
+## as points (PathPoints.legacy_bonus) so a grandfathered character neither gains nor loses anything.
+@export var path_legacy_free: Array = []
 @export var path_milestones: Array = []
 @export var feat_counts: Dictionary = {}
 @export var feats_claimed: Dictionary = {}
@@ -2532,6 +2535,7 @@ func to_dict() -> Dictionary:
 		"deck_repair_version": deck_repair_version,
 		"path_nodes": path_ranks.keys(),
 		"path_ranks": path_ranks.duplicate(),
+		"path_legacy_free": path_legacy_free.duplicate(),
 		"path_milestones": path_milestones.duplicate(),
 		"feat_counts": feat_counts.duplicate(),
 		"feats_claimed": feats_claimed.duplicate(),
@@ -2862,6 +2866,11 @@ func from_dict(data: Dictionary):
 	path_nodes = data.get("path_nodes", []) if data.get("path_nodes", []) is Array else []
 	path_milestones = data.get("path_milestones", []) if data.get("path_milestones", []) is Array else []
 	path_ranks = {}
+	path_legacy_free = []
+	var _saved_legacy = data.get("path_legacy_free", [])
+	if _saved_legacy is Array:
+		for lid in _saved_legacy:
+			path_legacy_free.append(String(lid))
 	var _saved_ranks = data.get("path_ranks", null)
 	if _saved_ranks is Dictionary:
 		for k in _saved_ranks:
@@ -2869,7 +2878,13 @@ func from_dict(data: Dictionary):
 				path_ranks[String(k)] = int(_saved_ranks[k])
 	else:
 		for legacy_id in path_nodes:    # a save from before ranks: one point bought one node
-			path_ranks[String(legacy_id)] = 1
+			var _ln: Dictionary = PathDatabaseScript.find_node(String(legacy_id))
+			if _ln.has("rank_curve"):
+				# its full effect now takes 3 ranks: hold it at the top and refund the difference (legacy_bonus)
+				path_ranks[String(legacy_id)] = PathDatabaseScript.max_rank(_ln)
+				path_legacy_free.append(String(legacy_id))
+			else:
+				path_ranks[String(legacy_id)] = 1
 	path_nodes = path_ranks.keys()
 	feat_counts = {}
 	var _saved_counts = data.get("feat_counts", {})
@@ -4218,7 +4233,7 @@ func get_path_points_earned() -> int:
 	var feat_points := 0
 	for fid in feats_claimed:
 		feat_points += int(feats_claimed[fid])
-	return PathPointsScript.from_level(level) + feat_points
+	return PathPointsScript.from_level(level) + feat_points + PathPointsScript.legacy_bonus(path_ranks, path_legacy_free)
 
 func path_summary() -> String:
 	"""'Sharpened Edge 3, Iron Hide 5, ...' - every node held, with its rank, for the opening line of a fight.

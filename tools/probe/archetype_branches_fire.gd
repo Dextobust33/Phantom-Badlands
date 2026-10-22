@@ -182,7 +182,7 @@ func _init() -> void:
 	_setr(w, "mage_5_4", 5)
 	sim.combat_mgr._apply_gear_resource_regen(w, [])
 	var qm: int = int(w.current_hp) - h_a
-	ck(abs(qm - int(w.get_total_max_hp() * 0.025)) <= 2, "Quiet Mind r5: +2.5%% max HP every round (%d, want ~%d)" % [qm, int(w.get_total_max_hp() * 0.025)])
+	ck(abs(qm - int(w.get_total_max_hp() * 0.025)) <= 2, "Steady Breath r5: +2.5%% max HP every round (%d, want ~%d)" % [qm, int(w.get_total_max_hp() * 0.025)])
 	_setr(w, "mage_5_4", 0)
 	covered(["round_heal_pct"])
 
