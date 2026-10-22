@@ -7430,11 +7430,13 @@ func run_preflight() -> void:
 		var klass := String(row[0])
 		var casts := 0
 		var turns := 0
-		for i in range(4):
+		# 16 fights, not 4: a fight can be one round long, so four of them put casts/turn within noise of the gate (Sorcerer read 0.50 on four and was fine).
+		for i in range(16):
 			var r = run_fight(30, "average", "normal", 1.0, 1.0, 1.0, klass)
 			casts += int(r.get("casts", 0))
 			turns += int(r.get("turns", 0))
 		var cpt: float = float(casts) / maxf(1.0, float(turns))
+		print("    %-10s %.2f casts/turn" % [klass, cpt])
 		if cpt < 0.55:
 			print("    FAIL %-10s casts %.2f/turn - it is auto-attacking, fix the policy first" % [klass, cpt])
 			fail += 1
