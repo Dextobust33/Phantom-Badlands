@@ -41,7 +41,7 @@ These all change power or the money behind it, so they share one design pass and
    come from"): item 14 S5's economy half (Role Swap price, companion upkeep), "Real sinks for excess eggs and companions",
    THE VALOR ECONOMY REALM-WIDE, and THE WORLD CONSUMES MATERIAL SURPLUS. Design doc first (`docs/design/economy.md`), then
    build. Gold prices (Temper, Role Swap) are unmeasured first guesses and are tuned HERE, once, not per feature.
-2. **ITEM 11 VARIETY** (rolled monster stats, companion variety/rolls, quest-board variety). 11(c) must follow item 14
+2. **ITEM 11 VARIETY** - **OWNER DECISIONS 2026-10-22 in `docs/design/variety_item11.md`** (named traits on ~1 in 3 monsters, mostly stats with a few behaviours, mean-preserving; companions inherit one trait and roll one; boards: 3-4+ different species, trait hunts, rotating themes; dungeon cards: every class 2+ worth swapping in, all 53 tagged for triggers). NOT BUILT; build order in that doc. (rolled monster stats, companion variety/rolls, quest-board variety). 11(c) must follow item 14
    (roles) - done. Design first; the rolls change power so they belong before the chain.
 3. **PATHS REVAMP** (class-specific, less conditional) and the **DUNGEON CARD POWER PASS**: both change player power and
    both are blocked only on an owner design answer. Ask once, build once.
