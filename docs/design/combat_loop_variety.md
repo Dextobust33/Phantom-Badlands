@@ -102,3 +102,35 @@ make the game harder for anyone and the sim stays valid.
 2. Close the telegraph queue (3D), then R1 timing window on top of it (owner to confirm after seeing the telegraphs play).
 3. Run build with persistent boons (3A, per section 7.2) once triggers exist to hand out; needs the run model in the sim first.
 4. Waves (3B) last, dungeons only.
+
+## 10. RUN-END RULE — SETTLED 2026-10-22
+
+Owner answers: boons last **the entire time the character is alive**; **no slot cap, but boons weaken as you stack**; **lost with the character on death** (permadeath
+unchanged, no Sanctuary remnant). Plus: *"Dungeons could also have even better things that only last for the dungeon."*
+
+So there are TWO tiers:
+| tier | lifetime | offered by | strength |
+|---|---|---|---|
+| **Life boons** | the whole life of the character; lost on death | chance after normal fights, guaranteed after hard ones (elites, bosses, modified monsters) | modest each, diminishing as the count grows |
+| **Dungeon boons** | until you leave the dungeon (exit, clear, death) | dungeon fights and floor rewards | stronger than life boons (they are temporary), which is what makes a dungeon feel like a survivor run |
+
+### What this commits us to (the balance consequences, so nobody discovers them later)
+1. **Life boons are a second progression layer beside Paths**, so they need the same discipline: a **power budget by level**. The expected number of boons a character
+   holds at level L must be a known function (offers per fight x fights per level), and total boon power must be bounded.
+2. **"Weaken as you stack" is the budget.** Each effect key follows a diminishing curve over the number of boons contributing to it, e.g. the n-th stack contributes
+   `base x d^(n-1)` (d ~ 0.85), so the total approaches `base / (1-d)` and can never run away. Stacking the SAME boon is weakest; spreading across keys is strongest,
+   which rewards build variety (the survivor feel) instead of one best pick. This reuses the `NON_SCALING_KEYS` / `rank_effect` machinery: a boon is a node effect at
+   a rank, with the diminishing factor applied in `get_path_effect_total`.
+3. **Dungeon boons live in a separate bucket** that is cleared on dungeon exit, with their own (looser) curve, so a dungeon spike can never leak into overworld power.
+4. **The simulator needs a life-build model**: `make_char` gains "expected boons at this level" the way it already gains path spec, and `pathcurve`/`pathspread` extend to
+   include boons. The monster chain then runs ONCE with boons in the reference player. A global boon buff will be cancelled by the refit, so boons that matter for
+   balance must be per-class (class-filtered pools), same as paths.
+5. **Permadeath makes boons a stake**: a long-lived character is worth more, which interacts with the "death risk must fall with progression" target. Keep boon power
+   modest enough that it never becomes the main reason a high-level character survives.
+6. **Fix the offer rate with data, not taste**: measure fights per level from live `[ENCOUNTER]` telemetry before choosing the chance, so the expected boon count at L100 / L1000 /
+   L10000 is a decision, not an accident.
+
+### Still open (smaller, can be decided while building triggers)
+- Offer UI: a pick 1-of-3 after the fight on the victory screen vs mid-fight. Recommendation: on the victory screen (zero pace cost).
+- Reroll or banish tokens, and whether boons can be seen/managed in the Paths panel (recommendation: a "Boons" strip there).
+- Pool size per class (suggest 12-15, filtered by the cards in the current deck).
