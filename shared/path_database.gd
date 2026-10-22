@@ -190,11 +190,11 @@ const TREES = {
 			{
 				"id": "lethality", "name": "Lethality", "color": "#FF6666",
 				"nodes": [
-					{"id": "trickster_1_1", "name": "Keen Eye", "desc": "+3% critical hit chance.", "effect": {"crit_chance_pct": 3}},
-					{"id": "trickster_1_2", "name": "Serrated Tools", "desc": "Your critical hits apply a bleed (30% of WIT per round, 3 rounds).", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"crit_bleed_wit_pct": 30, "crit_bleed_rounds": 3}},
+					{"id": "trickster_1_1", "name": "Keen Eye", "desc": "+3% critical hit chance. (A Ranger cannot crit: it gets card damage instead.)", "effect": {"crit_chance_pct": 3}},
+					{"id": "trickster_1_2", "name": "Serrated Tools", "desc": "Your critical hits apply a bleed (30% of WIT per round, 3 rounds). (A Ranger cannot crit: its Killing Shot leaves the bleed.)", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"crit_bleed_wit_pct": 30, "crit_bleed_rounds": 3}},
 					{"id": "trickster_1_3", "name": "Efficient Violence", "desc": "Killing blows refund 50% of the ability's energy cost.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"kill_cost_refund_pct": 50}},
 					{"id": "trickster_1_4", "name": "First Blood", "desc": "+30% damage against monsters at full HP.", "ranks": 3, "rank_curve": CURVE_BIG, "effect": {"vs_full_hp_damage_pct": 30}},
-					{"id": "trickster_1_5", "name": "Assassinate", "desc": "KEYSTONE: Your critical hits deal +50% damage, but your normal hits deal 10% less.", "keystone": true, "effect": {"crit_damage_pct": 50, "noncrit_damage_pct": -10}},
+					{"id": "trickster_1_5", "name": "Assassinate", "desc": "KEYSTONE: Your critical hits deal +50% damage, but your normal hits deal 10% less. (A Ranger cannot crit: it deals 25% more damage on every card, and still takes the 10%.)", "keystone": true, "effect": {"crit_damage_pct": 50, "noncrit_damage_pct": -10}},
 				],
 			},
 			{
@@ -242,9 +242,9 @@ const TREES = {
 				"nodes": [
 					{"id": "trickster_6_1", "name": "Hit Where It Hurts", "desc": "Cards deal 6% more damage to monsters below 30% HP.", "effect": {"vs_low_hp_damage_pct": 6}},
 					{"id": "trickster_6_2", "name": "Open Wounds", "desc": "Each card that hits makes the monster take 1% more from your cards, up to 5 times.", "effect": {"sunder_pct": 1}},
-					{"id": "trickster_6_3", "name": "Predator's Eye", "desc": "+1% critical hit chance.", "effect": {"crit_chance_pct": 1}},
+					{"id": "trickster_6_3", "name": "Predator's Eye", "desc": "+1% critical hit chance. (A Ranger cannot crit: it gets card damage instead.)", "effect": {"crit_chance_pct": 1}},
 					{"id": "trickster_6_4", "name": "Vicious Rhythm", "desc": "Your first damaging card each fight deals 8% more damage.", "effect": {"first_card_damage_pct": 8}},
-					{"id": "trickster_6_5", "name": "Cold Blood", "desc": "KEYSTONE: Your card crits deal 25% more damage, but your max HP is reduced 10%.", "keystone": true, "effect": {"ability_crit_damage_pct": 25, "max_hp_pct": -10}},
+					{"id": "trickster_6_5", "name": "Cold Blood", "desc": "KEYSTONE: Your card crits deal 25% more damage, but your max HP is reduced 10%. (A Ranger cannot crit: it deals 12.5% more damage on every card.)", "keystone": true, "effect": {"ability_crit_damage_pct": 25, "max_hp_pct": -10}},
 				],
 			},
 		],

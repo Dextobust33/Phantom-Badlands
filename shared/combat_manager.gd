@@ -4709,6 +4709,8 @@ static func ability_noncrit_multiplier(character) -> float:
 # path_sunder (stacks). They are written AFTER a cast resolves (`_apply_path_cast_riders`) and read BEFORE it, so a
 # cast and its card-face quote see the same numbers, and a quote never advances anything.
 const PATH_DODGE_FLOOR := 25
+const RANGER_CRIT_CHANCE_TO_DAMAGE := 0.4
+const RANGER_CRIT_DAMAGE_TO_DAMAGE := 0.5
 const PATH_SUNDER_MAX_STACKS := 5
 const PATH_VARIETY_MAX := 3
 const PATH_OVERDRIVE_EVERY := 4
@@ -4753,6 +4755,13 @@ func path_card_damage_mult(character, ability_name: String, combat) -> float:
 		var mon_f = combat.get("monster", {})
 		if mon_f is Dictionary and int(mon_f.get("current_hp", 0)) >= int(mon_f.get("max_hp", 1)):
 			mult *= 1.0 + full_hp / 100.0
+	# A character whose cards can never crit (the Ranger's Steady Hand) gets its crit nodes as CARD DAMAGE instead, at what a crit is worth: owner
+	# 2026-10-22 ("Ranger should get damage instead"). Keen Eye / Predator's Eye: each point of crit chance is +0.4% damage; Cold Blood and
+	# Assassinate: each point of crit damage is +0.5% damage (Assassinate's -10% to normal hits still applies, since every Ranger card is a normal hit).
+	if not character.crit_affects_abilities():
+		var conv: float = character.get_path_effect_total("crit_chance_pct") * RANGER_CRIT_CHANCE_TO_DAMAGE 			+ (character.get_path_effect_total("ability_crit_damage_pct") + character.get_path_effect_total("crit_damage_pct")) * RANGER_CRIT_DAMAGE_TO_DAMAGE
+		if conv != 0.0:
+			mult *= 1.0 + conv / 100.0
 	var sunder: float = character.get_path_effect_total("sunder_pct")
 	if sunder > 0.0:
 		mult *= 1.0 + sunder * float(int(combat.get("path_sunder", 0))) / 100.0
@@ -4807,6 +4816,9 @@ func _apply_path_cast_riders(combat: Dictionary, ability_name: String, damage_de
 		combat["path_damaging_cast"] = int(combat.get("path_damaging_cast", 0)) + 1
 	if damage_dealt > 0 and character.get_path_effect_total("sunder_pct") > 0.0:
 		combat["path_sunder"] = mini(PATH_SUNDER_MAX_STACKS, int(combat.get("path_sunder", 0)) + 1)
+	# Serrated Tools for a character that cannot crit: its finisher (the Ranger's Killing Shot) leaves the bleed a crit would have.
+	if damage_dealt > 0 and ability_name == "perfect_heist" and not character.crit_affects_abilities() and int(combat.get("monster", {}).get("current_hp", 0)) > 0:
+		_apply_path_crit_bleed(character, combat, String(combat.get("monster", {}).get("name", "monster")), result["messages"])
 	# Echo / Slippery Hands: the card's whole cost comes back.
 	var refund_pct: float = character.get_path_effect_total("card_refund_pct")
 	var paid: int = int(character.get_meta("path_last_ability_cost", 0))

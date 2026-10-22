@@ -446,8 +446,10 @@ exactly 0 everywhere because the simulator never uses a potion - unmeasurable, n
   attack's trickle only (silent for every mage); **Keen Eye / Predator's Eye dead for any Trickster at the 75% crit cap** - path crit chance past the cap now becomes +0.5 points
   of crit damage per point (only the PATH's chance converts: a level-60 Ninja is at 143% raw crit, and converting all of it would have been a windfall); **Opening Salvo /
   Vicious Rhythm spent on the first card even when it was a setup card** (a Grifter or Ninja opens with Distract or Mark) - they now mean the first DAMAGING card.
-- **Still open, owner call:** the Ranger's Steady Hand never crits, so Keen Eye, Predator's Eye, Serrated Tools, Assassinate and Cold Blood are dead for it by class design;
-  a Ranger that reads the Lethality branch finds a third of it useless. Either those nodes should offer the Ranger something else, or the Ranger's tree should hide them.
+- **Resolved (owner 2026-10-22: "Ranger should get damage instead"):** the Ranger's Steady Hand never crits, so its crit nodes now pay as CARD DAMAGE at what a crit is worth:
+  each point of crit chance (Keen Eye, Predator's Eye) is +0.4% damage, each point of crit damage (Cold Blood, Assassinate) is +0.5%, and Serrated Tools' bleed comes from its
+  Killing Shot. Assassinate's -10% to normal hits still applies (every Ranger card is a normal hit). A Grifter, who can crit, is untouched. Node text says so
+  (`old_path_nodes_reach_cards`).
 - `pathgap`: the typical spec at scale x0.5 / 1 / 1.5 / 2 against the median class, per level. By the +-10pp rule only the **Paladin** is consistently below (-4 / -11 / -5 pp at
   L30 / L100 / L500, needed scale 1.6-2.0 every time) and Barbarian at L30 only (-11, then -3). Every other class reads x0.6-x1.75 from sampling noise alone and is left at 1.0.
   `PathDatabase.CLASS_SCALE = {"Paladin": 1.5}` is therefore the whole per-class value table for now (every numeric path effect of the class times 1.5; durations and counts never

@@ -82,5 +82,38 @@ func _init() -> void:
 	sim.combat_mgr._apply_gear_resource_regen(wz, [])
 	var regen1: int = wz.current_mana
 	ck(regen0 > 0 and regen1 > regen0 and float(regen1) / float(regen0) > 1.2 and float(regen1) / float(regen0) <= 1.5, "Flowing Font r3: the per-card mana regeneration is up to 50%% stronger (%d -> %d; part of the total is not the base trickle)" % [regen0, regen1])
+	# The Ranger cannot crit (Steady Hand), so its crit nodes become card damage
+	var rg = sim.make_char(60, "average", "Ranger", "Human")
+	rg.initialize_deck_collection_if_needed()
+	var trg = _fight(rg)
+	ck(not rg.crit_affects_abilities(), "a Ranger's cards never crit")
+	var r0: float = float(sim.combat_mgr.preview_ability_effect(rg, trg[1], "exploit").get("value", 0))
+	rg.set_path_rank("trickster_1_1", 5)
+	var r1: float = float(sim.combat_mgr.preview_ability_effect(rg, trg[1], "exploit").get("value", 0))
+	ck(r0 > 0 and abs(r1 / r0 - 1.06) < 0.02, "Keen Eye r5 on a Ranger: +15%% crit chance becomes +6%% card damage (%d -> %d)" % [int(r0), int(r1)])
+	rg.set_path_rank("trickster_1_1", 0)
+	rg.set_path_rank("trickster_6_5", 1)
+	var r2: float = float(sim.combat_mgr.preview_ability_effect(rg, trg[1], "exploit").get("value", 0))
+	ck(abs(r2 / r0 - 1.125) < 0.02, "Cold Blood on a Ranger: +25 crit damage becomes +12.5%% card damage (%d -> %d)" % [int(r0), int(r2)])
+	rg.set_path_rank("trickster_6_5", 0)
+	var gf = sim.make_char(60, "average", "Grifter", "Human")
+	gf.initialize_deck_collection_if_needed()
+	var tgf = _fight(gf)
+	var g0: float = float(sim.combat_mgr.preview_ability_effect(gf, tgf[1], "exploit").get("value", 0))
+	gf.set_path_rank("trickster_1_1", 5)
+	var g1: float = float(sim.combat_mgr.preview_ability_effect(gf, tgf[1], "exploit").get("value", 0))
+	ck(abs(g1 / g0 - 1.0) < 0.005, "...but a Grifter, who CAN crit, gets no damage from it (%d -> %d)" % [int(g0), int(g1)])
+	rg.set_path_rank("trickster_1_2", 3)
+	var bleed_seen := 0
+	for sd in range(1, 30):
+		var tb = _fight(rg)
+		tb[1]["combo"] = 5
+		rg.current_energy = rg.get_total_max_energy()
+		tb[1]["combat_hand"] = ["perfect_heist"]
+		seed(sd)
+		sim.combat_mgr.process_ability_command(int(tb[1]["_probe_pid"]), "perfect_heist", "10")
+		if int(tb[1].get("monster_bleed", 0)) > 0:
+			bleed_seen += 1
+	ck(bleed_seen > 20, "Serrated Tools on a Ranger: Killing Shot leaves the bleed (%d of 29 shots)" % bleed_seen)
 	print("PASS" if fails == 0 else "FAIL (%d)" % fails)
 	quit(1 if fails else 0)
