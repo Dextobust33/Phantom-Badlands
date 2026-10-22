@@ -2509,6 +2509,15 @@ func note_gold(direction: String, reason: String, amount: int) -> void:
 	"""Gold telemetry in the same ledger ("gold_in:<reason>" / "gold_out:<reason>") so kills-per-Temper-tier is measured."""
 	_ledger_note("gold_" + direction, reason if reason != "" else "other", amount)
 
+func note_feat(feat_id: String, rung: int, level: int, played_seconds: int) -> void:
+	"""Feat telemetry (docs/design/paths_revamp.md 8.3 item 8), same ledger: "feat:<id>#<rung>" counts the characters that reached the rung,
+	"feat_level:<id>#<rung>" and "feat_hours:<id>#<rung>" sum the level and the played HOURS (x100, so two decimals survive the integer sum) at
+	that moment. Divide by n for the average; that is what the ladder numbers are retuned from, instead of a guess."""
+	var key := "%s#%d" % [feat_id, rung]
+	_ledger_note("feat", key, 1)
+	_ledger_note("feat_level", key, level)
+	_ledger_note("feat_hours", key, int(round(float(played_seconds) / 36.0)))
+
 func note_points(reason: String, amount: int) -> void:
 	"""Sanctuary points earned by playing, in the same ledger ("bp_in:<reason>")."""
 	_ledger_note("bp_in", reason, amount)

@@ -4573,8 +4573,7 @@ of controller or phone support as well."* A 2026-08-20 playtest had already reco
       proven by a probe (`path_ranks_and_feats`, `path_nodes_are_wired`, `*_signature_fires`). **BUILT 2026-10-22:** the six new archetype branches (45 nodes, probe
       `archetype_branches_fire`, panel shows them as two rows of three) and the two owner-approved fixes (Assassinate keystone now reaches cards with both halves;
       a slowed monster now hits less; probe `assassinate_and_slow`). **BUILT 2026-10-22:** the instruments (`pathspec`, `pathcurve`, `pathfires`, `pathvalue`, `pathspread`, `pathgap`; `--path=` spec in `make_char`),
-      six defects they found fixed (see design doc slice 7), and the per-class value table (`CLASS_SCALE = {"Paladin": 1.5}`). STILL TO DO: high-level reach (L1000+),
-      the feat telemetry ledger, (Ranger crit nodes now pay as card damage, done), then the ONE Wave 2 chain with paths in the model. Known gaps: party (co-op) fights do not run the card-damage nodes or
+      six defects they found fixed (see design doc slice 7), and the per-class value table (`CLASS_SCALE = {"Paladin": 1.5}`). high-level reach and the feat ledger are built (model-only above L91: no live character is higher); Ranger crit nodes pay as card damage. PATHS ARE DONE except the Wave 2 chain, which waits for the other Wave 1 power inputs. Known gaps: party (co-op) fights do not run the card-damage nodes or
       cast riders; Paladin ally-heal for a human teammate needs the party card path.
 
       Two distinct complaints, and they pull in the same direction:

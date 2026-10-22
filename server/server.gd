@@ -14625,6 +14625,10 @@ func _check_feats(peer_id: int) -> void:
 	if got.size() <= 3:
 		for g in got:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ PATH FEAT: %s - +1 Path point![/color]" % String(g.get("text", ""))})
+			# Telemetry only for rungs reached in play. A veteran's catch-up on load (more than three at once) is not evidence of how fast
+			# a ladder is climbed, and would drown the real signal.
+			if persistence != null:
+				persistence.note_feat(String(g.get("feat", "")), int(g.get("rung", 0)), int(characters[peer_id].level), int(characters[peer_id].played_time_seconds))
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ PATH FEATS: %d feats reached - +%d Path points! (see the Paths screen)[/color]" % [got.size(), got.size()]})
 	save_character(peer_id)

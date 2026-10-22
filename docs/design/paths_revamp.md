@@ -456,3 +456,15 @@ exactly 0 everywhere because the simulator never uses a potion - unmeasurable, n
   scale). Checked: Paladin typical 92 / 90 / 95 against medians 94 / 91 / 94. **Re-measure after the Wave 2 chain**, which moves the whole field.
 - Instruments still to build: high-level reach (L1000-10000; needs a check of the reference curve's top end against live saves first) and the feat telemetry ledger (the modelled
   70 feat points by L10000 is an assumption every number above carries).
+
+**Slice 7, finished - high-level reach and the feat ledger (2026-10-22).**
+- **High-level reach** needed no new code: `pathspread --levels=1000,2500,5000,10000` already runs there. 50 paired fights per arm (so +-7pp of sampling noise), average gear,
+  typical spec: every class sits at 84-100% (median ~96) from L1000 to L10000 against 58-92% with no points. Only Wizard and Sorcerer at L5000 (86, 84) fall outside +-10pp of the
+  median and that is inside the noise at n=50; no spec is mandatory or a trap anywhere. At these levels paths are worth 20-35pp, which is the same message as L100: the Wave 2 chain
+  has to absorb them, and the per-class table was only measured to L500, so it is re-measured after the chain.
+- **Ground truth stops at L91.** `tools/check_player_progress.sh` (2026-10-22): the highest CURRENT-ERA live character is L91 (a Sorcerer); the next is L57, then L22. Nothing above
+  that exists to compare the reference curve's top end against, so every L1000-L10000 number here is **model-only** and must be read that way. The check is cheap to repeat; run it
+  before trusting a high-level figure.
+- **Feat ledger:** `persistence.note_feat` in the existing valor ledger (`user://valor_ledger.json`): `feat:<id>#<rung>` counts characters reaching the rung, `feat_level:` and
+  `feat_hours:` sum the level and played hours (x100) at that moment. Only rungs reached IN PLAY are recorded: a veteran's catch-up on load (more than three at once) is not evidence
+  of how fast a ladder is climbed. Probe `feat_ledger`. Retune the ladders from `sum / n`; until live characters have produced some, the 70-points-by-L10000 assumption stands.
