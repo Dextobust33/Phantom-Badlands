@@ -492,3 +492,9 @@ The Ranger gets no crit trigger (Steady Hand never crits). Class value scaling n
 the class table. The simulator's specs take an Ascendant as soon as the level opens it, so the Wave 2 chain's reference player at L500+ now carries them and `pathgap` must be
 re-run there. Nine new class-flavoured triggers were added to the table for this tier (Bulwark Drive, Rampage Feast, Judgement's Mantle, Meteor Ember, Stormsurge, Seer's Flow, Cash Out,
 Hunter's Mark, Shadow's Gift), one new effect (burn) and a per-card filter.
+
+**`pathgap` re-run with the Ascendant tier in the reference player (2026-10-22, L500 / L2000 / L6000, 80 paired fights per cell, so about +-5pp of noise).** Win rate of the typical spec at class
+scale x1.0 against the median class: L500 median 94 (Paladin -3, Ninja -4, the rest within +-4), L2000 median 96 (Wizard -6, Sage -4, Barbarian -3, the rest within +-3), L6000 median 96 (Sorcerer
+-5, Paladin -3, the rest within +-3). **Everything is inside the +-10pp rule**, and the only class below the median at two of three levels is still the Paladin (-3, +0, -3), which
+the existing x1.5 entry already lifts. Wizard (-6 at L2000) and Sorcerer (-5 at L6000) are single cells at the edge of the noise and are NOT given entries: a scale chosen from one
+noisy cell is the treadmill. So `CLASS_SCALE` stays `{"Paladin": 1.5}`. Ascendants take every class to 90-99% at these levels, so the monster refit will have to absorb them like the rest of paths.
