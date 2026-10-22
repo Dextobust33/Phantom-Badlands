@@ -552,10 +552,49 @@ const CardGearScript = preload("res://shared/card_gear.gd")
 ## Simulator override of the class's path scale (negative = use PathDatabase.CLASS_SCALE). Never saved.
 var path_scale_override: float = -1.0
 
+func deck_tags() -> Array:
+	"""Every combat tag (shared/combat_triggers.gd) carried by a card in the deck - what a boon's `needs_tag` is checked against."""
+	var out: Array = []
+	var CT = load("res://shared/combat_triggers.gd")
+	for k in combat_deck_collection.keys():
+		if int(combat_deck_collection[k]) <= 0:
+			continue
+		for t in CT.tags_for(card_base(String(k)), true):
+			if not (t in out):
+				out.append(t)
+	return out
+
+func boon_count() -> int:
+	var n := 0
+	for id in boons:
+		n += int(boons[id])
+	return n
+
+func add_boon(boon_id: String, scope: String = "life") -> bool:
+	if not BoonsScript.BOONS.has(boon_id):
+		return false
+	var tgt: Dictionary = dungeon_boons if scope == "dungeon" else boons
+	tgt[boon_id] = int(tgt.get(boon_id, 0)) + 1
+	_path_fx_dirty = true
+	return true
+
+func clear_dungeon_boons() -> bool:
+	"""A dungeon boon ends with its dungeon. Returns whether anything was dropped."""
+	var had: bool = not dungeon_boons.is_empty()
+	dungeon_boons = {}
+	pending_boon_offers = pending_boon_offers.filter(func(o): return String(o.get("scope", "life")) != "dungeon")
+	_path_fx_dirty = true
+	return had
+
 func set_path_scale_override(scale: float) -> void:
 	path_scale_override = scale
 	_path_fx_dirty = true
 @export var path_milestones: Array = []
+## Persistent boons (shared/boons.gd): id -> times taken. LIFE boons last as long as the character; DUNGEON boons end when the dungeon does. Both feed get_path_effect_total.
+@export var boons: Dictionary = {}
+@export var dungeon_boons: Dictionary = {}
+## Boon offers waiting for a pick: [{"options": [id, id, id], "scope": "life"|"dungeon", "why": text}]. Saved, so a disconnect does not lose one.
+@export var pending_boon_offers: Array = []
 @export var feat_counts: Dictionary = {}
 @export var feats_claimed: Dictionary = {}
 @export var path_respecs_used: int = 0
@@ -563,6 +602,7 @@ func set_path_scale_override(scale: float) -> void:
 # path_database.gd / unique_database.gd are dependency-free, so preloads here
 # can't create a load-order cycle (unlike Constants, deliberately inlined).
 const PathDatabaseScript = preload("res://shared/path_database.gd")
+const BoonsScript = preload("res://shared/boons.gd")
 const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
 const PathPointsScript = preload("res://shared/path_points.gd")
 const PathFeatsScript = preload("res://shared/path_feats.gd")
@@ -2542,6 +2582,9 @@ func to_dict() -> Dictionary:
 		"path_nodes": path_ranks.keys(),
 		"path_ranks": path_ranks.duplicate(),
 		"path_legacy_free": path_legacy_free.duplicate(),
+		"boons": boons.duplicate(),
+		"dungeon_boons": dungeon_boons.duplicate(),
+		"pending_boon_offers": pending_boon_offers.duplicate(true),
 		"path_milestones": path_milestones.duplicate(),
 		"feat_counts": feat_counts.duplicate(),
 		"feats_claimed": feats_claimed.duplicate(),
@@ -2909,6 +2952,24 @@ func from_dict(data: Dictionary):
 		if _fid != "" and int(feats_claimed.get(_fid, 0)) < 1:
 			feats_claimed[_fid] = 1
 	path_respecs_used = int(data.get("path_respecs_used", 0))
+	boons = {}
+	dungeon_boons = {}
+	pending_boon_offers = []
+	var _sb = data.get("boons", {})
+	if _sb is Dictionary:
+		for k in _sb:
+			if BoonsScript.BOONS.has(String(k)) and int(_sb[k]) > 0:
+				boons[String(k)] = int(_sb[k])
+	var _sd = data.get("dungeon_boons", {})
+	if _sd is Dictionary:
+		for k in _sd:
+			if BoonsScript.BOONS.has(String(k)) and int(_sd[k]) > 0:
+				dungeon_boons[String(k)] = int(_sd[k])
+	var _so = data.get("pending_boon_offers", [])
+	if _so is Array:
+		for o in _so:
+			if o is Dictionary and o.get("options", []) is Array:
+				pending_boon_offers.append(o.duplicate(true))
 	_path_fx_dirty = true
 	# Ensure keybinds has all slots (in case of legacy data)
 	for slot in DEFAULT_ABILITY_KEYBINDS.keys():
@@ -4343,6 +4404,10 @@ func get_path_effect_total(effect_key: String) -> float:
 				elif v is int or v is float:
 					num = PathDatabaseScript.scale_effect_value(String(k), float(v), _scale)
 				_path_fx_cache[k] = float(_path_fx_cache.get(k, 0.0)) + num
+		# Boons add on top, already weakened by their own stacking curve (so the path scale does not touch them).
+		var _bt: Dictionary = BoonsScript.effect_totals(boons, dungeon_boons)
+		for k in _bt:
+			_path_fx_cache[k] = float(_path_fx_cache.get(k, 0.0)) + float(_bt[k])
 		_path_fx_dirty = false
 	var total: float = float(_path_fx_cache.get(effect_key, 0.0))
 	var set_counts: Dictionary = {}
@@ -7133,6 +7198,7 @@ func enter_dungeon(instance_id: String, dungeon_type: String, start_x: int, star
 
 func exit_dungeon():
 	"""Exit current dungeon"""
+	clear_dungeon_boons()    # a dungeon boon ends with its dungeon (shared/boons.gd)
 	in_dungeon = false
 	current_dungeon_id = ""
 	current_dungeon_type = ""

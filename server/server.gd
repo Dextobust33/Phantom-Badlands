@@ -71,6 +71,7 @@ const DropTablesScript = preload("res://shared/drop_tables.gd")
 ## .godot cache this project has been bitten by before.
 const PowerRankScript = preload("res://shared/power_rank.gd")
 const GoldEconomyScript = preload("res://shared/gold_economy.gd")
+const Boons = preload("res://shared/boons.gd")
 const SanctuaryPointsScript = preload("res://shared/sanctuary_points.gd")
 const MasterSmithScript = preload("res://shared/master_smith.gd")
 const PathPointsScript = preload("res://shared/path_points.gd")
@@ -2089,6 +2090,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 				send_location_update(peer_id)
 		"rank_choice_response":
 			handle_rank_choice_response(peer_id, message)
+		"boon_pick":
+			handle_boon_pick(peer_id, message)
 		"cull_ability_card":
 			handle_cull_ability_card(peer_id, message)
 		"add_ability_card":
@@ -6891,6 +6894,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Check quest progress for kill-based quests (uses full name for variant-specific quests)
 			var monster_level_for_quest = result.get("monster_level", 1)
 			check_kill_quest_progress(peer_id, monster_level_for_quest, killed_monster_name, killed_monster_empowered_mods)
+			_maybe_offer_boon(peer_id, {"is_boss_fight": bool(result.get("is_boss_fight", false)) or bool(result.get("is_boss", false)),
+				"is_apex_variant": bool(result.get("is_apex_variant", false)), "is_rare_variant": bool(result.get("is_rare_variant", false)),
+				"monster_variant_type": killed_monster_variant_type, "empowered_mods": killed_monster_empowered_mods})
 
 			# Check if this was a bounty kill
 			if characters[peer_id].has_meta("bounty_quest_id"):
@@ -7680,6 +7686,59 @@ func _flush_pending_rank_choices(peer_id: int) -> void:
 		})
 		return   # one at a time; the rest arrive via `next_pending` as each is resolved
 
+
+## ---- PERSISTENT BOONS (shared/boons.gd; docs/design/combat_loop_variety.md section 10) ----
+func _maybe_offer_boon(peer_id: int, info: Dictionary) -> void:
+	"""After a kill: maybe queue a pick-1-of-3 on the character. The offer rides in the character dict (pending_boon_offers), so it survives a disconnect and the client opens it when combat is over."""
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var kind: String = Boons.fight_kind(info)
+	var in_dg: bool = bool(ch.in_dungeon)
+	# A hard fight pays a LIFE boon; an ordinary one inside a dungeon pays a stronger, temporary DUNGEON boon.
+	var scope: String = "life" if (kind == "hard" or not in_dg) else "dungeon"
+	var chance: float = 1.0
+	if scope == "life":
+		chance = Boons.offer_chance(kind, int(ch.level), ch.boon_count() + _pending_life_offers(ch))
+	else:
+		chance = Boons.CHANCE_NORMAL * 2.0 if kind == "normal" else Boons.CHANCE_MODIFIED * 2.0
+	if randf() >= chance:
+		return
+	if ch.pending_boon_offers.size() >= 3:
+		return   # a backlog of unopened offers is not made longer
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var held: Dictionary = ch.boons if scope == "life" else ch.dungeon_boons
+	var options: Array = Boons.roll_options(String(ch.class_type), ch.deck_tags(), held, rng)
+	if options.is_empty():
+		return
+	var why := "A hard-won fight" if kind == "hard" else ("The dungeon answers" if scope == "dungeon" else "A fight worth remembering")
+	ch.pending_boon_offers.append({"options": options, "scope": scope, "why": why})
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]✦ A boon is offered.[/color] [color=#A0A0A0](%s)[/color]" % ("lasts your whole life" if scope == "life" else "lasts until you leave this dungeon")})
+
+func _pending_life_offers(ch) -> int:
+	var n := 0
+	for o in ch.pending_boon_offers:
+		if String(o.get("scope", "life")) == "life":
+			n += 1
+	return n
+
+func handle_boon_pick(peer_id: int, message: Dictionary) -> void:
+	"""Take one option of the oldest waiting offer (or decline it with an empty choice)."""
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	if ch.pending_boon_offers.is_empty():
+		return
+	var offer: Dictionary = ch.pending_boon_offers[0]
+	var choice := str(message.get("choice", ""))
+	if choice != "" and not (choice in (offer.get("options", []) as Array)):
+		return   # not one of the three offered
+	ch.pending_boon_offers.remove_at(0)
+	if choice != "":
+		ch.add_boon(choice, String(offer.get("scope", "life")))
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]✦ %s[/color] — %s" % [Boons.name_of(choice), Boons.text_of(choice)]})
+	send_character_update(peer_id)
 
 func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	"""Slice 6b — apply the player's rank-up choice. Choice is 'copy'
@@ -48375,6 +48434,9 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 					if _bacct != "":
 						persistence.record_bestiary_kill(_bacct, _kbase, _klvl)
 			check_kill_quest_progress(pid, _klvl, _kname, (monster.get("empowered_mods", []) as Array) if monster.get("empowered_mods", []) is Array else [])
+			_maybe_offer_boon(pid, {"is_boss_fight": bool(monster.get("is_boss", false)), "is_apex_variant": bool(monster.get("is_apex_variant", false)),
+				"is_rare_variant": bool(monster.get("is_rare_variant", false)), "monster_variant_type": String(monster.get("variant_type", "")),
+				"empowered_mods": (monster.get("empowered_mods", []) as Array) if monster.get("empowered_mods", []) is Array else []})
 			var drops = combat_mgr.roll_combat_drops(monster, ch)
 			var _loot_lines: Array = []
 			var _gear_drops: Array = []
