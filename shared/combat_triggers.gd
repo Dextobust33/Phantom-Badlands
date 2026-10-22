@@ -27,9 +27,27 @@ const TAGS := {
 }
 
 
+## The 53 dungeon cards are tagged by what their `kind` DOES (drop_tables.DUNGEON_CARD_DATA[...].kind), so a new card costs one data field and a new KIND fails the probe
+## `dungeon_cards_tagged` until it is placed here. Owner decision 2026-10-22: every dungeon card carries tags, so trigger gear and Ascendants work with them.
+const DUNGEON_KIND_TAGS := {
+	"poison": ["strike", "debuff"], "bleed": ["strike", "debuff"], "weaken": ["strike", "debuff"],
+	"lifesteal": ["strike"], "tribute": ["strike"], "plunder": ["strike"], "reckless": ["strike"], "strike": ["strike"], "channel": ["strike"],
+	"execute": ["strike", "finisher"],
+	"blind": ["strike", "control"], "stun": ["strike", "control"], "charm": ["strike", "control"],
+	"shield": ["guard"], "guard": ["guard"], "heal": ["guard"],
+	"rage": ["buff"], "focus": ["buff"],
+	"timestop": ["control"],
+}
+
+
 static func tags_for(card: String, damaging: bool = true) -> Array:
 	if TAGS.has(card):
 		return TAGS[card]
+	if card.begins_with("dungeon_card_"):
+		# loaded at call time, not preloaded: drop_tables preloads THIS script for gear rolls, and a preload each way is a cycle
+		var data: Dictionary = load("res://shared/drop_tables.gd").DUNGEON_CARD_DATA.get(card.trim_prefix("dungeon_card_"), {})
+		if not data.is_empty():
+			return DUNGEON_KIND_TAGS.get(String(data.get("kind", "")), ["strike"] if damaging else [])
 	return ["strike"] if damaging else []
 
 

@@ -563,6 +563,12 @@ const EMPOWERED_MOD_DISPLAY = {
 	"warded":       {"label": "WARDED — resists ability damage",          "color": "#7B68EE"},
 	"gilded":       {"label": "GILDED — carries bonus loot",              "color": "#FFD700"},
 	"broodcalling": {"label": "BROODCALLING — its kin WILL avenge it",    "color": "#FF8C00"},
+	"thickhided":   {"label": "THICK-HIDED — more health, tougher skin",  "color": "#C2A878"},
+	"stalwart":     {"label": "STALWART — hard to hurt",                  "color": "#8FA8C8"},
+	"giant":        {"label": "GIANT — bigger and hits harder",           "color": "#D2B48C"},
+	"ponderous":    {"label": "PONDEROUS — slow, heavy blows",            "color": "#A0826D"},
+	"skittish":     {"label": "SKITTISH — runs at low health: finish it", "color": "#E6E6A0"},
+	"regenerating": {"label": "REGENERATING — heals each turn: burst it", "color": "#7FFFB0"},
 }
 
 static func empowered_mod_hover(mod_id: String) -> String:

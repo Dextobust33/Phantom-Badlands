@@ -669,6 +669,11 @@ func _rebuild_active_section() -> void:
 	_active_label.text += "\n[color=#FFD700]Role: %s[/color] [color=#AAAAAA]- %s[/color]\n[color=#FFD700]Tactics: %s[/color] [color=#AAAAAA]- %s[/color]" % [
 		CompanionRolesScript.role_label(_role), CompanionRolesScript.role_blurb(_role),
 		CompanionRolesScript.tactics_label(_tac), CompanionRolesScript.tactics_blurb(_tac)]
+	# Item 11c: the perks it was hatched with (one from its monster's trait, one rolled).
+	var _perks = c.get("perks", [])
+	if _perks is Array and not (_perks as Array).is_empty():
+		_active_label.text += "
+[color=#C8A0FF]Perks: %s[/color]" % preload("res://shared/companion_perks.gd").describe(_perks)
 	if _tactics_button != null:
 		_tactics_button.text = "Tactics: %s" % CompanionRolesScript.tactics_label(_tac)
 

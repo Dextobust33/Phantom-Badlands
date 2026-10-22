@@ -5990,6 +5990,8 @@ func _hatch_egg(egg: Dictionary) -> Dictionary:
 		# moment the egg is made, so it travels WITH the egg. Absent means an ordinary companion,
 		# which is every companion that exists today.
 		"phantom_power": float(egg.get("phantom_power", 0.0)),
+		# Item 11c: the perks the egg was made with (already baked into `bonuses`; kept so the player can read what they are).
+		"perks": (egg.get("perks", []) as Array).duplicate() if egg.get("perks", []) is Array else [],
 		"level": 1,
 		"xp": 0
 	}
@@ -6008,6 +6010,7 @@ func activate_hatched_companion(companion_id: String) -> bool:
 				"tier": companion.get("tier", 1),
 				"sub_tier": companion.get("sub_tier", 1),
 				"bonuses": companion.bonuses.duplicate(),
+				"perks": (companion.get("perks", []) as Array).duplicate() if companion.get("perks", []) is Array else [],
 				"variant": companion.get("variant", "Normal"),
 				"variant_color": companion.get("variant_color", "#FFFFFF"),
 				"variant_color2": companion.get("variant_color2", ""),

@@ -86,7 +86,20 @@ const EMPOWERED_MODIFIERS = {
 	"warded":       {"prefix": "Warded",       "hp_mult": 1.15, "color": "#7B68EE"},
 	"gilded":       {"prefix": "Gilded",       "color": "#FFD700"},
 	"broodcalling": {"prefix": "Broodcalling", "color": "#FF8C00"},
+	# ---- item 11b, owner 2026-10-22: the new TRAITS join this list (one mechanism, one name line, the same XP / loot rewards per modifier). "Everything is a step up": each
+	# makes the monster tougher in a DIFFERENT way, so a fight is about reading which. The stat pairs trade one stat for another's bulk; Skittish and Regenerating reuse abilities
+	# the game already has (coward: flees at low HP, so you must finish it; regeneration: heals each turn, so you must burst).
+	"thickhided":   {"prefix": "Thick-hided",  "hp_mult": 1.30, "def_mult": 1.10, "color": "#C2A878"},
+	"stalwart":     {"prefix": "Stalwart",     "hp_mult": 1.05, "def_mult": 1.25, "color": "#8FA8C8"},
+	"giant":        {"prefix": "Giant",        "hp_mult": 1.20, "str_mult": 1.12, "color": "#D2B48C"},
+	"ponderous":    {"prefix": "Ponderous",    "hp_mult": 1.05, "str_mult": 1.20, "color": "#A0826D"},
+	"skittish":     {"prefix": "Skittish",     "ability": ABILITY_COWARD,         "hp_mult": 1.10, "color": "#E6E6A0"},
+	"regenerating": {"prefix": "Regenerating", "ability": ABILITY_REGENERATION,  "color": "#7FFFB0"},
 }
+
+## The chance a monster of level 5+ rolls Empowered modifiers. 0.25 until 2026-10-22, when the owner's "about 1 in 3 has a trait" raised it; the role calibration (rolecal) sizes the
+## empowered tier, so the chain re-fits this with everything else.
+const EMPOWERED_ROLL_CHANCE := 0.33
 
 # Name color by modifier count — D2-style rarity ladder (1 = blue magic,
 # 2 = purple, 3 = orange). Client renders the monster name + ASCII border in
@@ -1750,7 +1763,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 	# an additional 10% for 3. Server grants +1 combat-loot reveal per modifier
 	# (+1 extra for Gilded) and drop_chance scales below.
 	var empowered_mods: Array = []
-	if force_role == "empowered" or (not suppress_rare_rolls and not is_rare_variant and target_level >= 5 and randf() < 0.25):
+	if force_role == "empowered" or (not suppress_rare_rolls and not is_rare_variant and target_level >= 5 and randf() < EMPOWERED_ROLL_CHANCE):
 		var mod_count = 1
 		if target_level >= 40 and randf() < 0.10:
 			mod_count = 3

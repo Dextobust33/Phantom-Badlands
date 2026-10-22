@@ -118,6 +118,9 @@ func build_quest_extra_data(quest: Dictionary, character_name: String) -> Dictio
 		extra_data["rescue_floor"] = quest.get("rescue_floor", 1)
 	if quest_type == QuestDatabaseScript.QuestType.GATHER:
 		extra_data["gather_job"] = quest.get("gather_job", "")
+	if quest_type == QuestDatabaseScript.QuestType.TRAIT_HUNT:
+		extra_data["trait_ids"] = quest.get("trait_ids", [])
+		extra_data["trait_group"] = quest.get("trait_group", "")
 	if quest_type == QuestDatabaseScript.QuestType.DELIVER:
 		extra_data["delivery_item_name"] = quest.get("delivery_item_name", "")
 		extra_data["delivery_item_type"] = quest.get("delivery_item_type", "")
@@ -127,7 +130,7 @@ func build_quest_extra_data(quest: Dictionary, character_name: String) -> Dictio
 # ===== PROGRESS TRACKING =====
 
 func check_kill_progress(character: Character, monster_level: int, player_x: int, player_y: int,
-						 hotzone_intensity: float, world_system: WorldSystem, killed_monster_name: String = "") -> Array:
+						 hotzone_intensity: float, world_system: WorldSystem, killed_monster_name: String = "", killed_mods: Array = []) -> Array:
 	"""Check and update all kill-based quest progress. Returns array of {quest_id, progress, target, completed, message}"""
 	var updates = []
 
@@ -176,6 +179,13 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 				var bounty_name = quest_data.get("bounty_name", quest.get("bounty_name", ""))
 				if bounty_name != "" and killed_monster_name == bounty_name:
 					should_update = true
+
+			QuestDatabaseScript.QuestType.TRAIT_HUNT:
+				# The hourly bounty: any monster carrying a modifier of the bounty's group, wherever it was met.
+				for tid in quest_data.get("trait_ids", quest.get("trait_ids", [])):
+					if String(tid) in killed_mods:
+						should_update = true
+						break
 
 			QuestDatabaseScript.QuestType.KILL_TIER:
 				# Must kill a monster whose tier is >= required_tier

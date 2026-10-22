@@ -62,3 +62,21 @@ Still small and open: the exact stat vectors (they are fixed by the `traitmean` 
 3. Quest generator: species spread first (measured), then trait hunts, then themed boards.
 4. Companion perks and inheritance.
 5. Everything above lands, THEN the Wave 2 chain.
+
+## 6. BUILD STATUS (2026-10-22, unreleased)
+
+Owner's third-round answers: **extend the Empowered list** with the new traits (one mechanism), and **everything is a step up** (no weakening traits). Reading the code showed the trait system already existed as Empowered
+modifiers (25% of monsters from L5, named prefixes, XP and loot per modifier), and that `coward` (flees at low health) and `regeneration` already existed as abilities - so the trait work was mostly data.
+
+| piece | state |
+|---|---|
+| **Traits (11b)** | BUILT. Six new modifiers join the nine: Thick-hided, Stalwart, Giant, Ponderous (stat trades, each a step up), Skittish (the existing `coward`: finish it before it runs), Regenerating (the existing `regeneration`: burst it). The roll is now **one in three** (`EMPOWERED_ROLL_CHANCE` 0.33, was 0.25). Frail/Runt were dropped (they would have made a monster easier). Wording, colour and the hover come from the same tables as the old modifiers. Probe `new_traits_are_empowered_mods`. The role calibration (`rolecal`) sizes the empowered tier, so the chain re-fits the higher rate. |
+| **Reveal** | BUILT by construction: a trait is in the monster's name and the opening line, which is when a monster becomes visible at all. |
+| **Boards, species variety (11a)** | BUILT. A board drew from TWO dungeons per tier; it now draws from every dungeon of the area's tier and the two below, walked in one seeded shuffle, so a board names at least four different dungeons (measured before: worst board 3, mean 5.7 distinct names; after: worst 5, mean 7.3). Rescued NPCs and fabled bosses are distinct inside a board too. Probe `quest_board_variety`. |
+| **Boards, themes** | BUILT for species families: all 53 dungeons belong to one of eight families, each post has a fixed theme, and its board's first three quests lean to that family when the tier range has one. **Terrain is NOT built** (it needs the world's biome at the post's tile). |
+| **Boards, trait hunts + hourly bounty** | BUILT. A new quest kind `TRAIT_HUNT`; the **first slot on every board is an hourly bounty** (same for every player, rotates each real-time hour): defeat 3-6 monsters carrying any trait of a GROUP (Bulky / Vicious / Cunning, five traits each). It counts a GROUP and not one trait because one trait is about 2% of monsters, which would make "kill four" a hundred fights; a group is roughly one in ten. Kills count wherever met. Probe `trait_hunt_bounty`. |
+| **Companion perks (11c)** | BUILT. An egg carries up to two perks: one inherited from its monster's trait (companion-sized: Thick-hided -> Sturdy, Frenzied -> Fierce, Swift -> Quick...), one rolled and different. A plain monster's egg has just the rolled one. Baked into the egg's `bonuses`, so combat, the team and the stable see it with no code change; shown on the active companion card. Existing companions are untouched. Probe `companion_perks`. Dungeon-boss and floor eggs get the rolled perk only. |
+| **Dungeon cards (D6, D7)** | Tags BUILT (all 53, from each card's `kind`; probe `dungeon_cards_tagged`). The swap audit `dungeoncardswap` is BUILT and running; its result decides the per-class buffs. First reads (Fighter, Barbarian): the guard / heal cards (Bulwark of Bone, Trollish Regrowth, Stonewatch, Shieldwall Drill) are worth swapping in; the attack-type dungeon cards mostly trail the class's own weakest card. |
+
+**Known follow-ups:** terrain themes; a board "theme" label shown to the player; trait hunts for one specific trait (needs a way to find one); a trait glyph on the combat nameplate beyond the name.
+**Release note to write:** boards reshuffle when this deploys, so a dungeon quest accepted before it can point at a different dungeon than the board now shows (accepted quests keep their stored data, so turn-in is unaffected).

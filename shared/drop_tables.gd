@@ -2356,7 +2356,7 @@ func get_companion_data(monster_name: String) -> Dictionary:
 	return COMPANION_DATA.get(monster_name, {})
 
 func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = {}, sub_tier: int = 1,
-		tier_override: int = 0) -> Dictionary:
+		tier_override: int = 0, source_traits: Array = []) -> Dictionary:
 	"""Generate an egg dictionary for a given monster type.
 	If pre_rolled_variant is provided, uses that variant. Otherwise rolls a new one.
 	Variant is determined at egg creation and affects egg display and hatch times.
@@ -2396,6 +2396,8 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 	var rarity_multiplier = 1.0 + (15 - variant_rarity) * 0.1
 	var hatch_steps = int(base_hatch_steps * rarity_multiplier)
 
+	# Item 11c: one perk inherited from the monster's trait, one rolled (shared/companion_perks.gd). Baked into the bonuses here, so every reader of them sees it.
+	var perks: Array = CompanionPerksScript.roll(source_traits)
 	return {
 		"id": "egg_" + monster_name.to_lower().replace(" ", "_") + "_" + str(randi()),
 		"monster_type": monster_name,
@@ -2404,7 +2406,8 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 		"tier": tier,
 		"sub_tier": sub_tier,
 		"hatch_steps": hatch_steps,
-		"bonuses": companion.get("bonuses", {}).duplicate(),
+		"perks": perks,
+		"bonuses": CompanionPerksScript.bake(companion.get("bonuses", {}), perks, int(tier)),
 		# Variant info for display and hatching
 		"variant": variant.get("name", "MISSING_VARIANT"),
 		"variant_color": variant.get("color", "#FF00FF"),  # Hot pink = obvious error
@@ -2870,7 +2873,7 @@ func _roll_egg_variant_with_rng(rng: RandomNumberGenerator) -> Dictionary:
 
 	return EGG_VARIANTS[0].duplicate()  # Fallback to first variant (Crimson)
 
-func roll_egg_drop(monster_name: String, monster_tier: int, is_dungeon: bool = false) -> Dictionary:
+func roll_egg_drop(monster_name: String, monster_tier: int, is_dungeon: bool = false, monster_mods: Array = []) -> Dictionary:
 	"""Roll for an OVERWORLD egg drop from a defeated monster. Returns egg info if dropped.
 	Dungeon revamp B — dungeon kills DON'T drop per-kill eggs (dungeon eggs come from the
 	guaranteed boss egg + dungeon floor loot); overworld kills use the all-tier lottery
@@ -2884,7 +2887,7 @@ func roll_egg_drop(monster_name: String, monster_tier: int, is_dungeon: bool = f
 		return {}
 	if randf() < chance:
 		var sub_tier := 1 + (randi() % 8)  # random sub-ranking within the tier
-		return get_egg_for_monster(monster_name, {}, sub_tier)
+		return get_egg_for_monster(monster_name, {}, sub_tier, 0, monster_mods)
 	return {}
 
 # v0.9.570 — Companion Border Tiers (double-rarity stat layer).
@@ -4782,6 +4785,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
 const CardGearScript = preload("res://shared/card_gear.gd")
 const CombatTriggersScript = preload("res://shared/combat_triggers.gd")
+const CompanionPerksScript = preload("res://shared/companion_perks.gd")
 
 func generate_unique(unique_id: String, monster_level: int) -> Dictionary:
 	"""Uniques (ARPG pillar 4) — build a named unique at the drop level.

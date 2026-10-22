@@ -4,6 +4,7 @@ class_name QuestDatabase
 extends Node
 
 const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
+const MonsterDatabaseScript = preload("res://shared/monster_database.gd")
 ## The grade ladder (H1..S9). Read for its domain rather than restated - `RANKS` is 9, and a
 ## hardcoded 8 here would silently collapse the top rank into the second (see power_rank.gd).
 const PowerRankScript = preload("res://shared/power_rank.gd")
@@ -131,7 +132,8 @@ enum QuestType {
 	KILL_TIER,          # 7 - Kill X monsters of tier N or higher
 	RESCUE,             # 8 - Rescue NPC from dungeon
 	GATHER,             # 9 - Gather X materials through fishing/mining/logging/foraging
-	DELIVER             # 10 - Audit #6 Slice 9: deliver X of an item (loot/craft/buy — any path)
+	DELIVER,            # 10 - Audit #6 Slice 9: deliver X of an item (loot/craft/buy — any path)
+	TRAIT_HUNT          # 11 - item 11a: defeat N monsters carrying a trait of the bounty's GROUP (the hourly bounty slot)
 }
 
 # P2 (2026-08-26) — the dynamic quest board's type pool. SINGLE SOURCE OF TRUTH: both
@@ -176,6 +178,35 @@ const QUEST_TASK_REWARD := {
 	QuestType.DUNGEON_CLEAR: {"xp": 2.0, "valor": 1.55},
 	QuestType.RESCUE:        {"xp": 1.8, "valor": 1.45},
 	QuestType.GATHER:        {"xp": 1.6, "valor": 1.4},
+	# The hourly trait hunt: about as much effort as a rescue (a few dozen fights), no descent.
+	QuestType.TRAIT_HUNT:    {"xp": 1.8, "valor": 1.45},
+}
+
+## ---- ITEM 11a: themed boards and trait hunts (owner 2026-10-22) -----------------------------------------------------------------------------------
+## Each dungeon belongs to one species FAMILY. A post has a fixed theme (its family) that its board leans on: the first few quests prefer that family's dungeons when the tier range has any,
+## and the rest of the board is everything else, so a board is themed without ever being narrow. (Terrain, the third theme the owner named, needs the world's biome at the post's tile and is
+## not built here.)
+const DUNGEON_FAMILY := {
+	"wolf_den": "beasts", "rat_warrens": "beasts", "spider_nest": "beasts", "gnoll_den": "beasts", "harpy_cliffs": "beasts", "gryphon_aerie": "beasts",
+	"chimaera_gorge": "beasts", "cerberus_pit": "beasts", "jabberwock_thicket": "beasts", "wyvern_roost": "beasts", "shrieker_caverns": "beasts",
+	"goblin_caves": "warbands", "kobold_tunnels": "warbands", "orc_stronghold": "warbands", "hobgoblin_fortress": "warbands", "troll_den": "warbands",
+	"ogre_bog": "warbands", "giant_keep": "warbands", "minotaur_labyrinth": "warbands", "titan_colosseum": "warbands", "mimic_treasury": "warbands",
+	"forgotten_crypt": "undead", "plagued_graveyard": "undead", "barrow_mounds": "undead", "wraith_barrow": "undead", "vampire_crypt": "undead",
+	"lich_sanctum": "undead", "nazgul_shadow_keep": "undead", "elder_lich_phylactery": "undead", "death_domain": "undead",
+	"dragon_hatchery": "dragonkin", "ancient_dragon_lair": "dragonkin", "phoenix_nest": "dragonkin", "primordial_dragon_domain": "dragonkin", "balrog_depths": "dragonkin",
+	"demon_gate": "fiends", "succubus_parlor": "fiends", "demon_lord_throne": "fiends", "chaos_sanctum": "fiends",
+	"gargoyle_cathedral": "constructs", "golem_foundry": "constructs", "elemental_nexus": "constructs", "sphinx_riddle_hall": "constructs", "time_weaver_loom": "constructs",
+	"siren_cove": "waters", "kelpie_marsh": "waters", "hydra_swamp": "waters", "world_serpent_coil": "waters",
+	"void_walker_rift": "cosmic", "cosmic_horror_realm": "cosmic", "nameless_void": "cosmic", "entropy_end": "cosmic", "god_slayer_arena": "cosmic",
+}
+const DUNGEON_FAMILIES := ["beasts", "warbands", "undead", "dragonkin", "fiends", "constructs", "waters", "cosmic"]
+
+## Trait hunts count a GROUP of Empowered modifiers, not one trait: one trait is about 2% of monsters (a third of them carry a modifier, spread over fifteen), so "kill four Skittish ones" would be
+## a hundred fights. A group of five-ish is roughly one monster in ten, so a hunt for four is a few dozen fights - about a rescue's worth of effort, which is what it is paid like.
+const TRAIT_GROUPS := {
+	"bulky": {"label": "Bulky", "traits": ["thickhided", "stalwart", "giant", "juggernaut", "warded"]},
+	"vicious": {"label": "Vicious", "traits": ["frenzied", "ponderous", "venomous", "vampiric", "thorned"]},
+	"cunning": {"label": "Cunning", "traits": ["swift", "skittish", "regenerating", "broodcalling", "gilded"]},
 }
 
 ## How much of the dungeon the quest makes you descend, as a reward multiplier.
@@ -1944,6 +1975,10 @@ func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_pos
 	if "_daily_" in quest_id:
 		return _regenerate_daily_quest(quest_id, player_level, quests_completed_at_post, character_name)
 
+	# The hourly trait-hunt bounty (format: postid_hunt_YYYYMMDDHH)
+	if "_hunt_" in quest_id:
+		return _regenerate_hunt_quest(quest_id, player_level)
+
 	# Handle legacy dynamic quest IDs (format: postid_dynamic_tier_index)
 	if "_dynamic_" in quest_id:
 		return _regenerate_dynamic_quest(quest_id, player_level, quests_completed_at_post)
@@ -1961,6 +1996,36 @@ func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_pos
 		return _regenerate_threat_relief_quest(quest_id)
 
 	return {}
+
+static func _hour_string() -> String:
+	var dt = Time.get_datetime_dict_from_system()
+	return "%04d%02d%02d%02d" % [dt.year, dt.month, dt.day, dt.hour]
+
+
+func generate_hourly_bounty(trading_post_id: String, player_level: int = 1) -> Dictionary:
+	"""The post's rotating bounty slot (owner 2026-10-22: a fixed theme PLUS a rotating bounty, rotating hourly). A trait hunt, deterministic from (post, hour)."""
+	return _hunt_for_id("%s_hunt_%s" % [trading_post_id, _hour_string()], player_level)
+
+
+func _regenerate_hunt_quest(quest_id: String, player_level: int = -1) -> Dictionary:
+	return _hunt_for_id(quest_id, player_level)
+
+
+func _hunt_for_id(quest_id: String, player_level: int) -> Dictionary:
+	var parts: PackedStringArray = quest_id.split("_hunt_")
+	if parts.size() != 2:
+		return {}
+	var post: String = parts[0]
+	var coords: Vector2i = post_coords(post)
+	var distance: float = sqrt(float(coords.x * coords.x + coords.y * coords.y))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(quest_id)
+	var quest: Dictionary = _generate_daily_quest(post, quest_id, 2, distance, maxi(1, player_level), 0.0, [QuestType.TRAIT_HUNT], rng, coords)
+	randomize()
+	if not quest.is_empty():
+		quest["is_hourly_bounty"] = true
+	return quest
+
 
 func _regenerate_threat_relief_quest(quest_id: String) -> Dictionary:
 	"""Reconstruct a threat-relief quest from its ID. The live (rich) variant
@@ -2196,6 +2261,10 @@ func get_available_quests_for_player(trading_post_id: String, completed_quests: 
 	# Generate the daily quest board (date-seeded, per character at this post today)
 	var daily_quests = generate_dynamic_quests(trading_post_id, completed_quests, active_quest_ids, player_level, completed_at_post, daily_cooldowns, character_name)
 	available.append_array(daily_quests)
+	# The rotating bounty slot: one trait hunt per post per real-time hour, the same for every player.
+	var bounty: Dictionary = generate_hourly_bounty(trading_post_id, player_level)
+	if not bounty.is_empty() and not (String(bounty["id"]) in active_quest_ids) and not (String(bounty["id"]) in completed_quests):
+		available.insert(0, bounty)
 
 	return available
 
@@ -2634,6 +2703,84 @@ const RESCUE_NPC_TYPES = ["merchant", "healer", "blacksmith", "scholar", "breede
 # Gathering job types for GATHER quests
 const GATHER_QUEST_TYPES = ["fishing", "mining", "logging", "foraging"]
 
+## ITEM 11a (owner 2026-10-22: "at least 3-4 different species per board"). A board used to draw every quest's dungeon at random from TIER_DUNGEONS - eighteen hand-picked entries, TWO per tier - so a
+## six-quest board at a starter post could only ever name two dungeons and repeated them ("Conquer the Wolf Den" twice, "Rescue the Blacksmith" twice). The pool is now every dungeon of the game
+## whose tier is this area's tier or the two below (the owner wants lower dungeons possible in high areas), and the board walks it in ONE seeded shuffled order, so the first N quests
+## name N different dungeons. Deterministic per (post, date, character) because it is derived from the quest id, which `_regenerate_daily_quest` shares.
+static func board_key_of(quest_id: String) -> String:
+	var cut: int = quest_id.rfind("_")
+	return quest_id.substr(0, cut) if cut > 0 else quest_id
+
+
+static func board_index_of(quest_id: String) -> int:
+	var cut: int = quest_id.rfind("_")
+	return int(quest_id.substr(cut + 1)) if cut > 0 else 0
+
+
+func _board_dungeon_pool(area_level: int) -> Array:
+	var tier: int = _get_tier_for_area_level(area_level)
+	var out: Array = []
+	for t in range(tier, maxi(0, tier - 3), -1):
+		for id in DungeonDatabaseScript.DUNGEON_TYPES.keys():
+			var d: Dictionary = DungeonDatabaseScript.DUNGEON_TYPES[id]
+			if int(d.get("base_tier", 0)) == t:
+				out.append({"type": String(id), "name": String(d.get("name", id)), "boss": String(d.get("boss", {}).get("name", ""))})
+	out.sort_custom(func(a, b): return String(a["type"]) < String(b["type"]))
+	return out
+
+
+static func board_pick(n: int, quest_id: String, salt: int = 0) -> int:
+	"""An index into a list of `n`, one per board slot, all different until the list runs out: the board's own seeded shuffle of 0..n-1, read at this quest's index."""
+	if n <= 1:
+		return 0
+	var order: Array = range(n)
+	var shuf := RandomNumberGenerator.new()
+	shuf.seed = hash(board_key_of(quest_id) + "|" + str(salt))
+	for i in range(n - 1, 0, -1):
+		var j: int = shuf.randi_range(0, i)
+		var tmp = order[i]
+		order[i] = order[j]
+		order[j] = tmp
+	return int(order[board_index_of(quest_id) % n])
+
+
+func _board_dungeon(area_level: int, quest_id: String, salt: int = 0) -> Dictionary:
+	"""The dungeon the quest at this index of this board names: a different one for each index until the pool runs out."""
+	var pool: Array = _board_dungeon_pool(area_level)
+	if pool.is_empty():
+		return _get_dungeon_for_area(area_level)
+	# The post's theme: its fixed family goes to the front of the board (up to three quests), everything else follows, then any family dungeons left.
+	var theme: String = theme_family_for_post(String(quest_id.split("_daily_")[0]))
+	var themed: Array = []
+	var others: Array = []
+	for d in pool:
+		if String(DUNGEON_FAMILY.get(String(d["type"]), "")) == theme:
+			themed.append(d)
+		else:
+			others.append(d)
+	var shuf := RandomNumberGenerator.new()
+	shuf.seed = hash(board_key_of(quest_id) + "|theme|" + str(salt))
+	themed = _seeded_shuffle(themed, shuf)
+	others = _seeded_shuffle(others, shuf)
+	var ordered: Array = themed.slice(0, 3) + others + themed.slice(3)
+	return ordered[board_index_of(quest_id) % ordered.size()]
+
+
+static func theme_family_for_post(post_id: String) -> String:
+	"""A post's fixed theme: one of the species families, from its id."""
+	return String(DUNGEON_FAMILIES[abs(hash(post_id)) % DUNGEON_FAMILIES.size()])
+
+
+static func _seeded_shuffle(arr: Array, rng: RandomNumberGenerator) -> Array:
+	var out: Array = arr.duplicate()
+	for i in range(out.size() - 1, 0, -1):
+		var j: int = rng.randi_range(0, i)
+		var tmp = out[i]
+		out[i] = out[j]
+		out[j] = tmp
+	return out
+
+
 func _get_dungeon_for_area(area_level: int) -> Dictionary:
 	"""Get an appropriate dungeon type for the area level. Returns empty dict if none suitable.
 	Randomly selects from available dungeons at the appropriate tier."""
@@ -2799,7 +2946,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	var _task_xp_mult: float = 1.0
 	var _task_valor_mult: float = 1.0
 	var _task_floors: int = QUEST_DEPTH_PIVOT
-	var dungeon_info = _get_dungeon_for_area(area_level)
+	var dungeon_info = _board_dungeon(area_level, quest_id)
 	if dungeon_info.is_empty():
 		return {}
 
@@ -2840,7 +2987,7 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			# bounty). Routes into a personal dungeon of dungeon_info's type whose boss is
 			# renamed + buffed to the fabled name (server: _create_player_dungeon_instance
 			# + _spawn_dungeon_floor_monsters read fabled_boss_name off the instance).
-			var fabled_first = FABLED_BOSS_NAMES[rng.randi() % FABLED_BOSS_NAMES.size()]
+			var fabled_first = FABLED_BOSS_NAMES[board_pick(FABLED_BOSS_NAMES.size(), quest_id, 23)]
 			var dungeon_boss = String(dungeon_info.get("boss", "terror"))
 			var fabled_full = "%s, the Fabled %s" % [fabled_first, dungeon_boss]
 			quest_name = "Slay %s" % fabled_first
@@ -2856,8 +3003,9 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			_task_floors = int(dungeon_info.get("floors", QUEST_DEPTH_PIVOT))
 
 		QuestType.RESCUE:
-			var rescue_npc = RESCUE_NPC_TYPES[rng.randi() % RESCUE_NPC_TYPES.size()]
-			var rescue_dungeon = _get_dungeon_for_area(area_level)
+			# Distinct on a board too: the rescued NPC walks a per-board order, so five rescues in a row are five different people.
+			var rescue_npc = RESCUE_NPC_TYPES[board_pick(RESCUE_NPC_TYPES.size(), quest_id, 11)]
+			var rescue_dungeon = dungeon_info
 			var rescue_dungeon_data = DungeonDatabaseScript.get_dungeon(rescue_dungeon.get("type", "goblin_caves")) if not rescue_dungeon.is_empty() else {}
 			var total_floors = rescue_dungeon_data.get("floors", 3) if not rescue_dungeon_data.is_empty() else 3
 			var rescue_floor = rng.randi_range(1, max(1, total_floors - 2))
@@ -2908,6 +3056,24 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			_task_xp_mult = float(QUEST_TASK_REWARD[QuestType.DUNGEON_CLEAR]["xp"])
 			_task_valor_mult = float(QUEST_TASK_REWARD[QuestType.DUNGEON_CLEAR]["valor"])
 			_task_floors = int(dungeon_info.get("floors", QUEST_DEPTH_PIVOT))
+
+		QuestType.TRAIT_HUNT:
+			var group_ids: Array = TRAIT_GROUPS.keys()
+			group_ids.sort()
+			var group_id: String = String(group_ids[abs(hash(quest_id)) % group_ids.size()])
+			var grp: Dictionary = TRAIT_GROUPS[group_id]
+			var names: Array = []
+			for tid in grp["traits"]:
+				names.append(String(MonsterDatabaseScript.EMPOWERED_MODIFIERS.get(tid, {}).get("prefix", tid)))
+			quest_name = "Hunt %s monsters" % String(grp["label"])
+			target = clampi(3 + int(capped_level / 80), 3, 6)
+			quest_desc = "The post pays for %s ones - %s. Defeat %d monsters carrying any of these traits, wherever you meet them." % [String(grp["label"]).to_lower(), ", ".join(PackedStringArray(names)), target]
+			extra_fields["trait_group"] = group_id
+			extra_fields["trait_ids"] = grp["traits"].duplicate()
+			extra_fields["is_trait_hunt"] = true
+			_task_xp_mult = float(QUEST_TASK_REWARD[QuestType.TRAIT_HUNT]["xp"])
+			_task_valor_mult = float(QUEST_TASK_REWARD[QuestType.TRAIT_HUNT]["valor"])
+			_task_floors = QUEST_DEPTH_PIVOT
 
 		QuestType.GATHER:
 			# P2 Slice 3 — DUNGEON GATHER. Recover N themed relics scattered as floor loot

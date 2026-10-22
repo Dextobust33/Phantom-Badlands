@@ -188,7 +188,11 @@ func _write_curve(fields: Dictionary, what: String) -> bool:
 
 
 const PathSpecs = preload("res://tools/combat_simulator/path_specs.gd")
+const DropTablesLite = preload("res://shared/drop_tables.gd")
+const DungeonCardAudit = preload("res://tools/combat_simulator/dungeon_card_audit.gd")
 var _path_kind := ""
+var _dc_card := ""     # dungeoncardswap: a dungeon card id to swap INTO the deck (see dungeon_card_audit.gd)
+var _dc_remove := ""   # ...and the deck card to take out ("" = remove nothing)
 var _path_scale := -1.0   # pathgap: the class path scale to build with (negative = the game's own table)
 var _path_only := ""   # pathvalue: spend every point on ONE branch (or "signature")
 var _path_nodes: Dictionary = {}   # pathfires: exact {node_id: rank} to hold, bypassing the budget   # pathvalue: spend every point on ONE branch (or "signature")
@@ -265,6 +269,7 @@ func _audit_registry() -> Dictionary:
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"pathspec": ["PATHS: do the path specs spend legally, and does make_char carry them?", func(): PathSpecs.audit_spec(self)],
+		"dungeoncardswap": ["DUNGEON CARDS: per class, which are worth swapping into the weakest deck slot (paired A/B)", func(): DungeonCardAudit.audit(self)],
 		"pathgap": ["PATHS: what scale does each class's path need to sit with the field (median class)?", func(): PathSpecs.audit_gap(self)],
 		"pathfires": ["PATHS: does every node change a fight? (paired, one node at a time)", func(): PathSpecs.audit_fires(self)],
 		"pathvalue": ["PATHS: what is each branch worth, per class and level (paired A/B)", func(): PathSpecs.audit_value(self)],
@@ -5426,6 +5431,12 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 			ch.set_path_rank(String(_pn), int(_path_nodes[_pn]))
 	if _path_scale >= 0.0:
 		ch.set_path_scale_override(_path_scale)
+	if _dc_remove != "" or _dc_card != "":
+		ch.initialize_deck_collection_if_needed()   # a fresh character's collection is empty until this runs; editing it first would leave a one-card deck
+	if _dc_remove != "":
+		ch.combat_deck_collection.erase(_dc_remove)
+	if _dc_card != "":
+		ch.combat_deck_collection[_dc_card] = 1
 	ch.current_hp = ch.get_total_max_hp()
 	# Enter combat at FULL resources — in real play, out-of-combat regen tops the
 	# pool between fights. (level_up/equip raise MAX but don't refill current, and
@@ -5771,10 +5782,11 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 			var mhp0: int = int(monster.get("current_hp", 0))
 			var res0: int = _class_resource(ch, klass)
 			var _played0: int = int(combat.get("_cards_played", 0))
-			match ch.get_class_path():
-				"trickster": _player_act_trickster(combat, ch)
-				"mage": _player_act_mage(combat, ch)
-				_: _player_act(combat, ch)
+			if _dc_card == "" or not _play_dungeon_card(combat, ch):
+				match ch.get_class_path():
+					"trickster": _player_act_trickster(combat, ch)
+					"mage": _player_act_mage(combat, ch)
+					_: _player_act(combat, ch)
 			if int(combat.get("_cards_played", 0)) > _played0:
 				casts += 1
 			if _class_resource(ch, klass) < res0:
@@ -5828,7 +5840,34 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		"end_res_pct": 100.0 * float(end_res) / float(max_res),
 		"min_hp_pct": min_hp_pct,
 		"max_res": max_res,
+		"dc_casts": int(combat.get("_dc_casts", 0)),
 	}
+
+func _play_dungeon_card(combat: Dictionary, ch) -> bool:
+	"""The generic rule that plays a dungeon card under test (dungeon_card_audit.gd explains the assumption). True when it was cast this action."""
+	var hand: Array = combat.get("combat_hand", [])
+	if not (_dc_card in hand):
+		return false
+	var slug: String = _dc_card.trim_prefix("dungeon_card_")
+	var kind: String = String(DropTablesLite.DUNGEON_CARD_DATA.get(slug, {}).get("kind", ""))
+	var hp_frac: float = float(ch.current_hp) / float(maxi(1, ch.get_total_max_hp()))
+	var mon: Dictionary = combat.get("monster", {})
+	var mon_frac: float = float(mon.get("current_hp", 1)) / float(maxi(1, int(mon.get("max_hp", 1))))
+	match kind:
+		"heal", "guard", "shield":
+			if hp_frac >= 0.65:
+				return false
+		"execute":
+			if mon_frac >= 0.40:
+				return false
+		"rage", "focus", "timestop":
+			if int(combat.get("round", 0)) - int(combat.get("_dc_last_round", -99)) < 4:
+				return false
+	if bool(combat_mgr.process_ability_command(0, _dc_card, "").get("success", false)):
+		combat["_dc_casts"] = int(combat.get("_dc_casts", 0)) + 1
+		combat["_dc_last_round"] = int(combat.get("round", 0))
+		return true
+	return false
 
 # #5 (2026-09-02) — these three used to re-derive the archetype by string-matching the
 # exact class ("Grifter" / "Wizard", else stamina), so the other six classes silently read
