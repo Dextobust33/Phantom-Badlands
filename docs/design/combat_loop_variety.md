@@ -134,3 +134,39 @@ So there are TWO tiers:
 - Offer UI: a pick 1-of-3 after the fight on the victory screen vs mid-fight. Recommendation: on the victory screen (zero pace cost).
 - Reroll or banish tokens, and whether boons can be seen/managed in the Paths panel (recommendation: a "Boons" strip there).
 - Pool size per class (suggest 12-15, filtered by the cards in the current deck).
+
+## 11. COMBAT TRIGGERS - FIRST SLICE BUILT (2026-10-22, unreleased)
+
+Owner's pilot pick (section 7.1). `shared/combat_triggers.gd` is the data; `combat_manager._fire_triggers` is the executor; probe `combat_triggers_fire` proves every
+trigger (31 checks) and fails if one is untested.
+
+**Cards are tagged** (strike, spell, finisher, setup, guard, buff, control, debuff; a card can carry several). **Six events**: on_cast, on_hit, on_crit, on_kill, on_hurt,
+on_fight_start. **Eight effects**: build the class engine, restore the pool, heal, make the next damaging card hit harder, echo a hit, leave a bleed, slow the monster (the
+slow now works - see `assassinate_and_slow`), a guard of its own buff type. A trigger has a per-fight cap; one with a CHANCE gets more likely with power, one that is certain gets
+stronger.
+
+**Power** is `Character.trigger_power(id)` = the effect key `trg_<id>` summed over path nodes, unique items and set bonuses (all already flow through `get_path_effect_total`) plus a
+gear affix of the same key. So the same trigger can come from a node, a unique or a drop, and a persistent boon (section 10) is just one more source.
+
+| trigger | event | what it does (power 1) |
+|---|---|---|
+| Killing Rhythm | a crit | +1 engine, up to 4 a fight |
+| Finishing Flourish | a finisher | restore 8% of the pool |
+| Setup Edge | a setup card | the next damaging card +15% |
+| Steady Hands | a guard card | heal 3% |
+| Echo Bolt | a spell hits | 12% chance to echo 50% of the damage (never lethal) |
+| Barbed Strikes | a strike hits | 15% chance of a bleed worth 25% of the hit |
+| Chilling Touch | a control card | 30% chance to slow the monster 20%, 2 rounds |
+| Warding Buff | a buff card | 8% damage reduction, 2 rounds |
+| Pain Fuel | a blow of 15%+ max HP | +1 engine, up to 3 a fight |
+| Last Gasp | a blow leaves you under 35% | heal 12%, once a fight |
+| Full Repertoire | three different cards in a row | the next damaging card +25% - rewards NOT spamming |
+| Kill Vigor | a kill | restore 6% of the pool |
+| Opening Surge | the fight opens | start with +1 engine |
+
+**Sources built:** epic+ chase gear (four of the chase pool's slots, so roughly one chase roll in six; 37 of 600 epic L120 rolls carried one), power 1/2/3 by item level like card
+gear, shown on the item and in the compare text. **Sources not built yet:** path nodes (the Ascendant tier - L500 / L2000 / L6000 - is the natural home, since those were always
+"change how a card plays" nodes), uniques, and the persistent boons.
+
+**Known gaps:** co-op party fights do not fire triggers (same gap as the path card nodes); the compact card face and the stats comparison show triggers only in the Inspect text and the
+compare line; the simulator's gear model now rolls them like any drop, so the reference player will carry some, which is correct but means the Wave 2 chain sees them.

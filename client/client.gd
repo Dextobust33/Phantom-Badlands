@@ -21372,6 +21372,9 @@ func _format_chase_affix_lines(affixes: Dictionary, item: Dictionary = {}) -> Ar
 	# as the bonus they now give. Named by THIS player's class ("Rampage", not "Devastate").
 	for b in preload("res://shared/card_gear.gd").item_bonuses(item):
 		out.append("[color=#FFD700]%s[/color]" % preload("res://shared/card_gear.gd").describe(String(b.card), String(b.kind), float(b.value), _ability_display_name(String(b.card))))
+	# Combat triggers (shared/combat_triggers.gd): gear that changes how the deck plays.
+	for tr in preload("res://shared/combat_triggers.gd").item_triggers(item):
+		out.append("[color=#C8A0FF]%s[/color]" % preload("res://shared/combat_triggers.gd").item_line(String(tr.id), float(tr.power)))
 	return out
 
 func _get_player_resource_info() -> Dictionary:
@@ -21952,6 +21955,19 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 			var parts5: PackedStringArray = String(k5).split("|")
 			all_diffs["card:" + String(k5)] = "[color=%s]%s%s[/color]" % ["#FFD700" if d5 > 0 else "#808080", "" if d5 > 0 else "(less) ",
 				_cg.describe(parts5[0], parts5[1], absf(d5), _ability_display_name(parts5[0]))]
+
+	# Combat trigger diffs: a trigger gained or lost, by name.
+	var _ct = preload("res://shared/combat_triggers.gd")
+	var _ct_sum := {}
+	for t3 in _ct.item_triggers(new_item):
+		_ct_sum[String(t3.id)] = float(_ct_sum.get(String(t3.id), 0.0)) + float(t3.power)
+	if old_item != null and old_item is Dictionary:
+		for t4 in _ct.item_triggers(old_item):
+			_ct_sum[String(t4.id)] = float(_ct_sum.get(String(t4.id), 0.0)) - float(t4.power)
+	for k6 in _ct_sum:
+		var d6: float = float(_ct_sum[k6])
+		if absf(d6) >= 0.5:
+			all_diffs["trigger:" + String(k6)] = "[color=%s]%s%s[/color]" % ["#C8A0FF" if d6 > 0 else "#808080", "" if d6 > 0 else "(lose) ", String(_ct.TRIGGERS[k6].get("name", k6))]
 
 	# Assemble in priority order: pinned stats first, then remaining
 	var diff_parts: Array = []

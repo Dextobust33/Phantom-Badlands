@@ -1026,6 +1026,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			combat.erase("vanished")
 			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))))
 			_note_crit_escalation(character, combat)
+			combat["trg_crit"] = true   # read by the on_crit trigger event after the cast resolves
 			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))) - 1.0) * 100.0))
 			if messages != null and messages is Array:
 				# ⚑ SAY "CRITICAL", AND SAY WHICH CARD. Owner 2026-09-13: *"I'm not sure Phantom
@@ -1042,6 +1043,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			combat["path_first_strike_done"] = true
 			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))))
 			_note_crit_escalation(character, combat)
+			combat["trg_crit"] = true   # read by the on_crit trigger event after the cast resolves
 			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))) - 1.0) * 100.0))
 			if messages != null and messages is Array:
 				messages.append("[color=#FF6600]CRITICAL![/color] [color=#9F70FF]Phantom Strike — the first blow lands true.[/color]")
@@ -1060,6 +1062,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			_crit_landed = true
 			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))))
 			_note_crit_escalation(character, combat)
+			combat["trg_crit"] = true   # read by the on_crit trigger event after the cast resolves
 			# 2026-09-05 — buffer it for the damage-number hover. Ambush used to note its own
 			# private crit here; removing that roll left abilities whose ONLY modifier was a crit
 			# with an empty buffer, and _damage_with_detail falls back to a plain number when
@@ -2751,6 +2754,9 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var _start_focus: int = int(character.get_path_effect_total("start_focus"))
 	if _start_focus > 0:
 		combat_state["focus"] = mini(FOCUS_MAX, _start_focus)
+	# Combat triggers that fire as the fight opens (Opening Surge).
+	var _open_trg_lines: Array = []
+	_fire_triggers(combat_state, "on_fight_start", {"tags": [], "damage": 0}, _open_trg_lines)
 
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
@@ -2771,6 +2777,9 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		if int(combat_state.get("warrior_stance_path_pct", 0)) > 0:
 			msg += "
 [color=#7AE07A]  (Path - Drilled Stance makes it %d%% stronger.)[/color]" % int(combat_state["warrior_stance_path_pct"])
+	for _otl in _open_trg_lines:
+		msg += "
+" + String(_otl)
 	var _path_line: String = character.path_summary()
 	if _path_line != "":
 		msg += "
@@ -3846,6 +3855,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		var _kr: int = _path_restore_primary_pct(character, _kill_res)
 		if _kr > 0:
 			messages.append("[color=#FFD700]⚜ The kill restores %d %s.[/color]" % [_kr, character.get_primary_resource()])
+	_fire_triggers(combat, "on_kill", {"tags": [], "damage": 0}, messages)
 	var _kill_guard: float = character.get_path_effect_total("kill_defense_buff_pct")
 	if _kill_guard > 0.0:
 		character.add_buff("path_guard", int(_kill_guard), 3, "Path - Rally")
@@ -4748,6 +4758,7 @@ static func ability_noncrit_multiplier(character) -> float:
 # Counters live on the combat dictionary: path_cards_cast (cards cast so far), path_cards_seen (distinct card ids),
 # path_sunder (stacks). They are written AFTER a cast resolves (`_apply_path_cast_riders`) and read BEFORE it, so a
 # cast and its card-face quote see the same numbers, and a quote never advances anything.
+const CombatTriggersScript = preload("res://shared/combat_triggers.gd")
 const PATH_DODGE_FLOOR := 25
 const RANGER_CRIT_CHANCE_TO_DAMAGE := 0.4
 const RANGER_CRIT_DAMAGE_TO_DAMAGE := 0.5
@@ -4813,7 +4824,131 @@ func path_card_damage_mult(character, ability_name: String, combat) -> float:
 	var od: float = character.get_path_effect_total("overdrive_damage_pct")
 	if od > 0.0 and (cast_n + 1) % PATH_OVERDRIVE_EVERY == 0:
 		mult *= 1.0 + od / 100.0
+	# A trigger (Setup Edge, Full Repertoire) can promise the NEXT damaging card more. It is set after a cast and spent by the next one that hurts.
+	mult *= float(combat.get("trg_next_mult", 1.0))
 	return mult
+
+
+# ---- COMBAT TRIGGERS (shared/combat_triggers.gd): the executor -----------------------------------------------------------------------------------------
+func _add_engine_stacks(character, combat: Dictionary, n: int) -> String:
+	"""Build the class's own engine by n. Returns its label ("" when nothing moved)."""
+	var key := "momentum"
+	var cap := MOMENTUM_MAX
+	match character.get_class_path():
+		"trickster":
+			key = "combo"
+			cap = COMBO_MAX
+		"mage":
+			key = "focus"
+			cap = FOCUS_MAX
+	var before: int = clampi(int(combat.get(key, 0)), 0, cap)
+	var after: int = mini(cap, before + n)
+	if after == before:
+		return ""
+	combat[key] = after
+	combat["_engine_from_passive"] = int(combat.get("_engine_from_passive", 0)) + (after - before)
+	return class_engine_label(String(character.class_type))
+
+
+func _trigger_condition(when: String, character, combat: Dictionary, ctx: Dictionary) -> bool:
+	match when:
+		"":
+			return true
+		"hurt_15":
+			return float(ctx.get("damage", 0)) * 100.0 >= 15.0 * float(maxi(1, character.get_total_max_hp()))
+		"low_hp":
+			return character.current_hp > 0 and float(character.current_hp) < 0.35 * float(character.get_total_max_hp())
+		"variety":
+			var recent: Array = combat.get("trg_recent", [])
+			if recent.size() < 3:
+				return false
+			var last3: Array = recent.slice(recent.size() - 3)
+			return last3[0] != last3[1] and last3[1] != last3[2] and last3[0] != last3[2]
+	return true
+
+
+func _fire_triggers(combat: Dictionary, event: String, ctx: Dictionary, messages: Array) -> void:
+	"""Run every trigger the character holds that listens to `event`. `ctx`: ability, tags, damage, crit. Appends one line per trigger that fired."""
+	var character = combat.get("character", null)
+	if character == null:
+		return
+	var fired: Dictionary = combat.get("trg_fired", {})
+	var have_tags: Array = ctx.get("tags", [])
+	for id in CombatTriggersScript.TRIGGERS:
+		var t: Dictionary = CombatTriggersScript.TRIGGERS[id]
+		if String(t.get("event", "")) != event:
+			continue
+		var power: float = character.trigger_power(String(id))
+		if power <= 0.0:
+			continue
+		var need: Array = t.get("tags", [])
+		if not need.is_empty():
+			var ok := false
+			for n in need:
+				if n in have_tags:
+					ok = true
+			if not ok:
+				continue
+		if not _trigger_condition(String(t.get("when", "")), character, combat, ctx):
+			continue
+		if int(fired.get(id, 0)) >= int(t.get("per_fight", 99)):
+			continue
+		var base_chance: float = float(t.get("chance", 100))
+		var chance_scales: bool = base_chance < 100.0   # a chance trigger gets MORE LIKELY with power; a certain one gets STRONGER
+		var chance: float = minf(100.0, base_chance * power) if chance_scales else 100.0
+		if chance < 100.0 and randf() * 100.0 >= chance:
+			continue
+		var strength: float = 1.0 if chance_scales else power
+		var line: String = _run_trigger_effect(combat, character, t, strength, ctx)
+		if line == "":
+			continue
+		fired[id] = int(fired.get(id, 0)) + 1
+		combat["trg_fired"] = fired
+		if String(t.get("when", "")) == "variety":
+			combat["trg_recent"] = []   # a fresh run of three is needed for the next one
+		messages.append("[color=#C8A0FF]⚜ %s:[/color] %s" % [String(t.get("name", id)), line])
+
+
+func _run_trigger_effect(combat: Dictionary, character, t: Dictionary, strength: float, ctx: Dictionary) -> String:
+	"""Apply one trigger's effect. Returns the line to show, or "" when nothing happened (then it does not count against its per-fight cap)."""
+	var v: float = float(t.get("value", 0)) * strength
+	var monster: Dictionary = combat.get("monster", {})
+	match String(t.get("effect", "")):
+		"engine":
+			var n: int = maxi(1, int(round(v)))
+			var label: String = _add_engine_stacks(character, combat, n)
+			return "+%d %s." % [n, label] if label != "" else ""
+		"resource_pct":
+			var got: int = _path_restore_primary_pct(character, v)
+			return "+%d %s." % [got, character.get_primary_resource()] if got > 0 else ""
+		"heal_pct":
+			var healed: int = character.heal(maxi(1, int(float(character.get_total_max_hp()) * v / 100.0)))
+			return "+%d HP." % healed if healed > 0 else ""
+		"next_damage":
+			combat["trg_next_mult"] = maxf(float(combat.get("trg_next_mult", 1.0)), 1.0 + v / 100.0)
+			return "your next damaging card hits %d%% harder." % int(round(v))
+		"echo_hit":
+			if int(monster.get("current_hp", 0)) <= 1:
+				return ""
+			var dmg: int = maxi(1, int(float(ctx.get("damage", 0)) * float(t.get("value", 0)) / 100.0))
+			monster["current_hp"] = maxi(1, int(monster.get("current_hp", 0)) - dmg)
+			return "it echoes for %d more." % dmg
+		"bleed":
+			var tick: int = maxi(1, int(float(ctx.get("damage", 0)) * float(t.get("value", 0)) / 100.0 / 3.0))
+			combat["monster_bleed"] = maxi(int(combat.get("monster_bleed", 0)), tick)
+			combat["monster_bleed_duration"] = maxi(int(combat.get("monster_bleed_duration", 0)), 3)
+			return "a bleed (%d a round, 3 rounds)." % tick
+		"slow":
+			var sl: int = int(t.get("value", 0))
+			var rounds: int = int(t.get("rounds", 2))
+			combat["monster_slowed"] = maxi(int(combat.get("monster_slowed", 0)), sl)
+			combat["monster_slow_duration"] = maxi(int(combat.get("monster_slow_duration", 0)), rounds)
+			return "the %s is slowed (%d rounds)." % [String(monster.get("name", "monster")), rounds]
+		"guard":
+			var rounds2: int = int(t.get("rounds", 2))
+			character.add_buff("path_guard", int(round(v)), rounds2, "Trigger - %s" % String(t.get("name", "")))
+			return "%d%% less damage for %d rounds." % [int(round(v)), rounds2]
+	return ""
 
 
 func _apply_path_item_riders(combat: Dictionary, character, messages: Array) -> void:
@@ -4854,6 +4989,7 @@ func _apply_path_cast_riders(combat: Dictionary, ability_name: String, damage_de
 		result["messages"] = []
 	if damage_dealt > 0:
 		combat["path_damaging_cast"] = int(combat.get("path_damaging_cast", 0)) + 1
+		combat.erase("trg_next_mult")   # spent by the card that just hurt; a trigger that fires below can set it again
 	if damage_dealt > 0 and character.get_path_effect_total("sunder_pct") > 0.0:
 		combat["path_sunder"] = mini(PATH_SUNDER_MAX_STACKS, int(combat.get("path_sunder", 0)) + 1)
 	# Serrated Tools for a character that cannot crit: its finisher (the Ranger's Killing Shot) leaves the bleed a crit would have.
@@ -4869,6 +5005,20 @@ func _apply_path_cast_riders(combat: Dictionary, ability_name: String, damage_de
 	var siphon: float = character.get_path_effect_total("cast_resource_pct")
 	if siphon > 0.0:
 		_path_restore_primary_pct(character, siphon)
+	# Combat triggers: the cast, the hit and the crit are three separate events.
+	var crit_now: bool = bool(combat.get("trg_crit", false))
+	combat["trg_crit"] = false
+	var recent: Array = combat.get("trg_recent", [])
+	recent.append(ability_name)
+	if recent.size() > 6:
+		recent = recent.slice(recent.size() - 6)
+	combat["trg_recent"] = recent
+	var tctx := {"ability": ability_name, "tags": CombatTriggersScript.tags_for(ability_name, damage_dealt > 0), "damage": damage_dealt, "crit": crit_now}
+	_fire_triggers(combat, "on_cast", tctx, result["messages"])
+	if damage_dealt > 0:
+		_fire_triggers(combat, "on_hit", tctx, result["messages"])
+		if crit_now:
+			_fire_triggers(combat, "on_crit", tctx, result["messages"])
 
 
 func _path_restore_resource(character, resource: String, amount: int) -> void:
@@ -9798,6 +9948,15 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		_apply_opening_burst_cap(combat, _oth_char, _oth_before, _oth_result)
 		if int(_oth_char.current_hp) < _oth_before:
 			_apply_on_taken_hit(combat, _oth_char, _oth_result)
+			if int(_oth_char.current_hp) > 0:
+				var _hurt_lines: Array = []
+				_fire_triggers(combat, "on_hurt", {"tags": [], "damage": _oth_before - int(_oth_char.current_hp)}, _hurt_lines)
+				for _hl in _hurt_lines:
+					if _oth_result.has("message"):
+						_oth_result["message"] = "%s
+%s" % [String(_oth_result["message"]), String(_hl)]
+					elif _oth_result.get("messages", null) is Array:
+						(_oth_result["messages"] as Array).append(String(_hl))
 		else:
 			_apply_on_unharmed_turn(combat, _oth_char, _oth_result)
 		# What the turn COST is recorded by `_append_monster_turn_lines`, where the monster's

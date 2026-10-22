@@ -4241,6 +4241,12 @@ func get_path_points_earned() -> int:
 		feat_points += int(feats_claimed[fid])
 	return PathPointsScript.from_level(level) + feat_points + PathPointsScript.legacy_bonus(path_ranks, path_legacy_free)
 
+func trigger_power(trigger_id: String) -> float:
+	"""How strong this character's copy of a combat trigger is (0 = does not hold it). The effect key "trg_<id>" summed over path nodes, unique
+	items and set bonuses (all of which already flow through get_path_effect_total) plus a gear affix of the same key. See shared/combat_triggers.gd."""
+	var key: String = "trg_" + trigger_id
+	return get_path_effect_total(key) + _sum_affix_across_equipped(key)
+
 func path_summary() -> String:
 	"""'Sharpened Edge 3, Iron Hide 5, ...' - every node held, with its rank, for the opening line of a fight.
 	A path effect that changes a fight is named there, so a stronger number always has a visible origin."""

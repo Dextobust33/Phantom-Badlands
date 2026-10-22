@@ -107,6 +107,7 @@ never by reading the `if/elif` chain in `character.gd`.
    card_power_shield_bash       CHASE (epic+ only) card gear, also a card tome
    card_power_vanish            CHASE (epic+ only) card gear, also a card tome
    card_power_war_cry           CHASE (epic+ only) card gear, also a card tome
+   combat_trigger               CHASE (epic+ only)
    con_bonus                    suffix (any rarity), enchanter rune (armor,shield,helm,amulet)
    crit_chance_bonus            CHASE (epic+ only)
    crit_damage_bonus            CHASE (epic+ only)

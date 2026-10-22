@@ -4781,6 +4781,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
 const CardGearScript = preload("res://shared/card_gear.gd")
+const CombatTriggersScript = preload("res://shared/combat_triggers.gd")
 
 func generate_unique(unique_id: String, monster_level: int) -> Dictionary:
 	"""Uniques (ARPG pillar 4) — build a named unique at the drop level.
@@ -5298,6 +5299,12 @@ const CHASE_SUFFIX_POOL = [
 	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
 	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
 	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
+	# COMBAT TRIGGERS (combat_triggers.gd), 2026-10-22: gear that changes HOW the deck plays. Four slots of the chase pool, so a chase roll lands on
+	# one about one time in six. The trigger and its power are picked when rolled.
+	{"name": "", "stat": "combat_trigger", "base": 0, "per_level": 0},
+	{"name": "", "stat": "combat_trigger", "base": 0, "per_level": 0},
+	{"name": "", "stat": "combat_trigger", "base": 0, "per_level": 0},
+	{"name": "", "stat": "combat_trigger", "base": 0, "per_level": 0},
 	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
 	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
 	{"name": "", "stat": "card_bonus", "base": 0, "per_level": 0},
@@ -5666,6 +5673,12 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false, th
 				# Card-specific gear: one card, one of its measured kinds, tiered by item level.
 				var cb: Array = CardGearScript.roll(item_level)
 				affixes[cb[0]] = int(affixes.get(cb[0], 0)) + int(cb[1])
+				total_roll_quality += 50
+				affix_count += 1
+				continue
+			if picked.stat == "combat_trigger":
+				var tg: Array = CombatTriggersScript.roll(item_level)
+				affixes[tg[0]] = float(affixes.get(tg[0], 0)) + float(tg[1])
 				total_roll_quality += 50
 				affix_count += 1
 				continue

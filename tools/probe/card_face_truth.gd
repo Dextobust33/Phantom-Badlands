@@ -34,7 +34,11 @@ func _cast_mean(sim, cm, klass: String, level: int, card: String, engine: int) -
 	var quoted := false
 	var quote_sum := 0.0
 	var dealt_sum := 0.0
-	for i in range(N):
+	# A card that crits or kills most of the time (Sage Meteor at L200: 5 usable casts of 30) leaves too few clean samples to judge a +-15% band, so the
+	# loop goes on, up to 120 casts, until there are 12.
+	for i in range(120):
+		if i >= N and ratios.size() >= 12:
+			break
 		var ch = sim.make_char(level, "average", klass, "Human")
 		var mon: Dictionary = sim.make_monster(level, "normal", 400.0)
 		mon["defense"] = 0
@@ -65,9 +69,10 @@ func _cast_mean(sim, cm, klass: String, level: int, card: String, engine: int) -
 			var txt := " ".join(PackedStringArray(res.get("messages", []))).to_upper()
 			if int(c["monster"]["current_hp"]) <= 0:
 				kills += 1          # a lethal finisher ends the fight outright; not a damage sample
-			elif txt.find("CRIT") >= 0 or txt.find("CHAOS MAGIC") >= 0 or txt.find("DOUBLE CAST") >= 0:
+			elif txt.find("CRIT") >= 0 or txt.find("CHAOS MAGIC") >= 0 or txt.find("DOUBLE CAST") >= 0 or txt.find("GLANCING") >= 0:
 				# Gambles the quote deliberately leaves out (the on-hit number is the honest one):
-				# crits, the Sorcerer's Chaos Magic double/backfire, and Arcane Surge double casts.
+				# crits, glancing blows (the downside roll of the same coin), the Sorcerer's Chaos Magic double/backfire, and Arcane Surge double casts.
+				# A cell that kept its glances but dropped its crits was biased low by ~8% and sat on the tolerance with five samples.
 				crits += 1
 			else:
 				ratios.append(float(dealt) / float(quote))

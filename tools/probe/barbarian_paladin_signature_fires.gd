@@ -142,27 +142,30 @@ func _init() -> void:
 	ck(int(a1[1].get("momentum", 0)) - int(a0[1].get("momentum", 0)) == 2, "...and only the first blow (still +2 after a second)")
 
 	print("--- S2 Bastion of Faith ---")
+	# ONE character with the node toggled: two make_char calls are two characters with different random gear.
 	var h0 = sim.make_char(60, "average", "Paladin", "Human")
-	var h1 = sim.make_char(60, "average", "Paladin", "Human")
 	h0.set_path_scale_override(1.0)
-	h1.set_path_scale_override(1.0)
-	h1.set_path_rank("sig_Paladin_2", 5)
 	var hp_a: int = h0.get_total_max_hp()
-	var hp_b: int = h1.get_total_max_hp()
+	h0.set_path_rank("sig_Paladin_2", 5)
+	var hp_b: int = h0.get_total_max_hp()
 	ck(hp_b > hp_a and abs(float(hp_b) / float(hp_a) - 1.10) < 0.02, "rank 5 is +10%% max HP (%d -> %d)" % [hp_a, hp_b])
 
 	print("--- S3 Mercy ---")
 	var m0 = _fresh("Paladin", {})
-	var m1 = _fresh("Paladin", {"sig_Paladin_3": 5})
 	m0[0].current_hp = 1
-	m1[0].current_hp = 1
 	_cast(m0[0], m0[1], "rally")
-	_cast(m1[0], m1[1], "rally")
 	var g0: int = m0[0].current_hp - 1
-	var g1: int = m1[0].current_hp - 1
+	m0[0].set_path_rank("sig_Paladin_3", 5)
+	m0[0].current_hp = 1
+	_cast(m0[0], m0[1], "rally")
+	var g1: int = m0[0].current_hp - 1
 	ck(g0 > 0 and abs(float(g1) / float(g0) - 1.25) < 0.05, "Lay on Hands heals 25%% more at rank 5 (%d -> %d)" % [g0, g1])
 	var q0: int = int(sim.combat_mgr.preview_ability_effect(m0[0], m0[1], "rally").get("value", 0))
-	var q1: int = int(sim.combat_mgr.preview_ability_effect(m1[0], m1[1], "rally").get("value", 0))
+	m0[0].set_path_rank("sig_Paladin_3", 0)
+	var q0b: int = int(sim.combat_mgr.preview_ability_effect(m0[0], m0[1], "rally").get("value", 0))
+	m0[0].set_path_rank("sig_Paladin_3", 5)
+	var q1: int = int(sim.combat_mgr.preview_ability_effect(m0[0], m0[1], "rally").get("value", 0))
+	q0 = q0b
 	ck(q1 > q0, "...and the card face quotes it (%d -> %d)" % [q0, q1])
 
 	print("--- S4 Cleansing Hands ---")
