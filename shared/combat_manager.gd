@@ -2977,9 +2977,9 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 				return process_ability_command(peer_id, cmd, arg)
 			return {"success": false, "message": "Unknown combat command! Use: attack, flee, or abilities"}
 
-	return process_combat_action(peer_id, action)
+	return process_combat_action(peer_id, action, arg)
 
-func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
+func process_combat_action(peer_id: int, action: CombatAction, arg: String = "") -> Dictionary:
 	"""Process a player's combat action"""
 	
 	if not active_combats.has(peer_id):
@@ -3005,7 +3005,7 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		CombatAction.SPECIAL:
 			result = process_special(combat)
 		CombatAction.BRACE:
-			result = process_brace(combat)
+			result = process_brace(combat, int(arg) if arg.is_valid_int() else -1)
 
 	# Track damage dealt to monster this turn
 	var damage_dealt_this_turn = max(0, monster_hp_before - combat.monster.current_hp)
@@ -4363,19 +4363,40 @@ func _resolve_pending_burst(combat: Dictionary, monster, character, messages: Ar
 ## Returns the same shape as `process_attack` so the monster's turn runs normally afterwards -
 ## bracing is a CHOICE OF ACTION, not a skipped round. The player deals no damage; that is the
 ## price, and it is what keeps a card answer worth holding.
-func process_brace(combat: Dictionary) -> Dictionary:
+func process_brace(combat: Dictionary, timing: int = -1) -> Dictionary:
+	"""Spend the turn guarding. `timing` (0-100) is the skill bonus (docs/design/combat_loop_variety.md section 12): how well the player's press met the
+	timing window the client showed while a telegraphed burst was winding up. It is ignored unless a burst IS pending, and -1 (no input, a client that does not
+	show the window, the option turned off) is exactly the old plain Brace - the bonus can only ever help."""
 	var character = combat.character
 	var messages: Array = []
 	var nm := brace_name_for(character)
+	var reduction: int = BRACE_DAMAGE_REDUCTION
+	var grade := ""
+	if timing >= 0 and String(combat.get("pending_burst_ability", "")) != "":
+		var t: int = clampi(timing, 0, 100)
+		if t >= TIMING_PERFECT:
+			reduction = BRACE_PERFECT_REDUCTION
+			grade = "perfect"
+		elif t >= TIMING_GOOD:
+			reduction = BRACE_GOOD_REDUCTION
+			grade = "good"
 	# One round: it must still be up when the monster swings, and gone by the next choice, so a
 	# player cannot brace once and coast. `add_buff` ticks at end of round, hence 1.
-	character.add_buff("damage_reduction", BRACE_DAMAGE_REDUCTION, 1)
-	messages.append("[color=#7FD7FF][b]%s![/b][/color] [color=#66B0FF]You set yourself — %d%% less damage this round.[/color]"
-		% [nm.to_upper(), BRACE_DAMAGE_REDUCTION])
+	character.add_buff("damage_reduction", reduction, 1)
+	if grade == "perfect":
+		# A parry denies the blow's rider as well as most of its weight: the stagger and the boss's hardening do not happen.
+		combat["pending_burst_lull"] = false
+		combat["pending_burst_quake"] = false
+		messages.append("[color=#FFD700][b]PERFECT %s![/b][/color] [color=#66B0FF]You read the blow exactly — %d%% less damage, and it cannot stagger you.[/color]" % [nm.to_upper(), reduction])
+	elif grade == "good":
+		messages.append("[color=#7FD7FF][b]WELL-TIMED %s![/b][/color] [color=#66B0FF]%d%% less damage this round.[/color]" % [nm.to_upper(), reduction])
+	else:
+		messages.append("[color=#7FD7FF][b]%s![/b][/color] [color=#66B0FF]You set yourself — %d%% less damage this round.[/color]" % [nm.to_upper(), reduction])
 	return {
 		"success": true,
 		"messages": messages,
 		"braced": true,
+		"brace_grade": grade,
 	}
 
 
@@ -5173,6 +5194,11 @@ const DEFENSIVE_REPRIEVE_CHANCE := 40   # % chance the monster's turn is skipped
 # defensive reprieve (that is what spending a card buys). `iron_skin` is 60% for four rounds and
 # still strictly better.
 const BRACE_DAMAGE_REDUCTION := 40   # % of the incoming hit, this round only
+# The timing window (a skill bonus on a telegraphed burst): what a well-timed and a perfectly-timed press buys, and the 0-100 quality each needs.
+const BRACE_GOOD_REDUCTION := 55
+const BRACE_PERFECT_REDUCTION := 70
+const TIMING_GOOD := 55
+const TIMING_PERFECT := 85
 const BRACE_COMMANDS := ["brace", "ward", "slip", "defend", "guard", "block"]
 
 ## One name per ARCHETYPE, owner 2026-09-19: *"it should probably have different name for
@@ -12755,6 +12781,9 @@ func status_display_fields(character, combat: Dictionary) -> Dictionary:
 			"sabotage_value": int(combat.get("monster_sabotaged", 0)),
 			"distract_value": int(combat.get("enemy_distracted", 0)),
 			"analyze_value": int(combat.get("analyze_bonus", 0)),
+			# A burst winding up: the client shows its timing window while this is non-empty.
+			"burst_pending": String(combat.get("pending_burst_ability", "")),
+			"burst_text": (String(TELEGRAPHED_BURSTS.get(String(combat.get("pending_burst_ability", "")), "")) % String(combat.get("monster", {}).get("name", "The monster"))) if String(combat.get("pending_burst_ability", "")) != "" and TELEGRAPHED_BURSTS.has(String(combat.get("pending_burst_ability", ""))) else "",
 		},
 	}
 

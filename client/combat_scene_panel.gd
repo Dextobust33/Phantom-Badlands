@@ -503,6 +503,8 @@ func _build_layout() -> void:
 
 	# === Status-effect strip (DoT timers / buffs / debuffs) ===
 	root_vbox.add_child(_build_shared_status_strip())
+	# The timing window for telegraphed bursts (hidden unless one is winding up).
+	root_vbox.add_child(_build_timing_row())
 
 	# === Running damage totals strip (Combat readability #2) ===
 	root_vbox.add_child(_build_running_totals_strip())
@@ -3289,6 +3291,128 @@ func _format_status_chip(key: String, suffix: String) -> String:
 		return "[url=%s]%s[/url]" % [help.replace("\"", "”").replace("'", "’"), chip]
 	return chip
 
+## ---- THE TIMING WINDOW (docs/design/combat_loop_variety.md section 12) -----------------------------------------------------------------------
+## While a boss burst is winding up, a marker sweeps a bar; pressing Brace / Ward / Slip with the marker in the gold zone is a PERFECT guard, near it a good one.
+## The quality (0-100) goes to the server with the command. Optional skill upside: no press timing, a client with it switched off, or a miss is the plain guard.
+class TimingBar extends Control:
+	const PERIOD_MS := 1700.0
+	const ZONE_CENTER := 0.72
+	const ZONE_HALF := 0.09          # half-width of the gold zone, as a share of the bar
+	var active := false
+	var started_ms := 0
+	var title := ""
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(0, 30)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		visible = false
+
+	func begin(text: String) -> void:
+		active = true
+		started_ms = Time.get_ticks_msec()
+		title = text
+		visible = true
+		queue_redraw()
+
+	func finish() -> void:
+		active = false
+		visible = false
+
+	func marker_pos() -> float:
+		var t: float = fmod(float(Time.get_ticks_msec() - started_ms), PERIOD_MS) / PERIOD_MS
+		return 1.0 - absf(2.0 * t - 1.0)   # 0 -> 1 -> 0, a ping-pong
+
+	func quality() -> int:
+		"""0-100: 100 on the zone's centre, falling to 0 three half-widths away."""
+		if not active:
+			return -1
+		var d: float = absf(marker_pos() - ZONE_CENTER)
+		return int(round(clampf(1.0 - d / (ZONE_HALF * 3.0), 0.0, 1.0) * 100.0))
+
+	func _process(_delta: float) -> void:
+		if active:
+			queue_redraw()
+
+	func _draw() -> void:
+		var w: float = size.x
+		var h: float = size.y
+		draw_rect(Rect2(0, 4, w, h - 8), Color(0.08, 0.08, 0.1, 0.9))
+		var good_w: float = ZONE_HALF * 3.0 * 2.0 * 0.45 * w
+		draw_rect(Rect2(ZONE_CENTER * w - good_w * 0.5, 4, good_w, h - 8), Color(0.35, 0.55, 0.85, 0.55))
+		var perfect_w: float = ZONE_HALF * 3.0 * 2.0 * 0.15 * w
+		draw_rect(Rect2(ZONE_CENTER * w - perfect_w * 0.5, 4, perfect_w, h - 8), Color(1.0, 0.82, 0.2, 0.95))
+		var mx: float = marker_pos() * w
+		draw_rect(Rect2(mx - 2, 0, 4, h), Color(1, 1, 1, 1))
+		draw_string(ThemeDB.fallback_font, Vector2(6, h - 9), title, HORIZONTAL_ALIGNMENT_LEFT, w - 12, 12, Color(1, 0.8, 0.4))
+
+
+var _timing_bar: TimingBar
+var _timing_toggle: Button
+var _burst_seen := ""             # the wind-up the bar is currently showing, so one telegraph starts ONE sweep
+var combat_timing_enabled: bool = true
+signal timing_enabled_changed(on: bool)
+
+
+func _build_timing_row() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_timing_bar = TimingBar.new()
+	row.add_child(_timing_bar)
+	_timing_toggle = Button.new()
+	_timing_toggle.focus_mode = Control.FOCUS_NONE
+	_timing_toggle.toggle_mode = true
+	_timing_toggle.button_pressed = combat_timing_enabled
+	_timing_toggle.text = "Timing: on"
+	_timing_toggle.tooltip_text = "While a boss burst winds up, time your guard for a bigger reduction. Off = the plain guard, always."
+	_timing_toggle.visible = false
+	_timing_toggle.toggled.connect(_on_timing_toggled)
+	row.add_child(_timing_toggle)
+	return row
+
+
+func _on_timing_toggled(on: bool) -> void:
+	combat_timing_enabled = on
+	_timing_toggle.text = "Timing: on" if on else "Timing: off"
+	if not on and _timing_bar != null:
+		_timing_bar.finish()
+		_burst_seen = ""
+	timing_enabled_changed.emit(on)
+
+
+func set_combat_timing_enabled(on: bool) -> void:
+	combat_timing_enabled = on
+	if _timing_toggle != null and is_instance_valid(_timing_toggle):
+		_timing_toggle.set_pressed_no_signal(on)
+		_timing_toggle.text = "Timing: on" if on else "Timing: off"
+
+
+func _update_burst_window(monster_status: Dictionary) -> void:
+	if _timing_bar == null or not is_instance_valid(_timing_bar):
+		return
+	var pending: String = String(monster_status.get("burst_pending", ""))
+	if _timing_toggle != null:
+		_timing_toggle.visible = pending != ""
+	if pending == "" or not combat_timing_enabled:
+		_timing_bar.finish()
+		_burst_seen = ""
+		return
+	if _burst_seen != pending:
+		_burst_seen = pending
+		_timing_bar.begin("%s - guard when the marker crosses the gold" % String(monster_status.get("burst_text", "A heavy blow is coming")))
+
+
+func burst_timing_quality() -> int:
+	"""The quality (0-100) of a press RIGHT NOW, or -1 when no window is open. Reading it closes the window: one press, one grade."""
+	if _timing_bar == null or not is_instance_valid(_timing_bar) or not _timing_bar.active or not combat_timing_enabled:
+		return -1
+	var q: int = _timing_bar.quality()
+	_timing_bar.finish()
+	_burst_seen = ""
+	return q
+
+
 func update_combat_status(player_status: Dictionary, monster_status: Dictionary) -> void:
 	"""Refresh the status strip from the server's combat_state. Called every
 	combat_update. Empty side becomes blank — strip stays in place so layout
@@ -3298,6 +3422,7 @@ func update_combat_status(player_status: Dictionary, monster_status: Dictionary)
 	# Kept, not just rendered: "foe stunned" is the trigger for two upgrades, and the hand needs
 	# to answer that question when it draws a card face.
 	_monster_status = monster_status.duplicate()
+	_update_burst_window(monster_status)
 	_player_status_label.text = _build_player_status_bbcode(player_status)
 	var mon_bb := _build_monster_status_bbcode(monster_status)
 	if _lufia_monster_status != null and is_instance_valid(_lufia_monster_status):

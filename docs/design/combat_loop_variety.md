@@ -169,3 +169,21 @@ gear, shown on the item and in the compare text. **Path nodes: built** - the Asc
 
 **Known gaps:** co-op party fights do not fire triggers (same gap as the path card nodes); the compact card face and the stats comparison show triggers only in the Inspect text and the
 compare line; the simulator's gear model now rolls them like any drop, so the reference player will carry some, which is correct but means the Wave 2 chain sees them.
+
+## 12. THE TIMING WINDOW (R1) - BUILT (2026-10-22, unreleased)
+
+Owner asked for it after the trigger work. It is section 8's R1: the smallest real-time element, riding on the telegraphs (`TELEGRAPHED_BURSTS`, now 12 bursts).
+
+**How it plays.** A boss winds up a burst (the existing `⚠` line). A bar appears under the fight; a marker sweeps it (1.7 s end to end). Press Brace / Ward / Slip with the marker in the gold for a **perfect guard**
+(70% less damage, and the blow's rider - Tremor Stomp's stagger, Titan Earthquake's hardening - is denied), in the blue for a **well-timed** one (55%), anywhere else is the **plain** guard (40%, unchanged).
+One press, one grade; the window closes when read.
+
+**Why it is safe.**
+- The grade is client-reported (0-100, parsed from `brace <n>`), and the server uses it ONLY while a burst is actually pending, clamps it to 0-100, treats anything garbled as the plain guard, and never lets it make a guard worse.
+  A modified client can always claim 100: that is accepted for a bounded, optional bonus in a PvE game, and noted so nobody builds anything leaderboard-bearing on it.
+- No input, a client without the window, or the **Timing** button switched off (it sits on the bar; remembered with the keybinds) is exactly the old guard. So it cannot make the game harder for anyone, and the simulator -
+  which plays no timing - stays valid: the monster curve is calibrated to the no-skill baseline and skill is pure upside.
+- Latency: the quality is measured on the client against its own clock, from the moment it showed the bar, so network delay does not move the result; the zone is wide (a third of the bar counts as good).
+
+**Not built:** co-op party fights guard with the plain value (their brace path does not read a grade), and only Brace/Ward/Slip is graded (defensive cards are not). Both are small, and worth doing once the window has been played.
+Probe `timing_window_brace` (graded values 600 / 450 / 300 of a 1000 burst, the safety rules, the rider cancel, the state sent to the client, the bar's maths, the client wiring); screenshot scene `timing`.

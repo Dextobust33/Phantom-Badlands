@@ -659,6 +659,7 @@ var disable_tutorial: bool = false  # Skip tutorial on new character creation
 # panel auto-clicks random unrevealed cells once opened. Persisted with the
 # rest of the keybind/settings file.
 var autoskip_loot_reveal: bool = false
+var combat_timing_enabled: bool = true   # the guard timing window on boss bursts (the toggle on the bar itself); persisted with the keybinds
 ## Ask 'Break down X?' before salvaging ONE item. ON by default (owner 2026-10-14); the bulk salvages
 ## (all / consumables) always ask - they are the ones that cannot be walked back.
 var confirm_single_salvage: bool = true
@@ -3785,6 +3786,11 @@ DDD")
 	combat_loot_panel.closed.connect(_on_combat_loot_closed)
 	# v0.9.566 — autoskip toggle persists across sessions via keybind file.
 	combat_loot_panel.autoskip_toggled.connect(_on_combat_loot_autoskip_toggled)
+	# The guard timing window's own on/off button lives on its bar; remember the choice.
+	if combat_scene_panel != null and combat_scene_panel.has_signal("timing_enabled_changed"):
+		combat_scene_panel.timing_enabled_changed.connect(func(on: bool):
+			combat_timing_enabled = on
+			_save_keybinds())
 	# Engagement arc — panel emits play_sfx("chain" | "mystery" | "trap" | "plus_two")
 	# when a special cell reveals. Dispatched to existing scratch SFX players.
 	combat_loot_panel.play_sfx.connect(_on_combat_loot_sfx)
@@ -8232,6 +8238,20 @@ func _dev_run_shots() -> void:
 				print("[SHOTS] LOG DUMP: %d visible rows" % _rows.size())
 				for _i in range(_rows.size()):
 					print("[SHOTS]  %2d | %3d ch | %s" % [_i, String(_rows[_i]).length(), String(_rows[_i]).substr(0, 110)])
+			"timing":
+				# The guard timing window on a boss burst (docs/design/combat_loop_variety.md section 12): a fight, then a wind-up the way the server reports one.
+				send_to_server({"type": "gm_godmode"})
+				await get_tree().create_timer(0.6).timeout
+				send_to_server({"type": "gm_spawnmonster", "monster_name": "Wight", "level": maxi(80, int(character_data.get("level", 10)) * 6)})
+				await get_tree().create_timer(3.0).timeout
+				if in_combat and combat_scene_panel != null:
+					combat_scene_panel.update_combat_status(_last_player_status, {"burst_pending": "boss_aerial_dive", "burst_text": "The Wight climbs, circling for a dive"})
+					await get_tree().create_timer(0.55).timeout
+					await _dev_shot_capture("timing_01_window")
+					await get_tree().create_timer(0.5).timeout
+					await _dev_shot_capture("timing_02_window_later")
+				else:
+					print("[SHOTS] SKIPPED 'timing' - not in combat")
 			"logmeta":
 				# ⛑ NO GODMODE, DELIBERATELY - AND THAT IS THE WHOLE POINT OF A SEPARATE SCENE.
 				# The `combat` scene godmodes the player so a capture cannot lose its own subject,
@@ -14627,6 +14647,12 @@ func send_combat_command(command: String, target: String = ""):
 	# 2026-09-11 — `command` may play a COPY ("cleave#2 15"). Everything decided locally reads
 	# the CARD; the payload carries the copy so the server consumes the right one.
 	var base_cmd := Character.card_base(command)
+	# The timing window: a Brace / Ward / Slip pressed while a boss burst winds up carries how well it was timed (0-100). The server ignores it unless a burst is
+	# really pending, and a press with no window open (or the option off) goes as the plain command.
+	if command in CombatManagerScript.BRACE_COMMANDS and combat_scene_panel != null and is_instance_valid(combat_scene_panel):
+		var _tq: int = combat_scene_panel.burst_timing_quality()
+		if _tq >= 0:
+			command = "%s %d" % [command, _tq]
 	# #76 — party combat is SIMULTANEOUS: one action per round. Once locked in, ignore
 	# further presses (no mash) until the round resolves. Spectators can't act at all.
 	var _in_party := party_combat_active or party_waiting_for_turn or party_combat_spectating
@@ -32992,6 +33018,10 @@ func _load_keybinds():
 					show_numpad_popup = bool(data["show_numpad_popup"])
 				if data.has("autoskip_loot_reveal"):
 					autoskip_loot_reveal = bool(data["autoskip_loot_reveal"])
+				if data.has("combat_timing_enabled"):
+					combat_timing_enabled = bool(data["combat_timing_enabled"])
+					if combat_scene_panel != null and is_instance_valid(combat_scene_panel):
+						combat_scene_panel.set_combat_timing_enabled(combat_timing_enabled)
 				if data.has("confirm_single_salvage"):
 					confirm_single_salvage = bool(data["confirm_single_salvage"])
 				# Load UI scale settings
@@ -33046,6 +33076,7 @@ func _save_keybinds():
 	save_data["disable_tutorial"] = disable_tutorial
 	save_data["show_numpad_popup"] = show_numpad_popup
 	save_data["autoskip_loot_reveal"] = autoskip_loot_reveal
+	save_data["combat_timing_enabled"] = combat_timing_enabled
 	save_data["confirm_single_salvage"] = confirm_single_salvage
 	# Include UI scale settings
 	save_data["ui_scale_monster_art"] = ui_scale_monster_art
@@ -41214,6 +41245,9 @@ func _main_help_text() -> String:
 [color=#00FFFF]Hit:[/color] 75%+(DEX-spd) [30-95%] | [color=#00FFFF]Flee:[/color] 40%+DEX+spd+WIT/2-monSpd/2-lvldiff | [color=#00FFFF]Enemy:[/color] 85%+lvl-DEX/5(max30%)-spd/2 [40-95%]
 [color=#66FF66]Trickster Dodge:[/color] +WIT/50% dodge (max 15%). Combined with DEX dodge, tricksters are harder to hit!
 [color=#FF4444]Initiative:[/color] rises with the enemy's speed, falls with your DEX (min 5%, max 75%, ambusher +8; your travel stance moves it: Travelling +18, Scouting -4, Hunting -8. A party fight uses a simpler version capped at 55%)
+
+[b][color=#FFD700]══ TIMING A GUARD ══[/color][/b]
+When a boss [color=#FFCC00]winds up[/color] a heavy blow (a [color=#FFCC00]⚠[/color] line), a bar appears under the fight and a marker sweeps it. Press [b]Brace / Ward / Slip[/b] with the marker in the [color=#FFD700]gold[/color] for a [b]perfect[/b] guard ([color=#FFD700]70%[/color] less, and it cannot stagger you), in the [color=#6699FF]blue[/color] for a good one ([color=#6699FF]55%[/color]). Any other press is the ordinary [color=#7FD7FF]40%[/color] guard, so it can only help. The [b]Timing[/b] button on the bar turns it off for good.
 
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
 [color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75% dodge[/color] on enemy turn!
