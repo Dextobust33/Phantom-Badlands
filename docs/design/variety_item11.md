@@ -44,11 +44,17 @@ Each trait shifts stats by a fixed vector chosen so that the SPAWN-WEIGHTED mean
 
 Behavioural traits (Skittish, Thorned, Venomous, Regenerating) carry a small stat discount, so their power cost is paid, not free.
 
-## 4. STILL TO DECIDE (small; the next conversation)
-- The trait table above: names, which to keep, anything to add. Behavioural ones especially.
-- Themed board rotation: how often, and the themes (by species family? by trait? by dungeon?).
-- Companion perks: the mapping from each trait.
-- Whether a trait shows on the monster's name in the overworld (before you commit to a fight) or only once the fight opens.
+## 4. SECOND ROUND, ANSWERED (owner, 2026-10-22)
+- **Traits that ship first:** the stat pairs (Thick-hided/Frail, Frenzied/Stalwart, Swift/Ponderous, Giant/Runt), **Skittish, Thorned, Venomous and Regenerating** - all of the draft except the already-existing Gilded.
+- **Board rotation:** **a fixed theme per post PLUS a rotating bounty slot, rotating HOURLY** (owner: "4. but rotates hourly").
+- **Board themes built from:** **species families, dungeon types and terrain.** (Not traits-as-themes: traits come in through the rotating bounty slot and trait hunts instead.)
+- **Trait reveal:** **at the start of the fight.** The owner pointed out that monsters are not visible on the overworld at all (true: an encounter fires as you move and the fight opens naming the monster), so
+  there is no pre-fight reveal. The encounter opens as "Frenzied Wolf" with a trait line, and you can still flee. Hunting a trait therefore means moving through ground where it lives, which is what the terrain and
+  dungeon-type board themes are for.
+- **Companion perks:** **companion-sized versions of the trait** (Thick-hided -> Sturdy, Frenzied -> Fierce, Swift -> Quick). A lookup table, so "inherit one" is a mapping; behaviour traits get an ally-sized meaning
+  (Thorned -> the companion's hits reflect a little to you as a guard bonus, Regenerating -> it recovers between rounds) or are left unmapped and the hatch rolls the second perk instead.
+
+Still small and open: the exact stat vectors (they are fixed by the `traitmean` audit, not by taste), the theme lists per post, and the ally meaning of Skittish/Venomous.
 
 ## 5. Build order (after the answers above)
 1. Tag the 53 dungeon cards (data) and build `dungeoncardswap`; run it; buff per class. (Independent of the rest, and the longest measurement.)
