@@ -549,6 +549,12 @@ const CardGearScript = preload("res://shared/card_gear.gd")
 ## Node ids bought before ranks existed whose full effect now takes several ranks to reach; held at full rank, their extra price is refunded
 ## as points (PathPoints.legacy_bonus) so a grandfathered character neither gains nor loses anything.
 @export var path_legacy_free: Array = []
+## Simulator override of the class's path scale (negative = use PathDatabase.CLASS_SCALE). Never saved.
+var path_scale_override: float = -1.0
+
+func set_path_scale_override(scale: float) -> void:
+	path_scale_override = scale
+	_path_fx_dirty = true
 @export var path_milestones: Array = []
 @export var feat_counts: Dictionary = {}
 @export var feats_claimed: Dictionary = {}
@@ -4319,6 +4325,7 @@ func get_path_effect_total(effect_key: String) -> float:
 	_sum_affix_across_equipped."""
 	if _path_fx_dirty:
 		_path_fx_cache.clear()
+		var _scale: float = path_scale_override if path_scale_override >= 0.0 else PathDatabaseScript.class_scale(String(class_type))
 		for node_id in path_ranks:
 			var node: Dictionary = PathDatabaseScript.find_node(String(node_id))
 			var fx: Dictionary = PathDatabaseScript.rank_effect(node, int(path_ranks[node_id]))
@@ -4328,7 +4335,7 @@ func get_path_effect_total(effect_key: String) -> float:
 				if v is bool:
 					num = 1.0 if v else 0.0
 				elif v is int or v is float:
-					num = float(v)
+					num = PathDatabaseScript.scale_effect_value(String(k), float(v), _scale)
 				_path_fx_cache[k] = float(_path_fx_cache.get(k, 0.0)) + num
 		_path_fx_dirty = false
 	var total: float = float(_path_fx_cache.get(effect_key, 0.0))

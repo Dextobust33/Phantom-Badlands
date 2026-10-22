@@ -816,7 +816,30 @@ func _note_crit_ramp_attempt(character, combat: Dictionary) -> void:
 
 
 func player_crit_chance(character, combat: Dictionary, ability_name: String = "") -> int:
-	"""The player's crit chance, as ONE definition.
+	"""The player's crit chance, capped. See `player_crit_chance_raw` for the sum."""
+	var cfg0: Dictionary = balance_config.get("combat", {}) if balance_config else {}
+	return clampi(player_crit_chance_raw(character, combat, ability_name), 0, int(cfg0.get("player_crit_max", 75)))
+
+
+func crit_overflow_bonus(character, combat, ability_name: String = "") -> float:
+	"""Path crit chance past the cap is not thrown away: every point of it that lands over becomes +0.5 points of crit DAMAGE on cards. `pathfires` found Keen Eye and
+	Predator's Eye silent for every Trickster - a level-100 character is already at the 75% cap, so "+3% crit chance" was a node that did nothing.
+	Gear and companion crit chance get the same overflow, which is the point of a cap that players can chase past."""
+	if character == null or combat == null or not (combat is Dictionary):
+		return 0.0
+	var cfg0: Dictionary = balance_config.get("combat", {}) if balance_config else {}
+	var over: int = player_crit_chance_raw(character, combat, ability_name) - int(cfg0.get("player_crit_max", 75))
+	# Only the PATH's own crit chance converts. A level-60 Ninja on average gear is at 143% RAW crit chance; converting all of that would be a
+	# windfall for every crit-capped class that has nothing to do with the node that was dead.
+	var from_path: int = mini(maxi(0, over), int(character.get_path_effect_total("crit_chance_pct")))
+	return float(from_path) * CRIT_OVERFLOW_DAMAGE_PER_POINT
+
+
+const CRIT_OVERFLOW_DAMAGE_PER_POINT := 0.005
+
+
+func player_crit_chance_raw(character, combat: Dictionary, ability_name: String = "") -> int:
+	"""The player's crit chance, as ONE definition (UNCAPPED).
 
 	2026-09-05 — extracted from `calculate_damage`, which had it inline. It is now needed by the
 	ability path too (see `apply_ability_damage_modifiers`), and duplicating it is exactly the
@@ -853,14 +876,13 @@ func player_crit_chance(character, combat: Dictionary, ability_name: String = ""
 	# real cap was a hardcoded 75 at the roll. Anyone tuning the knob saw no effect, which is
 	# worse than not having one. The config value is corrected to 75 in the same change, so
 	# behaviour is unchanged and the knob is now live.
-	var _cap: int = int(cfg.get("player_crit_max", 75))
 	# Ninja "Killing Edge" — every crit landed this fight sharpens the next. Stored on the combat
 	# so it resets when the fight does and cannot be banked between encounters.
 	var esc: int = int(fx.get("crit_escalation", 0))
 	if esc > 0:
 		crit_chance += esc * int(combat.get("crit_escalation_stacks", 0))
 	crit_chance += int(ABILITY_CRIT_BONUS.get(ability_name, 0))
-	return clampi(crit_chance, 0, _cap)
+	return crit_chance
 
 func engine_damage_ramp(character, combat: Dictionary) -> float:
 	"""The multiplier the class ENGINE currently adds to every damaging card. 1.0 = none.
@@ -1002,9 +1024,9 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		# itself before today.
 		if bool(combat.get("vanished", false)):
 			combat.erase("vanished")
-			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character))
+			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))))
 			_note_crit_escalation(character, combat)
-			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ability_crit_multiplier(character) - 1.0) * 100.0))
+			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))) - 1.0) * 100.0))
 			if messages != null and messages is Array:
 				# ⚑ SAY "CRITICAL", AND SAY WHICH CARD. Owner 2026-09-13: *"I'm not sure Phantom
 				# strike is actually critting with ambush or other damaging abilities like it
@@ -1018,9 +1040,9 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		var _first_strike: bool = character.has_path_effect("first_strike_autocrit") 			and not combat.get("path_first_strike_done", false)
 		if _first_strike:
 			combat["path_first_strike_done"] = true
-			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character))
+			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))))
 			_note_crit_escalation(character, combat)
-			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ability_crit_multiplier(character) - 1.0) * 100.0))
+			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))) - 1.0) * 100.0))
 			if messages != null and messages is Array:
 				messages.append("[color=#FF6600]CRITICAL![/color] [color=#9F70FF]Phantom Strike — the first blow lands true.[/color]")
 			return max(1, mod_damage)
@@ -1036,15 +1058,16 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		var _crit_landed: bool = false
 		if cc > 0 and (randi() % 100) < cc:
 			_crit_landed = true
-			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character))
+			mod_damage = int(float(mod_damage) * ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))))
 			_note_crit_escalation(character, combat)
 			# 2026-09-05 — buffer it for the damage-number hover. Ambush used to note its own
 			# private crit here; removing that roll left abilities whose ONLY modifier was a crit
 			# with an empty buffer, and _damage_with_detail falls back to a plain number when
 			# nothing is buffered. Reported: "Ambush doesn't seem like you can hover its damage."
-			_note_modifier(combat, "Critical +%d%% (%d%% chance)" % [int((ability_crit_multiplier(character) - 1.0) * 100.0), cc])
+			_note_modifier(combat, "Critical +%d%% (%d%% chance)" % [int((ability_crit_multiplier(character, combat, str(combat.get("_crit_ability", ""))) - 1.0) * 100.0), cc])
 			if messages != null and messages is Array:
 				messages.append("[color=#FF6600]CRITICAL![/color]")
+			_apply_path_crit_bleed(character, combat, String(monster.get("name", "monster")), messages)
 		elif not _passive_has_no_glance(character):
 			var _dex: int = character.get_effective_stat("dexterity")
 			var _mspd: int = int(monster.get("speed", 10))
@@ -1141,6 +1164,11 @@ func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 		"mage":
 			var mm = character.get_total_max_mana()
 			var amt := mini(maxi(4, int(mm * base_pct / 100.0)), regen_cap)
+			# Flowing Font ("in-combat mana regeneration 50% stronger"). It was read only by the basic attack's own small trickle, so a deck-driven
+			# mage - who regenerates here, once per card - never felt it. `pathfires` found it silent for Wizard, Sorcerer and Sage.
+			var _font: float = character.get_path_effect_total("combat_regen_bonus_pct")
+			if _font > 0.0:
+				amt = maxi(amt + 1, int(float(amt) * (1.0 + _font / 100.0)))
 			character.current_mana = mini(mm, character.current_mana + amt)
 		"trickster":
 			var me = character.get_total_max_energy()
@@ -3416,13 +3444,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		# of 30% of WIT per round for 3 rounds). Refreshes duration, keeps the
 		# higher tick value when one is already running.
 		if is_crit and damage > 0 and monster.current_hp > 0:
-			var path_crit_bleed_pct = character.get_path_effect_total("crit_bleed_wit_pct")
-			if path_crit_bleed_pct > 0.0:
-				var cb_tick = max(1, int(character.get_effective_stat("wits") * path_crit_bleed_pct / 100.0))
-				var cb_rounds = max(1, int(character.get_path_effect_total("crit_bleed_rounds")))
-				combat["monster_bleed"] = max(int(combat.get("monster_bleed", 0)), cb_tick)
-				combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), cb_rounds)
-				messages.append("[color=#9ACD32]⚜ Serrated wound — the %s bleeds (%d/round, %d rounds)![/color]" % [monster.name, cb_tick, cb_rounds])
+			_apply_path_crit_bleed(character, combat, String(monster.name), messages)
 
 		# Audit #5 Slice 8 — Phase Mirror (Wraith Lord). 25% of damage dealt
 		# is reflected back to the player. Punishes hard hitters — softer
@@ -4662,7 +4684,7 @@ const FORCEFIELD_RECAST_FALLOFF := 0.55
 const ABILITY_CRIT_DAMAGE := 1.25
 
 
-static func ability_crit_multiplier(character) -> float:
+func ability_crit_multiplier(character, combat = null, ability_name: String = "") -> float:
 	"""A card crit's multiplier: the ability base plus gear crit damage. ⛑ 2026-09-15 - gear crit
 	damage used to reach basic attacks only (equipment_audit.gd: +100% crit damage, Power Strike +0%).
 	Owner: gear stats reach cards."""
@@ -4672,7 +4694,7 @@ static func ability_crit_multiplier(character) -> float:
 	# Assassinate keystone: the SAME +50% the basic attack gets. Its other half (normal hits -10%)
 	# is `ability_noncrit_multiplier`; they are read together or the keystone becomes pure gain.
 	var keystone: float = character.get_path_effect_total("crit_damage_pct") / 100.0 if character != null else 0.0
-	return ABILITY_CRIT_DAMAGE + gear + path + keystone
+	return ABILITY_CRIT_DAMAGE + gear + path + keystone + crit_overflow_bonus(character, combat, ability_name)
 
 
 static func ability_noncrit_multiplier(character) -> float:
@@ -4693,6 +4715,21 @@ const PATH_OVERDRIVE_EVERY := 4
 const PATH_LOW_HP_THRESHOLD := 0.30
 
 
+func _apply_path_crit_bleed(character, combat: Dictionary, monster_name: String, messages) -> void:
+	"""Serrated Tools: a critical hit leaves a bleed. ONE copy for the basic attack and for cards - it lived in the basic attack alone, which is
+	~1% of a deck-driven player's actions, so the node did nothing for anyone who plays cards (found by `pathvalue`: the whole Lethality branch
+	measured exactly +0 for Grifter, Ranger and Ninja)."""
+	var pct: float = character.get_path_effect_total("crit_bleed_wit_pct")
+	if pct <= 0.0:
+		return
+	var cb_tick = max(1, int(character.get_effective_stat("wits") * pct / 100.0))
+	var cb_rounds = max(1, int(character.get_path_effect_total("crit_bleed_rounds")))
+	combat["monster_bleed"] = max(int(combat.get("monster_bleed", 0)), cb_tick)
+	combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), cb_rounds)
+	if messages != null and messages is Array:
+		messages.append("[color=#9ACD32]⚜ Serrated wound — the %s bleeds (%d/round, %d rounds)![/color]" % [monster_name, cb_tick, cb_rounds])
+
+
 func path_card_damage_mult(character, ability_name: String, combat) -> float:
 	"""Multiplier for one card's damage from the archetype-branch nodes. 1.0 without them (or without a combat).
 	Pure: reads state, never writes it - the card face and the cast both call this."""
@@ -4700,14 +4737,22 @@ func path_card_damage_mult(character, ability_name: String, combat) -> float:
 		return 1.0
 	var mult := 1.0
 	var cast_n: int = int(combat.get("path_cards_cast", 0))
+	# "First card" means the first card that HURTS: a Grifter or a Ninja opens with a setup card (Distract, Mark), and `pathfires` found
+	# Vicious Rhythm silent for exactly that reason.
 	var first: float = character.get_path_effect_total("first_card_damage_pct")
-	if first > 0.0 and cast_n == 0:
+	if first > 0.0 and int(combat.get("path_damaging_cast", 0)) == 0:
 		mult *= 1.0 + first / 100.0
 	var low: float = character.get_path_effect_total("vs_low_hp_damage_pct")
 	if low > 0.0:
 		var mon = combat.get("monster", {})
 		if mon is Dictionary and float(mon.get("current_hp", 1)) <= float(mon.get("max_hp", 1)) * PATH_LOW_HP_THRESHOLD:
 			mult *= 1.0 + low / 100.0
+	# First Blood read the basic attack alone; a card now gets it too (the first blow of a fight, before anything has hurt the monster).
+	var full_hp: float = character.get_path_effect_total("vs_full_hp_damage_pct")
+	if full_hp > 0.0:
+		var mon_f = combat.get("monster", {})
+		if mon_f is Dictionary and int(mon_f.get("current_hp", 0)) >= int(mon_f.get("max_hp", 1)):
+			mult *= 1.0 + full_hp / 100.0
 	var sunder: float = character.get_path_effect_total("sunder_pct")
 	if sunder > 0.0:
 		mult *= 1.0 + sunder * float(int(combat.get("path_sunder", 0))) / 100.0
@@ -4758,6 +4803,8 @@ func _apply_path_cast_riders(combat: Dictionary, ability_name: String, damage_de
 	combat["path_cards_seen"] = seen
 	if not result.has("messages"):
 		result["messages"] = []
+	if damage_dealt > 0:
+		combat["path_damaging_cast"] = int(combat.get("path_damaging_cast", 0)) + 1
 	if damage_dealt > 0 and character.get_path_effect_total("sunder_pct") > 0.0:
 		combat["path_sunder"] = mini(PATH_SUNDER_MAX_STACKS, int(combat.get("path_sunder", 0)) + 1)
 	# Echo / Slippery Hands: the card's whole cost comes back.

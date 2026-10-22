@@ -14,6 +14,7 @@ func _fresh(klass: String, ranks: Dictionary) -> Array:
 	_next_pid += 1
 	var pid: int = _next_pid
 	var ch = sim.make_char(60, "average", klass, "Human")
+	ch.set_path_scale_override(1.0)   # the node's own numbers, not the class's value scale (PathDatabase.CLASS_SCALE)
 	ch.initialize_deck_collection_if_needed()
 	for k in ranks:
 		ch.set_path_rank(String(k), int(ranks[k]))
@@ -143,6 +144,8 @@ func _init() -> void:
 	print("--- S2 Bastion of Faith ---")
 	var h0 = sim.make_char(60, "average", "Paladin", "Human")
 	var h1 = sim.make_char(60, "average", "Paladin", "Human")
+	h0.set_path_scale_override(1.0)
+	h1.set_path_scale_override(1.0)
 	h1.set_path_rank("sig_Paladin_2", 5)
 	var hp_a: int = h0.get_total_max_hp()
 	var hp_b: int = h1.get_total_max_hp()

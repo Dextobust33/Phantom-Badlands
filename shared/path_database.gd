@@ -25,6 +25,23 @@ const CLASS_KEYSTONE_SPEND_REQ := 8
 ## existed are grandfathered at rank 3 (see Character.path_legacy_free), so nobody loses power. Owner 2026-10-22.
 const CURVE_BIG := [0.5, 0.75, 1.0]
 
+## THE per-class value lever (docs/design/paths_revamp.md section 8): every numeric path effect of a class is multiplied by its entry here, so
+## a class that sits below the field can be lifted - and one above it brought down - without touching a node, and without a global buff that the
+## monster refit would cancel. 1.0 (an absent class) changes nothing. `pathgap` measures what each class needs; the table is set once from that.
+## Set from `pathgap` (2026-10-22, 100 paired fights, within the +-10pp rule everything except Paladin sat inside the band): the Paladin was below the
+## median class at every level measured (-4, -11, -5 pp at L30 / L100 / L500) and its needed scale was 1.6-2.0 each time, so it is the one entry. The
+## others read x0.6-x1.75 from noise alone and are left at 1.0 - nothing under ~10pp is called a difference. Re-measure after the Wave 2 chain.
+const CLASS_SCALE := {"Paladin": 1.5}
+
+static func class_scale(class_type: String) -> float:
+	return float(CLASS_SCALE.get(class_type, 1.0))
+
+static func scale_effect_value(effect_key: String, v: float, scale: float) -> float:
+	"""A path effect value under a class scale. Durations, caps and counts (NON_SCALING_KEYS) are never scaled."""
+	if scale == 1.0 or effect_key in NON_SCALING_KEYS:
+		return v
+	return v * scale
+
 # archetype -> ordered branch list. Node ids: "<archetype>_<branch#>_<tier>".
 const TREES = {
 	"warrior": {
@@ -73,7 +90,7 @@ const TREES = {
 			{
 				"id": "reaver", "name": "Slayer", "color": "#FF8A5C",
 				"nodes": [
-					{"id": "warrior_5_1", "name": "Opening Salvo", "desc": "Your first card each fight deals 8% more damage.", "effect": {"first_card_damage_pct": 8}},
+					{"id": "warrior_5_1", "name": "Opening Salvo", "desc": "Your first damaging card each fight deals 8% more damage.", "effect": {"first_card_damage_pct": 8}},
 					{"id": "warrior_5_2", "name": "Executioner", "desc": "Cards deal 6% more damage to monsters below 30% HP.", "effect": {"vs_low_hp_damage_pct": 6}},
 					{"id": "warrior_5_3", "name": "Sundering", "desc": "Each card that hits makes the monster take 1% more from your cards, up to 5 times.", "effect": {"sunder_pct": 1}},
 					{"id": "warrior_5_4", "name": "Bloodletter", "desc": "Killing blows restore 3% of your max stamina.", "effect": {"kill_resource_pct": 3}},
@@ -226,7 +243,7 @@ const TREES = {
 					{"id": "trickster_6_1", "name": "Hit Where It Hurts", "desc": "Cards deal 6% more damage to monsters below 30% HP.", "effect": {"vs_low_hp_damage_pct": 6}},
 					{"id": "trickster_6_2", "name": "Open Wounds", "desc": "Each card that hits makes the monster take 1% more from your cards, up to 5 times.", "effect": {"sunder_pct": 1}},
 					{"id": "trickster_6_3", "name": "Predator's Eye", "desc": "+1% critical hit chance.", "effect": {"crit_chance_pct": 1}},
-					{"id": "trickster_6_4", "name": "Vicious Rhythm", "desc": "Your first card each fight deals 8% more damage.", "effect": {"first_card_damage_pct": 8}},
+					{"id": "trickster_6_4", "name": "Vicious Rhythm", "desc": "Your first damaging card each fight deals 8% more damage.", "effect": {"first_card_damage_pct": 8}},
 					{"id": "trickster_6_5", "name": "Cold Blood", "desc": "KEYSTONE: Your card crits deal 25% more damage, but your max HP is reduced 10%.", "keystone": true, "effect": {"ability_crit_damage_pct": 25, "max_hp_pct": -10}},
 				],
 			},

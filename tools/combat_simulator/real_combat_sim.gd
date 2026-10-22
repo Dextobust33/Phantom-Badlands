@@ -189,6 +189,9 @@ func _write_curve(fields: Dictionary, what: String) -> bool:
 
 const PathSpecs = preload("res://tools/combat_simulator/path_specs.gd")
 var _path_kind := ""
+var _path_scale := -1.0   # pathgap: the class path scale to build with (negative = the game's own table)
+var _path_only := ""   # pathvalue: spend every point on ONE branch (or "signature")
+var _path_nodes: Dictionary = {}   # pathfires: exact {node_id: rank} to hold, bypassing the budget   # pathvalue: spend every point on ONE branch (or "signature")
 
 func _init():
 	seed(20260824)  # reproducible run-to-run (gear affixes/crits/empowered are RNG)
@@ -232,6 +235,8 @@ func _init():
 			_team_flag = true
 		if String(arg) == "--companion":
 			_companion_flag = true
+		if String(arg).begins_with("--pathscale="):
+			_path_scale = float(String(arg).substr(12))
 		if String(arg).begins_with("--path="):
 			# Path spec (tools/combat_simulator/path_specs.gd): typical | offense | defense | none. Default none = the control.
 			_path_kind = String(arg).substr(7)
@@ -260,6 +265,10 @@ func _audit_registry() -> Dictionary:
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"pathspec": ["PATHS: do the path specs spend legally, and does make_char carry them?", func(): PathSpecs.audit_spec(self)],
+		"pathgap": ["PATHS: what scale does each class's path need to sit with the field (median class)?", func(): PathSpecs.audit_gap(self)],
+		"pathfires": ["PATHS: does every node change a fight? (paired, one node at a time)", func(): PathSpecs.audit_fires(self)],
+		"pathvalue": ["PATHS: what is each branch worth, per class and level (paired A/B)", func(): PathSpecs.audit_value(self)],
+		"pathspread": ["PATHS: is any build mandatory or a trap? none/typical/offense/defense paired", func(): PathSpecs.audit_spread(self)],
 		"pathcurve": ["PATHS: point economy - earned by level vs what the tree can absorb", func(): PathSpecs.audit_curve(self)],
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
 		"cardnames": ["every class: what each of its 5 cards is CALLED", run_cardnames],
@@ -5410,6 +5419,13 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	# Paths: spend the points this level has earned on the chosen spec BEFORE hp/resources are topped up (it can move the maximums).
 	if _path_kind != "" and _path_kind != "none":
 		PathSpecs.apply(ch, klass, _path_kind, level)
+	elif _path_only != "":
+		PathSpecs.apply_only(ch, klass, _path_only, level)
+	elif not _path_nodes.is_empty():
+		for _pn in _path_nodes:
+			ch.set_path_rank(String(_pn), int(_path_nodes[_pn]))
+	if _path_scale >= 0.0:
+		ch.set_path_scale_override(_path_scale)
 	ch.current_hp = ch.get_total_max_hp()
 	# Enter combat at FULL resources — in real play, out-of-combat regen tops the
 	# pool between fights. (level_up/equip raise MAX but don't refill current, and

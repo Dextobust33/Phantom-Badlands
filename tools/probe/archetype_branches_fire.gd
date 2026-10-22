@@ -242,9 +242,9 @@ func _init() -> void:
 	_setr(q, "warrior_5_1", 5)
 	var q1: float = _quote(tq, "power_strike")
 	ck(q0 > 0 and abs(q1 / q0 - 1.40) < 0.03, "Opening Salvo r5: the first card quotes %d -> %d (+40%%)" % [int(q0), int(q1)])
-	tq[1]["path_cards_cast"] = 1
-	ck(abs(_quote(tq, "power_strike") / q0 - 1.0) < 0.01, "...and the second card is back to base")
-	tq[1]["path_cards_cast"] = 0
+	tq[1]["path_damaging_cast"] = 1
+	ck(abs(_quote(tq, "power_strike") / q0 - 1.0) < 0.01, "...and the second damaging card is back to base")
+	tq[1]["path_damaging_cast"] = 0
 	_setr(q, "warrior_5_1", 0)
 	covered(["first_card_damage_pct"])
 	tq[2].current_hp = int(tq[2].max_hp * 0.2)

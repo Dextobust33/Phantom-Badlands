@@ -401,3 +401,56 @@ Design points that came out of testing, not out of the draft:
 - The panel shows six branches as two rows of three inside a scroll area.
 - **Not covered:** party (co-op) fights use their own damage path, so the card-damage nodes (Opening Salvo, Executioner, Sundering, Varied Arsenal, Overdrive) and
   the cast riders do not yet apply there; the mitigation, dodge, sustain and kill nodes do where the shared funnels are used. Filed as a known gap, same as feats.
+
+**Slice 7 - the measurement instruments: BUILT (2026-10-22).** `tools/combat_simulator/path_specs.gd`; run with `-- <audit>` on the simulator.
+`--path=none|typical|offense|defense` makes any audit build characters with a spec (default none = every old number byte-identical).
+
+| audit | answers | first result |
+|---|---|---|
+| `pathspec` | do the specs spend legally and does `make_char` carry them | PASS: legal, prerequisites held, none = no ranks |
+| `pathcurve` | points earned by level vs what the tree can absorb; name collisions | found the tree FULL at L10000 (288 vs 280) and two name collisions -> fixed (below) |
+| `pathfires` | does every node change a fight (paired, one node at a time) | see the findings below |
+| `pathvalue` | what is each branch worth, per class and level (paired A/B, all points in one branch) | below |
+| `pathspread` | is any build mandatory, or the default a trap | no: typical/offense/defense within 10pp everywhere |
+
+**Fixes the instruments forced (all built, all probed):**
+1. **Capacity.** 17 older nodes had effect numbers too big to multiply by five (+30% vs stunned, 50% kill refunds) and stayed single-rank, so the tree held only ~280
+   points against 288 earned at L10000. They now have **three ranks that climb to the old value** (rank 1 = half, rank 3 = all, `CURVE_BIG`). Owner chose this.
+   Characters who held one before ranks are **grandfathered at rank 3**, and the price difference comes back as earned points while the node is held
+   (`Character.path_legacy_free`, `PathPoints.legacy_bonus`), so a veteran neither gains nor loses. Capacity is now ~305 per class (94% of L10000's income); the
+   plan's "~555" was an arithmetic slip (it counted every node at five ranks), not a target the design needs.
+2. **Name collisions** a player could not tell apart: the Sage had two nodes called "Quiet Mind", the Barbarian a node "Reaver" and the warrior branch "Reaver".
+   The audit now fails on any name used twice inside what one class can see. (Branch -> Slayer, node -> Steady Breath.)
+3. **Dead for card players.** `pathvalue` measured the whole original Trickster Lethality branch at exactly +0 for Grifter, Ranger and Ninja. First Blood and Serrated Tools
+   were read by the basic attack alone (about 1% of a deck-driven player's actions). Both reach cards now (`old_path_nodes_reach_cards`).
+
+**What the spread says (paired, 150 fights per arm, average gear; win% with no points -> typical spec):**
+L100: Fighter 75->94, Barbarian 64->83, Paladin 60->81, Wizard 88->93, Sorcerer 80->91, Sage 71->93, Grifter 84->93, Ranger 76->90, Ninja 57->79.
+L500: Fighter 70->95, Barbarian 75->93, Paladin 67->93, Wizard 96->95, Sorcerer 86->97, Sage 73->91, Grifter 77->94, Ranger 80->94, Ninja 70->92.
+Two things follow. (1) Paths as modelled are worth **15-25pp** to most classes - far too much to add on top of the current monster curve without the Wave 2 chain
+absorbing it, so rank values stay unset until the chain runs. (2) They already **narrow the spread**: Wizard barely moves (it is at its ceiling), the weak classes move
+most, which is the direction the owner asked for. What remains at L100 is Ninja 79, Paladin 81, Barbarian 83 against a field at 90-94 - that is `pathgap`'s work.
+Caveat on every number here: feat points are an ASSUMPTION (70 by L10000, log-shaped) until the feat ledger exists.
+
+**What each branch is worth (L100 / L500, win pp over no points):** Signature is the strongest lever for 7 of 9 classes (Ninja +26/+26, Sage +6/+20, Fighter +14/+18,
+Grifter +13/+18, Ranger +15/+16); for the Fighter the Warlord branch (more stamina, longer buffs) is worth +15/+24, so resource is what binds the Fighter. Provisioner is
+exactly 0 everywhere because the simulator never uses a potion - unmeasurable, not worthless.
+
+**Slice 7, continued - `pathfires`, `pathgap`, and what they changed (2026-10-22).**
+- `pathfires` (paired, one node at a time over its prerequisite chain; silent = identical damage, taken, turns, casts, resource and HP marks): 87 of ~324 class-node
+  cells are silent, and every one now carries a reason. 60 are not defects of the node: items, fleeing and valor are not modelled; kill riders (Rally, Purging Strikes,
+  Bleed Them Dry) pay in the NEXT fight, which one fight cannot see (it needs the fights-in-sequence run model the persistent-boon design also needs); rare conditions
+  (a stunned or burning monster, poison on the player, a player below half HP); and cards the simulator's fixed rotation never plays (Resonance, Twin Bolt, Dirty Tricks,
+  Hunter's Reach, Vanishing Act...) in fights a level-100 mage ends in two or three rounds, before Focus has built.
+- **Defects it found, all fixed and probed** (`old_path_nodes_reach_cards`): Serrated Tools and First Blood read by the basic attack only; **Flowing Font** read by the basic
+  attack's trickle only (silent for every mage); **Keen Eye / Predator's Eye dead for any Trickster at the 75% crit cap** - path crit chance past the cap now becomes +0.5 points
+  of crit damage per point (only the PATH's chance converts: a level-60 Ninja is at 143% raw crit, and converting all of it would have been a windfall); **Opening Salvo /
+  Vicious Rhythm spent on the first card even when it was a setup card** (a Grifter or Ninja opens with Distract or Mark) - they now mean the first DAMAGING card.
+- **Still open, owner call:** the Ranger's Steady Hand never crits, so Keen Eye, Predator's Eye, Serrated Tools, Assassinate and Cold Blood are dead for it by class design;
+  a Ranger that reads the Lethality branch finds a third of it useless. Either those nodes should offer the Ranger something else, or the Ranger's tree should hide them.
+- `pathgap`: the typical spec at scale x0.5 / 1 / 1.5 / 2 against the median class, per level. By the +-10pp rule only the **Paladin** is consistently below (-4 / -11 / -5 pp at
+  L30 / L100 / L500, needed scale 1.6-2.0 every time) and Barbarian at L30 only (-11, then -3). Every other class reads x0.6-x1.75 from sampling noise alone and is left at 1.0.
+  `PathDatabase.CLASS_SCALE = {"Paladin": 1.5}` is therefore the whole per-class value table for now (every numeric path effect of the class times 1.5; durations and counts never
+  scale). Checked: Paladin typical 92 / 90 / 95 against medians 94 / 91 / 94. **Re-measure after the Wave 2 chain**, which moves the whole field.
+- Instruments still to build: high-level reach (L1000-10000; needs a check of the reference curve's top end against live saves first) and the feat telemetry ledger (the modelled
+  70 feat points by L10000 is an assumption every number above carries).
