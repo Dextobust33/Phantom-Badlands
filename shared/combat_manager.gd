@@ -4235,6 +4235,16 @@ const TELEGRAPHED_BURSTS := {
 	"boss_labyrinth_charge": "The %s paws the ground, gathering for a charge",
 	"boss_titan_earthquake": "The %s raises both fists over the earth",
 	"boss_tremor_stomp": "The %s lifts one great foot",
+	# Second batch (2026-10-22): every remaining boss ability that is a SINGLE big moment of raw damage. Heals, auras, stacking ticks and debuffs
+	# are deliberately not here - a telegraphed heal or a telegraphed tick is not a moment a player can answer, and winding up everything
+	# would make every boss the same metronome.
+	"boss_soul_siphon": "The %s's eyes pale, drawing at your soul",
+	"boss_sonic_echo": "The %s's resonance climbs to a shriek",
+	"boss_hatchling_swarm": "The %s's brood stirs in the shadows",
+	"boss_infernal_curse": "The %s's curse gathers to a single point",
+	"boss_primordial_roar": "The %s fills its lungs and the air itself bends",
+	"boss_divine_punishment": "The %s raises a hand, calling down judgement",
+	"boss_death_mark": "The %s tightens the mark on your soul",
 }
 
 
@@ -4272,6 +4282,21 @@ func _telegraph_burst(combat: Dictionary, ability: String, monster, messages: Ar
 	return true
 
 
+## Queue a burst, or - when another wind-up is already pending - land it now exactly as it always did, so converting a boss never DELETES damage.
+func _queue_burst_or_land(combat: Dictionary, ability: String, raw: int, monster, character, messages: Array, strip: bool = false, siphon: bool = false) -> void:
+	combat["pending_burst_raw"] = maxi(1, raw)
+	combat["pending_burst_strip"] = strip
+	combat["pending_burst_siphon"] = siphon
+	if _telegraph_burst(combat, ability, monster, messages):
+		return
+	combat["pending_burst_ability"] = ability
+	combat["pending_burst_round"] = int(combat.get("round", 0))
+	var save_msgs: Array = []
+	_resolve_pending_burst(combat, monster, character, save_msgs)
+	for m in save_msgs:
+		messages.append(m)
+
+
 ## Resolve a queued burst, if this is its round. Returns the damage dealt (0 if none or cancelled).
 func _resolve_pending_burst(combat: Dictionary, monster, character, messages: Array) -> int:
 	var ability := String(combat.get("pending_burst_ability", ""))
@@ -4285,6 +4310,8 @@ func _resolve_pending_burst(combat: Dictionary, monster, character, messages: Ar
 		messages.append("[color=#66FF99][b]THE BLOW NEVER COMES![/b][/color] [color=#AAFFCC]The %s is reeling — its attack falls apart.[/color]" % monster.name)
 		combat["pending_burst_lull"] = false
 		combat["pending_burst_quake"] = false
+		combat["pending_burst_strip"] = false
+		combat["pending_burst_siphon"] = false
 		return 0
 	var raw: int = int(combat.get("pending_burst_raw", 0))
 	if raw <= 0:
@@ -4301,6 +4328,19 @@ func _resolve_pending_burst(combat: Dictionary, monster, character, messages: Ar
 			combat["titan_earthquake_stacks"] = _qs + 1
 			messages.append("[color=#8B4513]The %s settles into a hardened stance (Earthquake %d/5).[/color]"
 				% [monster.name, _qs + 1])
+	if bool(combat.get("pending_burst_strip", false)):
+		combat["pending_burst_strip"] = false
+		var torn: Array = character.get_active_buff_names()
+		for b in torn:
+			character.remove_buff(b)
+		if torn.size() > 0:
+			messages.append("[color=#FF8800]Every buff you carried is torn away (%d stripped).[/color]" % torn.size())
+	if bool(combat.get("pending_burst_siphon", false)):
+		combat["pending_burst_siphon"] = false
+		var healed: int = mini(dealt, int(monster.max_hp) - int(monster.current_hp))
+		monster.current_hp = mini(int(monster.max_hp), int(monster.current_hp) + dealt)
+		if healed > 0:
+			messages.append("[color=#9370DB]It drinks what it took (+%d HP).[/color]" % healed)
 	var softened: String = ""
 	if dealt < raw:
 		softened = " [color=#66B0FF](you took %d of %d — you were ready)[/color]" % [dealt, raw]
@@ -11299,10 +11339,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		if siphon_already != int(combat.round):
 			combat["soul_siphon_last_round"] = int(combat.round)
 			var drain_amt = max(1, int(character.get_total_max_hp() * 0.08))
-			_damage_player_through_shield(combat, character, drain_amt, "Soul Siphon")
-			var heal_amt_ss = mini(drain_amt, int(monster.max_hp) - int(monster.current_hp))
-			monster.current_hp = mini(int(monster.max_hp), int(monster.current_hp) + drain_amt)
-			messages.append("[color=#9370DB][b]SOUL SIPHON![/b][/color] [color=#A0C8E0]The %s drains [color=#FF8800]%d[/color] HP from you — and heals %d.[/color]" % [monster.name, drain_amt, heal_amt_ss])
+			_queue_burst_or_land(combat, ABILITY_BOSS_SOUL_SIPHON, drain_amt, monster, character, messages, false, true)
 
 	# Audit #5 boss signature — Contagion Aura / boss_contagion_aura (Plague
 	# Zombie). Every 2 monster turns, apply +1 contagion stack (cap 5). The
@@ -11388,9 +11425,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			combat["sonic_echo_stacks"] = echo_stacks
 			if echo_stacks >= 4:
 				combat["sonic_echo_stacks"] = 0
-				var echo_dmg = max(1, int(character.get_total_max_hp() * 0.15))
-				character.current_hp = max(1, character.current_hp - echo_dmg)
-				messages.append("[color=#DDA0DD][b]SONIC ECHO RELEASE![/b][/color] [color=#FF8800]The %s's resonance shatters the air around you! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, echo_dmg])
+				_queue_burst_or_land(combat, ABILITY_BOSS_SONIC_ECHO, int(character.get_total_max_hp() * 0.15), monster, character, messages)
 			else:
 				messages.append("[color=#DDA0DD]The %s's screech builds (echo %d/4).[/color]" % [monster.name, echo_stacks])
 
@@ -11416,9 +11451,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		var swarm_already = int(combat.get("hatchling_swarm_last_round", -1))
 		if swarm_already != int(combat.round):
 			combat["hatchling_swarm_last_round"] = int(combat.round)
-			var swarm_dmg = max(1, int(character.get_total_max_hp() * 0.15))
-			character.current_hp = max(1, character.current_hp - swarm_dmg)
-			messages.append("[color=#FF6347][b]HATCHLING SWARM![/b][/color] [color=#FF8800]Hidden hatchlings swarm from the shadows! [color=#FF4444]-%d HP[/color].[/color]" % swarm_dmg)
+			_queue_burst_or_land(combat, ABILITY_BOSS_HATCHLING_SWARM, int(character.get_total_max_hp() * 0.15), monster, character, messages)
 
 	# Audit #5 boss signature (Slice 9) — Infernal Curse (Demon Overlord). Each
 	# monster turn +1 curse stack; at 5 stacks deals 25% max HP burst and resets.
@@ -11433,9 +11466,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			combat["infernal_curse_stacks"] = curse_stacks
 			if curse_stacks >= 5:
 				combat["infernal_curse_stacks"] = 0
-				var curse_dmg = max(1, int(character.get_total_max_hp() * 0.25))
-				character.current_hp = max(1, character.current_hp - curse_dmg)
-				messages.append("[color=#8B0000][b]INFERNAL CURSE EXPLODES![/b][/color] [color=#FF4444]-%d HP[/color].[/color]" % curse_dmg)
+				_queue_burst_or_land(combat, ABILITY_BOSS_INFERNAL_CURSE, int(character.get_total_max_hp() * 0.25), monster, character, messages)
 			else:
 				messages.append("[color=#9400D3]The %s's curse darkens around you (%d/5).[/color]" % [monster.name, curse_stacks])
 
@@ -11582,15 +11613,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		var roar_already = int(combat.get("primordial_roar_last_round", -1))
 		if roar_already != int(combat.round):
 			combat["primordial_roar_last_round"] = int(combat.round)
-			var roar_dmg = max(1, int(character.get_total_max_hp() * 0.20))
-			character.current_hp = max(1, character.current_hp - roar_dmg)
-			var roar_buffs = character.get_active_buff_names()
-			for b in roar_buffs:
-				character.remove_buff(b)
-			if roar_buffs.size() > 0:
-				messages.append("[color=#FF6347][b]PRIMORDIAL ROAR![/b][/color] [color=#FF8800]Reality itself shudders! [color=#FF4444]-%d HP[/color]. All your buffs are torn away (%d stripped).[/color]" % [roar_dmg, roar_buffs.size()])
-			else:
-				messages.append("[color=#FF6347][b]PRIMORDIAL ROAR![/b][/color] [color=#FF8800]Reality itself shudders! [color=#FF4444]-%d HP[/color].[/color]" % roar_dmg)
+			_queue_burst_or_land(combat, ABILITY_BOSS_PRIMORDIAL_ROAR, int(character.get_total_max_hp() * 0.20), monster, character, messages, true)
 
 	# Audit #5 boss signature (Slice 12) — Coil Squeeze (World Serpent). Each
 	# monster turn +1 coil stack (cap 10). Stacks tick 1% player max HP at
@@ -11611,9 +11634,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		var dmark_already = int(combat.get("death_mark_last_round", -1))
 		if dmark_already != int(combat.round):
 			combat["death_mark_last_round"] = int(combat.round)
-			var dmark_dmg = max(1, int(character.get_total_max_hp() * 0.08))
-			character.current_hp = max(1, character.current_hp - dmark_dmg)
-			messages.append("[color=#4B0082][b]DEATH MARK![/b][/color] [color=#9400D3]The mark on your soul flares! [color=#FF4444]-%d HP[/color].[/color]" % dmark_dmg)
+			_queue_burst_or_land(combat, ABILITY_BOSS_DEATH_MARK, int(character.get_total_max_hp() * 0.08), monster, character, messages)
 
 	# Audit #5 boss signature (Slice 12) — Madness Aura (Cosmic Horror). Every
 	# 4 monster turns, sets madness flag for player's next 2 turns. Consumer in
@@ -11685,9 +11706,7 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			# Use level multiplier capped so the burst is meaningful but not
 			# instakill — at level 100 it'd be 500% max HP otherwise.
 			var divine_pct = clamp(float(character.level) * 0.005, 0.10, 0.40)
-			var divine_dmg = max(1, int(character.get_total_max_hp() * divine_pct))
-			character.current_hp = max(1, character.current_hp - divine_dmg)
-			messages.append("[color=#FFD700][b]DIVINE PUNISHMENT![/b][/color] [color=#FF8800]The %s judges your insolence! [color=#FF4444]-%d HP[/color] (scales with your level).[/color]" % [monster.name, divine_dmg])
+			_queue_burst_or_land(combat, ABILITY_BOSS_DIVINE_PUNISHMENT, int(character.get_total_max_hp() * divine_pct), monster, character, messages)
 
 	# Audit #5 boss signature (Slice 12) — Decay (Entropy). Each monster turn,
 	# +1 decay stack (uncapped). The tick is applied in player turn-start block.

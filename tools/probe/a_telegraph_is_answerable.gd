@@ -27,6 +27,35 @@ const MonsterDB := preload("res://shared/monster_database.gd")
 
 var _fails: Array = []
 
+## The abilities that are deliberately NOT telegraphed, each judged against "is this a single big moment of damage the player could answer?"
+## (owner 2026-10-22 closed the queue by deciding every one). A telegraphed heal, tick or aura is not a decision, and winding up everything would make
+## every boss the same metronome. A NEW cyclical ability that is in neither this table nor TELEGRAPHED_BURSTS fails section 4: it has not been decided.
+const NOT_BURSTS := {
+	"boss_iron_discipline": "a heal (10%) - the answer is burst damage, not a guard",
+	"boss_soul_forge": "a heal (15%)",
+	"boss_temporal_rewind": "a heal (25%) that also clears its debuffs",
+	"boss_contagion_aura": "a passive stacking tick, not a moment",
+	"boss_coil_squeeze": "a passive stacking tick",
+	"boss_decay": "a passive stacking tick",
+	"boss_three_heads": "a steady chip every turn",
+	"boss_triple_threat": "a rotating debuff, not damage",
+	"boss_element_cycle": "a rotating debuff, not one blow",
+	"boss_riddle_curse": "a persistent stacking debuff",
+	"boss_chaotic_surge": "a random effect each turn; winding it up would remove the point of it",
+	"boss_dragons_hoard": "strips ONE buff and grows the boss; a stacking effect",
+	"boss_wind_shear": "a one-round damage debuff, shown the turn it applies",
+	"boss_lullaby": "a status (skip a turn); stun-cancel already answers it through Web/stun rules",
+	"boss_madness_aura": "a status over two turns",
+	"boss_void_step": "the boss phases out and your next hit does nothing: it already warns, and the answer is what you cast, not a guard",
+}
+
+## State a burst needs before its own round can fire: stack bursts release on their LAST stack, Death Mark needs the mark on the player.
+const SETUPS := {
+	"boss_sonic_echo": {"sonic_echo_stacks": 3},
+	"boss_infernal_curse": {"infernal_curse_stacks": 4},
+	"boss_death_mark": {"player_death_marked": true},
+}
+
 
 func _fail(m: String) -> void:
 	_fails.append(m)
@@ -67,6 +96,9 @@ func _boss_fight(cm, db, ability: String, period: int) -> Dictionary:
 	ch.current_hp = ch.get_total_max_hp()
 	var combat: Dictionary = cm.active_combats[0]
 	combat["round"] = period        # the round it used to land on
+	var setup: Dictionary = SETUPS.get(ability, {})
+	for k in setup:
+		combat[k] = setup[k]
 	return {"combat": combat, "char": ch, "monster": combat.monster}
 
 
@@ -79,6 +111,13 @@ func _init() -> void:
 		"boss_labyrinth_charge": 5,
 		"boss_tremor_stomp": 3,
 		"boss_titan_earthquake": 4,
+		"boss_soul_siphon": 3,
+		"boss_sonic_echo": 4,
+		"boss_hatchling_swarm": 4,
+		"boss_infernal_curse": 5,
+		"boss_primordial_roar": 5,
+		"boss_divine_punishment": 4,
+		"boss_death_mark": 3,
 	}
 
 	print("")
@@ -175,10 +214,22 @@ func _init() -> void:
 	var converted: Array = CombatManagerScript.TELEGRAPHED_BURSTS.keys()
 	print("  %d cyclical boss abilities; %d telegraph, %d still land the moment the counter hits:"
 		% [cyclical.size(), converted.size(), maxi(0, cyclical.size() - converted.size())])
+	var undecided: Array = []
+	var seen: Dictionary = {}
 	for c in cyclical:
 		var id := String(c).replace("ABILITY_", "").to_lower()
-		if not CombatManagerScript.TELEGRAPHED_BURSTS.has(id):
-			print("    %s" % id)
+		if seen.has(id):
+			continue
+		seen[id] = true
+		if CombatManagerScript.TELEGRAPHED_BURSTS.has(id):
+			continue
+		if NOT_BURSTS.has(id):
+			print("    decided, not a burst: %-22s %s" % [id, NOT_BURSTS[id]])
+		else:
+			undecided.append(id)
+			print("    UNDECIDED: %s" % id)
+	if not undecided.is_empty():
+		_fail("%d cyclical boss abilities are neither telegraphed nor decided: %s" % [undecided.size(), ", ".join(undecided)])
 
 	print("")
 	if not _fails.is_empty():

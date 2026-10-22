@@ -45,7 +45,7 @@ These all change power or the money behind it, so they share one design pass and
    (roles) - done. Design first; the rolls change power so they belong before the chain.
 3. **PATHS REVAMP** (class-specific, less conditional) and the **DUNGEON CARD POWER PASS**: both change player power and
    both are blocked only on an owner design answer. Ask once, build once.
-4. **THE REMAINING 24 CYCLICAL BURSTS** (telegraph them like the five already done): small, monster-side, must precede the chain.
+4. **THE REMAINING 24 CYCLICAL BURSTS** - **DONE 2026-10-22, unreleased:** seven more damage bursts now wind up (Soul Siphon, Sonic Echo, Hatchling Swarm, Infernal Curse, Primordial Roar, Divine Punishment, Death Mark); the other 16-17 were each DECIDED not to be bursts (heals, auras, stacking ticks, debuffs; reasons in `a_telegraph_is_answerable` section 4, which now fails on any cyclical ability that is neither). Must precede the chain, and does.
 
 ### WAVE 2 - the balance batch (item 9): ONE run
 `-- preflight` first, then speciescal, refcal, rolecal ONCE each (use `--budget=5400` for rolecal). Fold into it, in this order:
