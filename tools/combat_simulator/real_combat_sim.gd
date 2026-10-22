@@ -191,6 +191,7 @@ const PathSpecs = preload("res://tools/combat_simulator/path_specs.gd")
 const DropTablesLite = preload("res://shared/drop_tables.gd")
 const DungeonCardAudit = preload("res://tools/combat_simulator/dungeon_card_audit.gd")
 var _path_kind := ""
+var _boons_kind := ""
 var _dc_card := ""     # dungeoncardswap: a dungeon card id to swap INTO the deck (see dungeon_card_audit.gd)
 var _dc_remove := ""   # ...and the deck card to take out ("" = remove nothing)
 var _path_scale := -1.0   # pathgap: the class path scale to build with (negative = the game's own table)
@@ -247,6 +248,9 @@ func _init():
 			combat_mgr.dungeon_card_power_override = float(String(arg).substr(9))
 		if String(arg).begins_with("--pathscale="):
 			_path_scale = float(String(arg).substr(12))
+		if String(arg).begins_with("--boons="):
+			# Life-build model (path_specs.gd apply_boons): typical | half | none. Default none = the control.
+			_boons_kind = String(arg).substr(8)
 		if String(arg).begins_with("--path="):
 			# Path spec (tools/combat_simulator/path_specs.gd): typical | offense | defense | none. Default none = the control.
 			_path_kind = String(arg).substr(7)
@@ -278,6 +282,7 @@ func _audit_registry() -> Dictionary:
 		"dungeoncardswap": ["DUNGEON CARDS: per class, which are worth swapping into the weakest deck slot (paired A/B)", func(): DungeonCardAudit.audit(self)],
 		"pathgap": ["PATHS: what scale does each class's path need to sit with the field (median class)?", func(): PathSpecs.audit_gap(self)],
 		"pathfires": ["PATHS: does every node change a fight? (paired, one node at a time)", func(): PathSpecs.audit_fires(self)],
+		"boonvalue": ["BOONS: what the life build of boons is worth, per class and level (paired A/B)", func(): PathSpecs.audit_boons(self)],
 		"pathvalue": ["PATHS: what is each branch worth, per class and level (paired A/B)", func(): PathSpecs.audit_value(self)],
 		"pathspread": ["PATHS: is any build mandatory or a trap? none/typical/offense/defense paired", func(): PathSpecs.audit_spread(self)],
 		"pathcurve": ["PATHS: point economy - earned by level vs what the tree can absorb", func(): PathSpecs.audit_curve(self)],
@@ -5435,6 +5440,8 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	elif not _path_nodes.is_empty():
 		for _pn in _path_nodes:
 			ch.set_path_rank(String(_pn), int(_path_nodes[_pn]))
+	if _boons_kind != "" and _boons_kind != "none":
+		PathSpecs.apply_boons(ch, klass, _boons_kind, level)
 	if _path_scale >= 0.0:
 		ch.set_path_scale_override(_path_scale)
 	if _dc_remove != "" or _dc_card != "":

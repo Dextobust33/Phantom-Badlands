@@ -2052,6 +2052,9 @@ var _quest_panel_active_only := false  # true = opened from map "Quests" (active
 # Path of the Badlands (ARPG pillar 3) — skill tree panel.
 const PathsPanelScript = preload("res://client/paths_panel.gd")
 var paths_panel = null
+const BoonPanelScript = preload("res://client/boon_panel.gd")
+var boon_panel = null
+var _boon_timer: Timer = null
 
 # Uniques & Sets (ARPG pillar 4) — set definitions for tooltip rendering.
 const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
@@ -3549,6 +3552,15 @@ DDD")
 	paths_panel.close_requested.connect(_on_paths_panel_close)
 	paths_panel.learn_requested.connect(_on_paths_panel_learn)
 	paths_panel.respec_requested.connect(_on_paths_panel_respec)
+	# Persistent boons: the pick-1-of-3 modal. Offers ride in character_data; a 1s check opens one once the fight's aftermath is over.
+	boon_panel = BoonPanelScript.new()
+	add_child(boon_panel)
+	boon_panel.picked.connect(_on_boon_picked)
+	_boon_timer = Timer.new()
+	_boon_timer.wait_time = 1.0
+	_boon_timer.timeout.connect(_refresh_boon_panel)
+	add_child(_boon_timer)
+	_boon_timer.start()
 
 	# Audit #12 UI remediation — post status panel + Feed All.
 	post_status_panel = PostStatusPanelScript.new()
@@ -7465,6 +7477,22 @@ func _dev_run_shots() -> void:
 				paths_panel._on_node_pressed(PathDatabase.find_node("warrior_1_1"))
 				await get_tree().create_timer(0.5).timeout
 				await _dev_shot_capture("paths_02_rank_detail")
+				close_paths_panel()
+
+			"boons":
+				# The boon offer modal and the Paths strip, rendered by the REAL panels.
+				# The 1s refresh hides the modal when character_data holds no offer, so the scene puts one there (as the server would).
+				character_data["pending_boon_offers"] = [{"options": ["thick_skin", "kill_surge", "barbs"], "scope": "life", "why": "A hard-won fight"}]
+				character_data["boons"] = {"thick_skin": 2}
+				_refresh_boon_panel()
+				await get_tree().create_timer(0.6).timeout
+				await _dev_shot_capture("boons_01_offer")
+				character_data["pending_boon_offers"] = []
+				character_data["boons"] = {}
+				boon_panel.hide_offer()
+				paths_panel.open({"class": "Fighter", "level": 120, "path_ranks": {"warrior_1_1": 2}, "boons": {"thick_skin": 2, "hardy": 1, "barbs": 1}, "dungeon_boons": {"kill_surge": 1}})
+				await get_tree().create_timer(0.6).timeout
+				await _dev_shot_capture("boons_02_paths_strip")
 				close_paths_panel()
 
 			"rework":
@@ -29245,6 +29273,7 @@ func handle_server_message(message: Dictionary):
 				# counter update without closing the panel.
 				if paths_panel and paths_panel.visible:
 					paths_panel.populate(character_data)
+				_refresh_boon_panel()
 				# Refresh companion section in the battle panel so XP / level
 				# changes (gained from kills mid-combat) show in real time.
 				if combat_scene_panel and in_combat and combat_scene_panel.has_method("update_companion_data"):
@@ -43620,6 +43649,24 @@ func open_paths_panel() -> void:
 func close_paths_panel() -> void:
 	if paths_panel:
 		paths_panel.close()
+
+func _refresh_boon_panel() -> void:
+	"""Show the oldest waiting boon offer once nothing else is on screen; hide the modal when none is waiting."""
+	if not boon_panel:
+		return
+	var offers = character_data.get("pending_boon_offers", [])
+	if not (offers is Array) or offers.is_empty() or _combat_ui_busy():
+		boon_panel.hide_offer()
+		return
+	boon_panel.show_offer(offers[0], character_data.get("boons", {}), character_data.get("dungeon_boons", {}))
+
+func _on_boon_picked(choice: String) -> void:
+	send_to_server({"type": "boon_pick", "choice": choice})
+	# Optimistic hide: the server's character_update re-shows the NEXT waiting offer, if any.
+	boon_panel.hide_offer()
+	var offers = character_data.get("pending_boon_offers", [])
+	if offers is Array and not offers.is_empty():
+		offers.remove_at(0)
 
 func _on_paths_panel_close() -> void:
 	close_paths_panel()

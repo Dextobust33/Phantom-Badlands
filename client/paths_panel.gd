@@ -16,6 +16,7 @@ signal respec_requested(branch_id: String, confirm: bool)
 const PathDatabaseScript = preload("res://shared/path_database.gd")
 const PathPointsScript = preload("res://shared/path_points.gd")
 const PathFeatsScript = preload("res://shared/path_feats.gd")
+const BoonsScript = preload("res://shared/boons.gd")
 
 var _root_panel: PanelContainer
 var _header_label: RichTextLabel
@@ -24,6 +25,7 @@ var _ascendant_row: HBoxContainer
 var _columns_hbox: GridContainer
 var _keystone_row: HBoxContainer
 var _milestone_label: RichTextLabel
+var _boon_label: RichTextLabel
 var _detail_label: RichTextLabel
 var _learn_button: Button
 
@@ -236,6 +238,12 @@ func _build_layout() -> void:
 	_milestone_label.scroll_active = false
 	_milestone_label.add_theme_font_size_override("normal_font_size", 11)
 	vbox.add_child(_milestone_label)
+	_boon_label = RichTextLabel.new()
+	_boon_label.bbcode_enabled = true
+	_boon_label.fit_content = true
+	_boon_label.scroll_active = false
+	_boon_label.add_theme_font_size_override("normal_font_size", 11)
+	vbox.add_child(_boon_label)
 
 	# Detail strip + Learn button
 	var detail_hbox := HBoxContainer.new()
@@ -398,6 +406,7 @@ func _render() -> void:
 			ms_parts.append("[color=#B0A080]%s %d/%d (%d/%d)[/color]" % [String(f.get("label", fid)), val, int(rungs[have]), have, rungs.size()])
 	_milestone_label.text = "[color=#8A7B5C]Feats (each rung +1 point):[/color]  " + "   ".join(ms_parts)
 
+	_boon_label.text = _boon_text()
 	_refresh_detail()
 
 
@@ -481,3 +490,23 @@ func _on_learn_pressed() -> void:
 	if _selected_node_id == "":
 		return
 	learn_requested.emit(_selected_node_id)
+
+
+func _boon_text() -> String:
+	"""'Boons: Thick Skin x2, Hardy | this dungeon: ...' - what the character holds, so a stronger number has a visible origin."""
+	var life = _character_data.get("boons", {})
+	var dg = _character_data.get("dungeon_boons", {})
+	var parts: Array = []
+	if life is Dictionary:
+		for id in life:
+			parts.append(BoonsScript.name_of(String(id)) + (" x%d" % int(life[id]) if int(life[id]) > 1 else ""))
+	var dparts: Array = []
+	if dg is Dictionary:
+		for id in dg:
+			dparts.append(BoonsScript.name_of(String(id)) + (" x%d" % int(dg[id]) if int(dg[id]) > 1 else ""))
+	if parts.is_empty() and dparts.is_empty():
+		return "[color=#8A7B5C]Boons: none yet - hard fights and dungeon monsters can offer them.[/color]"
+	var out := "[color=#8A7B5C]Boons (life):[/color] [color=#B0A080]%s[/color]" % (", ".join(PackedStringArray(parts)) if not parts.is_empty() else "none")
+	if not dparts.is_empty():
+		out += "   [color=#8A7B5C]This dungeon:[/color] [color=#87CEEB]%s[/color]" % ", ".join(PackedStringArray(dparts))
+	return out

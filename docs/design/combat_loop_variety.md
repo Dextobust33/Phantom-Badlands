@@ -187,3 +187,15 @@ One press, one grade; the window closes when read.
 
 **Not built:** co-op party fights guard with the plain value (their brace path does not read a grade), and only Brace/Ward/Slip is graded (defensive cards are not). Both are small, and worth doing once the window has been played.
 Probe `timing_window_brace` (graded values 600 / 450 / 300 of a 1000 burst, the safety rules, the rider cancel, the state sent to the client, the bar's maths, the client wiring); screenshot scene `timing`.
+
+## 13. Persistent boons - BUILT 2026-10-22 (unreleased)
+
+Code: `shared/boons.gd` (table of 36, stacking, offers), `Character.boons / dungeon_boons / pending_boon_offers` (saved), server `_maybe_offer_boon` / `handle_boon_pick`, client `boon_panel.gd` + the strip in the Paths panel.
+
+- **A boon is a Path effect.** It adds to the same `get_path_effect_total` cache combat already reads (including `trg_<id>` trigger power), so no combat code changed and every key has a reader (probe `boons_core` checks all 36).
+- **Weakening, per effect key.** Contributions sort strongest first; the i-th counts `0.85^i` (life) or `0.92^i` (dungeon). A key can never exceed value/(1-curve) (6.7x one boon for life), and spreading across different boons beats stacking one. Dungeon boons are worth 1.6x per pick and end when `Character.exit_dungeon()` runs (every exit path, one place), along with any waiting dungeon offers.
+- **Pacing is a budget, not a flat chance.** `budget_for_level` = the Path point curve (6 boons at L30, 20 at L100, ~218 at L10000). A HARD fight (boss, elite/rare/apex, two or more traits) always offers while the character is less than 3 ahead of budget; a one-trait fight offers 30% x how far behind; an ordinary fight 10% x how far behind (a trickle once on budget). So the count by level is a known function the sim models. A normal-chance offer inside a dungeon pays a DUNGEON boon, a hard fight a LIFE boon. At most 3 offers wait unopened.
+- **Pool.** Class archetype and card-tag filtered (a Chilling Touch needs a control card in the deck, a crit trigger is not offered to a Ranger). Three different options; a boon already held is a little less likely.
+- **UI.** The offer rides in the character dict, so it survives disconnects; the client opens the modal once `_combat_ui_busy()` is false, with Decline. The Paths panel shows "Boons (life) ... This dungeon ...". Scene `--shots=boons`.
+- **Sim.** `--boons=typical|half|none` (`PathSpecs.apply_boons`: an on-budget character picks from seeded offers of three, fewest-held first); audit `boonvalue` (paired, typical Path spec in both arms). First read (n=60): Fighter L100 85 -> 95, Wizard L100 85 -> 90, L30 unchanged - modest, as intended. The Wave 2 chain should run with `--boons=typical` in the reference player.
+- **Not built:** co-op party fights offer boons but do not yet run boon-driven card nodes any more than they run path nodes (known gap); unique items cannot grant boons.

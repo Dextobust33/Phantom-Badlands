@@ -137,6 +137,33 @@ static func apply(ch, klass: String, kind: String, level: int) -> int:
 	return spent
 
 
+## BOONS (shared/boons.gd). The life-build model: a character on budget holds `Boons.budget_for_level(level)` boons, each picked from a seeded offer of three by the rule a sensible player
+## follows - take the boon you hold the fewest of (the stacking curve punishes repeats), ties to the heavier-weighted one. Seeded per (class, level) so a paired A/B differs only in the boons.
+## `kind`: "typical" = on budget; "half" = half of it (a player who declines or is behind); "none" = the control.
+static func apply_boons(ch, klass: String, kind: String, level: int) -> int:
+	if kind == "" or kind == "none":
+		return 0
+	var B = load("res://shared/boons.gd")
+	var n: int = B.budget_for_level(level)
+	if kind == "half":
+		n = n / 2
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%s|%d|boons" % [klass, level])
+	var tags: Array = ch.deck_tags()
+	for i in range(n):
+		var opts: Array = B.roll_options(klass, tags, ch.boons, rng)
+		if opts.is_empty():
+			break
+		var best: String = String(opts[0])
+		for o in opts:
+			var ho: int = int(ch.boons.get(String(o), 0))
+			var hb: int = int(ch.boons.get(best, 0))
+			if ho < hb or (ho == hb and float(B.BOONS[String(o)].get("weight", 5)) > float(B.BOONS[best].get("weight", 5))):
+				best = String(o)
+		ch.add_boon(best, "life")
+	return n
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # AUDITS (registered in real_combat_sim.gd). Each ends with its own PASS / FAIL line.
 # ---------------------------------------------------------------------------------------------------------------------
@@ -326,6 +353,52 @@ static func _paired(sim, level: int, klass: String, branch_key: String, n: int, 
 		turns += int(r.get("turns", 0))
 		taken += int(r.get("taken", 0))
 	return {"win": 100.0 * w / n, "death": 100.0 * d / n, "turns": float(turns) / n, "taken": float(taken) / n}
+
+
+static func audit_boons(sim) -> void:
+	"""What the boon life-build is worth: every class at each level, the typical Path spec in BOTH arms, boons none vs typical, same seeds. Args: --class=Wizard --levels=30,100 --n=120."""
+	var classes: Array = ALL
+	var levels: Array = [10, 30, 100, 500]
+	var n := 120
+	for a in OS.get_cmdline_user_args():
+		var sa := String(a)
+		if sa.begins_with("--class="):
+			classes = [sa.substr(8)]
+		elif sa.begins_with("--levels="):
+			levels = Array(sa.substr(9).split(",")).map(func(x): return int(x))
+		elif sa.begins_with("--n="):
+			n = int(sa.substr(4))
+	print("
+===== WHAT THE BOON BUILD IS WORTH (boonvalue) =====")
+	print("paired: fight i is the same character and monster in both arms; both hold the typical Path spec, one adds the boons a character on budget would hold.")
+	var B = load("res://shared/boons.gd")
+	var total_dw := 0.0
+	var cells := 0
+	for k in classes:
+		for lvl in levels:
+			var arms: Array = []
+			for kind in ["none", "typical"]:
+				var w := 0
+				var d := 0
+				for i in range(n):
+					seed(hash("boonvalue|%s|%d|%d" % [k, lvl, i]))
+					sim._path_kind = "typical"
+					sim._boons_kind = kind
+					var r = sim.run_fight(lvl, "average", "normal", 1.0, 1.0, 1.0, k)
+					if bool(r.get("win", false)):
+						w += 1
+					if bool(r.get("died", false)):
+						d += 1
+				arms.append([100.0 * w / n, 100.0 * d / n])
+			sim._boons_kind = ""
+			sim._path_kind = ""
+			var dw: float = arms[1][0] - arms[0][0]
+			total_dw += dw
+			cells += 1
+			print("%-9s L%-5d boons %3d | win %3.0f -> %3.0f (%+.0f)  death %4.1f -> %4.1f" % [k, lvl, B.budget_for_level(lvl), arms[0][0], arms[1][0], dw, arms[0][1], arms[1][1]])
+	var mean: float = total_dw / maxf(1.0, float(cells))
+	print("mean win change %+.1fpp over %d cells" % [mean, cells])
+	print("PASS" if cells > 0 and abs(mean) > 0.05 else "FAIL (the boons changed nothing - are they applied?)")
 
 
 static func audit_value(sim) -> void:
