@@ -31,7 +31,7 @@ const CURVE_BIG := [0.5, 0.75, 1.0]
 ## Set from `pathgap` (2026-10-22, 100 paired fights, within the +-10pp rule everything except Paladin sat inside the band): the Paladin was below the
 ## median class at every level measured (-4, -11, -5 pp at L30 / L100 / L500) and its needed scale was 1.6-2.0 each time, so it is the one entry. The
 ## others read x0.6-x1.75 from noise alone and are left at 1.0 - nothing under ~10pp is called a difference. Re-measure after the Wave 2 chain.
-const CLASS_SCALE := {"Paladin": 1.5}
+const CLASS_SCALE := {"Fighter": 1.3, "Barbarian": 1.45, "Paladin": 0.9, "Wizard": 0.75, "Grifter": 1.05, "Ninja": 0.65}  # pathgap 2026-10-23, reference player with typical paths + boons
 
 static func class_scale(class_type: String) -> float:
 	return float(CLASS_SCALE.get(class_type, 1.0))

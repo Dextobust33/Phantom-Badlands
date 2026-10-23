@@ -7173,7 +7173,7 @@ const COMPANION_STRIKE_POWER := {
 const DUNGEON_CARD_POWER_MULT := 2.0
 ## The per-class remainder. Even at x8 the Wizard's weakest slot beat most dungeon cards: its own cards are sized by a mana pool and a Focus ramp that a flat share of the reference HP bar cannot
 ## match, so the generic multiplier that makes eight of nine classes want two or more cannot reach it without being absurd for the other eight. An entry multiplies the generic one.
-const DUNGEON_CARD_CLASS_SCALE := {"Wizard": 3.0}
+const DUNGEON_CARD_CLASS_SCALE := {"Wizard": 4.5, "Grifter": 3.0, "Ninja": 2.0}
 var dungeon_card_class_scale_override: float = -1.0
 var dungeon_card_power_override: float = -1.0
 ## A dungeon card is a guest in a deck built around a class ENGINE (Momentum, Read, Focus); playing it skips the build the class's own cards would have made. So a dungeon card builds this much of the

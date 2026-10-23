@@ -19,12 +19,12 @@ func _build(klass: String):
 
 func _init() -> void:
 	var table: Dictionary = PD.CLASS_SCALE
-	ck(table.has("Paladin") and float(table["Paladin"]) > 1.0, "the table lifts the Paladin (x%s)" % str(table.get("Paladin", "?")))
+	ck(table.has("Paladin") and float(table["Paladin"]) != 1.0 and not table.has("Sage"), "the table scales the Paladin (and leaves Sage alone) (x%s)" % str(table.get("Paladin", "?")))
 	var pal = _build("Paladin")
-	var fig = _build("Fighter")
+	var fig = _build("Sage")
 	var s: float = PD.class_scale("Paladin")
 	ck(abs(pal.get_path_effect_total("attack_damage_pct") - 20.0 * s) < 0.001, "a Paladin's four ranks of +5%% become %.1f%% (20 x %.2f)" % [pal.get_path_effect_total("attack_damage_pct"), s])
-	ck(abs(fig.get_path_effect_total("attack_damage_pct") - 20.0) < 0.001, "a Fighter, absent from the table, is exactly 20%")
+	ck(abs(fig.get_path_effect_total("attack_damage_pct") - 20.0) < 0.001, "a Sage, absent from the table, is exactly 20%")
 	ck(pal.get_path_effect_total("buff_duration_bonus") == 2.0 and fig.get_path_effect_total("buff_duration_bonus") == 2.0, "a duration is never scaled (2 rounds for both)")
 	pal.set_path_scale_override(1.0)
 	ck(abs(pal.get_path_effect_total("attack_damage_pct") - 20.0) < 0.001, "the simulator override beats the table (back to 20%)")
