@@ -972,16 +972,23 @@ func delete_character(account_id: String, char_name: String) -> bool:
 	"""Delete a character file"""
 	var filepath = get_character_filepath(account_id, char_name)
 
-	if FileAccess.file_exists(filepath):
-		var dir = DirAccess.open(CHARACTERS_DIR)
-		if dir:
-			var filename = filepath.get_file()
-			dir.remove(filename)
-			print("Character deleted: %s" % char_name)
-
-			# Remove from account
-			remove_character_from_account(account_id, char_name)
-			return true
+	# ⚑ THE .bak MUST GO TOO. `_safe_load` treats a missing main file as corruption and RESTORES
+	# it from `<file>.bak`, so a deleted character whose backup survived was resurrected by the
+	# next load of that name (found 2026-11-06: Dexto, died 10-06, `acc_1_dexto.json` came back
+	# the same second via the Sanctuary recall path). The ghost is in no account's character list,
+	# so it is invisible on character select but still makes `character_name_exists` true -
+	# "name already taken" for a character nobody can see. Sweep every sibling of the file.
+	var existed := FileAccess.file_exists(filepath)
+	var dir = DirAccess.open(CHARACTERS_DIR)
+	if dir:
+		var filename = filepath.get_file()
+		for suffix in ["", ".bak", ".tmp"]:
+			if FileAccess.file_exists(CHARACTERS_DIR + filename + suffix):
+				dir.remove(filename + suffix)
+	if existed:
+		print("Character deleted: %s" % char_name)
+		remove_character_from_account(account_id, char_name)
+		return true
 
 	return false
 
