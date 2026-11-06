@@ -11,4 +11,5 @@
 - [x] Defence/guard buffs folded into ONE "Damage taken -N%" chip; sources + turns left in hover
 - [x] "4T" -> "4 turns"; chip labels spelled out; hovers state the live value and turns left
 - [x] Probe `tools/probe/status_chips_plain_words.gd` PASS
-- [ ] Owner: look at it live (needs a client release); server combat-log lines still say "for 4T" (combat_manager.gd:9612/9622, needs server deploy)
+- [x] Shipped in client v0.9.847 (2026-11-06)
+- [ ] Owner: look at it live; server combat-log lines still say "for 4T" (combat_manager.gd:9612/9622, needs server deploy)
