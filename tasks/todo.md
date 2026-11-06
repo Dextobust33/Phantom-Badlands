@@ -6,3 +6,9 @@
 - [x] Deploy server (2026-11-06, hash e28fb43b verified via /proc/PID/exe)
 - [x] Ghost acc_1_dexto.json* moved to ~/ghost_backup on server
 - [ ] Owner: recall the Dexto-held companion in the Sanctuary; confirm "Dexto" can be created
+
+## 2026-11-06 — Buff/debuff chips hard to read (Fighter opening turn)
+- [x] Defence/guard buffs folded into ONE "Damage taken -N%" chip; sources + turns left in hover
+- [x] "4T" -> "4 turns"; chip labels spelled out; hovers state the live value and turns left
+- [x] Probe `tools/probe/status_chips_plain_words.gd` PASS
+- [ ] Owner: look at it live (needs a client release); server combat-log lines still say "for 4T" (combat_manager.gd:9612/9622, needs server deploy)

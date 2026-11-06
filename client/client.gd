@@ -45482,7 +45482,7 @@ func _build_turn_summary(buffer: Array) -> Array:
 func _enrich_dot_tags(tags: Array, status: Dictionary, is_monster_side: bool) -> void:
 	"""Append post-tick duration info to DoT tags using the cached server
 	status state. Mutates the tags array in place. e.g. 'Bleed 4' becomes
-	'Bleed 4 (3T)' when bleed has 3 turns left after this tick."""
+	'Bleed 4 (3 turns left)' when bleed has 3 turns left after this tick."""
 	if status.is_empty():
 		return
 	for i in range(tags.size()):
@@ -45500,7 +45500,7 @@ func _enrich_dot_tags(tags: Array, status: Dictionary, is_monster_side: bool) ->
 				# tracked server-side), so leave them untagged.
 				continue
 		if duration > 0:
-			tags[i] = "%s (%dT)" % [tag, duration]
+			tags[i] = "%s (%d turn%s left)" % [tag, duration, "" if duration == 1 else "s"]
 
 func _classify_combat_msg(raw: String, stripped: String, player: Dictionary, companion: Dictionary, monster: Dictionary, dot_to_you: Dictionary, dot_to_monster: Dictionary, verbatim: Array) -> void:
 	"""Classify a single combat message into actor totals or pass-through."""

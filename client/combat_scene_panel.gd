@@ -3179,29 +3179,29 @@ func _build_shared_status_strip() -> HBoxContainer:
 
 # Status-effect tag definitions. Map server status keys to (label, color).
 const _STATUS_TAGS := {
-	"bleed":      {"label": "Bld",  "color": "#FF4444"},
-	"poison":     {"label": "Psn",  "color": "#66FF66"},
-	"blind":      {"label": "Bln",  "color": "#888888"},
-	"stun":       {"label": "Stn",  "color": "#FFD700"},
-	"charm":      {"label": "Chrm", "color": "#FF69B4"},
-	"weakness":   {"label": "Wkn",  "color": "#A0A0A0"},
-	"slow":       {"label": "Slw",  "color": "#6699FF"},
-	"haste":      {"label": "Hst",  "color": "#33CCFF"},
-	"fortify":    {"label": "Frt",  "color": "#AAAAFF"},
-	"iron_skin":  {"label": "IS",   "color": "#CCCCCC"},
-	"war_cry":    {"label": "WC",   "color": "#FFAA33"},
-	"berserk":    {"label": "Brsk", "color": "#FF6633"},
-	"speed":      {"label": "Spd",  "color": "#33CCFF"},
-	"strength":   {"label": "Str+", "color": "#FFAA33"},
-	"defense":    {"label": "Def+", "color": "#AAAAFF"},
-	"cloak":      {"label": "Cl",   "color": "#9999AA"},
-	"forcefield": {"label": "FF",   "color": "#AA66FF"},
-	"vampiric":   {"label": "Vmp",  "color": "#CC33CC"},
+	"bleed":      {"label": "Bleeding",  "color": "#FF4444"},
+	"poison":     {"label": "Poisoned",  "color": "#66FF66"},
+	"blind":      {"label": "Blinded",  "color": "#888888"},
+	"stun":       {"label": "Stunned",  "color": "#FFD700"},
+	"charm":      {"label": "Charmed", "color": "#FF69B4"},
+	"weakness":   {"label": "Weakened",  "color": "#A0A0A0"},
+	"slow":       {"label": "Slowed",  "color": "#6699FF"},
+	"haste":      {"label": "Haste",  "color": "#33CCFF"},
+	"fortify":    {"label": "Fortified",  "color": "#AAAAFF"},
+	"iron_skin":  {"label": "Iron Skin",   "color": "#CCCCCC"},
+	"war_cry":    {"label": "War Cry",   "color": "#FFAA33"},
+	"berserk":    {"label": "Berserk", "color": "#FF6633"},
+	"speed":      {"label": "Quickened",  "color": "#33CCFF"},
+	"strength":   {"label": "Strength", "color": "#FFAA33"},
+	"defense":    {"label": "Defense", "color": "#AAAAFF"},
+	"cloak":      {"label": "Cloaked",   "color": "#9999AA"},
+	"forcefield": {"label": "Forcefield",   "color": "#AA66FF"},
+	"vampiric":   {"label": "Vampiric",  "color": "#CC33CC"},
 	# 2026-09-07 — `damage_reduction` was MISSING, so the mitigation summary fell through to the
 	# unknown-key default and rendered as a grey "Dam", three letters of the word "damage" with
 	# none of its meaning. It is the one chip that summarises everything else on the row, so it
 	# gets a full word and its own colour.
-	"damage_reduction": {"label": "Mitigation", "color": "#7AE07A"},
+	"damage_reduction": {"label": "Damage taken", "color": "#7AE07A"},
 	# 2026-09-08 - sabotage / distract / analyze were BORROWING the weakness and slow tags, so a
 	# monster read "Wkn -35% str/def" and "Wkn analyzed +10%": two different effects under one
 	# wrong three-letter label, both in the same grey. Owner: "the coloring for enemy buffs and
@@ -3248,7 +3248,7 @@ const _STATUS_HELP := {
 	"cloak":      "Cloaked. Harder for the enemy to target you.",
 	"forcefield": "Forcefield. Absorbs incoming damage until its capacity is spent, then breaks.",
 	"vampiric":   "Vampiric. Returns some of the damage you deal as health.",
-	"damage_reduction": "How much less damage you take right now, from every source combined. The list in brackets shows where it comes from. Careful: some of it is your banked engine stacks, so a card that spends them lowers this number.",
+	"damage_reduction": "Your total damage reduction - already everything combined, so there is nothing to add up. Some of it is your banked engine stacks, so a card that spends them lowers it.",
 	"sabotage":   "Sabotaged. Its strength AND its defence are cut, so it hits softer and takes more. Stacks with repeat casts up to 50%.",
 	"distract":   "Distracted. Its attacks are far likelier to miss you.",
 	"analyze":    "Analyzed. You have read its weaknesses: every attack you make deals more for the rest of this fight.",
@@ -3268,7 +3268,13 @@ const _APEX_HELP_APEX := "APEX - one of the species this world is built to be fe
 const _APEX_HELP_ELITE := "ELITE - a stronger roll of this species, above a normal monster of the same level, and it drops better for it."
 
 
-func _format_status_chip(key: String, suffix: String) -> String:
+func _turns_txt(n: int) -> String:
+	"""'3 turns' / '1 turn'. Owner 2026-11-06: *"figure out what 4T or 5T means"* - the T was a
+	developer abbreviation, and every chip that carried one now spells the word out."""
+	return "%d turn%s" % [n, "" if n == 1 else "s"]
+
+
+func _format_status_chip(key: String, suffix: String, extra_help: String = "") -> String:
 	"""One status pill. Owner 2026-09-07: *"I see the buff panels, I guess without any color or
 	border it's just a bit hard to notice."* They were bare coloured words on a thin row, so they
 	read as part of the background text rather than as a readable state. Each now sits on a dark
@@ -3287,6 +3293,10 @@ func _format_status_chip(key: String, suffix: String) -> String:
 		# Never leave a chip mute. An unrecognised effect still tells the player what it is and
 		# how long it holds, which beats three truncated letters with no hover at all.
 		help = "%s - an active effect. The number is its strength, the T value how many rounds remain." % String(tag.label)
+	# `extra_help` is the live part - the actual number and time left - so the hover answers
+	# "what is this worth right now" instead of only "what is this kind of thing".
+	if extra_help != "":
+		help += " " + extra_help
 	if help != "":
 		return "[url=%s]%s[/url]" % [help.replace("\"", "”").replace("'", "’"), chip]
 	return chip
@@ -3443,10 +3453,10 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 	var poison_turns: int = int(s.get("poison_turns", 0))
 	if poison_turns > 0:
 		var pdmg: int = int(s.get("poison_damage", 0))
-		chips.append(_format_status_chip("poison", "%dx%dT" % [pdmg, poison_turns]))
+		chips.append(_format_status_chip("poison", "%d/turn, %s" % [pdmg, _turns_txt(poison_turns)]))
 	var blind_turns: int = int(s.get("blind_turns", 0))
 	if blind_turns > 0:
-		chips.append(_format_status_chip("blind", "%dT" % blind_turns))
+		chips.append(_format_status_chip("blind", _turns_txt(blind_turns)))
 	# Forcefield shield amount (capacity, not turns).
 	var ff_shield: int = int(s.get("forcefield_shield", 0))
 	if ff_shield > 0:
@@ -3479,10 +3489,34 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 			_stack_n[t0] = int(_stack_n.get(t0, 0)) + 1
 			if not _stack_best.has(t0) or int(b0.get("duration", 0)) > int(_stack_best[t0].get("duration", 0)):
 				_stack_best[t0] = b0
+	# ⚑ ONE DAMAGE-TAKEN NUMBER, NOT THREE CHIPS TO ADD UP. Owner 2026-11-06 (a fresh Fighter's
+	# opening turn showed a defence chip, a guard chip AND a mitigation chip that already
+	# contained both): *"the player has to try and add up a bunch of mitigations ... wonder if
+	# multiple mitigations are stacking."* These three buff types are INSIDE the mitigation total
+	# (`player_mitigation_breakdown`), so showing them twice was double-counting on screen. They
+	# now live only in that chip's hover, with their turns left.
+	var _folded_into_mitigation := ["damage_reduction", "defense", "path_guard"]
+	var _fold_turns: Dictionary = {}   # label as the breakdown prints it -> turns left
+	if buffs is Array:
+		for fb in buffs:
+			if not (fb is Dictionary):
+				continue
+			var ft: String = str(fb.get("type", "")).to_lower()
+			if not _folded_into_mitigation.has(ft):
+				continue
+			var fsrc: String = str(fb.get("source", ""))
+			var flabel: String = fsrc if fsrc != "" else "Damage reduction"
+			if ft == "defense":
+				flabel = (fsrc + " (defense)") if fsrc != "" else "Defense"
+			elif ft == "path_guard":
+				flabel = fsrc
+			_fold_turns[flabel] = int(fb.get("duration", 0))
 	if buffs is Array:
 		for btype_key in _stack_best.keys():
 			var b: Dictionary = _stack_best[btype_key]
 			var btype: String = String(btype_key)
+			if _folded_into_mitigation.has(btype) and int(s.get("mitigation_pct", 0)) > 0:
+				continue
 			var bdur: int = int(b.get("duration", 0))
 			var _n: int = int(_stack_n.get(btype_key, 1))
 			var _stack_tag: String = ("  ×%d" % _n) if _n > 1 else ""
@@ -3497,16 +3531,22 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 			#     literally. `CombatManager.REST_OF_COMBAT_TURNS` is the one definition of it.
 			var bval: int = int(b.get("value", 0))
 			var dur_txt := ("this fight" if bdur >= CombatManager.REST_OF_COMBAT_DISPLAY_MIN
-				else "%dT" % bdur)
+				else _turns_txt(bdur))
 			# A buff the player did not cast says where it came from (Fighter's stance, a companion).
 			if str(b.get("source", "")) != "":
 				_stack_tag += "  (%s)" % str(b.get("source"))
+			var _live := "Right now: %s%s." % [
+				("%+d%%, " % bval) if bval != 0 else "",
+				("lasts the rest of this fight" if bdur >= CombatManager.REST_OF_COMBAT_DISPLAY_MIN
+					else "%s left" % _turns_txt(bdur))]
+			if _n > 1:
+				_live += " You have %d of these active; they add together." % _n
 			if bval > 0:
-				chips.append(_format_status_chip(btype, "+%d%% %s%s" % [bval, dur_txt, _stack_tag]))
+				chips.append(_format_status_chip(btype, "+%d%%, %s%s" % [bval, dur_txt, _stack_tag], _live))
 			elif bval < 0:
-				chips.append(_format_status_chip(btype, "%d%% %s%s" % [bval, dur_txt, _stack_tag]))
+				chips.append(_format_status_chip(btype, "%d%%, %s%s" % [bval, dur_txt, _stack_tag], _live))
 			else:
-				chips.append(_format_status_chip(btype, dur_txt + _stack_tag))
+				chips.append(_format_status_chip(btype, dur_txt + _stack_tag, _live))
 	# Total damage reduction, with its sources. Most of it is NOT a buff — CON grants it from the
 	# stat and the class engines grant it from banked stacks — so it appeared on no surface, and a
 	# player could hold 25% from their own engine without knowing. It also makes the decision to
@@ -3517,9 +3557,15 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 		var parts: Array = []
 		for src in srcs:
 			if src is Dictionary:
-				parts.append("%s %d%%" % [str(src.get("label", "?")), int(src.get("pct", 0))])
-		var detail: String = (" (" + ", ".join(parts) + ")") if not parts.is_empty() else ""
-		chips.append(_format_status_chip("damage_reduction", "-%d%% taken%s" % [mit, detail]))
+				var lbl: String = str(src.get("label", "?"))
+				var piece := "%s %d%%" % [lbl, int(src.get("pct", 0))]
+				if _fold_turns.has(lbl) and int(_fold_turns[lbl]) > 0:
+					piece += " (%s left)" % _turns_txt(int(_fold_turns[lbl]))
+				parts.append(piece)
+		var why: String = ("Made up of: " + ", ".join(parts) + ". ") if not parts.is_empty() else ""
+		var how: String = "These multiply rather than add, so the total is a little less than the sum. " if parts.size() > 1 else ""
+		chips.append(_format_status_chip("damage_reduction", "-%d%%" % mit,
+			"You take %d%% less damage from every hit. %s%s" % [mit, why, how]))
 	return "  ".join(chips)
 
 func _build_monster_status_bbcode(s: Dictionary) -> String:
@@ -3529,25 +3575,25 @@ func _build_monster_status_bbcode(s: Dictionary) -> String:
 	var bleed_turns: int = int(s.get("bleed_turns", 0))
 	if bleed_turns > 0:
 		var bdmg: int = int(s.get("bleed_damage", 0))
-		chips.append(_format_status_chip("bleed", "%dx%dT" % [bdmg, bleed_turns]))
+		chips.append(_format_status_chip("bleed", "%d/turn, %s" % [bdmg, _turns_txt(bleed_turns)]))
 	var poison_turns: int = int(s.get("poison_turns", 0))
 	if poison_turns > 0:
 		var pdmg: int = int(s.get("poison_damage", 0))
-		chips.append(_format_status_chip("poison", "%dx%dT" % [pdmg, poison_turns]))
+		chips.append(_format_status_chip("poison", "%d/turn, %s" % [pdmg, _turns_txt(poison_turns)]))
 	var stun_turns: int = int(s.get("stun_turns", 0))
 	if stun_turns > 0:
-		chips.append(_format_status_chip("stun", "%dT" % stun_turns))
+		chips.append(_format_status_chip("stun", _turns_txt(stun_turns)))
 	var charm_turns: int = int(s.get("charm_turns", 0))
 	if charm_turns > 0:
-		chips.append(_format_status_chip("charm", "%dT" % charm_turns))
+		chips.append(_format_status_chip("charm", _turns_txt(charm_turns)))
 	var weakness_turns: int = int(s.get("weakness_turns", 0))
 	if weakness_turns > 0:
 		var wval: int = int(s.get("weakness_value", 0))
-		chips.append(_format_status_chip("weakness", "-%d%% %dT" % [wval, weakness_turns]))
+		chips.append(_format_status_chip("weakness", "-%d%%, %s" % [wval, _turns_txt(weakness_turns)]))
 	var slow_turns: int = int(s.get("slow_turns", 0))
 	if slow_turns > 0:
 		var sval: int = int(s.get("slow_value", 0))
-		chips.append(_format_status_chip("slow", "-%d%% %dT" % [sval, slow_turns]))
+		chips.append(_format_status_chip("slow", "-%d%%, %s" % [sval, _turns_txt(slow_turns)]))
 	# 2026-09-07 — the Trickster kit's own debuffs. Sabotage and Analyze last the FIGHT rather than a number of
 	# turns, so they show their magnitude and no timer; the player needs to see the number because
 	# sabotage stacks to a 50% cap and distract is overwritten rather than added to.
