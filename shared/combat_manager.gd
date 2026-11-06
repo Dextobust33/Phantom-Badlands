@@ -9609,7 +9609,7 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 				var bleed_per_turn: int = int(ceil(damage_dealt * (pct / 100.0) * n))
 				combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + bleed_per_turn
 				combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), dur)
-				msgs.append("[color=%s]✦ %s applies bleed (+%d/turn for %dT).[/color]" % [t_color, t_name, bleed_per_turn, dur])
+				msgs.append("[color=%s]✦ %s applies bleed (+%d/turn for %d turn%s).[/color]" % [t_color, t_name, bleed_per_turn, dur, "" if dur == 1 else "s"])
 			"poison":
 				# v0.9.637 — needs damage_dealt > 0 (poison scales with hit dmg).
 				if damage_dealt <= 0:
@@ -9619,7 +9619,7 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 				var poison_per_turn: int = int(ceil(damage_dealt * (pct2 / 100.0) * n))
 				combat["monster_poison"] = int(combat.get("monster_poison", 0)) + poison_per_turn
 				combat["monster_poison_duration"] = max(int(combat.get("monster_poison_duration", 0)), dur2)
-				msgs.append("[color=%s]✦ %s applies poison (+%d/turn for %dT).[/color]" % [t_color, t_name, poison_per_turn, dur2])
+				msgs.append("[color=%s]✦ %s applies poison (+%d/turn for %d turn%s).[/color]" % [t_color, t_name, poison_per_turn, dur2, "" if dur2 == 1 else "s"])
 			"enemy_miss":
 				# v0.9.637 — fires on cast (no damage needed). Buff abilities OK.
 				var current_dist: int = int(combat.get("enemy_distracted", 0))
